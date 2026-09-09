@@ -268,12 +268,16 @@ interface AuthContextType {
   users: AppUser[];
   login: (username: string, password: string) => { success: boolean; message?: string };
   logout: () => void;
-  addUser: (user: Partial<AppUser>) => void;
+  addUser: (user: Partial<AppUser>) => { success: boolean; error?: string };
   updateUser: (id: string, updates: Partial<AppUser>) => void;
   deleteUser: (id: string) => void;
   resetDefaultUsers: () => void;
+  resetToDefaultUsers: () => void;
+  toggleUserActive: (id: string) => void;
   isTabAllowed: (tabId: string) => boolean;
+  hasModuleAccess: (tabId: string) => boolean;
   canEdit: boolean;
+  isReadOnly: boolean;
   isSuperAdmin: boolean;
 }
 
@@ -289,7 +293,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.map((u: any) => ({
+            ...u,
+            name: u.name || u.fullName || u.username || 'کاربر',
+            allowedTabs: Array.isArray(u.allowedTabs) 
+              ? u.allowedTabs 
+              : (Array.isArray(u.allowedModules) ? u.allowedModules : ['todos', 'students']),
+          }));
         }
       }
     } catch (e) {
@@ -303,9 +313,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const saved = localStorage.getItem(CURRENT_USER_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Find latest data from users list
-        const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === parsed?.username?.toUpperCase());
-        return found || parsed;
+        if (parsed && typeof parsed === 'object') {
+          const normalized: AppUser = {
+            ...parsed,
+            name: parsed.name || parsed.fullName || parsed.username || 'کاربر',
+            allowedTabs: Array.isArray(parsed.allowedTabs) 
+              ? parsed.allowedTabs 
+              : (Array.isArray(parsed.allowedModules) ? parsed.allowedModules : ['todos', 'students']),
+          };
+          const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === normalized.username?.toUpperCase());
+          return found || normalized;
+        }
       }
     } catch (e) {
       console.error('Error loading current user:', e);
@@ -362,15 +380,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(CURRENT_USER_KEY);
   };
 
-  const addUser = (newUser: Partial<AppUser>) => {
+  const addUser = (newUser: Partial<AppUser>): { success: boolean; error?: string } => {
     const username = (newUser.username || '').trim().toUpperCase();
-    if (!username) return;
+    if (!username) return { success: false, error: 'نام کاربری الزامی است' };
 
     const user: AppUser = {
       id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       username,
       password: newUser.password || '8411924',
-      name: newUser.name || username,
+      name: newUser.name || newUser.fullName || username,
+      fullName: newUser.fullName || newUser.name || username,
       level: newUser.level || 2,
       role: newUser.role || 'custom',
       roleTitle: newUser.roleTitle || 'کاربر سفارشی',
@@ -381,12 +400,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       canEdit: newUser.canEdit !== undefined ? newUser.canEdit : true,
       canManageUsers: newUser.canManageUsers || false,
       canBackup: newUser.canBackup !== undefined ? newUser.canBackup : true,
-      allowedTabs: newUser.allowedTabs || ['todos', 'students'],
+      isActive: newUser.isActive !== undefined ? newUser.isActive : true,
+      allowedTabs: newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : ['todos', 'students']),
+      allowedModules: newUser.allowedModules,
       avatarBg: newUser.avatarBg || 'bg-indigo-600',
       createdAt: new Date().toISOString(),
     };
 
     setUsers(prev => [...prev.filter(u => u.username.toUpperCase() !== username), user]);
+    return { success: true };
   };
 
   const updateUser = (id: string, updates: Partial<AppUser>) => {
@@ -422,12 +444,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const toggleUserActive = (id: string) => {
+    setUsers(prev => prev.map(u => {
+      if (u.id === id) {
+        return { ...u, isReadOnly: !u.isReadOnly };
+      }
+      return u;
+    }));
+  };
+
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
-    return currentUser.allowedTabs.includes(tabId);
+    const tabs = currentUser.allowedTabs || currentUser.allowedModules || [];
+    return Array.isArray(tabs) ? tabs.includes(tabId) : false;
   };
 
+  const hasModuleAccess = (tabId: string): boolean => {
+    return isTabAllowed(tabId);
+  };
+
+  const isReadOnly = currentUser ? currentUser.isReadOnly === true : false;
   const canEdit = currentUser ? !currentUser.isReadOnly && (currentUser.canEdit !== false) : false;
   const isSuperAdmin = currentUser?.level === 1 && currentUser?.role === 'super_admin';
 
@@ -442,8 +479,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUser,
         deleteUser,
         resetDefaultUsers,
+        resetToDefaultUsers: resetDefaultUsers,
+        toggleUserActive,
         isTabAllowed,
+        hasModuleAccess,
         canEdit,
+        isReadOnly,
         isSuperAdmin,
       }}
     >

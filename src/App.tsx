@@ -25,6 +25,7 @@ import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, ShieldCheck, Layers, ChevronDown, UserCheck, LogOut, Settings, Eye, Lock } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -54,7 +55,7 @@ function AppContent() {
   useEffect(() => {
     if (currentUser) {
       if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
-        const fallback = currentUser.allowedTabs?.[0] || 'todos';
+        const fallback = currentUser.allowedTabs?.[0] || (currentUser as any).allowedModules?.[0] || 'todos';
         setActiveTab(fallback);
       }
     }
@@ -339,10 +340,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MentorProvider>
-        <AppContent />
-      </MentorProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <MentorProvider>
+          <AppContent />
+        </MentorProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

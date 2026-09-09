@@ -10,7 +10,9 @@ export interface Student {
   isActive: boolean;
   phoneNumber?: string;
   grade?: string;
+  fatherName?: string;
   fatherOccupation?: string;
+  fatherJob?: string;
   birthPlace?: string;
   birthDate?: string;
   maritalStatus?: 'مجرد' | 'متاهل';
@@ -127,6 +129,7 @@ export interface Todo {
   isResearchFollowUp?: boolean;
   isStudyFollowUp?: boolean;
   researchRecordId?: string;
+  periodId?: string;
   mentorId?: string;
   createdAt?: string;
 }

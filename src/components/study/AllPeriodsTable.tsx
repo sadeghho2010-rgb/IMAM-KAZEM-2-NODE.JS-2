@@ -184,6 +184,7 @@ export default function AllPeriodsTable({
                         sumTotal: true,
                         activeCount: true,
                         commitmentRate: true,
+                        gradeCommitmentRate: true,
                         avgTotal: true,
                         gradeAvg: true,
                         belowAverageCount: true,

@@ -837,7 +837,7 @@ export default function StudyEntryModal({
                       <div className="col-span-1 md:col-span-3">
                         <div className="relative">
                           <input 
-                            ref={el => studyInputRefs.current[student.id] = el}
+                            ref={el => { studyInputRefs.current[student.id] = el; }}
                             type="number"
                             className="w-full pr-3 pl-8 py-2 bg-indigo-50/40 border border-indigo-100 focus:border-indigo-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
                             placeholder="مطالعه (دقیقه)"
@@ -853,7 +853,7 @@ export default function StudyEntryModal({
                       <div className="col-span-1 md:col-span-3">
                         <div className="relative">
                           <input 
-                            ref={el => discussionInputRefs.current[student.id] = el}
+                            ref={el => { discussionInputRefs.current[student.id] = el; }}
                             type="number"
                             className="w-full pr-3 pl-8 py-2 bg-emerald-50/40 border border-emerald-100 focus:border-emerald-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
                             placeholder="مباحثه (دقیقه)"

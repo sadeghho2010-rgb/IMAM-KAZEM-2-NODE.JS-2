@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { AppUser, AppModuleId, UserLevel, UserRole, UserScope } from '../types';
+import { AppModuleId } from '../types';
+import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { 
   ShieldCheck, 
   UserPlus, 
@@ -109,7 +110,7 @@ export default function UserManagement() {
     setFormScope(user.scope);
     setFormGradeLabel(user.gradeLabel || 'کل پایه‌ها');
     setFormIsReadOnly(user.isReadOnly || false);
-    setFormAllowedModules(user.allowedModules || []);
+    setFormAllowedModules((user.allowedModules as AppModuleId[]) || (user.allowedTabs as AppModuleId[]) || []);
     setFormError(null);
     setIsCreateModalOpen(true);
   };

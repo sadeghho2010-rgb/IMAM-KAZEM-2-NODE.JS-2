@@ -19,7 +19,7 @@ import {
   KeyRound
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { AppUser } from '../types';
+import { AppUser } from '../types/auth';
 
 interface LoginViewProps {
   onLoginSuccess?: () => void;
@@ -47,7 +47,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       if (result.success) {
         if (onLoginSuccess) onLoginSuccess();
       } else {
-        setErrorMessage(result.error || 'خطا در ورود به سامانه.');
+        setErrorMessage(result.message || (result as any).error || 'خطا در ورود به سامانه.');
       }
     }, 350);
   };

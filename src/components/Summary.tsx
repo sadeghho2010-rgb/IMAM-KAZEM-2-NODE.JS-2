@@ -105,6 +105,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
     enrolledPrograms: Program[];
     discussionSummary?: {
       groups: DiscussionGroup[];
+      groupBreakdown?: { id: string; title: string; subject?: string; partners: string[] }[];
       partnerNames: string[];
       internalPartnerCount: number;
       externalPartnerCount: number;

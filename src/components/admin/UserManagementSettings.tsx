@@ -89,7 +89,7 @@ export default function UserManagementSettings() {
       gradeLabel: user.gradeLabel || '',
       isReadOnly: !!user.isReadOnly,
       canEdit: user.canEdit !== undefined ? user.canEdit : true,
-      allowedTabs: [...user.allowedTabs],
+      allowedTabs: [...(user.allowedTabs || [])],
     });
     setIsEditModalOpen(true);
   };
@@ -369,7 +369,7 @@ export default function UserManagementSettings() {
                     </td>
 
                     <td className="py-3.5 px-4 font-bold text-slate-700">
-                      {user.role === 'super_admin' ? 'همه بخش‌ها (کامل)' : `${user.allowedTabs.length} بخش`}
+                      {user.role === 'super_admin' ? 'همه بخش‌ها (کامل)' : `${(user.allowedTabs || []).length} بخش`}
                     </td>
 
                     <td className="py-3.5 px-4 text-center">

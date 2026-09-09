@@ -66,7 +66,12 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   const { currentUser, logout, hasModuleAccess, isReadOnly } = useAuth();
 
   // Filter items based on user's authorized modules
-  const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => hasModuleAccess(item.id));
+  const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
+    if (typeof hasModuleAccess === 'function') {
+      return hasModuleAccess(item.id);
+    }
+    return true;
+  });
 
   return (
     <div 
@@ -164,7 +169,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
           // Contextual label adjustments
           if (item.id === 'manager-files') {
-            label = currentUser?.role === 'super_admin' || currentUser?.role === 'education_officer'
+            label = currentUser?.role === 'super_admin' || (currentUser?.role as string) === 'education_officer' || currentUser?.role === 'education_manager'
               ? 'ارسال فایل برای کاربران'
               : 'فایل‌های ارسالی مدیر';
           } else if (currentUser?.level === 3) {
