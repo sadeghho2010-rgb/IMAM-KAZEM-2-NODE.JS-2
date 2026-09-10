@@ -137,7 +137,8 @@ export const COLLECTIONS = [
   'academic_holiday_types',
   'academic_sub_periods',
   'academic_weekly_programs',
-  'teachers'
+  'teachers',
+  'classrooms'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;

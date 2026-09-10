@@ -19,6 +19,7 @@ export const ALL_SYSTEM_TABS = [
   { id: 'manager-files', label: 'فایل‌های ارسالی مدیر' },
   { id: 'backup', label: 'پشتیبان‌گیری' },
   { id: 'user-management', label: 'تنظیمات کاربران و سطوح دسترسی' },
+  { id: 'user-credentials', label: 'مدیریت ورود کاربران' },
 ];
 
 export const DEFAULT_USERS: AppUser[] = [
@@ -41,8 +42,8 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-indigo-700',
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
-      'discussion', 'programs', 'student-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-management'
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'stats', 'research',
+      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-management', 'user-credentials'
     ],
   },
   {
@@ -63,8 +64,8 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-slate-700',
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
-      'discussion', 'programs', 'student-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup'
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'stats', 'research',
+      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
 
@@ -86,9 +87,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-amber-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs',
+      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup'
+      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
   {
@@ -108,9 +109,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-emerald-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs',
+      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup'
+      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
   {
@@ -130,9 +131,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-sky-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs',
+      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup'
+      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
   {
@@ -152,9 +153,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-purple-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs',
+      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup'
+      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
   {
@@ -174,9 +175,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-rose-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs',
+      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup'
+      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
   {
@@ -196,7 +197,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-teal-600',
     allowedTabs: [
-      'active-students', 'research', 'todos', 'summary', 'manager-files'
+      'active-students', 'research', 'todos', 'summary', 'programs', 'manager-files', 'user-credentials'
     ],
   },
   {
@@ -216,7 +217,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-cyan-700',
     allowedTabs: [
-      'presence-hours', 'teachers-bank', 'students', 'backup'
+      'presence-hours', 'teachers-bank', 'students', 'programs', 'backup', 'user-credentials'
     ],
   },
 
@@ -238,7 +239,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-blue-600',
     allowedTabs: [
-      'attendance', 'student-schedule', 'discussion', 'stats', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'discussion', 'stats', 'manager-files'
     ],
   },
   {
@@ -258,7 +259,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-emerald-700',
     allowedTabs: [
-      'attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'discussion', 'stats', 'comments', 'manager-files'
     ],
   },
 ];
@@ -293,13 +294,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((u: any) => ({
-            ...u,
-            name: u.name || u.fullName || u.username || 'کاربر',
-            allowedTabs: Array.isArray(u.allowedTabs) 
+          return parsed.map((u: any) => {
+            const tabs = Array.isArray(u.allowedTabs) 
               ? u.allowedTabs 
-              : (Array.isArray(u.allowedModules) ? u.allowedModules : ['todos', 'students']),
-          }));
+              : (Array.isArray(u.allowedModules) ? u.allowedModules : ['todos', 'students']);
+            if ((u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH') && !tabs.includes('user-credentials')) {
+              tabs.push('user-credentials');
+            }
+            return {
+              ...u,
+              name: u.name || u.fullName || u.username || 'کاربر',
+              allowedTabs: tabs,
+            };
+          });
         }
       }
     } catch (e) {
@@ -322,7 +329,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               : (Array.isArray(parsed.allowedModules) ? parsed.allowedModules : ['todos', 'students']),
           };
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === normalized.username?.toUpperCase());
-          return found || normalized;
+          const activeUser = found || normalized;
+          if (activeUser && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH')) {
+            if (Array.isArray(activeUser.allowedTabs) && !activeUser.allowedTabs.includes('user-credentials')) {
+              activeUser.allowedTabs.push('user-credentials');
+            }
+          }
+          return activeUser;
         }
       }
     } catch (e) {
@@ -385,7 +398,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!username) return { success: false, error: 'نام کاربری الزامی است' };
 
     const user: AppUser = {
-      id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      ...newUser,
+      id: newUser.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       username,
       password: newUser.password || '8411924',
       name: newUser.name || newUser.fullName || username,
@@ -396,6 +410,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       scope: newUser.scope || 'all',
       gradeLabel: newUser.gradeLabel || '',
       mentorId: newUser.mentorId || 'shahpoori',
+      linkedStudentId: newUser.linkedStudentId || newUser.studentId,
+      studentId: newUser.studentId || newUser.linkedStudentId,
+      studentName: newUser.studentName || newUser.name,
       isReadOnly: newUser.isReadOnly || false,
       canEdit: newUser.canEdit !== undefined ? newUser.canEdit : true,
       canManageUsers: newUser.canManageUsers || false,
@@ -404,7 +421,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       allowedTabs: newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : ['todos', 'students']),
       allowedModules: newUser.allowedModules,
       avatarBg: newUser.avatarBg || 'bg-indigo-600',
-      createdAt: new Date().toISOString(),
+      createdAt: newUser.createdAt || new Date().toISOString(),
     };
 
     setUsers(prev => [...prev.filter(u => u.username.toUpperCase() !== username), user]);
@@ -456,6 +473,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
+    // بخش برنامه‌های مدرسه به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
+    if (tabId === 'programs') return true;
+    if (tabId === 'user-credentials') {
+      if (
+        currentUser.role === 'super_admin' || 
+        currentUser.role === 'education_manager' || 
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      ) {
+        return true;
+      }
+    }
     const tabs = currentUser.allowedTabs || currentUser.allowedModules || [];
     return Array.isArray(tabs) ? tabs.includes(tabId) : false;
   };

@@ -33,9 +33,47 @@ export interface Program {
   day?: string;
   days?: string[]; // List of specific days e.g. ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']
   time?: string;
+  startTime?: string;
+  endTime?: string;
   teacher?: string;
+  madrasRoom?: string; // مَدرَس (کلاس درس)
+  classroom?: string;  // مَدرَس (نام یا شناسه کلاس درس)
+  grade?: string;      // پایه تحصیلی مربوطه
+  capacity?: number;
+  notes?: string;
   mentorId?: string;
   parentProgramId?: string; // ID of the main program if type === 'مشاوره'
+  representativeStudentIds?: string[]; // شناسه‌های طلاب نماینده کلاس
+  representativeNames?: string[]; // نام‌های نمایندگان کلاس
+  customRepresentative?: string; // نماینده متفرقه خارج از طلاب
+}
+
+export interface ClassSessionAttendance {
+  id: string;
+  programId: string;
+  programTitle: string;
+  date: string; // تاریخ شمسی e.g. 1403/07/15
+  isCancelled: boolean; // عدم برگزاری کلاس
+  cancellationReason?: string;
+  notes?: string; // توضیحات و یادداشت‌های کلاس
+  recordedByUserId?: string;
+  recordedByName?: string;
+  records: Record<string, AttendanceStatus>; // studentId -> 'present' | 'absent' | 'late'
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MadrasRoom {
+  id: string;
+  name: string;             // e.g. "مدرس ۱ (شیخ انصاری)"
+  code?: string;            // e.g. "M-1"
+  capacity?: number;        // ظرفیت به نفر
+  floor?: string;           // طبقه یا محل استقرار
+  facilities?: string[];    // امکانات مانند ویدئو پروژکتور، وایت‌برد، سیستم صوتی
+  description?: string;
+  color?: string;           // رنگ شاخص
+  isActive: boolean;
+  createdAt?: string;
 }
 
 export interface Enrollment {
@@ -385,6 +423,7 @@ export type AppModuleId =
   | 'students'
   | 'active-students'
   | 'programs'
+  | 'classrooms'
   | 'student-schedule'
   | 'stats'
   | 'discussion'
@@ -397,6 +436,7 @@ export type AppModuleId =
   | 'manager-files'
   | 'backup'
   | 'user-management'
+  | 'user-credentials'
   | 'student-portal';
 
 export type UserScope = 'global' | 'grade_7' | 'grade_8' | 'grade_9' | 'grade_10' | 'class' | 'self';

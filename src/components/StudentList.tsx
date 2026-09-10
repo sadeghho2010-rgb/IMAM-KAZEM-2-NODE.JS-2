@@ -28,12 +28,19 @@ import {
   Heart,
   Home,
   MapPin,
-  BookOpen
+  BookOpen,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { localDb, isStudentActive, DuplicateGroup, MergeResult } from '../lib/localDb';
 import { Student, Program, Enrollment } from '../types';
 import { useMentor } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
+import { AppUser } from '../types/auth';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -52,6 +59,127 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     shahpooriFilter,
     setShahpooriFilter 
   } = useMentor();
+  const { users, currentUser, addUser, updateUser } = useAuth();
+  const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState<Student | null>(null);
+  const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
+  const [editingCredUser, setEditingCredUser] = useState<AppUser | null>(null);
+
+  // Form fields inside the credentials popup
+  const [credUsername, setCredUsername] = useState('');
+  const [credPassword, setCredPassword] = useState('');
+  const [credName, setCredName] = useState('');
+
+  const isAuthorizedToManage = currentUser?.role === 'super_admin' || currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
+  const isReadOnlyUser = currentUser?.isReadOnly === true;
+
+  // Helper to accurately match a student with their user account
+  const getStudentAccount = (student: Student, allUsers: AppUser[] = users): AppUser | undefined => {
+    if (!student) return undefined;
+    return allUsers.find(u => {
+      // 1. Matched by linkedStudentId
+      if (u.linkedStudentId && String(u.linkedStudentId) === String(student.id)) return true;
+      // 2. Matched by studentId
+      if (u.studentId && String(u.studentId) === String(student.id)) return true;
+      // 3. Matched by national ID if username is national ID
+      if (student.nationalId && student.nationalId.trim()) {
+        const cleanNationalId = student.nationalId.trim().toUpperCase();
+        if (u.username.toUpperCase() === cleanNationalId) return true;
+      }
+      // 4. Matched by exact name if role is student or level is 3
+      if ((u.role === 'student' || u.level === 3) && u.name && student.name) {
+        if (u.name.trim() === student.name.trim()) return true;
+        if (u.fullName && u.fullName.trim() === student.name.trim()) return true;
+      }
+      return false;
+    });
+  };
+
+  const handleSaveCredentials = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForCredentials) return;
+
+    if (!credUsername.trim() || !credPassword.trim()) {
+      alert('نام کاربری و کلمه عبور نمی‌تواند خالی باشد.');
+      return;
+    }
+
+    const cleanUsername = credUsername.trim().toUpperCase();
+
+    if (editingCredUser) {
+      // Update
+      updateUser(editingCredUser.id, {
+        username: cleanUsername,
+        password: credPassword.trim(),
+        name: selectedStudentForCredentials.name,
+        fullName: selectedStudentForCredentials.name,
+        linkedStudentId: selectedStudentForCredentials.id,
+        studentId: selectedStudentForCredentials.id,
+        studentName: selectedStudentForCredentials.name,
+      });
+      alert('مشخصات ورود طلبه با موفقیت ویرایش شد.');
+      setSelectedStudentForCredentials(null);
+    } else {
+      // Create or re-link
+      const existingUserWithUsername = users.find(u => 
+        u.username.toUpperCase() === cleanUsername || 
+        (u.linkedStudentId && String(u.linkedStudentId) === String(selectedStudentForCredentials.id)) ||
+        (u.studentId && String(u.studentId) === String(selectedStudentForCredentials.id))
+      );
+
+      if (existingUserWithUsername) {
+        // If this user account belongs to this student (by name or nationalId or previous link), link and update it!
+        const isSameStudent = 
+          existingUserWithUsername.linkedStudentId === selectedStudentForCredentials.id ||
+          existingUserWithUsername.studentId === selectedStudentForCredentials.id ||
+          existingUserWithUsername.name?.trim() === selectedStudentForCredentials.name.trim() ||
+          existingUserWithUsername.fullName?.trim() === selectedStudentForCredentials.name.trim() ||
+          (selectedStudentForCredentials.nationalId && existingUserWithUsername.username.toUpperCase() === selectedStudentForCredentials.nationalId.trim().toUpperCase());
+
+        if (isSameStudent) {
+          updateUser(existingUserWithUsername.id, {
+            username: cleanUsername,
+            password: credPassword.trim(),
+            name: selectedStudentForCredentials.name,
+            fullName: selectedStudentForCredentials.name,
+            linkedStudentId: selectedStudentForCredentials.id,
+            studentId: selectedStudentForCredentials.id,
+            studentName: selectedStudentForCredentials.name,
+          });
+          alert('حساب کاربری با موفقیت به این طلبه متصل و بروزرسانی شد.');
+          setSelectedStudentForCredentials(null);
+          return;
+        }
+
+        alert('این نام کاربری قبلاً در سامانه برای کاربر دیگری تعریف شده است.');
+        return;
+      }
+
+      const result = addUser({
+        username: cleanUsername,
+        password: credPassword.trim(),
+        name: selectedStudentForCredentials.name,
+        fullName: selectedStudentForCredentials.name,
+        level: 3,
+        role: 'student',
+        roleTitle: 'طلبه',
+        scope: 'self',
+        gradeLabel: selectedStudentForCredentials.grade || 'طلبه پایه',
+        linkedStudentId: selectedStudentForCredentials.id,
+        studentId: selectedStudentForCredentials.id,
+        studentName: selectedStudentForCredentials.name,
+        isActive: true,
+        avatarBg: 'bg-emerald-600',
+        allowedTabs: ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
+      });
+
+      if (result.success) {
+        alert('حساب کاربری با موفقیت برای این طلبه ایجاد شد.');
+        setSelectedStudentForCredentials(null);
+      } else {
+        alert(`خطا در ایجاد حساب: ${result.error}`);
+      }
+    }
+  };
   const [students, setStudents] = useState<Student[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -93,7 +221,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([
-    'index', 'grade', 'name', 'nationalId', 'isActive', 'actions'
+    'index', 'grade', 'name', 'nationalId', 'isActive', 'userStatus', 'actions'
   ]);
 
   // Duplicate Students Management
@@ -170,6 +298,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     { id: 'levelOneSchool', label: 'مدرسه سطح یک' },
     { id: 'tammomStatus', label: 'وضعیت تعمم' },
     { id: 'isActive', label: 'وضعیت' },
+    { id: 'userStatus', label: 'وضعیت کاربری سایت' },
     { id: 'actions', label: 'عملیات' },
   ];
 
@@ -623,13 +752,15 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
             />
           </div>
           
-          <button 
-            onClick={() => { resetForm(); setShowAddModal(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>افزودن طلبه جدید</span>
-          </button>
+          {isAuthorizedToManage && (
+            <button 
+              onClick={() => { resetForm(); setShowAddModal(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>افزودن طلبه جدید</span>
+            </button>
+          )}
           
           <button 
             onClick={handleExcelExport}
@@ -641,22 +772,26 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
           {!onlyActive && (
             <>
-              <label className="flex items-center gap-2 px-4 py-2 border border-slate-200 bg-white text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors cursor-pointer shadow-sm">
-                <FileSpreadsheet size={16} />
-                <span>وارد کردن اکسل</span>
-                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
-              </label>
+              {isAuthorizedToManage && (
+                <label className="flex items-center gap-2 px-4 py-2 border border-slate-200 bg-white text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors cursor-pointer shadow-sm">
+                  <FileSpreadsheet size={16} />
+                  <span>وارد کردن اکسل</span>
+                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
+                </label>
+              )}
 
-              <button 
-                onClick={handleOpenDuplicateModal}
-                className="flex items-center gap-2 px-4 py-2 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
-                title="شناسایی طلاب تکراری بر اساس کد ملی، ادغام کامل سوابق و حذف پرونده‌های تکراری"
-              >
-                <GitMerge size={16} className="text-amber-700" />
-                <span>حذف کاربر تکراری</span>
-              </button>
+              {isAuthorizedToManage && (
+                <button 
+                  onClick={handleOpenDuplicateModal}
+                  className="flex items-center gap-2 px-4 py-2 border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
+                  title="شناسایی طلاب تکراری بر اساس کد ملی، ادغام کامل سوابق و حذف پرونده‌های تکراری"
+                >
+                  <GitMerge size={16} className="text-amber-700" />
+                  <span>حذف کاربر تکراری</span>
+                </button>
+              )}
 
-              {students.length > 0 && (
+              {isAuthorizedToManage && students.length > 0 && (
                 <button 
                   onClick={() => setShowDeleteAllModal(true)}
                   className="flex items-center gap-2 px-4 py-2 border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 text-xs font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
@@ -1004,29 +1139,86 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                       </button>
                     </td>
                   )}
-                  {visibleColumns.includes('actions') && (
+                  {visibleColumns.includes('userStatus') && (
+                    <td className="px-6 py-4" onClick={(e) => {
+                      e.stopPropagation();
+                      const studentUser = getStudentAccount(student);
+                      setSelectedStudentForCredentials(student);
+                      if (studentUser) {
+                        setEditingCredUser(studentUser);
+                        setCredUsername(studentUser.username);
+                        setCredPassword(studentUser.password || '8411924');
+                        setCredName(studentUser.name);
+                      } else {
+                        setEditingCredUser(null);
+                        setCredUsername(student.nationalId || '');
+                        setCredPassword(student.phoneNumber || '');
+                        setCredName(student.name);
+                      }
+                    }}>
+                      {(() => {
+                        const studentUser = getStudentAccount(student);
+                        return studentUser ? (
+                          <button 
+                            type="button"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                            title="مشاهده اطلاعات ورود به سایت"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                            <span>دارای کاربری ({studentUser.username})</span>
+                          </button>
+                        ) : (
+                          <button 
+                            type="button"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
+                            title="ایجاد نام کاربری و کلمه عبور برای سایت"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
+                            <span>بدون کاربری</span>
+                          </button>
+                        );
+                      })()}
+                    </td>
+                  )}
+                   {visibleColumns.includes('actions') && (
                     <td className="px-6 py-4 text-left" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleEdit(student);
+                            setViewingStudentSummary(student);
                           }}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                          title="ویرایش اطلاعات"
+                          className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg transition-all cursor-pointer"
+                          title="مشاهده اطلاعات کامل"
                         >
-                          <Edit2 size={14} />
+                          <User size={13} />
+                          <span>مشاهده</span>
                         </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteStudent(student);
-                          }}
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                          title="حذف کاربر"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        
+                        {isAuthorizedToManage && (
+                          <>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(student);
+                              }}
+                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                              title="ویرایش اطلاعات"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteStudent(student);
+                              }}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title="حذف کاربر"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   )}
@@ -1768,7 +1960,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                 </div>
               </div>
 
-              {/* Box 2: Enrolled Lessons / Courses */}
+               {/* Box 2: Enrolled Lessons / Courses */}
               <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xl">
                 <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2">
@@ -1815,6 +2007,129 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   );
                 })()}
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Student Site Login Credentials Modal */}
+      <AnimatePresence>
+        {selectedStudentForCredentials && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-slate-200 shadow-2xl space-y-5"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <KeyRound size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      حساب کاربری سایت: {selectedStudentForCredentials.name}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      پایه: {selectedStudentForCredentials.grade || 'نامشخص'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {editingCredUser ? (
+                <div className="bg-emerald-50 text-emerald-800 p-3 rounded-2xl border border-emerald-100 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                  <span>این طلبه هم‌اکنون دارای حساب کاربری فعال در سامانه است.</span>
+                </div>
+              ) : (
+                <div className="bg-rose-50 text-rose-800 p-3 rounded-2xl border border-rose-100 text-xs font-bold space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                    <span>این طلبه هنوز نام کاربری و کلمه عبوری برای ورود به سایت ندارد.</span>
+                  </div>
+                  {isAuthorizedToManage && (
+                    <p className="text-[10px] text-rose-700/90 font-medium leading-relaxed">
+                      سیستم به طور پیش‌فرض کدملی ثبت شده برای طلبه را به عنوان نام کاربری و شماره موبایل ثبت شده در نرم افزار را به عنوان رمز عبور پیشنهاد می‌دهد.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <form onSubmit={handleSaveCredentials} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">نام کاربری</label>
+                  <input
+                    type="text"
+                    value={credUsername}
+                    onChange={(e) => setCredUsername(e.target.value)}
+                    disabled={!isAuthorizedToManage}
+                    placeholder="بدون کدملی (کدملی را در پرونده ثبت کنید)"
+                    required
+                    dir="ltr"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-950 focus:outline-none focus:bg-white focus:border-indigo-500 text-right uppercase disabled:opacity-75 disabled:bg-slate-100"
+                  />
+                  {!editingCredUser && isAuthorizedToManage && !selectedStudentForCredentials.nationalId && (
+                    <p className="text-[9px] text-rose-600 mt-1 font-bold">هشدار: کدملی این طلبه ثبت نشده است. ابتدا کد ملی را ویرایش کنید یا دستی وارد نمایید.</p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">کلمه عبور (رمز)</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordMap(prev => ({ ...prev, current: !prev.current }))}
+                      className="text-[10px] text-indigo-600 font-bold hover:underline"
+                    >
+                      {showPasswordMap.current ? 'مخفی کردن' : 'نمایش رمز'}
+                    </button>
+                  </div>
+                  <input
+                    type={showPasswordMap.current ? 'text' : 'password'}
+                    value={credPassword}
+                    onChange={(e) => setCredPassword(e.target.value)}
+                    disabled={!isAuthorizedToManage}
+                    placeholder="بدون شماره موبایل (موبایل را در پرونده ثبت کنید)"
+                    required
+                    dir="ltr"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-950 focus:outline-none focus:bg-white focus:border-indigo-500 text-right disabled:opacity-75 disabled:bg-slate-100"
+                  />
+                  {!editingCredUser && isAuthorizedToManage && !selectedStudentForCredentials.phoneNumber && (
+                    <p className="text-[9px] text-rose-600 mt-1 font-bold">هشدار: شماره همراه این طلبه ثبت نشده است. ابتدا شماره همراه را ویرایش کنید یا دستی وارد نمایید.</p>
+                  )}
+                </div>
+
+                {!isAuthorizedToManage && (
+                  <div className="bg-amber-50 p-3 rounded-2xl border border-amber-100 flex items-start gap-2">
+                    <Lock size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                    <span className="text-[10px] text-amber-800 font-bold leading-relaxed">
+                      مشاهده فقط‌خواندنی: شما به عنوان کادر مسئول پایه مجاز به تغییر یا تعریف اعتبارنامه‌های کاربران نیستید. جهت تغییر با مدیر آموزش یا سوپر ادمین هماهنگ کنید.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStudentForCredentials(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    بستن صفحه
+                  </button>
+                  {isAuthorizedToManage && (
+                    <button
+                      type="submit"
+                      disabled={!credUsername.trim() || !credPassword.trim()}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
+                    >
+                      {editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری'}
+                    </button>
+                  )}
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

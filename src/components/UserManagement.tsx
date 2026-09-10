@@ -32,6 +32,7 @@ const ALL_MODULES: { id: AppModuleId; label: string; group: string }[] = [
   { id: 'students', label: 'مدیریت کل طلاب', group: 'آموزش' },
   { id: 'active-students', label: 'طلاب فعال', group: 'آموزش' },
   { id: 'programs', label: 'برنامه‌های آموزشی و سرفصل‌ها', group: 'آموزش' },
+  { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', group: 'آموزش' },
   { id: 'student-schedule', label: 'برنامه درسی و هفتگی طلاب', group: 'آموزش' },
   { id: 'stats', label: 'آمار و گزارشات مطالعه', group: 'آموزش و پژوهش' },
   { id: 'discussion', label: 'بخش مباحثات', group: 'آموزش' },

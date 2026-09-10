@@ -20,9 +20,11 @@ import StudyDiscussion from './components/StudyDiscussion';
 import AcademicCalendar from './components/AcademicCalendar';
 import PresenceHours from './components/PresenceHours';
 import TeachersBank from './components/TeachersBank';
+import MadrasRooms from './components/MadrasRooms';
 import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
+import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -83,6 +85,8 @@ function AppContent() {
         return <StudyDiscussion initialStudentId={selectedStudentIdForTab} />;
       case 'programs':
         return <Programs />;
+      case 'classrooms':
+        return <MadrasRooms />;
       case 'student-schedule':
         return <StudentSchedule initialStudentId={selectedStudentIdForTab} />;
       case 'research':
@@ -115,6 +119,8 @@ function AppContent() {
             دسترسی به بخش مدیریت کاربران و اختیارات فقط برای سوپر ادمین مجاز است.
           </div>
         );
+      case 'user-credentials':
+        return <UserCredentialsSettings />;
       default:
         return <TodoList />;
     }
@@ -166,7 +172,8 @@ function AppContent() {
                      activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
                      activeTab === 'active-students' ? 'لیست کاربران فعال' :
                      activeTab === 'manager-files' ? (currentUser.role === 'super_admin' || currentUser.role === 'education_manager' ? 'ارسال فایل برای کاربران' : 'فایل‌های ارسالی مدیر') :
-                     activeTab === 'programs' ? 'برنامه‌های آموزشی و مدرس‌ها' :
+                     activeTab === 'programs' ? 'برنامه‌های آموزشی و سرفصل‌ها' :
+                     activeTab === 'classrooms' ? 'مَدرَس‌ها (کلاس‌های درس و مدیریت فضاها)' :
                      activeTab === 'student-schedule' ? 'برنامه هفتگی و درسی طلاب' :
                      activeTab === 'research' ? 'بخش پژوهش و مقالات' :
                      activeTab === 'attendance' ? 'حضور و غیاب طلاب' :

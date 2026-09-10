@@ -19,7 +19,8 @@ import {
   Settings,
   Award,
   User,
-  Eye
+  Eye,
+  DoorOpen
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -47,6 +48,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
   { id: 'active-students', label: 'طلاب فعال', icon: UserCheck },
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
+  { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', icon: DoorOpen },
   { id: 'student-schedule', label: 'برنامه درسی و هفتگی طلاب', icon: CalendarDays },
   { id: 'stats', label: 'آمار مطالعه طلاب', icon: BarChart2 },
   { id: 'discussion', label: 'مطالعات و مباحثات طلاب', icon: Users },
@@ -59,6 +61,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'manager-files', label: 'فایل‌های ارسالی مدیر', icon: FolderOpen },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
+  { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
