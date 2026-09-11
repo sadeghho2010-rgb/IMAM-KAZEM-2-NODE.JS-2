@@ -42,7 +42,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-indigo-700',
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
-      'discussion', 'programs', 'classrooms', 'student-schedule', 'stats', 'research',
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
       'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-management', 'user-credentials'
     ],
   },
@@ -64,7 +64,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-slate-700',
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
-      'discussion', 'programs', 'classrooms', 'student-schedule', 'stats', 'research',
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
       'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -88,7 +88,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-amber-600',
     allowedTabs: [
       'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
       'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -110,7 +110,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-emerald-600',
     allowedTabs: [
       'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
       'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -132,7 +132,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-sky-600',
     allowedTabs: [
       'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
       'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -154,7 +154,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-purple-600',
     allowedTabs: [
       'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
       'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -176,7 +176,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-rose-600',
     allowedTabs: [
       'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
       'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
     ],
   },
@@ -197,7 +197,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-teal-600',
     allowedTabs: [
-      'active-students', 'research', 'todos', 'summary', 'programs', 'manager-files', 'user-credentials'
+      'active-students', 'research', 'todos', 'summary', 'programs', 'classrooms', 'teachers-schedule', 'manager-files', 'user-credentials'
     ],
   },
   {
@@ -239,7 +239,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-blue-600',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'discussion', 'stats', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'manager-files'
     ],
   },
   {
@@ -259,7 +259,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-emerald-700',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'discussion', 'stats', 'comments', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments', 'manager-files'
     ],
   },
 ];
@@ -363,6 +363,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const matched = users.find(u => u.username.toUpperCase() === cleanUser);
     if (!matched) {
       return { success: false, message: 'نام کاربری وارد شده در سامانه یافت نشد.' };
+    }
+
+    // Check if user account is deactivated
+    if (matched.isActive === false) {
+      return { 
+        success: false, 
+        message: 'این حساب کاربری در وضعیت غیرفعال قرار دارد و امکان ورود به سامانه را ندارد. تمامی اطلاعات کاربری شما محفوظ می‌باشد.' 
+      };
+    }
+
+    // Check linked student status if applicable
+    try {
+      const storedStudentsRaw = localStorage.getItem('school_students_v1') || localStorage.getItem('localdb_students');
+      if (storedStudentsRaw) {
+        const studentList = JSON.parse(storedStudentsRaw);
+        if (Array.isArray(studentList)) {
+          const linkedStudent = studentList.find(s => 
+            (matched.linkedStudentId && s.id === matched.linkedStudentId) ||
+            (matched.studentId && s.id === matched.studentId) ||
+            (s.nationalId && s.nationalId.trim().toUpperCase() === cleanUser)
+          );
+          if (linkedStudent && linkedStudent.isActive === false) {
+            return {
+              success: false,
+              message: 'حساب کاربری این طلبه در وضعیت غیرفعال قرار گرفته است و امکان ورود وجود ندارد. پرونده و اطلاعات تحصیلی در سامانه محفوظ است.'
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Student activity check non-blocking error:', err);
     }
 
     if (matched.password && matched.password !== cleanPass) {
@@ -473,8 +504,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
-    // بخش برنامه‌های مدرسه به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
-    if (tabId === 'programs') return true;
+    // بخش برنامه‌های مدرسه و مَدرَس‌ها به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
+    if (tabId === 'programs' || tabId === 'classrooms') return true;
     if (tabId === 'user-credentials') {
       if (
         currentUser.role === 'super_admin' || 

@@ -118,6 +118,7 @@ export default function Programs() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
+  const [programToDelete, setProgramToDelete] = useState<Program | null>(null);
 
   const [addModalDays, setAddModalDays] = useState<string[]>(DEFAULT_MAIN_DAYS);
   const [editModalDays, setEditModalDays] = useState<string[]>([]);
@@ -886,8 +887,8 @@ export default function Programs() {
                               </button>
 
                               <button 
-                                onClick={() => deleteProgram(program.id)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                onClick={() => setProgramToDelete(program)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                                 title="حذف برنامه"
                               >
                                 <Trash2 size={16} />
@@ -2163,14 +2164,17 @@ export default function Programs() {
                 />
               </div>
 
-              {/* Active Students List */}
+              {/* Active Students List (Class Enrolled Only) */}
               <div className="flex-1 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50/50 max-h-60">
-                <div className="text-[11px] font-bold text-slate-500 px-2 py-1">
-                  طلاب فعال مدرسه (جهت انتخاب یک یا چند نماینده تیک بزنید):
-                </div>
-                {students
-                  .filter(s => s.isActive !== false)
-                  .filter(s => {
+                {(() => {
+                  const targetClassStudents = repModalTarget === 'edit' && editingProgram
+                    ? getProgramStudents(editingProgram.id).filter(s => s.isActive !== false)
+                    : (newProgram.grade && newProgram.grade !== 'عمومی / سایر'
+                        ? students.filter(s => s.isActive !== false && s.grade === newProgram.grade)
+                        : students.filter(s => s.isActive !== false)
+                      );
+
+                  const filteredRepStudents = targetClassStudents.filter(s => {
                     if (!repSearchTerm.trim()) return true;
                     const term = repSearchTerm.toLowerCase();
                     return (
@@ -2178,37 +2182,63 @@ export default function Programs() {
                       (s.nationalId && s.nationalId.includes(term)) ||
                       (s.grade && s.grade.toLowerCase().includes(term))
                     );
-                  })
-                  .map(student => {
-                    const isSelected = repModalStudentIds.includes(student.id);
-                    return (
-                      <label 
-                        key={student.id}
-                        className={cn(
-                          "flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer select-none",
-                          isSelected 
-                            ? "bg-indigo-50 border-indigo-300 text-indigo-950 font-bold shadow-2xs" 
-                            : "bg-white border-slate-200 hover:bg-slate-50 text-slate-700"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <input 
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleRepStudent(student)}
-                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
-                          />
-                          <span className="text-xs">{student.name}</span>
-                          {student.grade && (
-                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                              {student.grade}
-                            </span>
-                          )}
+                  });
+
+                  return (
+                    <>
+                      <div className="text-[11px] font-bold text-slate-700 px-2 py-1 flex items-center justify-between border-b border-slate-200/80 mb-1">
+                        <span>
+                          {repModalTarget === 'edit' 
+                            ? `طلاب ثبت‌نام شده در همین کلاس (${targetClassStudents.length} نفر):`
+                            : `طلاب پایه مرتبط با کلاس (${targetClassStudents.length} نفر):`
+                          }
+                        </span>
+                        <span className="text-[10px] text-indigo-600 font-normal">
+                          (نماینده باید از میان طلاب کلاس انتخاب شود)
+                        </span>
+                      </div>
+
+                      {filteredRepStudents.map(student => {
+                        const isSelected = repModalStudentIds.includes(student.id);
+                        return (
+                          <label 
+                            key={student.id}
+                            className={cn(
+                              "flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer select-none",
+                              isSelected 
+                                ? "bg-indigo-50 border-indigo-300 text-indigo-950 font-bold shadow-2xs" 
+                                : "bg-white border-slate-200 hover:bg-slate-50 text-slate-700"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleRepStudent(student)}
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                              />
+                              <span className="text-xs">{student.name}</span>
+                              {student.grade && (
+                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                  {student.grade}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">{student.nationalId || ''}</span>
+                          </label>
+                        );
+                      })}
+
+                      {filteredRepStudents.length === 0 && (
+                        <div className="text-center py-6 px-4 text-xs text-slate-400 font-medium">
+                          {repModalTarget === 'edit'
+                            ? 'هنوز طلبه‌ای در این کلاس ثبت‌نام نشده است. می‌توانید از گزینه «سایر» در پایین نام نماینده را دستی بنویسید یا ابتدا طلاب را به کلاس اضافه فرمایید.'
+                            : 'طلبه‌ای با این مشخصات یافت نشد. می‌توانید از کادر زیر نام نماینده را دستی وارد کنید.'}
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono">{student.nationalId || ''}</span>
-                      </label>
-                    );
-                  })}
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Custom Representative (سایر) */}
@@ -2377,6 +2407,68 @@ export default function Programs() {
                   type="button"
                   onClick={() => setShowEnrollModal(false)}
                   className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
+                >
+                  انصراف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {programToDelete && (
+          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 text-rose-600 border-b border-slate-100 pb-3">
+                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
+                  <Trash2 size={22} className="text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">تأیید حذف کلاس و برنامه آموزشی</h3>
+                  <p className="text-xs text-slate-500 font-medium">این عملیات غیرقابل بازگشت است</p>
+                </div>
+              </div>
+
+              <div className="bg-rose-50/70 p-3.5 rounded-xl border border-rose-200 text-xs text-rose-950 space-y-2">
+                <p className="font-bold text-slate-900">
+                  آیا از حذف کلاس <span className="text-rose-700 font-black">«{programToDelete.title}»</span> اطمینان دارید؟
+                </p>
+                <div className="text-[11px] text-slate-600 space-y-0.5">
+                  <div>• استاد: <span className="font-bold text-slate-800">{programToDelete.teacher || 'تعیین‌نشده'}</span></div>
+                  <div>• زمان: <span className="font-bold text-slate-800">{programToDelete.day || ''} {programToDelete.time || ''}</span></div>
+                  <div>• تعداد طلاب عضو: <span className="font-bold text-slate-800">{getProgramStudents(programToDelete.id).length} نفر</span></div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    const id = programToDelete.id;
+                    setProgramToDelete(null);
+                    try {
+                      await localDb.deleteDoc('programs', id);
+                      fetchData();
+                    } catch (error) {
+                      console.error("Error deleting program:", error);
+                      alert('خطا در حذف برنامه');
+                    }
+                  }}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-bold text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  بله، حذف شود
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setProgramToDelete(null)}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                 >
                   انصراف
                 </button>

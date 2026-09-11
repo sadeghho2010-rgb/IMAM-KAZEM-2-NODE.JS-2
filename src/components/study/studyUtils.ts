@@ -9,6 +9,49 @@ export interface LogMetric {
   totalMinutes: number;
 }
 
+export function isPeriodClosed(period?: StudyPeriod | null): boolean {
+  if (!period) return false;
+  if (period.isClosed) return true;
+  if (period.deadlineDate) {
+    try {
+      // Normalize deadline string (could be Shamsi 1403/08/10 or ISO)
+      const dStr = period.deadlineDate.trim();
+      // If deadline contains slash (Shamsi or date), compare
+      const now = new Date();
+      // Simple date check
+      const deadline = new Date(dStr);
+      if (!isNaN(deadline.getTime())) {
+        return now.getTime() > deadline.getTime();
+      }
+    } catch {
+      // fallback
+    }
+  }
+  return false;
+}
+
+export function isStudentExempt(period?: StudyPeriod | null, student?: Student | null, log?: PeriodicStudyLog | null): boolean {
+  if (!period || !student) return false;
+  if (log?.isExempt) return true;
+  if (period.exemptStudentIds && period.exemptStudentIds.includes(student.id)) return true;
+  if (student.grade && period.exemptGrades && period.exemptGrades.includes(student.grade)) return true;
+  return false;
+}
+
+export function formatMinutesToHoursAndMinutes(minutes: number): string {
+  const isNeg = minutes < 0;
+  const absMin = Math.abs(Math.round(minutes));
+  const h = Math.floor(absMin / 60);
+  const m = absMin % 60;
+  
+  let res = '';
+  if (h > 0 && m > 0) res = `${h} ساعت و ${m} دقیقه`;
+  else if (h > 0) res = `${h} ساعت`;
+  else res = `${m} دقیقه`;
+
+  return isNeg ? `-${res}` : res;
+}
+
 export function getLogMetrics(log?: PeriodicStudyLog): LogMetric {
   if (!log) {
     return {

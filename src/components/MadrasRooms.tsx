@@ -1,35 +1,21 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   DoorOpen, 
-  Clock, 
-  Calendar, 
-  CalendarDays, 
-  User, 
-  Users, 
-  Plus, 
-  Edit3, 
-  Trash2, 
   Search, 
-  CheckCircle2, 
-  XCircle, 
-  AlertCircle, 
-  Sparkles, 
-  Building2, 
+  Plus, 
   Layers, 
-  LayoutGrid, 
-  Table, 
-  List, 
-  Printer, 
+  Users, 
   FileSpreadsheet, 
-  RefreshCw, 
-  ArrowRight, 
-  Check, 
-  ChevronDown, 
-  ChevronUp, 
-  Info, 
-  Settings2, 
+  Printer, 
+  Building2, 
+  Sparkles, 
+  Filter, 
+  Calendar,
+  XCircle,
+  Clock,
+  User,
   GraduationCap,
-  Eye
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -38,197 +24,28 @@ import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { useMentor } from '../context/MentorContext';
 import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
+import MadrasRoomCard from './madras/MadrasRoomCard';
+import MadrasWeeklyScheduleModal from './madras/MadrasWeeklyScheduleModal';
+import MadrasEmptyFinder from './madras/MadrasEmptyFinder';
+import { 
+  DEFAULT_MADRAS_ROOMS, 
+  MADRAS_TIME_SLOTS_7_TO_17, 
+  MADRAS_HOURLY_SLOTS_7_TO_17,
+  canManageAndSearchMadras,
+  timeToMinutes, 
+  isProgramInRoom,
+  getRoomCurrentStatus 
+} from './madras/madrasUtils';
 
-// Standard Seminary / School Study Slots (زنگ‌های آموزشی)
-export interface TimeSlotDef {
-  id: string;
-  label: string;
-  periodName: string;
-  startTime: string;
-  endTime: string;
-  displayTime: string;
-}
-
-export const STANDARD_TIME_SLOTS: TimeSlotDef[] = [
-  { id: 'slot-1', label: 'زنگ ۱ (صبحگاه)', periodName: 'زنگ اول', startTime: '08:00', endTime: '09:30', displayTime: '۰۸:۰۰ الی ۰۹:۳۰' },
-  { id: 'slot-2', label: 'زنگ ۲ (نیمروزی)', periodName: 'زنگ دوم', startTime: '10:00', endTime: '11:30', displayTime: '۱۰:۰۰ الی ۱۱:۳۰' },
-  { id: 'slot-3', label: 'زنگ ۳ (پیش از ظهر)', periodName: 'زنگ سوم / اخلاق', startTime: '11:45', endTime: '12:45', displayTime: '۱۱:۴۵ الی ۱۲:۴۵' },
-  { id: 'slot-4', label: 'زنگ ۴ (عصرگاه ۱)', periodName: 'زنگ چهارم', startTime: '14:00', endTime: '15:30', displayTime: '۱۴:۰۰ الی ۱۵:۳۰' },
-  { id: 'slot-5', label: 'زنگ ۵ (عصرگاه ۲)', periodName: 'زنگ پنجم', startTime: '15:45', endTime: '17:15', displayTime: '۱۵:۴۵ الی ۱۷:۱۵' },
-  { id: 'slot-6', label: 'زنگ ۶ (شبگاه)', periodName: 'زنگ ششم / کارگاه', startTime: '17:30', endTime: '19:00', displayTime: '۱۷:۳۰ الی ۱۹:۰۰' },
-];
-
-export const DEFAULT_MADRAS_ROOMS: MadrasRoom[] = [
-  {
-    id: 'room-1',
-    name: 'مدرس ۱ (شیخ انصاری)',
-    code: 'م-۱',
-    capacity: 35,
-    floor: 'طبقه اول',
-    facilities: ['ویدئو پروژکتور', 'سیستم صوتی', 'تخته وایت‌برد', 'تهویه مطبوع'],
-    color: 'border-indigo-400 bg-indigo-50/50',
-    description: 'مدرس اصلی دروس فقه و اصول پایه‌های عالی',
-    isActive: true,
-  },
-  {
-    id: 'room-2',
-    name: 'مدرس ۲ (علامه حلی)',
-    code: 'م-۲',
-    capacity: 30,
-    floor: 'طبقه اول',
-    facilities: ['ویدئو پروژکتور', 'تخته وایت‌برد', 'سیستم صوتی'],
-    color: 'border-sky-400 bg-sky-50/50',
-    description: 'مدرس دروس ادبیات و منطق',
-    isActive: true,
-  },
-  {
-    id: 'room-3',
-    name: 'مدرس ۳ (شهید بهشتی)',
-    code: 'م-۳',
-    capacity: 25,
-    floor: 'طبقه دوم',
-    facilities: ['تخته وایت‌برد', 'تهویه مطبوع'],
-    color: 'border-emerald-400 bg-emerald-50/50',
-    description: 'مدرس کلاس‌های پایه ۷ و مشاوره',
-    isActive: true,
-  },
-  {
-    id: 'room-4',
-    name: 'مدرس ۴ (ملاصدرا)',
-    code: 'م-۴',
-    capacity: 25,
-    floor: 'طبقه دوم',
-    facilities: ['تخته وایت‌برد'],
-    color: 'border-amber-400 bg-amber-50/50',
-    description: 'مدرس دروس فلسفه و کلام',
-    isActive: true,
-  },
-  {
-    id: 'room-5',
-    name: 'مدرس ۵ (شیخ طوسی)',
-    code: 'م-۵',
-    capacity: 20,
-    floor: 'طبقه دوم',
-    facilities: ['تخته وایت‌برد'],
-    color: 'border-purple-400 bg-purple-50/50',
-    description: 'مدرس کلاس‌های پژوهشی و جلسات حلقه‌ای',
-    isActive: true,
-  },
-  {
-    id: 'room-6',
-    name: 'مدرس ۶ (علامه طباطبایی)',
-    code: 'م-۶',
-    capacity: 40,
-    floor: 'طبقه همکف',
-    facilities: ['تخته هوشمند', 'ویدئو پروژکتور', 'سیستم صوتی'],
-    color: 'border-rose-400 bg-rose-50/50',
-    description: 'مدرس دروس عمومی و کارگاه‌های مشترک',
-    isActive: true,
-  },
-  {
-    id: 'room-7',
-    name: 'سالن اجتماعات (شهید مطهری)',
-    code: 'س-۱',
-    capacity: 120,
-    floor: 'طبقه زیرهمکف',
-    facilities: ['پروژکتور سالنی', 'سیستم صوتی حرفه‌ای', 'امکان ضبط ویدئویی', 'تریبون'],
-    color: 'border-teal-400 bg-teal-50/50',
-    description: 'سالن همایش، سخنرانی اخلاق و اجتماعات مدرسه',
-    isActive: true,
-  },
-];
-
-// Helper to normalize day string for loose comparison
-function normalizeDay(dayStr: string): string {
-  return (dayStr || '').replace(/\s+/g, '').replace(/‌/g, '');
-}
-
-// Convert "08:30" or "8:30" to minutes from midnight
-function timeToMinutes(timeStr: string): number | null {
-  if (!timeStr) return null;
-  const match = timeStr.match(/(\d{1,2})[:：](\d{1,2})/);
-  if (!match) return null;
-  const h = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  if (isNaN(h) || isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-// Check if two time ranges overlap or match
-function isTimeMatch(progTime: string | undefined, slot: TimeSlotDef): boolean {
-  if (!progTime) return false;
-  const pt = progTime.trim();
-  
-  // Exact slot display string match
-  if (pt.includes(slot.displayTime) || pt.includes(slot.startTime) || pt.includes(slot.endTime)) {
-    return true;
-  }
-  
-  // Try extracting start and end from program time
-  const times = pt.match(/\d{1,2}[:：]\d{1,2}/g);
-  if (times && times.length > 0) {
-    const pStart = timeToMinutes(times[0]);
-    const pEnd = times.length > 1 ? timeToMinutes(times[1]) : (pStart !== null ? pStart + 90 : null);
-    
-    const slotStart = timeToMinutes(slot.startTime);
-    const slotEnd = timeToMinutes(slot.endTime);
-    
-    if (pStart !== null && slotStart !== null && slotEnd !== null) {
-      const actualPEnd = pEnd !== null ? pEnd : pStart + 80;
-      // Overlap condition: startA < endB && startB < endA
-      if (pStart < slotEnd && slotStart < actualPEnd) {
-        return true;
-      }
-    }
-  }
-
-  // Fallback: check if period name or numbers match
-  if (pt.includes(slot.periodName)) return true;
-  return false;
-}
-
-// Check if program matches day
-function isDayMatch(program: Program, day: string): boolean {
-  const days = getProgramDays(program);
-  if (days.length === 0) return true; // generic daily
-  const normTarget = normalizeDay(day);
-  return days.some(d => normalizeDay(d) === normTarget);
-}
-
-// Helper to get today's Persian day name
-function getCurrentPersianDayName(): string {
-  const dayIndex = new Date().getDay(); // 0 is Sunday, 6 is Saturday
-  // JS getDay(): 0: یکشنبه, 1: دوشنبه, 2: سه‌شنبه, 3: چهارشنبه, 4: پنج‌شنبه, 5: جمعه, 6: شنبه
-  const map: Record<number, string> = {
-    6: 'شنبه',
-    0: 'یکشنبه',
-    1: 'دوشنبه',
-    2: 'سه‌شنبه',
-    3: 'چهارشنبه',
-    4: 'پنج‌شنبه',
-    5: 'جمعه',
-  };
-  return map[dayIndex] || 'شنبه';
-}
-
-// Find closest current time slot
-function getCurrentTimeSlot(): TimeSlotDef {
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  
-  for (const slot of STANDARD_TIME_SLOTS) {
-    const startM = timeToMinutes(slot.startTime) || 0;
-    const endM = timeToMinutes(slot.endTime) || 0;
-    if (currentMinutes >= startM - 15 && currentMinutes <= endM + 15) {
-      return slot;
-    }
-  }
-  return STANDARD_TIME_SLOTS[0];
-}
+// Re-export for any external consumers if needed
+export { DEFAULT_MADRAS_ROOMS } from './madras/madrasUtils';
 
 export default function MadrasRooms() {
   const { currentUser } = useAuth();
   const { currentMentorId } = useMentor();
+
+  // Role permissions: Only Super Admin and Education Officer can search and edit
+  const canEditAndSearch = canManageAndSearchMadras(currentUser);
 
   // Data state
   const [rooms, setRooms] = useState<MadrasRoom[]>([]);
@@ -238,21 +55,22 @@ export default function MadrasRooms() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Active View Tab: 'cards' | 'matrix' | 'classes' | 'rooms-config'
-  const [activeView, setActiveView] = useState<'cards' | 'matrix' | 'classes' | 'rooms-config'>('cards');
-
-  // Filter & Day-Time Navigator State
-  const [selectedDay, setSelectedDay] = useState<string>(() => getCurrentPersianDayName());
-  const [selectedSlotId, setSelectedSlotId] = useState<string>(() => getCurrentTimeSlot().id);
+  // Filters State for Main Madras List
   const [searchFilter, setSearchFilter] = useState('');
-  const [roomFilter, setRoomFilter] = useState('all');
-  const [onlyShowOccupied, setOnlyShowOccupied] = useState(false);
-  const [onlyShowAvailable, setOnlyShowAvailable] = useState(false);
+  const [floorFilter, setFloorFilter] = useState('all');
+  const [capacityFilter, setCapacityFilter] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'free' | 'occupied'>('all');
 
-  // Modals state
+  // Quick Finder Toggle
+  const [showEmptyFinder, setShowEmptyFinder] = useState(false);
+
+  // Selected Room for Weekly Timetable (7:00 to 17:00)
+  const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<MadrasRoom | null>(null);
+
+  // Modals state: Class & Room
   const [showClassModal, setShowClassModal] = useState(false);
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
-  
+
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState<MadrasRoom | null>(null);
 
@@ -261,7 +79,10 @@ export default function MadrasRooms() {
   const [classFormMadras, setClassFormMadras] = useState('');
   const [classFormTeacher, setClassFormTeacher] = useState('');
   const [classFormDays, setClassFormDays] = useState<string[]>(['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']);
-  const [classFormTime, setClassFormTime] = useState(STANDARD_TIME_SLOTS[0].displayTime);
+  const [classFormTime, setClassFormTime] = useState(MADRAS_HOURLY_SLOTS_7_TO_17[0].displayTime);
+  const [timeInputMode, setTimeInputMode] = useState<'standard' | 'manual'>('standard');
+  const [customStartTime, setCustomStartTime] = useState('07:30');
+  const [customEndTime, setCustomEndTime] = useState('08:45');
   const [classFormGrade, setClassFormGrade] = useState('پایه ۷');
   const [classFormType, setClassFormType] = useState<'اصلی' | 'مشاوره' | 'پژوهش' | 'دروس 5 شنبه' | 'سایر'>('اصلی');
   const [classFormNotes, setClassFormNotes] = useState('');
@@ -271,10 +92,9 @@ export default function MadrasRooms() {
   const [roomFormCode, setRoomFormCode] = useState('');
   const [roomFormCapacity, setRoomFormCapacity] = useState<number>(30);
   const [roomFormFloor, setRoomFormFloor] = useState('طبقه اول');
-  const [roomFormFacilities, setRoomFormFacilities] = useState<string>('ویدئو پروژکتور، وایت‌برد');
   const [roomFormDescription, setRoomFormDescription] = useState('');
 
-  const isReadOnly = currentUser?.isReadOnly || false;
+  const isReadOnly = !canEditAndSearch;
 
   // Fetch initial data
   const fetchData = async () => {
@@ -288,7 +108,6 @@ export default function MadrasRooms() {
         localDb.getDocs<Student>('students'),
       ]);
 
-      // Seed default rooms if none exist yet
       if (!rawRooms || rawRooms.length === 0) {
         for (const defaultRoom of DEFAULT_MADRAS_ROOMS) {
           await localDb.addDoc('classrooms', defaultRoom);
@@ -313,86 +132,67 @@ export default function MadrasRooms() {
     fetchData();
   }, []);
 
-  const selectedSlot = useMemo(() => {
-    return STANDARD_TIME_SLOTS.find(s => s.id === selectedSlotId) || STANDARD_TIME_SLOTS[0];
-  }, [selectedSlotId]);
-
-  // Map each room to its occupancy at current selected day & slot
-  const roomsOccupancy = useMemo(() => {
-    return rooms.map(room => {
-      // Find programs assigned to this room at selectedDay and selectedSlot
-      const matchingPrograms = programs.filter(prog => {
-        const progRoom = (prog.madrasRoom || prog.classroom || '').trim();
-        if (!progRoom) return false;
-        
-        // Exact or fuzzy room name match
-        const isThisRoom = progRoom === room.name || 
-                           progRoom === room.code || 
-                           (room.name && progRoom.includes(room.name)) || 
-                           (room.code && progRoom.includes(room.code));
-        if (!isThisRoom) return false;
-
-        // Day match
-        if (!isDayMatch(prog, selectedDay)) return false;
-
-        // Time slot match
-        return isTimeMatch(prog.time, selectedSlot);
-      });
-
-      const isOccupied = matchingPrograms.length > 0;
-      const primaryProgram = matchingPrograms[0] || null;
-      
-      // Calculate students count if program has enrollments
-      let enrolledCount = 0;
-      if (primaryProgram) {
-        enrolledCount = enrollments.filter(e => e.programId === primaryProgram.id).length;
-      }
-
-      return {
-        room,
-        isOccupied,
-        programs: matchingPrograms,
-        primaryProgram,
-        enrolledCount,
-      };
+  // Extract unique floors for filter dropdown
+  const uniqueFloors = useMemo(() => {
+    const s = new Set<string>();
+    rooms.forEach(r => {
+      if (r.floor && r.floor.trim()) s.add(r.floor.trim());
     });
-  }, [rooms, programs, selectedDay, selectedSlot, enrollments]);
+    return Array.from(s);
+  }, [rooms]);
 
-  // Filtered rooms based on user view toggles & search
-  const filteredOccupancy = useMemo(() => {
-    return roomsOccupancy.filter(item => {
-      if (onlyShowOccupied && !item.isOccupied) return false;
-      if (onlyShowAvailable && item.isOccupied) return false;
-      if (roomFilter !== 'all' && item.room.id !== roomFilter) return false;
-      
+  // Filtered rooms
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(room => {
+      // 1. Search name or code
       if (searchFilter.trim()) {
         const term = searchFilter.toLowerCase().trim();
-        const roomNameMatch = item.room.name.toLowerCase().includes(term);
-        const progMatch = item.programs.some(p => 
-          (p.title || '').toLowerCase().includes(term) || 
-          (p.teacher || '').toLowerCase().includes(term) ||
-          (p.grade || '').toLowerCase().includes(term)
-        );
-        return roomNameMatch || progMatch;
+        const matchName = (room.name || '').toLowerCase().includes(term);
+        const matchCode = (room.code || '').toLowerCase().includes(term);
+        if (!matchName && !matchCode) return false;
       }
+
+      // 2. Floor filter
+      if (floorFilter !== 'all' && (room.floor || '').trim() !== floorFilter) {
+        return false;
+      }
+
+      // 3. Capacity filter
+      if (capacityFilter > 0 && (room.capacity || 0) < capacityFilter) {
+        return false;
+      }
+
+      // 4. Real-time Status filter
+      if (statusFilter !== 'all') {
+        const { isOccupied } = getRoomCurrentStatus(room, programs);
+        if (statusFilter === 'free' && isOccupied) return false;
+        if (statusFilter === 'occupied' && !isOccupied) return false;
+      }
+
       return true;
     });
-  }, [roomsOccupancy, onlyShowOccupied, onlyShowAvailable, roomFilter, searchFilter]);
+  }, [rooms, programs, searchFilter, floorFilter, capacityFilter, statusFilter]);
 
-  // Metrics
-  const totalRoomsCount = rooms.length;
-  const occupiedCount = roomsOccupancy.filter(r => r.isOccupied).length;
-  const availableCount = totalRoomsCount - occupiedCount;
-  const occupancyPercent = totalRoomsCount > 0 ? Math.round((occupiedCount / totalRoomsCount) * 100) : 0;
-
-  // Open modal for new class with prefilled room and slot
-  const handleOpenAddClass = (prefillRoomName?: string) => {
+  // Open modal for new class with prefilled room and time
+  const handleOpenAddClass = (prefillRoomName?: string, prefillDay?: string, prefillTime?: string) => {
     setEditingProgram(null);
     setClassFormTitle('');
     setClassFormMadras(prefillRoomName || (rooms[0]?.name || ''));
     setClassFormTeacher('');
-    setClassFormDays(selectedDay !== 'جمعه' ? [selectedDay] : ['شنبه']);
-    setClassFormTime(selectedSlot.displayTime);
+    setClassFormDays(prefillDay ? [prefillDay] : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']);
+
+    const targetTime = prefillTime || MADRAS_HOURLY_SLOTS_7_TO_17[0].displayTime;
+    setClassFormTime(targetTime);
+
+    // If prefilled with a custom time format like 07:30 الی 08:45
+    const matchedTimes = targetTime.match(/\d{1,2}[:：]\d{1,2}/g);
+    if (matchedTimes && matchedTimes.length >= 2) {
+      setCustomStartTime(matchedTimes[0]);
+      setCustomEndTime(matchedTimes[1]);
+    }
+    const isStandard = MADRAS_HOURLY_SLOTS_7_TO_17.some(s => s.displayTime === targetTime);
+    setTimeInputMode(isStandard ? 'standard' : 'manual');
+
     setClassFormGrade('پایه ۷');
     setClassFormType('اصلی');
     setClassFormNotes('');
@@ -406,44 +206,23 @@ export default function MadrasRooms() {
     setClassFormMadras(prog.madrasRoom || prog.classroom || rooms[0]?.name || '');
     setClassFormTeacher(prog.teacher || '');
     setClassFormDays(getProgramDays(prog));
-    setClassFormTime(prog.time || selectedSlot.displayTime);
+
+    const progTime = prog.time || MADRAS_HOURLY_SLOTS_7_TO_17[0].displayTime;
+    setClassFormTime(progTime);
+
+    const matchedTimes = progTime.match(/\d{1,2}[:：]\d{1,2}/g);
+    if (matchedTimes && matchedTimes.length >= 2) {
+      setCustomStartTime(matchedTimes[0]);
+      setCustomEndTime(matchedTimes[1]);
+    }
+    const isStandard = MADRAS_HOURLY_SLOTS_7_TO_17.some(s => s.displayTime === progTime);
+    setTimeInputMode(isStandard ? 'standard' : 'manual');
+
     setClassFormGrade(prog.grade || 'پایه ۷');
     setClassFormType(prog.type || 'اصلی');
     setClassFormNotes(prog.notes || '');
     setShowClassModal(true);
   };
-
-  // Check for potential room conflict when editing/creating class
-  const conflictWarning = useMemo(() => {
-    if (!classFormMadras || !classFormTime) return null;
-    
-    // Find if another program already uses this room on any of the selected days at this time
-    const conflicting = programs.find(p => {
-      if (editingProgram && p.id === editingProgram.id) return false;
-      const pRoom = (p.madrasRoom || p.classroom || '').trim();
-      if (pRoom !== classFormMadras.trim()) return false;
-
-      // Check if time matches
-      const timeMatches = p.time === classFormTime || 
-        (selectedSlot && isTimeMatch(p.time, selectedSlot) && isTimeMatch(classFormTime, selectedSlot));
-      if (!timeMatches) return false;
-
-      // Check if any day overlaps
-      const pDays = getProgramDays(p);
-      const hasDayOverlap = classFormDays.some(d => pDays.includes(d));
-      return hasDayOverlap;
-    });
-
-    if (conflicting) {
-      return {
-        title: conflicting.title,
-        teacher: conflicting.teacher,
-        day: conflicting.day || getProgramDays(conflicting).join('، '),
-        time: conflicting.time,
-      };
-    }
-    return null;
-  }, [classFormMadras, classFormTime, classFormDays, programs, editingProgram, selectedSlot]);
 
   // Save class (Add / Update)
   const handleSaveClass = async (e: React.FormEvent) => {
@@ -480,34 +259,17 @@ export default function MadrasRooms() {
     }
   };
 
-  // Delete class
-  const handleDeleteClass = async (progId: string) => {
-    if (!confirm('آیا از حذف این کلاس اطمینان دارید؟')) return;
-    try {
-      await localDb.deleteDoc('programs', progId);
-      fetchData();
-    } catch (err) {
-      console.error('Error deleting program:', err);
-    }
-  };
-
   // Save Room (Add / Edit)
   const handleSaveRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!roomFormName.trim()) return;
 
     try {
-      const facilitiesArray = roomFormFacilities
-        .split(/[،,]/)
-        .map(s => s.trim())
-        .filter(Boolean);
-
       const payload: Partial<MadrasRoom> = {
         name: roomFormName.trim(),
         code: roomFormCode.trim(),
         capacity: Number(roomFormCapacity) || 30,
         floor: roomFormFloor.trim(),
-        facilities: facilitiesArray,
         description: roomFormDescription.trim(),
         isActive: true,
       };
@@ -537,128 +299,83 @@ export default function MadrasRooms() {
     }
   };
 
-  // Quick helper to jump to real-time now
-  const handleJumpToNow = () => {
-    const today = getCurrentPersianDayName();
-    const currentSlot = getCurrentTimeSlot();
-    setSelectedDay(today);
-    setSelectedSlotId(currentSlot.id);
-  };
-
-  // Export Matrix to Excel
+  // Export Rooms List to Excel
   const handleExportExcel = () => {
     const rows: any[] = [];
-    rows.push(['گزارش جامع وضعیت مَدرَس‌ها و کلاس‌های درس']);
-    rows.push(['روز بررسی', selectedDay]);
-    rows.push(['زنگ و ساعت', selectedSlot.displayTime]);
-    rows.push(['تعداد کل مدرس‌ها', totalRoomsCount]);
-    rows.push(['مدرس‌های مشغول', occupiedCount]);
-    rows.push(['مدرس‌های آزاد', availableCount]);
-    rows.push([]);
-    rows.push(['نام مَدرَس (کلاس درس)', 'کد', 'طبقه', 'ظرفیت', 'وضعیت', 'عنوان کلاس', 'استاد مربوطه', 'پایه', 'ساعت برگزاری']);
+    rows.push(['گزارش مَدرَس‌ها و کلاس‌های درس']);
+    rows.push(['شماره / نام مَدرَس', 'کد', 'طبقه', 'ظرفیت (نفر)', 'وضعیت فعلی']);
 
     rooms.forEach(room => {
-      const occ = roomsOccupancy.find(o => o.room.id === room.id);
-      if (occ?.isOccupied && occ.primaryProgram) {
-        rows.push([
-          room.name,
-          room.code || '',
-          room.floor || '',
-          room.capacity || '',
-          'مشغول (پر)',
-          occ.primaryProgram.title,
-          occ.primaryProgram.teacher || '---',
-          occ.primaryProgram.grade || '---',
-          occ.primaryProgram.time || ''
-        ]);
-      } else {
-        rows.push([
-          room.name,
-          room.code || '',
-          room.floor || '',
-          room.capacity || '',
-          'خالی و آزاد',
-          '---',
-          '---',
-          '---',
-          '---'
-        ]);
-      }
+      const { isOccupied } = getRoomCurrentStatus(room, programs);
+      rows.push([
+        room.name,
+        room.code || '',
+        room.floor || 'همکف',
+        room.capacity || '—',
+        isOccupied ? 'مشغول' : 'آزاد'
+      ]);
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'وضعیت مدرس‌ها');
-    XLSX.writeFile(workbook, `وضعیت_مدرس_ها_${selectedDay}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'لیست مدرس‌ها');
+    XLSX.writeFile(workbook, `لیست_مدرس_ها.xlsx`);
   };
 
   return (
-    <div className="space-y-6 text-slate-800" dir="rtl">
+    <div className="space-y-6 text-slate-800" dir="rtl" id="madras-rooms-main">
       
-      {/* 1. Header & Quick Actions Bar */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative overflow-hidden">
-        <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-indigo-50/60 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -right-10 -top-10 w-48 h-48 bg-emerald-50/60 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-100 shrink-0">
-                <DoorOpen size={26} />
-              </div>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                  مَدرَس‌ها (کلاس‌های درس و رصد اشغال فضاها)
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                  بررسی وضعیت پر یا خالی بودن کلاس‌ها در ساعات و روزهای مختلف، و مدیریت برگزاری دروس
-                </p>
-              </div>
+      {/* 1. Header Bar */}
+      <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
+              <DoorOpen size={24} />
             </div>
-
-            {/* Live Persian Clock & Day Badge */}
-            <div className="flex items-center gap-2 pt-1 text-xs font-bold text-slate-600">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200">
-                <Calendar size={13} className="text-indigo-600" />
-                <span>روز جاری سیستم: <b className="text-slate-900">{getCurrentPersianDayName()}</b></span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-700 rounded-xl border border-slate-200">
-                <Clock size={13} className="text-slate-500" />
-                <span>زنگ متناظر اکنون: <b className="text-slate-900">{getCurrentTimeSlot().label}</b></span>
-              </span>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                مَدرَس‌ها (کلاس‌های درس)
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                مشاهده لیست مَدرَس‌ها، برنامه هفتگی از ساعت ۰۷:۰۰ الی ۱۷:۰۰ و ابزار جستجوی سریع کلاس خالی
+              </p>
             </div>
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={handleJumpToNow}
-              className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="انتقال سریع به وضعیت روز و ساعت کنونی"
-            >
-              <Sparkles size={15} className="text-emerald-600" />
-              <span>هم‌اکنون</span>
-            </button>
+        {/* Quick Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {canEditAndSearch ? (
+            <>
+              <button
+                onClick={() => setShowEmptyFinder(!showEmptyFinder)}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs",
+                  showEmptyFinder 
+                    ? "bg-slate-900 text-white hover:bg-black" 
+                    : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                )}
+                title="ابزار جستجو و یافتن سریع مَدرَس خالی"
+              >
+                <Search size={15} />
+                <span>یافتن مَدرَس خالی</span>
+              </button>
 
-            {!isReadOnly && (
               <button
                 onClick={() => handleOpenAddClass()}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+                className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
               >
-                <Plus size={16} />
-                <span>تعریف کلاس درس جدید</span>
+                <Plus size={15} />
+                <span>تعریف کلاس جدید</span>
               </button>
-            )}
 
-            {!isReadOnly && (
               <button
                 onClick={() => {
                   setEditingRoom(null);
-                  setRoomFormName('');
+                  setRoomFormName(`مدرس ${rooms.length + 1}`);
                   setRoomFormCode(`م-${rooms.length + 1}`);
                   setRoomFormCapacity(30);
                   setRoomFormFloor('طبقه اول');
-                  setRoomFormFacilities('ویدئو پروژکتور، وایت‌برد');
                   setRoomFormDescription('');
                   setShowRoomModal(true);
                 }}
@@ -667,797 +384,197 @@ export default function MadrasRooms() {
                 <Building2 size={15} />
                 <span>افزودن مَدرَس</span>
               </button>
-            )}
+            </>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+              <DoorOpen size={15} className="text-indigo-600" />
+              <span>مشاهده برنامه مَدرَس‌ها (جهت مشاهده جدول هفتگی روی هر کارت کلیک کنید)</span>
+            </div>
+          )}
 
-            <button
-              onClick={handleExportExcel}
-              className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="خروجی فایل اکسل از وضعیت کلاس‌ها"
-            >
-              <FileSpreadsheet size={15} />
-              <span className="hidden sm:inline">اکسل</span>
-            </button>
+          <button
+            onClick={handleExportExcel}
+            className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="خروجی فایل اکسل از مَدرَس‌ها"
+          >
+            <FileSpreadsheet size={16} />
+          </button>
 
-            <button
-              onClick={() => window.print()}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 cursor-pointer"
-              title="چاپ برنامه"
-            >
-              <Printer size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Top Metric Chips Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-100">
-          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-slate-500 block">کل مَدرَس‌ها</span>
-              <span className="text-xl font-black text-slate-900">{totalRoomsCount} کلاس</span>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center font-bold">
-              <Building2 size={18} />
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-emerald-50/80 rounded-2xl border border-emerald-200 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-emerald-800 block">کلاس‌های خالی و آزاد</span>
-              <span className="text-xl font-black text-emerald-900">{availableCount} مدرس</span>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-              <CheckCircle2 size={18} />
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-rose-50/80 rounded-2xl border border-rose-200 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-rose-800 block">کلاس‌های پر و مشغول</span>
-              <span className="text-xl font-black text-rose-900">{occupiedCount} مدرس</span>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs">
-              <DoorOpen size={18} />
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-indigo-50/80 rounded-2xl border border-indigo-200 flex items-center justify-between">
-            <div>
-              <span className="text-[11px] font-bold text-indigo-800 block">نرخ اشغال فضاها</span>
-              <span className="text-xl font-black text-indigo-900">{occupancyPercent}٪</span>
-            </div>
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs font-black text-xs">
-              {occupancyPercent}%
-            </div>
-          </div>
+          <button
+            onClick={() => window.print()}
+            className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="چاپ"
+          >
+            <Printer size={16} />
+          </button>
         </div>
       </div>
 
-      {/* 3. Interactive Time & Day Slot Navigator */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+      {/* 2. Quick Empty Room Finder Section (Collapsible / Interactive - Super Admin & Education Officer Only) */}
+      <AnimatePresence>
+        {showEmptyFinder && canEditAndSearch && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <MadrasEmptyFinder
+              rooms={rooms}
+              programs={programs}
+              isReadOnly={isReadOnly}
+              onSelectRoom={(room) => setSelectedRoomForSchedule(room)}
+              onQuickAssign={(roomName, day, timeStr) => handleOpenAddClass(roomName, day, timeStr)}
+              onClose={() => setShowEmptyFinder(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. Filter Bar (Floor & Capacity & Search & Status) */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
         
-        {/* Days Bar */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <CalendarDays size={14} className="text-indigo-600" />
-            <span>انتخاب روز هفته جهت بررسی وضعیت مَدرَس‌ها:</span>
-          </label>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {WEEK_DAYS.map(day => {
-              const isSelected = selectedDay === day;
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelectedDay(day)}
-                  className={cn(
-                    "py-2.5 px-3 rounded-2xl text-xs font-black transition-all border text-center cursor-pointer",
-                    isSelected 
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100" 
-                      : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                  )}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
+        {/* Search */}
+        <div className="relative w-full md:w-64">
+          <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="شماره یا نام مَدرَس..."
+            className="w-full pr-8 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 focus:bg-white"
+          />
         </div>
 
-        {/* Time Slots Bar */}
-        <div className="space-y-1.5 pt-2 border-t border-slate-100">
-          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-            <Clock size={14} className="text-indigo-600" />
-            <span>انتخاب ساعت / زنگ برگزاری کلاس:</span>
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-            {STANDARD_TIME_SLOTS.map(slot => {
-              const isSelected = selectedSlotId === slot.id;
-              return (
-                <button
-                  key={slot.id}
-                  onClick={() => setSelectedSlotId(slot.id)}
-                  className={cn(
-                    "py-2 px-3 rounded-2xl text-xs font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer text-center",
-                    isSelected 
-                      ? "bg-slate-900 text-white border-slate-900 shadow-md shadow-slate-200" 
-                      : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
-                  )}
-                >
-                  <span className="font-black text-[11px]">{slot.label}</span>
-                  <span className={cn("text-[10px]", isSelected ? "text-slate-300" : "text-slate-400 font-mono")}>
-                    {slot.startTime} - {slot.endTime}
-                  </span>
-                </button>
-              );
-            })}
+        {/* Filters Group: Floor, Capacity, Status */}
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          
+          {/* Floor Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+            <Layers size={13} className="text-slate-400" />
+            <select
+              value={floorFilter}
+              onChange={(e) => setFloorFilter(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="all">همه طبقات</option>
+              {uniqueFloors.map(fl => (
+                <option key={fl} value={fl}>{fl}</option>
+              ))}
+            </select>
           </div>
-        </div>
 
-        {/* View Switcher & Filters */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          {/* Sub Tab View Buttons */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl w-full sm:w-auto">
+          {/* Capacity Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+            <Users size={13} className="text-slate-400" />
+            <select
+              value={capacityFilter}
+              onChange={(e) => setCapacityFilter(Number(e.target.value))}
+              className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value={0}>تمام ظرفیت‌ها</option>
+              <option value={20}>حداقل ۲۰ نفر</option>
+              <option value={25}>حداقل ۲۵ نفر</option>
+              <option value={30}>حداقل ۳۰ نفر</option>
+              <option value={35}>حداقل ۳۵ نفر</option>
+              <option value={40}>حداقل ۴۰ نفر</option>
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
             <button
-              onClick={() => setActiveView('cards')}
+              onClick={() => setStatusFilter('all')}
               className={cn(
-                "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                activeView === 'cards' 
-                  ? "bg-white text-slate-900 shadow-xs font-black" 
-                  : "text-slate-600 hover:text-slate-900"
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                statusFilter === 'all' ? "bg-white text-slate-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
               )}
             >
-              <LayoutGrid size={14} />
-              <span>تفکیک پر و خالی</span>
+              همه
             </button>
-
             <button
-              onClick={() => setActiveView('matrix')}
+              onClick={() => setStatusFilter('free')}
               className={cn(
-                "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                activeView === 'matrix' 
-                  ? "bg-white text-slate-900 shadow-xs font-black" 
-                  : "text-slate-600 hover:text-slate-900"
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                statusFilter === 'free' ? "bg-white text-emerald-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
               )}
             >
-              <Table size={14} />
-              <span>جدول ماتریس زنگ‌ها</span>
+              آزاد
             </button>
-
             <button
-              onClick={() => setActiveView('classes')}
+              onClick={() => setStatusFilter('occupied')}
               className={cn(
-                "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                activeView === 'classes' 
-                  ? "bg-white text-slate-900 shadow-xs font-black" 
-                  : "text-slate-600 hover:text-slate-900"
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                statusFilter === 'occupied' ? "bg-white text-rose-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
               )}
             >
-              <List size={14} />
-              <span>لیست کل کلاس‌ها</span>
-            </button>
-
-            <button
-              onClick={() => setActiveView('rooms-config')}
-              className={cn(
-                "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                activeView === 'rooms-config' 
-                  ? "bg-white text-slate-900 shadow-xs font-black" 
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Settings2 size={14} />
-              <span>مدیریت مَدرَس‌ها</span>
+              مشغول
             </button>
           </div>
 
-          {/* Search and Status Filters */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-56">
-              <Search size={14} className="absolute right-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="جستجوی درس، استاد یا مدرس..."
-                className="w-full pr-8 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 focus:bg-white"
-              />
-            </div>
-
-            {activeView === 'cards' && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    setOnlyShowOccupied(!onlyShowOccupied);
-                    if (onlyShowAvailable) setOnlyShowAvailable(false);
-                  }}
-                  className={cn(
-                    "px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer",
-                    onlyShowOccupied 
-                      ? "bg-rose-600 text-white border-rose-600 shadow-2xs" 
-                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                  )}
-                >
-                  فقط پر
-                </button>
-                <button
-                  onClick={() => {
-                    setOnlyShowAvailable(!onlyShowAvailable);
-                    if (onlyShowOccupied) setOnlyShowOccupied(false);
-                  }}
-                  className={cn(
-                    "px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer",
-                    onlyShowAvailable 
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs" 
-                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                  )}
-                >
-                  فقط خالی
-                </button>
-              </div>
-            )}
-          </div>
+          {(searchFilter || floorFilter !== 'all' || capacityFilter > 0 || statusFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchFilter('');
+                setFloorFilter('all');
+                setCapacityFilter(0);
+                setStatusFilter('all');
+              }}
+              className="text-xs text-rose-600 hover:underline px-2 py-1"
+            >
+              پاکسازی فیلترها
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 4. VIEW 1: LIVE CARDS DECK (تفکیک پر و خالی) */}
-      {/* ========================================================================= */}
-      {activeView === 'cards' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
-          {/* COLUMN 1: FREE / AVAILABLE CLASSROOMS */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  <CheckCircle2 size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-emerald-950">مَدرَس‌های خالی و آزاد (آماده استفاده)</h3>
-                  <span className="text-[11px] font-medium text-emerald-800">
-                    در روز {selectedDay}، {selectedSlot.label} ({selectedSlot.startTime} تا {selectedSlot.endTime})
-                  </span>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 bg-white text-emerald-900 border border-emerald-300 rounded-full font-black text-xs shadow-2xs">
-                {roomsOccupancy.filter(r => !r.isOccupied).length} کلاس
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {filteredOccupancy.filter(r => !r.isOccupied).length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 space-y-2">
-                  <DoorOpen size={32} className="mx-auto opacity-30" />
-                  <p className="text-xs font-bold">هیچ مدرس خالی‌ای در این ساعت یافت نشد (تمام فضاها پر یا فیلتر شده‌اند).</p>
-                </div>
-              ) : (
-                filteredOccupancy.filter(r => !r.isOccupied).map(({ room }) => (
-                  <motion.div
-                    key={room.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl p-5 border border-emerald-200/90 shadow-sm hover:shadow-md transition-all space-y-3 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500" />
-
-                    <div className="flex items-start justify-between pr-2">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-black text-slate-900 text-sm sm:text-base">{room.name}</h4>
-                          {room.code && (
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-mono text-[10px] font-bold">
-                              {room.code}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
-                          {room.floor && <span>موقعیت: {room.floor}</span>}
-                          {room.capacity && <span>ظرفیت: <b>{room.capacity} نفر</b></span>}
-                        </div>
-                      </div>
-
-                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-black rounded-xl flex items-center gap-1">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        خالی و آماده
-                      </span>
-                    </div>
-
-                    {/* Facilities Chips */}
-                    {room.facilities && room.facilities.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pr-2">
-                        {room.facilities.map((fac, idx) => (
-                          <span key={idx} className="px-2 py-0.5 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold border border-slate-200">
-                            {fac}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Action Bar */}
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between pr-2">
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        آماده برگزاری کلاس، جلسه یا کارگاه
-                      </span>
-
-                      {!isReadOnly && (
-                        <button
-                          onClick={() => handleOpenAddClass(room.name)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                        >
-                          <Plus size={14} />
-                          <span>تخصیص کلاس در این ساعت</span>
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* COLUMN 2: OCCUPIED CLASSROOMS */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between bg-rose-50/80 p-4 rounded-2xl border border-rose-200">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  <DoorOpen size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-rose-950">مَدرَس‌های پر و در حال برگزاری (مشغول)</h3>
-                  <span className="text-[11px] font-medium text-rose-800">
-                    در روز {selectedDay}، {selectedSlot.label} ({selectedSlot.startTime} تا {selectedSlot.endTime})
-                  </span>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 bg-white text-rose-900 border border-rose-300 rounded-full font-black text-xs shadow-2xs">
-                {roomsOccupancy.filter(r => r.isOccupied).length} کلاس
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {filteredOccupancy.filter(r => r.isOccupied).length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 space-y-2">
-                  <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
-                  <p className="text-xs font-bold text-slate-600">در این زنگ و روز، هیچ کلاسی در حال برگزاری نیست و تمام مدرس‌ها آزاد هستند.</p>
-                </div>
-              ) : (
-                filteredOccupancy.filter(r => r.isOccupied).map(({ room, primaryProgram, enrolledCount }) => (
-                  <motion.div
-                    key={room.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl p-5 border border-rose-200/90 shadow-sm hover:shadow-md transition-all space-y-3 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 right-0 w-2 h-full bg-rose-500" />
-
-                    <div className="flex items-start justify-between pr-2">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-black text-slate-900 text-sm sm:text-base">{room.name}</h4>
-                          {room.code && (
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-mono text-[10px] font-bold">
-                              {room.code}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-                          {room.floor && <span>{room.floor}</span>}
-                          {room.capacity && <span>ظرفیت: {room.capacity} نفر</span>}
-                        </div>
-                      </div>
-
-                      <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-black rounded-xl flex items-center gap-1">
-                        <div className="w-2 h-2 rounded-full bg-rose-500" />
-                        مشغول (پر)
-                      </span>
-                    </div>
-
-                    {/* Occupying Class Details Card */}
-                    {primaryProgram && (
-                      <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 mr-2 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <GraduationCap size={15} className="text-indigo-600" />
-                            <span className="font-black text-xs text-slate-900">{primaryProgram.title}</span>
-                          </div>
-                          {primaryProgram.grade && (
-                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[10px] font-black border border-indigo-200">
-                              {primaryProgram.grade}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
-                          <div className="flex items-center gap-1">
-                            <User size={13} className="text-slate-400" />
-                            <span>استاد: <b className="text-slate-800">{primaryProgram.teacher || 'مشخص‌نشده'}</b></span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock size={13} className="text-slate-400" />
-                            <span>ساعت: <b>{primaryProgram.time || selectedSlot.displayTime}</b></span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Users size={13} className="text-slate-400" />
-                            <span>تعداد طلاب: <b className="text-indigo-700">{enrolledCount} نفر</b></span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[11px] text-slate-400 font-medium">نوع: {primaryProgram.type || 'اصلی'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action Bar */}
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between pr-2">
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        کلاس در حال استفاده در این زنگ
-                      </span>
-
-                      {!isReadOnly && primaryProgram && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleOpenEditClass(primaryProgram)}
-                            className="px-2.5 py-1 text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                          >
-                            <Edit3 size={13} className="inline ml-1" />
-                            ویرایش کلاس
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
-          </div>
+      {/* 4. Compact Madras Rooms Grid (Clean, Decluttered, No Facilities) */}
+      {loading ? (
+        <div className="p-12 text-center text-slate-400 font-bold">
+          در حال بارگذاری اطلاعات مَدرَس‌ها...
+        </div>
+      ) : filteredRooms.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 space-y-2">
+          <DoorOpen size={36} className="mx-auto opacity-30" />
+          <p className="text-sm font-bold text-slate-600">مَدرَسی با این مشخصات یافت نشد.</p>
+          <p className="text-xs text-slate-400">می‌توانید فیلترهای جستجو را پاک کنید یا مَدرَس جدیدی اضافه نمایید.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredRooms.map(room => (
+            <MadrasRoomCard
+              key={room.id}
+              room={room}
+              programs={programs}
+              isReadOnly={isReadOnly}
+              onSelect={(r) => setSelectedRoomForSchedule(r)}
+              onEdit={(r) => {
+                setEditingRoom(r);
+                setRoomFormName(r.name);
+                setRoomFormCode(r.code || '');
+                setRoomFormCapacity(r.capacity || 30);
+                setRoomFormFloor(r.floor || 'طبقه اول');
+                setRoomFormDescription(r.description || '');
+                setShowRoomModal(true);
+              }}
+              onDelete={(roomId) => handleDeleteRoom(roomId)}
+            />
+          ))}
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 5. VIEW 2: WEEKLY TIMETABLE MATRIX (جدول ماتریس زنگ‌ها) */}
-      {/* ========================================================================= */}
-      {activeView === 'matrix' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="font-black text-slate-900 text-base">جدول ماتریس مَدرَس‌ها و زنگ‌های آموزشی</h3>
-              <p className="text-xs text-slate-500 font-medium">
-                نمای کلی وضعیت کلیه مدرس‌ها در زنگ‌های مختلف برای روز <b>{selectedDay}</b>
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-xs text-slate-500">
-                <span className="w-3 h-3 rounded-md bg-emerald-100 border border-emerald-300 inline-block" />
-                <span>خالی</span>
-              </span>
-              <span className="flex items-center gap-1 text-xs text-slate-500 mr-2">
-                <span className="w-3 h-3 rounded-md bg-indigo-600 inline-block" />
-                <span>پر (برگزاری کلاس)</span>
-              </span>
-            </div>
-          </div>
+      {/* 5. Weekly Schedule Modal (Strictly 07:00 to 17:00) */}
+      <MadrasWeeklyScheduleModal
+        room={selectedRoomForSchedule}
+        programs={programs}
+        isReadOnly={isReadOnly}
+        onClose={() => setSelectedRoomForSchedule(null)}
+        onAddClass={(roomName, day, time) => handleOpenAddClass(roomName, day, time)}
+        onEditClass={(prog) => handleOpenEditClass(prog)}
+      />
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse min-w-[700px]">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-600 font-black">
-                  <th className="p-3.5 w-48">مَدرَس (کلاس درس)</th>
-                  {STANDARD_TIME_SLOTS.map(slot => (
-                    <th key={slot.id} className="p-3.5 text-center font-black">
-                      <div className="text-[11px] text-slate-800">{slot.label}</div>
-                      <div className="text-[10px] text-slate-400 font-mono font-normal">{slot.startTime} - {slot.endTime}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {rooms.map(room => (
-                  <tr key={room.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="p-3.5 font-bold text-slate-900 align-middle">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                        <div>
-                          <div className="font-black text-slate-900">{room.name}</div>
-                          <div className="text-[10px] text-slate-400 font-normal">
-                            {room.floor || 'طبقه همکف'} • {room.capacity} نفر
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {STANDARD_TIME_SLOTS.map(slot => {
-                      // Find program in this room, day, slot
-                      const prog = programs.find(p => {
-                        const pRoom = (p.madrasRoom || p.classroom || '').trim();
-                        if (!pRoom) return false;
-                        const isThisRoom = pRoom === room.name || pRoom === room.code || pRoom.includes(room.name);
-                        if (!isThisRoom) return false;
-                        if (!isDayMatch(p, selectedDay)) return false;
-                        return isTimeMatch(p.time, slot);
-                      });
-
-                      return (
-                        <td key={slot.id} className="p-2 text-center align-middle">
-                          {prog ? (
-                            <div 
-                              onClick={() => !isReadOnly && handleOpenEditClass(prog)}
-                              className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-all cursor-pointer text-right space-y-0.5"
-                              title="مشاهده و ویرایش کلاس"
-                            >
-                              <div className="font-black text-[11px] leading-tight truncate">{prog.title}</div>
-                              <div className="text-[9px] text-indigo-200 truncate">{prog.teacher || 'بدون استاد'}</div>
-                              {prog.grade && (
-                                <div className="text-[9px] text-amber-300 font-black">{prog.grade}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <div 
-                              onClick={() => {
-                                if (!isReadOnly) {
-                                  setSelectedSlotId(slot.id);
-                                  handleOpenAddClass(room.name);
-                                }
-                              }}
-                              className="p-2 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-800 rounded-xl border border-emerald-200/80 transition-all text-center cursor-pointer group"
-                              title="مدرس در این ساعت خالی است. کلیک برای رزرو و تخصیص کلاس"
-                            >
-                              <span className="text-[10px] font-bold text-emerald-700 group-hover:hidden">خالی</span>
-                              <span className="text-[10px] font-black text-emerald-800 hidden group-hover:inline">+ تخصیص</span>
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 6. VIEW 3: ALL SCHEDULED CLASSES TABLE (لیست کل کلاس‌ها) */}
-      {/* ========================================================================= */}
-      {activeView === 'classes' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="font-black text-slate-900 text-base">لیست کلیه کلاس‌های تعریف‌شده</h3>
-              <p className="text-xs text-slate-500 font-medium">
-                فهرست کامل کلاس‌ها با مشخصات مَدرَس اختصاص‌یافته، استاد، ساعت و روزهای برگزاری
-              </p>
-            </div>
-
-            {!isReadOnly && (
-              <button
-                onClick={() => handleOpenAddClass()}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>تعریف کلاس جدید</span>
-              </button>
-            )}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-black border-b border-slate-200">
-                  <th className="p-3">عنوان درس / کلاس</th>
-                  <th className="p-3">مَدرَس (کلاس درس)</th>
-                  <th className="p-3">استاد / مدرس</th>
-                  <th className="p-3">روزهای برگزاری</th>
-                  <th className="p-3">ساعت برگزاری</th>
-                  <th className="p-3">پایه</th>
-                  <th className="p-3">تعداد طلاب</th>
-                  {!isReadOnly && <th className="p-3 text-center">عملیات</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {programs.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
-                      هیچ کلاسی در سامانه ثبت نشده است. از دکمه «تعریف کلاس جدید» استفاده نمایید.
-                    </td>
-                  </tr>
-                ) : (
-                  programs
-                    .filter(p => {
-                      if (!searchFilter.trim()) return true;
-                      const t = searchFilter.toLowerCase();
-                      return (p.title || '').toLowerCase().includes(t) ||
-                             (p.madrasRoom || p.classroom || '').toLowerCase().includes(t) ||
-                             (p.teacher || '').toLowerCase().includes(t);
-                    })
-                    .map(prog => {
-                      const studentCount = enrollments.filter(e => e.programId === prog.id).length;
-                      const roomName = prog.madrasRoom || prog.classroom || 'تعیین‌نشده';
-
-                      return (
-                        <tr key={prog.id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3 font-black text-slate-900">
-                            <div className="flex items-center gap-1.5">
-                              <GraduationCap size={15} className="text-indigo-600" />
-                              <span>{prog.title}</span>
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <span className={cn(
-                              "px-2.5 py-1 rounded-xl font-bold text-[11px] inline-flex items-center gap-1",
-                              roomName !== 'تعیین‌نشده' 
-                                ? "bg-indigo-50 text-indigo-800 border border-indigo-200" 
-                                : "bg-slate-100 text-slate-500"
-                            )}>
-                              <DoorOpen size={12} />
-                              {roomName}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold text-slate-700">
-                            {prog.teacher || '---'}
-                          </td>
-                          <td className="p-3 text-slate-600 font-medium">
-                            {prog.day || getProgramDays(prog).join(' ، ') || '---'}
-                          </td>
-                          <td className="p-3 font-bold text-slate-800">
-                            <span className="flex items-center gap-1">
-                              <Clock size={12} className="text-slate-400" />
-                              {prog.time || '---'}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold text-indigo-700">
-                            {prog.grade || '---'}
-                          </td>
-                          <td className="p-3 font-bold text-slate-700">
-                            {studentCount} نفر
-                          </td>
-                          {!isReadOnly && (
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => handleOpenEditClass(prog)}
-                                  className="p-1.5 text-slate-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-all"
-                                  title="ویرایش مشخصات کلاس"
-                                >
-                                  <Edit3 size={15} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteClass(prog.id)}
-                                  className="p-1.5 text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all"
-                                  title="حذف کلاس"
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 7. VIEW 4: ROOMS CATALOG & CONFIG (مدیریت مَدرَس‌ها) */}
-      {/* ========================================================================= */}
-      {activeView === 'rooms-config' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="font-black text-slate-900 text-base">مدیریت مَدرَس‌ها (کلاس‌های فیزیکی درس)</h3>
-              <p className="text-xs text-slate-500 font-medium">
-                تعریف اتاق‌های کلاس درس، مشخصات ظرفیت، طبقه و امکانات رفاهی و تجهیزات
-              </p>
-            </div>
-
-            {!isReadOnly && (
-              <button
-                onClick={() => {
-                  setEditingRoom(null);
-                  setRoomFormName('');
-                  setRoomFormCode(`م-${rooms.length + 1}`);
-                  setRoomFormCapacity(30);
-                  setRoomFormFloor('طبقه اول');
-                  setRoomFormFacilities('ویدئو پروژکتور، وایت‌برد');
-                  setRoomFormDescription('');
-                  setShowRoomModal(true);
-                }}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shadow-xs"
-              >
-                <Plus size={15} />
-                <span>افزودن مَدرَس جدید</span>
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rooms.map(room => (
-              <div
-                key={room.id}
-                className="bg-slate-50 rounded-2xl p-4 border border-slate-200 hover:border-indigo-300 transition-all space-y-3 relative"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-white text-indigo-700 border border-slate-200 flex items-center justify-center font-bold">
-                        <DoorOpen size={17} />
-                      </div>
-                      <h4 className="font-black text-slate-900 text-sm">{room.name}</h4>
-                    </div>
-                    {room.code && (
-                      <span className="text-[10px] text-slate-400 font-mono font-bold block pr-10">
-                        کد: {room.code}
-                      </span>
-                    )}
-                  </div>
-
-                  {!isReadOnly && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingRoom(room);
-                          setRoomFormName(room.name);
-                          setRoomFormCode(room.code || '');
-                          setRoomFormCapacity(room.capacity || 30);
-                          setRoomFormFloor(room.floor || 'طبقه اول');
-                          setRoomFormFacilities(room.facilities?.join('، ') || '');
-                          setRoomFormDescription(room.description || '');
-                          setShowRoomModal(true);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-indigo-700 hover:bg-white rounded-lg transition-all"
-                        title="ویرایش مَدرَس"
-                      >
-                        <Edit3 size={15} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRoom(room.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-700 hover:bg-white rounded-lg transition-all"
-                        title="حذف مَدرَس"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-100">
-                  <div>موقعیت: <b>{room.floor || 'همکف'}</b></div>
-                  <div>ظرفیت: <b>{room.capacity} نفر</b></div>
-                </div>
-
-                {room.facilities && room.facilities.length > 0 && (
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-slate-400 font-bold block">امکانات و تجهیزات:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {room.facilities.map((fac, idx) => (
-                        <span key={idx} className="px-2 py-0.5 bg-white text-slate-700 rounded-md text-[10px] font-medium border border-slate-200">
-                          {fac}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {room.description && (
-                  <p className="text-[11px] text-slate-500 italic">
-                    {room.description}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 8. MODAL: DEFINE / EDIT CLASS (همراه با مشخص کردن ساعت، روز، مَدرَس و استاد) */}
-      {/* ========================================================================= */}
+      {/* 6. Define / Edit Class Modal */}
       <AnimatePresence>
         {showClassModal && (
           <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
@@ -1473,7 +590,7 @@ export default function MadrasRooms() {
                     <GraduationCap size={18} />
                   </div>
                   <h3 className="text-base font-black text-slate-900">
-                    {editingProgram ? 'ویرایش اطلاعات کلاس درس' : 'تعریف کلاس درس جدید (با مَدرَس و ساعت)'}
+                    {editingProgram ? 'ویرایش کلاس درس' : 'تعریف کلاس درس جدید'}
                   </h3>
                 </div>
                 <button
@@ -1485,29 +602,22 @@ export default function MadrasRooms() {
               </div>
 
               <form onSubmit={handleSaveClass} className="space-y-4">
-                
-                {/* Class Title */}
+                {/* Title */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">عنوان کلاس / درس *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">عنوان درس / کلاس *</label>
                   <input
                     type="text"
                     required
                     value={classFormTitle}
                     onChange={(e) => setClassFormTitle(e.target.value)}
-                    placeholder="مثلاً: فقه (مکاسب)، اصول (کفایه)، نحو، منطق..."
+                    placeholder="مثلاً: فقه (مکاسب)، اصول، نحو..."
                     className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                   />
                 </div>
 
-                {/* Madras Room Select */}
+                {/* Madras Select */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <DoorOpen size={14} className="text-indigo-600" />
-                      <span>مَدرَس (کلاس درس) *</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-normal">محل فیزیکی برگزاری درس</span>
-                  </label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">مَدرَس (کلاس درس) *</label>
                   <select
                     required
                     value={classFormMadras}
@@ -1523,74 +633,169 @@ export default function MadrasRooms() {
                   </select>
                 </div>
 
-                {/* Teacher / Instructor */}
+                {/* Teacher */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <User size={14} className="text-indigo-600" />
-                      <span>استاد / مدرّس کلاس *</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-normal">از لیست یا تایپ دستی</span>
-                  </label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">استاد / مدرس کلاس *</label>
                   <input
                     type="text"
-                    list="teachers-datalist"
+                    list="teachers-datalist-madras"
                     required
                     value={classFormTeacher}
                     onChange={(e) => setClassFormTeacher(e.target.value)}
                     placeholder="نام استاد محترم..."
                     className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                   />
-                  <datalist id="teachers-datalist">
+                  <datalist id="teachers-datalist-madras">
                     {teachers.map(t => (
                       <option key={t.id} value={t.fullName} />
                     ))}
                   </datalist>
                 </div>
 
-                {/* Time & Slot */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                      <Clock size={13} className="text-indigo-600" />
-                      <span>ساعت برگزاری *</span>
+                {/* Time Selection: Standard 1-Hour vs Manual Custom Time (7:00 to 17:00) */}
+                <div className="space-y-2.5 p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Clock size={14} className="text-indigo-600" />
+                      <span>ساعت برگزاری کلاس *</span>
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={classFormTime}
-                      onChange={(e) => setClassFormTime(e.target.value)}
-                      placeholder="مثلاً: ۰۸:۰۰ الی ۰۹:۳۰"
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-center"
-                    />
+
+                    {/* Mode Toggle */}
+                    <div className="flex items-center bg-slate-200/80 p-0.5 rounded-xl text-[11px] font-bold self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimeInputMode('standard');
+                          setClassFormTime(MADRAS_HOURLY_SLOTS_7_TO_17[0].displayTime);
+                        }}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                          timeInputMode === 'standard'
+                            ? "bg-white text-indigo-700 shadow-2xs font-black"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        ساعت‌های رسمی (رأس ساعت)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTimeInputMode('manual');
+                          setClassFormTime(`${customStartTime} الی ${customEndTime}`);
+                        }}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                          timeInputMode === 'manual'
+                            ? "bg-white text-indigo-700 shadow-2xs font-black"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        دستی (غیر رأس ساعت)
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">انتخاب سریع زنگ</label>
-                    <select
-                      onChange={(e) => {
-                        const slot = STANDARD_TIME_SLOTS.find(s => s.id === e.target.value);
-                        if (slot) setClassFormTime(slot.displayTime);
-                      }}
-                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50 font-medium"
-                    >
-                      <option value="">-- انتخاب از زنگ‌های استاندارد --</option>
-                      {STANDARD_TIME_SLOTS.map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.label} ({s.startTime} تا {s.endTime})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {timeInputMode === 'standard' ? (
+                    <div className="space-y-1.5">
+                      <select
+                        value={classFormTime}
+                        onChange={(e) => setClassFormTime(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-black text-slate-800"
+                      >
+                        {MADRAS_HOURLY_SLOTS_7_TO_17.map(s => (
+                          <option key={s.id} value={s.displayTime}>
+                            {s.label} ({s.displayTime})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="text-[11px] text-slate-400 font-medium">
+                        ساعت‌های رسمی یک‌ساعته هستند و دقیقاً از رأس هر ساعت شروع می‌شوند (۰۷:۰۰ الی ۱۷:۰۰).
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-600 block mb-1">ساعت شروع (دلخواه):</span>
+                          <input
+                            type="time"
+                            min="07:00"
+                            max="17:00"
+                            value={customStartTime}
+                            onChange={(e) => {
+                              const newStart = e.target.value;
+                              setCustomStartTime(newStart);
+                              setClassFormTime(`${newStart} الی ${customEndTime}`);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-600 block mb-1">ساعت پایان:</span>
+                          <input
+                            type="time"
+                            min="07:00"
+                            max="17:00"
+                            value={customEndTime}
+                            onChange={(e) => {
+                              const newEnd = e.target.value;
+                              setCustomEndTime(newEnd);
+                              setClassFormTime(`${customStartTime} الی ${newEnd}`);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Manual editable text field */}
+                      <div>
+                        <input
+                          type="text"
+                          required
+                          value={classFormTime}
+                          onChange={(e) => setClassFormTime(e.target.value)}
+                          placeholder="مثلاً: ۰۷:۳۰ الی ۰۸:۴۵"
+                          className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-black text-center bg-white text-indigo-700 font-mono"
+                        />
+                      </div>
+
+                      {/* Quick non-hour presets */}
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                        <span className="text-[10px] text-slate-400 font-medium">ساعت‌های متداول:</span>
+                        {[
+                          { label: '۰۷:۳۰-۰۸:۴۵', s: '07:30', e: '08:45' },
+                          { label: '۰۸:۳۰-۰۹:۴۵', s: '08:30', e: '09:45' },
+                          { label: '۱۰:۱۵-۱۱:۴۵', s: '10:15', e: '11:45' },
+                          { label: '۱۳:۳۰-۱۵:۰۰', s: '13:30', e: '15:00' },
+                        ].map((p, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setCustomStartTime(p.s);
+                              setCustomEndTime(p.e);
+                              setClassFormTime(`${p.s} الی ${p.e}`);
+                            }}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-mono border transition-colors cursor-pointer",
+                              classFormTime === `${p.s} الی ${p.e}`
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                            )}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Days of week */}
+                {/* Days */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    روزهای برگزاری کلاس در هفته:
-                  </label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">روزهای برگزاری:</label>
                   <div className="grid grid-cols-3 gap-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                    {WEEK_DAYS.map(day => {
+                    {WEEK_DAYS.filter(d => d !== 'جمعه').map(day => {
                       const isChecked = classFormDays.includes(day);
                       return (
                         <label
@@ -1621,7 +826,7 @@ export default function MadrasRooms() {
                   </div>
                 </div>
 
-                {/* Grade & Type */}
+                {/* Grade */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">پایه تحصیلی</label>
@@ -1639,7 +844,7 @@ export default function MadrasRooms() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">نوع برنامه</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">نوع کلاس</label>
                     <select
                       value={classFormType}
                       onChange={(e) => setClassFormType(e.target.value as any)}
@@ -1654,26 +859,13 @@ export default function MadrasRooms() {
                   </div>
                 </div>
 
-                {/* Conflict Alert (Smart Warning) */}
-                {conflictWarning && (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
-                    <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <span className="font-bold block">توجه: احتمال تداخل کلاسی در این مَدرَس!</span>
-                      <p className="text-[11px] leading-relaxed text-amber-800">
-                        مدرس <b>{classFormMadras}</b> در روزهای <b>{conflictWarning.day}</b> ساعت <b>{conflictWarning.time}</b> برای کلاس <b>«{conflictWarning.title}»</b> استاد <b>{conflictWarning.teacher}</b> رزرو شده است.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Buttons */}
                 <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                   <button
                     type="submit"
                     className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shadow-md shadow-indigo-100 cursor-pointer"
                   >
-                    {editingProgram ? 'ذخیره تغییرات کلاس' : 'ثبت و اختصاص کلاس به مَدرَس'}
+                    {editingProgram ? 'ذخیره تغییرات' : 'ثبت و اختصاص کلاس'}
                   </button>
                   <button
                     type="button"
@@ -1689,9 +881,7 @@ export default function MadrasRooms() {
         )}
       </AnimatePresence>
 
-      {/* ========================================================================= */}
-      {/* 9. MODAL: DEFINE / EDIT MADRAS ROOM (تعریف و ویرایش کلاس درس فیزیکی) */}
-      {/* ========================================================================= */}
+      {/* 7. Define / Edit Madras Room Modal */}
       <AnimatePresence>
         {showRoomModal && (
           <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
@@ -1707,7 +897,7 @@ export default function MadrasRooms() {
                     <Building2 size={18} />
                   </div>
                   <h3 className="text-base font-black text-slate-900">
-                    {editingRoom ? 'ویرایش مشخصات مَدرَس' : 'تعریف مَدرَس (کلاس درس فیزیکی)'}
+                    {editingRoom ? 'ویرایش مشخصات مَدرَس' : 'تعریف مَدرَس جدید'}
                   </h3>
                 </div>
                 <button
@@ -1720,7 +910,7 @@ export default function MadrasRooms() {
 
               <form onSubmit={handleSaveRoom} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">نام مَدرَس *</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">شماره / نام مَدرَس *</label>
                   <input
                     type="text"
                     required
@@ -1733,20 +923,21 @@ export default function MadrasRooms() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">کد / شماره</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">کد مَدرَس</label>
                     <input
                       type="text"
                       value={roomFormCode}
                       onChange={(e) => setRoomFormCode(e.target.value)}
-                      placeholder="مثلاً: م-۱"
+                      placeholder="م-۱"
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">ظرفیت (نفر)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">ظرفیت (نفر) *</label>
                     <input
                       type="number"
+                      required
                       value={roomFormCapacity}
                       onChange={(e) => setRoomFormCapacity(Number(e.target.value))}
                       placeholder="۳۰"
@@ -1756,36 +947,24 @@ export default function MadrasRooms() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">موقعیت / طبقه</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">طبقه مَدرَس *</label>
                   <input
                     type="text"
+                    required
                     value={roomFormFloor}
                     onChange={(e) => setRoomFormFloor(e.target.value)}
-                    placeholder="مثلاً: طبقه اول، همکف، زیرهمکف..."
-                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                    placeholder="مثلاً: طبقه همکف، طبقه اول، طبقه دوم..."
+                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    امکانات و تجهیزات (با کاما یا ویرگول جدا کنید)
-                  </label>
-                  <input
-                    type="text"
-                    value={roomFormFacilities}
-                    onChange={(e) => setRoomFormFacilities(e.target.value)}
-                    placeholder="ویدئو پروژکتور، وایت‌برد، سیستم صوتی، تهویه..."
-                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">توضیحات</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">توضیحات اختیاری</label>
                   <textarea
                     rows={2}
                     value={roomFormDescription}
                     onChange={(e) => setRoomFormDescription(e.target.value)}
-                    placeholder="توضیحات اختیاری درباره کاربری یا اساتید مدرس..."
+                    placeholder="توضیحات کوتاه..."
                     className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -1795,7 +974,7 @@ export default function MadrasRooms() {
                     type="submit"
                     className="flex-1 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-bold text-xs transition-colors shadow-md cursor-pointer"
                   >
-                    {editingRoom ? 'ذخیره مشخصات' : 'ثبت مَدرَس'}
+                    {editingRoom ? 'ذخیره تغییرات' : 'ثبت مَدرَس'}
                   </button>
                   <button
                     type="button"

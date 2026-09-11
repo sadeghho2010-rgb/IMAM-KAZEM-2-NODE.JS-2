@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   BarChart2, 
   Plus, 
@@ -18,12 +18,17 @@ import {
   MessageSquare,
   Calculator,
   Sparkles,
-  Check
+  Check,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
 import { Student, StudyPeriod, PeriodicStudyLog } from '../types';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import StudyEntryModal from './study/StudyEntryModal';
 import RankingModal, { RankingModalData } from './study/RankingModal';
@@ -33,7 +38,8 @@ import AllPeriodsTable from './study/AllPeriodsTable';
 import StudentBreakoutSection from './study/StudentBreakoutSection';
 import DashboardAnalytics from './study/DashboardAnalytics';
 import PeriodAnalytics from './study/PeriodAnalytics';
-import { calculatePeriodAverages, exportStudyStatsCSV } from './study/studyUtils';
+import StudentStudyPortal from './study/StudentStudyPortal';
+import { calculatePeriodAverages, exportStudyStatsCSV, isPeriodClosed, isStudentExempt } from './study/studyUtils';
 
 interface StudyStatsProps {
   initialStudentId?: string;
@@ -41,8 +47,11 @@ interface StudyStatsProps {
 
 export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const { currentMentor, currentMentorId, shahpooriFilter, filterStudents } = useMentor();
+  const { currentUser } = useAuth();
+
   const [periods, setPeriods] = useState<StudyPeriod[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [allStudentsRaw, setAllStudentsRaw] = useState<Student[]>([]);
   const [allLogs, setAllLogs] = useState<PeriodicStudyLog[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId || null);
@@ -60,6 +69,19 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const [deleteConfirmPeriod, setDeleteConfirmPeriod] = useState<StudyPeriod | null>(null);
   const [rankingModalData, setRankingModalData] = useState<RankingModalData | null>(null);
 
+  const isLevel3Student = currentUser?.level === 3;
+  const isGradeMentor = currentUser?.role === 'grade_mentor' || currentUser?.role === 'grade_supervisor';
+  
+  // Extract mentor grade label
+  const mentorGradeLabel = useMemo(() => {
+    if (!currentUser) return '';
+    if (currentUser.scope === 'grade_7' || currentUser.gradeLabel?.includes('۷') || currentUser.gradeLabel?.includes('7')) return 'پایه ۷';
+    if (currentUser.scope === 'grade_8' || currentUser.gradeLabel?.includes('۸') || currentUser.gradeLabel?.includes('8')) return 'پایه ۸';
+    if (currentUser.scope === 'grade_9' || currentUser.gradeLabel?.includes('۹') || currentUser.gradeLabel?.includes('9')) return 'پایه ۹';
+    if (currentUser.scope === 'grade_10' || currentUser.gradeLabel?.includes('۱۰') || currentUser.gradeLabel?.includes('10')) return 'پایه ۱۰';
+    return currentUser.gradeLabel || '';
+  }, [currentUser]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) {
@@ -73,39 +95,34 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const fetchData = async () => {
     try {
       const allStudents = await localDb.getDocs<Student>('students');
+      setAllStudentsRaw(allStudents);
       
-      // Filter active students for the current mentor
-      const activeStudents = filterStudents(allStudents, true);
+      // Filter active students based on role
+      let activeStudents = filterStudents(allStudents, true);
+      
+      // If Grade Mentor, strictly scope to their grade
+      if (isGradeMentor && mentorGradeLabel) {
+        activeStudents = activeStudents.filter(s => 
+          s.grade && (s.grade === mentorGradeLabel || s.grade.includes(mentorGradeLabel.replace('پایه ', '')))
+        );
+      }
       setStudents(activeStudents);
 
       const allPeriods = await localDb.getDocs<StudyPeriod>('study_periods');
-      const mentorPeriods = allPeriods
-        .filter(p => {
-          if (currentMentorId === 'shahpoori') {
-            if (shahpooriFilter === 'all') return true;
-            return p.mentorId === shahpooriFilter;
-          }
-          if (p.mentorId) {
-            return p.mentorId === currentMentorId;
-          }
-          return (p.mentorId || '1') === currentMentor.id;
-        })
-        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-      setPeriods(mentorPeriods);
+      const sortedPeriods = [...allPeriods].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+      setPeriods(sortedPeriods);
 
-      if (mentorPeriods.length > 0) {
+      if (sortedPeriods.length > 0) {
         setSelectedPeriodId(prev => {
-          if (prev && mentorPeriods.some(p => p.id === prev)) return prev;
-          return mentorPeriods[0].id;
+          if (prev && sortedPeriods.some(p => p.id === prev)) return prev;
+          return sortedPeriods[0].id;
         });
       } else {
         setSelectedPeriodId(null);
       }
 
       const rawLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
-      const validPeriodIds = new Set(mentorPeriods.map(p => p.id));
-      const logs = rawLogs.filter(l => validPeriodIds.has(l.periodId));
-      setAllLogs(logs);
+      setAllLogs(rawLogs);
     } catch (error) {
       console.error("Error fetching study stats data:", error);
     }
@@ -117,13 +134,24 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       fetchData();
     });
     return () => unsub();
-  }, [currentMentor.id, currentMentorId, shahpooriFilter]);
+  }, [currentMentor.id, currentMentorId, shahpooriFilter, currentUser]);
 
   useEffect(() => {
     if (initialStudentId) {
       setSelectedStudentId(initialStudentId);
     }
   }, [initialStudentId]);
+
+  // Find student if user is level 3
+  const currentStudentForLevel3 = useMemo(() => {
+    if (!isLevel3Student || allStudentsRaw.length === 0) return null;
+    return allStudentsRaw.find(s => 
+      (currentUser?.linkedStudentId && s.id === currentUser.linkedStudentId) ||
+      (currentUser?.studentName && s.name.trim() === currentUser.studentName.trim()) ||
+      (currentUser?.name && s.name.trim() === currentUser.name.trim()) ||
+      (s.nationalId && s.nationalId === currentUser?.username)
+    ) || allStudentsRaw[0];
+  }, [isLevel3Student, allStudentsRaw, currentUser]);
 
   const selectedPeriod = periods.find(p => p.id === selectedPeriodId) || periods[0] || null;
 
@@ -135,6 +163,61 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const handleOpenEditPeriod = (period: StudyPeriod) => {
     setEditingPeriod(period);
     setShowEntryModal(true);
+  };
+
+  // Toggle period open/closed lock status (For education officer & admins)
+  const handleTogglePeriodLock = async (period: StudyPeriod) => {
+    try {
+      const updatedStatus = !period.isClosed;
+      await localDb.updateDoc('study_periods', period.id, {
+        isClosed: updatedStatus,
+        updatedAt: new Date().toISOString()
+      });
+      await fetchData();
+    } catch (err) {
+      console.error("Error toggling period lock:", err);
+      alert("خطا در تغییر وضعیت دسترسی دوره");
+    }
+  };
+
+  // Grade supervisor: Exempt their grade from this period
+  const handleToggleGradeExemption = async (period: StudyPeriod) => {
+    if (!mentorGradeLabel) return;
+    try {
+      const currentExemptGrades = period.exemptGrades || [];
+      const isExempt = currentExemptGrades.includes(mentorGradeLabel);
+      const updated = isExempt
+        ? currentExemptGrades.filter(g => g !== mentorGradeLabel)
+        : [...currentExemptGrades, mentorGradeLabel];
+
+      await localDb.updateDoc('study_periods', period.id, {
+        exemptGrades: updated,
+        updatedAt: new Date().toISOString()
+      });
+      await fetchData();
+    } catch (err) {
+      console.error("Error updating grade exemption:", err);
+    }
+  };
+
+  // Grade supervisor: Clear their grade logs for this period
+  const handleClearGradeLogsInPeriod = async (period: StudyPeriod) => {
+    if (!mentorGradeLabel) return;
+    const confirmClear = window.confirm(`آیا از پاک کردن تمامی ساعت‌های ثبت‌شده طلاب ${mentorGradeLabel} در دوره «${period.title}» اطمینان دارید؟`);
+    if (!confirmClear) return;
+
+    try {
+      const gradeStudents = students.filter(s => s.grade === mentorGradeLabel || s.grade?.includes(mentorGradeLabel.replace('پایه ', '')));
+      const gradeStudentIds = new Set(gradeStudents.map(s => s.id));
+      const logsToDelete = allLogs.filter(l => l.periodId === period.id && gradeStudentIds.has(l.studentId));
+
+      for (const log of logsToDelete) {
+        await localDb.deleteDoc('periodic_study_logs', log.id);
+      }
+      await fetchData();
+    } catch (err) {
+      console.error("Error clearing grade logs:", err);
+    }
   };
 
   const handleConfirmDeletePeriod = async () => {
@@ -164,8 +247,43 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     ? calculatePeriodAverages(selectedPeriod.id, allLogs) 
     : null;
 
+  // =========================================================================
+  // IF LEVEL 3 STUDENT: DIRECT TO DEDICATED STUDENT STUDY PORTAL
+  // =========================================================================
+  if (isLevel3Student) {
+    if (!currentStudentForLevel3) {
+      return (
+        <div className="p-8 bg-white rounded-3xl border border-slate-100 text-center font-vazir" dir="rtl">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
+            <Clock size={24} />
+          </div>
+          <h3 className="text-base font-black text-slate-800">در حال بارگذاری اطلاعات مطالعاتی...</h3>
+          <p className="text-xs text-slate-500 mt-1">لطفاً چند لحظه شکیبا باشید.</p>
+        </div>
+      );
+    }
+
+    return (
+      <StudentStudyPortal
+        student={currentStudentForLevel3}
+        periods={periods}
+        allLogs={allLogs}
+        allStudents={allStudentsRaw}
+        onRefresh={fetchData}
+      />
+    );
+  }
+
+  // =========================================================================
+  // OFFICER / GRADE SUPERVISOR / ADMIN VIEW
+  // =========================================================================
+  const isPeriodClosedForSelected = isPeriodClosed(selectedPeriod);
+  const isGradeExemptForSelected = Boolean(
+    selectedPeriod && mentorGradeLabel && selectedPeriod.exemptGrades?.includes(mentorGradeLabel)
+  );
+
   return (
-    <div className="space-y-8 pb-16" dir="rtl">
+    <div className="space-y-8 pb-16 font-vazir" dir="rtl">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
         <div>
@@ -174,9 +292,18 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
               <BarChart2 size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-800">آمار و تحلیل جامع مطالعه و مباحثه</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-slate-800">مدیریت و آمار مطالعه و مباحثه طلاب</h2>
+                {isGradeMentor && mentorGradeLabel && (
+                  <span className="px-3 py-1 bg-purple-50 border border-purple-200 text-purple-700 text-xs font-black rounded-full">
+                    محدوده: {mentorGradeLabel}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                ثبت همزمان و تفکیکی دقایق مطالعه و مباحثه، ارزیابی موظفی و مقایسه تراز طلاب
+                {isGradeMentor 
+                  ? `مشاهده و مدیریت ساعت مطالعه و مباحثه طلاب ${mentorGradeLabel}` 
+                  : 'تعریف دوره‌ها، ثبت مستقل دقایق مطالعه و مباحثه، ارزیابی موظفی و مقایسه تراز طلاب'}
               </p>
             </div>
           </div>
@@ -186,20 +313,22 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
           <button
             type="button"
             onClick={() => exportStudyStatsCSV(periods, allLogs, students)}
-            className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl flex items-center gap-2 transition-all"
+            className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl flex items-center gap-2 transition-all cursor-pointer"
           >
             <Download size={16} />
             <span>خروجی اکسل / CSV</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleOpenCreatePeriod}
-            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-200"
-          >
-            <Plus size={18} />
-            <span>ثبت دوره مطالعاتی جدید</span>
-          </button>
+          {!isGradeMentor && (
+            <button
+              type="button"
+              onClick={handleOpenCreatePeriod}
+              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-2xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-200 cursor-pointer"
+            >
+              <Plus size={18} />
+              <span>تعریف دوره مطالعاتی جدید</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -223,7 +352,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                 type="button"
                 onClick={() => setActiveMainTab('PERIOD')}
                 className={cn(
-                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2",
+                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
                   activeMainTab === 'PERIOD' 
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-200" 
                     : "text-slate-600 hover:text-slate-900 bg-slate-100"
@@ -237,7 +366,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                 type="button"
                 onClick={() => setActiveMainTab('ALL_PERIODS')}
                 className={cn(
-                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2",
+                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
                   activeMainTab === 'ALL_PERIODS' 
                     ? "bg-indigo-600 text-white shadow-md shadow-indigo-200" 
                     : "text-slate-600 hover:text-slate-900 bg-slate-100"
@@ -255,7 +384,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                   <button
                     type="button"
                     onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)}
-                    className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/90 rounded-2xl text-xs font-black text-slate-800 flex items-center justify-between gap-3 transition-all shadow-xs"
+                    className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/90 rounded-2xl text-xs font-black text-slate-800 flex items-center justify-between gap-3 transition-all shadow-xs cursor-pointer"
                   >
                     <div className="flex items-center gap-2 truncate">
                       <History size={15} className="text-indigo-600 shrink-0" />
@@ -288,6 +417,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                           periods.map(period => {
                             const isSelected = selectedPeriod?.id === period.id;
                             const pAvg = calculatePeriodAverages(period.id, allLogs);
+                            const pClosed = isPeriodClosed(period);
 
                             return (
                               <div
@@ -305,38 +435,41 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                                   <div className="flex items-center gap-1.5">
                                     {isSelected && <Check size={14} className="text-indigo-600" />}
                                     <span className="text-xs truncate">{period.title}</span>
+                                    {pClosed && <span className="text-[10px] text-rose-500 font-bold">(بسته)</span>}
                                   </div>
                                   <p className="text-[10px] text-slate-400 font-medium">
                                     موظفی: {Math.round((period.mandatoryHours || 0) * 60)} د • {pAvg.activeCount} ثبت
                                   </p>
                                 </div>
 
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsPeriodDropdownOpen(false);
-                                      handleOpenEditPeriod(period);
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-white"
-                                    title="ویرایش"
-                                  >
-                                    <Edit3 size={13} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsPeriodDropdownOpen(false);
-                                      setDeleteConfirmPeriod(period);
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white"
-                                    title="حذف"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
+                                {!isGradeMentor && (
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsPeriodDropdownOpen(false);
+                                        handleOpenEditPeriod(period);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-white"
+                                      title="ویرایش"
+                                    >
+                                      <Edit3 size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsPeriodDropdownOpen(false);
+                                        setDeleteConfirmPeriod(period);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white"
+                                      title="حذف"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             );
                           })
@@ -346,12 +479,12 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                   </AnimatePresence>
                 </div>
 
-                {selectedPeriod && (
+                {selectedPeriod && !isGradeMentor && (
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => handleOpenEditPeriod(selectedPeriod)}
-                      className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                      className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="ویرایش این دوره"
                     >
                       <Edit3 size={14} />
@@ -360,7 +493,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                     <button
                       type="button"
                       onClick={() => setDeleteConfirmPeriod(selectedPeriod)}
-                      className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+                      className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
                       title="حذف این دوره"
                     >
                       <Trash2 size={14} />
@@ -376,12 +509,33 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
           {activeMainTab === 'PERIOD' && selectedPeriod && (
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-200/60">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
                   <h3 className="text-base font-black text-slate-800">{selectedPeriod.title}</h3>
+                  
+                  {/* Lock/Closed Status Badge */}
+                  {isPeriodClosedForSelected ? (
+                    <span className="px-2.5 py-0.5 bg-rose-100 text-rose-700 rounded-full text-[11px] font-black flex items-center gap-1 border border-rose-200">
+                      <Lock size={12} />
+                      بسته شده برای طلاب
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[11px] font-black flex items-center gap-1 border border-emerald-200">
+                      <Unlock size={12} />
+                      باز برای ثبت طلاب
+                    </span>
+                  )}
+
+                  {isGradeExemptForSelected && (
+                    <span className="px-2.5 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[11px] font-black flex items-center gap-1 border border-purple-200">
+                      <ShieldCheck size={12} />
+                      {mentorGradeLabel} معاف شده
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-1">
                   بازه زمانی: {selectedPeriod.startDate ? new Date(selectedPeriod.startDate).toLocaleDateString('fa-IR') : '---'} تا {selectedPeriod.endDate ? new Date(selectedPeriod.endDate).toLocaleDateString('fa-IR') : '---'}
+                  {selectedPeriod.deadlineDate && ` • مهلت ثبت: ${new Date(selectedPeriod.deadlineDate).toLocaleDateString('fa-IR')}`}
                 </p>
               </div>
 
@@ -389,10 +543,56 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                 <span className="text-xs font-black text-slate-800 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs">
                   موظفی دوره: {Math.round((selectedPeriod.mandatoryHours || 0) * 60).toLocaleString('fa-IR')} دقیقه
                 </span>
+                
                 {selectedPeriodAvg && (
                   <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3.5 py-2 rounded-xl border border-indigo-100">
                     میانگین دوره: {selectedPeriodAvg.totalAvgMinutes.toLocaleString('fa-IR')} د (مطالعه: {selectedPeriodAvg.studyAvgMinutes.toLocaleString('fa-IR')} د | مباحثه: {selectedPeriodAvg.discussionAvgMinutes.toLocaleString('fa-IR')} د)
                   </span>
+                )}
+
+                {/* Lock Toggle for Admin / Education Officer */}
+                {!isGradeMentor && (
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePeriodLock(selectedPeriod)}
+                    className={cn(
+                      "px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer",
+                      selectedPeriod.isClosed
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        : "bg-rose-600 hover:bg-rose-700 text-white"
+                    )}
+                  >
+                    {selectedPeriod.isClosed ? <Unlock size={14} /> : <Lock size={14} />}
+                    <span>{selectedPeriod.isClosed ? 'بازگشایی ثبت برای طلاب' : 'بستن ثبت برای طلاب'}</span>
+                  </button>
+                )}
+
+                {/* Grade Supervisor Specific Actions */}
+                {isGradeMentor && mentorGradeLabel && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleGradeExemption(selectedPeriod)}
+                      className={cn(
+                        "px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer",
+                        isGradeExemptForSelected
+                          ? "bg-purple-600 text-white"
+                          : "bg-white border border-purple-200 text-purple-700 hover:bg-purple-50"
+                      )}
+                    >
+                      <ShieldCheck size={14} />
+                      <span>{isGradeExemptForSelected ? `لغو معافیت ${mentorGradeLabel}` : `معاف کردن ${mentorGradeLabel}`}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleClearGradeLogsInPeriod(selectedPeriod)}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-black transition-all cursor-pointer"
+                      title="پاک‌کردن ثبت‌های این دوره برای طلاب پایه"
+                    >
+                      <span>پاک‌کردن ساعات این دوره</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -464,3 +664,4 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     </div>
   );
 }
+

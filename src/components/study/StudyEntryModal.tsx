@@ -31,6 +31,8 @@ export default function StudyEntryModal({
   const [periodTitle, setPeriodTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [isClosed, setIsClosed] = useState(false);
   const [mandatoryHours, setMandatoryHours] = useState<number>(0);
   
   // Store study and discussion minutes per studentId
@@ -80,6 +82,8 @@ export default function StudyEntryModal({
         setPeriodTitle(editingPeriod.title || '');
         setStartDate(editingPeriod.startDate || '');
         setEndDate(editingPeriod.endDate || '');
+        setDeadlineDate(editingPeriod.deadlineDate || '');
+        setIsClosed(editingPeriod.isClosed || false);
         setMandatoryHours(Math.round((editingPeriod.mandatoryHours || 0) * 60));
 
         const pLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
@@ -99,6 +103,8 @@ export default function StudyEntryModal({
         setPeriodTitle('');
         setStartDate('');
         setEndDate('');
+        setDeadlineDate('');
+        setIsClosed(false);
         setMandatoryHours(0);
         setEntryStudyValues({});
         setEntryDiscussionValues({});
@@ -573,6 +579,8 @@ export default function StudyEntryModal({
           title: periodTitle.trim(),
           startDate,
           endDate,
+          deadlineDate: deadlineDate || '',
+          isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
           updatedAt: new Date().toISOString()
         });
@@ -615,6 +623,8 @@ export default function StudyEntryModal({
           title: periodTitle.trim(),
           startDate,
           endDate,
+          deadlineDate: deadlineDate || '',
+          isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
           mentorId: currentMentorId,
           createdAt: new Date().toISOString()
@@ -718,9 +728,9 @@ export default function StudyEntryModal({
                   onChange={(date) => setEndDate(date?.toDate?.().toISOString() || '')}
                 />
               </div>
-              <div className="md:col-span-4 space-y-1.5">
+              <div className="md:col-span-2 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-600">میزان موظفی دوره (برحسب دقیقه - ملاک مقایسه با مجموع مطالعه + مباحثه)</label>
+                  <label className="text-xs font-black text-slate-600">میزان موظفی دوره (برحسب دقیقه)</label>
                   <span className="text-[11px] font-bold text-indigo-600">
                     {mandatoryHours > 0 ? `معادل ${(mandatoryHours / 60).toFixed(1)} ساعت` : ''}
                   </span>
@@ -728,10 +738,40 @@ export default function StudyEntryModal({
                 <input 
                   type="number"
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-slate-800 text-sm"
-                  placeholder="مثلاً 2100 دقیقه"
+                  placeholder="مثلاً 1200 دقیقه (20 ساعت)"
                   value={mandatoryHours || ''}
                   onChange={(e) => setMandatoryHours(parseFloat(e.target.value) || 0)}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-600">مهلت ثبت توسط طلاب (ددلاین خودکار)</label>
+                <DatePicker
+                  calendar={persian}
+                  locale={persian_fa}
+                  calendarPosition="bottom-right"
+                  inputClass="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-slate-800 text-sm"
+                  value={deadlineDate}
+                  onChange={(date) => setDeadlineDate(date?.toDate?.().toISOString() || '')}
+                  placeholder="اختیاری - تاریخ انقضا"
+                />
+              </div>
+
+              <div className="space-y-1.5 flex flex-col justify-end">
+                <label className="text-xs font-black text-slate-600 mb-1">وضعیت دسترسی ثبت برای طلاب</label>
+                <button
+                  type="button"
+                  onClick={() => setIsClosed(!isClosed)}
+                  className={cn(
+                    "w-full px-4 py-3 rounded-2xl text-xs font-black flex items-center justify-center gap-2 border transition-all cursor-pointer",
+                    isClosed
+                      ? "bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100"
+                      : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                  )}
+                >
+                  <span className={cn("w-2.5 h-2.5 rounded-full", isClosed ? "bg-rose-600" : "bg-emerald-600")} />
+                  <span>{isClosed ? '🔒 بسته شده (غیرفعال برای طلاب)' : '🟢 باز (امکان ثبت و ویرایش)'}</span>
+                </button>
               </div>
 
               {/* Excel Auto Import Section */}

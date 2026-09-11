@@ -178,8 +178,15 @@ export interface StudyPeriod {
   startDate: string;
   endDate: string;
   mandatoryHours: number;
+  deadlineDate?: string;
+  isClosed?: boolean;
+  closedManually?: boolean;
+  exemptStudentIds?: string[];
+  exemptGrades?: string[];
+  targetGrades?: string[];
   mentorId?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PeriodicStudyLog {
@@ -189,6 +196,11 @@ export interface PeriodicStudyLog {
   hours: number;
   studyHours?: number;
   discussionHours?: number;
+  isExempt?: boolean;
+  exemptionReason?: string;
+  warningsCount?: number;
+  submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer';
+  lastModifiedAt?: string;
 }
 
 export type CommentPriority = 'high' | 'medium' | 'low' | 'info';
@@ -425,6 +437,7 @@ export type AppModuleId =
   | 'programs'
   | 'classrooms'
   | 'student-schedule'
+  | 'teachers-schedule'
   | 'stats'
   | 'discussion'
   | 'research'
@@ -438,6 +451,22 @@ export type AppModuleId =
   | 'user-management'
   | 'user-credentials'
   | 'student-portal';
+
+export interface TeacherManualSchedule {
+  id: string;
+  teacherId?: string;
+  teacherName: string;
+  title: string;
+  grade?: string;
+  days: string[];
+  day?: string;
+  time: string;
+  startTime?: string;
+  endTime?: string;
+  madrasRoom?: string;
+  notes?: string;
+  createdAt: string;
+}
 
 export type UserScope = 'global' | 'grade_7' | 'grade_8' | 'grade_9' | 'grade_10' | 'class' | 'self';
 

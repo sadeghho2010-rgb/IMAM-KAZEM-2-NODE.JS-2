@@ -25,6 +25,7 @@ import * as XLSX from 'xlsx';
 import { Student, Program, Enrollment } from '../types';
 import { localDb } from '../lib/localDb';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
 import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
@@ -35,18 +36,33 @@ interface StudentScheduleProps {
 
 export default function StudentSchedule({ initialStudentId }: StudentScheduleProps) {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
+  const { currentUser } = useAuth();
   
   const [students, setStudents] = useState<Student[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Initialize grade filter based on user role
+  const getInitialGradeFilter = (): string => {
+    if (!currentUser) return 'all';
+    if (currentUser.role === 'grade_mentor' || currentUser.role === 'grade_supervisor') {
+      if (currentUser.scope === 'grade_7' || currentUser.gradeLabel?.includes('۷') || currentUser.gradeLabel?.includes('7')) return '۷';
+      if (currentUser.scope === 'grade_8' || currentUser.gradeLabel?.includes('۸') || currentUser.gradeLabel?.includes('8')) return '۸';
+      if (currentUser.scope === 'grade_9' || currentUser.gradeLabel?.includes('۹') || currentUser.gradeLabel?.includes('9')) return '۹';
+      if (currentUser.scope === 'grade_10' || currentUser.gradeLabel?.includes('۱۰') || currentUser.gradeLabel?.includes('10')) return '۱۰';
+    }
+    return 'all';
+  };
+
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId || null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [gradeFilter, setGradeFilter] = useState<string>('all');
+  const [gradeFilter, setGradeFilter] = useState<string>(getInitialGradeFilter);
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const studentSchedulePrintRef = useRef<HTMLDivElement>(null);
+
+  const isLevel3Student = currentUser?.level === 3;
 
   const fetchData = async () => {
     setLoading(true);
@@ -58,6 +74,20 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
       setStudents(rawStudents);
       setPrograms(rawPrograms);
       setEnrollments(rawEnrollments);
+
+      // If Level 3 user, lock to their own student record
+      if (currentUser && currentUser.level === 3) {
+        const ownStudent = rawStudents.find(s => 
+          (currentUser.linkedStudentId && s.id === currentUser.linkedStudentId) ||
+          (currentUser.studentName && s.name.trim() === currentUser.studentName.trim()) ||
+          (currentUser.name && s.name.trim() === currentUser.name.trim()) ||
+          (s.nationalId && s.nationalId === currentUser.username)
+        );
+        if (ownStudent) {
+          setSelectedStudentId(ownStudent.id);
+          return;
+        }
+      }
 
       // Default select the first active student if none selected
       const activeFiltered = filterStudents(rawStudents, true);
@@ -75,23 +105,37 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     fetchData();
     const unsub = localDb.subscribe(() => fetchData());
     return () => unsub();
-  }, [currentMentorId, shahpooriFilter]);
+  }, [currentMentorId, shahpooriFilter, currentUser]);
 
   useEffect(() => {
-    if (initialStudentId) {
+    if (initialStudentId && !isLevel3Student) {
       setSelectedStudentId(initialStudentId);
     }
-  }, [initialStudentId]);
+  }, [initialStudentId, isLevel3Student]);
 
   // Filter students based on active mentor
-  const availableStudents = filterStudents(students, true).filter(s => {
-    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          (s.nationalId && s.nationalId.includes(searchTerm));
-    const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
-    return matchesSearch && matchesGrade;
-  });
+  const availableStudents = React.useMemo(() => {
+    if (isLevel3Student) {
+      const own = students.filter(s => 
+        (currentUser?.linkedStudentId && s.id === currentUser.linkedStudentId) ||
+        (currentUser?.studentName && s.name.trim() === currentUser.studentName.trim()) ||
+        (currentUser?.name && s.name.trim() === currentUser.name.trim()) ||
+        (s.nationalId && s.nationalId === currentUser?.username)
+      );
+      return own.length > 0 ? own : students.slice(0, 1);
+    }
 
-  const selectedStudent = students.find(s => s.id === selectedStudentId) || availableStudents[0];
+    return filterStudents(students, true).filter(s => {
+      const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            (s.nationalId && s.nationalId.includes(searchTerm));
+      const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
+      return matchesSearch && matchesGrade;
+    });
+  }, [students, isLevel3Student, currentUser, filterStudents, searchTerm, gradeFilter]);
+
+  const selectedStudent = isLevel3Student 
+    ? (availableStudents[0] || students.find(s => s.id === selectedStudentId))
+    : (students.find(s => s.id === selectedStudentId) || availableStudents[0]);
 
   // Get enrolled programs for the selected student
   const studentEnrollments = enrollments.filter(e => e.studentId === selectedStudent?.id);
@@ -249,7 +293,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
         <div>
           <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
             <CalendarDays className="text-indigo-600" size={28} />
-            <span>برنامه هفتگی و درسی طلاب</span>
+            <span>برنامه درسی طلاب</span>
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-1">
             مشاهده کامل برنامه کلاس‌های اصلی، مشاوره، پژوهش و ۵شنبه‌های هر طلبه به تفکیک زمان و روز
@@ -257,20 +301,22 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button 
-            onClick={exportAllStudentsExcel}
-            className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
-            title="خروجی اکسل خلاصه برنامه‌های تمام طلاب"
-          >
-            <FileSpreadsheet size={16} />
-            <span>خروجی اکسل همه طلاب</span>
-          </button>
+          {!isLevel3Student && (
+            <button 
+              onClick={exportAllStudentsExcel}
+              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm cursor-pointer"
+              title="خروجی اکسل خلاصه برنامه‌های تمام طلاب"
+            >
+              <FileSpreadsheet size={16} />
+              <span>خروجی اکسل همه طلاب</span>
+            </button>
+          )}
 
           {selectedStudent && (
             <>
               <button 
                 onClick={exportStudentExcel}
-                className="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl font-black text-xs transition-all shadow-sm"
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl font-black text-xs transition-all shadow-sm cursor-pointer"
                 title="دانلود اکسل برنامه این طلبه"
               >
                 <FileSpreadsheet size={16} />
@@ -280,7 +326,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
               <button 
                 onClick={handleExportPdf}
                 disabled={isExportingPdf}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md disabled:opacity-50 cursor-pointer"
                 title="دانلود PDF برنامه هفتگی این طلبه"
               >
                 <FileText size={16} />
@@ -292,99 +338,101 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
       </div>
 
       {/* Main Grid: Left Sidebar Selector + Right Schedule View */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+      <div className={cn("grid gap-6 items-start", isLevel3Student ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-4")}>
         {/* Student Selector Sidebar (1 col) */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 shadow-xs lg:sticky lg:top-20">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="font-black text-sm text-slate-800 flex items-center gap-2">
-              <Users size={18} className="text-indigo-600" />
-              <span>انتخاب طلبه ({availableStudents.length} نفر)</span>
-            </h3>
-          </div>
+        {!isLevel3Student && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 shadow-xs lg:sticky lg:top-20">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-black text-sm text-slate-800 flex items-center gap-2">
+                <Users size={18} className="text-indigo-600" />
+                <span>انتخاب طلبه ({availableStudents.length} نفر)</span>
+              </h3>
+            </div>
 
-          {/* Search Box */}
-          <div className="relative">
-            <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="جستجوی نام یا کد ملی..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-            />
-          </div>
+            {/* Search Box */}
+            <div className="relative">
+              <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="text" 
+                placeholder="جستجوی نام یا کد ملی..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+              />
+            </div>
 
-          {/* Grade Filter */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
-            <button 
-              onClick={() => setGradeFilter('all')}
-              className={cn("flex-1 py-1 rounded-lg transition-all", gradeFilter === 'all' ? "bg-white text-indigo-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-800")}
-            >
-              همه
-            </button>
-            {['۷', '۸', '۹', '۱۰'].map(g => (
+            {/* Grade Filter */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
               <button 
-                key={g}
-                onClick={() => setGradeFilter(g)}
-                className={cn("flex-1 py-1 rounded-lg transition-all", gradeFilter === g ? "bg-white text-indigo-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-800")}
+                onClick={() => setGradeFilter('all')}
+                className={cn("flex-1 py-1 rounded-lg transition-all cursor-pointer", gradeFilter === 'all' ? "bg-white text-indigo-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-800")}
               >
-                پایه {g}
+                همه
               </button>
-            ))}
-          </div>
-
-          {/* Students Scrollable List */}
-          <div className="max-h-[500px] overflow-y-auto space-y-1.5 pr-1">
-            {availableStudents.map(student => {
-              const isSelected = selectedStudent?.id === student.id;
-              const stEnrollmentsCount = enrollments.filter(e => e.studentId === student.id).length;
-
-              return (
-                <button
-                  key={student.id}
-                  onClick={() => setSelectedStudentId(student.id)}
-                  className={cn(
-                    "w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between group",
-                    isSelected 
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" 
-                      : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-indigo-200"
-                  )}
+              {['۷', '۸', '۹', '۱۰'].map(g => (
+                <button 
+                  key={g}
+                  onClick={() => setGradeFilter(g)}
+                  className={cn("flex-1 py-1 rounded-lg transition-all cursor-pointer", gradeFilter === g ? "bg-white text-indigo-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-800")}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs shrink-0",
-                      isSelected ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700"
-                    )}>
-                      {student.name.split(' ')[0]?.[0] || 'ط'}
-                    </div>
-                    <div className="truncate">
-                      <p className="text-xs font-black truncate">{student.name}</p>
-                      <p className={cn("text-[10px] font-medium", isSelected ? "text-indigo-100" : "text-slate-400")}>
-                        پایه {student.grade || '---'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <span className={cn(
-                    "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border",
-                    isSelected ? "bg-white/20 text-white border-white/30" : "bg-slate-100 text-slate-600 border-slate-200"
-                  )}>
-                    {stEnrollmentsCount} کلاس
-                  </span>
+                  پایه {g}
                 </button>
-              );
-            })}
+              ))}
+            </div>
 
-            {availableStudents.length === 0 && (
-              <div className="py-8 text-center text-xs text-slate-400 italic">
-                طلبه‌ای با این مشخصات یافت نشد.
-              </div>
-            )}
+            {/* Students Scrollable List */}
+            <div className="max-h-[500px] overflow-y-auto space-y-1.5 pr-1">
+              {availableStudents.map(student => {
+                const isSelected = selectedStudent?.id === student.id;
+                const stEnrollmentsCount = enrollments.filter(e => e.studentId === student.id).length;
+
+                return (
+                  <button
+                    key={student.id}
+                    onClick={() => setSelectedStudentId(student.id)}
+                    className={cn(
+                      "w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between group cursor-pointer",
+                      isSelected 
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" 
+                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-indigo-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs shrink-0",
+                        isSelected ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700"
+                      )}>
+                        {student.name.split(' ')[0]?.[0] || 'ط'}
+                      </div>
+                      <div className="truncate">
+                        <p className="text-xs font-black truncate">{student.name}</p>
+                        <p className={cn("text-[10px] font-medium", isSelected ? "text-indigo-100" : "text-slate-400")}>
+                          پایه {student.grade || '---'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border",
+                      isSelected ? "bg-white/20 text-white border-white/30" : "bg-slate-100 text-slate-600 border-slate-200"
+                    )}>
+                      {stEnrollmentsCount} کلاس
+                    </span>
+                  </button>
+                );
+              })}
+
+              {availableStudents.length === 0 && (
+                <div className="py-8 text-center text-xs text-slate-400 italic">
+                  طلبه‌ای با این مشخصات یافت نشد.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Selected Student Schedule Area (3 cols) */}
-        <div className="lg:col-span-3 space-y-6">
+        {/* Selected Student Schedule Area */}
+        <div className={cn("space-y-6", isLevel3Student ? "lg:col-span-1" : "lg:col-span-3")}>
           {selectedStudent ? (
             <>
               {/* Selected Student Profile Banner */}
