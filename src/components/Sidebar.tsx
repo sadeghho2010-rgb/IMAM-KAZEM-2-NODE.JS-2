@@ -20,7 +20,8 @@ import {
   Award,
   User,
   Eye,
-  DoorOpen
+  DoorOpen,
+  GitBranch
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -43,6 +44,7 @@ interface MenuItemDef {
 const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
   { id: 'todos', label: 'پیگیری‌ها', icon: GraduationCap },
+  { id: 'workflow', label: 'جریان کار', icon: GitBranch },
   { id: 'academic-calendar', label: 'تقویم آموزشی', icon: CalendarDays },
   { id: 'presence-hours', label: 'ساعت حضور و کارکرد', icon: Clock },
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
@@ -70,6 +72,10 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
   // Filter items based on user's authorized modules
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
+    // دسترسی صریح کاربر: بخش جریان کار منحصراً برای کاربران سطح ۱ و سطح ۲ است
+    if (item.id === 'workflow') {
+      return currentUser ? (currentUser.level === 1 || currentUser.level === 2) : false;
+    }
     if (typeof hasModuleAccess === 'function') {
       return hasModuleAccess(item.id);
     }

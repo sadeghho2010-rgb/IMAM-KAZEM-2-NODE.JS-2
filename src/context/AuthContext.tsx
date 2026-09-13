@@ -3,12 +3,14 @@ import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 
 export const ALL_SYSTEM_TABS = [
   { id: 'todos', label: 'پیگیری‌ها' },
+  { id: 'workflow', label: 'جریان کار (سطح ۱ و ۲)' },
   { id: 'academic-calendar', label: 'تقویم آموزشی' },
   { id: 'presence-hours', label: 'ثبت ساعت حضور' },
   { id: 'students', label: 'مدیریت کل کاربران (مشترک)' },
   { id: 'active-students', label: 'لیست کاربران فعال' },
   { id: 'discussion', label: 'مطالعات و مباحثات طلاب' },
   { id: 'programs', label: 'برنامه‌های مدرسه و مدرس‌ها' },
+  { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)' },
   { id: 'student-schedule', label: 'برنامه درسی طلاب' },
   { id: 'stats', label: 'آمار مطالعه' },
   { id: 'research', label: 'بخش پژوهش و مقالات' },
@@ -504,6 +506,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
+    // بخش جریان کار منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
+    if (tabId === 'workflow') {
+      return currentUser.level === 1 || currentUser.level === 2;
+    }
     // بخش برنامه‌های مدرسه و مَدرَس‌ها به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
     if (tabId === 'programs' || tabId === 'classrooms') return true;
     if (tabId === 'user-credentials') {

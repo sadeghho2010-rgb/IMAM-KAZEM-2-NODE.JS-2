@@ -63,7 +63,11 @@ export interface AttendanceRecord {
   students: StudentAttendanceItem[];
 }
 
-export default function AttendanceAndStats() {
+interface AttendanceAndStatsProps {
+  initialStudentId?: string;
+}
+
+export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
 
   // Data states
@@ -174,8 +178,25 @@ export default function AttendanceAndStats() {
       currentUser.username?.toUpperCase() === 'SHAH';
   }, [currentUser]);
 
-  // Set default selected program when programs are loaded
+  // Set default selected program when programs are loaded (or pick program that contains initialStudentId)
   useEffect(() => {
+    if (initialStudentId && programs.length > 0) {
+      // Find a program that has this student enrolled
+      const progWithStudent = programs.find(p => {
+        const inEnroll = enrollments.some(e => e.programId === p.id && String(e.studentId) === String(initialStudentId));
+        const inArray = Array.isArray(p.studentIds) && p.studentIds.includes(initialStudentId);
+        return inEnroll || inArray;
+      });
+      if (progWithStudent) {
+        setSelectedProgramId(progWithStudent.id);
+        setTimeout(() => {
+          const el = document.getElementById(`attendance-student-${initialStudentId}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 400);
+        return;
+      }
+    }
+
     if (!selectedProgramId) {
       if (representativePrograms.length > 0) {
         setSelectedProgramId(representativePrograms[0].id);
@@ -183,7 +204,7 @@ export default function AttendanceAndStats() {
         setSelectedProgramId(programs[0].id);
       }
     }
-  }, [representativePrograms, programs, selectedProgramId, isFullAdmin]);
+  }, [representativePrograms, programs, selectedProgramId, isFullAdmin, initialStudentId, enrollments]);
 
   // Get active selected program
   const currentProgram = useMemo(() => {
@@ -672,11 +693,18 @@ export default function AttendanceAndStats() {
               {enrolledStudents.map((student, index) => {
                 const currentStatus = studentsAttendance[student.id] || 'present';
                 const studentNote = studentNotes[student.id] || '';
+                const isHighlighted = initialStudentId && String(student.id) === String(initialStudentId);
 
                 return (
                   <div 
                     key={student.id}
-                    className="py-3 sm:py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/80 px-2 rounded-xl transition-colors"
+                    id={`attendance-student-${student.id}`}
+                    className={cn(
+                      "py-3 sm:py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 px-2 rounded-xl transition-all duration-300",
+                      isHighlighted 
+                        ? "bg-amber-50/90 ring-2 ring-amber-400 shadow-sm" 
+                        : "hover:bg-slate-50/80"
+                    )}
                   >
                     {/* Student Info */}
                     <div className="flex items-center gap-3">

@@ -21,6 +21,7 @@ import AcademicCalendar from './components/AcademicCalendar';
 import PresenceHours from './components/PresenceHours';
 import TeachersBank from './components/TeachersBank';
 import MadrasRooms from './components/MadrasRooms';
+import WorkflowManager from './components/WorkflowManager';
 import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
@@ -29,7 +30,7 @@ import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, ShieldCheck, Layers, ChevronDown, UserCheck, LogOut, Settings, Eye, Lock } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -40,10 +41,7 @@ function AppContent() {
 
   const { 
     currentMentor, 
-    currentMentorId, 
-    shahpooriFilter, 
-    setShahpooriFilter,
-    setIsMentorModalOpen 
+    currentMentorId 
   } = useMentor();
 
   useEffect(() => {
@@ -92,13 +90,15 @@ function AppContent() {
       case 'research':
         return <ResearchAndFeedback initialStudentId={selectedStudentIdForTab} />;
       case 'attendance':
-        return <AttendanceAndStats />;
+        return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
       case 'comments':
         return <StudentComments initialStudentId={selectedStudentIdForTab} />;
       case 'stats':
         return <StudyStats initialStudentId={selectedStudentIdForTab} />;
       case 'todos':
         return <TodoList />;
+      case 'workflow':
+        return <WorkflowManager onNavigate={(tab, params) => handleNavigate(tab, params?.studentId)} />;
       case 'academic-calendar':
         return <AcademicCalendar />;
       case 'presence-hours':
@@ -167,6 +167,7 @@ function AppContent() {
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-bold text-slate-800">
                     {activeTab === 'todos' ? 'پیگیری‌ها' :
+                     activeTab === 'workflow' ? 'جریان کار و کارتابل تاییدات' :
                      activeTab === 'academic-calendar' ? 'تقویم آموزشی و سالنامه تحصیلی' :
                      activeTab === 'presence-hours' ? 'بخش ثبت ساعت حضور و کارکرد' :
                      activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
@@ -243,84 +244,6 @@ function AppContent() {
               </button>
             </div>
           </div>
-
-          {/* Shahpoori Filter Bar (Only visible when current user is Shahpoori/Admin and not on shared "مدیریت کل کاربران") */}
-          {currentMentorId === 'shahpoori' && currentUser.level <= 2 && activeTab !== 'students' && (
-            <div className="bg-amber-50/60 border-t border-amber-100/80 px-4 sm:px-6 py-2 flex items-center justify-between flex-wrap gap-2 text-xs">
-              <div className="flex items-center gap-1.5 font-bold text-amber-900">
-                <ShieldCheck size={16} className="text-amber-600 shrink-0" />
-                <span>مدیریت ارشد:</span>
-                <span className="text-slate-500 font-normal hidden md:inline">انتخاب دسته طلاب فعال برای بررسی:</span>
-              </div>
-              
-              <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-amber-200 shadow-sm font-bold">
-                <button
-                  onClick={() => setShahpooriFilter('all')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all text-[11px] flex items-center gap-1",
-                    shahpooriFilter === 'all'
-                      ? "bg-amber-600 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-amber-50"
-                  )}
-                >
-                  <Layers size={12} />
-                  <span>همه کاربران فعال</span>
-                </button>
-                
-                <button
-                  onClick={() => setShahpooriFilter('hayati')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all text-[11px] flex items-center gap-1",
-                    shahpooriFilter === 'hayati'
-                      ? "bg-emerald-600 text-white shadow-sm"
-                      : "text-emerald-700 hover:bg-emerald-50"
-                  )}
-                >
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></div>
-                  <span>استاد حیاتی (پایه ۷)</span>
-                </button>
-
-                <button
-                  onClick={() => setShahpooriFilter('hosseini')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all text-[11px] flex items-center gap-1",
-                    shahpooriFilter === 'hosseini'
-                      ? "bg-sky-600 text-white shadow-sm"
-                      : "text-sky-700 hover:bg-sky-50"
-                  )}
-                >
-                  <div className="w-2 h-2 rounded-full bg-sky-400 shrink-0"></div>
-                  <span>استاد حسینی (پایه ۸)</span>
-                </button>
-
-                <button
-                  onClick={() => setShahpooriFilter('soleimani')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all text-[11px] flex items-center gap-1",
-                    shahpooriFilter === 'soleimani'
-                      ? "bg-purple-600 text-white shadow-sm"
-                      : "text-purple-700 hover:bg-purple-50"
-                  )}
-                >
-                  <div className="w-2 h-2 rounded-full bg-purple-400 shrink-0"></div>
-                  <span>استاد سلیمانی (پایه ۹)</span>
-                </button>
-
-                <button
-                  onClick={() => setShahpooriFilter('asadi')}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all text-[11px] flex items-center gap-1",
-                    shahpooriFilter === 'asadi'
-                      ? "bg-rose-600 text-white shadow-sm"
-                      : "text-rose-700 hover:bg-rose-50"
-                  )}
-                >
-                  <div className="w-2 h-2 rounded-full bg-rose-400 shrink-0"></div>
-                  <span>استاد اسدی (پایه ۱۰)</span>
-                </button>
-              </div>
-            </div>
-          )}
         </header>
 
         <main className="p-4 lg:p-8">

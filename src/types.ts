@@ -184,6 +184,8 @@ export interface StudyPeriod {
   exemptStudentIds?: string[];
   exemptGrades?: string[];
   targetGrades?: string[];
+  warningRule?: 'none' | 'below_mandatory' | 'below_mandatory_and_avg';
+  autoWarningGenerated?: boolean;
   mentorId?: string;
   createdAt: string;
   updatedAt?: string;
@@ -430,6 +432,7 @@ export type UserRole =
 
 export type AppModuleId =
   | 'todos'
+  | 'workflow'
   | 'academic-calendar'
   | 'presence-hours'
   | 'students'
@@ -451,6 +454,79 @@ export type AppModuleId =
   | 'user-management'
   | 'user-credentials'
   | 'student-portal';
+
+// -------------------------------------------------------------
+// Workflow & Task Approvals Types (جریان کار و کارتابل تاییدات)
+// -------------------------------------------------------------
+
+export type WorkflowItemType = 
+  | 'notice'          // صرفاً اطلاع‌رسانی رخدادهای مهم
+  | 'report_notice'   // اطلاع‌رسانی همراه با گزینه‌های گزارش‌گیری
+  | 'approval';       // نیاز به بررسی و تایید نهایی مسئول مربوطه
+
+export type WorkflowCategory = 
+  | 'study_period'                // دوره مطالعاتی (باز شدن / بسته شدن)
+  | 'unexcused_absence_warning'  // اخطار غیبت غیر موجه
+  | 'study_deficit_warning'       // اخطار ساعت مطالعه و مباحثه
+  | 'student_account_creation'    // ایجاد حساب کاربری برای طلبه جدید
+  | 'general';                    // اطلاعیه یا اقدام عمومی
+
+export type WorkflowStatus = 
+  | 'pending'         // در انتظار اقدام / تایید
+  | 'approved'        // تایید نهایی شده
+  | 'rejected'        // رد شده / تایید نشده
+  | 'acknowledged';   // مشاهده و بررسی شده (برای اطلاع‌رسانی‌ها)
+
+export interface WorkflowReportAction {
+  label: string;
+  tabTarget: AppModuleId;
+  description?: string;
+  filterParams?: Record<string, any>;
+}
+
+export interface WorkflowItem {
+  id: string;
+  type: WorkflowItemType;
+  category: WorkflowCategory;
+  title: string;
+  description: string;
+  status: WorkflowStatus;
+  grade?: string;                 // e.g. "پایه ۷", "پایه ۸", "همه پایه‌ها"
+  studentId?: string;
+  studentName?: string;
+  nationalId?: string;
+  periodId?: string;
+  periodTitle?: string;
+  dateRange?: string;             // e.g. "۱۴۰۳/۰۷/۰۱ تا ۱۴۰۳/۰۷/۱۵"
+  details?: Record<string, any>;  // داده‌های جزئی مانند تعداد غیبت‌ها، میزان کسری ساعت و ...
+  requiresEducationApproval: boolean;
+  approvedByUserId?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  approvalNotes?: string;
+  reportAction?: WorkflowReportAction;
+  targetRoles?: UserRole[];
+  targetLevels?: UserLevel[];
+  targetGrades?: string[];
+  readByUserIds?: string[];
+  createdByUserId?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowSettings {
+  id: string;
+  requireEducationApprovalForAttendanceWarning: boolean; // آیا ثبت نهایی اخطار غیبت منوط به تایید مسئول آموزش باشد؟
+  requireEducationApprovalForStudyWarning: boolean;      // آیا ثبت قطعی اخطار ساعت مطالعه منوط به تایید مسئول آموزش باشد؟
+  requireAccountCreationPrompt: boolean;                  // یادآوری و تایید ایجاد نام کاربری برای طلاب جدید
+  notifyGradeSupervisorOnWarning: boolean;               // اطلاع‌رسانی به مسئول پایه در زمان ثبت اخطار
+  notifyOnStudyPeriodOpened: boolean;                    // اطلاع‌رسانی هنگام باز شدن دوره مطالعاتی جدید
+  notifyOnStudyPeriodClosed: boolean;                    // اطلاع‌رسانی هنگام بسته شدن دوره مطالعه
+  updatedAt?: string;
+  updatedBy?: string;
+}
 
 export interface TeacherManualSchedule {
   id: string;

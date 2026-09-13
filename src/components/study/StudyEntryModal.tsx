@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Clock, ChevronDown, CheckCircle2, Info, BookOpen, MessageSquare, Calculator, FileSpreadsheet, Upload, Filter } from 'lucide-react';
+import { Clock, ChevronDown, CheckCircle2, Info, BookOpen, MessageSquare, Calculator, FileSpreadsheet, Upload, Filter, AlertTriangle, ShieldAlert, CheckSquare, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DatePicker from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
 import persian_fa from "react-date-object/locales/persian_fa";
 import * as XLSX from 'xlsx';
-import { Student, StudyPeriod, PeriodicStudyLog } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
+
+const ALL_SYSTEM_GRADES = ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'];
 
 interface StudyEntryModalProps {
   isOpen: boolean;
@@ -15,7 +17,7 @@ interface StudyEntryModalProps {
   editingPeriod: StudyPeriod | null;
   students: Student[];
   allLogs: PeriodicStudyLog[];
-  currentMentorId: string;
+  currentMentorId?: string;
   onSaveSuccess: () => void;
 }
 
@@ -25,7 +27,7 @@ export default function StudyEntryModal({
   editingPeriod,
   students,
   allLogs,
-  currentMentorId,
+  currentMentorId = '',
   onSaveSuccess
 }: StudyEntryModalProps) {
   const [periodTitle, setPeriodTitle] = useState('');
@@ -34,6 +36,12 @@ export default function StudyEntryModal({
   const [deadlineDate, setDeadlineDate] = useState('');
   const [isClosed, setIsClosed] = useState(false);
   const [mandatoryHours, setMandatoryHours] = useState<number>(0);
+
+  // Target grades for the period (default: all 4 grades)
+  const [targetGrades, setTargetGrades] = useState<string[]>(ALL_SYSTEM_GRADES);
+
+  // Auto warning rule
+  const [warningRule, setWarningRule] = useState<'none' | 'below_mandatory' | 'below_mandatory_and_avg'>('none');
   
   // Store study and discussion minutes per studentId
   const [entryStudyValues, setEntryStudyValues] = useState<Record<string, string>>({});
@@ -85,6 +93,8 @@ export default function StudyEntryModal({
         setDeadlineDate(editingPeriod.deadlineDate || '');
         setIsClosed(editingPeriod.isClosed || false);
         setMandatoryHours(Math.round((editingPeriod.mandatoryHours || 0) * 60));
+        setTargetGrades(editingPeriod.targetGrades && editingPeriod.targetGrades.length > 0 ? editingPeriod.targetGrades : ALL_SYSTEM_GRADES);
+        setWarningRule(editingPeriod.warningRule || 'none');
 
         const pLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
         const studyMap: Record<string, string> = {};
@@ -106,6 +116,8 @@ export default function StudyEntryModal({
         setDeadlineDate('');
         setIsClosed(false);
         setMandatoryHours(0);
+        setTargetGrades(ALL_SYSTEM_GRADES);
+        setWarningRule('none');
         setEntryStudyValues({});
         setEntryDiscussionValues({});
       }
@@ -552,12 +564,20 @@ export default function StudyEntryModal({
     }
   };
 
+  const displayedStudents = useMemo(() => {
+    if (!targetGrades || targetGrades.length === 0) return students;
+    return students.filter(s => {
+      if (!s.grade) return true;
+      return targetGrades.some(tg => s.grade?.includes(tg.replace('پایه', '').trim()) || tg === s.grade);
+    });
+  }, [students, targetGrades]);
+
   const handleKeyDownDiscussion = (e: React.KeyboardEvent, index: number) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       // Move to study input of the next student
       const nextIndex = index + 1;
-      const nextStudentId = students[nextIndex]?.id;
+      const nextStudentId = displayedStudents[nextIndex]?.id;
       if (nextStudentId) {
         studyInputRefs.current[nextStudentId]?.focus();
       }
@@ -570,8 +590,14 @@ export default function StudyEntryModal({
       return;
     }
 
+    if (targetGrades.length === 0) {
+      alert('لطفاً حداقل یک پایه را برای دوره انتخاب کنید.');
+      return;
+    }
+
     try {
       const mandatoryInHours = mandatoryHours / 60;
+      let effectivePeriodId = editingPeriod?.id || '';
 
       if (editingPeriod) {
         // Update existing period
@@ -582,8 +608,11 @@ export default function StudyEntryModal({
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
+          targetGrades: targetGrades,
+          warningRule: warningRule,
           updatedAt: new Date().toISOString()
         });
+        effectivePeriodId = editingPeriod.id;
 
         const existingPeriodLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
 
@@ -626,9 +655,12 @@ export default function StudyEntryModal({
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
+          targetGrades: targetGrades,
+          warningRule: warningRule,
           mentorId: currentMentorId,
           createdAt: new Date().toISOString()
         });
+        effectivePeriodId = periodId;
 
         for (const student of students) {
           const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
@@ -646,6 +678,78 @@ export default function StudyEntryModal({
               studyHours: sHours,
               discussionHours: dHours
             });
+          }
+        }
+      }
+
+      // Handle Automatic Warning Registration if a rule is selected
+      if (warningRule !== 'none' && effectivePeriodId) {
+        // Target students based on selected targetGrades
+        const targetStudents = allActiveStudents.filter(s => {
+          if (!s.grade) return true;
+          return targetGrades.some(tg => s.grade?.includes(tg.replace('پایه', '').trim()) || tg === s.grade);
+        });
+
+        // Compute total hours per target student
+        const studentHoursMap: { student: Student; totHours: number }[] = targetStudents.map(student => {
+          const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
+          const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
+          return {
+            student,
+            totHours: (sMin + dMin) / 60
+          };
+        });
+
+        const sumHours = studentHoursMap.reduce((acc, curr) => acc + curr.totHours, 0);
+        const avgHours = studentHoursMap.length > 0 ? (sumHours / studentHoursMap.length) : 0;
+
+        // Existing workflow items to avoid duplicates for the same period and student
+        const existingWfItems = await localDb.getDocs<WorkflowItem>('workflow_items');
+
+        for (const item of studentHoursMap) {
+          let shouldWarn = false;
+          if (warningRule === 'below_mandatory') {
+            shouldWarn = item.totHours < mandatoryInHours;
+          } else if (warningRule === 'below_mandatory_and_avg') {
+            shouldWarn = item.totHours < mandatoryInHours && item.totHours < avgHours;
+          }
+
+          if (shouldWarn) {
+            const alreadyExists = existingWfItems.some(wf => 
+              wf.category === 'study_deficit_warning' && 
+              wf.periodId === effectivePeriodId && 
+              wf.studentId === item.student.id
+            );
+
+            if (!alreadyExists) {
+              const ruleTitle = warningRule === 'below_mandatory' ? 'زیر سقف موظفی' : 'زیر موظفی و زیر میانگین';
+              const newWf: Partial<WorkflowItem> = {
+                id: `wf_study_${effectivePeriodId}_${item.student.id}_${Date.now()}`,
+                type: 'approval',
+                category: 'study_deficit_warning',
+                title: `اخطار کسری ساعت مطالعه (${ruleTitle}) - ${item.student.name}`,
+                description: `ثبت اولیه اخطار خودکار کسری ساعت مطالعه برای ${item.student.name} در دوره "${periodTitle.trim()}" (کارکرد: ${item.totHours.toFixed(1)} ساعت از ${mandatoryInHours} ساعت موظفی${warningRule === 'below_mandatory_and_avg' ? ` - میانگین دوره: ${avgHours.toFixed(1)} ساعت` : ''}) - منوط به بررسی و تأیید نهایی مسئول`,
+                status: 'pending',
+                studentId: item.student.id,
+                studentName: item.student.name,
+                grade: item.student.grade || '',
+                periodId: effectivePeriodId,
+                periodTitle: periodTitle.trim(),
+                requiresEducationApproval: true,
+                details: {
+                  periodId: effectivePeriodId,
+                  periodTitle: periodTitle.trim(),
+                  totalHours: item.totHours,
+                  mandatoryHours: mandatoryInHours,
+                  avgHours: Math.round(avgHours * 10) / 10,
+                  deficitHours: Math.max(0, Math.round((mandatoryInHours - item.totHours) * 10) / 10),
+                  rule: warningRule
+                },
+                targetRoles: ['education_officer', 'super_admin', 'grade_supervisor'],
+                createdAt: new Date().toISOString()
+              };
+              await localDb.addDoc('workflow_items', newWf);
+            }
           }
         }
       }
@@ -774,6 +878,140 @@ export default function StudyEntryModal({
                 </button>
               </div>
 
+              {/* Target Grades Selector */}
+              <div className="md:col-span-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-2">
+                      <Filter size={15} className="text-indigo-600" />
+                      <span>پایه‌های مشمول دوره مطالعاتی</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      به طور پیش‌فرض دوره برای همه پایه‌ها فعال است، مگر اینکه تیک برخی پایه‌ها را بردارید.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (targetGrades.length === ALL_SYSTEM_GRADES.length) {
+                        setTargetGrades([]);
+                      } else {
+                        setTargetGrades([...ALL_SYSTEM_GRADES]);
+                      }
+                    }}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition-all self-start sm:self-auto"
+                  >
+                    {targetGrades.length === ALL_SYSTEM_GRADES.length ? (
+                      <>
+                        <CheckSquare size={14} />
+                        <span>انتخاب همه (فعال)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Square size={14} />
+                        <span>انتخاب همه پایه‌ها</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {ALL_SYSTEM_GRADES.map((grade) => {
+                    const isSelected = targetGrades.includes(grade);
+                    return (
+                      <button
+                        key={grade}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setTargetGrades(targetGrades.filter(g => g !== grade));
+                          } else {
+                            setTargetGrades([...targetGrades, grade]);
+                          }
+                        }}
+                        className={cn(
+                          "px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center justify-between border transition-all cursor-pointer",
+                          isSelected
+                            ? "bg-indigo-50/80 border-indigo-300 text-indigo-900 shadow-xs ring-1 ring-indigo-400/30"
+                            : "bg-slate-50/60 border-slate-200 text-slate-500 hover:bg-slate-100"
+                        )}
+                      >
+                        <span>{grade}</span>
+                        {isSelected ? (
+                          <CheckCircle2 size={16} className="text-indigo-600" />
+                        ) : (
+                          <Square size={16} className="text-slate-300" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Automatic Warning Registration Rule */}
+              <div className="md:col-span-4 bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 shadow-xs space-y-3">
+                <div>
+                  <label className="text-xs font-black text-amber-900 flex items-center gap-2">
+                    <ShieldAlert size={16} className="text-amber-600" />
+                    <span>تنظیم ثبت اخطار خودکار برای کسری مطالعه و مباحثه</span>
+                  </label>
+                  <p className="text-[11px] text-amber-800/80 font-medium mt-0.5">
+                    در صورت فعال‌سازی، اخطار اولیه برای طلاب دارای کسری در سامانه ثبت می‌شود (ثبت قطعی منوط به تایید نهایی مسئول خواهد بود).
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setWarningRule('none')}
+                    className={cn(
+                      "p-3 rounded-xl text-xs font-bold text-right border transition-all flex flex-col justify-between gap-1",
+                      warningRule === 'none'
+                        ? "bg-white border-slate-400 text-slate-800 shadow-xs ring-2 ring-slate-400"
+                        : "bg-white/60 border-slate-200 text-slate-600 hover:bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between font-black">
+                      <span>بدون اخطار خودکار</span>
+                      <span className={cn("w-3 h-3 rounded-full border", warningRule === 'none' ? "bg-slate-700 border-slate-700" : "border-slate-300")} />
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-normal">اخطاری برای این دوره به طور خودکار ثبت نخواهد شد.</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWarningRule('below_mandatory')}
+                    className={cn(
+                      "p-3 rounded-xl text-xs font-bold text-right border transition-all flex flex-col justify-between gap-1",
+                      warningRule === 'below_mandatory'
+                        ? "bg-white border-amber-500 text-amber-950 shadow-xs ring-2 ring-amber-500"
+                        : "bg-white/60 border-amber-200 text-amber-900 hover:bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between font-black">
+                      <span>اخطار زیر عدد موظفی</span>
+                      <span className={cn("w-3 h-3 rounded-full border", warningRule === 'below_mandatory' ? "bg-amber-600 border-amber-600" : "border-slate-300")} />
+                    </div>
+                    <p className="text-[10px] text-amber-700/90 font-normal">برای هر طلبه‌ای که مجموع ساعت او کمتر از موظفی دوره باشد.</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWarningRule('below_mandatory_and_avg')}
+                    className={cn(
+                      "p-3 rounded-xl text-xs font-bold text-right border transition-all flex flex-col justify-between gap-1",
+                      warningRule === 'below_mandatory_and_avg'
+                        ? "bg-white border-rose-500 text-rose-950 shadow-xs ring-2 ring-rose-500"
+                        : "bg-white/60 border-rose-200 text-rose-900 hover:bg-white"
+                    )}
+                  >
+                    <div className="flex items-center justify-between font-black">
+                      <span>زیر موظفی + زیر میانگین</span>
+                      <span className={cn("w-3 h-3 rounded-full border", warningRule === 'below_mandatory_and_avg' ? "bg-rose-600 border-rose-600" : "border-slate-300")} />
+                    </div>
+                    <p className="text-[10px] text-rose-700/90 font-normal">برای طلاب با کارکرد کمتر از موظفی و همچنین کمتر از میانگین دوره.</p>
+                  </button>
+                </div>
+              </div>
+
               {/* Excel Auto Import Section */}
               <div className="md:col-span-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
                 <div className="flex items-center gap-3">
@@ -826,7 +1064,7 @@ export default function StudyEntryModal({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                 <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   <BookOpen size={16} className="text-indigo-600" />
-                  <span>ثبت دقایق مطالعه و مباحثه طلاب فعال ({students.length} نفر)</span>
+                  <span>ثبت دقایق مطالعه و مباحثه طلاب مشمول ({displayedStudents.length} نفر)</span>
                 </h4>
                 <div className="flex items-center gap-2 text-[11px] text-slate-500 font-bold bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
                   <Info size={14} className="text-indigo-500" />
@@ -852,7 +1090,7 @@ export default function StudyEntryModal({
               </div>
 
               <div className="flex flex-col gap-2.5 max-h-[450px] overflow-y-auto pr-1">
-                {students.map((student, idx) => {
+                {displayedStudents.map((student, idx) => {
                   const sVal = parseFloat(entryStudyValues[student.id] || '0') || 0;
                   const dVal = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
                   const totVal = sVal + dVal;

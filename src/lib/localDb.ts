@@ -109,7 +109,7 @@ export interface StudentBackupPackage {
 }
 
 const DB_NAME = 'TOLAB_OFFLINE_LOCAL_DB';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export const COLLECTIONS = [
   'students',
@@ -138,7 +138,9 @@ export const COLLECTIONS = [
   'academic_sub_periods',
   'academic_weekly_programs',
   'teachers',
-  'classrooms'
+  'classrooms',
+  'workflow_items',
+  'workflow_settings'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;
@@ -1880,6 +1882,121 @@ class LocalDatabase {
           this.bulkPut('todos', initialTodos),
           this.bulkPut('discussion_groups', initialDiscussionGroups)
         ]);
+      }
+
+      // Check and seed workflow_settings & workflow_items if empty
+      const existingSettings = await this.getDocs('workflow_settings');
+      if (!existingSettings || existingSettings.length === 0) {
+        await this.addDoc('workflow_settings', {
+          id: 'default_workflow_settings',
+          requireEducationApprovalForAttendanceWarning: true,
+          requireEducationApprovalForStudyWarning: true,
+          requireAccountCreationPrompt: true,
+          notifyGradeSupervisorOnWarning: true,
+          notifyOnStudyPeriodOpened: true,
+          notifyOnStudyPeriodClosed: true,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      const existingWorkflow = await this.getDocs('workflow_items');
+      if (!existingWorkflow || existingWorkflow.length === 0) {
+        const initialWorkflowItems = [
+          {
+            id: 'wf_1',
+            type: 'report_notice',
+            category: 'study_period',
+            title: 'بازگشایی دوره جدید ثبت مطالعه توسط مسئول آموزش',
+            description: 'دوره جدید ثبت مطالعه برای همه پایه‌ها برای بازه زمانی ۰۱ مهر تا ۱۵ مهر ایجاد شد. طلاب محترم و مسئولین پایه می‌توانند ساعات مطالعه و مباحثات را ثبت نمایند.',
+            status: 'acknowledged',
+            grade: 'همه پایه‌ها',
+            periodTitle: 'دوره اول مهرماه ۱۴۰۳',
+            dateRange: '۱۴۰۳/۰۷/۰۱ تا ۱۴۰۳/۰۷/۱۵',
+            requiresEducationApproval: false,
+            reportAction: {
+              label: 'مشاهده آمار و گزارش مطالعه',
+              tabTarget: 'stats',
+              description: 'بررسی شاخص‌های تفکیکی مطالعه و ساعات مباحثه'
+            },
+            createdAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString()
+          },
+          {
+            id: 'wf_2',
+            type: 'approval',
+            category: 'unexcused_absence_warning',
+            title: 'ثبت اخطار غیبت غیرموجه: طلبه علی موسوی',
+            description: 'طلبه علی موسوی (پایه ۷) دارای ۳ جلسه غیبت غیرموجه در هفته جاری است. بر اساس آئین‌نامه آموزشی، ثبت نهایی اخطار منوط به تایید مسئول آموزش است.',
+            status: 'pending',
+            grade: 'پایه ۷',
+            studentName: 'علی موسوی',
+            details: {
+              unexcusedAbsences: 3,
+              course: 'فقه (مکاسب)',
+              dates: ['۱۴۰۳/۰۷/۰۸', '۱۴۰۳/۰۷/۰۹', '۱۴۰۳/۰۷/۱۰']
+            },
+            requiresEducationApproval: true,
+            reportAction: {
+              label: 'گزارش حضور و غیاب',
+              tabTarget: 'attendance',
+              description: 'مشاهده ریز جزئیات جلسات و غیبت‌های ثبت شده'
+            },
+            createdAt: new Date(Date.now() - 3600000 * 5).toISOString()
+          },
+          {
+            id: 'wf_3',
+            type: 'approval',
+            category: 'study_deficit_warning',
+            title: 'ثبت اخطار ساعت مطالعه و مباحثه: طلبه محمد حسینی',
+            description: 'طلبه محمد حسینی (پایه ۸) به علت ثبت ۱۸ ساعت مطالعه و مباحثه (کسری ۱۲ ساعت از سقف الزامی ۳۰ ساعت) مشمول ثبت اخطار شده است. تایید قطعی منوط به نظر مسئول آموزش می‌باشد.',
+            status: 'pending',
+            grade: 'پایه ۸',
+            studentName: 'محمد حسینی',
+            details: {
+              mandatoryHours: 30,
+              loggedHours: 18,
+              deficitHours: 12,
+              period: 'دوره اول مهرماه ۱۴۰۳'
+            },
+            requiresEducationApproval: true,
+            reportAction: {
+              label: 'کارنامه مطالعه و مباحثه',
+              tabTarget: 'discussion',
+              description: 'مشاهده جزئیات گروه‌های مباحثه و لاگ‌های ثبت‌شده'
+            },
+            createdAt: new Date(Date.now() - 3600000 * 8).toISOString()
+          },
+          {
+            id: 'wf_4',
+            type: 'notice',
+            category: 'study_period',
+            title: 'پایان مهلت و بسته شدن بازه ثبت مطالعه',
+            description: 'مهلت ثبت ساعت مطالعه دوره شهریور ماه پایان یافت و سامانه برای ثبت دیرکرد بسته شد. گزارش تجمیعی در بخش آمار قابل دسترسی است.',
+            status: 'acknowledged',
+            grade: 'همه پایه‌ها',
+            periodTitle: 'دوره شهریور ماه ۱۴۰۳',
+            requiresEducationApproval: false,
+            createdAt: new Date(Date.now() - 3600000 * 24 * 7).toISOString()
+          },
+          {
+            id: 'wf_5',
+            type: 'report_notice',
+            category: 'unexcused_absence_warning',
+            title: 'ابلاغ اخطار غیبت غیرموجه به مسئول پایه: طلبه صادق مرادی',
+            description: 'اخطار غیبت غیرموجه طلبه صادق مرادی (پایه ۹) پس از تایید نهایی مسئول آموزش، به پرونده طلبه الصاق و به مسئول محترم پایه ۹ نیز ابلاغ گردید.',
+            status: 'approved',
+            grade: 'پایه ۹',
+            studentName: 'صادق مرادی',
+            requiresEducationApproval: true,
+            approvedByName: 'مسئول آموزش (استاد شاهپوری)',
+            approvedAt: new Date(Date.now() - 3600000 * 18).toISOString(),
+            reportAction: {
+              label: 'پرونده حضور و غیاب پایه ۹',
+              tabTarget: 'attendance'
+            },
+            createdAt: new Date(Date.now() - 3600000 * 20).toISOString()
+          }
+        ];
+        await this.bulkPut('workflow_items', initialWorkflowItems);
       }
     };
     } catch (e) {

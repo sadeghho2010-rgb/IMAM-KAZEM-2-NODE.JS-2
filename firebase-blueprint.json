@@ -132,6 +132,46 @@
         "dueDate": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "completed"]
+    },
+    "WorkflowItem": {
+      "title": "WorkflowItem",
+      "description": "Workflow events, pending approvals, and actionable reports.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["notice", "report_notice", "approval"] },
+        "category": { "type": "string", "enum": ["study_period", "unexcused_absence_warning", "study_deficit_warning", "student_account_creation", "general"] },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "acknowledged"] },
+        "grade": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "periodTitle": { "type": "string" },
+        "dateRange": { "type": "string" },
+        "requiresEducationApproval": { "type": "boolean" },
+        "approvedByUserId": { "type": "string" },
+        "approvedByName": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "rejectionReason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "category", "status"]
+    },
+    "WorkflowSettings": {
+      "title": "WorkflowSettings",
+      "description": "Workflow approval requirements and notification rules.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requireEducationApprovalForAttendanceWarning": { "type": "boolean" },
+        "requireEducationApprovalForStudyWarning": { "type": "boolean" },
+        "requireAccountCreationPrompt": { "type": "boolean" },
+        "notifyGradeSupervisorOnWarning": { "type": "boolean" },
+        "notifyOnStudyPeriodOpened": { "type": "boolean" },
+        "notifyOnStudyPeriodClosed": { "type": "boolean" }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
@@ -144,6 +184,8 @@
     "/conversation_archives/{archiveId}": { "schema": "ConversationArchive", "description": "Archive of talks." },
     "/attendance/{attendanceId}": { "schema": "Attendance", "description": "Attendance logs." },
     "/study_stats/{statId}": { "schema": "StudyStat", "description": "Study statistics." },
-    "/todos/{todoId}": { "schema": "Todo", "description": "To-do items." }
+    "/todos/{todoId}": { "schema": "Todo", "description": "To-do items." },
+    "/workflow_items/{itemId}": { "schema": "WorkflowItem", "description": "Workflow items and approvals." },
+    "/workflow_settings/{settingId}": { "schema": "WorkflowSettings", "description": "Workflow configuration." }
   }
 }

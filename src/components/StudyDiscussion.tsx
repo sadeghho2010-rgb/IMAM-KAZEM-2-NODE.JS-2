@@ -25,14 +25,27 @@ import {
   Layers,
   HelpCircle,
   Clock,
-  Activity
+  Activity,
+  CalendarPlus,
+  ArrowRight,
+  ArrowLeft,
+  Filter,
+  ShieldAlert,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  Lock,
+  Unlock,
+  AlertTriangle
 } from 'lucide-react';
 import { localDb, isStudentActive } from '../lib/localDb';
 import { Student, DiscussionGroup, PeriodicStudyLog, StudyStat, StudyPeriod } from '../types';
 import { useMentor, MENTORS } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import StudyEntryModal from './study/StudyEntryModal';
 
 interface StudyDiscussionProps {
   initialStudentId?: string;
@@ -40,7 +53,25 @@ interface StudyDiscussionProps {
 
 export default function StudyDiscussion({ initialStudentId }: StudyDiscussionProps) {
   const { currentMentor, currentMentorId, filterStudents } = useMentor();
-  const isManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori';
+  const { currentUser } = useAuth();
+
+  const isSuperAdmin = (currentUser?.role as string) === 'super_admin' || currentUser?.level === 1 || currentUser?.role === 'manager_principal' || currentUser?.role === 'school_manager';
+  const isEducationManager = currentUser?.role === 'education_manager' || 
+    currentUser?.role === 'education_officer' || 
+    currentUser?.username?.toUpperCase() === 'SHAH' ||
+    currentMentorId === 'shahpoori' ||
+    currentMentor?.isHeadManager;
+
+  const isEducationOrAdmin = isSuperAdmin || isEducationManager;
+
+  // View state for Education Manager / Super Admin: 'landing' (2 choices only), 'periods' (study period management), 'stats' (study/discussion stats)
+  const [managerActiveView, setManagerActiveView] = useState<'landing' | 'periods' | 'stats'>('landing');
+
+  // Study Period Entry & Management Modal State
+  const [isStudyEntryModalOpen, setIsStudyEntryModalOpen] = useState<boolean>(false);
+  const [editingPeriod, setEditingPeriod] = useState<StudyPeriod | null>(null);
+
+  const isManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori' || isEducationOrAdmin;
 
   // State
   const [groups, setGroups] = useState<DiscussionGroup[]>([]);
@@ -258,6 +289,24 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       setTimeout(() => setToastMessage(''), 4000);
     } catch (err) {
       console.error('Error deleting group:', err);
+    }
+  };
+
+  // Delete Study Period
+  const handleDeletePeriod = async (periodId: string) => {
+    if (!window.confirm('آیا از حذف این دوره مطالعاتی و تمام داده‌های مربوط به آن اطمینان دارید؟')) return;
+    try {
+      await localDb.deleteDoc('study_periods', periodId);
+      const logsToDelete = periodicLogs.filter(l => l.periodId === periodId);
+      for (const log of logsToDelete) {
+        await localDb.deleteDoc('periodic_study_logs', log.id);
+      }
+      setToastMessage('دوره مطالعاتی با موفقیت حذف گردید.');
+      await loadData();
+      setTimeout(() => setToastMessage(''), 4000);
+    } catch (err) {
+      console.error('Error deleting study period:', err);
+      alert('خطا در حذف دوره مطالعاتی!');
     }
   };
 
@@ -514,7 +563,286 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           </button>
         </div>
       )}
-      
+
+      {/* ========================================================================= */}
+      {/* 1. MANAGER TWO-OPTION LANDING SCREEN                                       */}
+      {/* ========================================================================= */}
+      {isEducationOrAdmin && managerActiveView === 'landing' ? (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold mb-1">
+                  <ShieldCheck size={16} />
+                  <span>پنل اختصاصی مسئول آموزش و مدیریت سامانه</span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-black text-white">سامانه مطالعه و مباحثه طلاب</h1>
+                <p className="text-xs sm:text-sm text-indigo-200/90 mt-1 font-medium">
+                  مدیریت متمرکز دوره‌های مطالعاتی، نظارت بر کارکرد علمی طلاب و تحلیل آماری
+                </p>
+              </div>
+              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/15 text-xs font-bold text-indigo-100 self-start md:self-auto shadow-inner">
+                <Clock size={16} className="text-indigo-300" />
+                <span>{studyPeriods.length} دوره مطالعاتی ثبت‌شده</span>
+              </div>
+            </div>
+          </div>
+
+          {/* TWO PRIMARY OPTIONS - Ultra clean and focused */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+            
+            {/* OPTION 1: ثبت دوره مطالعاتی */}
+            <div 
+              onClick={() => setManagerActiveView('periods')}
+              className="bg-white border-2 border-indigo-100 hover:border-indigo-500 rounded-3xl p-8 shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between space-y-8 group cursor-pointer"
+            >
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="w-16 h-16 bg-indigo-50 group-hover:bg-indigo-600 text-indigo-600 group-hover:text-white rounded-3xl flex items-center justify-center transition-all duration-300 shadow-md shadow-indigo-100">
+                    <CalendarPlus size={32} />
+                  </div>
+                  <span className="px-4 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-black rounded-xl border border-indigo-100">
+                    گزینه اول
+                  </span>
+                </div>
+
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800 group-hover:text-indigo-900 transition-colors">
+                    ثبت دوره مطالعاتی
+                  </h2>
+                  <p className="text-sm text-slate-500 font-medium leading-relaxed mt-2.5">
+                    تعریف و ایجاد دوره‌های جدید مطالعاتی، تعیین ساعت و دقیقه موظفی، انتخاب پایه‌ها، ورود ساعات مطالعه و مباحثه و تنظیم اخطار خودکار.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setManagerActiveView('periods');
+                  }}
+                  className="w-full py-4 px-5 bg-indigo-600 group-hover:bg-indigo-700 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-200 cursor-pointer"
+                >
+                  <CalendarPlus size={20} />
+                  <span>ورود به بخش ثبت و مدیریت دوره‌های مطالعاتی</span>
+                  <ArrowLeft size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* OPTION 2: آمار مطالعه و مباحثه */}
+            <div 
+              onClick={() => {
+                setSelectedGradeFilter('all');
+                setManagerActiveView('stats');
+              }}
+              className="bg-white border-2 border-emerald-100 hover:border-emerald-500 rounded-3xl p-8 shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between space-y-8 group cursor-pointer"
+            >
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div className="w-16 h-16 bg-emerald-50 group-hover:bg-emerald-600 text-emerald-600 group-hover:text-white rounded-3xl flex items-center justify-center transition-all duration-300 shadow-md shadow-emerald-100">
+                    <BarChart2 size={32} />
+                  </div>
+                  <span className="px-4 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-100">
+                    گزینه دوم
+                  </span>
+                </div>
+
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800 group-hover:text-emerald-900 transition-colors">
+                    آمار مطالعه و مباحثه
+                  </h2>
+                  <p className="text-sm text-slate-500 font-medium leading-relaxed mt-2.5">
+                    مشاهده آمار کامل کارکرد مطالعه و مباحثه طلاب، تفکیک بر اساس پایه‌ها، مقایسه هم‌مباحثه‌ای‌ها، گروه‌های مباحثه و خروجی‌های تحلیلی و PDF.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedGradeFilter('all');
+                    setManagerActiveView('stats');
+                  }}
+                  className="w-full py-4 px-5 bg-emerald-600 group-hover:bg-emerald-700 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-200 cursor-pointer"
+                >
+                  <BarChart2 size={20} />
+                  <span>ورود به بخش آمار مطالعه و مباحثه</span>
+                  <ArrowLeft size={18} />
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      ) : isEducationOrAdmin && managerActiveView === 'periods' ? (
+        /* ========================================================================= */
+        /* 2. MANAGER STUDY PERIODS MANAGEMENT VIEW                                  */
+        /* ========================================================================= */
+        <div className="space-y-6">
+          {/* Top Bar with Back Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setManagerActiveView('landing')}
+                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                title="بازگشت به منوی دو گزینه‌ای"
+              >
+                <ArrowRight size={16} />
+                <span>بازگشت به منوی اصلی</span>
+              </button>
+              <div>
+                <h2 className="text-lg font-black text-slate-800">مدیریت دوره‌های مطالعاتی</h2>
+                <p className="text-xs text-slate-400 font-medium">تعریف، ویرایش و ثبت ساعات دوره‌ای مطالعه و مباحثه طلاب</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingPeriod(null);
+                setIsStudyEntryModalOpen(true);
+              }}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-200 cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>ثبت دوره مطالعاتی جدید</span>
+            </button>
+          </div>
+
+          {/* Periods List */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {studyPeriods.map((period) => {
+              const pLogs = periodicLogs.filter(l => l.periodId === period.id);
+              const targetGrades = period.targetGrades && period.targetGrades.length > 0 ? period.targetGrades : ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'];
+              const isAllGrades = targetGrades.length === 4;
+
+              return (
+                <div 
+                  key={period.id}
+                  className="bg-white border border-slate-200 hover:border-indigo-300 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-800 leading-tight">{period.title}</h3>
+                        <p className="text-[11px] text-slate-400 font-mono mt-1">
+                          {period.startDate || '---'} تا {period.endDate || '---'}
+                        </p>
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-black px-2.5 py-1 rounded-xl border shrink-0",
+                        period.isClosed
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      )}>
+                        {period.isClosed ? '🔒 بسته شده' : '🟢 باز (فعال)'}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-slate-600 font-medium">
+                        <span>سقف موظفی دوره:</span>
+                        <span className="font-bold text-indigo-700">
+                          {period.mandatoryHours ? `${(period.mandatoryHours).toFixed(1)} ساعت (${Math.round(period.mandatoryHours * 60)} دقیقه)` : 'نامشخص'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-slate-600 font-medium">
+                        <span>تعداد رکوردهای ثبت‌شده:</span>
+                        <span className="font-bold text-slate-800">{pLogs.length} طلبه</span>
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-1 text-[11px]">
+                        <span className="text-slate-500 font-medium">پایه‌های مشمول:</span>
+                        <div className="flex flex-wrap gap-1 justify-end">
+                          {isAllGrades ? (
+                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg font-black text-[10px] border border-indigo-100">
+                              همه پایه‌ها
+                            </span>
+                          ) : (
+                            targetGrades.map(tg => (
+                              <span key={tg} className="px-1.5 py-0.5 bg-slate-200/80 text-slate-700 rounded-md font-bold text-[10px]">
+                                {tg}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-1 text-[11px]">
+                        <span className="text-slate-500 font-medium">سیستم اخطار:</span>
+                        <span className={cn(
+                          "font-bold text-[10px] px-2 py-0.5 rounded-lg border",
+                          period.warningRule === 'below_mandatory' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                          period.warningRule === 'below_mandatory_and_avg' ? "bg-rose-50 text-rose-800 border-rose-200" :
+                          "bg-slate-100 text-slate-600 border-slate-200"
+                        )}>
+                          {period.warningRule === 'below_mandatory' ? '⚠️ زیر موظفی' :
+                           period.warningRule === 'below_mandatory_and_avg' ? '🚨 زیر موظفی + میانگین' :
+                           'بدون اخطار خودکار'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPeriod(period);
+                        setIsStudyEntryModalOpen(true);
+                      }}
+                      className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Edit size={14} />
+                      <span>ویرایش و ثبت ساعات</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePeriod(period.id)}
+                      className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-colors border border-rose-200 cursor-pointer"
+                      title="حذف دوره"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* ========================================================================= */
+        /* 3. STATS & DISCUSSION DETAILED ANALYTICS VIEW                             */
+        /* ========================================================================= */
+        <div className="space-y-6">
+          {/* Top Bar for Education Manager / Super Admin to go back to 2-option dashboard */}
+          {isEducationOrAdmin && (
+            <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2 text-xs font-bold text-indigo-900">
+                <BarChart2 size={16} className="text-indigo-600 shrink-0" />
+                <span>شما در حال مشاهده گزارش جامع و آمار مطالعه و مباحثه هستید.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManagerActiveView('landing')}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+              >
+                <ArrowRight size={14} />
+                <span>بازگشت به منوی دو گزینه‌ای</span>
+              </button>
+            </div>
+          )}
+
       {/* HEADER SECTION */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -527,7 +855,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
               </div>
               <div>
                 <span className="text-xs font-bold text-indigo-300 uppercase tracking-widest">سامانه مدیریت علمی</span>
-                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">بخش گروه‌های مباحثه</h1>
+                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">بخش گروه‌های مباحثه و آمار</h1>
               </div>
             </div>
             <p className="text-xs sm:text-sm text-indigo-200/90 leading-relaxed max-w-2xl font-medium">
@@ -539,7 +867,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <button
               onClick={handleOpenCreateModal}
-              className="px-5 py-3 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5"
+              className="px-5 py-3 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
             >
               <Plus size={18} />
               <span>تعریف گروه مباحثه جدید</span>
@@ -548,7 +876,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
             <button
               onClick={handleExportCompositionPdf}
               disabled={isExportingCompositionPdf || groups.length === 0}
-              className="px-4 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 rounded-2xl"
+              className="px-4 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 rounded-2xl cursor-pointer"
               title="خروجی PDF اعضای گروه‌های بحثی و هم‌بحث‌ها به تفکیک عنوان هر گروه"
             >
               {isExportingCompositionPdf ? <Activity size={18} className="animate-spin" /> : <FileText size={18} />}
@@ -558,7 +886,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
             <button
               onClick={handleExportGroupsPdf}
               disabled={isExportingPdf || groups.length === 0}
-              className="px-4 py-3 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all backdrop-blur-md disabled:opacity-50"
+              className="px-4 py-3 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all backdrop-blur-md disabled:opacity-50 cursor-pointer"
               title="خروجی PDF خلاصه آمار و ساعات مطالعه و مباحثه"
             >
               {isExportingPdf ? <Activity size={18} className="animate-spin" /> : <Printer size={18} />}
@@ -598,7 +926,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
             <div>
               <span className="text-[11px] text-indigo-200 font-medium block">هم‌بحثی‌های خارج (سایر)</span>
               <span className="text-lg font-black text-white">
-                {groups.reduce((sum, g) => sum + (g.externalMembers?.length || 0), 0)} نفر
+                {groups.reduce((acc, g) => acc + (g.externalMembers?.length || 0), 0)} نفر
               </span>
             </div>
           </div>
@@ -608,11 +936,11 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
               <Clock size={20} />
             </div>
             <div>
-              <span className="text-[11px] text-indigo-200 font-medium block">میانگین مطالعه گروه‌ها</span>
+              <span className="text-[11px] text-indigo-200 font-medium block">میانگین مطالعه طلاب</span>
               <span className="text-lg font-black text-white">
-                {groups.length > 0 
-                  ? Math.round(groups.reduce((sum, g) => sum + calculateGroupStats(g).avgHours, 0) / groups.length) 
-                  : 0} ساعت
+                {periodicLogs.length > 0
+                  ? (periodicLogs.reduce((acc, l) => acc + (l.hours || 0), 0) / (students.length || 1)).toFixed(1)
+                  : '۰'} ساعت
               </span>
             </div>
           </div>
@@ -1866,6 +2194,31 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           </div>
         </div>
       </div>
+
+      </div>
+      )}
+
+      {/* Study Period Entry / Edit Modal */}
+      {isStudyEntryModalOpen && (
+        <StudyEntryModal
+          isOpen={isStudyEntryModalOpen}
+          onClose={() => {
+            setIsStudyEntryModalOpen(false);
+            setEditingPeriod(null);
+          }}
+          onSaveSuccess={async () => {
+            setIsStudyEntryModalOpen(false);
+            setEditingPeriod(null);
+            setToastMessage('دوره مطالعاتی با موفقیت ثبت/بروزرسانی شد.');
+            await loadData();
+            setTimeout(() => setToastMessage(''), 4000);
+          }}
+          students={allStudentsList.filter(s => isStudentActive(s))}
+          allLogs={periodicLogs}
+          editingPeriod={editingPeriod}
+          currentMentorId={currentMentorId}
+        />
+      )}
 
     </div>
   );

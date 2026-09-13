@@ -101,10 +101,7 @@ export const MentorProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return (saved && MENTORS[saved]) ? saved : 'hayati';
   });
 
-  const [shahpooriFilter, setShahpooriFilterState] = useState<ShahpooriFilter>(() => {
-    const saved = localStorage.getItem('shahpoori_active_filter') as ShahpooriFilter;
-    return saved || 'all';
-  });
+  const [shahpooriFilter, setShahpooriFilterState] = useState<ShahpooriFilter>('all');
 
   const [isMentorModalOpen, setIsMentorModalOpen] = useState<boolean>(() => {
     return !localStorage.getItem('current_mentor_id');
