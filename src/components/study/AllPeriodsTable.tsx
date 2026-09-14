@@ -199,6 +199,7 @@ export default function AllPeriodsTable({
                       type="button"
                       onClick={() => setCols({
                         grade: true,
+                        confirmedWarningsCount: true,
                         sumStudy: true,
                         sumDisc: true,
                         sumTotal: true,

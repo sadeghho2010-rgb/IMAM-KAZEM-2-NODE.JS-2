@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Check,
   CheckCircle2,
   HelpCircle,
   Layers,
@@ -209,7 +210,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     };
 
     try {
-      await localDb.saveDoc('custom_student_schedules', scheduleDoc);
+      await localDb.addDoc('custom_student_schedules', scheduleDoc);
       setShowAddCustomModal(false);
       setNewCustomSchedule({
         title: '',

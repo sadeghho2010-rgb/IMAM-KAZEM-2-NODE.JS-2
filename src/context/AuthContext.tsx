@@ -19,10 +19,10 @@ export const ALL_SYSTEM_TABS = [
   { id: 'comments', label: 'نظرات، صحبت‌ها و آزمون شفاهی' },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی' },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین' },
-  { id: 'manager-files', label: 'فایل‌های ارسالی مدیر' },
-  { id: 'backup', label: 'پشتیبان‌گیری' },
+  { id: 'backup', label: 'پشتیبان‌گیری (سطح ۱ و مسئول آموزش)' },
   { id: 'user-management', label: 'تنظیمات کاربران و سطوح دسترسی' },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران' },
+  { id: 'audit-logs', label: 'فعالیت‌های سایت (سطح ۱ و مسئول آموزش)' },
 ];
 
 export const DEFAULT_USERS: AppUser[] = [
@@ -46,7 +46,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-management', 'user-credentials'
+      'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
     ],
   },
   {
@@ -68,7 +68,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
 
@@ -90,9 +90,9 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-amber-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
   {
@@ -109,12 +109,12 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: true,
+    canBackup: false,
     avatarBg: 'bg-emerald-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
     ],
   },
   {
@@ -131,12 +131,12 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: true,
+    canBackup: false,
     avatarBg: 'bg-sky-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
     ],
   },
   {
@@ -153,12 +153,12 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: true,
+    canBackup: false,
     avatarBg: 'bg-purple-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
     ],
   },
   {
@@ -175,12 +175,12 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: true,
+    canBackup: false,
     avatarBg: 'bg-rose-600',
     allowedTabs: [
-      'todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials'
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
     ],
   },
   {
@@ -200,7 +200,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-teal-600',
     allowedTabs: [
-      'active-students', 'research', 'todos', 'summary', 'programs', 'classrooms', 'teachers-schedule', 'manager-files', 'user-credentials'
+      'active-students', 'research', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
     ],
   },
   {
@@ -217,10 +217,10 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: true,
+    canBackup: false,
     avatarBg: 'bg-cyan-700',
     allowedTabs: [
-      'presence-hours', 'teachers-bank', 'students', 'programs', 'backup', 'user-credentials'
+      'presence-hours', 'teachers-bank', 'students', 'workflow', 'programs', 'user-credentials'
     ],
   },
 
@@ -242,7 +242,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-blue-600',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats'
     ],
   },
   {
@@ -262,7 +262,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-emerald-700',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments', 'manager-files'
+      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments'
     ],
   },
 ];
@@ -506,10 +506,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
-    if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
-    // بخش جریان کار و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
-    if (tabId === 'workflow' || tabId === 'consultation-advisor') {
+
+    // پشتیبان‌گیری: فقط سوپر ادمین (سطح ۱) و مسئول آموزش
+    if (tabId === 'backup') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      );
+    }
+
+    // فعالیت‌های سایت: فقط سوپر ادمین / کاربران سطح ۱ و مسئول آموزش
+    if (tabId === 'audit-logs') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      );
+    }
+
+    // مدیریت کاربران: فقط سوپر ادمین (سطح ۱)
+    if (tabId === 'user-management') {
+      return currentUser.level === 1 && currentUser.role === 'super_admin';
+    }
+
+    // دستیار کلاس‌های مشاوره: برای مسئول پژوهش و مسئول مالی مخفی است
+    if (tabId === 'consultation-advisor') {
+      if (
+        currentUser.role === 'research_manager' || 
+        currentUser.role === 'research_officer' || 
+        currentUser.role === 'finance_manager' || 
+        currentUser.role === 'financial_officer' ||
+        currentUser.username.toUpperCase() === 'YAZDANI' ||
+        currentUser.username.toUpperCase() === 'MALI'
+      ) {
+        return false;
+      }
       return currentUser.level === 1 || currentUser.level === 2;
+    }
+
+    // جمع‌بندی و هوش مصنوعی: برای مسئول پژوهش و مسئول مالی مخفی است
+    if (tabId === 'summary') {
+      if (
+        currentUser.role === 'research_manager' || 
+        currentUser.role === 'research_officer' || 
+        currentUser.role === 'finance_manager' || 
+        currentUser.role === 'financial_officer' ||
+        currentUser.username.toUpperCase() === 'YAZDANI' ||
+        currentUser.username.toUpperCase() === 'MALI'
+      ) {
+        return false;
+      }
+    }
+
+    // کلاس‌های مشاوره (ارزیابی و نمرات): برای مسئول آموزش، مسئول پژوهش، مسئولین پایه و سوپر ادمین (سطح ۳ ممنوع است)
+    if (tabId === 'counseling-classes') {
+      if (currentUser.level === 3) return false;
+      if (currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI') {
+        return false;
+      }
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.role === 'research_manager' ||
+        currentUser.role === 'research_officer' ||
+        currentUser.role === 'grade_mentor' ||
+        currentUser.role === 'grade_supervisor' ||
+        currentUser.role.startsWith('grade_supervisor_') ||
+        ['SHAH', 'YAZDANI', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase())
+      );
+    }
+
+    if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
+    // بخش جریان کار و پیگیری‌ها منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
+    if (tabId === 'workflow' || tabId === 'todos') {
+      return currentUser.level === 1 || currentUser.level === 2;
+    }
+    // ساعت حضور و کارکرد: برای مسئول مالی لازم نیست وجود داشته باشد، اما برای اساتید پایه و سایرین نمایش داده می‌شود
+    if (tabId === 'presence-hours') {
+      const isFinance = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || (currentUser.roleTitle && currentUser.roleTitle.includes('مالی'));
+      if (isFinance) return false;
+      return true;
     }
     // بخش برنامه‌های مدرسه، مَدرَس‌ها و تقویم آموزشی به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
     if (tabId === 'programs' || tabId === 'classrooms' || tabId === 'academic-calendar') return true;

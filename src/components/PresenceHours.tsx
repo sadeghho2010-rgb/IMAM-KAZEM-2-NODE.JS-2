@@ -19,7 +19,8 @@ import {
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import { localDb } from '../lib/localDb';
 import { useMentor } from '../context/MentorContext';
-import { PresenceHoursLog } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { PresenceHoursLog, PresenceReport, WorkflowItem } from '../types';
 import { 
   getTodayShamsi, 
   parseShamsiDate, 
@@ -31,9 +32,11 @@ import {
 } from '../lib/jalali';
 import { cn } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { Send } from 'lucide-react';
 
 export default function PresenceHours() {
   const { currentMentor } = useMentor();
+  const { currentUser } = useAuth();
 
   // Cycle Range State (Defaults to 1st to 30th/31st of current Shamsi month)
   const today = getTodayShamsi();
@@ -55,7 +58,9 @@ export default function PresenceHours() {
 
   // Data & Search
   const [logs, setLogs] = useState<PresenceHoursLog[]>([]);
+  const [reports, setReports] = useState<PresenceReport[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [submittingReport, setSubmittingReport] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string>('');
 
@@ -70,15 +75,21 @@ export default function PresenceHours() {
   // Load logs from localDb
   useEffect(() => {
     loadData();
-  }, []);
+    const unsub = localDb.subscribe(() => loadData());
+    return () => unsub();
+  }, [currentUser?.id]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const stored = await localDb.getDocs<PresenceHoursLog>('presence_hours_logs');
-      setLogs(stored || []);
+      const [storedLogs, storedReports] = await Promise.all([
+        localDb.getDocs<PresenceHoursLog>('presence_hours_logs'),
+        localDb.getDocs<PresenceReport>('presence_reports')
+      ]);
+      setLogs(storedLogs || []);
+      setReports(storedReports || []);
     } catch (err) {
-      console.error("Error loading presence hours logs:", err);
+      console.error("Error loading presence hours data:", err);
     } finally {
       setLoading(false);
     }
@@ -87,6 +98,75 @@ export default function PresenceHours() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // Send Presence Report to Financial Officer
+  const handleSendReportToFinance = async () => {
+    if (filteredLogs.length === 0) {
+      alert("در این بازه زمانی رکوردی جهت ارسال به مسئول مالی وجود ندارد.");
+      return;
+    }
+    if (!currentUser) return;
+
+    const confirmSend = window.confirm(
+      `آیا از ارسال گزارش کارکرد "${cycleTitle}" (${cycleStart} تا ${cycleEnd}) به میزان ${totalHours} ساعت برای مسئول مالی اطمینان دارید؟`
+    );
+    if (!confirmSend) return;
+
+    setSubmittingReport(true);
+    try {
+      const reportId = `rep-${Date.now()}`;
+      const newReport: PresenceReport = {
+        id: reportId,
+        senderUserId: currentUser.id,
+        senderUserName: currentUser.fullName || currentUser.name || currentUser.username,
+        senderRoleTitle: currentUser.roleTitle || 'استاد پایه',
+        mentorId: currentMentor.id,
+        cycleTitle,
+        cycleStart,
+        cycleEnd,
+        totalHours,
+        logsCount: filteredLogs.length,
+        status: 'submitted',
+        submittedAt: new Date().toISOString()
+      };
+
+      await localDb.setDoc('presence_reports', newReport);
+
+      // Create workflow item for financial manager
+      const workflowId = `wf-presence-${Date.now()}`;
+      const workflowItem: WorkflowItem = {
+        id: workflowId,
+        type: 'approval',
+        category: 'presence_finance_report' as any,
+        title: `گزارش ساعت حضور و کارکرد: ${currentUser.fullName || currentUser.name}`,
+        description: `گزارش کارکرد ${cycleTitle} (از ${cycleStart} تا ${cycleEnd}) به میزان ${totalHours} ساعت (${filteredLogs.length} ثبت روزانه) توسط ${currentUser.fullName || currentUser.name} (${currentUser.roleTitle || 'استاد'}) جهت اطلاع و تایید دریافت مسئول مالی ارسال گردید.`,
+        status: 'pending',
+        grade: 'عمومی',
+        requiresEducationApproval: false,
+        createdByUserId: currentUser.id,
+        createdByName: currentUser.fullName || currentUser.name,
+        createdAt: new Date().toISOString(),
+        details: {
+          reportId,
+          mentorId: currentMentor.id,
+          cycleTitle,
+          cycleStart,
+          cycleEnd,
+          totalHours,
+          logsCount: filteredLogs.length
+        }
+      };
+
+      await localDb.setDoc('workflow_items', workflowItem);
+      showToast("گزارش کارکرد شما با موفقیت به بخش جریان کار مسئول مالی ارسال شد.");
+      loadData();
+    } catch (err) {
+      console.error("Error sending report to finance:", err);
+      alert("خطا در ارسال گزارش به مسئول مالی.");
+    } finally {
+      setSubmittingReport(false);
+    }
   };
 
   // Save / Update Log Entry
@@ -630,6 +710,17 @@ export default function PresenceHours() {
               <Printer size={16} />
               <span>چاپ و پیش‌نمایش</span>
             </button>
+
+            {/* Send Report to Finance Button */}
+            <button
+              onClick={handleSendReportToFinance}
+              disabled={submittingReport || filteredLogs.length === 0}
+              className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
+              title="ارسال گزارش کارکرد این بازه زمانی به مسئول مالی"
+            >
+              <Send size={16} />
+              <span>ارسال به مسئول مالی</span>
+            </button>
           </div>
         </div>
 
@@ -733,6 +824,52 @@ export default function PresenceHours() {
           </div>
         )}
       </div>
+
+      {/* --- SECTION 4: SENT REPORTS HISTORY --- */}
+      {reports.length > 0 && (
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <Send size={18} className="text-emerald-600" />
+              <span>وضعیت گزارش‌های کارکرد ارسال‌شده به مسئول مالی</span>
+            </h2>
+            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl font-mono">
+              {reports.length} گزارش
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {reports.map(rep => (
+              <div key={rep.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-black text-xs text-slate-900">{rep.cycleTitle}</h3>
+                  {rep.status === 'received' ? (
+                    <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-emerald-200">
+                      <CheckCircle2 size={12} />
+                      <span>تأیید و دریافت شد ✅</span>
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-amber-200">
+                      <Clock size={12} />
+                      <span>در انتظار بررسی مسئول مالی ⏳</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+                  <span>بازه: {rep.cycleStart} تا {rep.cycleEnd}</span>
+                  <span className="text-indigo-900 font-black">{rep.totalHours} ساعت</span>
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                  <span>فرستنده: {rep.senderUserName} ({rep.senderRoleTitle})</span>
+                  {rep.receivedByUserName && (
+                    <span className="text-emerald-700 font-bold">دریافت‌کننده: {rep.receivedByUserName}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* --- HIDDEN HIGH-RES CONTAINER FOR DIRECT PDF EXPORT (A4 Layout) --- */}
       <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>

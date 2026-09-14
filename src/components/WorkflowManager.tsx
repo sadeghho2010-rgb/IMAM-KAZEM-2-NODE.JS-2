@@ -126,6 +126,17 @@ export const WORKFLOW_CATEGORIES: {
     icon: MessageSquare,
   },
   {
+    id: 'presence_finance_report',
+    label: 'گزارش کارکرد اساتید (مالی)',
+    topicTitle: 'ساعت حضور و گزارش کارکرد اساتید',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    borderAccent: 'border-r-emerald-500',
+    bgGradient: 'bg-gradient-to-l from-emerald-50/40 via-white to-white',
+    iconBg: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    iconColor: 'text-emerald-600',
+    icon: Clock,
+  },
+  {
     id: 'general',
     label: 'امور عمومی و اطلاعیه‌ها',
     topicTitle: 'امور عمومی و اطلاعیه‌ها',
@@ -201,13 +212,25 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
   const [selectedStudentForEvent, setSelectedStudentForEvent] = useState<string>('');
 
   // Role permissions
-  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isSuperAdmin = currentUser?.level === 1 || currentUser?.role === 'super_admin' || currentUser?.role === 'school_manager';
   const isEducationManager = 
     currentUser?.role === 'education_manager' || 
     currentUser?.role === 'education_officer' || 
     currentUser?.username?.toUpperCase() === 'SHAH';
+  const isResearchManager = 
+    currentUser?.role === 'research_manager' || 
+    currentUser?.role === 'research_officer' || 
+    currentUser?.username?.toUpperCase() === 'YAZDANI';
+  const isFinanceManager = 
+    currentUser?.role === 'finance_manager' || 
+    currentUser?.role === 'financial_officer' || 
+    currentUser?.username?.toUpperCase() === 'MALI';
+  const isGradeSupervisor = 
+    currentUser?.role === 'grade_mentor' || 
+    currentUser?.role === 'grade_supervisor' || 
+    currentUser?.role?.startsWith('grade_supervisor_') ||
+    ['ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');
   const isManagerOrPrincipal = currentUser?.role === 'manager_principal' || currentUser?.role === 'vice_principal';
-  const isGradeSupervisor = currentUser?.role === 'grade_supervisor';
   const userGrade = currentUser?.gradeLabel || '';
 
   // Can approve/reject items
@@ -297,22 +320,44 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
   // Filter items tailored to current user
   const filteredItems = useMemo(() => {
     return allDisplayItems.filter(item => {
-      // 1. Role / User Tailoring (مطالبی که نشون داده میشه برای هر کاربر متفاوت بشه)
-      if (tabFilter === 'my_tasks') {
-        if (isSuperAdmin) {
-          // Super admin sees all actionable or important items
-          // Keep all
+      // 1. Strict Role Scope Filtering for Level 2 & Level 3 users
+      if (!isSuperAdmin && !isManagerOrPrincipal) {
+        if (isResearchManager) {
+          // مسئول پژوهش فقط فرآیندهای پژوهشی و جلسات مشاوره پژوهشی را می‌بیند
+          const isResearchCategory = ['research', 'research_article_submission', 'counseling_evaluation'].includes(item.category);
+          if (!isResearchCategory) return false;
+        } else if (isFinanceManager) {
+          // مسئول مالی فرآیندهای مربوط به کارکرد، حضور و امور مالی را می‌بیند
+          const isFinanceCategory = ['presence_finance_report', 'presence_hours', 'finance', 'general'].includes(item.category) || item.title?.includes('حضور') || item.title?.includes('کارکرد');
+          if (!isFinanceCategory) return false;
         } else if (isEducationManager) {
-          // Education manager sees all approval items, study periods, and academic warnings
-          // All relevant to education
+          // مسئول آموزش فرآیندهای آموزشی، اخطار غیبت/مطالعه، حساب‌های کاربری و دوره‌ها را می‌بیند
+          const isEduCategory = [
+            'unexcused_absence_warning',
+            'study_deficit_warning',
+            'study_period',
+            'student_account_creation',
+            'discussion_group_change',
+            'general'
+          ].includes(item.category);
+          if (!isEduCategory) return false;
         } else if (isGradeSupervisor) {
-          // Grade supervisor sees:
-          // a) notices for all grades or their own grade
-          // b) warnings/approvals concerning students of their own grade
+          // مسئولین پایه فقط اعلام‌های ثبت اخطار غیبت/مطالعه، دوره‌های مطالعه و پیام‌های مرتبط با پایه خود را می‌بینند
+          const isSupervisorCategory = [
+            'unexcused_absence_warning',
+            'study_deficit_warning',
+            'study_period',
+            'discussion_group_change',
+            'general'
+          ].includes(item.category);
+          if (!isSupervisorCategory) return false;
+
+          const matchesGrade = !item.grade || item.grade === 'همه پایه‌ها' || item.grade === 'عمومی' || item.grade === userGrade;
+          if (!matchesGrade) return false;
+        } else {
+          // سایر کاربران
           const matchesGrade = !item.grade || item.grade === 'همه پایه‌ها' || item.grade === userGrade;
           if (!matchesGrade) return false;
-        } else if (isManagerOrPrincipal) {
-          // Principal sees all as overview
         }
       }
 
@@ -432,6 +477,24 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
             id: `group_${Date.now()}_${item.studentId || 'new'}`,
             createdAt: now
           });
+        }
+      }
+
+      // If this item is associated with a presence report, update presence_reports doc
+      if (item.details?.reportId) {
+        try {
+          const reportId = item.details.reportId;
+          const rep = await localDb.getDoc<any>('presence_reports', reportId);
+          if (rep) {
+            await localDb.updateDoc('presence_reports', reportId, {
+              status: 'received',
+              receivedAt: new Date().toISOString(),
+              receivedByUserId: currentUser?.id,
+              receivedByUserName: currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی'
+            });
+          }
+        } catch (repErr) {
+          console.error("Error updating presence report status:", repErr);
         }
       }
 

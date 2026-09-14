@@ -13,7 +13,7 @@ import AttendanceAndStats from './components/AttendanceAndStats';
 import StudyStats from './components/StudyStats';
 import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
-import ManagerFiles from './components/ManagerFiles';
+import SiteAuditLogs from './components/SiteAuditLogs';
 import TodoList from './components/TodoList';
 import StudentComments from './components/StudentComments';
 import StudyDiscussion from './components/StudyDiscussion';
@@ -23,6 +23,7 @@ import TeachersBank from './components/TeachersBank';
 import TeachersSchedule from './components/TeachersSchedule';
 import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
+import CounselingClasses from './components/CounselingClasses';
 import { ConsultationAdvisor } from './components/ConsultationAdvisor';
 import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
@@ -97,6 +98,8 @@ function AppContent() {
         return <ResearchAndFeedback initialStudentId={selectedStudentIdForTab} />;
       case 'attendance':
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
+      case 'counseling-classes':
+        return <CounselingClasses />;
       case 'comments':
         return <StudentComments initialStudentId={selectedStudentIdForTab} />;
       case 'stats':
@@ -115,8 +118,8 @@ function AppContent() {
         return <TeachersBank />;
       case 'backup':
         return <BackupAndRestore />;
-      case 'manager-files':
-        return <ManagerFiles />;
+      case 'audit-logs':
+        return <SiteAuditLogs />;
       case 'user-management':
         return isSuperAdmin ? (
           <UserManagementSettings />
@@ -178,13 +181,14 @@ function AppContent() {
                      activeTab === 'presence-hours' ? 'بخش ثبت ساعت حضور و کارکرد' :
                      activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
                      activeTab === 'active-students' ? 'لیست کاربران فعال' :
-                     activeTab === 'manager-files' ? (currentUser.role === 'super_admin' || currentUser.role === 'education_manager' ? 'ارسال فایل برای کاربران' : 'فایل‌های ارسالی مدیر') :
+                     activeTab === 'audit-logs' ? 'فعالیت‌های سایت و مانیتورینگ تغییرات' :
                      activeTab === 'programs' ? 'برنامه‌های آموزشی و سرفصل‌ها' :
                      activeTab === 'classrooms' ? 'مَدرَس‌ها (کلاس‌های درس و مدیریت فضاها)' :
                      activeTab === 'student-schedule' ? 'برنامه هفتگی و درسی طلاب' :
                      activeTab === 'teachers-schedule' ? 'برنامه درسی و ساعات حضور اساتید' :
                      activeTab === 'research' ? 'بخش پژوهش و مقالات' :
                      activeTab === 'attendance' ? 'حضور و غیاب طلاب' :
+                     activeTab === 'counseling-classes' ? 'کلاس‌های مشاوره (ارزیابی، نمرات مشارکت و پژوهش)' :
                      activeTab === 'comments' ? 'نظرات، صحبت‌ها و آزمون شفاهی' :
                      activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت و چینش گروه‌ها)' :
                      activeTab === 'consultation-advisor' ? 'دستیار هوشمند چینش کلاس‌های مشاوره' :

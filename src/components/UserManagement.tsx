@@ -42,7 +42,7 @@ const ALL_MODULES: { id: AppModuleId; label: string; group: string }[] = [
   { id: 'comments', label: 'نظرات و ارزیابی تربیتی', group: 'تربیتی' },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی', group: 'تحلیل و BI' },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', group: 'آموزش' },
-  { id: 'manager-files', label: 'ارسال و دریافت فایل‌ها', group: 'اسناد' },
+  { id: 'audit-logs', label: 'فعالیت‌های سایت و گزارش تغییرات', group: 'امنیت و تنظیمات' },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', group: 'سیستم' },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', group: 'امنیت و تنظیمات' },
 ];

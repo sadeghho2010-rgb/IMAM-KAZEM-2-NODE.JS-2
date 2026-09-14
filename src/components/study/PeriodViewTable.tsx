@@ -319,6 +319,8 @@ export default function PeriodViewTable({
                       onClick={() => setCols({
                         grade: true,
                         needsFollowUp: true,
+                        warningNotice: true,
+                        warningStatus: true,
                         studyMinutes: true,
                         discussionMinutes: true,
                         totalMinutes: true,

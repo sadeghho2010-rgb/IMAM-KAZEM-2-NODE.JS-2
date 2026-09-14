@@ -224,6 +224,81 @@ export interface Todo {
   createdAt?: string;
 }
 
+export interface TodoCategory {
+  id: string;
+  userId: string;
+  name: string;
+  color?: string;
+  createdAt: string;
+}
+
+export interface PersonalTodo {
+  id: string;
+  userId: string;
+  userName?: string;
+  title: string;
+  description?: string;
+  category: string;
+  completed: boolean;
+  completedAt?: string;
+  archived?: boolean;
+  archivedAt?: string;
+  priority?: 'low' | 'medium' | 'high';
+  dueDate?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AssignedTodo {
+  id: string;
+  senderUserId: string;
+  senderUserName: string;
+  senderRoleTitle: string;
+  recipientUserId: string;
+  recipientUserName: string;
+  recipientRoleTitle: string;
+  title: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high';
+  dueDate?: string;
+  status: 'pending' | 'completed';
+  completedAt?: string;
+  completionNote?: string;
+  archivedBySender?: boolean;
+  archivedByRecipient?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface PresenceHoursLog {
+  id: string;
+  mentorId: string;
+  date: string;
+  durationHours: number;
+  category?: string;
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface PresenceReport {
+  id: string;
+  senderUserId: string;
+  senderUserName: string;
+  senderRoleTitle: string;
+  mentorId: string;
+  cycleTitle: string;
+  cycleStart: string;
+  cycleEnd: string;
+  totalHours: number;
+  logsCount: number;
+  status: 'submitted' | 'received';
+  submittedAt: string;
+  receivedAt?: string;
+  receivedByUserId?: string;
+  receivedByUserName?: string;
+}
+
 export interface StudyPeriod {
   id: string;
   title: string;
@@ -521,11 +596,59 @@ export type AppModuleId =
   | 'comments'
   | 'summary'
   | 'teachers-bank'
-  | 'manager-files'
   | 'backup'
   | 'user-management'
   | 'user-credentials'
-  | 'student-portal';
+  | 'student-portal'
+  | 'audit-logs'
+  | 'counseling-classes';
+
+export type CounselingScore = 'الف' | 'ب' | 'ج';
+
+export interface CounselingSessionGrade {
+  id: string;
+  studentId: string;
+  studentName: string;
+  grade?: string; // پایه تحصیلی مثلاً 'پایه ۷'
+  counselorTeacherName: string; // نام استاد مشاور
+  courseTitle: string; // عنوان درس / کلاس مشاوره
+  sessionDate: string; // تاریخ جلسه (شمسی)
+  sessionNumber?: number | string; // شماره یا عنوان جلسه
+  participationScore: CounselingScore; // نمره مشارکت
+  researchScore: CounselingScore; // نمره پژوهش و تقریر
+  counselorFeedback?: string; // نظرات و ملاحظات استاد مشاور
+  createdAt: string;
+  createdByName?: string;
+  createdByRole?: string;
+  updatedAt?: string;
+}
+
+export type AuditActionType = 'create' | 'update' | 'delete' | 'revert' | 'status_change';
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  shamsiDate: string;
+  shamsiTime: string;
+  userId?: string;
+  userName: string;
+  username: string;
+  userRole: UserRole;
+  userRoleTitle: string;
+  userLevel: UserLevel;
+  actionType: AuditActionType;
+  module: AppModuleId | string;
+  moduleTitle: string;
+  entityType: string;
+  entityId: string;
+  entityName?: string;
+  description: string;
+  previousState?: any;
+  newState?: any;
+  isReverted?: boolean;
+  revertedAt?: string;
+  revertedByUserName?: string;
+}
 
 export interface ProposedConsultationClass {
   id: string;
@@ -575,6 +698,7 @@ export type WorkflowCategory =
   | 'study_deficit_warning'       // اخطار ساعت مطالعه و مباحثه
   | 'student_account_creation'    // ایجاد حساب کاربری برای طلبه جدید
   | 'discussion_group_change'     // درخواست ثبت یا ویرایش گروه مباحثه طلبه
+  | 'presence_finance_report'     // گزارش کارکرد و ساعت حضور جهت اطلاع مسئول مالی
   | 'general';                    // اطلاعیه یا اقدام عمومی
 
 export type WorkflowStatus = 

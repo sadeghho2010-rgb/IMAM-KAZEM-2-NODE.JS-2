@@ -13,7 +13,6 @@ import {
   HardDrive,
   RefreshCw,
   ShieldCheck,
-  FolderOpen,
   Clock,
   LogOut,
   Settings,
@@ -22,7 +21,9 @@ import {
   Eye,
   DoorOpen,
   GitBranch,
-  Sparkles
+  Sparkles,
+  Activity,
+  BookCheck
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -51,22 +52,23 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
   { id: 'active-students', label: 'طلاب فعال', icon: UserCheck },
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
-  { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', icon: DoorOpen },
   { id: 'student-schedule', label: 'برنامه درسی و هفتگی طلاب', icon: CalendarDays },
   { id: 'teachers-schedule', label: 'برنامه درسی اساتید', icon: GraduationCap },
+  { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', icon: DoorOpen },
   { id: 'stats', label: 'آمار مطالعه طلاب', icon: BarChart2 },
   { id: 'discussion', label: 'گروه‌های بحثی', icon: Users },
-  { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
+  { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', icon: BookCheck },
   { id: 'comments', label: 'نظرات و ارزیابی‌ها', icon: MessageSquare },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی', icon: BrainCircuit },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', icon: GraduationCap },
-  { id: 'manager-files', label: 'فایل‌های ارسالی مدیر', icon: FolderOpen },
+  { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
+  { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
@@ -75,13 +77,31 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
   // Filter items based on user's authorized modules
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
-    // دسترسی صریح کاربر: بخش جریان کار و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
-    if (item.id === 'workflow' || item.id === 'consultation-advisor') {
-      return currentUser ? (currentUser.level === 1 || currentUser.level === 2) : false;
+    if (!currentUser) return false;
+
+    // فعالیت‌های سایت و پشتیبان‌گیری: تنها برای سوپر ادمین / کاربران سطح ۱ و مسئول آموزش
+    if (item.id === 'audit-logs' || item.id === 'backup') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      );
+    }
+
+    // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
+    if (item.id === 'workflow' || item.id === 'consultation-advisor' || item.id === 'todos') {
+      return currentUser.level === 1 || currentUser.level === 2;
+    }
+    // ساعت حضور و کارکرد: برای مسئول مالی لازم نیست وجود داشته باشد، برای اساتید پایه و سایرین نمایش داده می‌شود
+    if (item.id === 'presence-hours') {
+      const isFinance = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || (currentUser.roleTitle && currentUser.roleTitle.includes('مالی'));
+      if (isFinance) return false;
+      return true;
     }
     // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند در منوی خودشون این بخش رو ببینند؛ کاربران سطح 2 همه می توانند ببینند
     if (item.id === 'teachers-schedule') {
-      if (!currentUser) return false;
       if (currentUser.level === 3) return false;
       if (currentUser.level === 1 || currentUser.level === 2) return true;
     }
@@ -186,11 +206,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
           let label = item.label;
 
           // Contextual label adjustments
-          if (item.id === 'manager-files') {
-            label = currentUser?.role === 'super_admin' || (currentUser?.role as string) === 'education_officer' || currentUser?.role === 'education_manager'
-              ? 'ارسال فایل برای کاربران'
-              : 'فایل‌های ارسالی مدیر';
-          } else if (currentUser?.level === 3) {
+          if (currentUser?.level === 3) {
             if (item.id === 'student-schedule') label = 'برنامه درسی من';
             if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
             if (item.id === 'stats') label = 'ساعات مطالعه من';

@@ -140,7 +140,9 @@ export const COLLECTIONS = [
   'teachers',
   'classrooms',
   'workflow_items',
-  'workflow_settings'
+  'workflow_settings',
+  'audit_logs',
+  'counseling_session_grades'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;
@@ -415,6 +417,7 @@ class LocalDatabase {
 
     if (!db.objectStoreNames.contains(resolvedCol)) {
       this.setLocalStorageDoc(resolvedCol, record);
+      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       this.notify();
       return id;
     }
@@ -426,17 +429,20 @@ class LocalDatabase {
         const request = store.put(record);
 
         request.onsuccess = () => {
+          this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
           this.notify();
           resolve(id);
         };
         request.onerror = () => {
           this.setLocalStorageDoc(resolvedCol, record);
+          this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
           this.notify();
           resolve(id);
         };
       } catch (e) {
         console.warn(`Object store ${resolvedCol} put error:`, e);
         this.setLocalStorageDoc(resolvedCol, record);
+        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
         this.notify();
         resolve(id);
       }
@@ -448,7 +454,10 @@ class LocalDatabase {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
     if (!db.objectStoreNames.contains(resolvedCol)) {
-      this.setLocalStorageDoc(resolvedCol, { ...data, id });
+      const existingLS = (this.getLocalStorageDocs(resolvedCol) as any[]).find(x => x.id === id);
+      const updatedLS = { ...existingLS, ...data, id };
+      this.setLocalStorageDoc(resolvedCol, updatedLS);
+      this.autoLogAudit(db, 'update', resolvedCol, id, existingLS, updatedLS);
       this.notify();
       return;
     }
@@ -467,11 +476,13 @@ class LocalDatabase {
           }
           const putReq = store.put(updated);
           putReq.onsuccess = () => {
+            this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
             this.notify();
             resolve();
           };
           putReq.onerror = () => {
             this.setLocalStorageDoc(resolvedCol, updated);
+            this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
             this.notify();
             resolve();
           };
@@ -494,9 +505,16 @@ class LocalDatabase {
   async deleteDoc(collectionName: CollectionName, id: string): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
+
+    let existingDoc: any = undefined;
+    try {
+      existingDoc = await this.getDoc(resolvedCol, id);
+    } catch (e) {}
+
     this.deleteLocalStorageDoc(resolvedCol, id);
 
     if (!db.objectStoreNames.contains(resolvedCol)) {
+      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
       this.notify();
       return;
     }
@@ -508,10 +526,12 @@ class LocalDatabase {
         const request = store.delete(id);
 
         request.onsuccess = () => {
+          this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
           this.notify();
           resolve();
         };
         request.onerror = () => {
+          this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
           this.notify();
           resolve();
         };
@@ -521,6 +541,198 @@ class LocalDatabase {
         resolve();
       }
     });
+  }
+
+  // Automatic Audit Logging Interceptor
+  private autoLogAudit(
+    db: IDBDatabase,
+    actionType: 'create' | 'update' | 'delete',
+    collectionName: string,
+    entityId: string,
+    previousState?: any,
+    newState?: any
+  ) {
+    if (collectionName === 'audit_logs') return;
+
+    try {
+      const resolvedCol = this.resolveCollection(collectionName);
+      const itemForMeta = newState || previousState;
+
+      let module = resolvedCol;
+      let moduleTitle = resolvedCol;
+      let entityName = itemForMeta?.name || itemForMeta?.title || itemForMeta?.subject || entityId || 'رکورد داده';
+
+      switch (resolvedCol) {
+        case 'students':
+          module = 'students';
+          moduleTitle = 'مدیریت کل طلاب';
+          entityName = itemForMeta?.name ? `طلبه ${itemForMeta.name}` : 'پرونده طلبه';
+          break;
+        case 'programs':
+          module = 'programs';
+          moduleTitle = 'برنامه‌های آموزشی و سرفصل‌ها';
+          entityName = itemForMeta?.title || itemForMeta?.name || 'برنامه آموزشی';
+          break;
+        case 'enrollments':
+          module = 'programs';
+          moduleTitle = 'برنامه‌های آموزشی و ثبت‌نام';
+          entityName = 'ثبت‌نام دوره';
+          break;
+        case 'research':
+        case 'research_records':
+        case 'research_history':
+        case 'student_research_skills':
+          module = 'research';
+          moduleTitle = 'بخش پژوهش و مقالات';
+          entityName = itemForMeta?.title || itemForMeta?.subject || 'پژوهش و مقاله';
+          break;
+        case 'attendance':
+          module = 'attendance';
+          moduleTitle = 'حضور و غیاب طلاب';
+          entityName = itemForMeta?.date ? `حضور و غیاب ${itemForMeta.date}` : 'لیست حضور و غیاب';
+          break;
+        case 'study_stats':
+        case 'study_periods':
+        case 'periodic_study_logs':
+          module = 'stats';
+          moduleTitle = 'آمار و گزارشات مطالعه';
+          entityName = itemForMeta?.title || 'ساعات/دوره مطالعه';
+          break;
+        case 'discussion_groups':
+          module = 'discussion';
+          moduleTitle = 'گروه‌های بحثی';
+          entityName = itemForMeta?.title || itemForMeta?.subject || 'گروه مباحثه';
+          break;
+        case 'student_comments':
+          module = 'comments';
+          moduleTitle = 'نظرات و ارزیابی تربیتی';
+          entityName = itemForMeta?.category ? `نظر تربیتی (${itemForMeta.category})` : 'نظر تربیتی';
+          break;
+        case 'oral_exams':
+          module = 'comments';
+          moduleTitle = 'آزمون‌های شفاهی';
+          entityName = itemForMeta?.title || 'آزمون شفاهی';
+          break;
+        case 'todos':
+          module = 'todos';
+          moduleTitle = 'پیگیری‌ها و تسک‌ها';
+          entityName = itemForMeta?.title || 'تسک پیگیری';
+          break;
+        case 'academic_calendar_periods':
+        case 'academic_holidays':
+        case 'academic_holiday_types':
+        case 'academic_sub_periods':
+        case 'academic_weekly_programs':
+          module = 'academic-calendar';
+          moduleTitle = 'تقویم آموزشی و سالنامه';
+          entityName = itemForMeta?.title || itemForMeta?.name || 'تقویم آموزشی';
+          break;
+        case 'teachers':
+          module = 'teachers-bank';
+          moduleTitle = 'بانک اساتید و مدرسین';
+          entityName = itemForMeta?.name ? `استاد ${itemForMeta.name}` : 'پرونده استاد';
+          break;
+        case 'classrooms':
+          module = 'classrooms';
+          moduleTitle = 'مدرس‌ها و فضاهای درسی';
+          entityName = itemForMeta?.name || itemForMeta?.title || 'مدرس/کلاس';
+          break;
+        case 'workflow_items':
+        case 'workflow_settings':
+          module = 'workflow';
+          moduleTitle = 'جریان کار و کارتابل تاییدات';
+          entityName = itemForMeta?.title || 'آیتم جریان کار';
+          break;
+        case 'presence_hours':
+          module = 'presence-hours';
+          moduleTitle = 'ساعت حضور و کارکرد';
+          entityName = itemForMeta?.teacherName ? `کارکرد استاد ${itemForMeta.teacherName}` : 'کارکرد اساتید';
+          break;
+        case 'custom_student_schedules':
+          module = 'student-schedule';
+          moduleTitle = 'برنامه درسی و هفتگی طلاب';
+          entityName = itemForMeta?.title || 'برنامه هفتگی';
+          break;
+        case 'counseling_session_grades':
+          module = 'counseling-classes';
+          moduleTitle = 'کلاس‌های مشاوره (ارزیابی و نمرات)';
+          entityName = itemForMeta?.studentName ? `ارزیابی مشاوره ${itemForMeta.studentName}` : 'نمره کلاس مشاوره';
+          break;
+        default:
+          moduleTitle = `بخش ${resolvedCol}`;
+          break;
+      }
+
+      let userName = 'کاربر سیستم';
+      let username = 'system';
+      let userRole: any = 'super_admin';
+      let userRoleTitle = 'مدیریت سامانه';
+      let userLevel: any = 1;
+
+      try {
+        const raw = localStorage.getItem('system_auth_current_user_v2');
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p) {
+            userName = p.name || p.fullName || p.username || userName;
+            username = p.username || username;
+            userRole = p.role || userRole;
+            userRoleTitle = p.roleTitle || userRoleTitle;
+            userLevel = p.level || userLevel;
+          }
+        }
+      } catch (e) {}
+
+      const now = new Date();
+      const isoStr = now.toISOString();
+      const timeStr = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      let dateStr = now.toLocaleDateString('fa-IR');
+
+      try {
+        const formatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        const parts = formatter.formatToParts(now);
+        const y = parts.find(p => p.type === 'year')?.value;
+        const m = parts.find(p => p.type === 'month')?.value;
+        const d = parts.find(p => p.type === 'day')?.value;
+        dateStr = `${y}/${m}/${d}`;
+      } catch (e) {}
+
+      let actionText = 'ایجاد';
+      if (actionType === 'update') actionText = 'ویرایش';
+      if (actionType === 'delete') actionText = 'حذف';
+
+      const auditEntry = {
+        id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        timestamp: isoStr,
+        shamsiDate: dateStr,
+        shamsiTime: timeStr,
+        userName,
+        username,
+        userRole,
+        userRoleTitle,
+        userLevel,
+        actionType,
+        module,
+        moduleTitle,
+        entityType: resolvedCol,
+        entityId,
+        entityName,
+        description: `${actionText} اطلاعات در ${moduleTitle}: «${entityName}» توسط ${userName}`,
+        previousState: previousState ? JSON.parse(JSON.stringify(previousState)) : undefined,
+        newState: newState ? JSON.parse(JSON.stringify(newState)) : undefined,
+        isReverted: false
+      };
+
+      if (db.objectStoreNames.contains('audit_logs')) {
+        const tx = db.transaction('audit_logs', 'readwrite');
+        const store = tx.objectStore('audit_logs');
+        store.put(auditEntry);
+      } else {
+        this.setLocalStorageDoc('audit_logs', auditEntry);
+      }
+    } catch (e) {
+      console.warn('Auto audit log failed (non-fatal):', e);
+    }
   }
 
   // Clear entire collection
@@ -1997,6 +2209,122 @@ class LocalDatabase {
           }
         ];
         await this.bulkPut('workflow_items', initialWorkflowItems);
+      }
+
+      // Check and seed default audit_logs if empty
+      const existingAudit = await this.getDocs('audit_logs');
+      if (!existingAudit || existingAudit.length === 0) {
+        const initialAuditLogs = [
+          {
+            id: 'audit_1',
+            timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
+            shamsiDate: '1403/08/20',
+            shamsiTime: '10:15:22',
+            userId: 'user_yazdani',
+            userName: 'استاد یزدانی (مسئول پژوهش)',
+            username: 'YAZDANI',
+            userRole: 'research_manager',
+            userRoleTitle: 'مسئول پژوهش',
+            userLevel: 2,
+            actionType: 'update',
+            module: 'research',
+            moduleTitle: 'بخش پژوهش و مقالات',
+            entityType: 'research',
+            entityId: 'res_101',
+            entityName: 'مقاله بررسی تطبیقی درایه الحدیث',
+            description: 'ویرایش وضعیت مقاله علمی طلبه محمد رضایی به مرحله «ارزیابی نهایی استاد»',
+            previousState: { id: 'res_101', status: 'در حال نگارش', score: 14 },
+            newState: { id: 'res_101', status: 'ارزیابی نهایی استاد', score: 18 },
+            isReverted: false
+          },
+          {
+            id: 'audit_2',
+            timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
+            shamsiDate: '1403/08/20',
+            shamsiTime: '08:30:10',
+            userId: 'user_shah',
+            userName: 'استاد شاهپوری (مسئول آموزش)',
+            username: 'SHAH',
+            userRole: 'education_manager',
+            userRoleTitle: 'مسئول آموزش',
+            userLevel: 2,
+            actionType: 'delete',
+            module: 'programs',
+            moduleTitle: 'برنامه‌های مدرسه و مدرس‌ها',
+            entityType: 'programs',
+            entityId: 'prog_temp_9',
+            entityName: 'کلاس فوق‌العاده مکاسب پایه ۸',
+            description: 'حذف کلاس درس فوق‌العاده مکاسب پایه ۸ از لیست برنامه درسی مدرس ۱',
+            previousState: { id: 'prog_temp_9', title: 'کلاس فوق‌العاده مکاسب پایه ۸', day: 'پنج‌شنبه', time: '10:00 - 11:30' },
+            isReverted: false
+          },
+          {
+            id: 'audit_3',
+            timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+            shamsiDate: '1403/08/19',
+            shamsiTime: '16:45:00',
+            userId: 'user_mali',
+            userName: 'مسئول مالی و اداری',
+            username: 'MALI',
+            userRole: 'finance_manager',
+            userRoleTitle: 'مسئول مالی و کارکرد',
+            userLevel: 2,
+            actionType: 'update',
+            module: 'presence-hours',
+            moduleTitle: 'ساعت حضور و کارکرد اساتید',
+            entityType: 'presence_hours',
+            entityId: 'pres_55',
+            entityName: 'کارکرد آبان ماه اساتید',
+            description: 'تأیید و به‌روزرسانی ساعات حضور و کارکرد اساتید پایه ۷ و ۸ در مهر ماه',
+            previousState: { id: 'pres_55', approvedHours: 40 },
+            newState: { id: 'pres_55', approvedHours: 52 },
+            isReverted: false
+          },
+          {
+            id: 'audit_4',
+            timestamp: new Date(Date.now() - 3600000 * 36).toISOString(),
+            shamsiDate: '1403/08/18',
+            shamsiTime: '11:10:05',
+            userId: 'user_isj',
+            userName: 'استاد حیاتی (مسئول پایه ۷)',
+            username: 'ISJ',
+            userRole: 'grade_mentor',
+            userRoleTitle: 'مسئول پایه ۷',
+            userLevel: 2,
+            actionType: 'create',
+            module: 'discussion',
+            moduleTitle: 'گروه‌های بحثی',
+            entityType: 'discussion_groups',
+            entityId: 'group_702',
+            entityName: 'گروه مباحثه النحو الواضح پایه ۷',
+            description: 'ایجاد گروه مباحثه جدید «النحو الواضح» با عضویت طلاب پایه ۷',
+            newState: { id: 'group_702', title: 'گروه مباحثه النحو الواضح پایه ۷', grade: 'پایه ۷' },
+            isReverted: false
+          },
+          {
+            id: 'audit_5',
+            timestamp: new Date(Date.now() - 3600000 * 48).toISOString(),
+            shamsiDate: '1403/08/17',
+            shamsiTime: '14:20:15',
+            userId: 'user_sarlak',
+            userName: 'طلبه سرلک (نماینده کلاس)',
+            username: 'SARLAK',
+            userRole: 'class_representative',
+            userRoleTitle: 'نماینده کلاس',
+            userLevel: 3,
+            actionType: 'update',
+            module: 'attendance',
+            moduleTitle: 'حضور و غیاب طلاب',
+            entityType: 'attendance',
+            entityId: 'att_88',
+            entityName: 'حضور و غیاب کلاس فقه ۲ دوشنبه',
+            description: 'ویرایش و اصلاح لیست حضور و غیاب جلسه دوشنبه درس فقه پایه ۷',
+            previousState: { id: 'att_88', presentCount: 12 },
+            newState: { id: 'att_88', presentCount: 14 },
+            isReverted: false
+          }
+        ];
+        await this.bulkPut('audit_logs', initialAuditLogs);
       }
     };
     } catch (e) {
