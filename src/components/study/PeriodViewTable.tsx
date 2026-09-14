@@ -14,10 +14,11 @@ import {
   Info,
   Clock,
   Layers,
-  Filter
+  Filter,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, StudyPeriod, PeriodicStudyLog, Todo } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, Todo, WorkflowItem } from '../../types';
 import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
@@ -27,6 +28,8 @@ export type TableDisplayMode = 'ALL_SPLIT' | 'TOTAL_ONLY' | 'STUDY_ONLY' | 'DISC
 export interface PeriodColumnsVisibility {
   grade: boolean;
   needsFollowUp: boolean;
+  warningNotice: boolean;
+  warningStatus: boolean;
   studyMinutes: boolean;
   discussionMinutes: boolean;
   totalMinutes: boolean;
@@ -64,6 +67,8 @@ export default function PeriodViewTable({
   const [cols, setCols] = useState<PeriodColumnsVisibility>({
     grade: true,
     needsFollowUp: true,
+    warningNotice: true,
+    warningStatus: true,
     studyMinutes: true,
     discussionMinutes: true,
     totalMinutes: true,
@@ -77,22 +82,72 @@ export default function PeriodViewTable({
   });
 
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
 
   useEffect(() => {
-    const fetchTodos = async () => {
+    const fetchTodosAndWorkflows = async () => {
       try {
-        const list = await localDb.getDocs<Todo>('todos');
-        setTodos(list);
+        const [todoList, wfList] = await Promise.all([
+          localDb.getDocs<Todo>('todos'),
+          localDb.getDocs<WorkflowItem>('workflow_items')
+        ]);
+        setTodos(todoList || []);
+        setWorkflowItems(wfList || []);
       } catch (e) {
-        console.error("Error loading todos:", e);
+        console.error("Error loading todos or workflow items:", e);
       }
     };
-    fetchTodos();
+    fetchTodosAndWorkflows();
     const unsub = localDb.subscribe(() => {
-      fetchTodos();
+      fetchTodosAndWorkflows();
     });
     return () => unsub();
   }, []);
+
+  const handleRegisterWarning = async (student: Student, deficitMinutes: number) => {
+    try {
+      const existingWf = workflowItems.find(w => 
+        w.category === 'study_deficit_warning' && 
+        w.studentId === student.id && 
+        (w.details?.periodId === period.id || w.title?.includes(period.title))
+      );
+
+      if (existingWf) {
+        alert(`ثبت اخطار برای ${student.name} قبلاً انجام شده و در وضعیت «${
+          existingWf.status === 'approved' ? 'ثبت قطعی' :
+          existingWf.status === 'pending' ? 'در انتظار تایید' : 'رد اخطار'
+        }» می‌باشد.`);
+        return;
+      }
+
+      const newWfItem: WorkflowItem = {
+        id: `wf_warning_${Date.now()}_${student.id}`,
+        type: 'approval',
+        category: 'study_deficit_warning',
+        title: `اخطار کسری مطالعه: ${student.name} - ${period.title}`,
+        description: `طلبه ${student.name} (${student.grade || 'پایه نامشخص'}) در دوره مطالعاتی «${period.title}»، دارای ${deficitMinutes.toLocaleString('fa-IR')} دقیقه کسری مطالعه از میزان موظفی (${period.mandatoryHours || 0} ساعت) می‌باشد. درخواست ثبت اخطار در پرونده.`,
+        status: 'pending',
+        grade: student.grade || 'همه پایه‌ها',
+        studentId: student.id,
+        studentName: student.name,
+        nationalId: student.nationalId,
+        requiresEducationApproval: true,
+        details: {
+          periodId: period.id,
+          periodTitle: period.title,
+          deficitMinutes: deficitMinutes,
+          mandatoryHours: period.mandatoryHours || 0
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      await localDb.addDoc('workflow_items', newWfItem);
+      alert(`درخواست ثبت اخطار برای ${student.name} جهت تایید به بخش «جریان کار» ارسال گردید.`);
+    } catch (err) {
+      console.error("Error registering warning workflow item:", err);
+      alert("خطا در ثبت اخطار در جریان کار");
+    }
+  };
 
   const handleToggleFollowUp = async (student: Student, activeTodo?: Todo) => {
     try {
@@ -290,6 +345,14 @@ export default function PeriodViewTable({
                       <input type="checkbox" checked={cols.needsFollowUp} onChange={() => setCols(p => ({ ...p, needsFollowUp: !p.needsFollowUp }))} className="rounded text-amber-600" />
                       <span className="text-amber-800 font-black">نیاز به پیگیری</span>
                     </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-rose-50/50 cursor-pointer bg-rose-50/30">
+                      <input type="checkbox" checked={cols.warningNotice} onChange={() => setCols(p => ({ ...p, warningNotice: !p.warningNotice }))} className="rounded text-rose-600" />
+                      <span className="text-rose-800 font-black">ثبت اخطار</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
+                      <input type="checkbox" checked={cols.warningStatus} onChange={() => setCols(p => ({ ...p, warningStatus: !p.warningStatus }))} className="rounded text-amber-600" />
+                      <span className="text-amber-900 font-black">وضعیت اخطار</span>
+                    </label>
                     <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
                       <input type="checkbox" checked={cols.studyMinutes} onChange={() => setCols(p => ({ ...p, studyMinutes: !p.studyMinutes }))} className="rounded text-indigo-600" />
                       <span>دقیقه مطالعه</span>
@@ -343,6 +406,8 @@ export default function PeriodViewTable({
               <th className="px-4 py-3.5">نام و نام خانوادگی</th>
               {cols.grade && <th className="px-3 py-3.5 text-center">پایه</th>}
               {cols.needsFollowUp && <th className="px-3 py-3.5 text-center bg-amber-50/60 text-amber-800 font-extrabold">نیاز به پیگیری</th>}
+              {cols.warningNotice && <th className="px-3 py-3.5 text-center bg-rose-50/70 text-rose-800 font-extrabold">ثبت اخطار</th>}
+              {cols.warningStatus && <th className="px-3 py-3.5 text-center bg-amber-50/70 text-amber-900 font-extrabold">وضعیت اخطار</th>}
 
               {/* Show Study column if mode allows and column enabled */}
               {cols.studyMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'STUDY_ONLY') && (
@@ -438,6 +503,74 @@ export default function PeriodViewTable({
                         </button>
                       </td>
                     )}
+
+                    {/* Register Warning Column */}
+                    {cols.warningNotice && (
+                      <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        {period.exemptGrades?.includes(student.grade || '') ? (
+                          <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-100 whitespace-nowrap">
+                            معاف از موظفی
+                          </span>
+                        ) : diffMandatory < 0 ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[11px] font-bold text-rose-700 whitespace-nowrap">
+                              کسری {Math.abs(diffMandatory).toLocaleString('fa-IR')} د
+                            </span>
+                            {!workflowItems.some(w => w.category === 'study_deficit_warning' && w.studentId === student.id && (w.details?.periodId === period.id || w.title?.includes(period.title))) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRegisterWarning(student, Math.abs(diffMandatory))}
+                                className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black rounded-lg transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+                                title="ثبت اخطار در جریان کار"
+                              >
+                                <AlertCircle size={11} />
+                                <span>ثبت اخطار</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-bold text-slate-400">ثبت ارسالی</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] font-medium">تکمیل موظفی</span>
+                        )}
+                      </td>
+                    )}
+
+                    {/* Warning Status Column */}
+                    {cols.warningStatus && (() => {
+                      const wfItem = workflowItems.find(w => 
+                        w.category === 'study_deficit_warning' && 
+                        w.studentId === student.id && 
+                        (w.details?.periodId === period.id || w.title?.includes(period.title))
+                      );
+                      return (
+                        <td className="px-3 py-3.5 text-center">
+                          {wfItem ? (
+                            wfItem.status === 'approved' ? (
+                              <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
+                                ثبت قطعی
+                              </span>
+                            ) : wfItem.status === 'rejected' ? (
+                              <span className="bg-slate-100 text-slate-600 border border-slate-300 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
+                                رد اخطار
+                              </span>
+                            ) : (
+                              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
+                                در انتظار تایید
+                              </span>
+                            )
+                          ) : period.exemptGrades?.includes(student.grade || '') ? (
+                            <span className="text-slate-400 text-[10px]">---</span>
+                          ) : diffMandatory < 0 ? (
+                            <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
+                              ثبت نشده
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 text-[10px] font-bold">فاقد اخطار</span>
+                          )}
+                        </td>
+                      );
+                    })()}
 
                     {/* Study Minutes Column */}
                     {cols.studyMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'STUDY_ONLY') && (

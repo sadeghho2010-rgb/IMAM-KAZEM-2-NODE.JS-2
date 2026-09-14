@@ -28,7 +28,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useMentor } from '../context/MentorContext';
 import { localDb } from '../lib/localDb';
-import { Student, Program, Enrollment, DiscussionGroup, MadrasRoom, ConsultationAdvisorProposal, ProposedConsultationClass } from '../types';
+import { Student, Program, Enrollment, DiscussionGroup, MadrasRoom, ConsultationAdvisorProposal, ProposedConsultationClass, CustomStudentSchedule } from '../types';
 
 interface ConsultationAdvisorProps {
   onNavigate?: (tab: string, studentId?: string) => void;
@@ -99,6 +99,7 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [discussionGroups, setDiscussionGroups] = useState<DiscussionGroup[]>([]);
   const [classrooms, setClassrooms] = useState<MadrasRoom[]>([]);
+  const [customSchedules, setCustomSchedules] = useState<CustomStudentSchedule[]>([]);
   const [savedProposals, setSavedProposals] = useState<ConsultationAdvisorProposal[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -140,12 +141,13 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [sData, pData, eData, dgData, crData] = await Promise.all([
+      const [sData, pData, eData, dgData, crData, csData] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<Enrollment>('enrollments'),
         localDb.getDocs<DiscussionGroup>('discussion_groups'),
-        localDb.getDocs<MadrasRoom>('classrooms')
+        localDb.getDocs<MadrasRoom>('classrooms'),
+        localDb.getDocs<CustomStudentSchedule>('custom_student_schedules')
       ]);
 
       setStudents(sData || []);
@@ -153,6 +155,7 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
       setEnrollments(eData || []);
       setDiscussionGroups(dgData || []);
       setClassrooms(crData || []);
+      setCustomSchedules(csData || []);
 
       // Load saved proposals from localStorage
       try {
@@ -306,6 +309,30 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
             // Check simple time overlap
             if (timeOverlaps(slotStart, slotEnd, progStart, progEnd)) {
               return { hasConflict: true, conflictingProgramTitle: prog.title, conflictingDay: d };
+            }
+          }
+        }
+      }
+    }
+
+    // Check custom manual student schedules (e.g., external classes)
+    const studentCustoms = customSchedules.filter(cs => cs.studentId === studentId);
+    for (const cs of studentCustoms) {
+      for (const d of days) {
+        const isDayMatch = (cs.days && Array.isArray(cs.days) && cs.days.length > 0)
+          ? cs.days.includes(d)
+          : (cs.day === d || cs.day?.includes(d));
+
+        if (isDayMatch) {
+          const csStart = cs.startTime || cs.time?.split('-')[0]?.trim() || '';
+          const csEnd = cs.endTime || cs.time?.split('-')[1]?.trim() || '';
+          if (csStart && csEnd) {
+            if (timeOverlaps(slotStart, slotEnd, csStart, csEnd)) {
+              return { 
+                hasConflict: true, 
+                conflictingProgramTitle: `${cs.title} (برنامه دستی/خارج موسسه)`, 
+                conflictingDay: d 
+              };
             }
           }
         }

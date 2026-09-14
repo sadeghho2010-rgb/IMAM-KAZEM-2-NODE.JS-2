@@ -16,11 +16,12 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
-import { Student, StudyPeriod, PeriodicStudyLog } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
 import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
 import { exportAllPeriodsToExcel, prepareAggregatedData } from './allPeriodsExport';
 import AllPeriodsPDFModal from './AllPeriodsPDFModal';
 import { useMentor } from '../../context/MentorContext';
+import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -49,6 +50,7 @@ export default function AllPeriodsTable({
   // Column visibility state
   const [cols, setCols] = useState({
     grade: true,
+    confirmedWarningsCount: true,
     sumStudy: true,
     sumDisc: true,
     sumTotal: true,
@@ -62,6 +64,24 @@ export default function AllPeriodsTable({
     avgDisc: false,
     statusAvg: true
   });
+
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
+
+  useEffect(() => {
+    const fetchWorkflows = async () => {
+      try {
+        const list = await localDb.getDocs<WorkflowItem>('workflow_items');
+        setWorkflowItems(list || []);
+      } catch (e) {
+        console.error("Error loading workflow items:", e);
+      }
+    };
+    fetchWorkflows();
+    const unsub = localDb.subscribe(() => {
+      fetchWorkflows();
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -239,6 +259,10 @@ export default function AllPeriodsTable({
                       <input type="checkbox" checked={cols.belowAverageCount} onChange={() => setCols(p => ({ ...p, belowAverageCount: !p.belowAverageCount }))} className="rounded text-indigo-600" />
                       <span className="text-amber-700">دفعات زیر میانگین</span>
                     </label>
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-rose-600 bg-rose-50/50 p-1 rounded-lg">
+                      <input type="checkbox" checked={cols.confirmedWarningsCount} onChange={() => setCols(p => ({ ...p, confirmedWarningsCount: !p.confirmedWarningsCount }))} className="rounded text-rose-600" />
+                      <span className="text-rose-800 font-black">اخطارهای قطعی</span>
+                    </label>
                     <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600">
                       <input type="checkbox" checked={cols.avgStudy} onChange={() => setCols(p => ({ ...p, avgStudy: !p.avgStudy }))} className="rounded text-indigo-600" />
                       <span>میانگین مطالعه</span>
@@ -276,6 +300,7 @@ export default function AllPeriodsTable({
               {cols.avgTotal && <th className="px-3 py-3.5 text-center">میانگین کل دوره</th>}
               {cols.gradeAvg && <th className="px-3 py-3.5 text-center bg-purple-50/60 text-purple-800">میانگین کل پایه</th>}
               {cols.belowAverageCount && <th className="px-3 py-3.5 text-center bg-amber-50/60 text-amber-800">تعداد دفعات زیر میانگین</th>}
+              {cols.confirmedWarningsCount && <th className="px-3 py-3.5 text-center bg-rose-50/70 text-rose-800 font-extrabold">تعداد اخطارهای قطعی</th>}
               {cols.avgStudy && <th className="px-3 py-3.5 text-center">میانگین مطالعه</th>}
               {cols.avgDisc && <th className="px-3 py-3.5 text-center">میانگین مباحثه</th>}
               {cols.statusAvg && <th className="px-3 py-3.5 text-center bg-indigo-50/40 text-indigo-800">وضعیت میانگین</th>}
@@ -381,6 +406,26 @@ export default function AllPeriodsTable({
                       )}
                     </td>
                   )}
+
+                  {/* Confirmed Warnings Count */}
+                  {cols.confirmedWarningsCount && (() => {
+                    const confirmedCount = workflowItems.filter(w => 
+                      w.category === 'study_deficit_warning' && 
+                      w.studentId === item.student.id && 
+                      w.status === 'approved'
+                    ).length;
+                    return (
+                      <td className="px-3 py-3.5 text-center font-black bg-rose-50/20">
+                        {confirmedCount > 0 ? (
+                          <span className="bg-rose-100 text-rose-800 border border-rose-300 px-2.5 py-0.5 rounded-full text-[11px] font-black">
+                            {confirmedCount.toLocaleString('fa-IR')} اخطار قطعی
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[11px] font-medium">۰ (بدون اخطار)</span>
+                        )}
+                      </td>
+                    );
+                  })()}
 
                   {cols.avgStudy && (
                     <td className="px-3 py-3.5 text-center text-indigo-700 font-bold">

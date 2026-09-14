@@ -19,10 +19,14 @@ import {
   Filter,
   CheckCircle2,
   HelpCircle,
-  Layers
+  Layers,
+  Plus,
+  Trash2,
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Student, Program, Enrollment } from '../types';
+import { Student, Program, Enrollment, CustomStudentSchedule } from '../types';
 import { localDb } from '../lib/localDb';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -41,7 +45,26 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   const [students, setStudents] = useState<Student[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [customSchedules, setCustomSchedules] = useState<CustomStudentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal for adding manual custom schedule for a student
+  const [showAddCustomModal, setShowAddCustomModal] = useState<boolean>(false);
+  const [newCustomSchedule, setNewCustomSchedule] = useState<{
+    title: string;
+    days: string[];
+    startTime: string;
+    endTime: string;
+    locationOrNotes: string;
+    isExternal: boolean;
+  }>({
+    title: '',
+    days: ['شنبه'],
+    startTime: '10:00',
+    endTime: '11:30',
+    locationOrNotes: '',
+    isExternal: true
+  });
 
   // Initialize grade filter based on user role
   const getInitialGradeFilter = (): string => {
@@ -70,10 +93,12 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
       const rawStudents = await localDb.getDocs<Student>('students');
       const rawPrograms = await localDb.getDocs<Program>('programs');
       const rawEnrollments = await localDb.getDocs<Enrollment>('enrollments');
+      const rawCustoms = await localDb.getDocs<CustomStudentSchedule>('custom_student_schedules');
 
       setStudents(rawStudents);
       setPrograms(rawPrograms);
       setEnrollments(rawEnrollments);
+      setCustomSchedules(rawCustoms || []);
 
       // If Level 3 user, lock to their own student record
       if (currentUser && currentUser.level === 3) {
@@ -141,6 +166,75 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   const studentEnrollments = enrollments.filter(e => e.studentId === selectedStudent?.id);
   const enrolledProgramIds = new Set(studentEnrollments.map(e => e.programId));
   const studentPrograms = programs.filter(p => enrolledProgramIds.has(p.id));
+
+  // Helper to get custom manual schedules for selected student
+  const studentCustomSchedules = customSchedules.filter(cs => cs.studentId === selectedStudent?.id);
+
+  const getCustomSchedulesForDay = (dayName: string) => {
+    return studentCustomSchedules.filter(cs => {
+      if (cs.days && Array.isArray(cs.days) && cs.days.length > 0) {
+        return cs.days.includes(dayName);
+      }
+      return cs.day === dayName || cs.day?.includes(dayName);
+    });
+  };
+
+  const isAuthorizedToManageSchedule = currentUser?.level !== 3;
+
+  const handleSaveCustomSchedule = async () => {
+    if (!selectedStudent) return;
+    if (!newCustomSchedule.title.trim()) {
+      alert('لطفاً عنوان برنامه را وارد کنید.');
+      return;
+    }
+    if (!newCustomSchedule.days || newCustomSchedule.days.length === 0) {
+      alert('لطفاً حداقل یک روز برگزاری را انتخاب کنید.');
+      return;
+    }
+
+    const scheduleDoc: CustomStudentSchedule = {
+      id: `custom_sched_${Date.now()}`,
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.name,
+      title: newCustomSchedule.title.trim(),
+      day: newCustomSchedule.days.join(' - '),
+      days: newCustomSchedule.days,
+      time: `${newCustomSchedule.startTime} - ${newCustomSchedule.endTime}`,
+      startTime: newCustomSchedule.startTime,
+      endTime: newCustomSchedule.endTime,
+      locationOrNotes: newCustomSchedule.locationOrNotes,
+      isExternal: newCustomSchedule.isExternal,
+      createdAt: new Date().toISOString(),
+      createdByName: currentUser?.name || currentUser?.username || 'مسئول آموزش'
+    };
+
+    try {
+      await localDb.saveDoc('custom_student_schedules', scheduleDoc);
+      setShowAddCustomModal(false);
+      setNewCustomSchedule({
+        title: '',
+        days: ['شنبه'],
+        startTime: '10:00',
+        endTime: '11:30',
+        locationOrNotes: '',
+        isExternal: true
+      });
+      fetchData();
+    } catch (err) {
+      console.error('Error saving custom schedule:', err);
+      alert('خطا در ذخیره‌سازی برنامه درسی دستی.');
+    }
+  };
+
+  const handleDeleteCustomSchedule = async (id: string) => {
+    if (!confirm('آیا از حذف این برنامه درسی اختصاصی اطمینان دارید؟')) return;
+    try {
+      await localDb.deleteDoc('custom_student_schedules', id);
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting custom schedule:', err);
+    }
+  };
 
   // Helper to categorize programs
   const mainClasses = studentPrograms.filter(p => p.type === 'اصلی');
@@ -470,19 +564,34 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                 </div>
 
                 {/* Quick Summary Badges */}
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <span className="px-3 py-1 bg-indigo-800/60 text-indigo-100 rounded-xl border border-indigo-700/60 font-bold">
-                    دروس اصلی: <b className="text-white">{mainClasses.length}</b>
-                  </span>
-                  <span className="px-3 py-1 bg-amber-500/20 text-amber-200 rounded-xl border border-amber-500/40 font-bold">
-                    مشاوره‌ها: <b className="text-white">{counselingClasses.length}</b>
-                  </span>
-                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-200 rounded-xl border border-emerald-500/40 font-bold">
-                    پژوهش: <b className="text-white">{researchClasses.length}</b>
-                  </span>
-                  <span className="px-3 py-1 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/40 font-bold">
-                    ۵ شنبه‌ها: <b className="text-white">{thursdayClasses.length}</b>
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="px-3 py-1 bg-indigo-800/60 text-indigo-100 rounded-xl border border-indigo-700/60 font-bold">
+                      دروس اصلی: <b className="text-white">{mainClasses.length}</b>
+                    </span>
+                    <span className="px-3 py-1 bg-amber-500/20 text-amber-200 rounded-xl border border-amber-500/40 font-bold">
+                      مشاوره‌ها: <b className="text-white">{counselingClasses.length}</b>
+                    </span>
+                    <span className="px-3 py-1 bg-emerald-500/20 text-emerald-200 rounded-xl border border-emerald-500/40 font-bold">
+                      پژوهش: <b className="text-white">{researchClasses.length}</b>
+                    </span>
+                    <span className="px-3 py-1 bg-purple-500/20 text-purple-200 rounded-xl border border-purple-500/40 font-bold">
+                      ۵ شنبه‌ها: <b className="text-white">{thursdayClasses.length}</b>
+                    </span>
+                    <span className="px-3 py-1 bg-rose-500/20 text-rose-200 rounded-xl border border-rose-500/40 font-bold">
+                      برنامه‌های دستی/خارج موسسه: <b className="text-white">{studentCustomSchedules.length}</b>
+                    </span>
+                  </div>
+
+                  {isAuthorizedToManageSchedule && (
+                    <button
+                      onClick={() => setShowAddCustomModal(true)}
+                      className="flex items-center gap-2 px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer"
+                    >
+                      <Plus size={16} />
+                      <span>ثبت برنامه درسی دستی / خارج از موسسه</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -501,6 +610,8 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {WEEK_DAYS.map(dayName => {
                     const dayProgs = getProgramsForDay(dayName);
+                    const dayCustoms = getCustomSchedulesForDay(dayName);
+                    const totalDayItems = dayProgs.length + dayCustoms.length;
 
                     return (
                       <div key={dayName} className="bg-slate-50/80 rounded-2xl border border-slate-200 p-4 space-y-3 flex flex-col">
@@ -511,13 +622,14 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                           </h4>
                           <span className={cn(
                             "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                            dayProgs.length > 0 ? "bg-indigo-50 text-indigo-800 border-indigo-200" : "bg-slate-200/60 text-slate-500 border-slate-200"
+                            totalDayItems > 0 ? "bg-indigo-50 text-indigo-800 border-indigo-200" : "bg-slate-200/60 text-slate-500 border-slate-200"
                           )}>
-                            {dayProgs.length} کلاس
+                            {totalDayItems} برنامه
                           </span>
                         </div>
 
                         <div className="space-y-2 flex-1">
+                          {/* Institutional Programs */}
                           {dayProgs.map(prog => {
                             const parentTitle = getParentProgramTitle(prog.parentProgramId);
 
@@ -569,7 +681,43 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                             );
                           })}
 
-                          {dayProgs.length === 0 && (
+                          {/* Custom External / Manual Programs */}
+                          {dayCustoms.map(cs => (
+                            <div key={cs.id} className="p-3 rounded-xl border text-xs space-y-1.5 shadow-2xs bg-rose-50 text-rose-950 border-rose-200">
+                              <div className="flex items-center justify-between font-black">
+                                <span className="text-xs truncate flex items-center gap-1">
+                                  <ExternalLink size={12} className="text-rose-600" />
+                                  {cs.title}
+                                </span>
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-rose-100 text-rose-800 border-rose-300">
+                                  دستی / خارج موسسه
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] font-bold text-rose-800">
+                                <span className="flex items-center gap-1">
+                                  <Clock size={11} /> {cs.time || `${cs.startTime} - ${cs.endTime}`}
+                                </span>
+                                {isAuthorizedToManageSchedule && (
+                                  <button 
+                                    onClick={() => handleDeleteCustomSchedule(cs.id)}
+                                    className="p-1 hover:bg-rose-200 rounded text-rose-700 transition-colors cursor-pointer"
+                                    title="حذف این برنامه دستی"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+
+                              {cs.locationOrNotes && (
+                                <div className="text-[10px] text-rose-900 pt-1 border-t border-rose-200">
+                                  ملاحظات: {cs.locationOrNotes}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+
+                          {totalDayItems === 0 && (
                             <div className="py-6 text-center text-slate-400 text-xs italic">
                               کلاسی برای {dayName} ثبت نشده است.
                             </div>
@@ -679,27 +827,59 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                     </div>
                   </div>
 
-                  {/* Other Classes Section */}
-                  <div className="p-4 bg-slate-100/60 rounded-2xl border border-slate-200 space-y-3">
-                    <div className="flex items-center justify-between font-black text-slate-800 text-sm border-b border-slate-200 pb-2">
+                  {/* Custom External / Manual Classes Section */}
+                  <div className="p-4 bg-rose-50/50 rounded-2xl border border-rose-200 space-y-3 col-span-full">
+                    <div className="flex items-center justify-between font-black text-rose-950 text-sm border-b border-rose-200 pb-2">
                       <span className="flex items-center gap-2">
-                        <HelpCircle size={16} className="text-slate-600" />
-                        <span>سایر برنامه‌ها ({otherClasses.length} مورد)</span>
+                        <ExternalLink size={16} className="text-rose-700" />
+                        <span>برنامه‌های اختصاصی، دستی و خارج از موسسه ({studentCustomSchedules.length} مورد)</span>
                       </span>
+                      {isAuthorizedToManageSchedule && (
+                        <button
+                          onClick={() => setShowAddCustomModal(true)}
+                          className="flex items-center gap-1 text-xs text-rose-800 hover:text-rose-950 font-bold bg-white px-2.5 py-1 rounded-lg border border-rose-300 hover:bg-rose-100 transition-colors cursor-pointer"
+                        >
+                          <Plus size={14} />
+                          <span>افزودن برنامه جدید</span>
+                        </button>
+                      )}
                     </div>
 
-                    <div className="space-y-2">
-                      {otherClasses.map(p => (
-                        <div key={p.id} className="bg-white p-3 rounded-xl border border-slate-200 space-y-1 text-xs shadow-2xs">
-                          <div className="font-black text-slate-900 text-sm">{p.title}</div>
-                          <div className="flex justify-between text-slate-600 font-bold text-[11px]">
-                            <span>استاد: {p.teacher || '---'}</span>
-                            <span>زمان: {p.day || ''} {p.time || ''}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {studentCustomSchedules.map(cs => (
+                        <div key={cs.id} className="bg-white p-3 rounded-xl border border-rose-200 space-y-1.5 text-xs shadow-2xs">
+                          <div className="font-black text-rose-950 text-sm flex items-center justify-between">
+                            <span>{cs.title}</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-rose-100 text-rose-900 rounded font-bold">
+                              {cs.isExternal ? 'خارج از موسسه' : 'اختصاصی'}
+                            </span>
                           </div>
+                          <div className="flex justify-between text-slate-600 font-bold text-[11px]">
+                            <span>روز: {cs.day}</span>
+                            <span>ساعت: {cs.time || `${cs.startTime} - ${cs.endTime}`}</span>
+                          </div>
+                          {cs.locationOrNotes && (
+                            <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-100">
+                              ملاحظات: {cs.locationOrNotes}
+                            </div>
+                          )}
+                          {isAuthorizedToManageSchedule && (
+                            <div className="pt-2 border-t border-rose-100 flex justify-end">
+                              <button
+                                onClick={() => handleDeleteCustomSchedule(cs.id)}
+                                className="flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                              >
+                                <Trash2 size={12} />
+                                <span>حذف برنامه</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
-                      {otherClasses.length === 0 && (
-                        <p className="text-xs text-slate-400 italic text-center py-2">برنامه دیگری ثبت‌نام نشده است.</p>
+                      {studentCustomSchedules.length === 0 && (
+                        <p className="text-xs text-rose-400 italic text-center py-2 col-span-full">
+                          هیچ برنامه درسی دستی یا خارج از موسسه‌ای برای این طلبه ثبت نشده است.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -714,6 +894,150 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
           )}
         </div>
       </div>
+
+      {/* Modal for adding manual custom student schedule */}
+      <AnimatePresence>
+        {showAddCustomModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 max-w-lg w-full border border-slate-200 shadow-xl space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                    <Plus size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900">ثبت برنامه درسی دستی / خارج از موسسه</h3>
+                    <p className="text-xs text-slate-500">برای {selectedStudent?.name}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAddCustomModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs font-bold text-slate-700">
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 text-[11px] leading-relaxed">
+                  💡 برنامه‌های درسی که برای طلبه به صورت دستی ثبت می‌شوند، در دستیار هوشمند چینش کلاس‌های مشاوره لحاظ شده و از پیشنهاد کلاس مشاوره در این ساعات جلوگیری خواهد شد.
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-slate-600">عنوان برنامه / کلاس:</label>
+                  <input 
+                    type="text" 
+                    placeholder="مثال: درس فقه خارج (موسسه دیگر)، کلاس زبان، برنامه شخصی" 
+                    value={newCustomSchedule.title}
+                    onChange={(e) => setNewCustomSchedule({ ...newCustomSchedule, title: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white text-xs font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-slate-600">نوع برنامه:</label>
+                  <select 
+                    value={newCustomSchedule.isExternal ? 'external' : 'internal'}
+                    onChange={(e) => setNewCustomSchedule({ ...newCustomSchedule, isExternal: e.target.value === 'external' })}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white text-xs font-bold"
+                  >
+                    <option value="external">خارج از موسسه (مستقل)</option>
+                    <option value="internal">اختصاصی داخل موسسه</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-1.5 text-slate-600 font-bold">روزهای برگزاری (امکان انتخاب چند روز):</label>
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                    {WEEK_DAYS.map(d => {
+                      const isSelected = newCustomSchedule.days.includes(d);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => {
+                            const current = newCustomSchedule.days;
+                            const updated = isSelected
+                              ? current.filter(x => x !== d)
+                              : [...current, d];
+                            setNewCustomSchedule({ ...newCustomSchedule, days: updated });
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border shadow-2xs",
+                            isSelected
+                              ? "bg-amber-500 text-slate-950 border-amber-600 font-black"
+                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          <Check size={12} className={cn(isSelected ? "opacity-100 text-slate-950" : "opacity-0")} />
+                          <span>{d}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block mb-1 text-slate-600">ساعت شروع:</label>
+                    <input 
+                      type="text" 
+                      placeholder="08:00" 
+                      value={newCustomSchedule.startTime}
+                      onChange={(e) => setNewCustomSchedule({ ...newCustomSchedule, startTime: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white text-xs font-bold text-center dir-ltr"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-1 text-slate-600">ساعت پایان:</label>
+                    <input 
+                      type="text" 
+                      placeholder="09:30" 
+                      value={newCustomSchedule.endTime}
+                      onChange={(e) => setNewCustomSchedule({ ...newCustomSchedule, endTime: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white text-xs font-bold text-center dir-ltr"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block mb-1 text-slate-600">مکان / توضیحات تداخلی:</label>
+                  <textarea 
+                    rows={2}
+                    placeholder="محل برگزاری، نام استاد یا ملاحظات خاص..." 
+                    value={newCustomSchedule.locationOrNotes}
+                    onChange={(e) => setNewCustomSchedule({ ...newCustomSchedule, locationOrNotes: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowAddCustomModal(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleSaveCustomSchedule}
+                  className="px-5 py-2.5 text-xs font-black bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  ثبت برنامه
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* HIDDEN PRINTABLE CONTAINER FOR PDF EXPORT */}
       <div style={{ position: 'fixed', left: '-9999px', top: '0px', width: '850px', zIndex: -1000, pointerEvents: 'none', opacity: 0 }}>

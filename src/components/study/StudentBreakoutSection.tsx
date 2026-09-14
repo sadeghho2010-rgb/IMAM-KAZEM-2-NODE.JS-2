@@ -33,8 +33,9 @@ import {
   Legend, 
   ReferenceLine 
 } from 'recharts';
-import { Student, StudyPeriod, PeriodicStudyLog } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
 import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
+import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 
 export type ChartMetricMode = 'TOTAL' | 'SPLIT_ALL' | 'STUDY_ONLY' | 'DISCUSSION_ONLY' | 'ADJUSTED';
@@ -76,6 +77,24 @@ export default function StudentBreakoutSection({
     statusMandatory: true,
     statusAvg: true,
   });
+
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
+
+  useEffect(() => {
+    const fetchWorkflows = async () => {
+      try {
+        const list = await localDb.getDocs<WorkflowItem>('workflow_items');
+        setWorkflowItems(list || []);
+      } catch (e) {
+        console.error("Error loading workflow items:", e);
+      }
+    };
+    fetchWorkflows();
+    const unsub = localDb.subscribe(() => {
+      fetchWorkflows();
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -188,7 +207,7 @@ export default function StudentBreakoutSection({
       {selectedStudentId && selectedStudent ? (
         <div className="space-y-8">
           {/* Summary KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 bg-slate-50 p-5 rounded-2xl border border-slate-100">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 bg-slate-50 p-5 rounded-2xl border border-slate-100">
             <div className="space-y-1">
               <p className="text-[10px] font-bold text-slate-400">مجموع دقایق (مطالعه + مباحثه):</p>
               <p className="text-base font-black text-slate-900">
@@ -224,6 +243,27 @@ export default function StudentBreakoutSection({
                 {belowAvgPercentage.toFixed(0)}% <span className="text-xs font-normal text-slate-400">از دوره‌ها</span>
               </p>
               <p className="text-[10px] text-slate-400 font-medium">در {activeStudentLogs.length} دوره فعال</p>
+            </div>
+
+            <div className="space-y-1 bg-rose-50/70 p-2.5 rounded-xl border border-rose-100">
+              <p className="text-[10px] font-bold text-rose-800">تعداد اخطارهای قطعی:</p>
+              {(() => {
+                const confirmedCount = workflowItems.filter(w => 
+                  w.category === 'study_deficit_warning' && 
+                  w.studentId === selectedStudentId && 
+                  w.status === 'approved'
+                ).length;
+                return (
+                  <>
+                    <p className="text-base font-black text-rose-700">
+                      {confirmedCount.toLocaleString('fa-IR')} <span className="text-xs font-normal text-rose-600">مورد</span>
+                    </p>
+                    <p className="text-[10px] text-rose-600 font-medium">
+                      {confirmedCount > 0 ? 'اخطار ثبت شده در پرونده' : 'فاقد اخطار قطعی'}
+                    </p>
+                  </>
+                );
+              })()}
             </div>
           </div>
 

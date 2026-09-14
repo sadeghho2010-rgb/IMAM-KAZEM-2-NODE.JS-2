@@ -179,7 +179,13 @@ export default function MadrasRooms() {
     setClassFormTitle('');
     setClassFormMadras(prefillRoomName || (rooms[0]?.name || ''));
     setClassFormTeacher('');
-    setClassFormDays(prefillDay ? [prefillDay] : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']);
+    if (prefillDay === 'شنبه الی چهارشنبه' || prefillDay?.includes('شنبه الی چهارشنبه')) {
+      setClassFormDays(['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']);
+    } else if (prefillDay) {
+      setClassFormDays(prefillDay.split(/[،,]/).map(d => d.trim()).filter(Boolean));
+    } else {
+      setClassFormDays(['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']);
+    }
 
     const targetTime = prefillTime || MADRAS_HOURLY_SLOTS_7_TO_17[0].displayTime;
     setClassFormTime(targetTime);
@@ -474,11 +480,11 @@ export default function MadrasRooms() {
               className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
             >
               <option value={0}>تمام ظرفیت‌ها</option>
+              <option value={5}>حداقل ۵ نفر</option>
+              <option value={15}>حداقل ۱۵ نفر</option>
               <option value={20}>حداقل ۲۰ نفر</option>
               <option value={25}>حداقل ۲۵ نفر</option>
-              <option value={30}>حداقل ۳۰ نفر</option>
-              <option value={35}>حداقل ۳۵ نفر</option>
-              <option value={40}>حداقل ۴۰ نفر</option>
+              <option value={45}>حداقل ۴۵ نفر</option>
             </select>
           </div>
 

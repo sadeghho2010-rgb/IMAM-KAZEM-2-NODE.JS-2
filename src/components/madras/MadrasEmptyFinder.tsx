@@ -25,6 +25,34 @@ import {
 } from './madrasUtils';
 import { cn } from '../../lib/utils';
 
+export const SINGLE_DAY_OPTIONS = [
+  { id: 'all_school_days', label: 'همه روزهای درسی {شنبه الی چهارشنبه }', days: ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'] },
+  { id: 'شنبه', label: 'شنبه ها', days: ['شنبه'] },
+  { id: 'یکشنبه', label: 'یک شنبه ها', days: ['یکشنبه'] },
+  { id: 'دوشنبه', label: 'دوشنبه ها', days: ['دوشنبه'] },
+  { id: 'سه‌شنبه', label: 'سه شنبه ها', days: ['سه‌شنبه'] },
+  { id: 'چهارشنبه', label: 'چهارشنبه ها', days: ['چهارشنبه'] },
+  { id: 'پنج‌شنبه', label: 'پنج شنبه ها', days: ['پنج‌شنبه'] },
+];
+
+export const INDIVIDUAL_DAY_OPTIONS = [
+  { id: 'شنبه', label: 'شنبه ها' },
+  { id: 'یکشنبه', label: 'یک شنبه ها' },
+  { id: 'دوشنبه', label: 'دوشنبه ها' },
+  { id: 'سه‌شنبه', label: 'سه شنبه ها' },
+  { id: 'چهارشنبه', label: 'چهارشنبه ها' },
+  { id: 'پنج‌شنبه', label: 'پنج شنبه ها' },
+];
+
+export const CAPACITY_OPTIONS = [
+  { value: 0, label: 'تمام ظرفیت‌ها' },
+  { value: 5, label: 'حداقل 5 نفر' },
+  { value: 15, label: 'حداقل 15 نفر' },
+  { value: 20, label: 'حداقل 20 نفر' },
+  { value: 25, label: 'حداقل 25 نفر' },
+  { value: 45, label: 'حداقل 45 نفر' },
+];
+
 interface MadrasEmptyFinderProps {
   rooms: MadrasRoom[];
   programs: Program[];
@@ -42,8 +70,11 @@ export default function MadrasEmptyFinder({
   onQuickAssign,
   onClose,
 }: MadrasEmptyFinderProps) {
-  // Day selection: 'daily' (all active seminary days) or specific day name
-  const [selectedDay, setSelectedDay] = useState<string>(() => getCurrentPersianDayName());
+  // Day selection states: single day/all days mode OR two days selection mode
+  const [isTwoDaysMode, setIsTwoDaysMode] = useState(false);
+  const [selectedDayOption, setSelectedDayOption] = useState<string>('all_school_days');
+  const [selectedDay1, setSelectedDay1] = useState<string>('شنبه');
+  const [selectedDay2, setSelectedDay2] = useState<string>('سه‌شنبه');
   
   // Time Slot selection (1-hour slots) or Custom (non-hour manual entry)
   const [selectedSlotId, setSelectedSlotId] = useState<string>('hour-1');
@@ -63,6 +94,26 @@ export default function MadrasEmptyFinder({
     });
     return Array.from(set);
   }, [rooms]);
+
+  // Days to evaluate
+  const daysToCheck = useMemo(() => {
+    if (isTwoDaysMode) {
+      return [selectedDay1, selectedDay2];
+    }
+    const found = SINGLE_DAY_OPTIONS.find(o => o.id === selectedDayOption);
+    return found ? found.days : ['شنبه'];
+  }, [isTwoDaysMode, selectedDay1, selectedDay2, selectedDayOption]);
+
+  // Display label for selected day(s)
+  const dayDisplayLabel = useMemo(() => {
+    if (isTwoDaysMode) {
+      const l1 = INDIVIDUAL_DAY_OPTIONS.find(d => d.id === selectedDay1)?.label || selectedDay1;
+      const l2 = INDIVIDUAL_DAY_OPTIONS.find(d => d.id === selectedDay2)?.label || selectedDay2;
+      return `دو روز: ${l1} و ${l2}`;
+    }
+    const found = SINGLE_DAY_OPTIONS.find(o => o.id === selectedDayOption);
+    return found?.label || selectedDayOption;
+  }, [isTwoDaysMode, selectedDay1, selectedDay2, selectedDayOption]);
 
   // Selected time range minutes
   const timeRange = useMemo(() => {
@@ -92,8 +143,6 @@ export default function MadrasEmptyFinder({
 
   // Evaluate which rooms are free and which are occupied
   const { freeRooms, occupiedRooms } = useMemo(() => {
-    const daysToCheck = selectedDay === 'daily' ? WEEK_DAYS_SEMINARY : [selectedDay];
-
     const free: { room: MadrasRoom }[] = [];
     const occupied: { room: MadrasRoom; conflictingPrograms: Program[] }[] = [];
 
@@ -128,7 +177,7 @@ export default function MadrasEmptyFinder({
     });
 
     return { freeRooms: free, occupiedRooms: occupied };
-  }, [rooms, programs, selectedDay, selectedFloor, minCapacity, timeRange]);
+  }, [rooms, programs, daysToCheck, selectedFloor, minCapacity, timeRange]);
 
   const [showOccupiedToggle, setShowOccupiedToggle] = useState(false);
 
@@ -148,14 +197,14 @@ export default function MadrasEmptyFinder({
             </h3>
           </div>
           <p className="text-xs text-slate-500 font-medium">
-            انتخاب روز (یا کل ایام هفته)، بازه زمانی (۷ تا ۱۷)، طبقه و ظرفیت برای پیدا کردن فوری کلاس‌های آماده
+            انتخاب روز (یا کل ایام هفته یا دو روز انتخابی)، بازه زمانی (۷ تا ۱۷)، طبقه و ظرفیت برای پیدا کردن فوری کلاس‌های آماده
           </p>
         </div>
 
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl self-start sm:self-auto transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl self-start sm:self-auto transition-colors cursor-pointer"
             title="بستن ابزار جستجو"
           >
             <X size={18} />
@@ -166,22 +215,67 @@ export default function MadrasEmptyFinder({
       {/* Controls Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50/70 p-4 rounded-2xl border border-slate-200">
         
-        {/* 1. Day / Daily */}
+        {/* 1. Day Selection (Single or Two-day Mode) */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
-            <Calendar size={13} className="text-indigo-600" />
-            <span>روز مورد نظر:</span>
-          </label>
-          <select
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500"
-          >
-            <option value="daily">★ تمام روزهای هفته (برنامه روزانه ثابت)</option>
-            {WEEK_DAYS_SEMINARY.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+              <Calendar size={13} className="text-indigo-600" />
+              <span>روز مورد نظر:</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-bold text-indigo-700 bg-indigo-50/90 px-2 py-0.5 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={isTwoDaysMode}
+                onChange={(e) => setIsTwoDaysMode(e.target.checked)}
+                className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer accent-indigo-600"
+              />
+              <span>انتخاب دو روز</span>
+            </label>
+          </div>
+
+          {isTwoDaysMode ? (
+            <div className="space-y-1.5 bg-indigo-50/50 p-2 rounded-xl border border-indigo-100">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-600 shrink-0 w-11">روز اول:</span>
+                <select
+                  value={selectedDay1}
+                  onChange={(e) => setSelectedDay1(e.target.value)}
+                  className="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {INDIVIDUAL_DAY_OPTIONS.map(d => (
+                    <option key={d.id} value={d.id}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-600 shrink-0 w-11">روز دوم:</span>
+                <select
+                  value={selectedDay2}
+                  onChange={(e) => setSelectedDay2(e.target.value)}
+                  className="flex-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {INDIVIDUAL_DAY_OPTIONS.map(d => (
+                    <option key={d.id} value={d.id}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              {selectedDay1 === selectedDay2 && (
+                <span className="text-[10px] text-amber-700 font-bold block text-center">
+                  توجه: هر دو روز یکسان انتخاب شده‌اند.
+                </span>
+              )}
+            </div>
+          ) : (
+            <select
+              value={selectedDayOption}
+              onChange={(e) => setSelectedDayOption(e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              {SINGLE_DAY_OPTIONS.map(opt => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* 2. Time Slot / Hours (Bounded 7 to 17) */}
@@ -252,7 +346,7 @@ export default function MadrasEmptyFinder({
             <select
               value={selectedSlotId}
               onChange={(e) => setSelectedSlotId(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
             >
               {MADRAS_HOURLY_SLOTS_7_TO_17.map(slot => (
                 <option key={slot.id} value={slot.id}>
@@ -272,7 +366,7 @@ export default function MadrasEmptyFinder({
           <select
             value={selectedFloor}
             onChange={(e) => setSelectedFloor(e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
           >
             <option value="all">همه طبقات</option>
             {availableFloors.map(floor => (
@@ -281,7 +375,7 @@ export default function MadrasEmptyFinder({
           </select>
         </div>
 
-        {/* 4. Capacity Filter */}
+        {/* 4. Capacity Filter (5, 15, 20, 25, 45) */}
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
             <Users size={13} className="text-indigo-600" />
@@ -290,15 +384,11 @@ export default function MadrasEmptyFinder({
           <select
             value={minCapacity}
             onChange={(e) => setMinCapacity(Number(e.target.value))}
-            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 cursor-pointer"
           >
-            <option value={0}>تمام ظرفیت‌ها</option>
-            <option value={20}>حداقل ۲۰ نفر</option>
-            <option value={25}>حداقل ۲۵ نفر</option>
-            <option value={30}>حداقل ۳۰ نفر</option>
-            <option value={35}>حداقل ۳۵ نفر</option>
-            <option value={40}>حداقل ۴۰ نفر</option>
-            <option value={50}>حداقل ۵۰ نفر</option>
+            {CAPACITY_OPTIONS.map(cap => (
+              <option key={cap.value} value={cap.value}>{cap.label}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -313,7 +403,7 @@ export default function MadrasEmptyFinder({
             </span>
           </span>
           <span className="text-xs text-slate-500 font-medium">
-            (در {selectedDay === 'daily' ? 'تمام روزهای هفته' : `روز ${selectedDay}`}، ساعت {timeRange.display})
+            (در {dayDisplayLabel}، ساعت {timeRange.display})
           </span>
         </div>
 
@@ -383,7 +473,9 @@ export default function MadrasEmptyFinder({
                 {!isReadOnly && onQuickAssign && (
                   <button
                     onClick={() => {
-                      const dayToUse = selectedDay === 'daily' ? 'شنبه' : selectedDay;
+                      const dayToUse = isTwoDaysMode 
+                        ? `${selectedDay1}، ${selectedDay2}` 
+                        : (selectedDayOption === 'all_school_days' ? 'شنبه الی چهارشنبه' : selectedDayOption);
                       onQuickAssign(room.name, dayToUse, timeRange.display);
                     }}
                     className="py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black transition-colors flex items-center gap-1 cursor-pointer shadow-2xs"

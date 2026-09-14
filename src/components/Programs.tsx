@@ -93,6 +93,82 @@ export const END_HOURS_ALLOWED = [
   '17:00'
 ];
 
+export const DISCUSSION_GROUP_PALETTES = [
+  {
+    bg: 'bg-emerald-950/85',
+    border: 'border-emerald-400',
+    text: 'text-emerald-50',
+    badge: 'bg-emerald-400/25 text-emerald-200 border-emerald-400/60',
+    dot: 'bg-emerald-400',
+    gradeText: 'text-emerald-300',
+  },
+  {
+    bg: 'bg-amber-950/85',
+    border: 'border-amber-400',
+    text: 'text-amber-50',
+    badge: 'bg-amber-400/25 text-amber-200 border-amber-400/60',
+    dot: 'bg-amber-400',
+    gradeText: 'text-amber-300',
+  },
+  {
+    bg: 'bg-sky-950/85',
+    border: 'border-sky-400',
+    text: 'text-sky-50',
+    badge: 'bg-sky-400/25 text-sky-200 border-sky-400/60',
+    dot: 'bg-sky-400',
+    gradeText: 'text-sky-300',
+  },
+  {
+    bg: 'bg-rose-950/85',
+    border: 'border-rose-400',
+    text: 'text-rose-50',
+    badge: 'bg-rose-400/25 text-rose-200 border-rose-400/60',
+    dot: 'bg-rose-400',
+    gradeText: 'text-rose-300',
+  },
+  {
+    bg: 'bg-purple-950/85',
+    border: 'border-purple-400',
+    text: 'text-purple-50',
+    badge: 'bg-purple-400/25 text-purple-200 border-purple-400/60',
+    dot: 'bg-purple-400',
+    gradeText: 'text-purple-300',
+  },
+  {
+    bg: 'bg-teal-950/85',
+    border: 'border-teal-400',
+    text: 'text-teal-50',
+    badge: 'bg-teal-400/25 text-teal-200 border-teal-400/60',
+    dot: 'bg-teal-400',
+    gradeText: 'text-teal-300',
+  },
+  {
+    bg: 'bg-orange-950/85',
+    border: 'border-orange-400',
+    text: 'text-orange-50',
+    badge: 'bg-orange-400/25 text-orange-200 border-orange-400/60',
+    dot: 'bg-orange-400',
+    gradeText: 'text-orange-300',
+  },
+  {
+    bg: 'bg-fuchsia-950/85',
+    border: 'border-fuchsia-400',
+    text: 'text-fuchsia-50',
+    badge: 'bg-fuchsia-400/25 text-fuchsia-200 border-fuchsia-400/60',
+    dot: 'bg-fuchsia-400',
+    gradeText: 'text-fuchsia-300',
+  }
+];
+
+export const UNASSIGNED_PALETTE = {
+  bg: 'bg-slate-900/85',
+  border: 'border-slate-500',
+  text: 'text-slate-200',
+  badge: 'bg-slate-700/60 text-slate-300 border-slate-600',
+  dot: 'bg-slate-400',
+  gradeText: 'text-slate-400',
+};
+
 export default function Programs() {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
   const { currentUser } = useAuth();
@@ -1154,6 +1230,43 @@ export default function Programs() {
                   const linkedCounselings = counselingPrograms.filter(cp => cp.parentProgramId === mainProg.id);
                   const linkedDiscGroups = getProgramDiscussionGroups(mainProg);
 
+                  // Order students by discussion groups and assign distinct color palette per group
+                  const orderedStudentsWithGroup: Array<{
+                    student: Student;
+                    groupTitle?: string;
+                    groupIndex?: number;
+                    palette: typeof DISCUSSION_GROUP_PALETTES[0];
+                  }> = [];
+
+                  const assignedStudentIds = new Set<string>();
+
+                  linkedDiscGroups.forEach((group, gIdx) => {
+                    const palette = DISCUSSION_GROUP_PALETTES[gIdx % DISCUSSION_GROUP_PALETTES.length];
+                    const memberIds = group.memberStudentIds || [];
+                    mainStudents.forEach(st => {
+                      if (memberIds.includes(st.id) && !assignedStudentIds.has(st.id)) {
+                        orderedStudentsWithGroup.push({
+                          student: st,
+                          groupTitle: group.title,
+                          groupIndex: gIdx + 1,
+                          palette
+                        });
+                        assignedStudentIds.add(st.id);
+                      }
+                    });
+                  });
+
+                  // Add unassigned students at the end
+                  mainStudents.forEach(st => {
+                    if (!assignedStudentIds.has(st.id)) {
+                      orderedStudentsWithGroup.push({
+                        student: st,
+                        palette: UNASSIGNED_PALETTE
+                      });
+                      assignedStudentIds.add(st.id);
+                    }
+                  });
+
                   return (
                     <div key={mainProg.id} className="relative bg-slate-50/90 rounded-2xl p-5 border border-slate-300/80 space-y-6">
                       {/* Main Class Node Card (Parent Node) */}
@@ -1182,45 +1295,56 @@ export default function Programs() {
                           </div>
                         </div>
 
-                        {/* Main Class Enrolled Students (Filtered by Toggle) */}
+                        {/* Main Class Enrolled Students (Ordered by Discussion Group with Distinct Color per Group) */}
                         {showMainStudents ? (
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="text-[11px] font-bold text-indigo-200 block">
-                                طلاب شرکت‌کننده در این درس اصلی ({mainStudents.length} نفر):
+                                طلاب شرکت‌کننده در درس اصلی به تفکیک و ترتیب گروه‌های بحثی ({mainStudents.length} نفر):
                               </span>
-                              {showDiscussionGroups && (
-                                <span className="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
-                                  <span>🤝 طلاب دارای هم‌بحث هایلایت شده‌اند</span>
-                                </span>
+                              {linkedDiscGroups.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  {linkedDiscGroups.map((g, gIdx) => {
+                                    const p = DISCUSSION_GROUP_PALETTES[gIdx % DISCUSSION_GROUP_PALETTES.length];
+                                    return (
+                                      <span 
+                                        key={g.id} 
+                                        className={cn("px-2 py-0.5 rounded-md font-bold border flex items-center gap-1", p.badge)}
+                                      >
+                                        <span className={cn("w-1.5 h-1.5 rounded-full", p.dot)} />
+                                        <span>{g.title}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
                               )}
                             </div>
-                            {mainStudents.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5">
-                                {mainStudents.map(st => {
-                                  const discInfo = getStudentDiscussionInfo(st.id, mainProg);
-                                  const hasPartners = showDiscussionGroups && discInfo && discInfo.hasPartners;
-                                  return (
-                                    <span 
-                                      key={st.id} 
-                                      title={hasPartners ? `هم‌بحث در گروه «${discInfo.groupTitles.join('، ')}» با: ${discInfo.partnerNames.join(' ، ')}` : undefined}
-                                      className={cn(
-                                        "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5",
-                                        hasPartners 
-                                          ? "bg-emerald-950/90 text-emerald-100 border-emerald-400 shadow-sm ring-1 ring-emerald-400/40" 
-                                          : "bg-indigo-900/90 text-indigo-100 border-indigo-700"
-                                      )}
-                                    >
-                                      <span>{st.name}</span>
-                                      <span className={cn("text-[10px]", hasPartners ? "text-emerald-300" : "text-indigo-300")}>(پایه {st.grade})</span>
-                                      {hasPartners && (
-                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-800 text-[9px] font-black text-emerald-200 rounded border border-emerald-600">
-                                          🤝 {discInfo.partnerNames.slice(0, 2).join('، ')}{discInfo.partnerNames.length > 2 ? '...' : ''}
-                                        </span>
-                                      )}
-                                    </span>
-                                  );
-                                })}
+                            {orderedStudentsWithGroup.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5 items-center">
+                                {orderedStudentsWithGroup.map(({ student: st, groupTitle, palette }) => (
+                                  <span 
+                                    key={st.id} 
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 shadow-2xs",
+                                      palette.bg,
+                                      palette.border,
+                                      palette.text
+                                    )}
+                                  >
+                                    <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", palette.dot)} />
+                                    <span>{st.name}</span>
+                                    <span className={cn("text-[10px] font-normal", palette.gradeText)}>(پایه {st.grade})</span>
+                                    {groupTitle ? (
+                                      <span className={cn("text-[10px] font-bold px-1.5 py-0.2 rounded border font-mono", palette.badge)}>
+                                        {groupTitle}
+                                      </span>
+                                    ) : (
+                                      <span className={cn("text-[9px] font-normal px-1 py-0.2 rounded border", palette.badge)}>
+                                        مستقل
+                                      </span>
+                                    )}
+                                  </span>
+                                ))}
                               </div>
                             ) : (
                               <span className="text-xs text-indigo-300 italic">هنوز طلبی برای این درس ثبت نشده است.</span>
@@ -1499,6 +1623,24 @@ export default function Programs() {
               const linkedCounselings = counselingPrograms.filter(cp => cp.parentProgramId === mainProg.id);
               const linkedDiscGroups = getProgramDiscussionGroups(mainProg);
 
+              const orderedPdfStudents: Array<{ student: Student; groupTitle?: string }> = [];
+              const assignedPdfIds = new Set<string>();
+              linkedDiscGroups.forEach(g => {
+                const memberIds = g.memberStudentIds || [];
+                mainStudents.forEach(st => {
+                  if (memberIds.includes(st.id) && !assignedPdfIds.has(st.id)) {
+                    orderedPdfStudents.push({ student: st, groupTitle: g.title });
+                    assignedPdfIds.add(st.id);
+                  }
+                });
+              });
+              mainStudents.forEach(st => {
+                if (!assignedPdfIds.has(st.id)) {
+                  orderedPdfStudents.push({ student: st });
+                  assignedPdfIds.add(st.id);
+                }
+              });
+
               return (
                 <div key={mainProg.id} className="border border-slate-300 rounded-xl p-4 space-y-3 bg-slate-50/50">
                   <div className="bg-indigo-900 text-white p-3 rounded-lg flex justify-between items-center text-xs font-bold">
@@ -1507,15 +1649,13 @@ export default function Programs() {
                   </div>
 
                   <div className="text-xs text-slate-700">
-                    <b>طلاب شرکت‌کننده در درس اصلی ({mainStudents.length} نفر): </b>
+                    <b>طلاب شرکت‌کننده در درس اصلی به ترتیب گروه‌های بحثی ({mainStudents.length} نفر): </b>
                     {showMainStudents
-                      ? (mainStudents.map(s => {
-                          if (!includeDiscussionInPdf) return s.name;
-                          const discInfo = getStudentDiscussionInfo(s.id, mainProg);
-                          if (discInfo && discInfo.hasPartners) {
-                            return `${s.name} [هم‌بحث: ${discInfo.partnerNames.join('، ')}]`;
+                      ? (orderedPdfStudents.map(({ student: s, groupTitle }) => {
+                          if (groupTitle) {
+                            return `${s.name} (${groupTitle})`;
                           }
-                          return s.name;
+                          return `${s.name} (مستقل)`;
                         }).join(' ، ') || 'طلبه‌ای ثبت نشده')
                       : <span className="text-slate-500 font-bold">(نمایش اسامی فیلتر گردیده است)</span>
                     }

@@ -40,10 +40,113 @@ import {
   AlertCircle,
   HelpCircle,
   Sparkles,
-  KeyRound
+  KeyRound,
+  GraduationCap,
+  Tag,
+  RotateCcw
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+
+export const WORKFLOW_CATEGORIES: {
+  id: WorkflowCategory | 'all';
+  label: string;
+  topicTitle: string;
+  badgeClass: string;
+  borderAccent: string;
+  bgGradient: string;
+  iconBg: string;
+  iconColor: string;
+  icon: any;
+}[] = [
+  {
+    id: 'all',
+    label: 'همه موضوعات',
+    topicTitle: 'کلیه امور و فرآیندها',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
+    borderAccent: 'border-r-indigo-500',
+    bgGradient: 'bg-white',
+    iconBg: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    iconColor: 'text-indigo-600',
+    icon: Layers,
+  },
+  {
+    id: 'unexcused_absence_warning',
+    label: 'امور انضباطی و غیبت',
+    topicTitle: 'امور انضباطی (غیبت غیرموجه)',
+    badgeClass: 'bg-rose-50 text-rose-800 border-rose-200',
+    borderAccent: 'border-r-rose-500',
+    bgGradient: 'bg-gradient-to-l from-rose-50/40 via-white to-white',
+    iconBg: 'bg-rose-100 text-rose-700 border-rose-200',
+    iconColor: 'text-rose-600',
+    icon: AlertTriangle,
+  },
+  {
+    id: 'study_deficit_warning',
+    label: 'افت مطالعه و مباحثه',
+    topicTitle: 'امور آموزشی (کنترل و افت مطالعه)',
+    badgeClass: 'bg-amber-50 text-amber-900 border-amber-200',
+    borderAccent: 'border-r-amber-500',
+    bgGradient: 'bg-gradient-to-l from-amber-50/40 via-white to-white',
+    iconBg: 'bg-amber-100 text-amber-800 border-amber-200',
+    iconColor: 'text-amber-600',
+    icon: Clock,
+  },
+  {
+    id: 'study_period',
+    label: 'دوره‌ها و تقویم آموزشی',
+    topicTitle: 'امور آموزشی (دوره‌های تحصیلی)',
+    badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+    borderAccent: 'border-r-indigo-500',
+    bgGradient: 'bg-gradient-to-l from-indigo-50/40 via-white to-white',
+    iconBg: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    iconColor: 'text-indigo-600',
+    icon: Calendar,
+  },
+  {
+    id: 'student_account_creation',
+    label: 'حساب کاربری طلاب',
+    topicTitle: 'امور دسترسی و احراز هویت',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    borderAccent: 'border-r-emerald-500',
+    bgGradient: 'bg-gradient-to-l from-emerald-50/40 via-white to-white',
+    iconBg: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    iconColor: 'text-emerald-600',
+    icon: KeyRound,
+  },
+  {
+    id: 'discussion_group_change',
+    label: 'حلقه‌ها و گروه‌های مباحثه',
+    topicTitle: 'امور مباحثات و حلقه‌های علمی',
+    badgeClass: 'bg-sky-50 text-sky-800 border-sky-200',
+    borderAccent: 'border-r-sky-500',
+    bgGradient: 'bg-gradient-to-l from-sky-50/40 via-white to-white',
+    iconBg: 'bg-sky-100 text-sky-700 border-sky-200',
+    iconColor: 'text-sky-600',
+    icon: MessageSquare,
+  },
+  {
+    id: 'general',
+    label: 'امور عمومی و اطلاعیه‌ها',
+    topicTitle: 'امور عمومی و اطلاعیه‌ها',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
+    borderAccent: 'border-r-slate-400',
+    bgGradient: 'bg-white',
+    iconBg: 'bg-slate-100 text-slate-700 border-slate-200',
+    iconColor: 'text-slate-500',
+    icon: Info,
+  },
+];
+
+export const WORKFLOW_GRADES = [
+  { id: 'all', label: 'همه پایه‌ها' },
+  { id: 'پایه ۷', label: 'پایه ۷' },
+  { id: 'پایه ۸', label: 'پایه ۸' },
+  { id: 'پایه ۹', label: 'پایه ۹' },
+  { id: 'پایه ۱۰', label: 'پایه ۱۰' },
+  { id: 'پایه ۱۱', label: 'پایه ۱۱' },
+  { id: 'عمومی', label: 'عمومی و مشترک' },
+];
 
 interface WorkflowManagerProps {
   onNavigate?: (tab: AppModuleId, params?: Record<string, any>) => void;
@@ -229,8 +332,14 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
 
       // 4. Grade Filter
       if (gradeFilter !== 'all') {
-        if (item.grade !== gradeFilter && item.grade !== 'همه پایه‌ها') {
-          return false;
+        if (gradeFilter === 'عمومی') {
+          if (item.grade && item.grade !== 'همه پایه‌ها' && item.grade !== 'عمومی' && item.grade !== 'عمومی و مشترک') {
+            return false;
+          }
+        } else {
+          if (item.grade !== gradeFilter && item.grade !== 'همه پایه‌ها') {
+            return false;
+          }
         }
       }
 
@@ -249,7 +358,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
     });
   }, [allDisplayItems, tabFilter, categoryFilter, gradeFilter, searchQuery, isSuperAdmin, isEducationManager, isGradeSupervisor, isManagerOrPrincipal, userGrade]);
 
-  // Counts for Badges
+  // Counts for Badges & Segmentations
   const pendingCount = useMemo(() => {
     return allDisplayItems.filter(i => i.status === 'pending').length;
   }, [allDisplayItems]);
@@ -260,6 +369,28 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
 
   const reportsCount = useMemo(() => {
     return allDisplayItems.filter(i => i.type === 'report_notice' || i.reportAction).length;
+  }, [allDisplayItems]);
+
+  const gradeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: allDisplayItems.length };
+    WORKFLOW_GRADES.forEach(g => {
+      if (g.id === 'all') return;
+      if (g.id === 'عمومی') {
+        counts[g.id] = allDisplayItems.filter(i => !i.grade || i.grade === 'همه پایه‌ها' || i.grade === 'عمومی' || i.grade === 'عمومی و مشترک').length;
+      } else {
+        counts[g.id] = allDisplayItems.filter(i => i.grade === g.id || i.grade === 'همه پایه‌ها').length;
+      }
+    });
+    return counts;
+  }, [allDisplayItems]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: allDisplayItems.length };
+    WORKFLOW_CATEGORIES.forEach(c => {
+      if (c.id === 'all') return;
+      counts[c.id] = allDisplayItems.filter(i => i.category === c.id).length;
+    });
+    return counts;
   }, [allDisplayItems]);
 
   // Handle Approve
@@ -788,6 +919,127 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
         </div>
       </div>
 
+      {/* Dedicated Segmentation Box for Grades and Workflow Topics */}
+      <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs space-y-4" id="workflow-segmentation-box">
+        {/* Top Header of Segmentation Box */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center shrink-0">
+              <Filter size={16} />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-800">
+                کادر تفکیک و دسته‌بندی جریان کار مدرسه
+              </h3>
+              <p className="text-[11px] text-slate-400 font-medium">
+                تفکیک دقیق بر اساس پایه‌های تحصیلی و موضوعات کاری با دسترسی فوری
+              </p>
+            </div>
+          </div>
+          
+          {(gradeFilter !== 'all' || categoryFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setGradeFilter('all');
+                setCategoryFilter('all');
+              }}
+              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1.5 bg-indigo-50/80 hover:bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-100 transition-colors cursor-pointer self-start sm:self-auto"
+            >
+              <RotateCcw size={12} />
+              <span>بازنشانی فیلترهای پایه و موضوع</span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* 1. Grade Segmentation Section */}
+          <div className="lg:col-span-4 bg-slate-50/70 rounded-2xl p-3.5 border border-slate-200/80 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-black text-slate-800 px-1">
+              <span className="flex items-center gap-1.5">
+                <GraduationCap size={15} className="text-indigo-600" />
+                <span>تفکیک بر اساس پایه‌های تحصیلی:</span>
+              </span>
+              {gradeFilter !== 'all' && (
+                <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100/70 px-2 py-0.5 rounded-md">
+                  انتخاب‌شده
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {WORKFLOW_GRADES.map(g => {
+                const isSelected = gradeFilter === g.id;
+                const count = gradeCounts[g.id] ?? 0;
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => setGradeFilter(g.id)}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border",
+                      isSelected
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-200"
+                        : "bg-white text-slate-700 border-slate-200/90 hover:bg-slate-100/90 hover:border-slate-300"
+                    )}
+                  >
+                    <span>{g.label}</span>
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-md font-mono font-black",
+                      isSelected ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-500"
+                    )}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. Topic / Category Segmentation Section */}
+          <div className="lg:col-span-8 bg-slate-50/70 rounded-2xl p-3.5 border border-slate-200/80 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-black text-slate-800 px-1">
+              <span className="flex items-center gap-1.5">
+                <Tag size={15} className="text-indigo-600" />
+                <span>تفکیک بر اساس موضوعات جریان کار:</span>
+              </span>
+              {categoryFilter !== 'all' && (
+                <span className="text-[10px] text-indigo-700 font-bold bg-indigo-100/70 px-2 py-0.5 rounded-md">
+                  انتخاب‌شده
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {WORKFLOW_CATEGORIES.map(cat => {
+                const isSelected = categoryFilter === cat.id;
+                const CatIcon = cat.icon;
+                const count = categoryCounts[cat.id] ?? 0;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoryFilter(cat.id)}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border",
+                      isSelected
+                        ? "bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-300"
+                        : "bg-white text-slate-700 border-slate-200/90 hover:bg-slate-100/90 hover:border-slate-300"
+                    )}
+                  >
+                    <CatIcon size={13} className={isSelected ? "text-white" : cat.iconColor} />
+                    <span>{cat.label}</span>
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-md font-mono font-black",
+                      isSelected ? "bg-slate-800 text-slate-100" : "bg-slate-100 text-slate-500"
+                    )}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Workflow Items List */}
       {loading ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
@@ -816,6 +1068,9 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
               (isGradeSupervisor && (!item.grade || item.grade === 'همه پایه‌ها' || item.grade === userGrade))
             );
 
+            const catMeta = WORKFLOW_CATEGORIES.find(c => c.id === item.category) || WORKFLOW_CATEGORIES.find(c => c.id === 'general')!;
+            const CatIcon = catMeta.icon;
+
             return (
               <motion.div
                 key={item.id}
@@ -824,16 +1079,24 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 className={cn(
-                  "bg-white rounded-2xl p-5 border transition-all duration-200 shadow-xs",
+                  "rounded-2xl p-5 border transition-all duration-200 shadow-xs border-r-4",
+                  catMeta.borderAccent,
+                  catMeta.bgGradient,
                   isItemPending 
-                    ? "border-amber-200/90 bg-amber-50/20 hover:border-amber-300" 
+                    ? "border-amber-200/90 hover:border-amber-300 ring-1 ring-amber-200/40" 
                     : "border-slate-200 hover:border-slate-300"
                 )}
               >
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   {/* Item Content */}
-                  <div className="space-y-2 flex-1 min-w-0">
+                  <div className="space-y-2.5 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      {/* Distinct Category Tag */}
+                      <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-black border shadow-2xs", catMeta.badgeClass)}>
+                        <CatIcon size={12} className={catMeta.iconColor} />
+                        <span>{catMeta.topicTitle}</span>
+                      </span>
+
                       {renderStatusBadge(item)}
                       {renderTypeBadge(item)}
                       {item.grade && (
@@ -853,13 +1116,25 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                       )}
                     </div>
 
-                    <h3 className="text-sm font-black text-slate-900 leading-snug">
-                      {item.title}
-                    </h3>
-
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-4xl">
-                      {item.description}
-                    </p>
+                    {/* Distinct Title Header with Icon & Prefix */}
+                    <div className="flex items-start gap-2.5 pt-0.5">
+                      <div className={cn("w-7 h-7 rounded-xl flex items-center justify-center shrink-0 border mt-0.5 shadow-2xs", catMeta.iconBg)}>
+                        <CatIcon size={14} className={catMeta.iconColor} />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-md font-mono border", catMeta.badgeClass)}>
+                            [{catMeta.label}]
+                          </span>
+                          <h3 className="text-sm font-black text-slate-900 leading-snug">
+                            {item.title}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed max-w-4xl">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
 
                     {/* Specific Details Box if present */}
                     {item.details && (

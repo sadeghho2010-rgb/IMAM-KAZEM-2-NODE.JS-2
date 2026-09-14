@@ -1,6 +1,28 @@
+export interface CustomStudentSchedule {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  title: string;
+  day: string;
+  days?: string[];
+  time?: string;
+  startTime: string;
+  endTime: string;
+  locationOrNotes?: string;
+  isExternal?: boolean;
+  createdAt: string;
+  createdByName?: string;
+}
+
 export type ProgramType = 'اصلی' | 'مشاوره' | 'پژوهش' | 'دروس 5 شنبه' | 'سایر';
 export type ImportanceLevel = 'low' | 'medium' | 'high';
 export type AttendanceStatus = 'present' | 'absent' | 'late';
+
+export type StudentDeactivationReason = 
+  | 'صرفا غیر فعال' 
+  | 'فارغ التحصیل' 
+  | 'انتقال اختیاری از مجموعه' 
+  | 'قطع همکاری از مجموعه';
 
 export interface Student {
   id: string;
@@ -10,19 +32,49 @@ export interface Student {
   isActive: boolean;
   phoneNumber?: string;
   grade?: string;
-  fatherName?: string;
-  fatherOccupation?: string;
-  fatherJob?: string;
-  birthPlace?: string;
-  birthDate?: string;
+
+  // اطلاعات آموزشی
+  managementCenterCode?: string; // کد مرکز مدیریت
+  instituteCode?: string; // کد موسسه
+  servicesCenterCode?: string; // کد مرکز خدمات
+
+  // اطلاعات هویتی
+  birthDate?: string; // تاریخ تولد
+  birthPlace?: string; // اهل کجاست (محل تولد/صادره)
+  fatherName?: string; // نام پدر
+  fatherOccupation?: string; // شغل پدر
+  fatherJob?: string; // شغل پدر (سازگار با فیلدهای قبلی)
+  tammomStatus?: 'معمم' | 'غیر معمم'; // وضعیت تعمم
+
+  // وضعیت تاهل و سکونت
   maritalStatus?: 'مجرد' | 'متاهل';
   childrenCount?: number;
   livingStatus?: 'پدری' | 'خوابگاه' | 'اجاره ای' | 'شخصی' | 'سایر';
   livingStatusOther?: string;
-  classicEducation?: string;
-  howzaEntryYear?: string;
-  levelOneSchool?: string;
-  tammomStatus?: 'معمم' | 'غیر معمم';
+
+  // سوابق تحصیلی
+  classicEducation?: string; // تحصیلات کلاسیک
+  howzaEntryYear?: string; // سال ورود به حوزه
+  instituteEntryYear?: string; // سال ورود به موسسه
+  levelOneSchool?: string; // مدرسه سطح یک
+
+  // وضعیت در سامانه و علت غیرفعال بودن
+  deactivationReason?: StudentDeactivationReason;
+  deactivationDate?: string;
+  deactivationNotes?: string;
+
+  // اطلاعات مالی
+  tuitionCode?: string; // کد شهریه
+  bankName1?: string; // نام بانک ۱
+  bankAccount1?: string; // شماره حساب بانک ۱
+  bankSheba1?: string; // شماره شبا حساب شماره ۱
+  bankName2?: string; // نام بانک ۲
+  bankAccount2?: string; // شماره حساب بانک ۲
+  bankSheba2?: string; // شماره شبا حساب شماره ۲
+
+  // سوابق پایه‌ها
+  pastGrades?: string[]; // e.g. ['پایه 7', 'پایه 8']
+
   createdAt: string;
 }
 

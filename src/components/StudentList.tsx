@@ -33,16 +33,25 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Unlock
+  Unlock,
+  GraduationCap,
+  Award,
+  CreditCard,
+  Building,
+  UserX,
+  Calendar,
+  FileText
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { localDb, isStudentActive, DuplicateGroup, MergeResult } from '../lib/localDb';
-import { Student, Program, Enrollment } from '../types';
+import { Student, Program, Enrollment, StudentDeactivationReason } from '../types';
 import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { AppUser } from '../types/auth';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import DeactivationModal from './DeactivationModal';
+import StudentRecordHistoryModal from './StudentRecordHistoryModal';
 
 interface StudentListProps {
   onlyActive?: boolean;
@@ -212,16 +221,40 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     livingStatusOther: '',
     classicEducation: '',
     howzaEntryYear: '',
+    instituteEntryYear: '',
     levelOneSchool: '',
-    tammomStatus: 'غیر معمم'
+    tammomStatus: 'غیر معمم',
+    managementCenterCode: '',
+    instituteCode: '',
+    servicesCenterCode: '',
+    deactivationReason: 'صرفا غیر فعال',
+    deactivationDate: '',
+    deactivationNotes: '',
+    tuitionCode: '',
+    bankName1: '',
+    bankAccount1: '',
+    bankSheba1: '',
+    bankName2: '',
+    bankAccount2: '',
+    bankSheba2: ''
   });
+
+  // Deactivation and History State
+  const [studentToDeactivate, setStudentToDeactivate] = useState<Student | null>(null);
+  const [showDeactivationModal, setShowDeactivationModal] = useState(false);
+  const [selectedStudentForRecords, setSelectedStudentForRecords] = useState<Student | null>(null);
+
+  // Status Filter in the All-Users Bank (all | active | inactive)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [inactiveReasonFilter, setInactiveReasonFilter] = useState<string>('all');
 
   const [showColumnFilter, setShowColumnFilter] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [hideInactive, setHideInactive] = useState<boolean>(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>([
-    'index', 'grade', 'name', 'nationalId', 'isActive', 'userStatus', 'actions'
+    'index', 'grade', 'name', 'nationalId', 'isActive', 'deactivationReason', 'userStatus', 'actions'
   ]);
 
   // Duplicate Students Management
@@ -287,6 +320,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     { id: 'name', label: 'نام و نام خانوادگی' },
     { id: 'nationalId', label: 'کد ملی' },
     { id: 'phoneNumber', label: 'شماره تماس' },
+    { id: 'managementCenterCode', label: 'کد مرکز مدیریت' },
+    { id: 'instituteCode', label: 'کد موسسه' },
+    { id: 'servicesCenterCode', label: 'کد مرکز خدمات' },
     { id: 'fatherOccupation', label: 'شغل پدر' },
     { id: 'birthPlace', label: 'اهل کجاست' },
     { id: 'birthDate', label: 'تاریخ تولد' },
@@ -295,9 +331,12 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     { id: 'livingStatus', label: 'سکونت' },
     { id: 'classicEducation', label: 'تحصیلات کلاسیک' },
     { id: 'howzaEntryYear', label: 'سال ورود به حوزه' },
+    { id: 'instituteEntryYear', label: 'سال ورود به موسسه' },
     { id: 'levelOneSchool', label: 'مدرسه سطح یک' },
     { id: 'tammomStatus', label: 'وضعیت تعمم' },
-    { id: 'isActive', label: 'وضعیت' },
+    { id: 'isActive', label: 'وضعیت حضور' },
+    { id: 'deactivationReason', label: 'علت غیرفعال بودن' },
+    { id: 'tuitionCode', label: 'کد شهریه' },
     { id: 'userStatus', label: 'وضعیت کاربری سایت' },
     { id: 'actions', label: 'عملیات' },
   ];
@@ -346,28 +385,47 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     return () => unsub();
   }, [onlyActive]);
 
+  const syncStudentUserStatus = (studentId: string, isActive: boolean) => {
+    try {
+      const student = students.find(s => s.id === studentId);
+      if (!student) return;
+      const studentUser = getStudentAccount(student);
+      if (studentUser) {
+        updateUser(studentUser.id, { isActive });
+      }
+    } catch (e) {
+      console.warn('Could not sync user status:', e);
+    }
+  };
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name) {
-      alert('لطفاً نام را وارد کنید');
+    if (!newStudent.name?.trim()) {
+      alert('لطفاً نام و نام خانوادگی را وارد کنید');
       return;
     }
     
     try {
       const activeState = newStudent.isActive !== undefined ? isStudentActive(newStudent.isActive) : true;
+      const studentPayload: any = {
+        ...newStudent,
+        isActive: activeState,
+        deactivationReason: !activeState ? (newStudent.deactivationReason || 'صرفا غیر فعال') : undefined
+      };
+
       if (editingStudent) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id, createdAt, ...updateData } = newStudent as Student;
+        const { id, createdAt, ...updateData } = studentPayload as Student;
         
         await localDb.updateDoc('students', editingStudent.id, {
           ...updateData,
           isActive: activeState
         });
+        syncStudentUserStatus(editingStudent.id, activeState);
         alert('اطلاعات با موفقیت بروزرسانی شد');
       } else {
         await localDb.addDoc('students', {
-          ...newStudent,
-          isActive: activeState,
+          ...studentPayload,
           createdAt: new Date().toISOString()
         });
         alert('طلبه جدید با موفقیت ثبت شد');
@@ -435,17 +493,45 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       phoneNumber: '', 
       grade: defaultGrade,
       isActive: true,
-      fatherOccupation: '',
+      
+      // اطلاعات آموزشی
+      managementCenterCode: '',
+      instituteCode: '',
+      servicesCenterCode: '',
+
+      // اطلاعات هویتی
       birthPlace: '',
       birthDate: '',
+      fatherName: '',
+      fatherOccupation: '',
+      fatherJob: '',
+      tammomStatus: 'غیر معمم',
+
+      // وضعیت تاهل و سکونت
       maritalStatus: 'مجرد',
       childrenCount: 0,
       livingStatus: 'پدری',
       livingStatusOther: '',
+
+      // سوابق تحصیلی
       classicEducation: '',
       howzaEntryYear: '',
+      instituteEntryYear: '',
       levelOneSchool: '',
-      tammomStatus: 'غیر معمم'
+
+      // وضعیت غیرفعال
+      deactivationReason: 'صرفا غیر فعال',
+      deactivationDate: '',
+      deactivationNotes: '',
+
+      // اطلاعات مالی
+      tuitionCode: '',
+      bankName1: '',
+      bankAccount1: '',
+      bankSheba1: '',
+      bankName2: '',
+      bankAccount2: '',
+      bankSheba2: ''
     });
     setEditingStudent(null);
   };
@@ -454,7 +540,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     setEditingStudent(student);
     setNewStudent({
       ...student,
-      isActive: isStudentActive(student)
+      isActive: isStudentActive(student.isActive),
+      deactivationReason: student.deactivationReason || 'صرفا غیر فعال'
     });
     setShowAddModal(true);
   };
@@ -462,10 +549,43 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   const toggleActive = async (id: string, currentStatus: any) => {
     try {
       const activeBool = isStudentActive(currentStatus);
-      await localDb.updateDoc('students', id, { isActive: !activeBool });
-      fetchStudents();
+      if (activeBool) {
+        // If active -> prompt educational manager with the deactivation modal
+        const stud = students.find(s => s.id === id);
+        if (stud) {
+          setStudentToDeactivate(stud);
+          setShowDeactivationModal(true);
+          return;
+        }
+      } else {
+        // If inactive -> reactivate as present student
+        await localDb.updateDoc('students', id, { 
+          isActive: true, 
+          deactivationReason: undefined,
+          deactivationDate: undefined 
+        });
+        syncStudentUserStatus(id, true);
+        fetchStudents();
+      }
     } catch (error) {
       console.error("Error updating student:", error);
+    }
+  };
+
+  const handleConfirmDeactivation = async (reason: StudentDeactivationReason, date: string, notes?: string) => {
+    if (!studentToDeactivate) return;
+    try {
+      await localDb.updateDoc('students', studentToDeactivate.id, {
+        isActive: false,
+        deactivationReason: reason,
+        deactivationDate: date,
+        deactivationNotes: notes
+      });
+      syncStudentUserStatus(studentToDeactivate.id, false);
+      setStudentToDeactivate(null);
+      fetchStudents();
+    } catch (err) {
+      console.error('Error deactivating student:', err);
     }
   };
 
@@ -511,6 +631,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       'نام و نام خانوادگی': s.name,
       'کد ملی': s.nationalId || '',
       'شماره تماس': s.phoneNumber || '',
+      'کد مرکز مدیریت': s.managementCenterCode || '',
+      'کد موسسه': s.instituteCode || '',
+      'کد مرکز خدمات': s.servicesCenterCode || '',
       'شغل پدر': s.fatherOccupation || '',
       'اهل کجاست': s.birthPlace || '',
       'تاریخ تولد': s.birthDate || '',
@@ -519,9 +642,18 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       'سکونت': s.livingStatus || '',
       'تحصیلات کلاسیک': s.classicEducation || '',
       'سال ورود به حوزه': s.howzaEntryYear || '',
+      'سال ورود به موسسه': s.instituteEntryYear || '',
       'مدرسه سطح یک': s.levelOneSchool || '',
       'وضعیت تعمم': s.tammomStatus || '',
-      'وضعیت': s.isActive ? 'فعال' : 'غیرفعال'
+      'وضعیت حضور': isStudentActive(s.isActive) ? 'فعال (حاضر)' : 'غیرفعال (سابق)',
+      'علت غیرفعال بودن': !isStudentActive(s.isActive) ? (s.deactivationReason || 'صرفا غیر فعال') : '—',
+      'کد شهریه': s.tuitionCode || '',
+      'بانک ۱': s.bankName1 || '',
+      'شماره حساب ۱': s.bankAccount1 || '',
+      'شماره شبا ۱': s.bankSheba1 || '',
+      'بانک ۲': s.bankName2 || '',
+      'شماره حساب ۲': s.bankAccount2 || '',
+      'شماره شبا ۲': s.bankSheba2 || ''
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -584,6 +716,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
           const classicEducation = getString(row['تحصیلات کلاسیک'] ?? row.ClassicEducation);
           const howzaEntryYear = getString(row['سال ورود به حوزه'] ?? row.HowzaEntryYear);
+          const instituteEntryYear = getString(row['سال ورود به موسسه'] ?? row.InstituteEntryYear);
           const levelOneSchool = getString(row['مدرسه سطح یک'] ?? row.LevelOneSchool);
           
           const rawTammom = getString(row['وضعیت تعمم'] ?? row.TammomStatus);
@@ -592,18 +725,30 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
             tammomStatus = rawTammom;
           }
 
-          const rawStatus = row['وضعیت'] ?? row.IsActive ?? row.isActive;
+          const rawStatus = row['وضعیت حضور'] ?? row['وضعیت'] ?? row.IsActive ?? row.isActive;
           let isActive = true;
           if (rawStatus !== undefined && rawStatus !== null) {
             if (typeof rawStatus === 'boolean') {
               isActive = rawStatus;
             } else {
               const strStatus = String(rawStatus).trim().toLowerCase();
-              if (strStatus === 'غیرفعال' || strStatus === 'غیر فعال' || strStatus === 'false' || strStatus === '0') {
+              if (strStatus.includes('غیر') || strStatus === 'false' || strStatus === '0') {
                 isActive = false;
               }
             }
           }
+
+          const deactivationReason = getString(row['علت غیرفعال بودن'] ?? row.DeactivationReason ?? row.deactivationReason);
+          const managementCenterCode = getString(row['کد مرکز مدیریت'] ?? row.ManagementCenterCode ?? row.managementCenterCode);
+          const instituteCode = getString(row['کد موسسه'] ?? row.InstituteCode ?? row.instituteCode);
+          const servicesCenterCode = getString(row['کد مرکز خدمات'] ?? row.ServicesCenterCode ?? row.servicesCenterCode);
+          const tuitionCode = getString(row['کد شهریه'] ?? row.TuitionCode ?? row.tuitionCode);
+          const bankName1 = getString(row['بانک ۱'] ?? row.BankName1 ?? row.bankName1);
+          const bankAccount1 = getString(row['شماره حساب ۱'] ?? row.BankAccount1 ?? row.bankAccount1);
+          const bankSheba1 = getString(row['شماره شبا ۱'] ?? row.BankSheba1 ?? row.bankSheba1);
+          const bankName2 = getString(row['بانک ۲'] ?? row.BankName2 ?? row.bankName2);
+          const bankAccount2 = getString(row['شماره حساب ۲'] ?? row.BankAccount2 ?? row.bankAccount2);
+          const bankSheba2 = getString(row['شماره شبا ۲'] ?? row.BankSheba2 ?? row.bankSheba2);
 
           await localDb.addDoc('students', {
             name,
@@ -618,9 +763,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
             livingStatus,
             classicEducation,
             howzaEntryYear,
+            instituteEntryYear,
             levelOneSchool,
             tammomStatus,
             isActive,
+            deactivationReason: !isActive ? (deactivationReason || 'صرفا غیر فعال') : undefined,
+            managementCenterCode,
+            instituteCode,
+            servicesCenterCode,
+            tuitionCode,
+            bankName1,
+            bankAccount1,
+            bankSheba1,
+            bankName2,
+            bankAccount2,
+            bankSheba2,
             createdAt: new Date().toISOString()
           });
         }
@@ -677,7 +834,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         !searchTerm ||
         s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
         s.nationalId?.includes(searchTerm) ||
-        s.phoneNumber?.includes(searchTerm);
+        s.phoneNumber?.includes(searchTerm) ||
+        s.managementCenterCode?.includes(searchTerm) ||
+        s.instituteCode?.includes(searchTerm) ||
+        s.servicesCenterCode?.includes(searchTerm) ||
+        s.tuitionCode?.includes(searchTerm);
 
       const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
 
@@ -689,9 +850,28 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
       const matchesMarital = maritalFilter === 'all' || s.maritalStatus === maritalFilter;
 
-      return matchesSearch && matchesGrade && matchesLiving && matchesMarital;
+      const isAct = isStudentActive(s.isActive);
+      const matchesStatus = 
+        statusFilter === 'all' ? (hideInactive ? isAct : true) :
+        statusFilter === 'active' ? isAct :
+        !isAct;
+
+      const matchesInactiveReason = 
+        !isAct && statusFilter === 'inactive' && inactiveReasonFilter !== 'all'
+          ? (s.deactivationReason || 'صرفا غیر فعال') === inactiveReasonFilter
+          : true;
+
+      return matchesSearch && matchesGrade && matchesLiving && matchesMarital && matchesStatus && matchesInactiveReason;
     })
     .sort((a, b) => {
+      // In 'all' view, always keep active students before inactive students by default
+      const actA = isStudentActive(a.isActive) ? 1 : 0;
+      const actB = isStudentActive(b.isActive) ? 1 : 0;
+
+      if (statusFilter === 'all' && actA !== actB) {
+        return actB - actA; // 1 (active) comes before 0 (inactive)
+      }
+
       let cmp = 0;
       if (sortBy === 'grade') {
         const gA = a.grade || '99';
@@ -708,9 +888,15 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       } else if (sortBy === 'tammomStatus') {
         cmp = (a.tammomStatus || '').localeCompare(b.tammomStatus || '', 'fa');
       } else if (sortBy === 'isActive') {
-        cmp = (a.isActive === b.isActive ? 0 : a.isActive ? -1 : 1);
+        const actA = isStudentActive(a.isActive) ? 1 : 0;
+        const actB = isStudentActive(b.isActive) ? 1 : 0;
+        cmp = actB - actA;
+      } else if (sortBy === 'deactivationReason') {
+        cmp = (a.deactivationReason || '').localeCompare(b.deactivationReason || '', 'fa');
       } else if (sortBy === 'nationalId') {
         cmp = (a.nationalId || '').localeCompare(b.nationalId || '');
+      } else if (sortBy === 'managementCenterCode') {
+        cmp = (a.managementCenterCode || '').localeCompare(b.managementCenterCode || '');
       }
 
       if (cmp === 0) {
@@ -722,21 +908,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   return (
     <div className="space-y-6" dir="rtl">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-800">
-              {onlyActive ? 'کاربران فعال' : 'مدیریت همه کاربران'}
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xl font-black text-slate-800">
+              {onlyActive ? 'لیست طلاب و کاربران فعال' : 'مدیریت کل کاربران (بانک طلاب حاضر و سابق مدرسه)'}
             </h2>
             <div className={cn("px-2.5 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1.5", currentMentor.badgeBg, currentMentor.badgeText, currentMentor.badgeBorder)}>
               <span className={cn("w-2 h-2 rounded-full", currentMentor.dotColor)}></span>
               <span>{currentMentor.name} ({currentMentor.gradeLabel})</span>
             </div>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             {onlyActive 
-              ? `فهرست طلاب فعال در حال تحصیل (${filteredStudents.length} طلبه فعال)` 
-              : `فهرست جامع کلیه پرونده‌های ثبت‌شده (${filteredStudents.length} طلبه)`}
+              ? `فهرست طلاب حاضر در مدرسه دارای حساب کاربری فعال (${filteredStudents.length} طلبه فعال)` 
+              : `بانک جامع اطلاعاتی طلاب؛ تنها طلاب حاضر دارای کاربری و اجازه ورود به سامانه هستند و کلیه سوابق طلاب سابق به طور کامل محفوظ است.`}
           </p>
         </div>
         
@@ -841,6 +1027,99 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           </div>
         </div>
       </div>
+
+      {/* Bank Status Filter Switcher: All | Present (Active) | Former (Inactive) */}
+      {!onlyActive && (
+        <div className="bg-slate-100/90 p-2 rounded-2xl border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('all'); setInactiveReasonFilter('all'); }}
+              className={cn(
+                "px-3.5 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                statusFilter === 'all'
+                  ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              )}
+            >
+              <Users size={15} className="text-indigo-600" />
+              <span>همه طلاب (بانک جامع: حاضر و سابق)</span>
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 font-mono font-bold text-slate-700">
+                {students.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('active'); setInactiveReasonFilter('all'); }}
+              className={cn(
+                "px-3.5 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                statusFilter === 'active'
+                  ? "bg-white text-emerald-900 shadow-xs border border-emerald-300"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              )}
+            >
+              <CheckCircle size={15} className="text-emerald-600" />
+              <span>طلاب حاضر مدرسه (دارای کاربری فعال)</span>
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 font-mono font-bold text-emerald-800">
+                {students.filter(s => isStudentActive(s.isActive)).length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('inactive')}
+              className={cn(
+                "px-3.5 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                statusFilter === 'inactive'
+                  ? "bg-white text-slate-900 shadow-xs border border-slate-300"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              )}
+            >
+              <UserX size={15} className="text-slate-500" />
+              <span>طلاب سابق مدرسه (غیرفعال / بدون دسترسی)</span>
+              <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-200 font-mono font-bold text-slate-800">
+                {students.filter(s => !isStudentActive(s.isActive)).length}
+              </span>
+            </button>
+          </div>
+
+          {/* Toggle for hideInactive in 'all' view */}
+          {statusFilter === 'all' && (
+            <label className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer shadow-2xs hover:bg-slate-50 transition-colors">
+              <input 
+                type="checkbox" 
+                checked={hideInactive} 
+                onChange={(e) => setHideInactive(e.target.checked)} 
+                className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer" 
+              />
+              <span>عدم نمایش طلاب سابق (غیرفعال)</span>
+            </label>
+          )}
+
+          {/* Sub-filters for Inactive reasons when inactive is selected */}
+          {statusFilter === 'inactive' && (
+            <div className="flex items-center gap-1.5 flex-wrap bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-xs shadow-2xs">
+              <span className="text-[11px] font-bold text-slate-400 ml-1">علت غیرفعال بودن:</span>
+              {(['all', 'صرفا غیر فعال', 'فارغ التحصیل', 'انتقال اختیاری از مجموعه', 'قطع همکاری از مجموعه'] as const).map(reason => (
+                <button
+                  key={reason}
+                  type="button"
+                  onClick={() => setInactiveReasonFilter(reason)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                    inactiveReasonFilter === reason
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-100"
+                  )}
+                >
+                  {reason === 'all' ? 'همه علل' : reason}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter & Sort Bar */}
       <div ref={filterRef} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all">
@@ -982,11 +1261,13 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   'grade': 'grade',
                   'name': 'name',
                   'nationalId': 'nationalId',
+                  'managementCenterCode': 'managementCenterCode',
                   'maritalStatus': 'maritalStatus',
                   'childrenCount': 'childrenCount',
                   'livingStatus': 'livingStatus',
                   'tammomStatus': 'tammomStatus',
-                  'isActive': 'isActive'
+                  'isActive': 'isActive',
+                  'deactivationReason': 'deactivationReason'
                 };
                 const sortKey = sortableMap[col.id];
                 const isCurrentlySorted = sortKey && sortBy === sortKey;
@@ -1081,10 +1362,19 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     </td>
                   )}
                   {visibleColumns.includes('nationalId') && (
-                    <td className="px-6 py-4 text-xs text-slate-600">{student.nationalId || '---'}</td>
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.nationalId || '---'}</td>
+                  )}
+                  {visibleColumns.includes('managementCenterCode') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.managementCenterCode || '---'}</td>
+                  )}
+                  {visibleColumns.includes('instituteCode') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.instituteCode || '---'}</td>
+                  )}
+                  {visibleColumns.includes('servicesCenterCode') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.servicesCenterCode || '---'}</td>
                   )}
                   {visibleColumns.includes('phoneNumber') && (
-                    <td className="px-6 py-4 text-xs text-slate-600">{student.phoneNumber || '---'}</td>
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.phoneNumber || '---'}</td>
                   )}
                   {visibleColumns.includes('fatherOccupation') && (
                     <td className="px-6 py-4 text-xs text-slate-600">{student.fatherOccupation || '---'}</td>
@@ -1112,11 +1402,28 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   {visibleColumns.includes('howzaEntryYear') && (
                     <td className="px-6 py-4 text-xs text-slate-600">{student.howzaEntryYear || '---'}</td>
                   )}
+                  {visibleColumns.includes('instituteEntryYear') && (
+                    <td className="px-6 py-4 text-xs text-slate-600">{student.instituteEntryYear || '---'}</td>
+                  )}
                   {visibleColumns.includes('levelOneSchool') && (
                     <td className="px-6 py-4 text-xs text-slate-600">{student.levelOneSchool || '---'}</td>
                   )}
                   {visibleColumns.includes('tammomStatus') && (
                     <td className="px-6 py-4 text-xs text-slate-600">{student.tammomStatus || '---'}</td>
+                  )}
+                  {visibleColumns.includes('tuitionCode') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.tuitionCode || '---'}</td>
+                  )}
+                  {visibleColumns.includes('deactivationReason') && (
+                    <td className="px-6 py-4 text-xs text-slate-600">
+                      {!isStudentActive(student.isActive) ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          {student.deactivationReason || 'صرفا غیر فعال'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300 text-[11px]">—</span>
+                      )}
+                    </td>
                   )}
                   {visibleColumns.includes('isActive') && (
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
@@ -1130,12 +1437,12 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                           "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer",
                           isStudentActive(student.isActive) 
                             ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" 
-                            : "bg-slate-50 text-slate-400 border border-slate-200 hover:bg-slate-100"
+                            : "bg-slate-100 text-slate-500 border border-slate-300 hover:bg-slate-200"
                         )}
-                        title="جهت تغییر وضعیت طلبه کلیک کنید"
+                        title={isStudentActive(student.isActive) ? "طلبه حاضر (کلیک برای غیرفعال‌سازی و ثبت علت)" : "طلبه سابق (کلیک برای فعال‌سازی مجدد)"}
                       >
-                        <div className={cn("w-1.5 h-1.5 rounded-full", isStudentActive(student.isActive) ? "bg-emerald-500" : "bg-slate-300")}></div>
-                        {isStudentActive(student.isActive) ? 'فعال' : 'غیرفعال'}
+                        <div className={cn("w-1.5 h-1.5 rounded-full", isStudentActive(student.isActive) ? "bg-emerald-500" : "bg-slate-400")}></div>
+                        {isStudentActive(student.isActive) ? 'حاضر (فعال)' : 'سابق (غیرفعال)'}
                       </button>
                     </td>
                   )}
@@ -1158,6 +1465,20 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     }}>
                       {(() => {
                         const studentUser = getStudentAccount(student);
+                        const isStudentAct = isStudentActive(student.isActive);
+                        
+                        if (!isStudentAct) {
+                          return (
+                            <span 
+                              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200"
+                              title="طلبه غیرفعال اجازه ورود به سامانه را ندارد"
+                            >
+                              <UserX size={11} className="text-slate-400" />
+                              <span>غیرفعال (مسدود)</span>
+                            </span>
+                          );
+                        }
+
                         return studentUser ? (
                           <button 
                             type="button"
@@ -1183,16 +1504,16 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                    {visibleColumns.includes('actions') && (
                     <td className="px-6 py-4 text-left" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <button 
+                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            setViewingStudentSummary(student);
+                            setSelectedStudentForRecords(student);
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg transition-all cursor-pointer"
-                          title="مشاهده اطلاعات کامل"
+                          className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-all cursor-pointer"
+                          title="مشاهده گزارش جامع سوابق به تفکیک پایه‌ها و جزئیات"
                         >
-                          <User size={13} />
-                          <span>مشاهده</span>
+                          <GraduationCap size={13} />
+                          <span>سوابق</span>
                         </button>
                         
                         {isAuthorizedToManage && (
@@ -1288,12 +1609,12 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   </div>
                   
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">نام و نام خانوادگی</label>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">نام و نام خانوادگی <span className="text-rose-500">*</span></label>
                     <input 
                       type="text" 
                       required
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.name}
+                      value={newStudent.name || ''}
                       onChange={(e) => setNewStudent({...newStudent, name: e.target.value})}
                     />
                   </div>
@@ -1301,8 +1622,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">کد ملی</label>
                     <input 
                       type="text" 
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.nationalId}
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.nationalId || ''}
                       onChange={(e) => setNewStudent({...newStudent, nationalId: e.target.value})}
                     />
                   </div>
@@ -1310,9 +1631,40 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره تماس</label>
                     <input 
                       type="text" 
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.phoneNumber}
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.phoneNumber || ''}
                       onChange={(e) => setNewStudent({...newStudent, phoneNumber: e.target.value})}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">کد مرکز مدیریت</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: 981234"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.managementCenterCode || ''}
+                      onChange={(e) => setNewStudent({...newStudent, managementCenterCode: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">کد موسسه</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: 104"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.instituteCode || ''}
+                      onChange={(e) => setNewStudent({...newStudent, instituteCode: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">کد مرکز خدمات</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: 45678"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.servicesCenterCode || ''}
+                      onChange={(e) => setNewStudent({...newStudent, servicesCenterCode: e.target.value})}
                     />
                   </div>
                   <div>
@@ -1380,10 +1732,17 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <select 
                       className="w-full px-3 py-2 text-sm font-bold border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                       value={isStudentActive(newStudent.isActive) ? 'active' : 'inactive'}
-                      onChange={(e) => setNewStudent({...newStudent, isActive: e.target.value === 'active'})}
+                      onChange={(e) => {
+                        const isAct = e.target.value === 'active';
+                        setNewStudent({
+                          ...newStudent, 
+                          isActive: isAct,
+                          deactivationReason: isAct ? undefined : (newStudent.deactivationReason || 'صرفا غیر فعال')
+                        });
+                      }}
                     >
-                      <option value="active">🟢 فعال (در حال تحصیل / نمایش در کاربران فعال و برنامه ها)</option>
-                      <option value="inactive">⚪ غیرفعال (بایگانی / عدم نمایش در کاربران فعال)</option>
+                      <option value="active">🟢 فعال (در حال تحصیل / حضور در مدرسه)</option>
+                      <option value="inactive">⚪ غیرفعال (طلاب سابق / عدم حضور در مدرسه)</option>
                     </select>
                   </div>
                   <div>
@@ -1396,27 +1755,28 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                       onChange={(e) => setNewStudent({...newStudent, birthDate: e.target.value})}
                     />
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">اهل کجاست</label>
-                    <input 
-                      type="text" 
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.birthPlace}
-                      onChange={(e) => setNewStudent({...newStudent, birthPlace: e.target.value})}
-                    />
-                  </div>
 
                   {/* Family & Status */}
                   <div className="space-y-4 col-span-full mt-4">
-                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-50 pb-1">وضعیت خانوادگی و سکونت</h4>
+                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-50 pb-1">وضعیت خانوادگی، سکونت و اصالت</h4>
                   </div>
 
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">اهل کجاست (محل تولد / اصالت)</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: قم / اصفهان / شیراز"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={newStudent.birthPlace || ''}
+                      onChange={(e) => setNewStudent({...newStudent, birthPlace: e.target.value})}
+                    />
+                  </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">شغل پدر</label>
                     <input 
                       type="text" 
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.fatherOccupation}
+                      value={newStudent.fatherOccupation || ''}
                       onChange={(e) => setNewStudent({...newStudent, fatherOccupation: e.target.value})}
                     />
                   </div>
@@ -1477,7 +1837,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <input 
                       type="text" 
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.classicEducation}
+                      value={newStudent.classicEducation || ''}
                       onChange={(e) => setNewStudent({...newStudent, classicEducation: e.target.value})}
                     />
                   </div>
@@ -1485,9 +1845,20 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">سال ورود به حوزه</label>
                     <input 
                       type="text" 
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.howzaEntryYear}
+                      placeholder="مثال: 1398"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.howzaEntryYear || ''}
                       onChange={(e) => setNewStudent({...newStudent, howzaEntryYear: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">سال ورود به موسسه</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: 1401"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.instituteEntryYear || ''}
+                      onChange={(e) => setNewStudent({...newStudent, instituteEntryYear: e.target.value})}
                     />
                   </div>
                   <div>
@@ -1495,7 +1866,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <input 
                       type="text" 
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.levelOneSchool}
+                      value={newStudent.levelOneSchool || ''}
                       onChange={(e) => setNewStudent({...newStudent, levelOneSchool: e.target.value})}
                     />
                   </div>
@@ -1503,12 +1874,135 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">وضعیت تعمم</label>
                     <select 
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.tammomStatus}
+                      value={newStudent.tammomStatus || 'غیر معمم'}
                       onChange={(e) => setNewStudent({...newStudent, tammomStatus: e.target.value as any})}
                     >
                       <option value="معمم">معمم</option>
                       <option value="غیر معمم">غیر معمم</option>
+                      <option value="در شرف تعمم">در شرف تعمم</option>
                     </select>
+                  </div>
+
+                  {/* If Inactive -> Deactivation reason and notes */}
+                  {!isStudentActive(newStudent.isActive) && (
+                    <div className="col-span-full bg-amber-50/70 border border-amber-200 rounded-xl p-4 mt-2 space-y-3">
+                      <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                        <AlertCircle size={16} className="text-amber-600" />
+                        <span>جزئیات غیرفعال‌سازی طلبه (عدم حضور در مدرسه)</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">علت غیرفعال بودن <span className="text-rose-500">*</span></label>
+                          <select
+                            value={newStudent.deactivationReason || 'صرفا غیر فعال'}
+                            onChange={(e) => setNewStudent({ ...newStudent, deactivationReason: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm font-bold border border-amber-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="صرفا غیر فعال">صرفاً غیرفعال (مرخصی / انصراف موقت)</option>
+                            <option value="فارغ التحصیل">فارغ التحصیل</option>
+                            <option value="انتقال اختیاری از مجموعه">انتقال اختیاری از مجموعه</option>
+                            <option value="قطع همکاری از مجموعه">قطع همکاری از مجموعه</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">تاریخ غیرفعال‌سازی / خروج</label>
+                          <input
+                            type="text"
+                            placeholder="مثال: ۱۴۰۴/۰۶/۳۱"
+                            value={newStudent.deactivationDate || ''}
+                            onChange={(e) => setNewStudent({ ...newStudent, deactivationDate: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div className="col-span-full">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">یادداشت و توضیحات مدیر آموزش</label>
+                          <input
+                            type="text"
+                            placeholder="توضیحات و مصوبه مربوط به وضعیت طلبه..."
+                            value={newStudent.deactivationNotes || ''}
+                            onChange={(e) => setNewStudent({ ...newStudent, deactivationNotes: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Financial & Banking Information */}
+                  <div className="space-y-4 col-span-full mt-4">
+                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider border-b border-indigo-50 pb-1">اطلاعات شهریه و حساب‌های بانکی</h4>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">کد شهریه</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: 12345"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.tuitionCode || ''}
+                      onChange={(e) => setNewStudent({...newStudent, tuitionCode: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">نام بانک (اول)</label>
+                    <input 
+                      type="text" 
+                      placeholder="مثال: بانک ملی / تجارت / رسالت"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={newStudent.bankName1 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankName1: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره حساب (اول)</label>
+                    <input 
+                      type="text" 
+                      placeholder="شماره حساب اول"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.bankAccount1 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankAccount1: e.target.value})}
+                    />
+                  </div>
+                  <div className="col-span-full">
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره شبا (اول)</label>
+                    <input 
+                      type="text" 
+                      placeholder="IR000000000000000000000000"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left uppercase"
+                      value={newStudent.bankSheba1 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankSheba1: e.target.value})}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">نام بانک (دوم - اختیاری)</label>
+                    <input 
+                      type="text" 
+                      placeholder="نام بانک دوم"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={newStudent.bankName2 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankName2: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره حساب (دوم)</label>
+                    <input 
+                      type="text" 
+                      placeholder="شماره حساب دوم"
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                      value={newStudent.bankAccount2 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankAccount2: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره شبا (دوم)</label>
+                    <input 
+                      type="text" 
+                      placeholder="IR..."
+                      className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left uppercase"
+                      value={newStudent.bankSheba2 || ''}
+                      onChange={(e) => setNewStudent({...newStudent, bankSheba2: e.target.value})}
+                    />
                   </div>
                 </div>
 
@@ -2134,6 +2628,24 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           </div>
         )}
       </AnimatePresence>
+
+      {/* Deactivation Modal */}
+      <DeactivationModal
+        isOpen={showDeactivationModal}
+        student={studentToDeactivate}
+        onClose={() => {
+          setShowDeactivationModal(false);
+          setStudentToDeactivate(null);
+        }}
+        onConfirm={handleConfirmDeactivation}
+      />
+
+      {/* Student Record & History Modal */}
+      <StudentRecordHistoryModal
+        isOpen={!!selectedStudentForRecords}
+        student={selectedStudentForRecords}
+        onClose={() => setSelectedStudentForRecords(null)}
+      />
     </div>
   );
 }
