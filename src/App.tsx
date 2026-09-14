@@ -20,8 +20,10 @@ import StudyDiscussion from './components/StudyDiscussion';
 import AcademicCalendar from './components/AcademicCalendar';
 import PresenceHours from './components/PresenceHours';
 import TeachersBank from './components/TeachersBank';
+import TeachersSchedule from './components/TeachersSchedule';
 import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
+import { ConsultationAdvisor } from './components/ConsultationAdvisor';
 import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
@@ -81,12 +83,16 @@ function AppContent() {
         return <StudentList onlyActive initialStudentId={selectedStudentIdForTab} />;
       case 'discussion':
         return <StudyDiscussion initialStudentId={selectedStudentIdForTab} />;
+      case 'consultation-advisor':
+        return <ConsultationAdvisor onNavigate={handleNavigate} />;
       case 'programs':
         return <Programs />;
       case 'classrooms':
         return <MadrasRooms />;
       case 'student-schedule':
         return <StudentSchedule initialStudentId={selectedStudentIdForTab} />;
+      case 'teachers-schedule':
+        return <TeachersSchedule />;
       case 'research':
         return <ResearchAndFeedback initialStudentId={selectedStudentIdForTab} />;
       case 'attendance':
@@ -176,9 +182,12 @@ function AppContent() {
                      activeTab === 'programs' ? 'برنامه‌های آموزشی و سرفصل‌ها' :
                      activeTab === 'classrooms' ? 'مَدرَس‌ها (کلاس‌های درس و مدیریت فضاها)' :
                      activeTab === 'student-schedule' ? 'برنامه هفتگی و درسی طلاب' :
+                     activeTab === 'teachers-schedule' ? 'برنامه درسی و ساعات حضور اساتید' :
                      activeTab === 'research' ? 'بخش پژوهش و مقالات' :
                      activeTab === 'attendance' ? 'حضور و غیاب طلاب' :
                      activeTab === 'comments' ? 'نظرات، صحبت‌ها و آزمون شفاهی' :
+                     activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت و چینش گروه‌ها)' :
+                     activeTab === 'consultation-advisor' ? 'دستیار هوشمند چینش کلاس‌های مشاوره' :
                      activeTab === 'stats' ? 'آمار و گزارشات مطالعه' :
                      activeTab === 'summary' ? 'جمع‌بندی نهایی و هوش مصنوعی' :
                      activeTab === 'teachers-bank' ? 'بانک جامع اساتید و مدرسین' :

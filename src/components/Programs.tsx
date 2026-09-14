@@ -33,7 +33,7 @@ import {
   PhoneCall
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Program, Student, Enrollment, MadrasRoom, Teacher } from '../types';
+import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup } from '../types';
 import { localDb } from '../lib/localDb';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -167,6 +167,11 @@ export default function Programs() {
   // Hierarchy Display Toggles
   const [showMainStudents, setShowMainStudents] = useState<boolean>(true);
   const [showCounselingStudents, setShowCounselingStudents] = useState<boolean>(true);
+  const [showDiscussionGroups, setShowDiscussionGroups] = useState<boolean>(true);
+  const [includeDiscussionInPdf, setIncludeDiscussionInPdf] = useState<boolean>(true);
+
+  // Discussion groups data
+  const [discussionGroups, setDiscussionGroups] = useState<DiscussionGroup[]>([]);
 
   // Export states & refs
   const [isExportingImage, setIsExportingImage] = useState(false);
@@ -186,12 +191,14 @@ export default function Programs() {
       const rawEnrollments = await localDb.getDocs<Enrollment>('enrollments');
       const rawRooms = await localDb.getDocs<MadrasRoom>('classrooms');
       const rawTeachers = await localDb.getDocs<Teacher>('teachers');
+      const rawDiscussionGroups = await localDb.getDocs<DiscussionGroup>('discussion_groups');
 
       setStudents(rawStudents);
       setEnrollments(rawEnrollments);
       setRooms(rawRooms || []);
       setTeachers(rawTeachers || []);
       setPrograms(rawPrograms || []);
+      setDiscussionGroups(rawDiscussionGroups || []);
     } catch (error) {
       console.error("Error fetching programs:", error);
     } finally {
@@ -457,6 +464,50 @@ export default function Programs() {
       .filter(e => e.programId === programId)
       .map(e => e.studentId);
     return students.filter(s => studentIds.includes(s.id));
+  };
+
+  // Get discussion groups linked to a program
+  const getProgramDiscussionGroups = (program: Program) => {
+    return discussionGroups.filter(g => {
+      if (g.programId && g.programId === program.id) return true;
+      if (g.programTitle && program.title && g.programTitle.trim() === program.title.trim()) return true;
+      if (g.subject && program.title && (g.subject.includes(program.title) || program.title.includes(g.subject))) return true;
+      return false;
+    });
+  };
+
+  // Get discussion partner info for a student in this program or general
+  const getStudentDiscussionInfo = (studentId: string, program?: Program) => {
+    const relevantGroups = program ? getProgramDiscussionGroups(program) : discussionGroups;
+    const matchingGroups = relevantGroups.filter(g => g.memberStudentIds?.includes(studentId));
+
+    if (matchingGroups.length === 0) return null;
+
+    const allPartnerNames: string[] = [];
+    const groupTitles: string[] = [];
+
+    matchingGroups.forEach(g => {
+      if (!groupTitles.includes(g.title)) groupTitles.push(g.title);
+      g.memberStudentIds?.filter(id => id !== studentId).forEach(partnerId => {
+        const partnerStu = students.find(s => s.id === partnerId);
+        if (partnerStu && !allPartnerNames.includes(partnerStu.name)) {
+          allPartnerNames.push(partnerStu.name);
+        }
+      });
+      g.externalMembers?.forEach(ext => {
+        const label = `${ext} (سایر)`;
+        if (!allPartnerNames.includes(label)) {
+          allPartnerNames.push(label);
+        }
+      });
+    });
+
+    return {
+      groups: matchingGroups,
+      groupTitles,
+      partnerNames: allPartnerNames,
+      hasPartners: allPartnerNames.length > 0
+    };
   };
 
   const mainPrograms = programs.filter(p => p.type === 'اصلی');
@@ -1019,15 +1070,15 @@ export default function Programs() {
         </div>
 
         {/* Display Filter Toggles Panel */}
-        <div className="bg-slate-100/90 p-4 rounded-2xl border border-slate-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+        <div className="bg-slate-100/90 p-4 rounded-2xl border border-slate-200/90 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-2 font-black text-slate-800">
-            <Eye size={18} className="text-indigo-600" />
-            <span>تنظیم فیلتر نمایش اسامی طلاب در نمودار و خروجی‌های تصویر و PDF:</span>
+            <Eye size={18} className="text-indigo-600 shrink-0" />
+            <span>تنظیم فیلتر نمایش اسامی طلاب و گروه‌های مباحثه در نمودار و خروجی‌های تصویر و PDF:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
             <label className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
               showMainStudents ? "bg-indigo-50 border-indigo-300 text-indigo-950 shadow-2xs" : "bg-white border-slate-200 text-slate-400"
             )}>
               <input 
@@ -1036,11 +1087,11 @@ export default function Programs() {
                 onChange={(e) => setShowMainStudents(e.target.checked)}
                 className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
               />
-              <span>نمایش اسامی طلاب «درس اصلی»</span>
+              <span>اسامی «درس اصلی»</span>
             </label>
 
             <label className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
               showCounselingStudents ? "bg-amber-50 border-amber-300 text-amber-950 shadow-2xs" : "bg-white border-slate-200 text-slate-400"
             )}>
               <input 
@@ -1049,7 +1100,33 @@ export default function Programs() {
                 onChange={(e) => setShowCounselingStudents(e.target.checked)}
                 className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
               />
-              <span>نمایش اسامی طلاب «درس مشاوره»</span>
+              <span>اسامی «درس مشاوره»</span>
+            </label>
+
+            <label className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
+              showDiscussionGroups ? "bg-emerald-50 border-emerald-400 text-emerald-950 shadow-2xs" : "bg-white border-slate-200 text-slate-400"
+            )}>
+              <input 
+                type="checkbox"
+                checked={showDiscussionGroups}
+                onChange={(e) => setShowDiscussionGroups(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+              />
+              <span>نمایش گروه‌ها و هم‌بحث‌ها ({discussionGroups.length})</span>
+            </label>
+
+            <label className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
+              includeDiscussionInPdf ? "bg-teal-50 border-teal-400 text-teal-950 shadow-2xs" : "bg-white border-slate-200 text-slate-400"
+            )}>
+              <input 
+                type="checkbox"
+                checked={includeDiscussionInPdf}
+                onChange={(e) => setIncludeDiscussionInPdf(e.target.checked)}
+                className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
+              />
+              <span>شامل مباحثه در PDF</span>
             </label>
           </div>
         </div>
@@ -1059,9 +1136,9 @@ export default function Programs() {
           <div ref={hierarchyChartRef} className="p-6 bg-white rounded-2xl border border-slate-200/90 space-y-10 min-w-[700px]">
             {/* School Header Banner inside the graph export */}
             <div className="text-center border-b-2 border-indigo-600 pb-4 space-y-1">
-              <h4 className="text-lg font-black text-indigo-950">نمودار ساختاری دروس اصلی و کلاس‌های مشاوره مدرسه</h4>
+              <h4 className="text-lg font-black text-indigo-950">نمودار ساختاری دروس اصلی، کلاس‌های مشاوره و گروه‌های مباحثه مدرسه</h4>
               <p className="text-xs text-slate-500">
-                استاد/مسئول: <span className="font-bold text-slate-800">{currentMentor.name}</span> | تاریخ تنظیم: <span className="font-bold text-slate-800">{new Date().toLocaleDateString('fa-IR-u-nu-latn')}</span> | کل کلاس‌ها: <span className="font-bold text-slate-800">{programs.length}</span>
+                استاد/مسئول: <span className="font-bold text-slate-800">{currentMentor.name}</span> | تاریخ تنظیم: <span className="font-bold text-slate-800">{new Date().toLocaleDateString('fa-IR-u-nu-latn')}</span> | کل کلاس‌ها: <span className="font-bold text-slate-800">{programs.length}</span> | گروه‌های مباحثه: <span className="font-bold text-slate-800">{discussionGroups.length}</span>
               </p>
             </div>
 
@@ -1075,6 +1152,7 @@ export default function Programs() {
                 {mainPrograms.map((mainProg, idx) => {
                   const mainStudents = getProgramStudents(mainProg.id);
                   const linkedCounselings = counselingPrograms.filter(cp => cp.parentProgramId === mainProg.id);
+                  const linkedDiscGroups = getProgramDiscussionGroups(mainProg);
 
                   return (
                     <div key={mainProg.id} className="relative bg-slate-50/90 rounded-2xl p-5 border border-slate-300/80 space-y-6">
@@ -1107,16 +1185,42 @@ export default function Programs() {
                         {/* Main Class Enrolled Students (Filtered by Toggle) */}
                         {showMainStudents ? (
                           <div className="space-y-1.5">
-                            <span className="text-[11px] font-bold text-indigo-200 block">
-                              طلاب شرکت‌کننده در این درس اصلی ({mainStudents.length} نفر):
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-indigo-200 block">
+                                طلاب شرکت‌کننده در این درس اصلی ({mainStudents.length} نفر):
+                              </span>
+                              {showDiscussionGroups && (
+                                <span className="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
+                                  <span>🤝 طلاب دارای هم‌بحث هایلایت شده‌اند</span>
+                                </span>
+                              )}
+                            </div>
                             {mainStudents.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5">
-                                {mainStudents.map(st => (
-                                  <span key={st.id} className="px-2.5 py-1 bg-indigo-900/90 text-indigo-100 rounded-lg text-xs font-bold border border-indigo-700">
-                                    {st.name} <span className="text-indigo-300 text-[10px]">(پایه {st.grade})</span>
-                                  </span>
-                                ))}
+                                {mainStudents.map(st => {
+                                  const discInfo = getStudentDiscussionInfo(st.id, mainProg);
+                                  const hasPartners = showDiscussionGroups && discInfo && discInfo.hasPartners;
+                                  return (
+                                    <span 
+                                      key={st.id} 
+                                      title={hasPartners ? `هم‌بحث در گروه «${discInfo.groupTitles.join('، ')}» با: ${discInfo.partnerNames.join(' ، ')}` : undefined}
+                                      className={cn(
+                                        "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5",
+                                        hasPartners 
+                                          ? "bg-emerald-950/90 text-emerald-100 border-emerald-400 shadow-sm ring-1 ring-emerald-400/40" 
+                                          : "bg-indigo-900/90 text-indigo-100 border-indigo-700"
+                                      )}
+                                    >
+                                      <span>{st.name}</span>
+                                      <span className={cn("text-[10px]", hasPartners ? "text-emerald-300" : "text-indigo-300")}>(پایه {st.grade})</span>
+                                      {hasPartners && (
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-800 text-[9px] font-black text-emerald-200 rounded border border-emerald-600">
+                                          🤝 {discInfo.partnerNames.slice(0, 2).join('، ')}{discInfo.partnerNames.length > 2 ? '...' : ''}
+                                        </span>
+                                      )}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             ) : (
                               <span className="text-xs text-indigo-300 italic">هنوز طلبی برای این درس ثبت نشده است.</span>
@@ -1126,6 +1230,40 @@ export default function Programs() {
                           <div className="text-[11px] font-bold text-indigo-200 bg-indigo-900/50 p-2 rounded-xl border border-indigo-800 flex items-center justify-between">
                             <span>تعداد طلاب شرکت‌کننده در درس اصلی: <b className="text-white font-black">{mainStudents.length} نفر</b></span>
                             <span className="text-[10px] text-indigo-300 italic">(نمایش اسامی طلاب درس اصلی فیلتر/مخفی شده است)</span>
+                          </div>
+                        )}
+
+                        {/* Discussion Groups for this Main Course */}
+                        {showDiscussionGroups && linkedDiscGroups.length > 0 && (
+                          <div className="pt-2.5 border-t border-indigo-700/60 space-y-2">
+                            <div className="flex items-center justify-between text-xs text-emerald-200 font-bold">
+                              <span className="flex items-center gap-1.5">
+                                <Users size={14} className="text-emerald-400" />
+                                <span>گروه‌های مباحثه ثبت‌شده برای این درس ({linkedDiscGroups.length} گروه):</span>
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {linkedDiscGroups.map(g => {
+                                const memberNames = (g.memberStudentIds || [])
+                                  .map(id => students.find(s => s.id === id)?.name)
+                                  .filter(Boolean);
+                                const allMembers = [...memberNames, ...(g.externalMembers?.map(m => `${m} (سایر)`) || [])];
+                                return (
+                                  <div key={g.id} className="bg-indigo-950/80 border border-emerald-500/50 rounded-xl p-2.5 space-y-1 text-xs text-white shadow-2xs">
+                                    <div className="flex items-center justify-between font-black text-emerald-300">
+                                      <span>{g.title}</span>
+                                      <span className="text-[10px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-600">
+                                        {allMembers.length} نفر
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-200 font-medium">
+                                      <b>اعضا: </b>{allMembers.join(' ، ') || 'بدون عضو'}
+                                    </div>
+                                    {g.room && <div className="text-[10px] text-indigo-300 font-mono">مکان: {g.room}</div>}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1193,11 +1331,25 @@ export default function Programs() {
                                         </span>
                                         {counselingStudents.length > 0 ? (
                                           <div className="flex flex-wrap gap-1">
-                                            {counselingStudents.map(st => (
-                                              <span key={st.id} className="px-2 py-0.5 bg-amber-50 text-amber-950 rounded-md text-[11px] font-bold border border-amber-200">
-                                                {st.name}
-                                              </span>
-                                            ))}
+                                            {counselingStudents.map(st => {
+                                              const discInfo = getStudentDiscussionInfo(st.id, mainProg);
+                                              const hasPartners = showDiscussionGroups && discInfo && discInfo.hasPartners;
+                                              return (
+                                                <span 
+                                                  key={st.id} 
+                                                  title={hasPartners ? `هم‌بحث در گروه «${discInfo.groupTitles.join('، ')}» با: ${discInfo.partnerNames.join(' ، ')}` : undefined}
+                                                  className={cn(
+                                                    "px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all flex items-center gap-1",
+                                                    hasPartners 
+                                                      ? "bg-emerald-50 text-emerald-950 border-emerald-300 shadow-2xs" 
+                                                      : "bg-amber-50 text-amber-950 border-amber-200"
+                                                  )}
+                                                >
+                                                  <span>{st.name}</span>
+                                                  {hasPartners && <span className="text-[9px] text-emerald-700">🤝</span>}
+                                                </span>
+                                              );
+                                            })}
                                           </div>
                                         ) : (
                                           <span className="text-[11px] text-slate-400 italic">طلبه‌ای ثبت‌نام نشده است</span>
@@ -1345,6 +1497,7 @@ export default function Programs() {
             {mainPrograms.map((mainProg, idx) => {
               const mainStudents = getProgramStudents(mainProg.id);
               const linkedCounselings = counselingPrograms.filter(cp => cp.parentProgramId === mainProg.id);
+              const linkedDiscGroups = getProgramDiscussionGroups(mainProg);
 
               return (
                 <div key={mainProg.id} className="border border-slate-300 rounded-xl p-4 space-y-3 bg-slate-50/50">
@@ -1356,10 +1509,43 @@ export default function Programs() {
                   <div className="text-xs text-slate-700">
                     <b>طلاب شرکت‌کننده در درس اصلی ({mainStudents.length} نفر): </b>
                     {showMainStudents
-                      ? (mainStudents.map(s => s.name).join(' ، ') || 'طلبه‌ای ثبت نشده')
+                      ? (mainStudents.map(s => {
+                          if (!includeDiscussionInPdf) return s.name;
+                          const discInfo = getStudentDiscussionInfo(s.id, mainProg);
+                          if (discInfo && discInfo.hasPartners) {
+                            return `${s.name} [هم‌بحث: ${discInfo.partnerNames.join('، ')}]`;
+                          }
+                          return s.name;
+                        }).join(' ، ') || 'طلبه‌ای ثبت نشده')
                       : <span className="text-slate-500 font-bold">(نمایش اسامی فیلتر گردیده است)</span>
                     }
                   </div>
+
+                  {/* Discussion Groups in PDF */}
+                  {includeDiscussionInPdf && linkedDiscGroups.length > 0 && (
+                    <div className="pr-4 border-r-2 border-emerald-500 space-y-2">
+                      <h5 className="font-black text-xs text-emerald-900">گروه‌های مباحثه ثبت‌شده این درس:</h5>
+                      <div className="grid grid-cols-2 gap-2">
+                        {linkedDiscGroups.map(g => {
+                          const memberNames = (g.memberStudentIds || [])
+                            .map(id => students.find(s => s.id === id)?.name)
+                            .filter(Boolean);
+                          const allMembers = [...memberNames, ...(g.externalMembers?.map(m => `${m} (سایر)`) || [])];
+                          return (
+                            <div key={g.id} className="bg-white p-2 rounded border border-emerald-300 text-xs space-y-1">
+                              <div className="font-black text-emerald-950 flex justify-between">
+                                <span>گروه: {g.title}</span>
+                                <span className="text-[10px] text-slate-500">{allMembers.length} عضو</span>
+                              </div>
+                              <div className="text-slate-700 text-[11px]">
+                                <b>اعضا: </b>{allMembers.join(' ، ') || 'بدون عضو'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {linkedCounselings.length > 0 && (
                     <div className="pr-4 border-r-2 border-amber-500 space-y-2">

@@ -8,10 +8,11 @@ export const ALL_SYSTEM_TABS = [
   { id: 'presence-hours', label: 'ثبت ساعت حضور' },
   { id: 'students', label: 'مدیریت کل کاربران (مشترک)' },
   { id: 'active-students', label: 'لیست کاربران فعال' },
-  { id: 'discussion', label: 'مطالعات و مباحثات طلاب' },
+  { id: 'discussion', label: 'گروه‌های بحثی' },
   { id: 'programs', label: 'برنامه‌های مدرسه و مدرس‌ها' },
   { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)' },
   { id: 'student-schedule', label: 'برنامه درسی طلاب' },
+  { id: 'teachers-schedule', label: 'برنامه درسی اساتید' },
   { id: 'stats', label: 'آمار مطالعه' },
   { id: 'research', label: 'بخش پژوهش و مقالات' },
   { id: 'attendance', label: 'حضور و غیاب طلاب' },
@@ -506,12 +507,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
-    // بخش جریان کار منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
-    if (tabId === 'workflow') {
+    // بخش جریان کار و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
+    if (tabId === 'workflow' || tabId === 'consultation-advisor') {
       return currentUser.level === 1 || currentUser.level === 2;
     }
-    // بخش برنامه‌های مدرسه و مَدرَس‌ها به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
-    if (tabId === 'programs' || tabId === 'classrooms') return true;
+    // بخش برنامه‌های مدرسه، مَدرَس‌ها و تقویم آموزشی به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
+    if (tabId === 'programs' || tabId === 'classrooms' || tabId === 'academic-calendar') return true;
+    // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند ببینند؛ کاربران سطح 2 همه می توانند ببینند
+    if (tabId === 'teachers-schedule') {
+      if (currentUser.level === 3) return false;
+      if (currentUser.level === 1 || currentUser.level === 2) return true;
+    }
     if (tabId === 'user-credentials') {
       if (
         currentUser.role === 'super_admin' || 

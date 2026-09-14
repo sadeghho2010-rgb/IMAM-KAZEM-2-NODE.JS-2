@@ -24,8 +24,13 @@ import {
   BookOpen,
   FileText,
   Eye,
-  X
+  X,
+  ShieldCheck,
+  Lock,
+  UserCheck,
+  GraduationCap
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { localDb } from '../lib/localDb';
@@ -84,7 +89,60 @@ const COLOR_MAP: Record<string, { bg: string; text: string; border: string; badg
   slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-300', badge: 'bg-slate-600 text-white' },
 };
 
+const ALL_SYSTEM_GRADES = ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'];
+
 export default function AcademicCalendar() {
+  // Auth Context & Role Detection
+  const { currentUser } = useAuth();
+
+  // RBAC: Only Level 1 Super Admin or Level 2 Education Manager / Officer can edit calendar
+  const isCalendarEditor = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.isReadOnly) return false;
+    if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
+    if (currentUser.level === 2) {
+      return (
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username?.toUpperCase() === 'SHAH'
+      );
+    }
+    return false;
+  }, [currentUser]);
+
+  // Detected grade for grade mentors or students (e.g. 'پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰')
+  const userAssignedGrade = useMemo(() => {
+    if (!currentUser) return null;
+    // Super admins and Education managers see all grades
+    if (
+      (currentUser.level === 1 && currentUser.role === 'super_admin') ||
+      currentUser.role === 'education_manager' ||
+      currentUser.role === 'education_officer' ||
+      currentUser.username?.toUpperCase() === 'SHAH'
+    ) {
+      return null;
+    }
+    if (currentUser.scope === 'grade_7' || currentUser.mentorId === 'hayati' || currentUser.gradeLabel?.includes('پایه ۷') || currentUser.gradeLabel?.includes('پایه 7')) {
+      return 'پایه ۷';
+    }
+    if (currentUser.scope === 'grade_8' || currentUser.mentorId === 'hosseini' || currentUser.gradeLabel?.includes('پایه ۸') || currentUser.gradeLabel?.includes('پایه 8')) {
+      return 'پایه ۸';
+    }
+    if (currentUser.scope === 'grade_9' || currentUser.mentorId === 'soleimani' || currentUser.gradeLabel?.includes('پایه ۹') || currentUser.gradeLabel?.includes('پایه 9')) {
+      return 'پایه ۹';
+    }
+    if (currentUser.scope === 'grade_10' || currentUser.mentorId === 'asadi' || currentUser.gradeLabel?.includes('پایه ۱۰') || currentUser.gradeLabel?.includes('پایه 10')) {
+      return 'پایه ۱۰';
+    }
+    if (currentUser.gradeLabel && currentUser.gradeLabel.includes('پایه')) {
+      return currentUser.gradeLabel;
+    }
+    return null;
+  }, [currentUser]);
+
+  // Interactive Grade View Filter for Admins / Education Officers
+  const [gradeViewFilter, setGradeViewFilter] = useState<string>('all');
+
   // State
   const [periods, setPeriods] = useState<AcademicCalendarPeriod[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
@@ -115,6 +173,9 @@ export default function AcademicCalendar() {
     locationOrTeacher: string;
     description: string;
     color: string;
+    isPublic: boolean;
+    targetGrades: string[];
+    grade: string;
   }>({
     title: 'کارگاه مهارتی / جلسه علمی',
     scheduleType: 'recurring',
@@ -127,7 +188,10 @@ export default function AcademicCalendar() {
     time: '10:00 تا 11:30',
     locationOrTeacher: 'سالن همایش / استاد مربوطه',
     description: 'برنامه آموزشی یا پژوهشی دوره',
-    color: 'purple'
+    color: 'purple',
+    isPublic: true,
+    targetGrades: ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'],
+    grade: 'عمومی'
   });
 
   // Custom Delete Confirmation Dialog State
@@ -232,14 +296,28 @@ export default function AcademicCalendar() {
   });
 
   // Form States for Sub-period Modal (هفته پژوهش، کارگاه‌ها و...)
-  const [subPeriodForm, setSubPeriodForm] = useState({
+  const [subPeriodForm, setSubPeriodForm] = useState<{
+    title: string;
+    startDate: string;
+    endDate: string;
+    isAcademicPresence: boolean;
+    isStandardClassDay: boolean;
+    description: string;
+    color: string;
+    isPublic: boolean;
+    targetGrades: string[];
+    grade: string;
+  }>({
     title: 'هفته پژوهش',
     startDate: getTodayShamsi(),
     endDate: getTodayShamsi(),
     isAcademicPresence: true,
     isStandardClassDay: false,
     description: '',
-    color: 'violet'
+    color: 'violet',
+    isPublic: true,
+    targetGrades: ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'],
+    grade: 'عمومی'
   });
 
   // Load Initial Data
@@ -375,17 +453,53 @@ export default function AcademicCalendar() {
     });
   }, [holidays, selectedPeriod]);
 
+  // Helper function to verify visibility of special course / weekly program for the current user
+  const isItemVisibleForActiveUser = (item: { targetGrades?: string[]; grade?: string; isPublic?: boolean }, specificGradeFilter?: string) => {
+    // Check if item is public / general
+    const isPublic = item.isPublic !== false && (
+      !item.targetGrades ||
+      item.targetGrades.length === 0 ||
+      item.targetGrades.includes('all') ||
+      item.targetGrades.includes('عمومی') ||
+      item.grade === 'عمومی' ||
+      !item.grade
+    );
+
+    // If current logged in user has a specific assigned grade (Grade Mentor or Student)
+    if (userAssignedGrade) {
+      if (isPublic) return true;
+      if (item.targetGrades && item.targetGrades.includes(userAssignedGrade)) return true;
+      if (item.grade === userAssignedGrade) return true;
+      return false;
+    }
+
+    // If viewing with a specific grade filter (for Education officer / Admin)
+    if (specificGradeFilter && specificGradeFilter !== 'all') {
+      if (specificGradeFilter === 'public') {
+        return isPublic;
+      }
+      const matchesTarget = (item.targetGrades && item.targetGrades.includes(specificGradeFilter)) || item.grade === specificGradeFilter;
+      if (matchesTarget) return true;
+      if (isPublic) return true; // public items apply to all grades
+      return false;
+    }
+
+    return true;
+  };
+
   // Sub-periods belonging to current period (هفته پژوهش، کارگاه‌ها و...)
   const periodSubPeriods = useMemo(() => {
     if (!selectedPeriodId) return [];
-    return subPeriods.filter(sp => sp.periodId === selectedPeriodId);
-  }, [subPeriods, selectedPeriodId]);
+    const list = subPeriods.filter(sp => sp.periodId === selectedPeriodId);
+    return list.filter(sp => isItemVisibleForActiveUser(sp, gradeViewFilter));
+  }, [subPeriods, selectedPeriodId, userAssignedGrade, gradeViewFilter]);
 
   // Weekly programs belonging to current period
   const periodWeeklyPrograms = useMemo(() => {
     if (!selectedPeriodId) return [];
-    return weeklyPrograms.filter(wp => wp.periodId === selectedPeriodId);
-  }, [weeklyPrograms, selectedPeriodId]);
+    const list = weeklyPrograms.filter(wp => wp.periodId === selectedPeriodId);
+    return list.filter(wp => isItemVisibleForActiveUser(wp, gradeViewFilter));
+  }, [weeklyPrograms, selectedPeriodId, userAssignedGrade, gradeViewFilter]);
 
   // Period Date Range Array
   const periodDateList = useMemo(() => {
@@ -528,7 +642,10 @@ export default function AcademicCalendar() {
       isAcademicPresence: true,
       isStandardClassDay: false,
       description: 'برگزاری کارگاه‌های مهارتی، اردوها، همایش‌های علمی یا هفته پژوهش',
-      color: 'violet'
+      color: 'violet',
+      isPublic: true,
+      targetGrades: ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'],
+      grade: 'عمومی'
     });
     setShowSubPeriodModal(true);
   };
@@ -542,9 +659,51 @@ export default function AcademicCalendar() {
       isAcademicPresence: sp.isAcademicPresence !== false,
       isStandardClassDay: sp.isStandardClassDay === true,
       description: sp.description || '',
-      color: sp.color || 'violet'
+      color: sp.color || 'violet',
+      isPublic: sp.isPublic !== false,
+      targetGrades: sp.targetGrades && sp.targetGrades.length > 0 ? sp.targetGrades : (sp.grade && sp.grade !== 'عمومی' ? [sp.grade] : ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰']),
+      grade: sp.grade || (sp.isPublic !== false ? 'عمومی' : (sp.targetGrades?.[0] || 'عمومی'))
     });
     setShowSubPeriodModal(true);
+  };
+
+  const handleToggleSubPeriodGrade = (grade: string) => {
+    const current = new Set(subPeriodForm.targetGrades || []);
+    if (current.has(grade)) {
+      if (current.size === 1) {
+        showToast("حداقل یک پایه باید انتخاب شده باشد یا گزینه عمومی فعال شود.");
+        return;
+      }
+      current.delete(grade);
+    } else {
+      current.add(grade);
+    }
+    const updatedGrades = ALL_SYSTEM_GRADES.filter(g => current.has(g));
+    const isAllSelected = updatedGrades.length === ALL_SYSTEM_GRADES.length;
+    setSubPeriodForm(prev => ({
+      ...prev,
+      targetGrades: updatedGrades,
+      isPublic: isAllSelected,
+      grade: isAllSelected ? 'عمومی' : updatedGrades.join('، ')
+    }));
+  };
+
+  const handleSetSubPeriodPublic = (isPublic: boolean) => {
+    if (isPublic) {
+      setSubPeriodForm(prev => ({
+        ...prev,
+        isPublic: true,
+        targetGrades: ALL_SYSTEM_GRADES,
+        grade: 'عمومی'
+      }));
+    } else {
+      setSubPeriodForm(prev => ({
+        ...prev,
+        isPublic: false,
+        targetGrades: ['پایه ۷'],
+        grade: 'پایه ۷'
+      }));
+    }
   };
 
   const handleSaveSubPeriod = async (e: React.FormEvent) => {
@@ -567,6 +726,9 @@ export default function AcademicCalendar() {
           isStandardClassDay: subPeriodForm.isStandardClassDay,
           description: subPeriodForm.description.trim(),
           color: subPeriodForm.color,
+          isPublic: subPeriodForm.isPublic,
+          targetGrades: subPeriodForm.targetGrades,
+          grade: subPeriodForm.isPublic ? 'عمومی' : (subPeriodForm.targetGrades.join('، ') || 'عمومی'),
           updatedAt: new Date().toISOString()
         };
         await localDb.setDoc('academic_sub_periods', updated);
@@ -583,6 +745,9 @@ export default function AcademicCalendar() {
           isStandardClassDay: subPeriodForm.isStandardClassDay,
           description: subPeriodForm.description.trim(),
           color: subPeriodForm.color,
+          isPublic: subPeriodForm.isPublic,
+          targetGrades: subPeriodForm.targetGrades,
+          grade: subPeriodForm.isPublic ? 'عمومی' : (subPeriodForm.targetGrades.join('، ') || 'عمومی'),
           createdAt: new Date().toISOString()
         };
         await localDb.setDoc('academic_sub_periods', newSp);
@@ -611,7 +776,10 @@ export default function AcademicCalendar() {
       time: '10:00 تا 11:30',
       locationOrTeacher: 'سالن همایش / استاد مربوطه',
       description: 'برنامه آموزشی یا پژوهشی دوره',
-      color: 'purple'
+      color: 'purple',
+      isPublic: true,
+      targetGrades: ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'],
+      grade: 'عمومی'
     });
     setShowWeeklyProgramModal(true);
   };
@@ -634,7 +802,10 @@ export default function AcademicCalendar() {
       time: wp.time || '',
       locationOrTeacher: wp.locationOrTeacher || '',
       description: wp.description || '',
-      color: wp.color || 'purple'
+      color: wp.color || 'purple',
+      isPublic: wp.isPublic !== false,
+      targetGrades: wp.targetGrades && wp.targetGrades.length > 0 ? wp.targetGrades : (wp.grade && wp.grade !== 'عمومی' ? [wp.grade] : ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰']),
+      grade: wp.grade || (wp.isPublic !== false ? 'عمومی' : (wp.targetGrades?.[0] || 'عمومی'))
     });
     setShowWeeklyProgramModal(true);
   };
@@ -680,6 +851,45 @@ export default function AcademicCalendar() {
     });
   };
 
+  const handleToggleWeeklyProgramGrade = (grade: string) => {
+    const current = new Set(weeklyProgramForm.targetGrades || []);
+    if (current.has(grade)) {
+      if (current.size === 1) {
+        showToast("حداقل یک پایه باید انتخاب شده باشد یا گزینه عمومی فعال شود.");
+        return;
+      }
+      current.delete(grade);
+    } else {
+      current.add(grade);
+    }
+    const updatedGrades = ALL_SYSTEM_GRADES.filter(g => current.has(g));
+    const isAllSelected = updatedGrades.length === ALL_SYSTEM_GRADES.length;
+    setWeeklyProgramForm(prev => ({
+      ...prev,
+      targetGrades: updatedGrades,
+      isPublic: isAllSelected,
+      grade: isAllSelected ? 'عمومی' : updatedGrades.join('، ')
+    }));
+  };
+
+  const handleSetWeeklyProgramPublic = (isPublic: boolean) => {
+    if (isPublic) {
+      setWeeklyProgramForm(prev => ({
+        ...prev,
+        isPublic: true,
+        targetGrades: ALL_SYSTEM_GRADES,
+        grade: 'عمومی'
+      }));
+    } else {
+      setWeeklyProgramForm(prev => ({
+        ...prev,
+        isPublic: false,
+        targetGrades: ['پایه ۷'],
+        grade: 'پایه ۷'
+      }));
+    }
+  };
+
   const handleSaveWeeklyProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPeriodId || !weeklyProgramForm.title.trim()) return;
@@ -713,6 +923,9 @@ export default function AcademicCalendar() {
           locationOrTeacher: weeklyProgramForm.locationOrTeacher.trim() || undefined,
           description: weeklyProgramForm.description.trim() || undefined,
           color: weeklyProgramForm.color,
+          isPublic: weeklyProgramForm.isPublic,
+          targetGrades: weeklyProgramForm.targetGrades,
+          grade: weeklyProgramForm.isPublic ? 'عمومی' : (weeklyProgramForm.targetGrades.join('، ') || 'عمومی'),
           updatedAt: new Date().toISOString()
         };
         await localDb.updateDoc('academic_weekly_programs', editingWeeklyProgram.id, updated);
@@ -736,6 +949,9 @@ export default function AcademicCalendar() {
           locationOrTeacher: weeklyProgramForm.locationOrTeacher.trim() || undefined,
           description: weeklyProgramForm.description.trim() || undefined,
           color: weeklyProgramForm.color,
+          isPublic: weeklyProgramForm.isPublic,
+          targetGrades: weeklyProgramForm.targetGrades,
+          grade: weeklyProgramForm.isPublic ? 'عمومی' : (weeklyProgramForm.targetGrades.join('، ') || 'عمومی'),
           customCancelledDates: [],
           createdAt: new Date().toISOString()
         };
@@ -1639,9 +1855,20 @@ export default function AcademicCalendar() {
         
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold">
+            <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold flex-wrap">
               <CalendarIcon size={18} />
               <span>سامانه هوشمند مدیریت برنامه‌ریزی حوزه علمیه</span>
+              {isCalendarEditor ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] flex items-center gap-1 font-bold">
+                  <ShieldCheck size={12} />
+                  مسئول آموزش (دسترسی کامل ویرایش)
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] flex items-center gap-1 font-bold">
+                  <Eye size={12} />
+                  {userAssignedGrade ? `مشاهده برنامه ${userAssignedGrade}` : 'حالت مشاهده و خروجی تقویم'}
+                </span>
+              )}
             </div>
             <h1 className="text-xl sm:text-2xl font-black text-white">تقویم آموزشی و سالنامه تحصیلی</h1>
             <p className="text-xs text-indigo-200/80 max-w-xl">
@@ -1669,13 +1896,15 @@ export default function AcademicCalendar() {
               </select>
             </div>
 
-            <button
-              onClick={handleOpenNewPeriod}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 shrink-0"
-            >
-              <Plus size={16} />
-              <span>ایجاد دوره جدید</span>
-            </button>
+            {isCalendarEditor && (
+              <button
+                onClick={handleOpenNewPeriod}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 shrink-0"
+              >
+                <Plus size={16} />
+                <span>ایجاد دوره جدید</span>
+              </button>
+            )}
 
             <button
               onClick={handleExportData}
@@ -1686,14 +1915,16 @@ export default function AcademicCalendar() {
               <span>پشتیبان‌گیری تقویم (خروجی JSON)</span>
             </button>
 
-            <button
-              onClick={() => setShowImportExportModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold rounded-xl shadow-md transition-all shrink-0 border border-indigo-500/30 active:scale-95"
-              title="بارگذاری فایل پشتیبان تقویم آموزشی"
-            >
-              <Upload size={15} />
-              <span>بارگذاری پشتیبان تقویم</span>
-            </button>
+            {isCalendarEditor && (
+              <button
+                onClick={() => setShowImportExportModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold rounded-xl shadow-md transition-all shrink-0 border border-indigo-500/30 active:scale-95"
+                title="بارگذاری فایل پشتیبان تقویم آموزشی"
+              >
+                <Upload size={15} />
+                <span>بارگذاری پشتیبان تقویم</span>
+              </button>
+            )}
 
             <button
               onClick={() => setShowPdfPreviewModal(true)}
@@ -1723,24 +1954,26 @@ export default function AcademicCalendar() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleOpenEditPeriod(selectedPeriod)}
-                className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-indigo-100 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1"
-              >
-                <Edit2 size={12} />
-                <span>ویرایش دوره</span>
-              </button>
-              {periods.length > 1 && (
+            {isCalendarEditor && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => handleDeletePeriod(selectedPeriod.id)}
-                  className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1"
+                  onClick={() => handleOpenEditPeriod(selectedPeriod)}
+                  className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-indigo-100 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1"
                 >
-                  <Trash2 size={12} />
-                  <span>حذف</span>
+                  <Edit2 size={12} />
+                  <span>ویرایش دوره</span>
                 </button>
-              )}
-            </div>
+                {periods.length > 1 && (
+                  <button
+                    onClick={() => handleDeletePeriod(selectedPeriod.id)}
+                    className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 size={12} />
+                    <span>حذف</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2221,18 +2454,58 @@ export default function AcademicCalendar() {
                 <span>دوره‌ها و هفته‌های ویژه بین سال تحصیلی</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                تعریف برنامه‌هایی نظیر هفته پژوهش، کارگاه‌های مهارتی، اردوهای علمی یا امتحانات که جزء ایام حضور و فعالیت تحصیلی طلاب است اما تدریس کتب اصلی انجام نمی‌شود.
+                تعریف برنامه‌هایی نظیر هفته پژوهش، کارگاه‌های مهارتی، اردوهای علمی یا امتحانات که جزء ایام حضور و فعالیت تحصیلی طلاب است.
               </p>
             </div>
 
-            <button
-              onClick={() => handleOpenAddSubPeriod()}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95"
-            >
-              <Plus size={16} />
-              <span>افزودن دوره ویژه جدید (هفته پژوهش...)</span>
-            </button>
+            {isCalendarEditor ? (
+              <button
+                onClick={() => handleOpenAddSubPeriod()}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95"
+              >
+                <Plus size={16} />
+                <span>افزودن دوره ویژه جدید (هفته پژوهش...)</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold">
+                <GraduationCap size={16} className="text-amber-600" />
+                <span>فیلتر نمایش: دوره‌های عمومی + دوره‌های اختصاصی {userAssignedGrade || 'پایه شما'}</span>
+              </div>
+            )}
           </div>
+
+          {/* Grade Filter Bar for Education Officer / Super Admin */}
+          {isCalendarEditor && (
+            <div className="flex items-center justify-between flex-wrap gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <Filter size={15} className="text-violet-600" />
+                <span>فیلتر پایه‌های تحصیلی:</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'all', label: 'همه پایه‌ها' },
+                  { id: 'public', label: 'دوره‌های عمومی' },
+                  { id: 'پایه ۷', label: 'پایه ۷' },
+                  { id: 'پایه ۸', label: 'پایه ۸' },
+                  { id: 'پایه ۹', label: 'پایه ۹' },
+                  { id: 'پایه ۱۰', label: 'پایه ۱۰' }
+                ].map(gf => (
+                  <button
+                    key={gf.id}
+                    onClick={() => setGradeViewFilter(gf.id)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                      gradeViewFilter === gf.id
+                        ? "bg-violet-600 text-white shadow-xs"
+                        : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
+                    )}
+                  >
+                    {gf.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Sub-periods List Grid */}
           {periodSubPeriods.length === 0 ? (
@@ -2240,46 +2513,62 @@ export default function AcademicCalendar() {
               <Sparkles size={36} className="mx-auto text-violet-300" />
               <p className="text-xs font-bold text-slate-600">هنوز هیچ دوره یا هفته ویژه‌ای برای این سال تحصیلی ثبت نشده است.</p>
               <p className="text-[11px] text-slate-400">می‌توانید برنامه‌هایی مانند هفته پژوهش، مسابقات قرآن و عترت یا کارگاه‌های مهارتی را ثبت کنید.</p>
-              <button
-                onClick={() => handleOpenAddSubPeriod()}
-                className="px-4 py-2 bg-violet-600 text-white text-xs font-bold rounded-xl hover:bg-violet-700 transition-colors"
-              >
-                ایجاد اولین دوره ویژه
-              </button>
+              {isCalendarEditor && (
+                <button
+                  onClick={() => handleOpenAddSubPeriod()}
+                  className="px-4 py-2 bg-violet-600 text-white text-xs font-bold rounded-xl hover:bg-violet-700 transition-colors"
+                >
+                  ایجاد اولین دوره ویژه
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {periodSubPeriods.map(sp => {
                 const daysCount = generateShamsiDateRange(sp.startDate, sp.endDate || sp.startDate).length;
                 const colorConfig = COLOR_MAP[sp.color || 'violet'] || COLOR_MAP.violet;
+                const isItemPublic = sp.isPublic !== false && (!sp.targetGrades || sp.targetGrades.length === 0 || sp.targetGrades.includes('all') || sp.grade === 'عمومی');
 
                 return (
                   <div key={sp.id} className={cn("p-5 rounded-2xl border shadow-xs space-y-4 flex flex-col justify-between transition-all hover:shadow-md", colorConfig.bg, colorConfig.border)}>
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className={cn("px-2.5 py-0.5 rounded-md text-[10px] font-black border inline-block mb-1", colorConfig.bg, colorConfig.text, colorConfig.border)}>
-                            برنامه تحصیلی ویژه
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                            <span className={cn("px-2.5 py-0.5 rounded-md text-[10px] font-black border inline-block", colorConfig.bg, colorConfig.text, colorConfig.border)}>
+                              برنامه تحصیلی ویژه
+                            </span>
+                            {isItemPublic ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                عمومی (تمامی پایه‌ها)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                                مخصوص: {sp.targetGrades && sp.targetGrades.length > 0 ? sp.targetGrades.join('، ') : (sp.grade || 'پایه‌های خاص')}
+                              </span>
+                            )}
+                          </div>
                           <h4 className="text-sm font-black text-slate-900">{sp.title}</h4>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => handleOpenEditSubPeriod(sp)}
-                            className="p-1.5 text-slate-500 hover:text-violet-700 hover:bg-white rounded-lg transition-colors"
-                            title="ویرایش دوره ویژه"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleOpenDeleteSubPeriod(sp.id, sp.title)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors"
-                            title="حذف دوره ویژه"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        {isCalendarEditor && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleOpenEditSubPeriod(sp)}
+                              className="p-1.5 text-slate-500 hover:text-violet-700 hover:bg-white rounded-lg transition-colors"
+                              title="ویرایش دوره ویژه"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDeleteSubPeriod(sp.id, sp.title)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors"
+                              title="حذف دوره ویژه"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <p className="text-xs text-slate-600 leading-relaxed">
@@ -2337,27 +2626,34 @@ export default function AcademicCalendar() {
             </div>
 
             {/* Quick Batch Policy Actions */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-slate-600">اقدام سریع:</span>
-              <button
-                onClick={() => handleBatchSetThursdays('special_program')}
-                className="px-3 py-1.5 bg-amber-100 text-amber-900 hover:bg-amber-200 text-xs font-bold rounded-xl border border-amber-300 transition-colors"
-              >
-                🟪 همه برنامه ویژه
-              </button>
-              <button
-                onClick={() => handleBatchSetThursdays('main_class')}
-                className="px-3 py-1.5 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 text-xs font-bold rounded-xl border border-emerald-300 transition-colors"
-              >
-                📘 همه درس اصلی
-              </button>
-              <button
-                onClick={() => handleBatchSetThursdays('off')}
-                className="px-3 py-1.5 bg-slate-100 text-slate-800 hover:bg-slate-200 text-xs font-bold rounded-xl border border-slate-300 transition-colors"
-              >
-                ⚪ همه تعطیل
-              </button>
-            </div>
+            {isCalendarEditor ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-600">اقدام سریع:</span>
+                <button
+                  onClick={() => handleBatchSetThursdays('special_program')}
+                  className="px-3 py-1.5 bg-amber-100 text-amber-900 hover:bg-amber-200 text-xs font-bold rounded-xl border border-amber-300 transition-colors"
+                >
+                  🟪 همه برنامه ویژه
+                </button>
+                <button
+                  onClick={() => handleBatchSetThursdays('main_class')}
+                  className="px-3 py-1.5 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 text-xs font-bold rounded-xl border border-emerald-300 transition-colors"
+                >
+                  📘 همه درس اصلی
+                </button>
+                <button
+                  onClick={() => handleBatchSetThursdays('off')}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-800 hover:bg-slate-200 text-xs font-bold rounded-xl border border-slate-300 transition-colors"
+                >
+                  ⚪ همه تعطیل
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold">
+                <Eye size={15} />
+                <span>مشاهده برنامه پنج‌شنبه‌ها</span>
+              </div>
+            )}
           </div>
 
           {/* Thursday Range-Based Rules Section */}
@@ -2373,20 +2669,22 @@ export default function AcademicCalendar() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (showInlineThursdayForm) {
-                    setShowInlineThursdayForm(false);
-                  } else {
-                    handleOpenAddThursdayRange();
-                  }
-                }}
-                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>{showInlineThursdayForm ? 'بستن فرم' : 'افزودن بازه جدید برای پنج‌شنبه‌ها'}</span>
-              </button>
+              {isCalendarEditor && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showInlineThursdayForm) {
+                      setShowInlineThursdayForm(false);
+                    } else {
+                      handleOpenAddThursdayRange();
+                    }
+                  }}
+                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>{showInlineThursdayForm ? 'بستن فرم' : 'افزودن بازه جدید برای پنج‌شنبه‌ها'}</span>
+                </button>
+              )}
             </div>
 
             {/* INLINE FORM FOR THURSDAY RANGE RULE */}
@@ -2536,22 +2834,24 @@ export default function AcademicCalendar() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => handleOpenEditThursdayRange(r)}
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="ویرایش این بازه"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteThursdayRange(r.id)}
-                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                        title="حذف این بازه"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                    {isCalendarEditor && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => handleOpenEditThursdayRange(r)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          title="ویرایش این بازه"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteThursdayRange(r.id)}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="حذف این بازه"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2611,7 +2911,7 @@ export default function AcademicCalendar() {
                         <th className="p-3">ماه تحصیلی</th>
                         <th className="p-3">وضعیت پنج‌شنبه</th>
                         <th className="p-3">عنوان / توضیحات برنامه</th>
-                        <th className="p-3 text-center">تغییر وضعیت و ویرایش</th>
+                        {isCalendarEditor && <th className="p-3 text-center">تغییر وضعیت و ویرایش</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
@@ -2668,38 +2968,40 @@ export default function AcademicCalendar() {
                                 <span className="text-slate-600 text-xs">{d.thursdayTitle || 'رویه عمومی سال تحصیلی'}</span>
                               )}
                             </td>
-                            <td className="p-3">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button
-                                  onClick={() => handleSetThursdayOverride(d.dateStr, 'special_program', 'برنامه ویژه')}
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md border border-amber-200"
-                                  title="تنظیم به برنامه ویژه"
-                                >
-                                  برنامه ویژه
-                                </button>
-                                <button
-                                  onClick={() => handleSetThursdayOverride(d.dateStr, 'main_class', 'درس اصلی')}
-                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-200"
-                                  title="تنظیم به درس اصلی"
-                                >
-                                  درس اصلی
-                                </button>
-                                <button
-                                  onClick={() => handleSetThursdayOverride(d.dateStr, 'off')}
-                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-md border border-slate-200"
-                                  title="تنظیم به تعطیل"
-                                >
-                                  تعطیل
-                                </button>
-                                <button
-                                  onClick={() => handleOpenThursdayModal(d.dateStr)}
-                                  className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md"
-                                  title="جزئیات و عنوان اختصاصی"
-                                >
-                                  <Edit3 size={14} />
-                                </button>
-                              </div>
-                            </td>
+                            {isCalendarEditor && (
+                              <td className="p-3">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    onClick={() => handleSetThursdayOverride(d.dateStr, 'special_program', 'برنامه ویژه')}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md border border-amber-200"
+                                    title="تنظیم به برنامه ویژه"
+                                  >
+                                    برنامه ویژه
+                                  </button>
+                                  <button
+                                    onClick={() => handleSetThursdayOverride(d.dateStr, 'main_class', 'درس اصلی')}
+                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-200"
+                                    title="تنظیم به درس اصلی"
+                                  >
+                                    درس اصلی
+                                  </button>
+                                  <button
+                                    onClick={() => handleSetThursdayOverride(d.dateStr, 'off')}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-md border border-slate-200"
+                                    title="تنظیم به تعطیل"
+                                  >
+                                    تعطیل
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenThursdayModal(d.dateStr)}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md"
+                                    title="جزئیات و عنوان اختصاصی"
+                                  >
+                                    <Edit3 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -2730,13 +3032,15 @@ export default function AcademicCalendar() {
                 <span>خروجی PDF جدول تعطیلات</span>
               </button>
 
-              <button
-                onClick={() => handleOpenAddHoliday()}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
-              >
-                <Plus size={16} />
-                <span>افزودن تعطیلی جدید</span>
-              </button>
+              {isCalendarEditor && (
+                <button
+                  onClick={() => handleOpenAddHoliday()}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                >
+                  <Plus size={16} />
+                  <span>افزودن تعطیلی جدید</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2744,12 +3048,14 @@ export default function AcademicCalendar() {
             <div className="p-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-3">
               <CalendarIcon size={36} className="mx-auto text-slate-300" />
               <p className="text-xs font-bold text-slate-500">هیچ تعطیلی خاصی برای این دوره ثبت نشده است.</p>
-              <button
-                onClick={() => handleOpenAddHoliday()}
-                className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors"
-              >
-                ثبت اولین تعطیلی
-              </button>
+              {isCalendarEditor && (
+                <button
+                  onClick={() => handleOpenAddHoliday()}
+                  className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors"
+                >
+                  ثبت اولین تعطیلی
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -2763,7 +3069,7 @@ export default function AcademicCalendar() {
                     <th className="p-3">تاریخ پایان</th>
                     <th className="p-3">مدت (روز)</th>
                     <th className="p-3">توضیحات</th>
-                    <th className="p-3 text-left">عملیات</th>
+                    {isCalendarEditor && <th className="p-3 text-left">عملیات</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
@@ -2785,24 +3091,26 @@ export default function AcademicCalendar() {
                         <td className="p-3 font-bold text-slate-700">{h.endDate || h.startDate} ({getShamsiDayOfWeekName(h.endDate || h.startDate)})</td>
                         <td className="p-3 font-black text-indigo-700">{daysCount} روز</td>
                         <td className="p-3 text-slate-500 max-w-xs truncate">{h.description || '---'}</td>
-                        <td className="p-3 text-left">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => handleOpenEditHoliday(h)}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                              title="ویرایش"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteHoliday(h.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="حذف"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
+                        {isCalendarEditor && (
+                          <td className="p-3 text-left">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleOpenEditHoliday(h)}
+                                className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="ویرایش"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteHoliday(h.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                title="حذف"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -3032,18 +3340,58 @@ export default function AcademicCalendar() {
               </div>
               <h2 className="text-xl font-black">مدیریت و آمار برنامه‌های تکرارشونده هفتگی</h2>
               <p className="text-xs text-purple-200/80 max-w-2xl leading-relaxed">
-                برنامه‌های آموزشی، مهارتی، کارگاهی یا جلسات علمی که به صورت دوره‌ای (مثلاً دوشنبه‌های هر هفته) یا در تاریخ‌های خاص برگزار می‌شوند. وجود این برنامه‌ها **هیچ کسر یا خللی در آمار روزهای درسی کتاب‌های اصلی ایجاد نمی‌کند** و آمار جلسات و تعطیلی‌های آن به طور مستقل محاسبه می‌شود.
+                برنامه‌های آموزشی، مهارتی، کارگاهی یا جلسات علمی که به صورت دوره‌ای یا در تاریخ‌های خاص برگزار می‌شوند. وجود این برنامه‌ها هیچ کسر یا خللی در آمار روزهای درسی کتاب‌های اصلی ایجاد نمی‌کند.
               </p>
             </div>
 
-            <button
-              onClick={handleOpenNewWeeklyProgram}
-              className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold rounded-2xl shadow-lg transition-all active:scale-95 shrink-0 self-start md:self-center"
-            >
-              <Plus size={16} />
-              <span>افزودن برنامه هفتگی جدید</span>
-            </button>
+            {isCalendarEditor ? (
+              <button
+                onClick={handleOpenNewWeeklyProgram}
+                className="flex items-center gap-2 px-5 py-3 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold rounded-2xl shadow-lg transition-all active:scale-95 shrink-0 self-start md:self-center"
+              >
+                <Plus size={16} />
+                <span>افزودن برنامه هفتگی جدید</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-purple-800/60 border border-purple-400/40 rounded-2xl text-xs font-bold text-purple-100 shrink-0 self-start md:self-center">
+                <GraduationCap size={16} className="text-purple-300" />
+                <span>فیلتر نمایش: برنامه‌های عمومی + اختصاصی {userAssignedGrade || 'پایه شما'}</span>
+              </div>
+            )}
           </div>
+
+          {/* Grade Filter Bar for Education Officer / Super Admin */}
+          {isCalendarEditor && (
+            <div className="flex items-center justify-between flex-wrap gap-3 bg-white p-4 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <Filter size={15} className="text-purple-600" />
+                <span>فیلتر پایه‌های تحصیلی برنامه‌ها:</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'all', label: 'همه پایه‌ها' },
+                  { id: 'public', label: 'برنامه‌های عمومی' },
+                  { id: 'پایه ۷', label: 'پایه ۷' },
+                  { id: 'پایه ۸', label: 'پایه ۸' },
+                  { id: 'پایه ۹', label: 'پایه ۹' },
+                  { id: 'پایه ۱۰', label: 'پایه ۱۰' }
+                ].map(gf => (
+                  <button
+                    key={gf.id}
+                    onClick={() => setGradeViewFilter(gf.id)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                      gradeViewFilter === gf.id
+                        ? "bg-purple-600 text-white shadow-xs"
+                        : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                    )}
+                  >
+                    {gf.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Aggregated KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -3081,18 +3429,21 @@ export default function AcademicCalendar() {
               <p className="text-xs text-slate-400 max-w-md mx-auto">
                 می‌توانید کارگاه‌های پژوهشی، نشست‌های علمی یا برنامه‌های هفتگی مانند «دوشنبه‌های پژوهشی» را ثبت کنید تا آمار دقیق جلسات برگزارشده و تعطیل‌شده آن محاسبه گردد.
               </p>
-              <button
-                onClick={handleOpenNewWeeklyProgram}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
-              >
-                + ثبت اولین برنامه هفتگی
-              </button>
+              {isCalendarEditor && (
+                <button
+                  onClick={handleOpenNewWeeklyProgram}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+                >
+                  + ثبت اولین برنامه هفتگی
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {periodWeeklyPrograms.map(wp => {
                 const stats = getWeeklyProgramStats(wp);
                 const isSelected = selectedProgramForDetails?.id === wp.id;
+                const isItemPublic = wp.isPublic !== false && (!wp.targetGrades || wp.targetGrades.length === 0 || wp.targetGrades.includes('all') || wp.grade === 'عمومی');
 
                 return (
                   <div
@@ -3104,10 +3455,19 @@ export default function AcademicCalendar() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-2.5 py-1 bg-purple-100 text-purple-800 text-[11px] font-black rounded-lg border border-purple-200">
                             {wp.dayOfWeek}ها
                           </span>
+                          {isItemPublic ? (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              عمومی (تمامی پایه‌ها)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
+                              مخصوص: {wp.targetGrades && wp.targetGrades.length > 0 ? wp.targetGrades.join('، ') : (wp.grade || 'پایه‌های خاص')}
+                            </span>
+                          )}
                           <h3 className="text-base font-black text-slate-800">{wp.title}</h3>
                         </div>
                         {wp.description && (
@@ -3115,22 +3475,24 @@ export default function AcademicCalendar() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => handleOpenEditWeeklyProgram(wp)}
-                          className="p-2 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors"
-                          title="ویرایش"
-                        >
-                          <Edit3 size={15} />
-                        </button>
-                        <button
-                          onClick={() => handleOpenDeleteWeeklyProgram(wp.id, wp.title)}
-                          className="p-2 hover:bg-rose-50 text-rose-600 rounded-xl transition-colors"
-                          title="حذف"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                      {isCalendarEditor && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => handleOpenEditWeeklyProgram(wp)}
+                            className="p-2 hover:bg-slate-100 text-slate-600 rounded-xl transition-colors"
+                            title="ویرایش"
+                          >
+                            <Edit3 size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleOpenDeleteWeeklyProgram(wp.id, wp.title)}
+                            className="p-2 hover:bg-rose-50 text-rose-600 rounded-xl transition-colors"
+                            title="حذف"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Program Metadata info */}
@@ -3222,20 +3584,24 @@ export default function AcademicCalendar() {
                       </div>
 
                       <div className="flex items-center gap-2 self-start sm:self-center">
-                        <button
-                          onClick={() => handleOpenEditWeeklyProgram(selectedProgramForDetails)}
-                          className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl border border-purple-200 transition-colors flex items-center gap-1"
-                        >
-                          <Edit3 size={14} />
-                          <span>ویرایش</span>
-                        </button>
-                        <button
-                          onClick={() => handleOpenDeleteWeeklyProgram(selectedProgramForDetails.id, selectedProgramForDetails.title)}
-                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors flex items-center gap-1"
-                        >
-                          <Trash2 size={14} />
-                          <span>حذف کامل</span>
-                        </button>
+                        {isCalendarEditor && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEditWeeklyProgram(selectedProgramForDetails)}
+                              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold rounded-xl border border-purple-200 transition-colors flex items-center gap-1"
+                            >
+                              <Edit3 size={14} />
+                              <span>ویرایش</span>
+                            </button>
+                            <button
+                              onClick={() => handleOpenDeleteWeeklyProgram(selectedProgramForDetails.id, selectedProgramForDetails.title)}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors flex items-center gap-1"
+                            >
+                              <Trash2 size={14} />
+                              <span>حذف کامل</span>
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => setSelectedProgramForDetails(null)}
                           className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-colors"
@@ -3254,7 +3620,7 @@ export default function AcademicCalendar() {
                             <th className="p-3">روز هفته</th>
                             <th className="p-3">وضعیت برگزاری</th>
                             <th className="p-3">علت لغو / تعطیلی</th>
-                            <th className="p-3">تغییر وضعیت دستی</th>
+                            {isCalendarEditor && <th className="p-3">تغییر وضعیت دستی</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
@@ -3283,19 +3649,21 @@ export default function AcademicCalendar() {
                               <td className="p-3 text-slate-600">
                                 {sess.cancellationReason || '---'}
                               </td>
-                              <td className="p-3">
-                                <button
-                                  onClick={() => handleToggleSessionCancellation(selectedProgramForDetails.id, sess.dateStr)}
-                                  className={cn(
-                                    "px-3 py-1 rounded-lg text-[10px] font-bold transition-all border",
-                                    sess.isCustomCancelled
-                                      ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-                                      : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
-                                  )}
-                                >
-                                  {sess.isCustomCancelled ? 'فعال‌سازی مجدد جلسه' : 'لغو دستی این جلسه'}
-                                </button>
-                              </td>
+                              {isCalendarEditor && (
+                                <td className="p-3">
+                                  <button
+                                    onClick={() => handleToggleSessionCancellation(selectedProgramForDetails.id, sess.dateStr)}
+                                    className={cn(
+                                      "px-3 py-1 rounded-lg text-[10px] font-bold transition-all border",
+                                      sess.isCustomCancelled
+                                        ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                                        : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200"
+                                    )}
+                                  >
+                                    {sess.isCustomCancelled ? 'فعال‌سازی مجدد جلسه' : 'لغو دستی این جلسه'}
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -3639,6 +4007,88 @@ export default function AcademicCalendar() {
                   <p className="text-[10px] text-slate-500 pr-6">
                     نکته: برای برنامه‌هایی مانند «هفته پژوهش»، معمولا این گزینه‌ غیرفعال است تا مشخص شود کتب اصلی تدریس نمی‌شوند اما حضور طلاب الزامی است.
                   </p>
+                </div>
+
+                {/* Related Grade Box / باکس پایه تحصیلی مربوطه */}
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <GraduationCap size={16} className="text-violet-600" />
+                      <span>پایه تحصیلی مربوطه (مخاطبان دوره ویژه) *</span>
+                    </label>
+                    <span className={cn(
+                      "text-[10px] font-bold px-2.5 py-0.5 rounded-full border",
+                      subPeriodForm.isPublic
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-violet-50 text-violet-700 border-violet-200"
+                    )}>
+                      {subPeriodForm.isPublic ? '🌐 عمومی (همه پایه‌ها)' : `🎯 اختصاصی (${subPeriodForm.targetGrades.join('، ')})`}
+                    </span>
+                  </div>
+
+                  {/* Public vs Specific Grade Mode */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetSubPeriodPublic(true)}
+                      className={cn(
+                        "py-2 px-3 rounded-xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5",
+                        subPeriodForm.isPublic
+                          ? "bg-violet-600 text-white border-violet-700 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>🌐 عمومی (تمام پایه‌ها)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetSubPeriodPublic(false)}
+                      className={cn(
+                        "py-2 px-3 rounded-xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5",
+                        !subPeriodForm.isPublic
+                          ? "bg-violet-600 text-white border-violet-700 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>🎯 مخصوص پایه‌های انتخابی</span>
+                    </button>
+                  </div>
+
+                  {/* Multi-select Grade Badges */}
+                  {!subPeriodForm.isPublic && (
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-200/80">
+                      <span className="text-[11px] font-bold text-slate-600 block">انتخاب پایه‌های مجاز برای این دوره:</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {ALL_SYSTEM_GRADES.map(grade => {
+                          const isSelected = subPeriodForm.targetGrades.includes(grade);
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              onClick={() => handleToggleSubPeriodGrade(grade)}
+                              className={cn(
+                                "py-2 px-2.5 rounded-xl font-bold text-xs transition-all border flex items-center justify-between",
+                                isSelected
+                                  ? "bg-violet-100 text-violet-900 border-violet-300 ring-2 ring-violet-400/50 font-black"
+                                  : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                              )}
+                            >
+                              <span>{grade}</span>
+                              <span className={cn(
+                                "w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black",
+                                isSelected ? "bg-violet-600 text-white" : "bg-slate-200 text-transparent"
+                              )}>
+                                ✓
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        نکته: فقط طلاب و مسئولین پایه‌های انتخاب‌شده این دوره ویژه را در تقویم آموزشی خود خواهند دید.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -4479,6 +4929,88 @@ export default function AcademicCalendar() {
                     )}
                   </div>
                 )}
+
+                {/* Related Grade Box / باکس پایه تحصیلی مربوطه */}
+                <div className="p-3.5 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
+                      <GraduationCap size={16} className="text-purple-700" />
+                      <span>پایه تحصیلی مربوطه (مخاطبان برنامه هفتگی) *</span>
+                    </label>
+                    <span className={cn(
+                      "text-[10px] font-bold px-2.5 py-0.5 rounded-full border",
+                      weeklyProgramForm.isPublic
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-purple-100 text-purple-800 border-purple-300"
+                    )}>
+                      {weeklyProgramForm.isPublic ? '🌐 عمومی (همه پایه‌ها)' : `🎯 اختصاصی (${weeklyProgramForm.targetGrades.join('، ')})`}
+                    </span>
+                  </div>
+
+                  {/* Public vs Specific Grade Mode */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetWeeklyProgramPublic(true)}
+                      className={cn(
+                        "py-2 px-3 rounded-xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5",
+                        weeklyProgramForm.isPublic
+                          ? "bg-purple-600 text-white border-purple-700 shadow-xs"
+                          : "bg-white text-slate-700 border-purple-200 hover:bg-purple-100/50"
+                      )}
+                    >
+                      <span>🌐 عمومی (تمام پایه‌ها)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetWeeklyProgramPublic(false)}
+                      className={cn(
+                        "py-2 px-3 rounded-xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5",
+                        !weeklyProgramForm.isPublic
+                          ? "bg-purple-600 text-white border-purple-700 shadow-xs"
+                          : "bg-white text-slate-700 border-purple-200 hover:bg-purple-100/50"
+                      )}
+                    >
+                      <span>🎯 مخصوص پایه‌های انتخابی</span>
+                    </button>
+                  </div>
+
+                  {/* Multi-select Grade Badges */}
+                  {!weeklyProgramForm.isPublic && (
+                    <div className="space-y-1.5 pt-1.5 border-t border-purple-200/80">
+                      <span className="text-[11px] font-bold text-purple-900 block">انتخاب پایه‌های مجاز برای این برنامه:</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {ALL_SYSTEM_GRADES.map(grade => {
+                          const isSelected = weeklyProgramForm.targetGrades.includes(grade);
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              onClick={() => handleToggleWeeklyProgramGrade(grade)}
+                              className={cn(
+                                "py-2 px-2.5 rounded-xl font-bold text-xs transition-all border flex items-center justify-between",
+                                isSelected
+                                  ? "bg-purple-100 text-purple-950 border-purple-400 ring-2 ring-purple-400/50 font-black"
+                                  : "bg-white text-slate-500 border-purple-200 hover:bg-purple-50"
+                              )}
+                            >
+                              <span>{grade}</span>
+                              <span className={cn(
+                                "w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black",
+                                isSelected ? "bg-purple-600 text-white" : "bg-slate-200 text-transparent"
+                              )}>
+                                ✓
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-purple-700 mt-1">
+                        نکته: طلاب و مسئولین سایر پایه‌ها این برنامه هفتگی را در تقویم خود نخواهند دید مگر آنکه برای پایه آنها یا به صورت عمومی تعریف شده باشد.
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>

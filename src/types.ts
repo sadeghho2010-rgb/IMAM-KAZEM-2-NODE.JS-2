@@ -243,8 +243,11 @@ export interface DiscussionGroup {
   subject?: string;
   grade?: string; // 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰'
   mentorId?: string; // 'hayati' | 'hosseini' | 'soleimani' | 'asadi' | 'shahpoori'
+  programId?: string; // شناسه درس اصلی یا برنامه آموزشی مرتبط
+  programTitle?: string; // عنوان درس اصلی یا کلاس متفرقه
   memberStudentIds: string[]; // Active students in this discussion group
   externalMembers?: string[]; // External discussion partners ("سایر" / custom names)
+  room?: string; // محل مباحثه (مدرسه، حجره یا کلاس)
   description?: string;
   createdAt: string;
   updatedAt?: string;
@@ -333,6 +336,9 @@ export interface AcademicSubPeriod {
   endDate: string; // Shamsi YYYY/MM/DD
   isAcademicPresence: boolean; // آیا حضور تحصیلی محسوب می‌شود؟ (default: true)
   isStandardClassDay: boolean; // آیا کلاس درس اصلی سرفصل برگزار می‌شود؟ (default: false)
+  targetGrades?: string[]; // شناسه‌های پایه‌های هدف مثلاً ['پایه ۷'] یا خالی برای عمومی
+  grade?: string; // 'عمومی' | 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰' | 'سایر'
+  isPublic?: boolean; // آیا دوره به صورت عمومی برای تمام پایه‌هاست؟ (پیش‌فرض: true)
   description?: string;
   color?: string; // e.g. "violet", "purple", "indigo", "amber", "sky"
   createdAt: string;
@@ -353,6 +359,9 @@ export interface AcademicWeeklyProgram {
   endDate: string; // Shamsi YYYY/MM/DD (defaults to period endDate)
   time?: string; // e.g. "10:00 تا 11:30"
   locationOrTeacher?: string; // e.g. "سالن اجتماعات / استاد حسینی"
+  targetGrades?: string[]; // شناسه‌های پایه‌های هدف مثلاً ['پایه ۷'] یا خالی برای عمومی
+  grade?: string; // 'عمومی' | 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰' | 'سایر'
+  isPublic?: boolean; // آیا برنامه به صورت عمومی برای تمام پایه‌هاست؟ (پیش‌فرض: true)
   description?: string;
   customCancelledDates?: string[]; // List of YYYY/MM/DD specific dates manually cancelled for this program
   color?: string; // 'indigo' | 'emerald' | 'amber' | 'purple' | 'rose' | 'sky' | 'violet'
@@ -419,16 +428,26 @@ export type UserLevel = 1 | 2 | 3;
 export type UserRole = 
   // Level 1
   | 'super_admin'            // سوپر ادمین (دسترسی کامل + مدیریت کاربران و اختیارات)
+  | 'school_manager'          // مدیر مدرسه / معاون
   | 'manager_principal'       // مدیر مدرسه (مشاهده کامل بدون ویرایش)
   | 'vice_principal'          // معاون مدرسه (مشاهده کامل بدون ویرایش)
   // Level 2
+  | 'education_manager'       // مسئول آموزش
   | 'education_officer'       // مسئول آموزش
+  | 'research_manager'        // مسئول پژوهش
   | 'research_officer'        // مسئول پژوهش
+  | 'grade_supervisor_7'      // مسئول پایه ۷
+  | 'grade_supervisor_8'      // مسئول پایه ۸
+  | 'grade_supervisor_9'      // مسئول پایه ۹
+  | 'grade_supervisor_10'     // مسئول پایه ۱۰
+  | 'grade_mentor'            // مسئول پایه
   | 'grade_supervisor'        // مسئول پایه (۷، ۸، ۹، ۱۰)
+  | 'finance_manager'         // مسئول مالی
   | 'financial_officer'       // مسئول مالی
   // Level 3
   | 'class_representative'    // نماینده کلاس (ثبت حضور و غیاب، مشاهده برنامه و مباحثات)
-  | 'student';                // طلبه / دانشجو (مشاهده پرونده، حضور، مطالعه و برنامه شخصی)
+  | 'student'                 // طلبه / دانشجو (مشاهده پرونده، حضور، مطالعه و برنامه شخصی)
+  | 'custom';                 // سفارشی
 
 export type AppModuleId =
   | 'todos'
@@ -441,6 +460,7 @@ export type AppModuleId =
   | 'classrooms'
   | 'student-schedule'
   | 'teachers-schedule'
+  | 'consultation-advisor'
   | 'stats'
   | 'discussion'
   | 'research'
@@ -454,6 +474,39 @@ export type AppModuleId =
   | 'user-management'
   | 'user-credentials'
   | 'student-portal';
+
+export interface ProposedConsultationClass {
+  id: string;
+  name: string;
+  day: string;
+  days?: string[]; // دو روز تشکیل در هفته
+  startTime: string;
+  endTime: string;
+  room?: string;
+  advisorName?: string;
+  assignedStudentIds: string[];
+  discussionGroupNames: string[];
+}
+
+export interface ConsultationAdvisorProposal {
+  id: string;
+  mainProgramId: string;
+  mainProgramTitle: string;
+  grade: string;
+  totalEnrolledCount: number;
+  classesCount: number;
+  minCapacity: number;
+  maxCapacity: number;
+  selectedDays?: string[];
+  priority1Time?: { start: string; end: string };
+  priority2Time?: { start: string; end: string };
+  activePriorityUsed?: 1 | 2;
+  classes: ProposedConsultationClass[];
+  unassignedStudentIds: string[];
+  unassignedReasons: Record<string, string>;
+  createdAt: string;
+  createdByUserName?: string;
+}
 
 // -------------------------------------------------------------
 // Workflow & Task Approvals Types (جریان کار و کارتابل تاییدات)
@@ -469,6 +522,7 @@ export type WorkflowCategory =
   | 'unexcused_absence_warning'  // اخطار غیبت غیر موجه
   | 'study_deficit_warning'       // اخطار ساعت مطالعه و مباحثه
   | 'student_account_creation'    // ایجاد حساب کاربری برای طلبه جدید
+  | 'discussion_group_change'     // درخواست ثبت یا ویرایش گروه مباحثه طلبه
   | 'general';                    // اطلاعیه یا اقدام عمومی
 
 export type WorkflowStatus = 

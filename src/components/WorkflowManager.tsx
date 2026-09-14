@@ -274,6 +274,36 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
     }
 
     try {
+      // If this is a discussion group change approval, persist the group to database
+      if (item.category === 'discussion_group_change' && item.details) {
+        const details = item.details;
+        const targetGroupId = details.targetGroupId;
+        const now = new Date().toISOString();
+        
+        const groupPayload = {
+          title: details.programTitle ? `گروه مباحثه ${details.programTitle}` : (details.title || `گروه مباحثه ${item.studentName}`),
+          subject: details.subject || details.programTitle || 'مباحثه درسی',
+          grade: details.grade || item.grade || 'پایه ۷',
+          programId: details.programId || undefined,
+          programTitle: details.programTitle || undefined,
+          memberStudentIds: details.memberStudentIds || (item.studentId ? [item.studentId] : []),
+          externalMembers: details.externalMembers || [],
+          room: details.room || undefined,
+          description: details.description || undefined,
+          updatedAt: now
+        };
+
+        if (targetGroupId) {
+          await localDb.updateDoc('discussion_groups', targetGroupId, groupPayload);
+        } else {
+          await localDb.addDoc('discussion_groups', {
+            ...groupPayload,
+            id: `group_${Date.now()}_${item.studentId || 'new'}`,
+            createdAt: now
+          });
+        }
+      }
+
       const updated: WorkflowItem = {
         ...item,
         status: 'approved',
@@ -779,7 +809,12 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
           {filteredItems.map((item) => {
             const isItemPending = item.status === 'pending';
             const isAccountPrompt = item.category === 'student_account_creation';
-            const canUserActOnThis = canApprove && isItemPending;
+            const isDiscussionChange = item.category === 'discussion_group_change';
+            const canUserActOnThis = isItemPending && (
+              isSuperAdmin || 
+              isEducationManager || 
+              (isGradeSupervisor && (!item.grade || item.grade === 'همه پایه‌ها' || item.grade === userGrade))
+            );
 
             return (
               <motion.div
@@ -828,30 +863,80 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
 
                     {/* Specific Details Box if present */}
                     {item.details && (
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-150 text-[11px] text-slate-700 flex flex-wrap gap-x-6 gap-y-1.5 mt-2">
-                        {item.details.unexcusedAbsences !== undefined && (
-                          <div>
-                            <span className="text-slate-400">تعداد جلسات غیبت: </span>
-                            <span className="font-bold text-rose-600">{item.details.unexcusedAbsences} جلسه</span>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-150 text-[11px] text-slate-700 flex flex-wrap gap-x-6 gap-y-2 mt-2">
+                        {item.category === 'discussion_group_change' ? (
+                          <div className="w-full space-y-2">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                              {item.details.programTitle && (
+                                <div>
+                                  <span className="text-slate-400">درس اصلی: </span>
+                                  <span className="font-black text-indigo-700">{item.details.programTitle}</span>
+                                </div>
+                              )}
+                              {item.details.room && (
+                                <div>
+                                  <span className="text-slate-400">محل مباحثه / مدرس: </span>
+                                  <span className="font-bold text-slate-800">{item.details.room}</span>
+                                </div>
+                              )}
+                              {item.details.targetGroupId ? (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md font-bold text-[10px]">
+                                  اصلاح و ویرایش گروه قبلی
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-bold text-[10px]">
+                                  ثبت گروه مباحثه جدید
+                                </span>
+                              )}
+                            </div>
+                            {item.details.memberStudentNames && item.details.memberStudentNames.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="text-slate-400">اعضای گروه مباحثه: </span>
+                                {item.details.memberStudentNames.map((name: string, i: number) => (
+                                  <span key={i} className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-md font-bold">
+                                    {name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {item.details.externalMembers && item.details.externalMembers.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-slate-400">سایر هم‌بحث‌ها: </span>
+                                {item.details.externalMembers.map((name: string, i: number) => (
+                                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded-md font-medium">
+                                    {name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {item.details.course && (
-                          <div>
-                            <span className="text-slate-400">عنوان درس: </span>
-                            <span className="font-bold">{item.details.course}</span>
-                          </div>
-                        )}
-                        {item.details.deficitHours !== undefined && (
-                          <div>
-                            <span className="text-slate-400">میزان کسری ساعت: </span>
-                            <span className="font-bold text-rose-600">{item.details.deficitHours} ساعت</span>
-                          </div>
-                        )}
-                        {item.details.loggedHours !== undefined && (
-                          <div>
-                            <span className="text-slate-400">ساعات ثبت‌شده: </span>
-                            <span className="font-bold text-slate-800">{item.details.loggedHours} از {item.details.mandatoryHours} ساعت</span>
-                          </div>
+                        ) : (
+                          <>
+                            {item.details.unexcusedAbsences !== undefined && (
+                              <div>
+                                <span className="text-slate-400">تعداد جلسات غیبت: </span>
+                                <span className="font-bold text-rose-600">{item.details.unexcusedAbsences} جلسه</span>
+                              </div>
+                            )}
+                            {item.details.course && (
+                              <div>
+                                <span className="text-slate-400">عنوان درس: </span>
+                                <span className="font-bold">{item.details.course}</span>
+                              </div>
+                            )}
+                            {item.details.deficitHours !== undefined && (
+                              <div>
+                                <span className="text-slate-400">میزان کسری ساعت: </span>
+                                <span className="font-bold text-rose-600">{item.details.deficitHours} ساعت</span>
+                              </div>
+                            )}
+                            {item.details.loggedHours !== undefined && (
+                              <div>
+                                <span className="text-slate-400">ساعات ثبت‌شده: </span>
+                                <span className="font-bold text-slate-800">{item.details.loggedHours} از {item.details.mandatoryHours} ساعت</span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -908,10 +993,10 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                             <button
                               onClick={() => handleApprove(item)}
                               className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-                              title="تایید نهایی اخطار"
+                              title={isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید نهایی اخطار"}
                             >
                               <Check size={14} />
-                              <span>تایید اخطار</span>
+                              <span>{isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید اخطار"}</span>
                             </button>
 
                             <button
@@ -920,10 +1005,10 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                                 setRejectionReasonInput('');
                               }}
                               className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition-all cursor-pointer"
-                              title="عدم تایید / رد اخطار"
+                              title={isDiscussionChange ? "عدم تایید / رد درخواست" : "عدم تایید / رد اخطار"}
                             >
                               <X size={14} />
-                              <span>رد اخطار</span>
+                              <span>{isDiscussionChange ? "رد درخواست" : "رد اخطار"}</span>
                             </button>
                           </>
                         )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Clock, ChevronDown, CheckCircle2, Info, BookOpen, MessageSquare, Calculator, FileSpreadsheet, Upload, Filter, AlertTriangle, ShieldAlert, CheckSquare, Square } from 'lucide-react';
+import { Clock, ChevronDown, CheckCircle2, Info, BookOpen, MessageSquare, Calculator, FileSpreadsheet, Upload, Filter, AlertTriangle, ShieldAlert, CheckSquare, Square, Search, Users, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DatePicker from "react-multi-date-picker";
 import persian from "react-date-object/calendars/persian";
@@ -60,6 +60,8 @@ export default function StudyEntryModal({
   const [selectedStudyCol, setSelectedStudyCol] = useState<number>(3);
   const [selectedDiscCol, setSelectedDiscCol] = useState<number>(4);
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
+  const [manualGradeFilter, setManualGradeFilter] = useState<string>('all');
+  const [manualSearchQuery, setManualSearchQuery] = useState<string>('');
   const [maxColsCount, setMaxColsCount] = useState<number>(6);
   const [manualStudentOverrides, setManualStudentOverrides] = useState<Record<number, string>>({}); // rowIndex -> studentId
 
@@ -73,6 +75,8 @@ export default function StudyEntryModal({
       setExcelRows(null);
       setManualStudentOverrides({});
       setSelectedGradeFilter('all');
+      setManualGradeFilter('all');
+      setManualSearchQuery('');
 
       // Fetch all active students from localDb to ensure no active student is missed regardless of UI filters
       localDb.getDocs<Student>('students').then(list => {
@@ -572,12 +576,30 @@ export default function StudyEntryModal({
     });
   }, [students, targetGrades]);
 
+  const filteredManualStudents = useMemo(() => {
+    return displayedStudents.filter(s => {
+      if (manualGradeFilter !== 'all') {
+        const normFilter = manualGradeFilter.replace(/پایه\s*/g, '').trim();
+        const normGrade = (s.grade || '').replace(/پایه\s*/g, '').trim();
+        if (!normGrade.includes(normFilter)) return false;
+      }
+      if (manualSearchQuery.trim()) {
+        const q = manualSearchQuery.trim().toLowerCase();
+        const matchesName = (s.name || '').toLowerCase().includes(q);
+        const matchesNat = (s.nationalId || '').includes(q);
+        const matchesPhone = (s.phoneNumber || (s as any).phone || (s as any).mobile || '').includes(q);
+        if (!matchesName && !matchesNat && !matchesPhone) return false;
+      }
+      return true;
+    });
+  }, [displayedStudents, manualGradeFilter, manualSearchQuery]);
+
   const handleKeyDownDiscussion = (e: React.KeyboardEvent, index: number) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      // Move to study input of the next student
+      // Move to study input of the next student in filtered list
       const nextIndex = index + 1;
-      const nextStudentId = displayedStudents[nextIndex]?.id;
+      const nextStudentId = filteredManualStudents[nextIndex]?.id;
       if (nextStudentId) {
         studyInputRefs.current[nextStudentId]?.focus();
       }
@@ -1064,11 +1086,83 @@ export default function StudyEntryModal({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                 <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   <BookOpen size={16} className="text-indigo-600" />
-                  <span>ثبت دقایق مطالعه و مباحثه طلاب مشمول ({displayedStudents.length} نفر)</span>
+                  <span>ثبت دقایق مطالعه و مباحثه طلاب مشمول ({filteredManualStudents.length} از {displayedStudents.length} نفر)</span>
                 </h4>
                 <div className="flex items-center gap-2 text-[11px] text-slate-500 font-bold bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
                   <Info size={14} className="text-indigo-500" />
-                  <span>با زدن اینتر به فیلد بعدی / طلبه بعدی بروید.</span>
+                  <span>با زدن اینتر به فیلد بعدی / طلبه بعدی در لیست فیلترشده بروید.</span>
+                </div>
+              </div>
+
+              {/* Grade Filter Bar and Search for Rapid Data Entry */}
+              <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-black text-indigo-950 ml-1 flex items-center gap-1">
+                    <Filter size={14} className="text-indigo-600" />
+                    <span>فیلتر پایه:</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setManualGradeFilter('all')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-black transition-all",
+                      manualGradeFilter === 'all'
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                    )}
+                  >
+                    همه طلاب دوره ({displayedStudents.length})
+                  </button>
+
+                  {ALL_SYSTEM_GRADES.map(grade => {
+                    const countInGrade = displayedStudents.filter(s => (s.grade || '').includes(grade.replace('پایه', '').trim())).length;
+                    if (countInGrade === 0 && !targetGrades.includes(grade)) return null;
+
+                    const isSelected = manualGradeFilter === grade;
+                    return (
+                      <button
+                        key={grade}
+                        type="button"
+                        onClick={() => setManualGradeFilter(grade)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5",
+                          isSelected
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                        )}
+                      >
+                        <span>{grade}</span>
+                        <span className={cn(
+                          "px-1.5 py-0.2 text-[10px] rounded-md font-bold",
+                          isSelected ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500"
+                        )}>
+                          {countInGrade}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Quick Search */}
+                <div className="relative w-full md:w-64">
+                  <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={manualSearchQuery}
+                    onChange={(e) => setManualSearchQuery(e.target.value)}
+                    placeholder="جستجوی نام یا کدملی طلبه..."
+                    className="w-full pr-8 pl-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium placeholder:text-slate-400"
+                  />
+                  {manualSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setManualSearchQuery('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1090,75 +1184,93 @@ export default function StudyEntryModal({
               </div>
 
               <div className="flex flex-col gap-2.5 max-h-[450px] overflow-y-auto pr-1">
-                {displayedStudents.map((student, idx) => {
-                  const sVal = parseFloat(entryStudyValues[student.id] || '0') || 0;
-                  const dVal = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
-                  const totVal = sVal + dVal;
+                {filteredManualStudents.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                    <p className="text-xs font-bold text-slate-600">طلبه‌ای با این فیلتر یا مشخصات در این دوره یافت نشد.</p>
+                    {(manualGradeFilter !== 'all' || manualSearchQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualGradeFilter('all');
+                          setManualSearchQuery('');
+                        }}
+                        className="text-xs font-black text-indigo-600 hover:underline"
+                      >
+                        پاک کردن فیلترها و مشاهده همه طلاب
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  filteredManualStudents.map((student, idx) => {
+                    const sVal = parseFloat(entryStudyValues[student.id] || '0') || 0;
+                    const dVal = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
+                    const totVal = sVal + dVal;
 
-                  return (
-                    <div 
-                      key={student.id} 
-                      className="p-3.5 bg-white border border-slate-200 hover:border-indigo-200 rounded-2xl grid grid-cols-1 md:grid-cols-12 gap-3 items-center transition-all shadow-xs"
-                    >
-                      {/* Student Info */}
-                      <div className="col-span-1 md:col-span-4 flex items-center gap-3">
-                        <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 text-xs font-black shrink-0">
-                          {idx + 1}
+                    return (
+                      <div 
+                        key={student.id} 
+                        className="p-3.5 bg-white border border-slate-200 hover:border-indigo-200 rounded-2xl grid grid-cols-1 md:grid-cols-12 gap-3 items-center transition-all shadow-xs"
+                      >
+                        {/* Student Info */}
+                        <div className="col-span-1 md:col-span-4 flex items-center gap-3">
+                          <div className="w-8 h-8 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500 text-xs font-black shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 truncate">{student.name}</p>
+                            <p className="text-[10px] text-slate-400">پایه: {student.grade || '---'}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-800 truncate">{student.name}</p>
-                          <p className="text-[10px] text-slate-400">پایه: {student.grade || '---'}</p>
+
+                        {/* Study Input */}
+                        <div className="col-span-1 md:col-span-3">
+                          <div className="relative">
+                            <input 
+                              ref={el => { studyInputRefs.current[student.id] = el; }}
+                              type="number"
+                              className="w-full pr-3 pl-8 py-2 bg-indigo-50/40 border border-indigo-100 focus:border-indigo-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
+                              placeholder="مطالعه (دقیقه)"
+                              value={entryStudyValues[student.id] || ''}
+                              onChange={(e) => setEntryStudyValues({ ...entryStudyValues, [student.id]: e.target.value })}
+                              onKeyDown={(e) => handleKeyDownStudy(e, idx, student.id)}
+                            />
+                            <span className="absolute left-2.5 top-2.5 text-[9px] font-bold text-indigo-400">دقیقه</span>
+                          </div>
+                        </div>
+
+                        {/* Discussion Input */}
+                        <div className="col-span-1 md:col-span-3">
+                          <div className="relative">
+                            <input 
+                              ref={el => { discussionInputRefs.current[student.id] = el; }}
+                              type="number"
+                              className="w-full pr-3 pl-8 py-2 bg-emerald-50/40 border border-emerald-100 focus:border-emerald-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
+                              placeholder="مباحثه (دقیقه)"
+                              value={entryDiscussionValues[student.id] || ''}
+                              onChange={(e) => setEntryDiscussionValues({ ...entryDiscussionValues, [student.id]: e.target.value })}
+                              onKeyDown={(e) => handleKeyDownDiscussion(e, idx)}
+                            />
+                            <span className="absolute left-2.5 top-2.5 text-[9px] font-bold text-emerald-500">دقیقه</span>
+                          </div>
+                        </div>
+
+                        {/* Total Sum Badge */}
+                        <div className="col-span-1 md:col-span-2 flex items-center justify-center">
+                          <span className={cn(
+                            "px-3 py-1.5 rounded-xl text-xs font-black border transition-all text-center w-full block",
+                            totVal > 0 
+                              ? (mandatoryHours > 0 && totVal >= mandatoryHours 
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                  : "bg-indigo-50 text-indigo-700 border-indigo-200")
+                              : "bg-slate-50 text-slate-400 border-slate-100"
+                          )}>
+                            {totVal > 0 ? `${totVal.toLocaleString('fa-IR')} د` : '۰'}
+                          </span>
                         </div>
                       </div>
-
-                      {/* Study Input */}
-                      <div className="col-span-1 md:col-span-3">
-                        <div className="relative">
-                          <input 
-                            ref={el => { studyInputRefs.current[student.id] = el; }}
-                            type="number"
-                            className="w-full pr-3 pl-8 py-2 bg-indigo-50/40 border border-indigo-100 focus:border-indigo-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
-                            placeholder="مطالعه (دقیقه)"
-                            value={entryStudyValues[student.id] || ''}
-                            onChange={(e) => setEntryStudyValues({ ...entryStudyValues, [student.id]: e.target.value })}
-                            onKeyDown={(e) => handleKeyDownStudy(e, idx, student.id)}
-                          />
-                          <span className="absolute left-2.5 top-2.5 text-[9px] font-bold text-indigo-400">دقیقه</span>
-                        </div>
-                      </div>
-
-                      {/* Discussion Input */}
-                      <div className="col-span-1 md:col-span-3">
-                        <div className="relative">
-                          <input 
-                            ref={el => { discussionInputRefs.current[student.id] = el; }}
-                            type="number"
-                            className="w-full pr-3 pl-8 py-2 bg-emerald-50/40 border border-emerald-100 focus:border-emerald-500 focus:bg-white rounded-xl text-center font-black text-xs text-slate-800 outline-none transition-all"
-                            placeholder="مباحثه (دقیقه)"
-                            value={entryDiscussionValues[student.id] || ''}
-                            onChange={(e) => setEntryDiscussionValues({ ...entryDiscussionValues, [student.id]: e.target.value })}
-                            onKeyDown={(e) => handleKeyDownDiscussion(e, idx)}
-                          />
-                          <span className="absolute left-2.5 top-2.5 text-[9px] font-bold text-emerald-500">دقیقه</span>
-                        </div>
-                      </div>
-
-                      {/* Total Sum Badge */}
-                      <div className="col-span-1 md:col-span-2 flex items-center justify-center">
-                        <span className={cn(
-                          "px-3 py-1.5 rounded-xl text-xs font-black border transition-all text-center w-full block",
-                          totVal > 0 
-                            ? (mandatoryHours > 0 && totVal >= mandatoryHours 
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                                : "bg-indigo-50 text-indigo-700 border-indigo-200")
-                            : "bg-slate-50 text-slate-400 border-slate-100"
-                        )}>
-                          {totVal > 0 ? `${totVal.toLocaleString('fa-IR')} د` : '۰'}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>

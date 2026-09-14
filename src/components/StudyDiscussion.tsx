@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Users,
   Plus,
@@ -36,17 +36,17 @@ import {
   SlidersHorizontal,
   Lock,
   Unlock,
-  AlertTriangle
+  AlertTriangle,
+  Send,
+  MapPin
 } from 'lucide-react';
 import { localDb, isStudentActive } from '../lib/localDb';
-import { Student, DiscussionGroup, PeriodicStudyLog, StudyStat, StudyPeriod } from '../types';
+import { Student, DiscussionGroup, PeriodicStudyLog, StudyStat, StudyPeriod, Program, Enrollment, WorkflowItem } from '../types';
 import { useMentor, MENTORS } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import StudyEntryModal from './study/StudyEntryModal';
-
 interface StudyDiscussionProps {
   initialStudentId?: string;
 }
@@ -63,13 +63,9 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     currentMentor?.isHeadManager;
 
   const isEducationOrAdmin = isSuperAdmin || isEducationManager;
-
-  // View state for Education Manager / Super Admin: 'landing' (2 choices only), 'periods' (study period management), 'stats' (study/discussion stats)
-  const [managerActiveView, setManagerActiveView] = useState<'landing' | 'periods' | 'stats'>('landing');
-
-  // Study Period Entry & Management Modal State
-  const [isStudyEntryModalOpen, setIsStudyEntryModalOpen] = useState<boolean>(false);
-  const [editingPeriod, setEditingPeriod] = useState<StudyPeriod | null>(null);
+  const isStudentUser = currentUser?.role === 'student' || currentUser?.role === 'class_representative' || currentUser?.level === 3;
+  const isGradeSupervisor = (currentUser?.role === 'grade_supervisor' || currentUser?.level === 2) && !isEducationManager && !isSuperAdmin;
+  const userGrade = currentUser?.gradeLabel || currentMentor?.gradeLabel || '';
 
   const isManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori' || isEducationOrAdmin;
 
@@ -77,15 +73,18 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const [groups, setGroups] = useState<DiscussionGroup[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [allStudentsList, setAllStudentsList] = useState<Student[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [periodicLogs, setPeriodicLogs] = useState<PeriodicStudyLog[]>([]);
   const [studyStats, setStudyStats] = useState<StudyStat[]>([]);
   const [studyPeriods, setStudyPeriods] = useState<StudyPeriod[]>([]);
+  const [studentWorkflowItems, setStudentWorkflowItems] = useState<WorkflowItem[]>([]);
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Filters & Tabs
   const [activeSubTab, setActiveSubTab] = useState<'groups' | 'student_partners' | 'summary_report'>('groups');
-  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>(isGradeSupervisor && userGrade ? userGrade : 'all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedStudentForView, setSelectedStudentForView] = useState<string>(initialStudentId || '');
 
@@ -98,12 +97,28 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
 
   // Form State
   const [formTitle, setFormTitle] = useState<string>('');
+  const [formProgramId, setFormProgramId] = useState<string>(''); // '' | 'other' | specific program ID
+  const [customProgramTitle, setCustomProgramTitle] = useState<string>('');
+  const [showOtherStudentsInModal, setShowOtherStudentsInModal] = useState<boolean>(false);
   const [formSubject, setFormSubject] = useState<string>('فقه و اصول');
-  const [formGrade, setFormGrade] = useState<string>('پایه ۷');
+  const [formGrade, setFormGrade] = useState<string>(userGrade || 'پایه ۷');
+  const [formRoom, setFormRoom] = useState<string>('');
   const [formMemberStudentIds, setFormMemberStudentIds] = useState<string[]>([]);
   const [formExternalMembers, setFormExternalMembers] = useState<string[]>([]);
   const [externalInput, setExternalInput] = useState<string>('');
   const [formDescription, setFormDescription] = useState<string>('');
+
+  // Identify logged student if student role
+  const loggedStudent = useMemo(() => {
+    if (!isStudentUser) return null;
+    return allStudentsList.find(s => 
+      (currentUser?.linkedStudentId && s.id === currentUser.linkedStudentId) ||
+      (currentUser?.studentId && s.id === currentUser.studentId) ||
+      (s.nationalId && s.nationalId.trim() === currentUser?.username?.trim()) ||
+      s.name === currentUser?.fullName ||
+      s.name === currentUser?.name
+    ) || (allStudentsList.length > 0 ? allStudentsList[0] : null);
+  }, [isStudentUser, allStudentsList, currentUser]);
 
   // Export PDF State
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
@@ -115,12 +130,15 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [allStudents, allGroups, logs, stats, periods] = await Promise.all([
+      const [allStudents, allGroups, logs, stats, periods, progs, enrs, wfItems] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<DiscussionGroup>('discussion_groups'),
         localDb.getDocs<PeriodicStudyLog>('periodic_study_logs'),
         localDb.getDocs<StudyStat>('study_stats'),
-        localDb.getDocs<StudyPeriod>('study_periods')
+        localDb.getDocs<StudyPeriod>('study_periods'),
+        localDb.getDocs<Program>('programs'),
+        localDb.getDocs<Enrollment>('enrollments'),
+        localDb.getDocs<WorkflowItem>('workflow_items')
       ]);
 
       setAllStudentsList(allStudents);
@@ -128,6 +146,14 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       setStudents(filteredStus);
       setGroups(allGroups);
       setStudyStats(stats);
+      setPrograms(progs || []);
+      setEnrollments(enrs || []);
+
+      const myWfItems = (wfItems || []).filter(w => 
+        w.category === 'discussion_group_change' && 
+        (loggedStudent ? (w.studentId === loggedStudent.id || w.details?.requestedByStudentId === loggedStudent.id) : true)
+      );
+      setStudentWorkflowItems(myWfItems);
 
       const defaultPeriods: StudyPeriod[] = [
         {
@@ -165,11 +191,15 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       setPeriodicLogs(validLogs);
 
       if (!selectedStudentForView) {
-        const activeList = allStudents.filter(s => isStudentActive(s));
-        if (activeList.length > 0) {
-          setSelectedStudentForView(activeList[0].id);
-        } else if (filteredStus.length > 0) {
-          setSelectedStudentForView(filteredStus[0].id);
+        if (loggedStudent) {
+          setSelectedStudentForView(loggedStudent.id);
+        } else {
+          const activeList = allStudents.filter(s => isStudentActive(s));
+          if (activeList.length > 0) {
+            setSelectedStudentForView(activeList[0].id);
+          } else if (filteredStus.length > 0) {
+            setSelectedStudentForView(filteredStus[0].id);
+          }
         }
       }
     } catch (e) {
@@ -191,12 +221,16 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const handleOpenCreateModal = () => {
     setEditingGroup(null);
     setFormTitle('');
+    setFormProgramId('');
+    setCustomProgramTitle('');
+    setShowOtherStudentsInModal(false);
     setFormSubject('فقه و اصول');
-    const defaultGrade = currentMentor.gradeLabel.includes('۸') ? 'پایه ۸' : currentMentor.gradeLabel.includes('۹') ? 'پایه ۹' : currentMentor.gradeLabel.includes('۱۰') ? 'پایه ۱۰' : 'پایه ۷';
+    const defaultGrade = loggedStudent?.grade || (userGrade || 'پایه ۷');
     setFormGrade(defaultGrade);
+    setFormRoom('');
     setModalGradeFilter('all');
     setModalSearchQuery('');
-    setFormMemberStudentIds([]);
+    setFormMemberStudentIds(loggedStudent ? [loggedStudent.id] : []);
     setFormExternalMembers([]);
     setExternalInput('');
     setFormDescription('');
@@ -208,10 +242,35 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setEditingGroup(group);
     setFormTitle(group.title);
     setFormSubject(group.subject || 'فقه و اصول');
-    setFormGrade(group.grade || 'پایه ۷');
+    setFormGrade(group.grade || userGrade || 'پایه ۷');
+    setFormRoom(group.room || '');
+    
+    if (group.programId) {
+      setFormProgramId(group.programId);
+      setCustomProgramTitle('');
+    } else if (group.programTitle) {
+      const matched = programs.find(p => p.title === group.programTitle);
+      if (matched) {
+        setFormProgramId(matched.id);
+        setCustomProgramTitle('');
+      } else {
+        setFormProgramId('other');
+        setCustomProgramTitle(group.programTitle);
+      }
+    } else {
+      setFormProgramId('');
+      setCustomProgramTitle('');
+    }
+
+    setShowOtherStudentsInModal(false);
     setModalGradeFilter('all');
     setModalSearchQuery('');
-    setFormMemberStudentIds(group.memberStudentIds || []);
+    
+    const initialMemberIds = [...(group.memberStudentIds || [])];
+    if (isStudentUser && loggedStudent && !initialMemberIds.includes(loggedStudent.id)) {
+      initialMemberIds.push(loggedStudent.id);
+    }
+    setFormMemberStudentIds(initialMemberIds);
     setFormExternalMembers(group.externalMembers || []);
     setExternalInput('');
     setFormDescription(group.description || '');
@@ -233,20 +292,72 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setFormExternalMembers(formExternalMembers.filter(m => m !== name));
   };
 
-  // Save Group (Create / Update)
+  // Save Group (Create / Update or Student Workflow Request)
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
 
     try {
       const now = new Date().toISOString();
+      const selectedProg = programs.find(p => p.id === formProgramId);
+      const effectiveProgramTitle = formProgramId === 'other'
+        ? customProgramTitle.trim()
+        : (selectedProg?.title || formSubject || '');
+
+      // STUDENT SUBMISSION: Send to Workflow Approval (Grade Supervisor + Education Manager)
+      if (isStudentUser && loggedStudent) {
+        const studentGrade = loggedStudent.grade || formGrade || 'پایه ۷';
+        const memberNames = allStudentsList.filter(s => formMemberStudentIds.includes(s.id)).map(s => s.name);
+        
+        const reqItem: WorkflowItem = {
+          id: `disc_req_${Date.now()}_${loggedStudent.id}`,
+          type: 'approval',
+          category: 'discussion_group_change',
+          title: `درخواست ثبت/ویرایش گروه مباحثه: ${loggedStudent.name} (${effectiveProgramTitle || 'درس اصلی'})`,
+          description: `طلبه گرامی ${loggedStudent.name} (${studentGrade}) درخواست ثبت/ویرایش گروه مباحثه با عنوان «${formTitle.trim()}» برای درس «${effectiveProgramTitle}» را با اعضای (${memberNames.join('، ')}) ثبت نموده است.`,
+          status: 'pending',
+          grade: studentGrade,
+          studentId: loggedStudent.id,
+          studentName: loggedStudent.name,
+          nationalId: loggedStudent.nationalId,
+          requiresEducationApproval: true,
+          details: {
+            targetGroupId: editingGroup?.id || null,
+            programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+            programTitle: effectiveProgramTitle,
+            subject: formSubject || effectiveProgramTitle,
+            grade: studentGrade,
+            room: formRoom.trim(),
+            memberStudentIds: formMemberStudentIds,
+            memberStudentNames: memberNames,
+            externalMembers: formExternalMembers,
+            description: formDescription.trim(),
+            requestedByStudentId: loggedStudent.id,
+            requestedByStudentName: loggedStudent.name,
+            originalGroupName: editingGroup?.title || null
+          },
+          createdAt: now
+        };
+
+        await localDb.addDoc('workflow_items', reqItem);
+        setToastMessage('درخواست ویرایش گروه مباحثه با موفقیت به جریان کار ارسال شد و پس از تایید مسئول پایه و مسئول آموزش اعمال خواهد شد.');
+        setShowModal(false);
+        await loadData();
+        setTimeout(() => setToastMessage(''), 6000);
+        return;
+      }
+
+      // LEVEL 1 & 2 USERS: Direct Create / Update
       if (editingGroup) {
         const updated: DiscussionGroup = {
           ...editingGroup,
           title: formTitle.trim(),
-          subject: formSubject,
+          subject: formSubject || effectiveProgramTitle || 'فقه و اصول',
           grade: formGrade,
+          room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
+          programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+          programTitle: effectiveProgramTitle || undefined,
           memberStudentIds: formMemberStudentIds,
           externalMembers: formExternalMembers,
           description: formDescription.trim(),
@@ -258,9 +369,12 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         const newGroup: DiscussionGroup = {
           id: `group_${Date.now()}`,
           title: formTitle.trim(),
-          subject: formSubject,
+          subject: formSubject || effectiveProgramTitle || 'فقه و اصول',
           grade: formGrade,
+          room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
+          programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+          programTitle: effectiveProgramTitle || undefined,
           memberStudentIds: formMemberStudentIds,
           externalMembers: formExternalMembers,
           description: formDescription.trim(),
@@ -270,8 +384,6 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         setToastMessage('گروه مباحثه جدید با موفقیت ایجاد گردید.');
       }
       setShowModal(false);
-      setSelectedGradeFilter('all');
-      setSearchQuery('');
       await loadData();
       setTimeout(() => setToastMessage(''), 4000);
     } catch (err) {
@@ -289,24 +401,6 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       setTimeout(() => setToastMessage(''), 4000);
     } catch (err) {
       console.error('Error deleting group:', err);
-    }
-  };
-
-  // Delete Study Period
-  const handleDeletePeriod = async (periodId: string) => {
-    if (!window.confirm('آیا از حذف این دوره مطالعاتی و تمام داده‌های مربوط به آن اطمینان دارید؟')) return;
-    try {
-      await localDb.deleteDoc('study_periods', periodId);
-      const logsToDelete = periodicLogs.filter(l => l.periodId === periodId);
-      for (const log of logsToDelete) {
-        await localDb.deleteDoc('periodic_study_logs', log.id);
-      }
-      setToastMessage('دوره مطالعاتی با موفقیت حذف گردید.');
-      await loadData();
-      setTimeout(() => setToastMessage(''), 4000);
-    } catch (err) {
-      console.error('Error deleting study period:', err);
-      alert('خطا در حذف دوره مطالعاتی!');
     }
   };
 
@@ -393,19 +487,29 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   };
 
   // Filter Groups List
-  const filteredGroups = groups.filter(g => {
-    if (selectedGradeFilter !== 'all' && g.grade !== selectedGradeFilter) return false;
+  const filteredGroups = useMemo(() => {
+    let list = groups;
+    if (isStudentUser) {
+      if (!loggedStudent) return [];
+      list = groups.filter(g => g.memberStudentIds?.includes(loggedStudent.id));
+    } else if (selectedGradeFilter !== 'all') {
+      list = groups.filter(g => g.grade === selectedGradeFilter);
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const titleMatch = g.title.toLowerCase().includes(q);
-      const subjectMatch = g.subject?.toLowerCase().includes(q);
-      const memberNames = allStudentsList.filter(s => g.memberStudentIds.includes(s.id)).map(s => s.name.toLowerCase());
-      const studentMatch = memberNames.some(n => n.includes(q));
-      const externalMatch = g.externalMembers?.some(m => m.toLowerCase().includes(q));
-      return titleMatch || subjectMatch || studentMatch || externalMatch;
+      list = list.filter(g => {
+        const titleMatch = g.title.toLowerCase().includes(q);
+        const subjectMatch = g.subject?.toLowerCase().includes(q);
+        const memberNames = allStudentsList.filter(s => g.memberStudentIds.includes(s.id)).map(s => s.name.toLowerCase());
+        const studentMatch = memberNames.some(n => n.includes(q));
+        const externalMatch = g.externalMembers?.some(m => m.toLowerCase().includes(q));
+        return titleMatch || subjectMatch || studentMatch || externalMatch;
+      });
     }
-    return true;
-  });
+
+    return list;
+  }, [groups, isStudentUser, loggedStudent, selectedGradeFilter, searchQuery, allStudentsList]);
 
   // Calculate Student Discussion Partners Analysis
   const getStudentDiscussionAnalysis = (studentId: string) => {
@@ -517,33 +621,86 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     }
   };
 
-  // Active students available for modal selection
-  const availableStudentsForModal = allStudentsList.filter(s => {
-    // 1. Must be active student
-    if (!isStudentActive(s)) return false;
-
-    // 2. Grade filter if modalGradeFilter is active
-    if (modalGradeFilter !== 'all') {
-      const sGrade = s.grade || 'پایه ۷';
-      const normS = sGrade.replace(/[77۷]/g, '۷').replace(/[88۸]/g, '۸').replace(/[99۹]/g, '۹');
-      const normT = modalGradeFilter.replace(/[77۷]/g, '۷').replace(/[88۸]/g, '۸').replace(/[99۹]/g, '۹');
-
-      if (normT.includes('۷') && !normS.includes('۷')) return false;
-      if (normT.includes('۸') && !normS.includes('۸')) return false;
-      if (normT.includes('۹') && !normS.includes('۹')) return false;
+  // Enrolled student IDs for the selected program in create/edit modal
+  const enrolledIdsForSelectedProgram = useMemo(() => {
+    if (!formProgramId || formProgramId === 'other') return new Set<string>();
+    const eIds = new Set(enrollments.filter(e => e.programId === formProgramId).map(e => e.studentId));
+    const selectedProg = programs.find(p => p.id === formProgramId);
+    if (selectedProg) {
+      allStudentsList.forEach(s => {
+        const courses = (s as any).currentCourses as string[] | undefined;
+        if (courses && courses.some(c => c.includes(selectedProg.title) || selectedProg.title.includes(c))) {
+          eIds.add(s.id);
+        }
+      });
     }
+    return eIds;
+  }, [formProgramId, enrollments, programs, allStudentsList]);
 
-    // 3. Search filter
-    if (modalSearchQuery.trim()) {
-      const q = modalSearchQuery.trim().toLowerCase();
-      const nameMatch = s.name.toLowerCase().includes(q);
-      const phoneMatch = s.phoneNumber?.includes(q);
-      const nationalMatch = s.nationalId?.includes(q);
-      return nameMatch || phoneMatch || nationalMatch;
+  // Students actively enrolled in the selected program/class
+  const classStudentsForModal = useMemo(() => {
+    if (!formProgramId || formProgramId === 'other') return [];
+    const directEnrolled = allStudentsList.filter(s => isStudentActive(s) && enrolledIdsForSelectedProgram.has(s.id));
+    if (directEnrolled.length > 0) return directEnrolled;
+    
+    // Fallback: If no explicit enrollments exist, students in that program's grade
+    const selectedProg = programs.find(p => p.id === formProgramId);
+    if (selectedProg?.grade) {
+      const normGrade = selectedProg.grade.replace(/پایه\s*/g, '').trim();
+      return allStudentsList.filter(s => isStudentActive(s) && (s.grade || '').replace(/پایه\s*/g, '').trim() === normGrade);
     }
+    return [];
+  }, [allStudentsList, formProgramId, enrolledIdsForSelectedProgram, programs]);
 
-    return true;
-  });
+  // Other active students in the school (for optional selection)
+  const otherStudentsForModal = useMemo(() => {
+    const classIdSet = new Set(classStudentsForModal.map(s => s.id));
+    return allStudentsList.filter(s => {
+      if (!isStudentActive(s)) return false;
+      if (formProgramId && formProgramId !== 'other' && classIdSet.has(s.id)) return false;
+
+      // Grade filter
+      if (modalGradeFilter !== 'all') {
+        const normFilter = modalGradeFilter.replace(/پایه\s*/g, '').trim();
+        const normGrade = (s.grade || '').replace(/پایه\s*/g, '').trim();
+        if (!normGrade.includes(normFilter)) return false;
+      }
+
+      // Search filter
+      if (modalSearchQuery.trim()) {
+        const q = modalSearchQuery.trim().toLowerCase();
+        const nameMatch = s.name.toLowerCase().includes(q);
+        const phoneMatch = s.phoneNumber?.includes(q) || (s as any).phone?.includes(q);
+        const nationalMatch = s.nationalId?.includes(q);
+        return nameMatch || phoneMatch || nationalMatch;
+      }
+
+      return true;
+    });
+  }, [allStudentsList, classStudentsForModal, formProgramId, modalGradeFilter, modalSearchQuery]);
+
+  // Active students available for modal selection (when no program selected or in "other" mode)
+  const availableStudentsForModal = useMemo(() => {
+    return allStudentsList.filter(s => {
+      if (!isStudentActive(s)) return false;
+
+      if (modalGradeFilter !== 'all') {
+        const normFilter = modalGradeFilter.replace(/پایه\s*/g, '').trim();
+        const normGrade = (s.grade || '').replace(/پایه\s*/g, '').trim();
+        if (!normGrade.includes(normFilter)) return false;
+      }
+
+      if (modalSearchQuery.trim()) {
+        const q = modalSearchQuery.trim().toLowerCase();
+        const nameMatch = s.name.toLowerCase().includes(q);
+        const phoneMatch = s.phoneNumber?.includes(q) || (s as any).phone?.includes(q);
+        const nationalMatch = s.nationalId?.includes(q);
+        return nameMatch || phoneMatch || nationalMatch;
+      }
+
+      return true;
+    });
+  }, [allStudentsList, modalGradeFilter, modalSearchQuery]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-vazir" dir="rtl">
@@ -564,285 +721,6 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 1. MANAGER TWO-OPTION LANDING SCREEN                                       */}
-      {/* ========================================================================= */}
-      {isEducationOrAdmin && managerActiveView === 'landing' ? (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold mb-1">
-                  <ShieldCheck size={16} />
-                  <span>پنل اختصاصی مسئول آموزش و مدیریت سامانه</span>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">سامانه مطالعه و مباحثه طلاب</h1>
-                <p className="text-xs sm:text-sm text-indigo-200/90 mt-1 font-medium">
-                  مدیریت متمرکز دوره‌های مطالعاتی، نظارت بر کارکرد علمی طلاب و تحلیل آماری
-                </p>
-              </div>
-              <div className="flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/15 text-xs font-bold text-indigo-100 self-start md:self-auto shadow-inner">
-                <Clock size={16} className="text-indigo-300" />
-                <span>{studyPeriods.length} دوره مطالعاتی ثبت‌شده</span>
-              </div>
-            </div>
-          </div>
-
-          {/* TWO PRIMARY OPTIONS - Ultra clean and focused */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-            
-            {/* OPTION 1: ثبت دوره مطالعاتی */}
-            <div 
-              onClick={() => setManagerActiveView('periods')}
-              className="bg-white border-2 border-indigo-100 hover:border-indigo-500 rounded-3xl p-8 shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between space-y-8 group cursor-pointer"
-            >
-              <div className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <div className="w-16 h-16 bg-indigo-50 group-hover:bg-indigo-600 text-indigo-600 group-hover:text-white rounded-3xl flex items-center justify-center transition-all duration-300 shadow-md shadow-indigo-100">
-                    <CalendarPlus size={32} />
-                  </div>
-                  <span className="px-4 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-black rounded-xl border border-indigo-100">
-                    گزینه اول
-                  </span>
-                </div>
-
-                <div>
-                  <h2 className="text-2xl font-black text-slate-800 group-hover:text-indigo-900 transition-colors">
-                    ثبت دوره مطالعاتی
-                  </h2>
-                  <p className="text-sm text-slate-500 font-medium leading-relaxed mt-2.5">
-                    تعریف و ایجاد دوره‌های جدید مطالعاتی، تعیین ساعت و دقیقه موظفی، انتخاب پایه‌ها، ورود ساعات مطالعه و مباحثه و تنظیم اخطار خودکار.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setManagerActiveView('periods');
-                  }}
-                  className="w-full py-4 px-5 bg-indigo-600 group-hover:bg-indigo-700 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-200 cursor-pointer"
-                >
-                  <CalendarPlus size={20} />
-                  <span>ورود به بخش ثبت و مدیریت دوره‌های مطالعاتی</span>
-                  <ArrowLeft size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* OPTION 2: آمار مطالعه و مباحثه */}
-            <div 
-              onClick={() => {
-                setSelectedGradeFilter('all');
-                setManagerActiveView('stats');
-              }}
-              className="bg-white border-2 border-emerald-100 hover:border-emerald-500 rounded-3xl p-8 shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between space-y-8 group cursor-pointer"
-            >
-              <div className="space-y-5">
-                <div className="flex items-center justify-between">
-                  <div className="w-16 h-16 bg-emerald-50 group-hover:bg-emerald-600 text-emerald-600 group-hover:text-white rounded-3xl flex items-center justify-center transition-all duration-300 shadow-md shadow-emerald-100">
-                    <BarChart2 size={32} />
-                  </div>
-                  <span className="px-4 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-black rounded-xl border border-emerald-100">
-                    گزینه دوم
-                  </span>
-                </div>
-
-                <div>
-                  <h2 className="text-2xl font-black text-slate-800 group-hover:text-emerald-900 transition-colors">
-                    آمار مطالعه و مباحثه
-                  </h2>
-                  <p className="text-sm text-slate-500 font-medium leading-relaxed mt-2.5">
-                    مشاهده آمار کامل کارکرد مطالعه و مباحثه طلاب، تفکیک بر اساس پایه‌ها، مقایسه هم‌مباحثه‌ای‌ها، گروه‌های مباحثه و خروجی‌های تحلیلی و PDF.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedGradeFilter('all');
-                    setManagerActiveView('stats');
-                  }}
-                  className="w-full py-4 px-5 bg-emerald-600 group-hover:bg-emerald-700 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-200 cursor-pointer"
-                >
-                  <BarChart2 size={20} />
-                  <span>ورود به بخش آمار مطالعه و مباحثه</span>
-                  <ArrowLeft size={18} />
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      ) : isEducationOrAdmin && managerActiveView === 'periods' ? (
-        /* ========================================================================= */
-        /* 2. MANAGER STUDY PERIODS MANAGEMENT VIEW                                  */
-        /* ========================================================================= */
-        <div className="space-y-6">
-          {/* Top Bar with Back Button */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setManagerActiveView('landing')}
-                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-                title="بازگشت به منوی دو گزینه‌ای"
-              >
-                <ArrowRight size={16} />
-                <span>بازگشت به منوی اصلی</span>
-              </button>
-              <div>
-                <h2 className="text-lg font-black text-slate-800">مدیریت دوره‌های مطالعاتی</h2>
-                <p className="text-xs text-slate-400 font-medium">تعریف، ویرایش و ثبت ساعات دوره‌ای مطالعه و مباحثه طلاب</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setEditingPeriod(null);
-                setIsStudyEntryModalOpen(true);
-              }}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-200 cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>ثبت دوره مطالعاتی جدید</span>
-            </button>
-          </div>
-
-          {/* Periods List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {studyPeriods.map((period) => {
-              const pLogs = periodicLogs.filter(l => l.periodId === period.id);
-              const targetGrades = period.targetGrades && period.targetGrades.length > 0 ? period.targetGrades : ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'];
-              const isAllGrades = targetGrades.length === 4;
-
-              return (
-                <div 
-                  key={period.id}
-                  className="bg-white border border-slate-200 hover:border-indigo-300 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-sm font-black text-slate-800 leading-tight">{period.title}</h3>
-                        <p className="text-[11px] text-slate-400 font-mono mt-1">
-                          {period.startDate || '---'} تا {period.endDate || '---'}
-                        </p>
-                      </div>
-                      <span className={cn(
-                        "text-[10px] font-black px-2.5 py-1 rounded-xl border shrink-0",
-                        period.isClosed
-                          ? "bg-rose-50 text-rose-700 border-rose-200"
-                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      )}>
-                        {period.isClosed ? '🔒 بسته شده' : '🟢 باز (فعال)'}
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
-                      <div className="flex items-center justify-between text-slate-600 font-medium">
-                        <span>سقف موظفی دوره:</span>
-                        <span className="font-bold text-indigo-700">
-                          {period.mandatoryHours ? `${(period.mandatoryHours).toFixed(1)} ساعت (${Math.round(period.mandatoryHours * 60)} دقیقه)` : 'نامشخص'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-slate-600 font-medium">
-                        <span>تعداد رکوردهای ثبت‌شده:</span>
-                        <span className="font-bold text-slate-800">{pLogs.length} طلبه</span>
-                      </div>
-
-                      <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-1 text-[11px]">
-                        <span className="text-slate-500 font-medium">پایه‌های مشمول:</span>
-                        <div className="flex flex-wrap gap-1 justify-end">
-                          {isAllGrades ? (
-                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg font-black text-[10px] border border-indigo-100">
-                              همه پایه‌ها
-                            </span>
-                          ) : (
-                            targetGrades.map(tg => (
-                              <span key={tg} className="px-1.5 py-0.5 bg-slate-200/80 text-slate-700 rounded-md font-bold text-[10px]">
-                                {tg}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-1 text-[11px]">
-                        <span className="text-slate-500 font-medium">سیستم اخطار:</span>
-                        <span className={cn(
-                          "font-bold text-[10px] px-2 py-0.5 rounded-lg border",
-                          period.warningRule === 'below_mandatory' ? "bg-amber-50 text-amber-800 border-amber-200" :
-                          period.warningRule === 'below_mandatory_and_avg' ? "bg-rose-50 text-rose-800 border-rose-200" :
-                          "bg-slate-100 text-slate-600 border-slate-200"
-                        )}>
-                          {period.warningRule === 'below_mandatory' ? '⚠️ زیر موظفی' :
-                           period.warningRule === 'below_mandatory_and_avg' ? '🚨 زیر موظفی + میانگین' :
-                           'بدون اخطار خودکار'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPeriod(period);
-                        setIsStudyEntryModalOpen(true);
-                      }}
-                      className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                    >
-                      <Edit size={14} />
-                      <span>ویرایش و ثبت ساعات</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePeriod(period.id)}
-                      className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-colors border border-rose-200 cursor-pointer"
-                      title="حذف دوره"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        /* ========================================================================= */
-        /* 3. STATS & DISCUSSION DETAILED ANALYTICS VIEW                             */
-        /* ========================================================================= */
-        <div className="space-y-6">
-          {/* Top Bar for Education Manager / Super Admin to go back to 2-option dashboard */}
-          {isEducationOrAdmin && (
-            <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-900">
-                <BarChart2 size={16} className="text-indigo-600 shrink-0" />
-                <span>شما در حال مشاهده گزارش جامع و آمار مطالعه و مباحثه هستید.</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setManagerActiveView('landing')}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
-              >
-                <ArrowRight size={14} />
-                <span>بازگشت به منوی دو گزینه‌ای</span>
-              </button>
-            </div>
-          )}
-
       {/* HEADER SECTION */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -854,44 +732,62 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                 <Users size={26} />
               </div>
               <div>
-                <span className="text-xs font-bold text-indigo-300 uppercase tracking-widest">سامانه مدیریت علمی</span>
-                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">بخش گروه‌های مباحثه و آمار</h1>
+                <span className="text-xs font-bold text-indigo-300 uppercase tracking-widest">
+                  {isStudentUser ? 'سامانه طلاب و هم‌بحثی' : 'سامانه مدیریت علمی'}
+                </span>
+                <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                  {isStudentUser ? 'گروه مباحثه من' : 'بخش گروه‌های بحثی طلاب'}
+                </h1>
               </div>
             </div>
             <p className="text-xs sm:text-sm text-indigo-200/90 leading-relaxed max-w-2xl font-medium">
-              تعیین هم‌مباحثه‌ای‌های طلاب، مدیریت گروه‌های درسی پایه، تحلیل ساعات مطالعه و مقایسه عملکرد علمی گروه‌های مباحثاتی
+              {isStudentUser ? (
+                `مشاهده هم‌مباحثه‌ای‌های ثبت‌شده طلبه گرامی ${loggedStudent?.name || currentUser?.fullName || ''} (${loggedStudent?.grade || userGrade || 'پایه ۷'}) و امکان ثبت درخواست ویرایش و تغییر گروه مباحثه`
+              ) : (
+                'تعیین و مدیریت هم‌مباحثه‌ای‌های طلاب، چینش گروه‌های درسی بر اساس پایه و ثبت تغییرات توسط مسئولین مربوطه'
+              )}
             </p>
           </div>
 
           {/* Header Action Buttons */}
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <button
-              onClick={handleOpenCreateModal}
+              onClick={() => {
+                if (isStudentUser && filteredGroups.length > 0) {
+                  handleOpenEditModal(filteredGroups[0]);
+                } else {
+                  handleOpenCreateModal();
+                }
+              }}
               className="px-5 py-3 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
             >
-              <Plus size={18} />
-              <span>تعریف گروه مباحثه جدید</span>
+              {isStudentUser ? <Edit size={18} /> : <Plus size={18} />}
+              <span>{isStudentUser ? 'درخواست ویرایش / اصلاح گروه مباحثه' : 'تعریف گروه مباحثه جدید'}</span>
             </button>
 
-            <button
-              onClick={handleExportCompositionPdf}
-              disabled={isExportingCompositionPdf || groups.length === 0}
-              className="px-4 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 rounded-2xl cursor-pointer"
-              title="خروجی PDF اعضای گروه‌های بحثی و هم‌بحث‌ها به تفکیک عنوان هر گروه"
-            >
-              {isExportingCompositionPdf ? <Activity size={18} className="animate-spin" /> : <FileText size={18} />}
-              <span>خروجی PDF ترکیب گروه‌ها و هم‌بحث‌ها</span>
-            </button>
+            {!isStudentUser && (
+              <>
+                <button
+                  onClick={handleExportCompositionPdf}
+                  disabled={isExportingCompositionPdf || groups.length === 0}
+                  className="px-4 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50 rounded-2xl cursor-pointer"
+                  title="خروجی PDF اعضای گروه‌های بحثی و هم‌بحث‌ها به تفکیک عنوان هر گروه"
+                >
+                  {isExportingCompositionPdf ? <Activity size={18} className="animate-spin" /> : <FileText size={18} />}
+                  <span>خروجی PDF ترکیب گروه‌ها و هم‌بحث‌ها</span>
+                </button>
 
-            <button
-              onClick={handleExportGroupsPdf}
-              disabled={isExportingPdf || groups.length === 0}
-              className="px-4 py-3 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all backdrop-blur-md disabled:opacity-50 cursor-pointer"
-              title="خروجی PDF خلاصه آمار و ساعات مطالعه و مباحثه"
-            >
-              {isExportingPdf ? <Activity size={18} className="animate-spin" /> : <Printer size={18} />}
-              <span>خروجی PDF آمار عملکرد</span>
-            </button>
+                <button
+                  onClick={handleExportGroupsPdf}
+                  disabled={isExportingPdf || groups.length === 0}
+                  className="px-4 py-3 bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/20 text-white rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all backdrop-blur-md disabled:opacity-50 cursor-pointer"
+                  title="خروجی PDF خلاصه آمار و ساعات مطالعه و مباحثه"
+                >
+                  {isExportingPdf ? <Activity size={18} className="animate-spin" /> : <Printer size={18} />}
+                  <span>خروجی PDF آمار عملکرد</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -902,8 +798,10 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
               <Layers size={20} />
             </div>
             <div>
-              <span className="text-[11px] text-indigo-200 font-medium block">تعداد گروه‌ها</span>
-              <span className="text-lg font-black text-white">{groups.length} گروه</span>
+              <span className="text-[11px] text-indigo-200 font-medium block">
+                {isStudentUser ? 'گروه‌های من' : 'تعداد گروه‌ها'}
+              </span>
+              <span className="text-lg font-black text-white">{filteredGroups.length} گروه</span>
             </div>
           </div>
 
@@ -914,7 +812,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
             <div>
               <span className="text-[11px] text-indigo-200 font-medium block">طلاب فعال عضو</span>
               <span className="text-lg font-black text-white">
-                {new Set(groups.flatMap(g => g.memberStudentIds)).size} نفر
+                {new Set(filteredGroups.flatMap(g => g.memberStudentIds)).size} نفر
               </span>
             </div>
           </div>
@@ -926,7 +824,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
             <div>
               <span className="text-[11px] text-indigo-200 font-medium block">هم‌بحثی‌های خارج (سایر)</span>
               <span className="text-lg font-black text-white">
-                {groups.reduce((acc, g) => acc + (g.externalMembers?.length || 0), 0)} نفر
+                {filteredGroups.reduce((acc, g) => acc + (g.externalMembers?.length || 0), 0)} نفر
               </span>
             </div>
           </div>
@@ -936,16 +834,51 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
               <Clock size={20} />
             </div>
             <div>
-              <span className="text-[11px] text-indigo-200 font-medium block">میانگین مطالعه طلاب</span>
+              <span className="text-[11px] text-indigo-200 font-medium block">
+                {isStudentUser ? 'ساعات ثبت‌شده من' : 'میانگین مطالعه طلاب'}
+              </span>
               <span className="text-lg font-black text-white">
-                {periodicLogs.length > 0
-                  ? (periodicLogs.reduce((acc, l) => acc + (l.hours || 0), 0) / (students.length || 1)).toFixed(1)
-                  : '۰'} ساعت
+                {isStudentUser && loggedStudent
+                  ? `${getStudentMetrics(loggedStudent.id).totalHours} ساعت`
+                  : periodicLogs.length > 0
+                  ? `${(periodicLogs.reduce((acc, l) => acc + (l.hours || 0), 0) / (students.length || 1)).toFixed(1)} ساعت`
+                  : '۰ ساعت'}
               </span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* STUDENT PENDING WORKFLOW NOTIFICATION BANNER */}
+      {isStudentUser && studentWorkflowItems.some(w => w.status === 'pending') && (
+        <div className="bg-amber-50/90 border border-amber-300 rounded-3xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+              <Clock size={20} className="animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black text-amber-950">درخواست ویرایش گروه مباحثه شما در جریان کار است</h4>
+                <span className="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-full text-[10px] font-black">
+                  در انتظار تایید مسئول پایه و آموزش
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 leading-relaxed max-w-3xl">
+                درخواست اصلاحیه شما با موفقیت ثبت شده و برای بررسی به کارتابل مسئول محترم پایه و مسئول آموزش ارسال گردیده است. پس از تایید نهایی، مشخصات گروه در همین بخش بروزرسانی خواهد شد.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (filteredGroups.length > 0) handleOpenEditModal(filteredGroups[0]);
+              else handleOpenCreateModal();
+            }}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs shrink-0 cursor-pointer"
+          >
+            مشاهده / ثبت مجدد
+          </button>
+        </div>
+      )}
 
       {/* PERIOD SELECTOR BANNER */}
       <div className="bg-white rounded-2xl p-4 border border-indigo-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1118,28 +1051,46 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                           </h3>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
+                        {isStudentUser ? (
                           <button
                             onClick={() => handleOpenEditModal(group)}
-                            className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-xl transition-all"
-                            title="ویرایش گروه"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-black transition-all border border-indigo-200 cursor-pointer shadow-2xs shrink-0"
+                            title="ثبت درخواست ویرایش این گروه مباحثه"
                           >
-                            <Edit size={16} />
+                            <Edit size={14} />
+                            <span>ویرایش گروه</span>
                           </button>
-                          <button
-                            onClick={() => handleDeleteGroup(group.id)}
-                            className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
-                            title="حذف گروه"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleOpenEditModal(group)}
+                              className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-xl transition-all"
+                              title="ویرایش گروه"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGroup(group.id)}
+                              className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"
+                              title="حذف گروه"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {group.subject && (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                           <BookOpen size={14} className="text-indigo-500 shrink-0" />
                           <span>موضوع مباحثه: {group.subject}</span>
+                        </div>
+                      )}
+
+                      {group.room && (
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                          <MapPin size={14} className="text-emerald-600 shrink-0" />
+                          <span>محل مباحثه / مدرس: {group.room}</span>
                         </div>
                       )}
 
@@ -1690,9 +1641,15 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-800">
-                      {editingGroup ? 'ویرایش گروه مباحثه' : 'تعریف گروه مباحثه جدید'}
+                      {isStudentUser 
+                        ? 'درخواست ویرایش / ثبت گروه مباحثه' 
+                        : (editingGroup ? 'ویرایش گروه مباحثه' : 'تعریف گروه مباحثه جدید')}
                     </h3>
-                    <p className="text-xs text-slate-500">مشخصات گروه و هم‌مباحثه‌ای‌ها را وارد کنید</p>
+                    <p className="text-xs text-slate-500">
+                      {isStudentUser 
+                        ? 'تعیین درس اصلی، هم‌مباحثه‌ای‌ها و ارسال جهت تایید مسئول پایه و آموزش' 
+                        : 'مشخصات گروه و هم‌مباحثه‌ای‌ها را وارد کنید'}
+                    </p>
                   </div>
                 </div>
 
@@ -1704,8 +1661,88 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                 </button>
               </div>
 
+              {isStudentUser && (
+                <div className="bg-indigo-50/80 border border-indigo-200/80 rounded-2xl p-3.5 text-xs text-indigo-950 font-medium space-y-1">
+                  <div className="flex items-center gap-2 font-bold text-indigo-900">
+                    <Clock size={15} className="text-indigo-600 shrink-0" />
+                    <span>فرایند جریان کار و تایید دو مرحله‌ای</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800/90 leading-relaxed">
+                    طلبه گرامی، ابتدا درس اصلی مباحثه و سپس هم‌بحث‌های خود را انتخاب نمایید. پس از ثبت نهایی، درخواست شما برای مسئول محترم پایه و مسئول آموزش ارسال خواهد شد.
+                  </p>
+                </div>
+              )}
+
               <form onSubmit={handleSaveGroup} className="space-y-4 text-xs font-bold text-slate-700">
-                {/* Title */}
+                {/* 1. Course / Class Selection */}
+                <div className="p-4 bg-indigo-50/60 border border-indigo-100/80 rounded-2xl space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                      <GraduationCap size={15} className="text-indigo-600" />
+                      <span>انتخاب درس / کلاس اصلی مباحثه *</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      با انتخاب درس، لیست طلاب آن کلاس در مرحله بعد آماده انتخاب شده و اطلاعات درس به صورت خودکار بارگذاری می‌گردد.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">انتخاب از دروس فعال مدرسه:</label>
+                      <select
+                        value={formProgramId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormProgramId(val);
+                          if (val && val !== 'other') {
+                            const prog = programs.find(p => p.id === val);
+                            if (prog) {
+                              setFormSubject(prog.title);
+                              if (prog.grade) setFormGrade(prog.grade);
+                              if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
+                                setFormTitle(`گروه مباحثه ${prog.title}`);
+                              }
+                            }
+                          } else if (val === 'other') {
+                            setCustomProgramTitle('');
+                            setFormSubject('');
+                          }
+                        }}
+                        className="w-full px-3.5 py-2.5 border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-800"
+                      >
+                        <option value="">-- انتخاب درس / کلاس --</option>
+                        {programs.map(prog => (
+                          <option key={prog.id} value={prog.id}>
+                            {prog.title} {prog.teacher ? `(استاد ${prog.teacher})` : ''} {prog.grade ? `[${prog.grade}]` : ''}
+                          </option>
+                        ))}
+                        <option value="other">🌟 سایر کلاس‌ها / درس متفرقه (ورود دستی)</option>
+                      </select>
+                    </div>
+
+                    {formProgramId === 'other' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-amber-700">نام درس یا کلاس متفرقه (دستی) *</label>
+                        <input
+                          type="text"
+                          value={customProgramTitle}
+                          onChange={(e) => {
+                            setCustomProgramTitle(e.target.value);
+                            setFormSubject(e.target.value);
+                            if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
+                              setFormTitle(e.target.value ? `گروه مباحثه ${e.target.value}` : '');
+                            }
+                          }}
+                          placeholder="مثال: بدایه الحکمه، صمدیه، حلقات..."
+                          required={formProgramId === 'other'}
+                          className="w-full px-3.5 py-2.5 border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50/40 text-xs font-bold text-slate-800"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Title, Grade, & Subject */}
                 <div className="space-y-1.5">
                   <label>عنوان گروه مباحثه *</label>
                   <input
@@ -1714,18 +1751,17 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                     onChange={(e) => setFormTitle(e.target.value)}
                     placeholder="مثال: گروه مباحثه مکاسب محرمه پایه ۷"
                     required
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 font-bold"
                   />
                 </div>
 
-                {/* Grade & Subject Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <label>پایه تحصیلی</label>
                     <select
                       value={formGrade}
                       onChange={(e) => setFormGrade(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 font-bold text-xs"
                     >
                       <option value="پایه ۷">پایه ۷</option>
                       <option value="پایه ۸">پایه ۸</option>
@@ -1735,137 +1771,280 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   </div>
 
                   <div className="space-y-1.5">
-                    <label>موضوع / درس مباحثه</label>
+                    <label>موضوع / سرفصل مباحثه</label>
                     <input
                       type="text"
                       value={formSubject}
                       onChange={(e) => setFormSubject(e.target.value)}
                       placeholder="مثال: فقه، اصول، منطق..."
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 font-bold text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-1">
+                      <MapPin size={13} className="text-emerald-600" />
+                      <span>محل مباحثه / مدرس</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formRoom}
+                      onChange={(e) => setFormRoom(e.target.value)}
+                      placeholder="مثال: مدرس ۱، حجره ۱۲، حیاط..."
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50 font-bold text-xs"
                     />
                   </div>
                 </div>
 
-                {/* Active Students Selection */}
-                <div className="space-y-2.5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <label className="block text-xs font-black text-slate-800">
-                      انتخاب اعضا از میان طلاب فعال مدرسه
-                      {formMemberStudentIds.length > 0 && (
-                        <span className="mr-2 px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-[11px] font-bold">
-                          {formMemberStudentIds.length} نفر انتخاب شده
-                        </span>
-                      )}
+                {/* 3. Member Selection (Enrolled Class Students vs. Other School Students) */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Users size={15} className="text-indigo-600" />
+                      <span>انتخاب اعضای گروه مباحثه</span>
                     </label>
-
-                    <div className="flex items-center gap-2">
-                      {/* Grade filter inside modal */}
-                      <select
-                        value={modalGradeFilter}
-                        onChange={(e) => setModalGradeFilter(e.target.value)}
-                        className="text-[11px] px-2.5 py-1 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                      >
-                        <option value="all">همه پایه‌ها</option>
-                        <option value="پایه ۷">پایه ۷</option>
-                        <option value="پایه ۸">پایه ۸</option>
-                        <option value="پایه ۹">پایه ۹</option>
-                        <option value="پایه ۱۰">پایه ۱۰</option>
-                      </select>
-
-                      {/* Select all / Deselect all */}
-                      {availableStudentsForModal.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const currentIds = availableStudentsForModal.map(s => s.id);
-                            const allSelected = currentIds.every(id => formMemberStudentIds.includes(id));
-                            if (allSelected) {
-                              setFormMemberStudentIds(formMemberStudentIds.filter(id => !currentIds.includes(id)));
-                            } else {
-                              const combined = Array.from(new Set([...formMemberStudentIds, ...currentIds]));
-                              setFormMemberStudentIds(combined);
-                            }
-                          }}
-                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
-                        >
-                          {availableStudentsForModal.every(s => formMemberStudentIds.includes(s.id)) ? 'حذف انتخاب این گروه' : 'انتخاب همه این لیست'}
-                        </button>
-                      )}
-                    </div>
+                    {formMemberStudentIds.length > 0 && (
+                      <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-[11px] font-bold">
+                        {formMemberStudentIds.length} طلبه انتخاب شده
+                      </span>
+                    )}
                   </div>
 
-                  {/* Search box inside modal */}
-                  <div className="relative">
-                    <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={modalSearchQuery}
-                      onChange={(e) => setModalSearchQuery(e.target.value)}
-                      placeholder="جستجوی نام یا کد ملی طلبه..."
-                      className="w-full pr-8 pl-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                    />
-                  </div>
-
-                  {/* Scrollable list */}
-                  <div className="max-h-48 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
-                    {availableStudentsForModal.length === 0 ? (
-                      <div className="p-4 text-center space-y-2">
-                        <p className="text-xs text-slate-500 font-normal">طلبه فعالی با این مشخصات یا فیلتر پیدا نشد.</p>
-                        {(modalGradeFilter !== 'all' || modalSearchQuery) && (
+                  {/* If a specific course is selected, show enrolled students first */}
+                  {formProgramId && formProgramId !== 'other' && (
+                    <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                          <span className="text-xs font-black text-emerald-950">
+                            طلاب عضو در این درس/کلاس ({classStudentsForModal.length} نفر)
+                          </span>
+                        </div>
+                        {classStudentsForModal.length > 0 && (
                           <button
                             type="button"
                             onClick={() => {
-                              setModalGradeFilter('all');
-                              setModalSearchQuery('');
+                              const classIds = classStudentsForModal.map(s => s.id);
+                              const allClassSelected = classIds.every(id => formMemberStudentIds.includes(id));
+                              if (allClassSelected) {
+                                setFormMemberStudentIds(formMemberStudentIds.filter(id => !classIds.includes(id)));
+                              } else {
+                                setFormMemberStudentIds(Array.from(new Set([...formMemberStudentIds, ...classIds])));
+                              }
                             }}
-                            className="text-xs font-bold text-indigo-600 hover:underline"
+                            className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline"
                           >
-                            مشاهده تمام طلاب فعال مدرسه
+                            {classStudentsForModal.every(s => formMemberStudentIds.includes(s.id)) ? 'حذف انتخاب همه این کلاس' : 'انتخاب همه طلاب این کلاس'}
                           </button>
                         )}
                       </div>
-                    ) : (
-                      availableStudentsForModal.map((stu) => {
-                        const isSelected = formMemberStudentIds.includes(stu.id);
-                        return (
-                          <label
-                            key={stu.id}
-                            className={cn(
-                              "flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all",
-                              isSelected
-                                ? "bg-indigo-50/80 border-indigo-300 shadow-sm"
-                                : "bg-white border-slate-200/80 hover:border-slate-300"
-                            )}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setFormMemberStudentIds([...formMemberStudentIds, stu.id]);
-                                  } else {
-                                    setFormMemberStudentIds(formMemberStudentIds.filter(id => id !== stu.id));
-                                  }
-                                }}
-                                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                              />
-                              <span className="text-xs font-bold text-slate-800">{stu.name}</span>
-                            </div>
 
-                            <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
-                              {stu.grade || 'پایه ۷'}
-                            </span>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
+                      {classStudentsForModal.length === 0 ? (
+                        <p className="text-[11px] text-slate-500 py-1 font-normal">
+                          هنوز طلبه‌ای در این درس ثبت‌نام نشده است. می‌توانید از بخش زیر طلاب مدرسه را انتخاب کنید.
+                        </p>
+                      ) : (
+                        <div className="max-h-40 overflow-y-auto p-1.5 bg-white border border-emerald-100 rounded-xl space-y-1.5">
+                          {classStudentsForModal.map((stu) => {
+                            const isSelected = formMemberStudentIds.includes(stu.id);
+                            return (
+                              <label
+                                key={stu.id}
+                                className={cn(
+                                  "flex items-center justify-between p-2 rounded-xl border cursor-pointer transition-all",
+                                  isSelected
+                                    ? "bg-emerald-50 border-emerald-300 font-black shadow-xs"
+                                    : "bg-slate-50/50 border-slate-200/80 hover:border-slate-300"
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setFormMemberStudentIds([...formMemberStudentIds, stu.id]);
+                                      } else {
+                                        setFormMemberStudentIds(formMemberStudentIds.filter(id => id !== stu.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                                  />
+                                  <span className="text-xs text-slate-800">{stu.name}</span>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-white text-emerald-800 border border-emerald-100 rounded-md">
+                                  {stu.grade || 'پایه ۷'}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Section for choosing other students from the school */}
+                  {formProgramId && formProgramId !== 'other' ? (
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+                      <button
+                        type="button"
+                        onClick={() => setShowOtherStudentsInModal(!showOtherStudentsInModal)}
+                        className="w-full p-3 flex items-center justify-between text-xs font-black text-slate-700 hover:bg-slate-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <UserPlus size={15} className="text-indigo-600" />
+                          <span>انتخاب سایر طلاب از کل مدرسه (خارج از این کلاس)</span>
+                        </div>
+                        <span className="text-[11px] text-indigo-600 font-bold">
+                          {showOtherStudentsInModal ? '▲ بستن لیست سایر طلاب' : '▼ باز کردن و انتخاب سایر طلاب'}
+                        </span>
+                      </button>
+
+                      {showOtherStudentsInModal && (
+                        <div className="p-3 border-t border-slate-200 space-y-2 bg-white">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={modalGradeFilter}
+                              onChange={(e) => setModalGradeFilter(e.target.value)}
+                              className="text-[11px] px-2.5 py-1 border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                            >
+                              <option value="all">همه پایه‌ها</option>
+                              <option value="پایه ۷">پایه ۷</option>
+                              <option value="پایه ۸">پایه ۸</option>
+                              <option value="پایه ۹">پایه ۹</option>
+                              <option value="پایه ۱۰">پایه ۱۰</option>
+                            </select>
+
+                            <div className="relative flex-1">
+                              <Search size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={modalSearchQuery}
+                                onChange={(e) => setModalSearchQuery(e.target.value)}
+                                placeholder="جستجوی نام یا کد ملی طلبه..."
+                                className="w-full pr-7 pl-3 py-1 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="max-h-40 overflow-y-auto p-1.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                            {otherStudentsForModal.length === 0 ? (
+                              <p className="text-center text-xs text-slate-500 py-3 font-normal">طلبه‌ای یافت نشد.</p>
+                            ) : (
+                              otherStudentsForModal.map((stu) => {
+                                const isSelected = formMemberStudentIds.includes(stu.id);
+                                return (
+                                  <label
+                                    key={stu.id}
+                                    className={cn(
+                                      "flex items-center justify-between p-2 rounded-xl border cursor-pointer transition-all",
+                                      isSelected
+                                        ? "bg-indigo-50 border-indigo-300 font-black"
+                                        : "bg-white border-slate-200/80 hover:border-slate-300"
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setFormMemberStudentIds([...formMemberStudentIds, stu.id]);
+                                          } else {
+                                            setFormMemberStudentIds(formMemberStudentIds.filter(id => id !== stu.id));
+                                          }
+                                        }}
+                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                      />
+                                      <span className="text-xs text-slate-800">{stu.name}</span>
+                                    </div>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
+                                      {stu.grade || 'پایه ۷'}
+                                    </span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Default full school student selection (for "other" or unselected class) */
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={modalGradeFilter}
+                          onChange={(e) => setModalGradeFilter(e.target.value)}
+                          className="text-[11px] px-2.5 py-1 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                        >
+                          <option value="all">همه پایه‌ها</option>
+                          <option value="پایه ۷">پایه ۷</option>
+                          <option value="پایه ۸">پایه ۸</option>
+                          <option value="پایه ۹">پایه ۹</option>
+                          <option value="پایه ۱۰">پایه ۱۰</option>
+                        </select>
+
+                        <div className="relative flex-1">
+                          <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={modalSearchQuery}
+                            onChange={(e) => setModalSearchQuery(e.target.value)}
+                            placeholder="جستجوی نام یا کد ملی طلبه..."
+                            className="w-full pr-8 pl-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5">
+                        {availableStudentsForModal.length === 0 ? (
+                          <div className="p-4 text-center space-y-2">
+                            <p className="text-xs text-slate-500 font-normal">طلبه فعالی با این مشخصات یا فیلتر پیدا نشد.</p>
+                          </div>
+                        ) : (
+                          availableStudentsForModal.map((stu) => {
+                            const isSelected = formMemberStudentIds.includes(stu.id);
+                            return (
+                              <label
+                                key={stu.id}
+                                className={cn(
+                                  "flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all",
+                                  isSelected
+                                    ? "bg-indigo-50/80 border-indigo-300 shadow-sm font-black"
+                                    : "bg-white border-slate-200/80 hover:border-slate-300"
+                                )}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setFormMemberStudentIds([...formMemberStudentIds, stu.id]);
+                                      } else {
+                                        setFormMemberStudentIds(formMemberStudentIds.filter(id => id !== stu.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                  />
+                                  <span className="text-xs text-slate-800">{stu.name}</span>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
+                                  {stu.grade || 'پایه ۷'}
+                                </span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* External Members ("سایر") */}
-                <div className="space-y-2">
-                  <label className="block">افزودن هم‌بحثی خارج از مدرسه (عنوان سایر)</label>
+                {/* 4. External Members ("سایر") */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <label className="block text-slate-800">افزودن هم‌بحثی خارج از مدرسه (عنوان سایر)</label>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1905,7 +2084,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   )}
                 </div>
 
-                {/* Description */}
+                {/* 5. Description */}
                 <div className="space-y-1.5">
                   <label>توضیحات و یادداشت</label>
                   <textarea
@@ -1913,7 +2092,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     placeholder="توضیحات تکمیلی..."
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 font-normal"
                   />
                 </div>
 
@@ -1928,9 +2107,16 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow-md"
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow-md flex items-center gap-2 cursor-pointer"
                   >
-                    {editingGroup ? 'ذخیره تغییرات' : 'ثبت گروه مباحثه'}
+                    {isStudentUser ? (
+                      <>
+                        <Send size={15} />
+                        <span>ارسال درخواست به جریان کار</span>
+                      </>
+                    ) : (
+                      <span>{editingGroup ? 'ذخیره تغییرات' : 'ثبت گروه مباحثه'}</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -2194,31 +2380,6 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           </div>
         </div>
       </div>
-
-      </div>
-      )}
-
-      {/* Study Period Entry / Edit Modal */}
-      {isStudyEntryModalOpen && (
-        <StudyEntryModal
-          isOpen={isStudyEntryModalOpen}
-          onClose={() => {
-            setIsStudyEntryModalOpen(false);
-            setEditingPeriod(null);
-          }}
-          onSaveSuccess={async () => {
-            setIsStudyEntryModalOpen(false);
-            setEditingPeriod(null);
-            setToastMessage('دوره مطالعاتی با موفقیت ثبت/بروزرسانی شد.');
-            await loadData();
-            setTimeout(() => setToastMessage(''), 4000);
-          }}
-          students={allStudentsList.filter(s => isStudentActive(s))}
-          allLogs={periodicLogs}
-          editingPeriod={editingPeriod}
-          currentMentorId={currentMentorId}
-        />
-      )}
 
     </div>
   );

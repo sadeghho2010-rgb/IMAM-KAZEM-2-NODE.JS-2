@@ -623,43 +623,103 @@ export default function UserCredentialsSettings() {
                 </div>
 
                 {(isSuperAdmin || isEducationManager) ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">سطح کاربری</label>
-                      <select
-                        value={formLevel}
-                        onChange={(e) => {
-                          const lvl = Number(e.target.value) as UserLevel;
-                          setFormLevel(lvl);
-                          if (lvl === 1) {
-                            setFormRole('school_manager');
-                            setFormRoleTitle('کادر اجرایی');
-                          } else if (lvl === 2) {
-                            setFormRole('grade_mentor');
-                            setFormRoleTitle('مسئول پایه');
-                          } else {
-                            setFormRole('student');
-                            setFormRoleTitle('طلبه');
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none"
-                      >
-                        {isSuperAdmin && <option value={1}>سطح ۱ (مدیریت کلان)</option>}
-                        <option value={2}>سطح ۲ (کادر و اساتید)</option>
-                        <option value={3}>سطح ۳ (طلاب / نمایندگان)</option>
-                      </select>
-                    </div>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">نقش کاربری</label>
+                        <select
+                          value={formRole}
+                          onChange={(e) => {
+                            const r = e.target.value as UserRole;
+                            setFormRole(r);
+                            switch (r) {
+                              case 'super_admin':
+                                setFormLevel(1);
+                                setFormRoleTitle('سوپر ادمین');
+                                break;
+                              case 'school_manager':
+                              case 'manager_principal':
+                                setFormLevel(1);
+                                setFormRoleTitle('مدیر مدرسه');
+                                break;
+                              case 'education_manager':
+                              case 'education_officer':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول آموزش');
+                                break;
+                              case 'grade_supervisor_7':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول پایه ۷');
+                                break;
+                              case 'grade_supervisor_8':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول پایه ۸');
+                                break;
+                              case 'grade_supervisor_9':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول پایه ۹');
+                                break;
+                              case 'grade_supervisor_10':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول پایه ۱۰');
+                                break;
+                              case 'research_manager':
+                              case 'research_officer':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول پژوهش');
+                                break;
+                              case 'finance_manager':
+                              case 'financial_officer':
+                                setFormLevel(2);
+                                setFormRoleTitle('مسئول مالی');
+                                break;
+                              case 'class_representative':
+                                setFormLevel(3);
+                                setFormRoleTitle('نماینده کلاس');
+                                break;
+                              case 'student':
+                                setFormLevel(3);
+                                setFormRoleTitle('طلبه');
+                                break;
+                              default:
+                                break;
+                            }
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                        >
+                          {isSuperAdmin && (
+                            <optgroup label="سطح ۱ - مدیریت">
+                              <option value="super_admin">سوپر ادمین</option>
+                              <option value="school_manager">مدیر مدرسه</option>
+                            </optgroup>
+                          )}
+                          <optgroup label="سطح ۲ - مسئول آموزش و مسئولین پایه‌ها">
+                            <option value="education_manager">مسئول آموزش</option>
+                            <option value="grade_supervisor_7">مسئول پایه ۷</option>
+                            <option value="grade_supervisor_8">مسئول پایه ۸</option>
+                            <option value="grade_supervisor_9">مسئول پایه ۹</option>
+                            <option value="grade_supervisor_10">مسئول پایه ۱۰</option>
+                            <option value="research_manager">مسئول پژوهش</option>
+                            <option value="finance_manager">مسئول مالی</option>
+                          </optgroup>
+                          <optgroup label="سطح ۳ - طلاب و نمایندگان">
+                            <option value="student">طلبه / دانشجو</option>
+                            <option value="class_representative">نماینده کلاس</option>
+                          </optgroup>
+                        </select>
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">عنوان نقش</label>
-                      <input
-                        type="text"
-                        value={formRoleTitle}
-                        onChange={(e) => setFormRoleTitle(e.target.value)}
-                        placeholder="طلبه، کادر، مسئول پایه"
-                        required
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-950 focus:outline-none"
-                      />
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">عنوان نقش نمایشی</label>
+                        <input
+                          type="text"
+                          value={formRoleTitle}
+                          onChange={(e) => setFormRoleTitle(e.target.value)}
+                          placeholder="طلبه، مسئول آموزش، مسئول پایه ۷..."
+                          required
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-950 focus:outline-none focus:bg-white focus:border-indigo-500"
+                        />
+                      </div>
                     </div>
                   </div>
                 ) : (

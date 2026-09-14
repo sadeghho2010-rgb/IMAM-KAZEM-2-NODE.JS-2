@@ -21,7 +21,8 @@ import {
   User,
   Eye,
   DoorOpen,
-  GitBranch
+  GitBranch,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -52,8 +53,10 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
   { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', icon: DoorOpen },
   { id: 'student-schedule', label: 'برنامه درسی و هفتگی طلاب', icon: CalendarDays },
+  { id: 'teachers-schedule', label: 'برنامه درسی اساتید', icon: GraduationCap },
   { id: 'stats', label: 'آمار مطالعه طلاب', icon: BarChart2 },
-  { id: 'discussion', label: 'مطالعات و مباحثات طلاب', icon: Users },
+  { id: 'discussion', label: 'گروه‌های بحثی', icon: Users },
+  { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
@@ -72,9 +75,15 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
   // Filter items based on user's authorized modules
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
-    // دسترسی صریح کاربر: بخش جریان کار منحصراً برای کاربران سطح ۱ و سطح ۲ است
-    if (item.id === 'workflow') {
+    // دسترسی صریح کاربر: بخش جریان کار و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
+    if (item.id === 'workflow' || item.id === 'consultation-advisor') {
       return currentUser ? (currentUser.level === 1 || currentUser.level === 2) : false;
+    }
+    // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند در منوی خودشون این بخش رو ببینند؛ کاربران سطح 2 همه می توانند ببینند
+    if (item.id === 'teachers-schedule') {
+      if (!currentUser) return false;
+      if (currentUser.level === 3) return false;
+      if (currentUser.level === 1 || currentUser.level === 2) return true;
     }
     if (typeof hasModuleAccess === 'function') {
       return hasModuleAccess(item.id);

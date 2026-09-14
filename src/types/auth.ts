@@ -7,6 +7,10 @@ export type UserRole =
   | 'vice_principal'      // معاون مدرسه
   | 'education_manager'   // مسئول آموزش (سطح ۲)
   | 'education_officer'   // مسئول آموزش
+  | 'grade_supervisor_7'  // مسئول پایه ۷ (سطح ۲)
+  | 'grade_supervisor_8'  // مسئول پایه ۸ (سطح ۲)
+  | 'grade_supervisor_9'  // مسئول پایه ۹ (سطح ۲)
+  | 'grade_supervisor_10' // مسئول پایه ۱۰ (سطح ۲)
   | 'grade_mentor'        // مسئول پایه (سطح ۲ - پایه‌های ۷، ۸، ۹، ۱۰)
   | 'grade_supervisor'    // مسئول پایه
   | 'research_manager'    // مسئول پژوهش (سطح ۲)

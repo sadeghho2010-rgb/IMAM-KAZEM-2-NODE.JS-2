@@ -491,6 +491,150 @@ export default function UserManagementSettings() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
+                      نقش و مسئولیت کاربر
+                    </label>
+                    <select
+                      value={formData.role}
+                      onChange={(e) => {
+                        const newRole = e.target.value as UserRole;
+                        let newLevel: UserLevel = formData.level;
+                        let newRoleTitle = formData.roleTitle;
+                        let newScope = formData.scope;
+                        let newGradeLabel = formData.gradeLabel;
+                        let newReadOnly = formData.isReadOnly;
+
+                        switch (newRole) {
+                          case 'super_admin':
+                            newLevel = 1;
+                            newRoleTitle = 'سوپر ادمین';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = false;
+                            break;
+                          case 'school_manager':
+                          case 'manager_principal':
+                            newLevel = 1;
+                            newRoleTitle = 'مدیر مدرسه';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = true;
+                            break;
+                          case 'vice_principal':
+                            newLevel = 1;
+                            newRoleTitle = 'معاون مدرسه';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = true;
+                            break;
+                          case 'education_manager':
+                          case 'education_officer':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول آموزش';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = false;
+                            break;
+                          case 'grade_supervisor_7':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول پایه ۷';
+                            newScope = 'grade_7';
+                            newGradeLabel = 'پایه ۷';
+                            newReadOnly = false;
+                            break;
+                          case 'grade_supervisor_8':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول پایه ۸';
+                            newScope = 'grade_8';
+                            newGradeLabel = 'پایه ۸';
+                            newReadOnly = false;
+                            break;
+                          case 'grade_supervisor_9':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول پایه ۹';
+                            newScope = 'grade_9';
+                            newGradeLabel = 'پایه ۹';
+                            newReadOnly = false;
+                            break;
+                          case 'grade_supervisor_10':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول پایه ۱۰';
+                            newScope = 'grade_10';
+                            newGradeLabel = 'پایه ۱۰';
+                            newReadOnly = false;
+                            break;
+                          case 'research_manager':
+                          case 'research_officer':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول پژوهش';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = false;
+                            break;
+                          case 'finance_manager':
+                          case 'financial_officer':
+                            newLevel = 2;
+                            newRoleTitle = 'مسئول مالی';
+                            newScope = 'all';
+                            newGradeLabel = '';
+                            newReadOnly = false;
+                            break;
+                          case 'class_representative':
+                            newLevel = 3;
+                            newRoleTitle = 'نماینده کلاس';
+                            newScope = 'class';
+                            newReadOnly = false;
+                            break;
+                          case 'student':
+                            newLevel = 3;
+                            newRoleTitle = 'طلبه';
+                            newScope = 'self';
+                            newReadOnly = false;
+                            break;
+                          case 'custom':
+                          default:
+                            newRoleTitle = formData.roleTitle || 'کاربر سیستم';
+                            break;
+                        }
+
+                        setFormData({
+                          ...formData,
+                          role: newRole,
+                          level: newLevel,
+                          roleTitle: newRoleTitle,
+                          scope: newScope,
+                          gradeLabel: newGradeLabel,
+                          isReadOnly: newReadOnly,
+                          canEdit: !newReadOnly
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
+                    >
+                      <optgroup label="سطح ۱ - مدیریت ارشد">
+                        <option value="super_admin">سوپر ادمین (دسترسی کامل)</option>
+                        <option value="school_manager">مدیر مدرسه (مشاهده کل)</option>
+                        <option value="vice_principal">معاون مدرسه (مشاهده کل)</option>
+                      </optgroup>
+                      <optgroup label="سطح ۲ - مسئول آموزش و مسئولین پایه‌ها">
+                        <option value="education_manager">مسئول آموزش</option>
+                        <option value="grade_supervisor_7">مسئول پایه ۷</option>
+                        <option value="grade_supervisor_8">مسئول پایه ۸</option>
+                        <option value="grade_supervisor_9">مسئول پایه ۹</option>
+                        <option value="grade_supervisor_10">مسئول پایه ۱۰</option>
+                        <option value="research_manager">مسئول پژوهش</option>
+                        <option value="finance_manager">مسئول مالی</option>
+                      </optgroup>
+                      <optgroup label="سطح ۳ - طلاب و نمایندگان">
+                        <option value="class_representative">نماینده کلاس</option>
+                        <option value="student">طلبه / دانشجو</option>
+                      </optgroup>
+                      <optgroup label="سایر">
+                        <option value="custom">نقش سفارشی</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
                       عنوان نقش نمایشی
                     </label>
                     <input
@@ -513,7 +657,7 @@ export default function UserManagementSettings() {
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500"
                     >
                       <option value={1}>سطح ۱ (مدیریت کلان / سوپر ادمین / مدیر مدرسه)</option>
-                      <option value={2}>سطح ۲ (مسئول آموزش / مسئولین پایه‌ها / پژوهش / مالی)</option>
+                      <option value={2}>سطح ۲ (مسئول آموزش / مسئولین پایه‌های ۷ تا ۱۰ / پژوهش / مالی)</option>
                       <option value={3}>سطح ۳ (طلاب / نمایندگان کلاس)</option>
                     </select>
                   </div>
