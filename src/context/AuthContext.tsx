@@ -255,7 +255,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-blue-600',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats'
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats'
     ],
   },
   {
@@ -275,7 +275,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-emerald-700',
     allowedTabs: [
-      'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments'
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments'
     ],
   },
 ];
@@ -625,6 +625,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
     if (tabId === 'presence-hours') {
       return true;
+    }
+    // رزرو نهار و شام طلاب: برای تمامی کاربران سطح ۳ (طلاب) و مدیران قابل دسترسی است
+    if (tabId === 'student-meals') {
+      if (currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative') return true;
+      return currentUser.level === 1 || currentUser.level === 2;
     }
     // بخش برنامه‌های مدرسه، مَدرَس‌ها و تقویم آموزشی به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
     if (tabId === 'programs' || tabId === 'classrooms' || tabId === 'academic-calendar') return true;

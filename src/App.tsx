@@ -30,6 +30,7 @@ import StudentActivityAndTuition from './components/finance/StudentActivityAndTu
 import GradeProfessorsCompensation from './components/finance/GradeProfessorsCompensation';
 import TeachersCompensation from './components/finance/TeachersCompensation';
 import LunchManagement from './components/finance/LunchManagement';
+import StudentMealReservationView from './components/finance/StudentMealReservationView';
 import ClaimsManagement from './components/finance/ClaimsManagement';
 import FundAndActiveLoans from './components/finance/FundAndActiveLoans';
 import ExpensesAndReports from './components/finance/ExpensesAndReports';
@@ -129,6 +130,8 @@ function AppContent() {
         return <TeachersCompensation onNavigateTab={handleNavigate} />;
       case 'finance-lunch':
         return <LunchManagement onNavigateTab={handleNavigate} />;
+      case 'student-meals':
+        return <StudentMealReservationView />;
       case 'finance-claims':
         return <ClaimsManagement onNavigateTab={handleNavigate} />;
       case 'finance-loans-fund':

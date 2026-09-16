@@ -914,6 +914,7 @@ export type AppModuleId =
   | 'user-management'
   | 'user-credentials'
   | 'student-portal'
+  | 'student-meals'
   | 'audit-logs'
   | 'education-financial-report'
   | 'counseling-classes';
@@ -1115,6 +1116,15 @@ export interface AppUser {
 // Meal Reservation & Kitchen Management Types (نهار و شام)
 // -------------------------------------------------------------
 
+export interface MealPersonCategory {
+  id: string;
+  title: string; // e.g. "طلبه", "استاد", "کارمند / کادر", "خادم", "مهمان", "سایر"
+  defaultLunchPrice?: number;
+  defaultDinnerPrice?: number;
+  isDefault?: boolean;
+  createdAt?: string;
+}
+
 export interface MealCancelledDay {
   id: string;
   date: string; // تاریخ شمسی e.g. '۱۴۰۳/۰۷/۱۵'
@@ -1129,9 +1139,14 @@ export interface MealReservationPeriod {
   title: string; // e.g. "رزرو نهار و شام مهر ۱۴۰۳"
   startDate: string; // YYYY/MM/DD
   endDate: string; // YYYY/MM/DD
+  deadlineDate?: string; // مهلت ثبت‌نام (مثلاً تا ۱۴۰۳/۰۷/۰۵)
+  enableLunch: boolean; // امکان رزرو نهار
+  enableDinner: boolean; // امکان رزرو شام
   lunchPrice: number; // نرخ مصوب هر وعده نهار به تومان (مثلاً ۴۵,۰۰۰)
   dinnerPrice: number; // نرخ مصوب هر وعده شام به تومان (مثلاً ۳۵,۰۰۰)
+  allowDinnerLocationSelect?: boolean; // امکان انتخاب محل دریافت شام (موسسه/خوابگاه) - پیش‌فرض فعال
   status: 'open' | 'closed' | 'finalized';
+  isManuallyClosed?: boolean; // بسته شدن دستی توسط مسئول مالی
   lunchDisabledDays: string[]; // روزهای مسدود شده نهار در هفته (مثلاً ['جمعه'] یا ['پنج‌شنبه', 'جمعه'])
   dinnerDisabledDays: string[]; // روزهای مسدود شده شام در هفته
   cancelledDates?: MealCancelledDay[]; // روزهای تعطیلی موردی آشپزخانه
@@ -1147,12 +1162,20 @@ export interface StudentMealReservation {
   studentName: string;
   nationalId?: string;
   grade?: string;
+  personRoleTitle?: string; // عنوان فرد: "طلبه"، "استاد"، "کارمند / کادر"، "خادم"، "مهمان"
   isDormitory?: boolean;
   selectedLunchDays: string[]; // روزهای انتخابی هفتگی نهار: ['شنبه', 'یک‌شنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه']
   selectedDinnerDays: string[]; // روزهای انتخابی هفتگی شام
+  dinnerLocation: 'institute' | 'dormitory'; // محل دریافت شام: 'موسسه' | 'خوابگاه'
+  dinnerDayLocations?: Record<string, 'institute' | 'dormitory'>;
+  // روزهای استثنایی خاص (در صورت ویرایش موردی)
+  customLunchDates?: string[];
+  customDinnerDates?: string[];
   // آمار محاسباتی نهایی در این دوره
   totalCalculatedLunches: number; // تعداد کل روزهای نهار با کسر روزهای تعطیلی آشپزخانه
   totalCalculatedDinners: number; // تعداد کل روزهای شام با کسر روزهای تعطیلی آشپزخانه
+  totalDinnersInstitute?: number; // تعداد شام در موسسه
+  totalDinnersDormitory?: number; // تعداد شام در خوابگاه
   totalLunchCost: number; // مجموع هزینه نهار
   totalDinnerCost: number; // مجموع هزینه شام
   totalMealCost: number; // مجموع کل هزینه نهار و شام

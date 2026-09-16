@@ -51,6 +51,7 @@ interface MenuItemDef {
 }
 
 const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
+  { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
   { id: 'todos', label: 'پیگیری‌ها', icon: GraduationCap },
   { id: 'workflow', label: 'جریان کار', icon: GitBranch },
@@ -141,6 +142,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
     // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
     if (item.id === 'workflow' || item.id === 'consultation-advisor' || item.id === 'todos') {
+      return currentUser.level === 1 || currentUser.level === 2;
+    }
+    // رزرو نهار و شام طلاب: برای کاربران سطح ۳ و همچنین مدیران قابل مشاهده است
+    if (item.id === 'student-meals') {
+      if (currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative') return true;
       return currentUser.level === 1 || currentUser.level === 2;
     }
     // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود

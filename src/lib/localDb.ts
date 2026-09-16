@@ -412,9 +412,12 @@ class LocalDatabase {
     });
   }
 
-  // Alias for addDoc / setDoc
-  async setDoc(collectionName: CollectionName, data: any): Promise<string> {
-    return this.addDoc(collectionName, data);
+  // Alias for addDoc / setDoc (supports both setDoc(col, doc) and setDoc(col, id, doc))
+  async setDoc(collectionName: CollectionName, idOrData: any, optionalData?: any): Promise<string> {
+    if (optionalData !== undefined && typeof idOrData === 'string') {
+      return this.addDoc(collectionName, { ...optionalData, id: idOrData });
+    }
+    return this.addDoc(collectionName, idOrData);
   }
 
   // Add a new document (auto assigns ID if missing)
