@@ -142,7 +142,20 @@ export const COLLECTIONS = [
   'workflow_items',
   'workflow_settings',
   'audit_logs',
-  'counseling_session_grades'
+  'counseling_session_grades',
+  'presence_hours_logs',
+  'presence_reports',
+  'tuition_periods',
+  'tuition_records',
+  'tuition_settings',
+  'student_financial_profiles',
+  'personal_todos',
+  'assigned_todos',
+  'user_todo_categories',
+  'finance_expenses',
+  'finance_loans',
+  'finance_staff',
+  'attendance_settings'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;

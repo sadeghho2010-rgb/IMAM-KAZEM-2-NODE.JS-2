@@ -67,6 +67,8 @@ export default function PresenceHours() {
   // PDF Export States
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [isSendConfirmModalOpen, setIsSendConfirmModalOpen] = useState<boolean>(false);
+  const [sendNotes, setSendNotes] = useState<string>('');
 
   // Hidden print & PDF export refs
   const pdfPrintableRef = useRef<HTMLDivElement | null>(null);
@@ -101,17 +103,17 @@ export default function PresenceHours() {
   };
 
   // Send Presence Report to Financial Officer
-  const handleSendReportToFinance = async () => {
+  const handleSendReportToFinance = () => {
     if (filteredLogs.length === 0) {
-      alert("در این بازه زمانی رکوردی جهت ارسال به مسئول مالی وجود ندارد.");
+      showToast("در این بازه زمانی رکوردی جهت ارسال به مسئول مالی وجود ندارد.");
       return;
     }
     if (!currentUser) return;
+    setIsSendConfirmModalOpen(true);
+  };
 
-    const confirmSend = window.confirm(
-      `آیا از ارسال گزارش کارکرد "${cycleTitle}" (${cycleStart} تا ${cycleEnd}) به میزان ${totalHours} ساعت برای مسئول مالی اطمینان دارید؟`
-    );
-    if (!confirmSend) return;
+  const handleConfirmSendReportToFinance = async () => {
+    if (filteredLogs.length === 0 || !currentUser) return;
 
     setSubmittingReport(true);
     try {
@@ -127,6 +129,7 @@ export default function PresenceHours() {
         cycleEnd,
         totalHours,
         logsCount: filteredLogs.length,
+        notes: sendNotes.trim() || undefined,
         status: 'submitted',
         submittedAt: new Date().toISOString()
       };
@@ -139,13 +142,13 @@ export default function PresenceHours() {
         id: workflowId,
         type: 'approval',
         category: 'presence_finance_report' as any,
-        title: `گزارش ساعت حضور و کارکرد: ${currentUser.fullName || currentUser.name}`,
-        description: `گزارش کارکرد ${cycleTitle} (از ${cycleStart} تا ${cycleEnd}) به میزان ${totalHours} ساعت (${filteredLogs.length} ثبت روزانه) توسط ${currentUser.fullName || currentUser.name} (${currentUser.roleTitle || 'استاد'}) جهت اطلاع و تایید دریافت مسئول مالی ارسال گردید.`,
+        title: `گزارش ساعت حضور و کارکرد: ${currentUser.fullName || currentUser.name || currentUser.username}`,
+        description: `گزارش کارکرد ${cycleTitle} (از ${cycleStart} تا ${cycleEnd}) به میزان ${totalHours} ساعت (${filteredLogs.length} ثبت روزانه) توسط ${currentUser.fullName || currentUser.name || currentUser.username} (${currentUser.roleTitle || 'استاد'}) جهت بررسی و تایید دریافت به کارتابل مسئول مالی ارسال گردید.${sendNotes.trim() ? ` توضیحات استاد: ${sendNotes.trim()}` : ''}`,
         status: 'pending',
         grade: 'عمومی',
         requiresEducationApproval: false,
         createdByUserId: currentUser.id,
-        createdByName: currentUser.fullName || currentUser.name,
+        createdByName: currentUser.fullName || currentUser.name || currentUser.username,
         createdAt: new Date().toISOString(),
         details: {
           reportId,
@@ -154,16 +157,38 @@ export default function PresenceHours() {
           cycleStart,
           cycleEnd,
           totalHours,
-          logsCount: filteredLogs.length
+          logsCount: filteredLogs.length,
+          notes: sendNotes.trim() || undefined
         }
       };
-
       await localDb.setDoc('workflow_items', workflowItem);
-      showToast("گزارش کارکرد شما با موفقیت به بخش جریان کار مسئول مالی ارسال شد.");
+
+      // Also create an Assigned Todo for Finance Manager
+      const assignedTodoId = `todo-presence-${Date.now()}`;
+      const assignedTodo: any = {
+        id: assignedTodoId,
+        senderUserId: currentUser.id,
+        senderUserName: currentUser.fullName || currentUser.name || currentUser.username,
+        senderRoleTitle: currentUser.roleTitle || 'استاد پایه',
+        recipientUserId: 'user_mali',
+        recipientUserName: 'مسئول مالی و اداری',
+        recipientRoleTitle: 'مسئول مالی و کارکرد',
+        title: `بررسی گزارش کارکرد ${currentUser.fullName || currentUser.name || currentUser.username} (${cycleTitle})`,
+        description: `میزان کارکرد: ${totalHours} ساعت در ${filteredLogs.length} جلسه (${cycleStart} تا ${cycleEnd}). لطفا کارکرد را بررسی و دریافت آن را تایید نمایید.${sendNotes.trim() ? ` یادداشت: ${sendNotes.trim()}` : ''}`,
+        priority: 'high',
+        dueDate: cycleEnd,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+      await localDb.setDoc('assigned_todos', assignedTodo);
+
+      setIsSendConfirmModalOpen(false);
+      setSendNotes('');
+      showToast("گزارش کارکرد با موفقیت به کارتابل جریان کار و پیگیری‌های مسئول مالی ارسال شد.");
       loadData();
     } catch (err) {
       console.error("Error sending report to finance:", err);
-      alert("خطا در ارسال گزارش به مسئول مالی.");
+      showToast("خطا در ارسال گزارش به مسئول مالی.");
     } finally {
       setSubmittingReport(false);
     }
@@ -1101,6 +1126,100 @@ export default function PresenceHours() {
                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl transition-colors cursor-pointer"
               >
                 بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CONFIRM SEND TO FINANCE MODAL --- */}
+      {isSendConfirmModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <Send size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">ارسال گزارش کارکرد به مسئول مالی</h3>
+                  <p className="text-[11px] text-slate-500">ارسال مستقیم به کارتابل جریان کار و پیگیری‌های مسئول مالی</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSendConfirmModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Summary Details Card */}
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">عنوان دوره:</span>
+                <span className="font-bold text-slate-900">{cycleTitle}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">بازه زمانی:</span>
+                <span className="font-bold text-slate-800">{cycleStart} تا {cycleEnd}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">میزان ساعات حضور:</span>
+                <span className="font-black text-indigo-700 text-sm">{totalHours} ساعت</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">تعداد روزهای ثبت شده:</span>
+                <span className="font-bold text-slate-800">{filteredLogs.length} رکورد روزانه</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-500">دریافت‌کننده:</span>
+                <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  مسئول مالی و اداری (@MALI)
+                </span>
+              </div>
+            </div>
+
+            {/* Optional Notes */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                توضیحات و پیام اختیاری برای مسئول مالی:
+              </label>
+              <textarea
+                rows={2}
+                value={sendNotes}
+                onChange={(e) => setSendNotes(e.target.value)}
+                placeholder="در صورت وجود نکته خاص درباره ساعت حضور این ماه، در اینجا بنویسید..."
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsSendConfirmModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSendReportToFinance}
+                disabled={submittingReport}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer"
+              >
+                {submittingReport ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>در حال ارسال...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    <span>تایید و ارسال نهایی به مسئول مالی</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

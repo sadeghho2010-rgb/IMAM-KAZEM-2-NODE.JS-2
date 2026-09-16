@@ -23,7 +23,14 @@ import {
   GitBranch,
   Sparkles,
   Activity,
-  BookCheck
+  BookCheck,
+  Wallet,
+  Coins,
+  UtensilsCrossed,
+  Building2,
+  Receipt,
+  FileSpreadsheet,
+  HandCoins
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -49,6 +56,14 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'workflow', label: 'جریان کار', icon: GitBranch },
   { id: 'academic-calendar', label: 'تقویم آموزشی', icon: CalendarDays },
   { id: 'presence-hours', label: 'ساعت حضور و کارکرد', icon: Clock },
+  { id: 'finance-tuition', label: 'محاسبه شهریه طلاب', icon: Coins },
+  { id: 'finance-grade-mentors', label: 'محاسبه حق‌الزحمه اساتید پایه', icon: BookOpen },
+  { id: 'finance-teachers', label: 'محاسبه حق‌الزحمه اساتید', icon: Clock },
+  { id: 'finance-lunch', label: 'اطلاعات نهار و شام', icon: UtensilsCrossed },
+  { id: 'finance-claims', label: 'مطالبات و بدهی‌های طلاب', icon: HandCoins },
+  { id: 'finance-loans-fund', label: 'گزارشات صندوق و وام‌های فعال', icon: Building2 },
+  { id: 'finance-expenses-reports', label: 'سایر هزینه‌ها و تراز مالی', icon: Receipt },
+  { id: 'finance', label: 'بخش جامع امور مالی', icon: Wallet },
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
   { id: 'active-students', label: 'طلاب فعال', icon: UserCheck },
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
@@ -69,6 +84,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
+  { id: 'education-financial-report', label: 'تنظیم گزارش مالی', icon: FileSpreadsheet },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
@@ -78,6 +94,27 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   // Filter items based on user's authorized modules
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
     if (!currentUser) return false;
+
+    // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
+    const isFinanceUser = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI';
+    if (isFinanceUser) {
+      const allowedFinanceTabs = [
+        'finance-tuition',
+        'finance-grade-mentors',
+        'finance-teachers',
+        'finance-lunch',
+        'finance-claims',
+        'finance-loans-fund',
+        'finance-expenses-reports',
+        'workflow',
+        'todos',
+        'academic-calendar',
+        'students',
+        'teachers-bank',
+        'finance'
+      ];
+      return allowedFinanceTabs.includes(item.id);
+    }
 
     // فعالیت‌های سایت و پشتیبان‌گیری: تنها برای سوپر ادمین / کاربران سطح ۱ و مسئول آموزش
     if (item.id === 'audit-logs' || item.id === 'backup') {
@@ -90,14 +127,24 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       );
     }
 
+    // تنظیم گزارش مالی: ویژه مسئول آموزش، سوپرادمین و مدیران سطح ۱ و ۲
+    if (item.id === 'education-financial-report') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH' ||
+        currentUser.level === 2
+      );
+    }
+
     // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
     if (item.id === 'workflow' || item.id === 'consultation-advisor' || item.id === 'todos') {
       return currentUser.level === 1 || currentUser.level === 2;
     }
-    // ساعت حضور و کارکرد: برای مسئول مالی لازم نیست وجود داشته باشد، برای اساتید پایه و سایرین نمایش داده می‌شود
+    // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
     if (item.id === 'presence-hours') {
-      const isFinance = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || (currentUser.roleTitle && currentUser.roleTitle.includes('مالی'));
-      if (isFinance) return false;
       return true;
     }
     // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند در منوی خودشون این بخش رو ببینند؛ کاربران سطح 2 همه می توانند ببینند

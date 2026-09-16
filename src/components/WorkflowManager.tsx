@@ -401,7 +401,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
 
       return true;
     });
-  }, [allDisplayItems, tabFilter, categoryFilter, gradeFilter, searchQuery, isSuperAdmin, isEducationManager, isGradeSupervisor, isManagerOrPrincipal, userGrade]);
+  }, [allDisplayItems, tabFilter, categoryFilter, gradeFilter, searchQuery, isSuperAdmin, isEducationManager, isFinanceManager, isResearchManager, isGradeSupervisor, isManagerOrPrincipal, userGrade]);
 
   // Counts for Badges & Segmentations
   const pendingCount = useMemo(() => {
@@ -1125,9 +1125,11 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
             const isItemPending = item.status === 'pending';
             const isAccountPrompt = item.category === 'student_account_creation';
             const isDiscussionChange = item.category === 'discussion_group_change';
+            const isPresenceReport = item.category === 'presence_finance_report';
             const canUserActOnThis = isItemPending && (
               isSuperAdmin || 
               isEducationManager || 
+              (isFinanceManager && isPresenceReport) ||
               (isGradeSupervisor && (!item.grade || item.grade === 'همه پایه‌ها' || item.grade === userGrade))
             );
 
@@ -1331,10 +1333,10 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                             <button
                               onClick={() => handleApprove(item)}
                               className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-                              title={isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید نهایی اخطار"}
+                              title={isPresenceReport ? "تایید دریافت و ثبت در کارکرد مالی" : isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید اخطار"}
                             >
                               <Check size={14} />
-                              <span>{isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید اخطار"}</span>
+                              <span>{isPresenceReport ? "تایید دریافت و ثبت در کارکرد" : isDiscussionChange ? "تایید و اعمال گروه مباحثه" : "تایید اخطار"}</span>
                             </button>
 
                             <button
@@ -1343,10 +1345,10 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                                 setRejectionReasonInput('');
                               }}
                               className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition-all cursor-pointer"
-                              title={isDiscussionChange ? "عدم تایید / رد درخواست" : "عدم تایید / رد اخطار"}
+                              title={isPresenceReport ? "درخواست اصلاح یا رد گزارش کارکرد" : isDiscussionChange ? "عدم تایید / رد درخواست" : "عدم تایید / رد اخطار"}
                             >
                               <X size={14} />
-                              <span>{isDiscussionChange ? "رد درخواست" : "رد اخطار"}</span>
+                              <span>{isPresenceReport ? "درخواست اصلاح" : isDiscussionChange ? "رد درخواست" : "رد اخطار"}</span>
                             </button>
                           </>
                         )}

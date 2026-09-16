@@ -16,7 +16,306 @@ export interface CustomStudentSchedule {
 
 export type ProgramType = 'اصلی' | 'مشاوره' | 'پژوهش' | 'دروس 5 شنبه' | 'سایر';
 export type ImportanceLevel = 'low' | 'medium' | 'high';
-export type AttendanceStatus = 'present' | 'absent' | 'late';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused' | 'unspecified';
+
+export interface AttendanceJustification {
+  isExcused: boolean;
+  reason?: string;
+  justifiedBy?: string;
+  justifiedAt?: string;
+}
+
+export interface StudentAttendanceDetail {
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  status: AttendanceStatus;
+  note?: string;
+  lateMinutes?: number;
+  isExcused?: boolean;
+  excuseReason?: string;
+  hasEducationalWarning?: boolean;
+  warningRegisteredBy?: string;
+  warningRegisteredAt?: string;
+}
+
+export interface AttendanceSessionLog {
+  id: string; // `${programId}_${date}`
+  programId: string;
+  programTitle: string;
+  grade?: string;
+  date: string; // Shamsi YYYY/MM/DD
+  dayOfWeek: string;
+  isCancelled: boolean;
+  cancellationReason?: string;
+  notes?: string;
+  recordedByUserId?: string;
+  recordedByName?: string;
+  recordedAt: string;
+  students: StudentAttendanceDetail[];
+}
+
+export interface AttendanceSettings {
+  id: string;
+  representativeEditWindowDays: number; // default: 7
+  unspecifiedCountAs: 'unspecified' | 'absent' | 'present' | 'late'; // in reporting
+  unexcusedWarningThreshold?: number; // حد نصاب اخطار آموزشی غیبت (پیش‌فرض: ۳ جلسه)
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface TuitionCalculationSettings {
+  id: string;
+  // شهریه پایه
+  isBaseTuitionEqualForMarried?: boolean; // آیا شهریه پایه متاهلین و مجردین یکسان است؟
+  singleBaseTuition?: number; // شهریه پایه مجردین (تومان)
+  baseSingleTuition?: number; // سازگار با نگارش فارسی
+  marriedBaseTuition?: number; // شهریه پایه متاهلین (تومان)
+  baseMarriedTuition?: number; // سازگار با نگارش فارسی
+  
+  // تاهل و اولاد و معمم بودن
+  marriageBonusType?: 'percentage' | 'fixed'; // نوع افزایش تاهل: درصدی یا تومانی
+  marriageBonusAmount?: number; // مبلغ تومانی اضافه برای تاهل
+  marriageBonusPercent?: number; // درصد اضافه برای تاهل
+
+  // پرسش اختیاری بودن حق اولاد، پاداش تلبس و کمک هزینه مسکن
+  hasChildAllowance?: boolean; // آیا حق اولاد داریم یا نه؟
+  childAllowance?: number; // مبلغ به ازای هر فرزند (تومان)
+  childAllowancePerChild?: number;
+
+  hasTurbanAllowance?: boolean; // آیا پاداش تلبس داریم یا نه؟
+  turbanAllowance?: number; // پاداش معمم بودن (تومان)
+  clericalHabitBonus?: number;
+
+  hasHousingAllowance?: boolean; // آیا کمک هزینه مسکن اجاره‌ای داریم یا نه؟
+  housingAllowanceRented?: number; // کمک هزینه مسکن اجاره‌ای (تومان)
+  housingAllowanceDorm?: number; // کمک هزینه خوابگاه (تومان)
+  housingSubsidy?: number;
+
+  // مطالعه
+  studyBonusEnabled?: boolean; // آیا مطالعه بالای موظفی موجب افزایش شهریه شود؟
+  studyBonusThresholdMinutes?: number; // چند دقیقه بالای موظفی موجب افزایش شهریه شود؟
+  studyBonusCalculationType?: 'per_hour' | 'fixed'; // نوع افزایش: متناسب با هر ساعت اضافه یا عدد ثابت
+  studyBonusPerHour?: number; // پاداش به ازای هر ساعت مطالعه مازاد بر موظفی
+  studyBonusRatePerHour?: number;
+  studyBonusFixedAmount?: number; // مبلغ پاداش ثابت ساعت مطالعه
+
+  studyPenaltyEnabled?: boolean; // آیا زیر میانگین و زیر موظفی بودن موجب کسر شهریه شود؟
+  studyPenaltyThreshold?: 'below_mandatory' | 'below_average' | 'both';
+  studyPenaltyCalculationType?: 'per_hour' | 'fixed'; // نوع کاهش: متناسب با هر ساعت کسری یا عدد ثابت
+  studyPenaltyPerHour?: number; // جریمه کسری ساعت مطالعه به ازای هر ساعت
+  studyPenaltyRatePerHour?: number;
+  studyPenaltyFixedAmount?: number; // مبلغ جریمه ثابت کسری مطالعه
+
+  // حضور و غیاب
+  absenceDeductionEnabled?: boolean; // آیا بخش غیبت‌ها تاثیری در شهریه دارد یا نه؟
+  absenceDeductionMode?: 'unexcused_only' | 'both_different'; // فقط غیرموجه یا هر دو با نرخ متفاوت
+  absencePenaltyUnexcusedType?: 'fixed' | 'percentage'; // کسر تومانی یا درصدی
+  absencePenaltyPerSession?: number; // جریمه هر جلسه غیبت غیرموجه (تومان)
+  absencePenaltyUnexcusedAmount?: number;
+  absencePenaltyUnexcusedPercent?: number;
+  absencePenaltyExcusedAmount?: number; // کسر به ازای غیبت موجه (تومان)
+
+  // ارزیابی مشاوره‌ها
+  counselingGradeABonus?: number; // پاداش هر نمره الف کلاس مشاوره (تومان) - مثلاً ۳۰,۰۰۰
+  counselingGradeBBonus?: number; // پاداش هر نمره ب کلاس مشاوره (تومان)
+  counselingGradeCBonus?: number; // پاداش هر نمره ج کلاس مشاوره (تومان)
+  counselingBonusPerWorkshop?: number;
+
+  // نهار و شام
+  lunchCostPerDay?: number; // کسر هزینه هر روز استفاده از نهار (تومان)
+  dailyLunchCost?: number;
+  dinnerCostPerDay?: number; // کسر هزینه هر روز استفاده از شام (تومان)
+  dailyDinnerCost?: number;
+
+  // وام و صندوق قرض‌الحسنه
+  deductActiveLoans?: boolean; // آیا وام‌های فعالی که قرار است از شهریه کسر شود اعمال شود یا نه؟
+  defaultLoanInstallment?: number;
+  deductFundContribution?: boolean; // آیا کمک مالی به صندوق اعمال شود یا خیر؟
+  defaultFundContribution?: number;
+
+  // مطالبات و بدهی‌ها (کسورات نوع دوم)
+  deductClaims?: boolean; // آیا مطالبات و بدهی‌های طلاب به صورت خودکار از شهریه کسر شود؟
+
+  // ۶. اعمال تشویقی عمومی ماهانه برای همه طلاب (مبلغ ثابت یا درصدی)
+  enableGeneralIncentive?: boolean; // فعال‌سازی تشویقی ماهانه برای همه طلاب
+  generalIncentiveType?: 'fixed' | 'percentage'; // مبلغ ثابت یا درصد از شهریه پایه
+  generalIncentiveAmount?: number; // مبلغ تشویقی به تومان
+  generalIncentivePercent?: number; // درصد تشویقی
+  generalIncentiveTitle?: string; // عنوان تشویقی (مثلاً تشویقی مناسبتی یا پاداش پایان ترم)
+
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export interface StudentFinancialProfile {
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  grade?: string;
+  maritalStatus?: 'مجرد' | 'متاهل';
+  isMarried?: boolean;
+  childrenCount?: number;
+  livingStatus?: 'پدری' | 'خوابگاه' | 'اجاره ای' | 'شخصی' | 'سایر';
+  hasHousingSubsidy?: boolean;
+  isTammam?: boolean; // معمم
+  isRobed?: boolean;
+  currentBalance?: number; // تراز مالی فعلی (تومان)
+  lunchDaysCount?: number; // تعداد روزهای استفاده از نهار
+  monthlyLunchDays?: number;
+  activeLoanTotal?: number; // کل مبلغ وام فعال
+  monthlyLoanInstallment?: number; // قسط ماهانه کسر از شهریه
+  activeLoanInstallment?: number;
+  fundContributionMonthly?: number; // مبلغ ماهانه کمک به صندوق
+  fundContribution?: number; // سازگار با نگارش سریع
+  studyHoursLogged?: number;
+  counselingWorkshopsAttended?: number; // تعداد کارگاه‌ها / جلسات مشاوره
+  unexcusedAbsences?: number;
+  counselingScoreA?: number;
+  counselingScoreB?: number;
+  isBlockedFromTuition?: boolean;
+  bankAccount?: string;
+  bankSheba?: string;
+  manualAdjustmentAmount?: number; // مبلغ تعدیل دستی (افزایش مثبت، کاهش منفی)
+  manualAdjustmentReason?: string; // علت ثبت تعدیل دستی
+  notes?: string;
+  updatedAt?: string;
+}
+
+export interface TuitionCalculationBreakdown {
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  instituteCode?: string;
+  phoneNumber?: string;
+  grade?: string;
+  periodTitle?: string;
+  maritalStatus?: 'مجرد' | 'متاهل';
+  childrenCount?: number;
+  livingStatus?: string;
+  isTammam?: boolean;
+  bankAccount?: string;
+  bankSheba?: string;
+  tuitionCode?: string;
+  baseTuition?: number;
+  baseAmount?: number;
+  maritalBonus?: number;
+  childAllowanceTotal?: number;
+  childAllowance?: number;
+  turbanAllowance?: number;
+  robedBonus?: number;
+  housingAllowance?: number;
+  studyMinutesTotal?: number;
+  studyRequiredMinutes?: number;
+  studyDiffMinutes?: number;
+  isAboveStudyRequired?: boolean;
+  isAboveStudyAverage?: boolean;
+  studyWarningIssued?: boolean;
+  studyBonusAmount?: number;
+  studyBonus?: number;
+  studyPenaltyAmount?: number;
+  totalPresentSessions?: number;
+  totalAbsentSessions?: number;
+  totalExcusedAbsences?: number;
+  unexcusedAbsenceCount?: number;
+  excusedAbsenceCount?: number;
+  totalLateSessions?: number;
+  totalUnspecifiedSessions?: number;
+  totalEducationalWarnings?: number;
+  absencePenaltyAmount?: number;
+  absenceDeduction?: number;
+  counselingGradeACount?: number;
+  counselingGradeBCount?: number;
+  counselingGradeCCount?: number;
+  counselingBonusAmount?: number;
+  lunchDaysCount?: number;
+  lunchDeductionAmount?: number;
+  lunchDeduction?: number;
+  dinnerDaysCount?: number;
+  dinnerDeductionAmount?: number;
+  dinnerDeduction?: number;
+  totalMealDeduction?: number;
+  loanInstallmentDeduction?: number;
+  loanDeduction?: number;
+  fundContributionDeduction?: number;
+  fundDeduction?: number;
+  // مطالبات کسر شده (کسورات نوع دوم)
+  claimsDeductions?: Array<{
+    claimId: string;
+    title: string;
+    amount: number;
+    destinationAccountId: string;
+    destinationTitle: string;
+    bankInfo?: string;
+  }>;
+  claimsTotalDeduction?: number;
+  generalIncentiveAmount?: number; // پاداش تشویقی عمومی ماهانه
+  generalIncentiveTitle?: string;
+  lunchMealsFromModule?: boolean; // آیا آمار نهار مستقیماً از ماژول نهار استخراج شده
+  lunchSubsidyDiscount?: number;
+  // تعدیل دستی امور مالی
+  manualAdjustmentAmount?: number; // مبلغ افزایش (+) یا کاهش (-) دستی
+  manualAdjustmentReason?: string; // علت افزایش یا کاهش دستی
+  // تعدیل ارسالی مسئول آموزش
+  educationAdjustmentAmount?: number; // مبلغ تعدیل ارسالی از طرف مسئول آموزش
+  educationAdjustmentReason?: string; // علت تعدیل ارسالی آموزش
+  educationAdjustmentApplied?: boolean; // آیا تعدیل آموزش تایید و اعمال شده است
+  totalAdditions?: number;
+  totalEarnings?: number;
+  totalDeductions?: number;
+  // تفکیک ساختاری کسورات نوع اول و نوع دوم (مطابق فاکتور بالادستی)
+  type1DeductionsTotal?: number; // کسورات نوع ۱ (غیبت، مطالعه و...) که از شهریه کسر و تمام می‌شود
+  grossEarnedTuition?: number; // شهریه ناخالص / استحقاقی ارسالی به بالادستی (پایه + افزایش‌ها - کسورات نوع ۱)
+  type2DeductionsTotal?: number; // کسورات نوع ۲ (نهار، وام، صندوق، عتبات، مطالبات) که به حساب‌های مقصد واریز می‌شوند
+  kitchenTransferAmount?: number; // سهم واریز به حساب آشپزخانه (نهار و شام)
+  culturalTransferAmount?: number; // سهم واریز به امور فرهنگی (عتبات، اردوها و...)
+  qardFundTransferAmount?: number; // سهم واریز به صندوق قرض‌الحسنه (وام و پس‌انداز ماهانه)
+  otherTransferAmount?: number; // سهم واریز به سایر حساب‌های مقصد
+  netPayableTuition?: number; // مبلغ خالص قابل پرداخت به طلبه (grossEarnedTuition - type2DeductionsTotal)
+  netPayable?: number;
+}
+
+// آیتم‌های گزارش مالی ارسالی مسئول آموزش برای هر طلبه
+export interface EducationFinancialItem {
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  grade?: string;
+  type: 'increase' | 'decrease' | 'none'; // افزایش، کاهش یا بدون تغییر
+  amount: number; // مبلغ به تومان (مثبت)
+  reason: string; // علت افزایش یا کاهش
+}
+
+// گزارش مالی ارسالی آموزش به امور مالی
+export interface EducationFinancialReport {
+  id: string;
+  title: string; // عنوان گزارش (مثلاً گزارش تشویقی و کسورات آموزشی مهرماه ۱۴۰۳)
+  month: string; // ماه مربوطه (مثلاً مهر ۱۴۰۳)
+  senderUserId?: string;
+  senderUserName: string;
+  senderRoleTitle: string;
+  status: 'sent' | 'reviewed' | 'applied' | 'rejected'; // ارسال شده / بررسی شده / اعمال شده / رد شده
+  items: EducationFinancialItem[];
+  notes?: string;
+  createdAt: string;
+  appliedAt?: string;
+  appliedByName?: string;
+}
+
+export interface TuitionPeriod {
+  id: string;
+  title: string; // e.g. "شهریه مهر ماه ۱۴۰۳"
+  startDate: string; // Shamsi YYYY/MM/DD
+  endDate: string; // Shamsi YYYY/MM/DD
+  status: 'draft' | 'finalized' | 'paid';
+  totalStudentsCalculated: number;
+  totalPayoutAmount: number;
+  calculations: TuitionCalculationBreakdown[];
+  createdAt: string;
+  createdByName?: string;
+  finalizedAt?: string;
+  finalizedByName?: string;
+}
 
 export type StudentDeactivationReason = 
   | 'صرفا غیر فعال' 
@@ -71,6 +370,7 @@ export interface Student {
   bankName2?: string; // نام بانک ۲
   bankAccount2?: string; // شماره حساب بانک ۲
   bankSheba2?: string; // شماره شبا حساب شماره ۲
+  activeDepositAccount?: 'account1' | 'account2' | 'both'; // حساب فعال جهت واریز شهریه (پیش‌فرض حساب اول)
 
   // سوابق پایه‌ها
   pastGrades?: string[]; // e.g. ['پایه 7', 'پایه 8']
@@ -272,11 +572,13 @@ export interface AssignedTodo {
 
 export interface PresenceHoursLog {
   id: string;
-  mentorId: string;
-  date: string;
-  durationHours: number;
-  category?: string;
+  mentorId?: string;
+  date: string; // Shamsi date string, e.g. "1405/06/15"
+  startTime?: string; // e.g. "08:00"
+  endTime?: string; // e.g. "16:30"
+  durationHours: number; // e.g. 8.5
   description?: string;
+  category?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -297,6 +599,10 @@ export interface PresenceReport {
   receivedAt?: string;
   receivedByUserId?: string;
   receivedByUserName?: string;
+  teacherName?: string;
+  grade?: string;
+  dateRange?: string;
+  notes?: string;
 }
 
 export interface StudyPeriod {
@@ -581,6 +887,14 @@ export type AppModuleId =
   | 'workflow'
   | 'academic-calendar'
   | 'presence-hours'
+  | 'finance'
+  | 'finance-tuition'
+  | 'finance-grade-mentors'
+  | 'finance-teachers'
+  | 'finance-lunch'
+  | 'finance-claims'
+  | 'finance-loans-fund'
+  | 'finance-expenses-reports'
   | 'students'
   | 'active-students'
   | 'programs'
@@ -601,6 +915,7 @@ export type AppModuleId =
   | 'user-credentials'
   | 'student-portal'
   | 'audit-logs'
+  | 'education-financial-report'
   | 'counseling-classes';
 
 export type CounselingScore = 'الف' | 'ب' | 'ج';
@@ -792,6 +1107,105 @@ export interface AppUser {
   avatarBg?: string;
   allowedModules?: AppModuleId[]; // If specified, overrides default role menu
   modulePermissions?: Partial<Record<AppModuleId, 'none' | 'view' | 'edit'>>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// -------------------------------------------------------------
+// Meal Reservation & Kitchen Management Types (نهار و شام)
+// -------------------------------------------------------------
+
+export interface MealCancelledDay {
+  id: string;
+  date: string; // تاریخ شمسی e.g. '۱۴۰۳/۰۷/۱۵'
+  mealType: 'lunch' | 'dinner' | 'both'; // نهار، شام یا هر دو تعطیل
+  reason?: string; // علت لغو (مثلاً تعطیلی آشپزخانه، اردوی عمومی، تعطیلی رسمی)
+  registeredAt: string;
+  registeredByName?: string;
+}
+
+export interface MealReservationPeriod {
+  id: string;
+  title: string; // e.g. "رزرو نهار و شام مهر ۱۴۰۳"
+  startDate: string; // YYYY/MM/DD
+  endDate: string; // YYYY/MM/DD
+  lunchPrice: number; // نرخ مصوب هر وعده نهار به تومان (مثلاً ۴۵,۰۰۰)
+  dinnerPrice: number; // نرخ مصوب هر وعده شام به تومان (مثلاً ۳۵,۰۰۰)
+  status: 'open' | 'closed' | 'finalized';
+  lunchDisabledDays: string[]; // روزهای مسدود شده نهار در هفته (مثلاً ['جمعه'] یا ['پنج‌شنبه', 'جمعه'])
+  dinnerDisabledDays: string[]; // روزهای مسدود شده شام در هفته
+  cancelledDates?: MealCancelledDay[]; // روزهای تعطیلی موردی آشپزخانه
+  createdAt: string;
+  createdByName?: string;
+  updatedAt?: string;
+}
+
+export interface StudentMealReservation {
+  id: string;
+  periodId: string;
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  grade?: string;
+  isDormitory?: boolean;
+  selectedLunchDays: string[]; // روزهای انتخابی هفتگی نهار: ['شنبه', 'یک‌شنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه']
+  selectedDinnerDays: string[]; // روزهای انتخابی هفتگی شام
+  // آمار محاسباتی نهایی در این دوره
+  totalCalculatedLunches: number; // تعداد کل روزهای نهار با کسر روزهای تعطیلی آشپزخانه
+  totalCalculatedDinners: number; // تعداد کل روزهای شام با کسر روزهای تعطیلی آشپزخانه
+  totalLunchCost: number; // مجموع هزینه نهار
+  totalDinnerCost: number; // مجموع هزینه شام
+  totalMealCost: number; // مجموع کل هزینه نهار و شام
+  subsidyDiscount?: number; // تخفیف یا سهم حمایتی
+  finalDeductionAmount: number; // مبلغ نهایی کسر از شهریه
+  notes?: string;
+  updatedAt: string;
+}
+
+// -------------------------------------------------------------
+// Claims & Destination Deposit Accounts Types (مطالبات و حساب‌های واریز)
+// -------------------------------------------------------------
+
+export interface FinanceDestinationAccount {
+  id: string;
+  title: string; // e.g. "حساب آشپزخانه و پذیرایی", "حساب مسئول فرهنگی (عتبات و اردو)", "حساب صندوق قرض‌الحسنه", "حساب کتابخانه"
+  bankName: string; // e.g. "بانک ملی", "بانک ملت", "بانک رسالت"
+  accountNumber: string; // شماره حساب
+  shebaNumber: string; // شماره شبا (بدون IR یا همراه با IR)
+  accountHolder: string; // نام صاحب حساب / متصدی
+  category?: 'kitchen' | 'cultural' | 'qard_fund' | 'other';
+  isDefault?: boolean;
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FinanceClaimCategory {
+  id: string;
+  title: string; // e.g. "وام اردو عتبات", "بدهی کتب درسی", "هزینه بیمه تکمیلی", "خسارت تجهیزات", "اردوی مشهد"
+  defaultDestinationAccountId: string; // شناسه حساب پیش‌فرض جهت واریز
+  description?: string;
+  createdAt: string;
+}
+
+export interface StudentClaimRecord {
+  id: string;
+  claimCategoryId: string;
+  claimTitle: string;
+  destinationAccountId: string; // شناسه حسابی که مبلغ کسر شده باید به آن واریز شود
+  destinationAccountTitle?: string;
+  destinationBankInfo?: string;
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  grade?: string;
+  totalDebtAmount: number; // مبلغ کل بدهی (تومان)
+  monthlyDeductionAmount: number; // مبلغی که ماهانه از شهریه طلبه کسر می‌شود (تومان)
+  paidAmount: number; // کل مبالغ کسر / پرداخت شده تاکنون
+  remainingAmount: number; // مانده بدهی
+  status: 'active' | 'completed' | 'paused'; // فعال / تسویه کامل / متوقف شده
+  startDate?: string; // تاریخ شروع کسر
+  notes?: string;
   createdAt: string;
   updatedAt?: string;
 }

@@ -125,12 +125,31 @@ export default function TodoList() {
     return () => unsub();
   }, [currentUser?.id]);
 
+  const isFinanceOfficer = 
+    currentUser?.role === 'finance_manager' || 
+    currentUser?.role === 'financial_officer' || 
+    currentUser?.username?.toUpperCase() === 'MALI';
+
+  const defaultUserCategories = useMemo(() => {
+    if (isFinanceOfficer) {
+      return [
+        'کارکرد و حضور اساتید',
+        'محاسبه و پرداخت شهریه طلاب',
+        'کسورات نهار و غیبت‌ها',
+        'وام و صندوق قرض‌الحسنه',
+        'هزینه‌های جاری و تنخواه مدرسه',
+        'اسناد و گزارشات مالی'
+      ];
+    }
+    return DEFAULT_CATEGORIES;
+  }, [isFinanceOfficer]);
+
   // Available categories array (defaults + user created)
   const allCategoryNames = useMemo(() => {
     const customNames = categories.map(c => c.name);
-    const set = new Set([...DEFAULT_CATEGORIES, ...customNames]);
+    const set = new Set([...defaultUserCategories, ...customNames]);
     return Array.from(set);
-  }, [categories]);
+  }, [categories, defaultUserCategories]);
 
   // Responsibles list (Level 1 and Level 2 users) for assignment dropdown
   const managerUsers = useMemo(() => {
@@ -472,13 +491,20 @@ export default function TodoList() {
 
   const receivedAssignedTodos = useMemo(() => {
     return assignedTodos
-      .filter(t => t.recipientUserId === currentUser.id && !t.archivedByRecipient)
+      .filter(t => {
+        if (t.archivedByRecipient) return false;
+        if (t.recipientUserId === currentUser.id) return true;
+        if (isFinanceOfficer && (t.recipientUserId === 'user_mali' || t.recipientRoleTitle?.includes('مالی') || t.recipientUserName?.includes('مالی'))) {
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => {
         // Pending first, completed bottom
         if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
-  }, [assignedTodos, currentUser.id]);
+  }, [assignedTodos, currentUser.id, isFinanceOfficer]);
 
   const sentAssignedTodos = useMemo(() => {
     return assignedTodos
@@ -501,9 +527,13 @@ export default function TodoList() {
                 <Sparkles className="w-6 h-6 text-indigo-300" />
               </div>
               <div>
-                <h1 className="text-xl md:text-2xl font-black text-white">پیگیری‌های من و ارجاعات بین مسئولین</h1>
+                <h1 className="text-xl md:text-2xl font-black text-white">
+                  {isFinanceOfficer ? 'پیگیری‌ها و ارجاعات مالی و اداری' : 'پیگیری‌های من و ارجاعات بین مسئولین'}
+                </h1>
                 <p className="text-xs text-indigo-200 mt-0.5">
-                  مدیریت کارهای شخصی، دسته‌بندی ستونی و ارجاع پیگیری به سایر مسئولین مدرسه (مستقل برای هر کاربر)
+                  {isFinanceOfficer 
+                    ? 'مدیریت پیگیری‌های دریافت کارکرد اساتید، محاسبه شهریه طلاب، تسویه نهار، وام و امور مالی مدرسه'
+                    : 'مدیریت کارهای شخصی، دسته‌بندی ستونی و ارجاع پیگیری به سایر مسئولین مدرسه (مستقل برای هر کاربر)'}
                 </p>
               </div>
             </div>

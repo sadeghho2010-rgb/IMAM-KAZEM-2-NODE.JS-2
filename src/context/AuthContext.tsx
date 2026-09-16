@@ -6,6 +6,7 @@ export const ALL_SYSTEM_TABS = [
   { id: 'workflow', label: 'جریان کار (سطح ۱ و ۲)' },
   { id: 'academic-calendar', label: 'تقویم آموزشی' },
   { id: 'presence-hours', label: 'ثبت ساعت حضور' },
+  { id: 'finance', label: 'بخش مالی (شهریه، کارکرد و هزینه‌ها)' },
   { id: 'students', label: 'مدیریت کل کاربران (مشترک)' },
   { id: 'active-students', label: 'لیست کاربران فعال' },
   { id: 'discussion', label: 'گروه‌های بحثی' },
@@ -44,7 +45,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-indigo-700',
     allowedTabs: [
-      'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
+      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
       'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
     ],
@@ -66,7 +67,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: true,
     avatarBg: 'bg-slate-700',
     allowedTabs: [
-      'todos', 'academic-calendar', 'presence-hours', 'students', 'active-students',
+      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
       'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
@@ -220,7 +221,19 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-cyan-700',
     allowedTabs: [
-      'presence-hours', 'teachers-bank', 'students', 'workflow', 'programs', 'user-credentials'
+      'finance-tuition',
+      'finance-grade-mentors',
+      'finance-teachers',
+      'finance-lunch',
+      'finance-loans-fund',
+      'finance-expenses-reports',
+      'workflow',
+      'todos',
+      'academic-calendar',
+      'students',
+      'teachers-bank',
+      'finance',
+      'user-credentials'
     ],
   },
 
@@ -583,14 +596,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
+
+    // مسئول مالی منحصراً به این تب‌ها دسترسی دارد: بخش‌های منفک مالی + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
+    const isFinanceUser = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI';
+    if (isFinanceUser) {
+      const allowedForFinance = [
+        'finance-tuition',
+        'finance-grade-mentors',
+        'finance-teachers',
+        'finance-lunch',
+        'finance-loans-fund',
+        'finance-expenses-reports',
+        'workflow',
+        'todos',
+        'academic-calendar',
+        'students',
+        'teachers-bank',
+        'finance',
+        'user-credentials'
+      ];
+      return allowedForFinance.includes(tabId);
+    }
+
     // بخش جریان کار و پیگیری‌ها منحصراً برای کاربران سطح ۱ و سطح ۲ در دسترس است
     if (tabId === 'workflow' || tabId === 'todos') {
       return currentUser.level === 1 || currentUser.level === 2;
     }
-    // ساعت حضور و کارکرد: برای مسئول مالی لازم نیست وجود داشته باشد، اما برای اساتید پایه و سایرین نمایش داده می‌شود
+    // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
     if (tabId === 'presence-hours') {
-      const isFinance = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || (currentUser.roleTitle && currentUser.roleTitle.includes('مالی'));
-      if (isFinance) return false;
       return true;
     }
     // بخش برنامه‌های مدرسه، مَدرَس‌ها و تقویم آموزشی به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است

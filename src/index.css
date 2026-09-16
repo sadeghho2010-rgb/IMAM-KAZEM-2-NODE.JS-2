@@ -94,3 +94,19 @@ body {
   margin: 0;
   background-color: #f8fafc;
 }
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}

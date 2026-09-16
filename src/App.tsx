@@ -14,6 +14,7 @@ import StudyStats from './components/StudyStats';
 import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
+import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
 import TodoList from './components/TodoList';
 import StudentComments from './components/StudentComments';
 import StudyDiscussion from './components/StudyDiscussion';
@@ -24,6 +25,14 @@ import TeachersSchedule from './components/TeachersSchedule';
 import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
 import CounselingClasses from './components/CounselingClasses';
+import FinanceManagerDashboard from './components/FinanceManagerDashboard';
+import StudentActivityAndTuition from './components/finance/StudentActivityAndTuition';
+import GradeProfessorsCompensation from './components/finance/GradeProfessorsCompensation';
+import TeachersCompensation from './components/finance/TeachersCompensation';
+import LunchManagement from './components/finance/LunchManagement';
+import ClaimsManagement from './components/finance/ClaimsManagement';
+import FundAndActiveLoans from './components/finance/FundAndActiveLoans';
+import ExpensesAndReports from './components/finance/ExpensesAndReports';
 import { ConsultationAdvisor } from './components/ConsultationAdvisor';
 import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
@@ -112,6 +121,22 @@ function AppContent() {
         return <AcademicCalendar />;
       case 'presence-hours':
         return <PresenceHours />;
+      case 'finance-tuition':
+        return <StudentActivityAndTuition onNavigateTab={handleNavigate} />;
+      case 'finance-grade-mentors':
+        return <GradeProfessorsCompensation onNavigateTab={handleNavigate} />;
+      case 'finance-teachers':
+        return <TeachersCompensation onNavigateTab={handleNavigate} />;
+      case 'finance-lunch':
+        return <LunchManagement onNavigateTab={handleNavigate} />;
+      case 'finance-claims':
+        return <ClaimsManagement onNavigateTab={handleNavigate} />;
+      case 'finance-loans-fund':
+        return <FundAndActiveLoans onNavigateTab={handleNavigate} />;
+      case 'finance-expenses-reports':
+        return <ExpensesAndReports onNavigateTab={handleNavigate} />;
+      case 'finance':
+        return <FinanceManagerDashboard />;
       case 'summary':
         return <Summary onNavigate={handleNavigate} initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-bank':
@@ -120,6 +145,8 @@ function AppContent() {
         return <BackupAndRestore />;
       case 'audit-logs':
         return <SiteAuditLogs />;
+      case 'education-financial-report':
+        return <EducationFinancialReportSettings onNavigateTab={handleNavigate} />;
       case 'user-management':
         return isSuperAdmin ? (
           <UserManagementSettings />
@@ -179,6 +206,14 @@ function AppContent() {
                      activeTab === 'workflow' ? 'جریان کار و کارتابل تاییدات' :
                      activeTab === 'academic-calendar' ? 'تقویم آموزشی و سالنامه تحصیلی' :
                      activeTab === 'presence-hours' ? 'بخش ثبت ساعت حضور و کارکرد' :
+                     activeTab === 'finance-tuition' ? 'محاسبه شهریه طلاب (اطلاعات حضور، فعالیت و محاسبه مکانیزه)' :
+                     activeTab === 'finance-grade-mentors' ? 'محاسبه حق‌الزحمه اساتید پایه (حق سرپرستی و پیگیری)' :
+                     activeTab === 'finance-teachers' ? 'محاسبه حق‌الزحمه اساتید (ساعات تدریس و حق‌التدریس مصوب)' :
+                     activeTab === 'finance-lunch' ? 'اطلاعات نهار و شام (رزرو غذا، لغو آشپزخانه و کسر شهریه)' :
+                     activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌های طلاب (تعریف اقساط و حساب‌های واریز)' :
+                     activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌های فعال طلاب' :
+                     activeTab === 'finance-expenses-reports' ? 'سایر هزینه‌های حوزه، حقوق کارمندان و تراز مالی' :
+                     activeTab === 'finance' ? 'امور مالی، محاسبه شهریه و کارکرد' :
                      activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
                      activeTab === 'active-students' ? 'لیست کاربران فعال' :
                      activeTab === 'audit-logs' ? 'فعالیت‌های سایت و مانیتورینگ تغییرات' :
