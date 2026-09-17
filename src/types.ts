@@ -861,10 +861,14 @@ export interface TeacherDetailedSpecialties {
 export interface Teacher {
   id: string;
   fullName: string;
+  name?: string; // alias for display
+  nationalId?: string; // کد ملی
   teacherCode?: string; // کد استادی
   phoneNumber?: string;
   phone?: string; // alias
   subjectSpecialty?: string; // تخصص اصلی
+  courses?: string[]; // عناوین دروس تدریسی
+  managedGrades?: string[]; // پایه‌های تحت اشراف
   photoUrl?: string;
   categories: TeacherCategory[];
   detailedSpecialties?: TeacherDetailedSpecialties;
@@ -939,7 +943,7 @@ export interface TeacherTransportSchedule {
   updatedAt?: string;
 }
 
-export interface TeacherCompensationSettings {
+export interface LegacyTeacherCompensationSettings {
   id: string;
   // آیا نرخ یکسان است یا تفکیکی؟
   rateMode: 'uniform' | 'separate'; // uniform: یکسان | separate: تفکیکی
@@ -1297,6 +1301,8 @@ export interface StudentMealReservation {
   updatedAt: string;
 }
 
+export type LunchReservation = StudentMealReservation;
+
 // -------------------------------------------------------------
 // Claims & Destination Deposit Accounts Types (مطالبات و حساب‌های واریز)
 // -------------------------------------------------------------
@@ -1358,14 +1364,20 @@ export interface GradeMentorCalculationItem {
   name: string;
   gradesStr: string; // پایه‌های تحت مسئولیت
   teacherCode?: string;
+  nationalId?: string;
+  phone?: string;
   totalHours: number; // ساعت حضور و کارکرد
   hourlyRate: number; // نرخ ساعتی
   baseCompensation: number; // مبلغ پایه کارکرد
   lunchCount: number; // تعداد وعده نهار
   lunchDeduction: number; // کسر نهار
   bonusAmount: number; // اضافات / پاداش
+  manualAdjustmentAmount?: number; // افزایش (+) یا کاهش (-) دستی مسئول مالی
+  manualAdjustmentReason?: string; // علت افزایش / کاهش دستی
   debtDeduction?: number; // کسر بدهی‌ها و مطالبات فعال
   debtNotes?: string; // شرح بدهی
+  loanInstallment?: number; // اقساط وام
+  fundContribution?: number; // صندوق قرض‌الحسنه
   otherDeductions: number; // سایر کسورات
   netPayable: number; // خالص پرداختی
   bankName?: string;
@@ -1410,7 +1422,152 @@ export interface BudgetRow {
   updatedAt?: string;
 }
 
+export interface TeacherWeeklyTransportRoutine {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  daysOfWeek: string[]; // e.g. ['شنبه', 'چهارشنبه']
+  // رفت به موسسه
+  arrivalEnabled?: boolean;
+  arrivalTime: string; // e.g. "15:00"
+  arrivalAddressTitle: string; // e.g. "منزل", "دانشگاه"
+  arrivalAddressDetails: string; // e.g. "الغدیر ۴۱، پلاک ۱۲"
+  // برگشت از موسسه
+  departureEnabled?: boolean;
+  departureTime: string; // e.g. "16:00"
+  departureAddressTitle: string; // e.g. "منزل", "پژوهشگاه"
+  departureAddressDetails: string; // e.g. "الغدیر ۴۱"
+  costPerTrip?: number; // هزینه هر رفت یا برگشت
+  driverId?: string;
+  driverName?: string;
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TeacherTransportSingleTrip {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  date: string; // Shamsi date e.g. "1403/07/10"
+  tripType: 'arrival' | 'departure' | 'both' | 'round_trip'; // آمدن، رفتن، هر دو
+  arrivalTime?: string;
+  arrivalAddressTitle?: string;
+  arrivalAddressDetails?: string;
+  departureTime?: string;
+  departureAddressTitle?: string;
+  departureAddressDetails?: string;
+  driverId?: string;
+  driverName?: string;
+  tripsCount: number; // مثلاً ۱ نوبت یا ۲ نوبت
+  cost: number;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
+  createdAt: string;
+}
+
+export interface TeacherCompensationSettings {
+  hourlyTeachingRate: number; // نرخ هر ساعت / جلسه تدریس
+  lunchCostPerDay: number; // هزینه هر وعده نهار
+  enableTransportCalculation: boolean; // آیا هزینه سرویس محاسبه شود؟
+  transportCalculationMode: 'per_trip' | 'per_day'; // هر رفت و آمد جداگانه (۲ نوبت) یا کل روز ۱ نوبت
+  transportCostPerTrip: number; // نرخ مصوب هر نوبت سرویس
+}
+
+export interface TeacherCompensationCalculationItem {
+  id: string;
+  teacherId: string;
+  teacherName: string; // نام و نام خانوادگی کامل استاد
+  nationalId?: string;
+  phone?: string;
+  coursesStr?: string; // عناوین دروس تدریسی
+  gradesStr?: string; // پایه‌ها
+  
+  // آمار حضور و غیاب
+  totalCalendarDays: number; // کل روزهای تقویم درسی در بازه
+  cancelledDaysCount: number; // جلسات تعطیل شده توسط نماینده
+  regularTeachingSessions: number; // جلسات حضور عادی استاد اصلی
+  regularTeachingHours: number; // مجموع ساعات تدریس عادی
+  substituteTeachingSessions: number; // جلسات حضور به عنوان استاد جایگزین
+  substituteTeachingHours: number; // ساعت تدریس جایگزین
+  totalTeachingHours: number; // کل ساعات تدریس مؤثر (عادی + جایگزین)
+  
+  hourlyRate: number; // نرخ ساعتی/جلسه‌ای مصوب
+  baseGrossAmount: number; // حق‌الزحمه ناخالص پایه
+  
+  // نهار
+  lunchCount: number; // تعداد وعده نهار در بازه
+  lunchDeduction: number; // مبلغ کسر نهار
+  
+  // سرویس ایاب و ذهاب
+  transportTripsCount: number; // تعداد نوبت‌های سرویس (موردی یا هفتگی)
+  transportDeduction: number; // مبلغ کسر سرویس
+  
+  // کسورات نوع ۱
+  type1Deductions: number; // کسورات آموزشی و غیبت
+  
+  // کسورات نوع ۲ (واریز به حساب‌های مقصد)
+  type2DeductionsTotal: number;
+  claimsDeductions?: Array<{
+    claimId: string;
+    title: string;
+    amount: number;
+    destinationAccountId: string;
+    destinationTitle: string;
+    bankInfo?: string;
+  }>;
+  loanInstallment?: number; // قسط وام
+  fundContribution?: number; // صندوق قرض‌الحسنه
+  culturalDebt?: number; // عتبات و امور فرهنگی
+  otherType2Deductions?: number;
+  
+  // پاداش و تعدیلات
+  bonusAmount: number; // پاداش / تشویقی
+  manualAdjustmentAmount: number; // افزایش (+) یا کاهش (-) دستی
+  manualAdjustmentReason: string; // علت تعدیل دستی
+  
+  // نهایی
+  netPayable: number; // خالص پرداختی نهایی
+  bankName?: string;
+  bankAccount?: string;
+  bankSheba?: string;
+  status: 'draft' | 'approved' | 'paid';
+  notes?: string;
+}
+
+export interface TeacherCompensationPeriod {
+  id: string;
+  title: string; // e.g. "حق‌الزحمه اساتید مهر ماه ۱۴۰۳"
+  startDate: string;
+  endDate: string;
+  status: 'draft' | 'finalized' | 'paid';
+  settings: TeacherCompensationSettings;
+  totalTeachers: number;
+  totalPayoutAmount: number;
+  totalType2Deductions: number;
+  items: TeacherCompensationCalculationItem[];
+  createdAt: string;
+  createdByName?: string;
+  finalizedAt?: string;
+  finalizedByName?: string;
+}
+
+export interface DestinationAccountSummaryReport {
+  destinationAccountId: string;
+  destinationAccountTitle: string;
+  category: string;
+  bankName: string;
+  accountNumber: string;
+  shebaNumber: string;
+  accountHolder: string;
+  totalDeductionAmount: number;
+  beneficiaryCount: number;
+  description?: string;
+}
+
 export interface ExpenseRecord {
+
   id: string;
   title: string; // عنوان هزینه
   date: string; // تاریخ هزینه (شمسی)

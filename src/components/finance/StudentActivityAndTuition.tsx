@@ -38,7 +38,9 @@ import {
   Trash2,
   HandCoins,
   ArrowLeft,
-  CalendarPlus
+  CalendarPlus,
+  Layers,
+  Save
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../../lib/utils';
@@ -250,6 +252,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
 
   // Active selected archived period for viewing details
   const [selectedArchivedPeriod, setSelectedArchivedPeriod] = useState<TuitionPeriod | null>(null);
+  const [isArchivedCompactView, setIsArchivedCompactView] = useState(false);
+  const [archivedSearchQuery, setArchivedSearchQuery] = useState('');
+  const [archivedGradeFilter, setArchivedGradeFilter] = useState('all');
+  const [isArchivedModified, setIsArchivedModified] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1171,6 +1177,209 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       console.error('Export internal excel error:', err);
       alert('خطا در صدور فایل اکسل تفصیلی.');
     }
+  };
+
+  // -------------------------------------------------------------
+  // Archived Period Helpers: Detailed Excel Export, Upper Export, and Save Changes
+  // -------------------------------------------------------------
+  const handleExportArchivedDetailedExcel = () => {
+    if (!selectedArchivedPeriod) return;
+    try {
+      const calcs = selectedArchivedPeriod.calculations || [];
+      const rows = calcs.map((item, index) => ({
+        'ردیف': index + 1,
+        'نام طلبه': item.studentName,
+        'پایه': item.grade,
+        'کد ملی': item.nationalId || '-',
+        'شماره حساب/شبا': item.bankSheba || item.bankAccount || '-',
+        'وضعیت تاهل': item.maritalStatus,
+        'تعداد فرزند': item.childrenCount || 0,
+        'معمم': item.isTammam ? 'بله' : 'خیر',
+        'سکونت': item.livingStatus || 'پدری',
+        'شهریه پایه': item.baseTuition || 0,
+        'پاداش تاهل': item.maritalBonus || 0,
+        'حق اولاد': item.childAllowanceTotal || 0,
+        'پاداش تلبس': item.turbanAllowance || 0,
+        'کمک مسکن': item.housingAllowance || 0,
+        'ساعات مطالعه (دقیقه)': item.studyMinutesTotal || 0,
+        'پاداش مطالعه': item.studyBonusAmount || 0,
+        'جریمه مطالعه (نوع ۱)': item.studyPenaltyAmount || 0,
+        'غیبت غیرموجه': item.unexcusedAbsenceCount || 0,
+        'جریمه غیبت (نوع ۱)': item.absencePenaltyAmount || 0,
+        'جمع کسورات نوع ۱': item.type1DeductionsTotal || 0,
+        'شهریه استحقاقی (فاکتور بالادستی)': item.grossEarnedTuition || 0,
+        'کسر نهار/شام (نوع ۲)': item.kitchenTransferAmount || 0,
+        'کسر عتبات/اردو (نوع ۲)': item.culturalTransferAmount || 0,
+        'قسط وام و صندوق (نوع ۲)': item.qardFundTransferAmount || 0,
+        'سایر کسورات نوع ۲': item.otherTransferAmount || 0,
+        'افزایش/کاهش دستی': item.manualAdjustmentAmount || 0,
+        'علت تعدیل دستی': item.manualAdjustmentReason || '',
+        'جمع کسورات نوع ۲': item.type2DeductionsTotal || 0,
+        'خالص پرداختی نهایی به طلبه': item.netPayableTuition || 0
+      }));
+
+      const totalGross = calcs.reduce((acc, c) => acc + (c.grossEarnedTuition || 0), 0);
+      const totalNet = calcs.reduce((acc, c) => acc + (c.netPayableTuition || 0), 0);
+      const totalType1 = calcs.reduce((acc, c) => acc + (c.type1DeductionsTotal || 0), 0);
+      const totalType2 = calcs.reduce((acc, c) => acc + (c.type2DeductionsTotal || 0), 0);
+      const totalKitchen = calcs.reduce((acc, c) => acc + (c.kitchenTransferAmount || 0), 0);
+      const totalQard = calcs.reduce((acc, c) => acc + (c.qardFundTransferAmount || 0), 0);
+
+      rows.push({
+        'ردیف': 'جمع کل' as any,
+        'نام طلبه': `تعداد: ${calcs.length} نفر`,
+        'پایه': '-',
+        'کد ملی': '-',
+        'شماره حساب/شبا': '-',
+        'وضعیت تاهل': '-' as any,
+        'تعداد فرزند': '-' as any,
+        'معمم': '-',
+        'سکونت': '-',
+        'شهریه پایه': '-' as any,
+        'پاداش تاهل': '-' as any,
+        'حق اولاد': '-' as any,
+        'پاداش تلبس': '-' as any,
+        'کمک مسکن': '-' as any,
+        'ساعات مطالعه (دقیقه)': '-' as any,
+        'پاداش مطالعه': '-' as any,
+        'جریمه مطالعه (نوع ۱)': '-' as any,
+        'غیبت غیرموجه': '-' as any,
+        'جریمه غیبت (نوع ۱)': '-' as any,
+        'جمع کسورات نوع ۱': totalType1,
+        'شهریه استحقاقی (فاکتور بالادستی)': totalGross,
+        'کسر نهار/شام (نوع ۲)': totalKitchen,
+        'کسر عتبات/اردو (نوع ۲)': '-' as any,
+        'قسط وام و صندوق (نوع ۲)': totalQard,
+        'سایر کسورات نوع ۲': '-' as any,
+        'افزایش/کاهش دستی': '-' as any,
+        'علت تعدیل دستی': '',
+        'جمع کسورات نوع ۲': totalType2,
+        'خالص پرداختی نهایی به طلبه': totalNet
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'گزارش تفصیلی بایگانی');
+      const fileName = `گزارش_تفصیلی_${(selectedArchivedPeriod.title || 'شهریه').replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      showToast('فایل اکسل جامع با تمامی جزئیات صادر گردید.');
+    } catch (err) {
+      console.error('Export archived detailed excel error:', err);
+      alert('خطا در صدور فایل اکسل.');
+    }
+  };
+
+  const handleExportArchivedUpperManagementExcel = () => {
+    if (!selectedArchivedPeriod) return;
+    try {
+      const calcs = selectedArchivedPeriod.calculations || [];
+      const rows = calcs.map((item, index) => ({
+        'ردیف': index + 1,
+        'نام و نام خانوادگی طلبه': item.studentName,
+        'پایه': item.grade,
+        'کد ملی': item.nationalId || '-',
+        'شماره شبا / حساب بانکی': item.bankSheba || item.bankAccount || '-',
+        'شهریه استحقاقی مصوب (فاکتور بالادستی)': item.grossEarnedTuition || 0,
+        'کسر واریز به حساب آشپزخانه (نهار)': item.kitchenTransferAmount || 0,
+        'کسر واریز به امور فرهنگی': item.culturalTransferAmount || 0,
+        'کسر واریز به صندوق قرض‌الحسنه': item.qardFundTransferAmount || 0,
+        'کسر واریز به سایر حساب‌ها': item.otherTransferAmount || 0,
+        'افزایش/کاهش دستی': item.manualAdjustmentAmount || 0,
+        'جمع کل کسورات': item.type2DeductionsTotal || 0,
+        'خالص واریزی به حساب بانکی طلبه': item.netPayableTuition || 0
+      }));
+
+      const totalGross = calcs.reduce((acc, c) => acc + (c.grossEarnedTuition || 0), 0);
+      const totalNet = calcs.reduce((acc, c) => acc + (c.netPayableTuition || 0), 0);
+      const totalType2 = calcs.reduce((acc, c) => acc + (c.type2DeductionsTotal || 0), 0);
+
+      rows.push({
+        'ردیف': 'جمع کل' as any,
+        'نام و نام خانوادگی طلبه': `تعداد: ${calcs.length} نفر`,
+        'پایه': '-',
+        'کد ملی': '-',
+        'شماره شبا / حساب بانکی': '-',
+        'شهریه استحقاقی مصوب (فاکتور بالادستی)': totalGross,
+        'کسر واریز به حساب آشپزخانه (نهار)': '-' as any,
+        'کسر واریز به امور فرهنگی': '-' as any,
+        'کسر واریز به صندوق قرض‌الحسنه': '-' as any,
+        'کسر واریز به سایر حساب‌ها': '-' as any,
+        'افزایش/کاهش دستی': '-' as any,
+        'جمع کل کسورات': totalType2,
+        'خالص واریزی به حساب بانکی طلبه': totalNet
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'صورت‌وضعیت واریزی بالادستی');
+      const fileName = `صورت‌وضعیت_واریزی_${(selectedArchivedPeriod.title || 'شهریه').replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      showToast('فایل اکسل حواله‌های بالادستی با موفقیت صادر شد.');
+    } catch (err) {
+      console.error('Export archived upper excel error:', err);
+      alert('خطا در صدور فایل اکسل.');
+    }
+  };
+
+  const handleSaveArchivedPeriodChanges = async () => {
+    if (!selectedArchivedPeriod) return;
+    try {
+      const updatedTotalNet = (selectedArchivedPeriod.calculations || []).reduce((acc, c) => acc + (c.netPayableTuition || 0), 0);
+      const updatedDoc: TuitionPeriod = {
+        ...selectedArchivedPeriod,
+        totalPayoutAmount: updatedTotalNet,
+        totalStudentsCalculated: (selectedArchivedPeriod.calculations || []).length,
+        finalizedAt: new Date().toISOString(),
+        finalizedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول مالی'
+      };
+
+      await localDb.setDoc('tuition_periods', updatedDoc);
+      setTuitionPeriods(prev => prev.map(p => p.id === updatedDoc.id ? updatedDoc : p));
+      setSelectedArchivedPeriod(updatedDoc);
+      setIsArchivedModified(false);
+      showToast('تغییرات دوره بایگانی با موفقیت ذخیره گردید.');
+    } catch (err) {
+      console.error('Save archived period changes error:', err);
+      alert('خطا در ذخیره تغییرات دوره بایگانی.');
+    }
+  };
+
+  const handleUpdateArchivedItemAdjustment = (studentId: string, amount: number | undefined, reason: string | undefined) => {
+    if (!selectedArchivedPeriod) return;
+    const updatedCalcs = (selectedArchivedPeriod.calculations || []).map(calc => {
+      if (calc.studentId === studentId) {
+        const manualAdj = amount !== undefined ? (amount || 0) : (calc.manualAdjustmentAmount || 0);
+        const reasonText = reason !== undefined ? reason : (calc.manualAdjustmentReason || '');
+        const gross = calc.grossEarnedTuition || 0;
+        const deductions2 = calc.type2DeductionsTotal || 0;
+        const net = Math.max(0, gross + manualAdj - deductions2);
+        return {
+          ...calc,
+          manualAdjustmentAmount: amount !== undefined ? amount : calc.manualAdjustmentAmount,
+          manualAdjustmentReason: reasonText,
+          netPayableTuition: net
+        };
+      }
+      return calc;
+    });
+
+    setSelectedArchivedPeriod({
+      ...selectedArchivedPeriod,
+      calculations: updatedCalcs
+    });
+    setIsArchivedModified(true);
+  };
+
+  const handleDeleteArchivedStudentRow = (studentId: string, studentName: string) => {
+    if (!selectedArchivedPeriod) return;
+    if (!window.confirm(`آیا از حذف اطلاعات «${studentName}» از این دوره بایگانی اطمینان دارید؟`)) return;
+    const updatedCalcs = (selectedArchivedPeriod.calculations || []).filter(c => c.studentId !== studentId);
+    setSelectedArchivedPeriod({
+      ...selectedArchivedPeriod,
+      calculations: updatedCalcs
+    });
+    setIsArchivedModified(true);
+    showToast(`اطلاعات ${studentName} از دوره حذف گردید.`);
   };
 
   // Print slip handler
@@ -2295,10 +2504,11 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                             <td className="py-3 px-2 text-center">
                               <button
                                 type="button"
-                                onClick={() => setEditingOverrideStudentId(calc.studentId)}
-                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer mx-auto"
+                                id={`btn-details-${calc.studentId}`}
+                                onClick={() => setSelectedSlipDetail(calc)}
+                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer mx-auto shadow-2xs"
                               >
-                                <Edit3 size={12} />
+                                <Eye size={13} className="text-indigo-600" />
                                 <span>جزئیات</span>
                               </button>
                             </td>
@@ -2480,22 +2690,30 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           ) : (
             /* Detailed View of Selected Archived Period */
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-5">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setSelectedArchivedPeriod(null)}
+                    onClick={() => {
+                      setSelectedArchivedPeriod(null);
+                      setIsArchivedModified(false);
+                    }}
                     className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
-                    title="بازگشت"
+                    title="بازگشت به لیست بایگانی"
                   >
                     <ChevronRight size={18} />
                   </button>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-base font-black text-slate-900">{selectedArchivedPeriod.title}</h3>
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md">
+                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-lg">
                         بایگانی نهایی
                       </span>
+                      {isArchivedModified && (
+                        <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-black rounded-lg animate-pulse">
+                          تغییرات ذخیره‌نشده
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">
                       بازه محاسباتی: {selectedArchivedPeriod.startDate} تا {selectedArchivedPeriod.endDate} • ثبت‌شده توسط: {selectedArchivedPeriod.createdByName || 'مسئول مالی'}
@@ -2503,15 +2721,58 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                {/* Top Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Toggle Detailed / Compact */}
                   <button
                     type="button"
-                    onClick={handleExportUpperManagementExcel}
-                    className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setIsArchivedCompactView(prev => !prev)}
+                    className={cn(
+                      "px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border",
+                      isArchivedCompactView 
+                        ? "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    )}
+                  >
+                    <Layers size={14} />
+                    <span>{isArchivedCompactView ? 'نمایش تفصیلی کامل' : 'نمایش جمع و جور'}</span>
+                  </button>
+
+                  {/* Save Changes button */}
+                  {isArchivedModified && (
+                    <button
+                      type="button"
+                      onClick={handleSaveArchivedPeriodChanges}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs animate-bounce"
+                    >
+                      <Save size={14} />
+                      <span>ذخیره تغییرات در بایگانی</span>
+                    </button>
+                  )}
+
+                  {/* Export Full Detailed Excel */}
+                  <button
+                    type="button"
+                    onClick={handleExportArchivedDetailedExcel}
+                    className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="خروجی اکسل با تمامی جزئیات و فاکتورها"
+                  >
+                    <FileSpreadsheet size={14} className="text-emerald-700" />
+                    <span>اکسل تفصیلی کامل</span>
+                  </button>
+
+                  {/* Export Upper Management Excel */}
+                  <button
+                    type="button"
+                    onClick={handleExportArchivedUpperManagementExcel}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="خروجی اکسل ویژه حواله بالادستی"
                   >
                     <Download size={14} />
-                    <span>خروجی اکسل</span>
+                    <span>اکسل بالادستی</span>
                   </button>
+
+                  {/* Print */}
                   <button
                     type="button"
                     onClick={handlePrintSlip}
@@ -2523,38 +2784,213 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                 </div>
               </div>
 
-              {/* Archived Table */}
-              <div className="overflow-x-auto">
+              {/* Filter Strip */}
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 flex-1 max-w-sm">
+                  <Search size={14} className="text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="جستجو در طلاب دوره بایگانی شده..."
+                    value={archivedSearchQuery}
+                    onChange={e => setArchivedSearchQuery(e.target.value)}
+                    className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-hidden focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-600">پایه:</span>
+                  <select
+                    value={archivedGradeFilter}
+                    onChange={e => setArchivedGradeFilter(e.target.value)}
+                    className="bg-white px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-hidden focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                </div>
+
+                <div className="text-slate-500 font-bold">
+                  تعداد: {(selectedArchivedPeriod.calculations || []).length} نفر | مجموع واریزی: {(selectedArchivedPeriod.totalPayoutAmount || 0).toLocaleString('fa-IR')} تومان
+                </div>
+              </div>
+
+              {/* Comprehensive Detailed / Compact Table */}
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                 <table className="w-full text-right text-xs">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
-                      <th className="py-3 px-3">ردیف</th>
+                    <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-black text-[11px]">
+                      <th className="py-3 px-2 text-center w-10">#</th>
                       <th className="py-3 px-3">نام طلبه</th>
-                      <th className="py-3 px-3">پایه</th>
-                      <th className="py-3 px-3">کد ملی</th>
-                      <th className="py-3 px-3">شهریه استحقاقی</th>
-                      <th className="py-3 px-3 text-rose-700">جمع کسورات</th>
-                      <th className="py-3 px-3 font-black text-emerald-800">خالص واریزی</th>
+                      <th className="py-3 px-2 text-center">پایه</th>
+                      <th className="py-3 px-2 text-center">شهریه پایه</th>
+
+                      {isArchivedCompactView ? (
+                        <>
+                          <th className="py-3 px-2 text-center text-emerald-700 font-black">جمع اضافات (+)</th>
+                          <th className="py-3 px-2 text-center text-rose-700 font-black">کسورات انضباطی نوع ۱ (-)</th>
+                          <th className="py-3 px-2 text-center text-amber-900 font-black">شهریه استحقاقی</th>
+                          <th className="py-3 px-2 text-center text-rose-700 font-black">کسورات انتقالی نوع ۲ (-)</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="py-3 px-2 text-center text-slate-600">تاهل و اولاد</th>
+                          <th className="py-3 px-2 text-center text-slate-600">معمم و مسکن</th>
+                          <th className="py-3 px-2 text-center text-emerald-700">مازاد مطالعه</th>
+                          <th className="py-3 px-2 text-center text-rose-700">کسری مطالعه</th>
+                          <th className="py-3 px-2 text-center text-rose-700">غیبت</th>
+                          <th className="py-3 px-2 text-center text-amber-900 font-black">استحقاقی</th>
+                          <th className="py-3 px-2 text-center text-rose-700">کسر نهار</th>
+                          <th className="py-3 px-2 text-center text-rose-700">وام و صندوق</th>
+                          <th className="py-3 px-2 text-center text-rose-700">سایر کسور</th>
+                        </>
+                      )}
+
+                      <th className="py-3 px-2 text-center bg-indigo-50/60 text-indigo-900">افزایش/کاهش دستی</th>
+                      <th className="py-3 px-2 bg-indigo-50/60 text-indigo-900">علت تعدیل</th>
+                      <th className="py-3 px-3 text-center font-black text-emerald-800 bg-emerald-50/40">خالص پرداختی</th>
+                      <th className="py-3 px-2 text-center">عملیات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(selectedArchivedPeriod.calculations || []).map((calc, idx) => (
-                      <tr key={calc.studentId} className="hover:bg-slate-50/70">
-                        <td className="py-3 px-3 font-mono text-slate-400">{idx + 1}</td>
-                        <td className="py-3 px-3 font-bold text-slate-900">{calc.studentName}</td>
-                        <td className="py-3 px-3 text-slate-600 font-bold">{calc.grade}</td>
-                        <td className="py-3 px-3 font-mono text-slate-500">{calc.nationalId || '---'}</td>
-                        <td className="py-3 px-3 font-mono text-amber-900 font-bold">
-                          {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
-                        </td>
-                        <td className="py-3 px-3 font-mono text-rose-700 font-bold">
-                          -{(calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}
-                        </td>
-                        <td className="py-3 px-3 font-mono font-black text-emerald-800 text-sm">
-                          {(calc.netPayableTuition || 0).toLocaleString('fa-IR')} تومان
-                        </td>
-                      </tr>
-                    ))}
+                    {(selectedArchivedPeriod.calculations || [])
+                      .filter(calc => {
+                        const matchGrade = archivedGradeFilter === 'all' || calc.grade === archivedGradeFilter;
+                        const matchSearch = !archivedSearchQuery || 
+                          calc.studentName.toLowerCase().includes(archivedSearchQuery.toLowerCase()) ||
+                          (calc.nationalId && calc.nationalId.includes(archivedSearchQuery));
+                        return matchGrade && matchSearch;
+                      })
+                      .map((calc, idx) => (
+                        <tr key={calc.studentId} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3 px-2 text-center font-mono text-slate-400">{idx + 1}</td>
+                          <td className="py-3 px-3">
+                            <span className="font-bold text-slate-900 block">{calc.studentName}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">{calc.nationalId || '---'}</span>
+                          </td>
+                          <td className="py-3 px-2 text-center text-slate-600 font-bold">{calc.grade}</td>
+                          <td className="py-3 px-2 text-center font-mono text-slate-700">
+                            {(calc.baseTuition || 0).toLocaleString('fa-IR')}
+                          </td>
+
+                          {isArchivedCompactView ? (
+                            <>
+                              <td className="py-3 px-2 text-center font-mono text-emerald-700 font-bold">
+                                +{(calc.totalAdditions || 0).toLocaleString('fa-IR')}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700 font-bold">
+                                -{(calc.type1DeductionsTotal || 0).toLocaleString('fa-IR')}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-amber-900 font-bold">
+                                {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700 font-bold">
+                                -{(calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-3 px-2 text-center font-mono text-slate-600">
+                                {((calc.maritalBonus || 0) + (calc.childAllowanceTotal || 0)) > 0
+                                  ? `+${((calc.maritalBonus || 0) + (calc.childAllowanceTotal || 0)).toLocaleString('fa-IR')}`
+                                  : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-slate-600">
+                                {((calc.turbanAllowance || 0) + (calc.housingAllowance || 0)) > 0
+                                  ? `+${((calc.turbanAllowance || 0) + (calc.housingAllowance || 0)).toLocaleString('fa-IR')}`
+                                  : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-emerald-700 font-bold">
+                                {(calc.studyBonusAmount || 0) > 0 ? `+${(calc.studyBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                {(calc.studyPenaltyAmount || 0) > 0 ? `-${(calc.studyPenaltyAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                {(calc.absencePenaltyAmount || 0) > 0 ? `-${(calc.absencePenaltyAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-amber-900 font-bold">
+                                {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                {(calc.kitchenTransferAmount || 0) > 0 ? `-${(calc.kitchenTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                {(calc.qardFundTransferAmount || 0) > 0 ? `-${(calc.qardFundTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                              </td>
+                              <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                {((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)) > 0
+                                  ? `-${((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)).toLocaleString('fa-IR')}`
+                                  : '-'}
+                              </td>
+                            </>
+                          )}
+
+                          {/* Editable Manual Adjustment Amount in Archive */}
+                          <td className="py-2.5 px-2 bg-indigo-50/20 text-center">
+                            <input
+                              type="number"
+                              placeholder="0"
+                              value={calc.manualAdjustmentAmount !== undefined ? calc.manualAdjustmentAmount : ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                handleUpdateArchivedItemAdjustment(calc.studentId, val, calc.manualAdjustmentReason);
+                              }}
+                              className={cn(
+                                "w-24 px-2 py-1.5 border rounded-lg text-xs font-mono font-bold outline-hidden transition-all text-center",
+                                (calc.manualAdjustmentAmount || 0) > 0
+                                  ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                                  : (calc.manualAdjustmentAmount || 0) < 0
+                                  ? "bg-rose-50 border-rose-300 text-rose-800"
+                                  : "bg-white border-slate-200 text-slate-700 focus:border-indigo-500"
+                              )}
+                            />
+                          </td>
+
+                          {/* Editable Manual Adjustment Reason in Archive */}
+                          <td className="py-2.5 px-2 bg-indigo-50/20">
+                            <input
+                              type="text"
+                              placeholder="علت تعدیل..."
+                              value={calc.manualAdjustmentReason || ''}
+                              onChange={e => {
+                                handleUpdateArchivedItemAdjustment(calc.studentId, calc.manualAdjustmentAmount, e.target.value);
+                              }}
+                              className="w-28 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-hidden focus:border-indigo-500"
+                            />
+                          </td>
+
+                          {/* Net Payable */}
+                          <td className="py-3 px-3 text-center font-mono font-black text-emerald-800 bg-emerald-50/40 text-xs">
+                            {(calc.netPayableTuition || 0).toLocaleString('fa-IR')}
+                          </td>
+
+                          {/* Actions: View Slip Detail + Delete */}
+                          <td className="py-3 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSlipDetail(calc)}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                                title="مشاهده فیش تفصیلی"
+                              >
+                                <Eye size={12} />
+                                <span>جزئیات</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteArchivedStudentRow(calc.studentId, calc.studentName)}
+                                className="p-1 hover:bg-rose-50 text-rose-500 rounded-lg transition-all cursor-pointer"
+                                title="حذف از دوره"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -3580,6 +4016,17 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                       </div>
                     )}
 
+                    {(selectedSlipDetail.manualAdjustmentAmount || 0) > 0 && (
+                      <div className="flex items-center justify-between pt-1 bg-emerald-100/40 p-1.5 rounded-lg">
+                        <span className="text-emerald-900 font-bold">
+                          افزایش دستی مسئول مالی {selectedSlipDetail.manualAdjustmentReason ? `(${selectedSlipDetail.manualAdjustmentReason})` : ''}:
+                        </span>
+                        <span className="font-mono font-bold text-emerald-800">
+                          +{(selectedSlipDetail.manualAdjustmentAmount || 0).toLocaleString('fa-IR')} تومان
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-1.5 font-bold text-slate-800 border-t border-emerald-200">
                       <span>جمع ناخالص و پاداش‌ها:</span>
                       <span className="font-mono font-black text-emerald-800">
@@ -3623,6 +4070,17 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                       <div className="flex items-center justify-between pt-1 text-slate-400">
                         <span>جریمه کسری مطالعه:</span>
                         <span>۰ تومان</span>
+                      </div>
+                    )}
+
+                    {(selectedSlipDetail.manualAdjustmentAmount || 0) < 0 && (
+                      <div className="flex items-center justify-between pt-1 bg-rose-100/50 p-1.5 rounded-lg">
+                        <span className="text-rose-900 font-bold">
+                          کاهش دستی مسئول مالی {selectedSlipDetail.manualAdjustmentReason ? `(${selectedSlipDetail.manualAdjustmentReason})` : ''}:
+                        </span>
+                        <span className="font-mono font-bold text-rose-800">
+                          {Math.abs(selectedSlipDetail.manualAdjustmentAmount || 0).toLocaleString('fa-IR')} تومان-
+                        </span>
                       </div>
                     )}
 

@@ -55,6 +55,12 @@ export interface AppUser {
   allowedTabs: string[];
   allowedModules?: string[];
   avatarBg?: string;
+  phone?: string;
+  nationalId?: string;
+  personnelCode?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bankSheba?: string;
   createdAt?: string;
   updatedAt?: string;
   lastLogin?: string;

@@ -458,7 +458,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       const excMap: Record<string, { isExcused: boolean; reason: string }> = {};
 
       existingRecord.students?.forEach(item => {
-        attMap[item.studentId] = item.status || 'present';
+        if (item.status) {
+          attMap[item.studentId] = item.status;
+        }
         if (item.note) noteMap[item.studentId] = item.note;
         if (item.lateMinutes) lateMap[item.studentId] = item.lateMinutes;
         if (item.hasEducationalWarning) warnMap[item.studentId] = true;
@@ -467,13 +469,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         }
       });
 
-      // Default unlisted to 'present'
-      enrolledStudents.forEach(s => {
-        if (!attMap[s.id]) {
-          attMap[s.id] = 'present';
-        }
-      });
-
+      // Keep unrecorded students undefined (do NOT default to present)
       setStudentsAttendance(attMap);
       setStudentNotes(noteMap);
       setStudentLateMinutes(lateMap);
@@ -488,11 +484,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setSubstituteTeacherNotes('');
       setSessionNotes('');
 
-      const defaultMap: Record<string, AttendanceStatus> = {};
-      enrolledStudents.forEach(s => {
-        defaultMap[s.id] = 'present';
-      });
-      setStudentsAttendance(defaultMap);
+      // Fresh session: start empty without pre-selecting present or absent
+      setStudentsAttendance({});
       setStudentNotes({});
       setStudentLateMinutes({});
       setStudentWarnings({});
@@ -547,7 +540,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         studentId: s.id,
         studentName: s.name,
         nationalId: s.nationalId || '',
-        status: studentsAttendance[s.id] || 'present',
+        status: studentsAttendance[s.id] || 'unspecified',
         note: studentNotes[s.id] || '',
         lateMinutes: studentLateMinutes[s.id] || undefined,
         isExcused: studentExcused[s.id]?.isExcused || false,
@@ -1463,7 +1456,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
                         {/* Interactive Status Buttons & Individual Note */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          {/* 5 Status Options */}
+                          {/* Status Options - Role Aware */}
                           <div className="inline-flex rounded-xl p-1 bg-slate-100/90 border border-slate-200">
                             {/* 1. Present */}
                             <button
@@ -1513,36 +1506,47 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               <span>تاخیر</span>
                             </button>
 
-                            {/* 4. Excused */}
-                            <button
-                              type="button"
-                              disabled={isDateLockedForRepresentative}
-                              onClick={() => handleSetStudentStatus(student.id, 'excused')}
-                              className={cn(
-                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
-                                currentStatus === 'excused'
-                                  ? "bg-indigo-600 text-white shadow-xs scale-102"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                              )}
-                            >
-                              <span>موجه</span>
-                            </button>
+                            {/* 4. Excused - ONLY for Education Manager & Super Admin */}
+                            {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
+                              <button
+                                type="button"
+                                disabled={isDateLockedForRepresentative}
+                                onClick={() => handleSetStudentStatus(student.id, 'excused')}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                                  currentStatus === 'excused'
+                                    ? "bg-indigo-600 text-white shadow-xs scale-102"
+                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                )}
+                              >
+                                <span>موجه</span>
+                              </button>
+                            )}
 
-                            {/* 5. Unspecified */}
-                            <button
-                              type="button"
-                              disabled={isDateLockedForRepresentative}
-                              onClick={() => handleSetStudentStatus(student.id, 'unspecified')}
-                              className={cn(
-                                "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                                currentStatus === 'unspecified'
-                                  ? "bg-slate-700 text-white shadow-xs"
-                                  : "text-slate-500 hover:text-slate-800"
-                              )}
-                            >
-                              <span>نامشخص</span>
-                            </button>
+                            {/* 5. Unspecified - ONLY for Education Manager & Super Admin */}
+                            {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
+                              <button
+                                type="button"
+                                disabled={isDateLockedForRepresentative}
+                                onClick={() => handleSetStudentStatus(student.id, 'unspecified')}
+                                className={cn(
+                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                                  currentStatus === 'unspecified'
+                                    ? "bg-slate-700 text-white shadow-xs"
+                                    : "text-slate-500 hover:text-slate-800"
+                                )}
+                              >
+                                <span>نامشخص</span>
+                              </button>
+                            )}
                           </div>
+
+                          {/* Badge for unrecorded status */}
+                          {(!currentStatus || currentStatus === 'unspecified') && (
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-lg border border-amber-200">
+                              ثبت‌نشده
+                            </span>
+                          )}
 
                           {/* Justify Absence Button for Admins & Supervisors */}
                           {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (

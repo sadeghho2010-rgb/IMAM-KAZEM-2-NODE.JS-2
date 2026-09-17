@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Car, 
   UserCheck, 
@@ -16,68 +16,109 @@ import {
   Building2, 
   Phone, 
   Check, 
-  AlertCircle 
+  AlertCircle,
+  Repeat,
+  Navigation,
+  ArrowRight,
+  ArrowLeft,
+  SlidersHorizontal,
+  Home,
+  Briefcase
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
-import { getTodayShamsi, compareShamsi, SHAMSI_MONTH_NAMES, SHAMSI_WEEKDAY_NAMES_SHORT, getDaysInShamsiMonth, getShamsiDayOfWeek, formatShamsiDate } from '../../lib/jalali';
-import { Teacher, DriverInfo, TeacherTransportSchedule } from '../../types';
+import { getTodayShamsi, compareShamsi, SHAMSI_WEEKDAY_NAMES_SHORT } from '../../lib/jalali';
+import { 
+  Teacher, 
+  DriverInfo, 
+  TeacherWeeklyTransportRoutine, 
+  TeacherTransportSingleTrip 
+} from '../../types';
+import { motion, AnimatePresence } from 'motion/react';
+
+const WEEKDAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه'];
 
 export default function TeacherTransportManagement() {
   const { currentUser } = useAuth();
   
-  // Data State
+  // Data States
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
-  const [schedules, setSchedules] = useState<TeacherTransportSchedule[]>([]);
+  const [routines, setRoutines] = useState<TeacherWeeklyTransportRoutine[]>([]);
+  const [singleTrips, setSingleTrips] = useState<TeacherTransportSingleTrip[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Active View Tab: 'schedules' or 'drivers'
-  const [activeSubTab, setActiveSubTab] = useState<'schedules' | 'drivers'>('schedules');
+  // Active Tab: 'routines' (برنامه روتین هفتگی) | 'single_trips' (ترددهای موردی و تقویمی) | 'drivers' (رانندگان)
+  const [activeTab, setActiveTab] = useState<'routines' | 'single_trips' | 'drivers'>('routines');
 
-  // Filters
+  // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>('all');
-  const [selectedDriverFilter, setSelectedDriverFilter] = useState<string>('all');
-  const [selectedApprovalFilter, setSelectedApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
+  const [selectedWeekdayFilter, setSelectedWeekdayFilter] = useState<string>('all');
+  const [toastMessage, setToastMessage] = useState<string>('');
+
+  // Weekly Routine Modal State
+  const [isRoutineModalOpen, setIsRoutineModalOpen] = useState(false);
+  const [editingRoutine, setEditingRoutine] = useState<TeacherWeeklyTransportRoutine | null>(null);
+  const [routineTeacherId, setRoutineTeacherId] = useState('');
+  const [routineDays, setRoutineDays] = useState<string[]>(['شنبه', 'چهارشنبه']);
+  const [routineArrivalEnabled, setRoutineArrivalEnabled] = useState(true);
+  const [routineArrivalTime, setRoutineArrivalTime] = useState('15:00');
+  const [routineArrivalTitle, setRoutineArrivalTitle] = useState('منزل');
+  const [routineArrivalDetails, setRoutineArrivalDetails] = useState('الغدیر ۴۱');
+  const [routineDepartureEnabled, setRoutineDepartureEnabled] = useState(true);
+  const [routineDepartureTime, setRoutineDepartureTime] = useState('16:00');
+  const [routineDepartureTitle, setRoutineDepartureTitle] = useState('منزل');
+  const [routineDepartureDetails, setRoutineDepartureDetails] = useState('الغدیر ۴۱');
+  const [routineDriverId, setRoutineDriverId] = useState('');
+  const [routineCost, setRoutineCost] = useState(150000);
+  const [routineNotes, setRoutineNotes] = useState('');
+
+  // Single Trip Modal State
+  const [isSingleTripModalOpen, setIsSingleTripModalOpen] = useState(false);
+  const [editingSingleTrip, setEditingSingleTrip] = useState<TeacherTransportSingleTrip | null>(null);
+  const [tripTeacherId, setTripTeacherId] = useState('');
+  const [tripDate, setTripDate] = useState(getTodayShamsi());
+  const [tripType, setTripType] = useState<'arrival' | 'departure' | 'round_trip'>('round_trip');
+  const [tripArrivalTime, setTripArrivalTime] = useState('15:00');
+  const [tripArrivalTitle, setTripArrivalTitle] = useState('منزل');
+  const [tripArrivalDetails, setTripArrivalDetails] = useState('الغدیر ۴۱');
+  const [tripDepartureTime, setTripDepartureTime] = useState('16:00');
+  const [tripDepartureTitle, setTripDepartureTitle] = useState('منزل');
+  const [tripDepartureDetails, setTripDepartureDetails] = useState('الغدیر ۴۱');
+  const [tripDriverId, setTripDriverId] = useState('');
+  const [tripTripsCount, setTripTripsCount] = useState(2);
+  const [tripCost, setTripCost] = useState(150000);
+  const [tripNotes, setTripNotes] = useState('');
 
   // Driver Modal State
-  const [isDriverModalOpen, setIsDriverModalOpen] = useState<boolean>(false);
+  const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState<DriverInfo | null>(null);
-  const [driverName, setDriverName] = useState<string>('');
-  const [driverPhone, setDriverPhone] = useState<string>('');
-  const [carModel, setCarModel] = useState<string>('');
-  const [plateNumber, setPlateNumber] = useState<string>('');
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [carModel, setCarModel] = useState('');
+  const [plateNumber, setPlateNumber] = useState('');
 
-  // Schedule Modal State
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
-  const [editingSchedule, setEditingSchedule] = useState<TeacherTransportSchedule | null>(null);
-  const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
-  const [scheduleDate, setScheduleDate] = useState<string>(getTodayShamsi());
-  const [pickupTime, setPickupTime] = useState<string>('07:30');
-  const [returnTime, setReturnTime] = useState<string>('12:00');
-  const [routeDescription, setRouteDescription] = useState<string>('قم - منزل تا موسسه');
-  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
-  const [cost, setCost] = useState<number>(150000);
-  const [notes, setNotes] = useState<string>('');
-
-  // Calendar Picker State inside Schedule Modal
-  const [calYear, setCalYear] = useState<number>(1403);
-  const [calMonth, setCalMonth] = useState<number>(7);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
 
   // Load Data
   const loadData = async () => {
     try {
       setLoading(true);
-      const [storedTeachers, storedDrivers, storedSchedules] = await Promise.all([
+      const [storedTeachers, storedDrivers, storedRoutines, storedTrips] = await Promise.all([
         localDb.getDocs<Teacher>('teachers'),
         localDb.getDocs<DriverInfo>('drivers'),
-        localDb.getDocs<TeacherTransportSchedule>('teacher_transports')
+        localDb.getDocs<TeacherWeeklyTransportRoutine>('teacher_transport_routines'),
+        localDb.getDocs<TeacherTransportSingleTrip>('teacher_transport_trips')
       ]);
 
-      setTeachers(storedTeachers || []);
+      const validTeachers = storedTeachers || [];
+      setTeachers(validTeachers);
 
       // Seed initial drivers if empty
       let validDrivers = storedDrivers || [];
@@ -93,39 +134,68 @@ export default function TeacherTransportManagement() {
       }
       setDrivers(validDrivers);
 
-      // Seed initial transport schedules if empty
-      let validSchedules = storedSchedules || [];
-      if (validSchedules.length === 0 && storedTeachers && storedTeachers.length > 0) {
-        const seedSchedules: TeacherTransportSchedule[] = [
+      // Seed sample weekly routine if empty
+      let validRoutines = storedRoutines || [];
+      if (validRoutines.length === 0 && validTeachers.length > 0) {
+        const seedRoutines: TeacherWeeklyTransportRoutine[] = [
           {
-            id: 'trans_1',
-            teacherId: storedTeachers[0]?.id || 't1',
-            teacherName: storedTeachers[0]?.fullName || 'استاد سید علی حسینی',
-            date: getTodayShamsi(),
-            dayOfWeek: 'شنبه',
-            pickupTime: '07:30',
-            returnTime: '12:30',
-            routeDescription: 'منزل تا موسسه و بالعکس',
-            driverId: validDrivers[0]?.id || '',
-            driverName: validDrivers[0]?.fullName || 'آقای مجید رضایی',
-            cost: 150000,
-            isEducationApproved: true,
-            approvedBy: currentUser?.fullName || 'مسئول آموزش',
-            approvedAt: new Date().toISOString(),
+            id: 'rout_1',
+            teacherId: validTeachers[0].id,
+            teacherName: validTeachers[0].fullName || validTeachers[0].name || 'استاد شاه‌فضل',
+            daysOfWeek: ['شنبه', 'چهارشنبه'],
+            arrivalEnabled: true,
+            arrivalTime: '15:00',
+            arrivalAddressTitle: 'منزل',
+            arrivalAddressDetails: 'الغدیر ۴۱، پلاک ۱۲',
+            departureEnabled: true,
+            departureTime: '16:00',
+            departureAddressTitle: 'منزل',
+            departureAddressDetails: 'الغدیر ۴۱، پلاک ۱۲',
+            costPerTrip: 150000,
+            driverId: validDrivers[0]?.id,
+            driverName: validDrivers[0]?.fullName,
+            isActive: true,
+            notes: 'سرویس منظم هفتگی در روزهای کلاسی',
             createdAt: new Date().toISOString()
           }
         ];
-        for (const s of seedSchedules) {
-          await localDb.setDoc('teacher_transports', s.id, s);
+        for (const r of seedRoutines) {
+          await localDb.setDoc('teacher_transport_routines', r.id, r);
         }
-        validSchedules = seedSchedules;
+        validRoutines = seedRoutines;
       }
+      setRoutines(validRoutines);
 
-      validSchedules.sort((a, b) => compareShamsi(b.date, a.date));
-      setSchedules(validSchedules);
+      // Seed sample single trip if empty
+      let validTrips = storedTrips || [];
+      if (validTrips.length === 0 && validTeachers.length > 0) {
+        const seedTrip: TeacherTransportSingleTrip = {
+          id: 'trip_1',
+          teacherId: validTeachers[0].id,
+          teacherName: validTeachers[0].fullName || validTeachers[0].name || 'استاد شاه‌فضل',
+          date: getTodayShamsi(),
+          tripType: 'round_trip',
+          arrivalTime: '15:00',
+          arrivalAddressTitle: 'منزل',
+          arrivalAddressDetails: 'الغدیر ۴۱',
+          departureTime: '16:00',
+          departureAddressTitle: 'منزل',
+          departureAddressDetails: 'الغدیر ۴۱',
+          driverId: validDrivers[0]?.id,
+          driverName: validDrivers[0]?.fullName,
+          tripsCount: 2,
+          cost: 150000,
+          status: 'completed',
+          notes: 'استفاده موردی در تاریخ مقرر',
+          createdAt: new Date().toISOString()
+        };
+        await localDb.setDoc('teacher_transport_trips', seedTrip.id, seedTrip);
+        validTrips = [seedTrip];
+      }
+      setSingleTrips(validTrips);
 
-    } catch (err) {
-      console.error('Error loading transport data:', err);
+    } catch (e) {
+      console.error('Error loading transport data:', e);
     } finally {
       setLoading(false);
     }
@@ -133,7 +203,162 @@ export default function TeacherTransportManagement() {
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
+
+  // Open Routine Modal
+  const handleOpenRoutineModal = (routine?: TeacherWeeklyTransportRoutine) => {
+    if (routine) {
+      setEditingRoutine(routine);
+      setRoutineTeacherId(routine.teacherId);
+      setRoutineDays(routine.daysOfWeek || []);
+      setRoutineArrivalEnabled(routine.arrivalEnabled !== false);
+      setRoutineArrivalTime(routine.arrivalTime || '15:00');
+      setRoutineArrivalTitle(routine.arrivalAddressTitle || 'منزل');
+      setRoutineArrivalDetails(routine.arrivalAddressDetails || '');
+      setRoutineDepartureEnabled(routine.departureEnabled !== false);
+      setRoutineDepartureTime(routine.departureTime || '16:00');
+      setRoutineDepartureTitle(routine.departureAddressTitle || 'منزل');
+      setRoutineDepartureDetails(routine.departureAddressDetails || '');
+      setRoutineDriverId(routine.driverId || '');
+      setRoutineCost(routine.costPerTrip || 150000);
+      setRoutineNotes(routine.notes || '');
+    } else {
+      setEditingRoutine(null);
+      setRoutineTeacherId(teachers[0]?.id || '');
+      setRoutineDays(['شنبه', 'چهارشنبه']);
+      setRoutineArrivalEnabled(true);
+      setRoutineArrivalTime('15:00');
+      setRoutineArrivalTitle('منزل');
+      setRoutineArrivalDetails('الغدیر ۴۱');
+      setRoutineDepartureEnabled(true);
+      setRoutineDepartureTime('16:00');
+      setRoutineDepartureTitle('منزل');
+      setRoutineDepartureDetails('الغدیر ۴۱');
+      setRoutineDriverId(drivers[0]?.id || '');
+      setRoutineCost(150000);
+      setRoutineNotes('');
+    }
+    setIsRoutineModalOpen(true);
+  };
+
+  // Save Routine
+  const handleSaveRoutine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const matchedTeacher = teachers.find(t => t.id === routineTeacherId);
+    const teacherName = matchedTeacher ? (matchedTeacher.fullName || matchedTeacher.name || 'استاد') : 'استاد';
+    const matchedDriver = drivers.find(d => d.id === routineDriverId);
+
+    const routineData: TeacherWeeklyTransportRoutine = {
+      id: editingRoutine ? editingRoutine.id : `rout_${Date.now()}`,
+      teacherId: routineTeacherId,
+      teacherName,
+      daysOfWeek: routineDays,
+      arrivalEnabled: routineArrivalEnabled,
+      arrivalTime: routineArrivalTime,
+      arrivalAddressTitle: routineArrivalTitle.trim() || 'منزل',
+      arrivalAddressDetails: routineArrivalDetails.trim(),
+      departureEnabled: routineDepartureEnabled,
+      departureTime: routineDepartureTime,
+      departureAddressTitle: routineDepartureTitle.trim() || 'منزل',
+      departureAddressDetails: routineDepartureDetails.trim(),
+      costPerTrip: Number(routineCost) || 0,
+      driverId: routineDriverId || undefined,
+      driverName: matchedDriver?.fullName || undefined,
+      isActive: true,
+      notes: routineNotes.trim(),
+      createdAt: editingRoutine ? editingRoutine.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await localDb.setDoc('teacher_transport_routines', routineData.id, routineData);
+    setIsRoutineModalOpen(false);
+    showToast('برنامه سرویس هفتگی استاد با موفقیت ثبت شد.');
+  };
+
+  const handleDeleteRoutine = async (id: string) => {
+    if (!confirm('آیا از حذف این برنامه سرویس هفتگی اطمینان دارید؟')) return;
+    await localDb.deleteDoc('teacher_transport_routines', id);
+    showToast('برنامه سرویس هفتگی حذف شد.');
+  };
+
+  // Open Single Trip Modal
+  const handleOpenSingleTripModal = (trip?: TeacherTransportSingleTrip) => {
+    if (trip) {
+      setEditingSingleTrip(trip);
+      setTripTeacherId(trip.teacherId);
+      setTripDate(trip.date);
+      setTripType(trip.tripType === 'departure' ? 'departure' : trip.tripType === 'arrival' ? 'arrival' : 'round_trip');
+      setTripArrivalTime(trip.arrivalTime || '15:00');
+      setTripArrivalTitle(trip.arrivalAddressTitle || 'منزل');
+      setTripArrivalDetails(trip.arrivalAddressDetails || '');
+      setTripDepartureTime(trip.departureTime || '16:00');
+      setTripDepartureTitle(trip.departureAddressTitle || 'منزل');
+      setTripDepartureDetails(trip.departureAddressDetails || '');
+      setTripDriverId(trip.driverId || '');
+      setTripTripsCount(trip.tripsCount || 1);
+      setTripCost(trip.cost || 150000);
+      setTripNotes(trip.notes || '');
+    } else {
+      setEditingSingleTrip(null);
+      setTripTeacherId(teachers[0]?.id || '');
+      setTripDate(getTodayShamsi());
+      setTripType('round_trip');
+      setTripArrivalTime('15:00');
+      setTripArrivalTitle('منزل');
+      setTripArrivalDetails('الغدیر ۴۱');
+      setTripDepartureTime('16:00');
+      setTripDepartureTitle('منزل');
+      setTripDepartureDetails('الغدیر ۴۱');
+      setTripDriverId(drivers[0]?.id || '');
+      setTripTripsCount(2);
+      setTripCost(150000);
+      setTripNotes('');
+    }
+    setIsSingleTripModalOpen(true);
+  };
+
+  // Save Single Trip
+  const handleSaveSingleTrip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const matchedTeacher = teachers.find(t => t.id === tripTeacherId);
+    const teacherName = matchedTeacher ? (matchedTeacher.fullName || matchedTeacher.name || 'استاد') : 'استاد';
+    const matchedDriver = drivers.find(d => d.id === tripDriverId);
+
+    const tripData: TeacherTransportSingleTrip = {
+      id: editingSingleTrip ? editingSingleTrip.id : `trip_${Date.now()}`,
+      teacherId: tripTeacherId,
+      teacherName,
+      date: tripDate,
+      tripType,
+      arrivalTime: tripType !== 'departure' ? tripArrivalTime : undefined,
+      arrivalAddressTitle: tripType !== 'departure' ? (tripArrivalTitle.trim() || 'منزل') : undefined,
+      arrivalAddressDetails: tripType !== 'departure' ? tripArrivalDetails.trim() : undefined,
+      departureTime: tripType !== 'arrival' ? tripDepartureTime : undefined,
+      departureAddressTitle: tripType !== 'arrival' ? (tripDepartureTitle.trim() || 'منزل') : undefined,
+      departureAddressDetails: tripType !== 'arrival' ? tripDepartureDetails.trim() : undefined,
+      driverId: tripDriverId || undefined,
+      driverName: matchedDriver?.fullName || undefined,
+      tripsCount: tripType === 'round_trip' ? 2 : 1,
+      cost: Number(tripCost) || 0,
+      status: 'completed',
+      notes: tripNotes.trim(),
+      createdAt: editingSingleTrip ? editingSingleTrip.createdAt : new Date().toISOString()
+    };
+
+    await localDb.setDoc('teacher_transport_trips', tripData.id, tripData);
+    setIsSingleTripModalOpen(false);
+    showToast('تردد موردی استاد با موفقیت ذخیره گردید.');
+  };
+
+  const handleDeleteSingleTrip = async (id: string) => {
+    if (!confirm('آیا از حذف این تردد موردی اطمینان دارید؟')) return;
+    await localDb.deleteDoc('teacher_transport_trips', id);
+    showToast('تردد موردی حذف شد.');
+  };
 
   // Save Driver
   const handleSaveDriver = async (e: React.FormEvent) => {
@@ -152,119 +377,151 @@ export default function TeacherTransportManagement() {
 
     await localDb.setDoc('drivers', driverData.id, driverData);
     setIsDriverModalOpen(false);
-    loadData();
+    showToast('اطلاعات راننده ذخیره شد.');
   };
 
   const handleDeleteDriver = async (id: string) => {
-    if (window.confirm('آیا از حذف این راننده اطمینان دارید؟')) {
-      await localDb.deleteDoc('drivers', id);
-      loadData();
+    if (!confirm('آیا از حذف این راننده اطمینان دارید؟')) return;
+    await localDb.deleteDoc('drivers', id);
+    showToast('راننده حذف شد.');
+  };
+
+  // Filtered lists
+  const filteredRoutines = useMemo(() => {
+    return routines.filter(r => {
+      const matchSearch = searchQuery ? (r.teacherName.includes(searchQuery) || r.arrivalAddressDetails.includes(searchQuery) || r.departureAddressDetails.includes(searchQuery)) : true;
+      const matchTeacher = selectedTeacherFilter === 'all' || r.teacherId === selectedTeacherFilter;
+      const matchDay = selectedWeekdayFilter === 'all' || r.daysOfWeek.includes(selectedWeekdayFilter);
+      return matchSearch && matchTeacher && matchDay;
+    });
+  }, [routines, searchQuery, selectedTeacherFilter, selectedWeekdayFilter]);
+
+  const filteredSingleTrips = useMemo(() => {
+    return singleTrips.filter(t => {
+      const matchSearch = searchQuery ? (t.teacherName.includes(searchQuery) || (t.arrivalAddressDetails && t.arrivalAddressDetails.includes(searchQuery)) || (t.departureAddressDetails && t.departureAddressDetails.includes(searchQuery))) : true;
+      const matchTeacher = selectedTeacherFilter === 'all' || t.teacherId === selectedTeacherFilter;
+      return matchSearch && matchTeacher;
+    });
+  }, [singleTrips, searchQuery, selectedTeacherFilter]);
+
+  // Export Excel
+  const handleExportExcel = () => {
+    try {
+      if (activeTab === 'routines') {
+        const rows = filteredRoutines.map((r, i) => ({
+          'ردیف': i + 1,
+          'نام و نام خانوادگی استاد': r.teacherName,
+          'روزهای هفته سرویس': r.daysOfWeek.join('، '),
+          'ساعت آمدن به موسسه': r.arrivalEnabled ? r.arrivalTime : 'ندارد',
+          'عنوان نشانی مبدا': r.arrivalAddressTitle,
+          'آدرس دقیق مبدا': r.arrivalAddressDetails,
+          'ساعت رفتن از موسسه': r.departureEnabled ? r.departureTime : 'ندارد',
+          'عنوان نشانی مقصد': r.departureAddressTitle,
+          'آدرس دقیق مقصد': r.departureAddressDetails,
+          'هزینه هر نوبت (تومان)': r.costPerTrip?.toLocaleString('fa-IR') || '۰',
+          'راننده سرویس': r.driverName || 'نامشخص',
+          'توضیحات': r.notes || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'برنامه هفتگی سرویس اساتید');
+        XLSX.writeFile(wb, `برنامه_هفتگی_سرویس_اساتید_${getTodayShamsi().replace(/\//g, '-')}.xlsx`);
+      } else {
+        const rows = filteredSingleTrips.map((t, i) => ({
+          'ردیف': i + 1,
+          'نام و نام خانوادگی استاد': t.teacherName,
+          'تاریخ تردد': t.date,
+          'نوع تردد': t.tripType === 'round_trip' ? 'رفت و برگشت (۲ نوبت)' : t.tripType === 'arrival' ? 'آمدن به موسسه (۱ نوبت)' : 'رفتن از موسسه (۱ نوبت)',
+          'ساعت آمدن': t.arrivalTime || '-',
+          'نشانی مبدا': t.arrivalAddressTitle ? `${t.arrivalAddressTitle}: ${t.arrivalAddressDetails || ''}` : '-',
+          'ساعت رفتن': t.departureTime || '-',
+          'نشانی مقصد': t.departureAddressTitle ? `${t.departureAddressTitle}: ${t.departureAddressDetails || ''}` : '-',
+          'تعداد نوبت': t.tripsCount,
+          'هزینه سرویس (تومان)': t.cost.toLocaleString('fa-IR'),
+          'راننده': t.driverName || 'نامشخص',
+          'توضیحات': t.notes || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'ترددهای موردی اساتید');
+        XLSX.writeFile(wb, `ترددهای_موردی_اساتید_${getTodayShamsi().replace(/\//g, '-')}.xlsx`);
+      }
+      showToast('خروجی اکسل با موفقیت دانلود شد.');
+    } catch (e) {
+      console.error(e);
+      alert('خطا در دریافت فایل اکسل.');
     }
-  };
-
-  // Save Schedule
-  const handleSaveSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTeacherId) return;
-
-    const teacher = teachers.find(t => t.id === selectedTeacherId);
-    const driver = drivers.find(d => d.id === selectedDriverId);
-
-    const scheduleData: TeacherTransportSchedule = {
-      id: editingSchedule ? editingSchedule.id : `trans_${Date.now()}`,
-      teacherId: selectedTeacherId,
-      teacherName: teacher?.fullName || 'استاد',
-      date: scheduleDate,
-      dayOfWeek: 'شنبه', // dynamically formatted
-      pickupTime,
-      returnTime,
-      routeDescription,
-      driverId: selectedDriverId,
-      driverName: driver?.fullName || '',
-      cost: Number(cost) || 0,
-      notes,
-      isEducationApproved: editingSchedule ? editingSchedule.isEducationApproved : false,
-      createdAt: editingSchedule ? editingSchedule.createdAt : new Date().toISOString()
-    };
-
-    await localDb.setDoc('teacher_transports', scheduleData.id, scheduleData);
-    setIsScheduleModalOpen(false);
-    loadData();
-  };
-
-  const handleDeleteSchedule = async (id: string) => {
-    if (window.confirm('آیا از حذف این رکورد ایاب و ذهاب مطمئن هستید؟')) {
-      await localDb.deleteDoc('teacher_transports', id);
-      loadData();
-    }
-  };
-
-  // Final Approval Toggle by Education Manager
-  const handleToggleApproval = async (schedule: TeacherTransportSchedule) => {
-    const newStatus = !schedule.isEducationApproved;
-    const updated: TeacherTransportSchedule = {
-      ...schedule,
-      isEducationApproved: newStatus,
-      approvedBy: newStatus ? (currentUser?.fullName || 'مسئول آموزش') : undefined,
-      approvedAt: newStatus ? new Date().toISOString() : undefined
-    };
-
-    await localDb.setDoc('teacher_transports', schedule.id, updated);
-    loadData();
-  };
-
-  // Filtered Schedules
-  const filteredSchedules = schedules.filter(s => {
-    const matchesSearch = s.teacherName.includes(searchQuery) || (s.driverName && s.driverName.includes(searchQuery));
-    const matchesTeacher = selectedTeacherFilter === 'all' || s.teacherId === selectedTeacherFilter;
-    const matchesDriver = selectedDriverFilter === 'all' || s.driverId === selectedDriverFilter;
-    const matchesApproval = selectedApprovalFilter === 'all' || 
-      (selectedApprovalFilter === 'approved' && s.isEducationApproved) ||
-      (selectedApprovalFilter === 'pending' && !s.isEducationApproved);
-
-    return matchesSearch && matchesTeacher && matchesDriver && matchesApproval;
-  });
-
-  // Export to Excel
-  const exportToExcel = () => {
-    const dataToExport = filteredSchedules.map((s, index) => ({
-      'ردیف': index + 1,
-      'نام استاد': s.teacherName,
-      'تاریخ شمسی': s.date,
-      'ساعت رفت': s.pickupTime,
-      'ساعت برگشت': s.returnTime,
-      'مسیر': s.routeDescription,
-      'نام راننده': s.driverName || '-',
-      'هزینه (تومان)': s.cost,
-      'وضعیت تایید نهایی آموزش': s.isEducationApproved ? 'تایید شده' : 'در انتظار تایید',
-      'تایید کننده': s.approvedBy || '-'
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'ایاب و ذهاب اساتید');
-    XLSX.writeFile(workbook, `گزارش_ایاب_و_ذهاب_اساتید_${getTodayShamsi().replace(/\//g, '-')}.xlsx`);
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 font-sans" dir="rtl">
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-slate-700"
+          >
+            <CheckCircle2 size={16} className="text-emerald-400" />
+            <span>{toastMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/85 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-100">
+            <Car size={28} />
+          </div>
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30">
-                <Car size={22} />
-              </span>
-              <h1 className="text-xl font-black">مدیریت سرویس و ایاب و ذهاب اساتید</h1>
-            </div>
-            <p className="text-xs text-indigo-200 font-medium">
-              تعریف رانندگان سرویس، زمان‌بندی رفت و آمد اساتید و تایید نهایی صورت‌حساب جهت پرداخت مالی
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              سرویس ایاب و ذهاب اساتید
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+              مدیریت برنامه هفتگی سرویس (روزها، ساعات و آدرس‌های رفت‌وآمد)، ثبت ترددهای موردی و ارتباط با محاسبه مالی
             </p>
           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <FileSpreadsheet size={16} className="text-emerald-600" />
+            <span>خروجی اکسل</span>
+          </button>
+
+          {activeTab === 'routines' && (
             <button
+              type="button"
+              onClick={() => handleOpenRoutineModal()}
+              className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-sky-100 cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>تعریف برنامه هفتگی سرویس استاد</span>
+            </button>
+          )}
+
+          {activeTab === 'single_trips' && (
+            <button
+              type="button"
+              onClick={() => handleOpenSingleTripModal()}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>ثبت تردد موردی در تاریخ مشخص</span>
+            </button>
+          )}
+
+          {activeTab === 'drivers' && (
+            <button
+              type="button"
               onClick={() => {
                 setEditingDriver(null);
                 setDriverName('');
@@ -273,266 +530,382 @@ export default function TeacherTransportManagement() {
                 setPlateNumber('');
                 setIsDriverModalOpen(true);
               }}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
             >
-              <UserCheck size={15} />
-              <span>تعریف راننده جدید</span>
+              <Plus size={16} />
+              <span>افزودن راننده جدید</span>
             </button>
-
-            <button
-              onClick={() => {
-                setEditingSchedule(null);
-                setSelectedTeacherId(teachers[0]?.id || '');
-                setScheduleDate(getTodayShamsi());
-                setPickupTime('07:30');
-                setReturnTime('12:00');
-                setRouteDescription('منزل تا موسسه');
-                setSelectedDriverId(drivers[0]?.id || '');
-                setCost(150000);
-                setNotes('');
-                setIsScheduleModalOpen(true);
-              }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus size={15} />
-              <span>ثبت سرویس ایاب و ذهاب جدید</span>
-            </button>
-
-            <button
-              onClick={exportToExcel}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet size={15} />
-              <span>خروجی اکسل</span>
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Tabs Switcher */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl w-fit border border-slate-200">
+      {/* Main Tabs Navigation */}
+      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
         <button
-          onClick={() => setActiveSubTab('schedules')}
+          type="button"
+          onClick={() => setActiveTab('routines')}
           className={cn(
-            "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'schedules'
-              ? "bg-white text-indigo-900 shadow-xs"
-              : "text-slate-600 hover:text-slate-900"
+            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+            activeTab === 'routines'
+              ? "bg-sky-600 text-white shadow-md shadow-sky-100 ring-2 ring-sky-600/10"
+              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
+          )}
+        >
+          <Repeat size={15} />
+          <span>برنامه هفتگی و روتین سرویس اساتید ({routines.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('single_trips')}
+          className={cn(
+            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+            activeTab === 'single_trips'
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/10"
+              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
+          )}
+        >
+          <Calendar size={15} />
+          <span>ثبت و گزارش ترددهای موردی ({singleTrips.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('drivers')}
+          className={cn(
+            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+            activeTab === 'drivers'
+              ? "bg-slate-900 text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
           )}
         >
           <Car size={15} />
-          <span>جدول ایاب و ذهاب و تایید نهایی ({schedules.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('drivers')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'drivers'
-              ? "bg-white text-indigo-900 shadow-xs"
-              : "text-slate-600 hover:text-slate-900"
-          )}
-        >
-          <UserCheck size={15} />
-          <span>بانک رانندگان سرویس ({drivers.length})</span>
+          <span>رانندگان و خودروها ({drivers.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: SCHEDULES TABLE */}
-      {activeSubTab === 'schedules' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          {/* Filters Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="relative">
-              <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-              <input
-                type="text"
-                placeholder="جستجوی استاد یا راننده..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pr-9 pl-3 py-2 outline-none focus:border-indigo-500 font-bold"
-              />
+      {/* Search & Filter Bar */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
+        <div className="relative w-full md:w-80">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="جستجو در نام استاد، عنوان نشانی یا آدرس..."
+            className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 transition-all"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
+          {/* Teacher Filter */}
+          <select
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
+            value={selectedTeacherFilter}
+            onChange={(e) => setSelectedTeacherFilter(e.target.value)}
+          >
+            <option value="all">همه اساتید</option>
+            {teachers.map(t => (
+              <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
+            ))}
+          </select>
+
+          {/* Weekday Filter for Routines */}
+          {activeTab === 'routines' && (
+            <select
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
+              value={selectedWeekdayFilter}
+              onChange={(e) => setSelectedWeekdayFilter(e.target.value)}
+            >
+              <option value="all">همه روزهای هفته</option>
+              {WEEKDAYS.map(day => (
+                <option key={day} value={day}>{day}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* TAB 1: ROUTINES (برنامه هفتگی) */}
+      {activeTab === 'routines' && (
+        <div className="space-y-4">
+          {filteredRoutines.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 space-y-3 shadow-xs">
+              <Car size={40} className="text-slate-300 mx-auto" />
+              <h3 className="text-sm font-black text-slate-800">هیچ برنامه هفتگی سرویسی تعریف نشده است</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto font-medium">
+                می‌توانید روزهای هفته (مثل شنبه‌ها و چهارشنبه‌ها)، ساعت آمدن از نشانی مبدا و ساعت رفتن به نشانی مقصد را برای اساتید ثبت کنید.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleOpenRoutineModal()}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-sky-100 inline-flex items-center gap-1.5 cursor-pointer mt-2"
+              >
+                <Plus size={15} />
+                <span>تعریف اولین برنامه هفتگی سرویس</span>
+              </button>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredRoutines.map((routine) => (
+                <div 
+                  key={routine.id}
+                  className="bg-white rounded-2xl p-5 border border-slate-200 shadow-2xs hover:shadow-md hover:border-sky-300/60 transition-all space-y-4 relative overflow-hidden group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-sky-50 text-sky-700 font-black flex items-center justify-center border border-sky-100 shadow-xs">
+                        <Car size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900">{routine.teacherName}</h3>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          {routine.daysOfWeek.map(day => (
+                            <span key={day} className="px-2 py-0.5 bg-sky-100/80 text-sky-950 border border-sky-200/40 rounded-md text-[10px] font-black">
+                              {day}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
 
-            <select
-              value={selectedTeacherFilter}
-              onChange={(e) => setSelectedTeacherFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none font-bold"
-            >
-              <option value="all">همه اساتید</option>
-              {teachers.map(t => (
-                <option key={t.id} value={t.id}>{t.fullName}</option>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRoutineModal(routine)}
+                        className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition-colors cursor-pointer"
+                        title="ویرایش"
+                      >
+                        <Edit3 size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRoutine(routine.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        title="حذف"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Route & Times Box */}
+                  <div className="bg-slate-50/90 rounded-xl p-3.5 border border-slate-200/80 space-y-3">
+                    {/* Coming to institute */}
+                    {routine.arrivalEnabled !== false && (
+                      <div className="flex items-start gap-2.5 text-xs">
+                        <div className="p-1 bg-emerald-100 text-emerald-800 rounded-md shrink-0 mt-0.5 font-bold text-[10px] flex items-center gap-1 border border-emerald-200/40">
+                          <ArrowLeft size={12} />
+                          <span>آمدن به موسسه</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-slate-800">{routine.arrivalTime}</span>
+                            <span className="px-1.5 py-0.2 bg-white text-slate-600 rounded text-[10px] font-bold border border-slate-200">
+                              {routine.arrivalAddressTitle}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 flex items-center gap-1 font-medium">
+                            <MapPin size={11} className="text-slate-400 shrink-0" />
+                            <span>{routine.arrivalAddressDetails || 'آدرس ثبت نشده'}</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Leaving institute */}
+                    {routine.departureEnabled !== false && (
+                      <div className="flex items-start gap-2.5 text-xs border-t border-slate-200/60 pt-2.5">
+                        <div className="p-1 bg-rose-100 text-rose-800 rounded-md shrink-0 mt-0.5 font-bold text-[10px] flex items-center gap-1 border border-rose-200/40">
+                          <ArrowRight size={12} />
+                          <span>رفتن از موسسه</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-slate-800">{routine.departureTime}</span>
+                            <span className="px-1.5 py-0.2 bg-white text-slate-600 rounded text-[10px] font-bold border border-slate-200">
+                              {routine.departureAddressTitle}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 flex items-center gap-1 font-medium">
+                            <MapPin size={11} className="text-slate-400 shrink-0" />
+                            <span>{routine.departureAddressDetails || 'آدرس ثبت نشده'}</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer details */}
+                  <div className="flex items-center justify-between gap-2 text-xs pt-1 border-t border-slate-100">
+                    <div className="text-slate-500 font-medium flex items-center gap-1">
+                      <span>هزینه هر نوبت:</span>
+                      <span className="font-mono font-black text-sky-700">{routine.costPerTrip?.toLocaleString('fa-IR')} تومان</span>
+                    </div>
+
+                    {routine.driverName && (
+                      <div className="text-[11px] text-sky-800 font-bold bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100">
+                        راننده: {routine.driverName}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
-            </select>
+            </div>
+          )}
+        </div>
+      )}
 
-            <select
-              value={selectedDriverFilter}
-              onChange={(e) => setSelectedDriverFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none font-bold"
-            >
-              <option value="all">همه رانندگان</option>
-              {drivers.map(d => (
-                <option key={d.id} value={d.id}>{d.fullName}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedApprovalFilter}
-              onChange={(e) => setSelectedApprovalFilter(e.target.value as any)}
-              className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none font-bold"
-            >
-              <option value="all">همه وضعیت‌های تایید</option>
-              <option value="approved">فقط تایید شده‌های آموزش</option>
-              <option value="pending">در انتظار تایید آموزش</option>
-            </select>
+      {/* TAB 2: SINGLE TRIPS (ترددهای موردی) */}
+      {activeTab === 'single_trips' && (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Calendar className="text-indigo-600" size={18} />
+              <span>لیست ترددهای موردی و ثبت‌شده ({filteredSingleTrips.length} مورد)</span>
+            </h3>
+            <span className="text-xs text-slate-500 font-medium">
+              استفاده موردی در تاریخ‌های خاص برای محاسبه در حق‌الزحمه
+            </span>
           </div>
 
-          {/* Table */}
-          <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-            <table className="w-full text-right border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-800 border-b border-slate-200 font-black">
-                  <th className="py-3 px-3">ردیف</th>
-                  <th className="py-3 px-3">نام استاد</th>
-                  <th className="py-3 px-3">تاریخ سرویس</th>
-                  <th className="py-3 px-3">ساعت رفت / برگشت</th>
-                  <th className="py-3 px-3">مسیر و مبدا/مقصد</th>
-                  <th className="py-3 px-3">راننده تخصیص‌یافته</th>
-                  <th className="py-3 px-3 text-center">هزینه ایاب و ذهاب</th>
-                  <th className="py-3 px-3 text-center">تایید نهایی مسئول آموزش</th>
-                  <th className="py-3 px-3 text-center">عملیات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSchedules.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400 font-bold">
-                      هیچ سرویس ایاب و ذهابی ثبت نشده است.
-                    </td>
+          {filteredSingleTrips.length === 0 ? (
+            <div className="p-12 text-center space-y-2">
+              <Calendar size={36} className="text-slate-300 mx-auto" />
+              <p className="text-xs font-bold text-slate-600">هیچ تردد موردی در این بازه ثبت نشده است.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                    <th className="p-3 w-12 text-center">ردیف</th>
+                    <th className="p-3">نام و نام خانوادگی استاد</th>
+                    <th className="p-3">تاریخ تردد</th>
+                    <th className="p-3">نوع تردد</th>
+                    <th className="p-3">جزئیات ساعت و نشانی</th>
+                    <th className="p-3">تعداد نوبت</th>
+                    <th className="p-3">هزینه (تومان)</th>
+                    <th className="p-3">راننده</th>
+                    <th className="p-3 w-20 text-center">عملیات</th>
                   </tr>
-                ) : (
-                  filteredSchedules.map((s, idx) => (
-                    <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-3 font-mono text-slate-500">{idx + 1}</td>
-                      <td className="py-3 px-3 font-black text-slate-900">{s.teacherName}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-700">{s.date}</td>
-                      <td className="py-3 px-3 font-mono text-slate-600">
-                        {s.pickupTime} تا {s.returnTime}
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredSingleTrips.map((trip, idx) => (
+                    <tr key={trip.id} className="hover:bg-slate-50/90 transition-colors">
+                      <td className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
+                      <td className="p-3 font-black text-slate-900">{trip.teacherName}</td>
+                      <td className="p-3 font-mono font-bold text-indigo-700">{trip.date}</td>
+                      <td className="p-3">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-md text-[10px] font-black border",
+                          trip.tripType === 'round_trip' ? "bg-sky-50 text-sky-950 border-sky-200/50" :
+                          trip.tripType === 'arrival' ? "bg-emerald-50 text-emerald-950 border-emerald-200/50" : "bg-rose-50 text-rose-950 border-rose-200/50"
+                        )}>
+                          {trip.tripType === 'round_trip' ? 'رفت و برگشت' : trip.tripType === 'arrival' ? 'آمدن به موسسه' : 'رفتن از موسسه'}
+                        </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate">{s.routeDescription}</td>
-                      <td className="py-3 px-3 font-bold text-slate-800">{s.driverName || '-'}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-emerald-700">
-                        {s.cost ? s.cost.toLocaleString('fa-IR') + ' تومان' : 'رایگان / توافقی'}
+                      <td className="p-3 text-[11px] text-slate-600 space-y-0.5">
+                        {trip.arrivalTime && (
+                          <div>
+                            <span className="font-bold text-emerald-700">آمدن ({trip.arrivalTime}): </span>
+                            <span>{trip.arrivalAddressTitle} ({trip.arrivalAddressDetails})</span>
+                          </div>
+                        )}
+                        {trip.departureTime && (
+                          <div>
+                            <span className="font-bold text-rose-700">رفتن ({trip.departureTime}): </span>
+                            <span>{trip.departureAddressTitle} ({trip.departureAddressDetails})</span>
+                          </div>
+                        )}
                       </td>
-                      <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => handleToggleApproval(s)}
-                          className={cn(
-                            "px-3 py-1 rounded-xl text-xs font-bold transition-all border flex items-center gap-1 mx-auto cursor-pointer",
-                            s.isEducationApproved
-                              ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
-                              : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                          )}
-                        >
-                          {s.isEducationApproved ? (
-                            <>
-                              <CheckCircle2 size={13} className="text-emerald-600" />
-                              <span>تایید شده ({s.approvedBy || 'آموزش'})</span>
-                            </>
-                          ) : (
-                            <>
-                              <Clock size={13} className="text-amber-600" />
-                              <span>کلیک جهت تایید نهایی</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-                      <td className="py-3 px-3 text-center">
+                      <td className="p-3 font-mono font-bold text-center">{trip.tripsCount}</td>
+                      <td className="p-3 font-mono font-black text-slate-800">{trip.cost.toLocaleString('fa-IR')}</td>
+                      <td className="p-3 text-slate-600">{trip.driverName || '-'}</td>
+                      <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => {
-                              setEditingSchedule(s);
-                              setSelectedTeacherId(s.teacherId);
-                              setScheduleDate(s.date);
-                              setPickupTime(s.pickupTime);
-                              setReturnTime(s.returnTime);
-                              setRouteDescription(s.routeDescription);
-                              setSelectedDriverId(s.driverId || '');
-                              setCost(s.cost || 0);
-                              setNotes(s.notes || '');
-                              setIsScheduleModalOpen(true);
-                            }}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
-                            title="ویرایش"
+                            type="button"
+                            onClick={() => handleOpenSingleTripModal(trip)}
+                            className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
                           >
-                            <Edit3 size={13} />
+                            <Edit3 size={14} />
                           </button>
                           <button
-                            onClick={() => handleDeleteSchedule(s.id)}
-                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg"
-                            title="حذف"
+                            type="button"
+                            onClick={() => handleDeleteSingleTrip(trip.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* TAB 2: DRIVERS LIST */}
-      {activeSubTab === 'drivers' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {drivers.map(driver => (
-              <div key={driver.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 relative">
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
-                      <Car size={18} />
-                    </span>
+      {/* TAB 3: DRIVERS (رانندگان) */}
+      {activeTab === 'drivers' && (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Car className="text-slate-800" size={18} />
+              <span>بانک رانندگان طرف قرارداد سرویس ({drivers.length} نفر)</span>
+            </h3>
+          </div>
+
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {drivers.map(drv => (
+              <div key={drv.id} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs">
+                      {drv.fullName.slice(0, 2)}
+                    </div>
                     <div>
-                      <h4 className="font-black text-slate-900 text-xs">{driver.fullName}</h4>
-                      <span className="text-[10px] font-mono text-slate-400 block">{driver.phoneNumber}</span>
+                      <h4 className="text-xs font-black text-slate-900">{drv.fullName}</h4>
+                      <p className="text-[11px] font-mono text-slate-500 font-bold">{drv.phoneNumber || 'بدون شماره'}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1">
                     <button
+                      type="button"
                       onClick={() => {
-                        setEditingDriver(driver);
-                        setDriverName(driver.fullName);
-                        setDriverPhone(driver.phoneNumber);
-                        setCarModel(driver.carModel || '');
-                        setPlateNumber(driver.plateNumber || '');
+                        setEditingDriver(drv);
+                        setDriverName(drv.fullName);
+                        setDriverPhone(drv.phoneNumber || '');
+                        setCarModel(drv.carModel || '');
+                        setPlateNumber(drv.plateNumber || '');
                         setIsDriverModalOpen(true);
                       }}
-                      className="p-1.5 bg-white hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200"
+                      className="p-1 text-slate-400 hover:text-slate-800"
                     >
-                      <Edit3 size={13} />
+                      <Edit3 size={14} />
                     </button>
                     <button
-                      onClick={() => handleDeleteDriver(driver.id)}
-                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200"
+                      type="button"
+                      onClick={() => handleDeleteDriver(drv.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>مدل خودرو:</span>
-                    <span className="font-bold text-slate-800">{driver.carModel || 'تعریف نشده'}</span>
+                <div className="bg-white rounded-xl p-2.5 border border-slate-200 text-xs space-y-1">
+                  <div className="flex justify-between text-slate-600">
+                    <span className="text-[11px] text-slate-400">خودرو:</span>
+                    <span className="font-bold">{drv.carModel || 'نامشخص'}</span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span>شماره پلاک:</span>
-                    <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border border-slate-200">{driver.plateNumber || 'تعریف نشده'}</span>
+                  <div className="flex justify-between text-slate-600">
+                    <span className="text-[11px] text-slate-400">پلاک:</span>
+                    <span className="font-mono font-bold">{drv.plateNumber || 'ثبت نشده'}</span>
                   </div>
                 </div>
               </div>
@@ -541,79 +914,231 @@ export default function TeacherTransportManagement() {
         </div>
       )}
 
-      {/* MODAL 1: Driver Form Modal */}
-      {isDriverModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-slate-200">
+      {/* MODAL: CREATE / EDIT WEEKLY ROUTINE */}
+      {isRoutineModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-5 my-8">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Car size={18} className="text-indigo-600" />
-                <span>{editingDriver ? 'ویرایش مشخصات راننده' : 'تعریف راننده جدید سرویس'}</span>
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Car className="text-amber-600" size={20} />
+                <span>{editingRoutine ? 'ویرایش برنامه هفتگی سرویس استاد' : 'تعریف برنامه هفتگی سرویس استاد'}</span>
               </h3>
-              <button onClick={() => setIsDriverModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400">
-                <XCircle size={18} />
+              <button 
+                type="button"
+                onClick={() => setIsRoutineModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <XCircle size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveDriver} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">نام و نام خانوادگی راننده:</label>
-                <input
-                  type="text"
+            <form onSubmit={handleSaveRoutine} className="space-y-4">
+              {/* Select Teacher */}
+              <div className="space-y-1">
+                <label className="text-xs font-black text-slate-700">انتخاب استاد:</label>
+                <select
                   required
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  placeholder="مثلا: آقای مجید رضایی"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                />
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                  value={routineTeacherId}
+                  onChange={(e) => setRoutineTeacherId(e.target.value)}
+                >
+                  {teachers.map(t => (
+                    <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
+                  ))}
+                </select>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">شماره تماس:</label>
+              {/* Select Days of Week */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-700">روزهای هفته نیاز به سرویس:</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {WEEKDAYS.map(day => {
+                    const isSelected = routineDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) {
+                            setRoutineDays(routineDays.filter(d => d !== day));
+                          } else {
+                            setRoutineDays([...routineDays, day]);
+                          }
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                          isSelected 
+                            ? "bg-amber-600 text-white shadow-2xs font-black" 
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        )}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Arrival Section */}
+              <div className="bg-emerald-50/60 rounded-2xl p-4 border border-emerald-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                    <ArrowLeft size={14} className="text-emerald-600" />
+                    <span>آمدن به موسسه (رفت)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={routineArrivalEnabled}
+                      onChange={(e) => setRoutineArrivalEnabled(e.target.checked)}
+                      className="accent-emerald-600 rounded"
+                    />
+                    <span>فعال</span>
+                  </label>
+                </div>
+
+                {routineArrivalEnabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">ساعت آمدن:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً 15:00"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold outline-none"
+                        value={routineArrivalTime}
+                        onChange={(e) => setRoutineArrivalTime(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">عنوان نشانی مبدا:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً منزل / دانشگاه"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                        value={routineArrivalTitle}
+                        onChange={(e) => setRoutineArrivalTitle(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-3">
+                      <label className="text-[11px] font-bold text-slate-600">آدرس دقیق مبدا:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً الغدیر ۴۱، پلاک ۱۲"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                        value={routineArrivalDetails}
+                        onChange={(e) => setRoutineArrivalDetails(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Departure Section */}
+              <div className="bg-rose-50/60 rounded-2xl p-4 border border-rose-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-rose-950 flex items-center gap-1.5">
+                    <ArrowRight size={14} className="text-rose-600" />
+                    <span>رفتن از موسسه (برگشت)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-rose-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={routineDepartureEnabled}
+                      onChange={(e) => setRoutineDepartureEnabled(e.target.checked)}
+                      className="accent-rose-600 rounded"
+                    />
+                    <span>فعال</span>
+                  </label>
+                </div>
+
+                {routineDepartureEnabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">ساعت رفتن:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً 16:00"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold outline-none"
+                        value={routineDepartureTime}
+                        onChange={(e) => setRoutineDepartureTime(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600">عنوان نشانی مقصد:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً منزل / پژوهشگاه"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                        value={routineDepartureTitle}
+                        onChange={(e) => setRoutineDepartureTitle(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-3">
+                      <label className="text-[11px] font-bold text-slate-600">آدرس دقیق مقصد:</label>
+                      <input
+                        type="text"
+                        placeholder="مثلاً الغدیر ۴۱"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                        value={routineDepartureDetails}
+                        onChange={(e) => setRoutineDepartureDetails(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Driver and Cost */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">راننده سرویس:</label>
+                  <select
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    value={routineDriverId}
+                    onChange={(e) => setRoutineDriverId(e.target.value)}
+                  >
+                    <option value="">انتخاب راننده (اختیاری)</option>
+                    {drivers.map(d => (
+                      <option key={d.id} value={d.id}>{d.fullName} ({d.carModel || 'خودرو'})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">هزینه هر نوبت (تومان):</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                    value={routineCost}
+                    onChange={(e) => setRoutineCost(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">توضیحات و ملاحظات:</label>
                 <input
                   type="text"
-                  value={driverPhone}
-                  onChange={(e) => setDriverPhone(e.target.value)}
-                  placeholder="0912..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-mono font-bold"
+                  placeholder="یادداشت در خصوص مسیر یا هماهنگی..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                  value={routineNotes}
+                  onChange={(e) => setRoutineNotes(e.target.value)}
                 />
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">مدل و نوع خودرو:</label>
-                <input
-                  type="text"
-                  value={carModel}
-                  onChange={(e) => setCarModel(e.target.value)}
-                  placeholder="مثلا: پژو پارس سفید"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">شماره پلاک:</label>
-                <input
-                  type="text"
-                  value={plateNumber}
-                  onChange={(e) => setPlateNumber(e.target.value)}
-                  placeholder="۲۲ ج ۳۴۵ ایران ۱۶"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsDriverModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold"
+                  onClick={() => setIsRoutineModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
                 >
                   انصراف
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md shadow-amber-200"
                 >
-                  ذخیره راننده
+                  ذخیره برنامه هفتگی
                 </button>
               </div>
             </form>
@@ -621,157 +1146,273 @@ export default function TeacherTransportManagement() {
         </div>
       )}
 
-      {/* MODAL 2: Schedule Form Modal */}
-      {isScheduleModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+      {/* MODAL: CREATE / EDIT SINGLE TRIP */}
+      {isSingleTripModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-5 my-8">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Car size={18} className="text-indigo-600" />
-                <span>{editingSchedule ? 'ویرایش سرویس ایاب و ذهاب' : 'ثبت سرویس ایاب و ذهاب استاد'}</span>
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Calendar className="text-indigo-600" size={20} />
+                <span>{editingSingleTrip ? 'ویرایش تردد موردی استاد' : 'ثبت تردد موردی استاد'}</span>
               </h3>
-              <button onClick={() => setIsScheduleModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400">
-                <XCircle size={18} />
+              <button 
+                type="button"
+                onClick={() => setIsSingleTripModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <XCircle size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveSchedule} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">انتخاب استاد:</label>
-                <select
-                  value={selectedTeacherId}
-                  onChange={(e) => setSelectedTeacherId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                >
-                  <option value="">انتخاب کنید...</option>
-                  {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.fullName}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Interactive Shamsi Calendar for Schedule Date */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-800">تاریخ سرویس (شمسی):</label>
-                  <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
-                    {scheduleDate}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between bg-white p-1.5 rounded-xl border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setCalMonth(m => m === 1 ? 12 : m - 1)}
-                    className="px-2 py-1 bg-slate-100 rounded text-[11px] font-bold"
-                  >
-                    قبلی
-                  </button>
-                  <span className="font-bold text-slate-800 text-[11px]">
-                    {SHAMSI_MONTH_NAMES[calMonth - 1]} {calYear}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCalMonth(m => m === 12 ? 1 : m + 1)}
-                    className="px-2 py-1 bg-slate-100 rounded text-[11px] font-bold"
-                  >
-                    بعدی
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold">
-                  {Array.from({ length: getDaysInShamsiMonth(calYear, calMonth) }, (_, i) => i + 1).map(d => {
-                    const dStr = formatShamsiDate(calYear, calMonth, d);
-                    const isSelected = scheduleDate === dStr;
-                    return (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setScheduleDate(dStr)}
-                        className={cn(
-                          "py-1 rounded font-mono font-bold border",
-                          isSelected ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-800 border-slate-200"
-                        )}
-                      >
-                        {d}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">ساعت رفت:</label>
-                  <input
-                    type="text"
-                    value={pickupTime}
-                    onChange={(e) => setPickupTime(e.target.value)}
-                    placeholder="07:30"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 outline-none font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">ساعت برگشت:</label>
-                  <input
-                    type="text"
-                    value={returnTime}
-                    onChange={(e) => setReturnTime(e.target.value)}
-                    placeholder="12:30"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 outline-none font-mono font-bold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">مسیر / مبدا و مقصد:</label>
-                <input
-                  type="text"
-                  value={routeDescription}
-                  onChange={(e) => setRouteDescription(e.target.value)}
-                  placeholder="منزل استاد تا موسسه"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">تخصیص راننده:</label>
+            <form onSubmit={handleSaveSingleTrip} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-slate-700">انتخاب استاد:</label>
                   <select
-                    value={selectedDriverId}
-                    onChange={(e) => setSelectedDriverId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 outline-none font-bold"
+                    required
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    value={tripTeacherId}
+                    onChange={(e) => setTripTeacherId(e.target.value)}
                   >
-                    <option value="">انتخاب راننده...</option>
+                    {teachers.map(t => (
+                      <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-slate-700">تاریخ تردد (شمسی):</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثلاً 1403/07/10"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                    value={tripDate}
+                    onChange={(e) => setTripDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Trip Type */}
+              <div className="space-y-1">
+                <label className="text-xs font-black text-slate-700">نوع تردد:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTripType('round_trip')}
+                    className={cn(
+                      "py-2 rounded-xl text-xs font-black transition-all",
+                      tripType === 'round_trip' ? "bg-amber-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
+                    )}
+                  >
+                    رفت و برگشت (۲ نوبت)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTripType('arrival')}
+                    className={cn(
+                      "py-2 rounded-xl text-xs font-black transition-all",
+                      tripType === 'arrival' ? "bg-emerald-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
+                    )}
+                  >
+                    فقط آمدن (۱ نوبت)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTripType('departure')}
+                    className={cn(
+                      "py-2 rounded-xl text-xs font-black transition-all",
+                      tripType === 'departure' ? "bg-rose-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
+                    )}
+                  >
+                    فقط رفتن (۱ نوبت)
+                  </button>
+                </div>
+              </div>
+
+              {/* Arrival address */}
+              {tripType !== 'departure' && (
+                <div className="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-200 space-y-2">
+                  <div className="text-xs font-black text-emerald-900">مشخصات آمدن به موسسه:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="ساعت آمدن (مثلاً 15:00)"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold outline-none"
+                      value={tripArrivalTime}
+                      onChange={(e) => setTripArrivalTime(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="عنوان نشانی (مثلاً منزل)"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      value={tripArrivalTitle}
+                      onChange={(e) => setTripArrivalTitle(e.target.value)}
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="آدرس دقیق نشانی مبدا (مثلاً الغدیر ۴۱)"
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                    value={tripArrivalDetails}
+                    onChange={(e) => setTripArrivalDetails(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Departure address */}
+              {tripType !== 'arrival' && (
+                <div className="bg-rose-50/50 p-3.5 rounded-2xl border border-rose-200 space-y-2">
+                  <div className="text-xs font-black text-rose-900">مشخصات رفتن از موسسه:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="ساعت رفتن (مثلاً 16:00)"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold outline-none"
+                      value={tripDepartureTime}
+                      onChange={(e) => setTripDepartureTime(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="عنوان نشانی (مثلاً منزل)"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      value={tripDepartureTitle}
+                      onChange={(e) => setTripDepartureTitle(e.target.value)}
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="آدرس دقیق نشانی مقصد (مثلاً الغدیر ۴۱)"
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                    value={tripDepartureDetails}
+                    onChange={(e) => setTripDepartureDetails(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">راننده:</label>
+                  <select
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                    value={tripDriverId}
+                    onChange={(e) => setTripDriverId(e.target.value)}
+                  >
+                    <option value="">انتخاب راننده</option>
                     {drivers.map(d => (
                       <option key={d.id} value={d.id}>{d.fullName}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">هزینه ایاب و ذهاب (تومان):</label>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">مبلغ تردد (تومان):</label>
                   <input
                     type="number"
-                    value={cost}
-                    onChange={(e) => setCost(Number(e.target.value))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 outline-none font-mono font-bold"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                    value={tripCost}
+                    onChange={(e) => setTripCost(Number(e.target.value))}
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsScheduleModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold"
+                  onClick={() => setIsSingleTripModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
                 >
                   انصراف
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-200"
                 >
-                  ذخیره سرویس
+                  ذخیره تردد موردی
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE / EDIT DRIVER */}
+      {isDriverModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Car className="text-slate-800" size={20} />
+                <span>{editingDriver ? 'ویرایش راننده' : 'افزودن راننده جدید'}</span>
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setIsDriverModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDriver} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">نام و نام خانوادگی:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="نام راننده..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">شماره تماس:</label>
+                <input
+                  type="text"
+                  placeholder="0912..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold outline-none"
+                  value={driverPhone}
+                  onChange={(e) => setDriverPhone(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">مدل خودرو:</label>
+                  <input
+                    type="text"
+                    placeholder="پژو ۴۰۵، سمند..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none"
+                    value={carModel}
+                    onChange={(e) => setCarModel(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">شماره پلاک:</label>
+                  <input
+                    type="text"
+                    placeholder="۲۲ ج ۳۴۵ ایران ۱۶"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-medium outline-none"
+                    value={plateNumber}
+                    onChange={(e) => setPlateNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsDriverModalOpen(false)}
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black shadow-md"
+                >
+                  ذخیره راننده
                 </button>
               </div>
             </form>
