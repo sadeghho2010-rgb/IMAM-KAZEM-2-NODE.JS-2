@@ -36,7 +36,9 @@ import {
   BookOpen,
   ArrowLeftRight,
   Trash2,
-  HandCoins
+  HandCoins,
+  ArrowLeft,
+  CalendarPlus
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../../lib/utils';
@@ -85,8 +87,8 @@ interface StudentActivityAndTuitionProps {
 export default function StudentActivityAndTuition({ onNavigateTab }: StudentActivityAndTuitionProps) {
   const { currentUser } = useAuth();
 
-  // Sub-tab: 'activity_info' (اطلاعات حضور و فعالیت طلاب) | 'tuition_calc' (محاسبه و فیش‌های شهریه)
-  const [currentSubTab, setCurrentSubTab] = useState<'activity_info' | 'tuition_calc'>('activity_info');
+  // Sub-tab: 'activity_info' (اطلاعات حضور و فعالیت طلاب) | 'mechanized_calc' (محاسبه مکانیزه)
+  const [currentSubTab, setCurrentSubTab] = useState<'activity_info' | 'mechanized_calc'>('activity_info');
 
   // Filters & Date Range
   const [gradeFilter, setGradeFilter] = useState('all');
@@ -188,8 +190,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   // Table view mode: 'detailed' (default) or 'compact'
   const [isCompactView, setIsCompactView] = useState(false);
 
-  // Dual Reporting Mode: 'upper_management' (صورت‌وضعیت تفکیکی بالادستی و حواله‌ها) | 'internal_detailed' (گزارش تفصیلی داخلی)
-  const [reportViewMode, setReportViewMode] = useState<'upper_management' | 'internal_detailed'>('upper_management');
+  // Dual Reporting Mode: 'upper_management' (صورت‌وضعیت تفکیکی بالادستی و حواله‌ها) | 'internal_detailed' (گزارش تفصیلی داخلی با اصلاحات دستی)
+  const [reportViewMode, setReportViewMode] = useState<'upper_management' | 'internal_detailed'>('internal_detailed');
 
   // Collections for Lunch, Meals, Claims, Destination Accounts, and Education Reports
   const [lunchItems, setLunchItems] = useState<StudentLunchItem[]>([]);
@@ -231,8 +233,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [profManualAdjustment, setProfManualAdjustment] = useState<number>(0);
   const [profManualAdjustmentReason, setProfManualAdjustmentReason] = useState<string>('');
 
-  // Primary Tuition View Mode: 'create_period' (ایجاد دوره پرداخت شهریه) | 'archived_periods' (مشاهده دوره‌های شهریه {بایگانی})
-  const [tuitionMainMode, setTuitionMainMode] = useState<'create_period' | 'archived_periods'>('create_period');
+  // Primary Page View Mode: 'initial_home' (صفحه آغازین دو گزینه‌ای) | 'active_period' (محیط ایجاد دوره و محاسبه شهریه) | 'archived_periods' (مشاهده دوره‌های شهریه {بایگانی})
+  const [pageMode, setPageMode] = useState<'initial_home' | 'active_period' | 'archived_periods'>('initial_home');
 
   // Manual Overrides state per student (indexed by studentId)
   const [studentOverrides, setStudentOverrides] = useState<Record<string, {
@@ -1018,40 +1020,26 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const isFinancialReconciled = totalGrossTuitionSum === (totalNetPayoutSum + totalKitchenTransferSum + totalCulturalTransferSum + totalQardFundTransferSum + totalOtherTransferSum);
 
   // -------------------------------------------------------------
-  // Save/Create Tuition Period
+  // Confirm Period Range & Enter Active Calculation Session
   // -------------------------------------------------------------
-  const handleCreateTuitionPeriod = async (e: React.FormEvent) => {
+  const handleConfirmPeriodRange = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPeriodTitle) {
+    if (!newPeriodTitle.trim()) {
       alert('لطفاً عنوان دوره شهریه را وارد کنید.');
       return;
     }
 
-    const periodId = `period-${Date.now()}`;
-    const periodDoc: TuitionPeriod = {
-      id: periodId,
-      title: newPeriodTitle,
-      startDate: newPeriodStartDate,
-      endDate: newPeriodEndDate,
-      status: 'draft',
-      totalStudentsCalculated: calculatedTuitions.length,
-      totalPayoutAmount: totalNetPayoutSum,
-      calculations: calculatedTuitions,
-      createdAt: new Date().toISOString(),
-      createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username
-    };
-
-    await localDb.setDoc('tuition_periods', periodDoc);
-    setTuitionPeriods(prev => [periodDoc, ...prev]);
-    setSelectedPeriodId(periodId);
+    setStartDate(newPeriodStartDate);
+    setEndDate(newPeriodEndDate);
     setIsNewPeriodModalOpen(false);
-    setCurrentSubTab('tuition_calc');
-    showToast(`دوره جدید «${newPeriodTitle}» با موفقیت ایجاد و شهریه‌ها ذخیره گردید.`);
+    setPageMode('active_period');
+    setCurrentSubTab('activity_info');
+    showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت تنظیم شد. اکنون می‌توانید اطلاعات طلاب را بررسی فرمایید.`);
   };
 
   // Finalize & Archive Current Calculation
   const handleFinalizeTuitionPeriod = async () => {
-    if (!newPeriodTitle) {
+    if (!newPeriodTitle.trim()) {
       alert('لطفاً عنوان دوره شهریه را وارد کنید.');
       return;
     }
@@ -1075,7 +1063,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     await localDb.setDoc('tuition_periods', finalizedDoc);
     setTuitionPeriods(prev => [finalizedDoc, ...prev]);
     setSelectedArchivedPeriod(finalizedDoc);
-    setTuitionMainMode('archived_periods');
+    setPageMode('archived_periods');
     showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت ثبت نهایی شد و به بایگانی منتقل گردید.`);
   };
 
@@ -1216,68 +1204,186 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         )}
       </AnimatePresence>
 
-      {/* Top Banner & Title */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shadow-xs border border-emerald-100 shrink-0">
-            <Users size={24} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-slate-900">اطلاعات حضور و فعالیت طلاب و محاسبه شهریه</h2>
-              <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black rounded-lg">
-                واحد مالی و بودجه
-              </span>
+      {/* ============================================================= */}
+      {/* MODE 1: INITIAL CLEAN SLATE (دو گزینه کلی: ایجاد دوره و مشاهده بایگانی) */}
+      {/* ============================================================= */}
+      {pageMode === 'initial_home' && (
+        <div className="space-y-6">
+          {/* Top Banner & Title */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shadow-xs border border-emerald-100 shrink-0">
+                <Coins size={24} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-black text-slate-900">سامانه محاسبه و پرداخت شهریه طلاب</h2>
+                  <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-black rounded-lg">
+                    واحد مالی و بودجه
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  مدیریت دوره‌های پرداخت، استخراج کارکرد و حضور طلاب، محاسبه مکانیزه و صدور اسناد
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              مشاهده تمامی اطلاعات پایه، زندگی، مطالعه، حضور و غیاب، مشاوره‌ها، نهار، وام و محاسبه مکانیزه شهریه
-            </p>
+          </div>
+
+          {/* Clean Slate 2 Grand Action Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 max-w-4xl mx-auto">
+            {/* گزینه ۱: ایجاد دوره پرداخت شهریه */}
+            <button
+              type="button"
+              onClick={() => {
+                setNewPeriodTitle(`شهریه دوره ${today.substring(0, 7)}`);
+                setNewPeriodStartDate(defaultStart);
+                setNewPeriodEndDate(today);
+                setIsNewPeriodModalOpen(true);
+              }}
+              className="group text-right bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white p-8 rounded-3xl shadow-lg hover:shadow-xl hover:shadow-emerald-600/20 transition-all duration-200 cursor-pointer border border-emerald-500/30 flex flex-col justify-between min-h-[260px] relative overflow-hidden active:scale-[0.99]"
+            >
+              <div className="absolute top-0 left-0 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none -translate-x-12 -translate-y-12 group-hover:scale-125 transition-transform" />
+              <div className="space-y-4 relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white border border-white/30 shadow-inner group-hover:scale-105 transition-transform">
+                  <CalendarPlus size={32} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white">ایجاد دوره پرداخت شهریه</h3>
+                  <p className="text-xs text-emerald-100 mt-2 leading-relaxed font-normal">
+                    تنظیم بازه زمانی دوره پرداخت، بررسی پرونده و آمار فعالیت طلاب، محاسبه مکانیزه و اعمال افزایش یا کاهش دستی و ثبت نهایی دوره.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-4 border-t border-white/20 flex items-center justify-between text-xs font-bold text-white relative z-10">
+                <span className="flex items-center gap-1.5 bg-white/20 px-3.5 py-1.5 rounded-xl backdrop-blur-xs">
+                  <span>تنظیم بازه زمانی و ورود به دوره</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </span>
+                <span className="text-[11px] text-emerald-200">شروع فرآیند ←</span>
+              </div>
+            </button>
+
+            {/* گزینه ۲: مشاهده دوره‌های شهریه {بایگانی} */}
+            <button
+              type="button"
+              onClick={() => {
+                setPageMode('archived_periods');
+                setSelectedArchivedPeriod(null);
+              }}
+              className="group text-right bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-8 rounded-3xl shadow-lg hover:shadow-xl hover:shadow-indigo-950/20 transition-all duration-200 cursor-pointer border border-indigo-800/40 flex flex-col justify-between min-h-[260px] relative overflow-hidden active:scale-[0.99]"
+            >
+              <div className="absolute top-0 left-0 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none -translate-x-12 -translate-y-12 group-hover:scale-125 transition-transform" />
+              <div className="space-y-4 relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xs flex items-center justify-center text-indigo-300 border border-white/20 shadow-inner group-hover:scale-105 transition-transform">
+                  <BookOpen size={30} />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-black text-white">مشاهده دوره‌های شهریه {"{بایگانی}"}</h3>
+                    {tuitionPeriods.length > 0 && (
+                      <span className="px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 rounded-full text-xs font-mono font-bold">
+                        {tuitionPeriods.length} دوره
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-300 mt-2 leading-relaxed font-normal">
+                    مشاهده سوابق و اسناد دوره‌های نهایی شده، فیش‌های شهریه پرداخت شده، صورت‌وضعیت بالادستی و خروجی اکسل گزارش‌ها.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-4 border-t border-white/15 flex items-center justify-between text-xs font-bold text-white relative z-10">
+                <span className="flex items-center gap-1.5 bg-white/10 px-3.5 py-1.5 rounded-xl backdrop-blur-xs text-indigo-200">
+                  <span>مشاهده آرشیو و فیش‌ها</span>
+                  <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
+                </span>
+                <span className="text-[11px] text-slate-400">سوابق نهایی‌شده ←</span>
+              </div>
+            </button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Sub-Navigation Tabs */}
-      <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('activity_info')}
-          className={cn(
-            "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer",
-            currentSubTab === 'activity_info'
-              ? "bg-emerald-600 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          )}
-        >
-          <Users size={16} />
-          <span>۱. پرونده و اطلاعات حضور و فعالیت طلاب</span>
-          <span className={cn(
-            "px-2 py-0.5 rounded-md text-[11px] font-bold font-mono",
-            currentSubTab === 'activity_info' ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600"
-          )}>
-            {filteredStudents.length}
-          </span>
-        </button>
+      {/* ============================================================= */}
+      {/* MODE 2: ACTIVE PERIOD (ورود به بخش ایجاد دوره پرداخت شهریه)    */}
+      {/* ============================================================= */}
+      {pageMode === 'active_period' && (
+        <div className="space-y-5">
+          {/* Active Period Top Bar */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <button
+                type="button"
+                onClick={() => setPageMode('initial_home')}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shrink-0"
+              >
+                <ArrowLeft size={16} />
+                <span>بازگشت به صفحه اصلی دوره‌ها</span>
+              </button>
+              <div className="border-r border-slate-200 pr-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-black text-slate-900">{newPeriodTitle || 'دوره پرداخت شهریه'}</h2>
+                  <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black rounded-lg">
+                    دوره در حال ویرایش و پردازش
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  بازه زمانی ارزیابی کارکرد: از {startDate} تا {endDate}
+                </p>
+              </div>
+            </div>
 
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('tuition_calc')}
-          className={cn(
-            "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer",
-            currentSubTab === 'tuition_calc'
-              ? "bg-emerald-600 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          )}
-        >
-          <DollarSign size={16} />
-          <span>۲. محاسبه مکانیزه و لیست فیش‌های شهریه</span>
-          <span className={cn(
-            "px-2 py-0.5 rounded-md text-[11px] font-bold font-mono",
-            currentSubTab === 'tuition_calc' ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600"
-          )}>
-            {totalNetPayoutSum.toLocaleString('fa-IR')} ت
-          </span>
-        </button>
-      </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold hidden md:inline">مجموع واریزی خالص پایا:</span>
+              <span className="px-3.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black font-mono">
+                {totalNetPayoutSum.toLocaleString('fa-IR')} تومان
+              </span>
+            </div>
+          </div>
+
+          {/* The Two Grand Tabs Requested by User */}
+          <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('activity_info')}
+              className={cn(
+                "flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer",
+                currentSubTab === 'activity_info'
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <Users size={16} />
+              <span>۱. اطلاعات حضور و فعالیت طلاب</span>
+              <span className={cn(
+                "px-2 py-0.5 rounded-md text-[11px] font-bold font-mono",
+                currentSubTab === 'activity_info' ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600"
+              )}>
+                {filteredStudents.length} طلبه
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('mechanized_calc')}
+              className={cn(
+                "flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer",
+                currentSubTab === 'mechanized_calc'
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <DollarSign size={16} />
+              <span>۲. محاسبه مکانیزه</span>
+              <span className={cn(
+                "px-2 py-0.5 rounded-md text-[11px] font-bold font-mono",
+                currentSubTab === 'mechanized_calc' ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600"
+              )}>
+                با امکان اصلاح دستی
+              </span>
+            </button>
+          </div>
 
       {/* Filter and Date Range Strip */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1603,84 +1709,50 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                 );
               })
             )}
+            {/* Step Next Button */}
+            <div className="flex justify-end pt-3 pb-2">
+              <button
+                type="button"
+                onClick={() => setCurrentSubTab('mechanized_calc')}
+                className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-[1.01]"
+              >
+                <span>مرحله بعد: ورود به سربرگ محاسبه مکانیزه شهریه</span>
+                <ChevronLeft size={16} />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: محاسبه و فیش‌های شهریه */}
-      {currentSubTab === 'tuition_calc' && (
+      {/* TAB 2: محاسبه مکانیزه */}
+      {currentSubTab === 'mechanized_calc' && (
         <div className="space-y-5">
-          {/* Main Top Selector: Create Period vs Archived Periods */}
-          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setTuitionMainMode('create_period');
-                setSelectedArchivedPeriod(null);
-              }}
-              className={cn(
-                "flex-1 w-full py-3 px-5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer",
-                tuitionMainMode === 'create_period'
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
-              )}
-            >
-              <PlusCircle size={18} />
-              <span>ایجاد دوره پرداخت شهریه</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTuitionMainMode('archived_periods')}
-              className={cn(
-                "flex-1 w-full py-3 px-5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer",
-                tuitionMainMode === 'archived_periods'
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
-                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
-              )}
-            >
-              <BookOpen size={18} />
-              <span>مشاهده دوره‌های شهریه {"{بایگانی}"}</span>
-              {tuitionPeriods.length > 0 && (
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[11px] font-mono font-bold mr-1",
-                  tuitionMainMode === 'archived_periods' ? "bg-indigo-800 text-white" : "bg-slate-200 text-slate-700"
-                )}>
-                  {tuitionPeriods.length} دوره
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* MODE 1: ایجاد دوره پرداخت شهریه */}
-          {tuitionMainMode === 'create_period' && (
-            <div className="space-y-5">
-              {/* Period Date & Formula Controls Header */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                      <DollarSign size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black text-slate-900">تعریف و تنظیم بازه زمان محاسبات شهریه</h3>
-                      <p className="text-[11px] text-slate-500">
-                        بازه زمانی مورد نظر را مشخص کرده و اطلاعات جدول را بررسی و ویرایش نمایید.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsSettingsModalOpen(true)}
-                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <SlidersHorizontal size={14} className="text-emerald-400" />
-                      <span>تنظیمات فرمول شهریه</span>
-                    </button>
-                  </div>
+          {/* Period Date & Formula Controls Header */}
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+                  <DollarSign size={20} />
                 </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">محاسبه مکانیزه و اصلاحات دستی شهریه طلاب</h3>
+                  <p className="text-[11px] text-slate-500">
+                    شهریه‌ها به صورت هوشمند بر اساس آمار حضور و مطالعه محاسبه شده‌اند. می‌توانید مبالغ را بررسی و به صورت موردی تغییر دهید.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <SlidersHorizontal size={14} className="text-emerald-400" />
+                  <span>تنظیمات فرمول محاسبه شهریه</span>
+                </button>
+              </div>
+            </div>
 
                 {/* Period Title & Dates Picker Form */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
@@ -2135,18 +2207,49 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
             <button
               type="button"
               onClick={handleFinalizeTuitionPeriod}
-              className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-95 shrink-0"
+              className="px-6 py-3.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-95 shrink-0"
             >
               <CheckCheck size={18} />
-              <span>ثبت نهایی دوره محاسبه شهریه</span>
+              <span>تایید نهایی و انتقال دوره به بایگانی</span>
             </button>
           </div>
         </div>
       )}
+    </div>
+  )}
 
-      {/* MODE 2: مشاهده دوره‌های شهریه {بایگانی} */}
-      {tuitionMainMode === 'archived_periods' && (
+      {/* ============================================================= */}
+      {/* MODE 3: ARCHIVED PERIODS (مشاهده دوره‌های شهریه {بایگانی})     */}
+      {/* ============================================================= */}
+      {pageMode === 'archived_periods' && (
         <div className="space-y-5">
+          {/* Top Header for Archive with Back Button */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setPageMode('initial_home');
+                  setSelectedArchivedPeriod(null);
+                }}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shrink-0"
+              >
+                <ArrowLeft size={16} />
+                <span>بازگشت به صفحه اصلی دوره‌ها</span>
+              </button>
+              <div className="border-r border-slate-200 pr-3">
+                <h2 className="text-base font-black text-slate-900">مشاهده دوره‌های شهریه {"{بایگانی}"}</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  آرشیو دوره‌های ثبت نهایی شده، فیش‌های تفکیکی و دریافت فایل اکسل
+                </p>
+              </div>
+            </div>
+
+            <span className="px-3 py-1.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold font-mono">
+              {tuitionPeriods.length} دوره بایگانی شده
+            </span>
+          </div>
+
           {!selectedArchivedPeriod ? (
             /* List of Archived Tuition Periods */
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
@@ -2171,11 +2274,16 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   <p className="text-xs text-slate-500 font-bold">هنوز هیچ دوره شهریه‌ای ثبت نهایی نشده است.</p>
                   <button
                     type="button"
-                    onClick={() => setTuitionMainMode('create_period')}
+                    onClick={() => {
+                      setNewPeriodTitle(`شهریه دوره ${today.substring(0, 7)}`);
+                      setNewPeriodStartDate(defaultStart);
+                      setNewPeriodEndDate(today);
+                      setIsNewPeriodModalOpen(true);
+                    }}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <PlusCircle size={16} />
-                    <span>ایجاد اولین دوره شهریه</span>
+                    <span>ایجاد دوره پرداخت شهریه</span>
                   </button>
                 </div>
               ) : (
@@ -2319,8 +2427,6 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           )}
         </div>
       )}
-    </div>
-  )}
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL 1: تنظیمات جامع فرمول محاسبه شهریه                       */}
@@ -3135,7 +3241,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                 </button>
               </div>
 
-              <form onSubmit={handleCreateTuitionPeriod} className="p-6 space-y-4 text-xs">
+              <form onSubmit={handleConfirmPeriodRange} className="p-6 space-y-4 text-xs">
                 <div>
                   <label className="block text-slate-700 font-bold mb-1.5">عنوان دوره پرداخت:</label>
                   <input
@@ -3170,10 +3276,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                 <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-900 space-y-1">
                   <div className="font-bold flex items-center gap-1">
                     <Info size={14} className="text-emerald-700" />
-                    <span>پنجره زمانی محاسبات:</span>
+                    <span>پنجره زمانی محاسبات دوره:</span>
                   </div>
                   <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    تنها اطلاعات مطالعه، غیبت‌ها، ارزیابی مشاوره‌ها و کارکردهای ثبت شده در این بازه زمانی ملاک محاسبه شهریه خواهد بود.
+                    با تایید این بخش، وارد فرآیند بررسی کارکرد طلاب و محاسبه مکانیزه شهریه برای این بازه زمانی خواهید شد.
                   </p>
                 </div>
 
@@ -3190,7 +3296,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer shadow-md flex items-center gap-1.5"
                   >
                     <Check size={16} />
-                    <span>محاسبه و ایجاد دوره</span>
+                    <span>تایید و ورود به دوره پرداخت شهریه</span>
                   </button>
                 </div>
               </form>
