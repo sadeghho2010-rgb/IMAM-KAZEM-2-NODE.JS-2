@@ -63,9 +63,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'finance-teachers', label: 'محاسبه حق‌الزحمه اساتید', icon: Clock },
   { id: 'finance-lunch', label: 'اطلاعات نهار و شام', icon: UtensilsCrossed },
   { id: 'finance-claims', label: 'مطالبات و بدهی‌ها', icon: HandCoins },
-  { id: 'finance-loans-fund', label: 'گزارشات صندوق و وام‌های فعال', icon: Building2 },
-  { id: 'finance-expenses-reports', label: 'سایر هزینه‌ها و تراز مالی', icon: Receipt },
-  { id: 'finance', label: 'بخش جامع امور مالی', icon: Wallet },
+  { id: 'finance-expenses-reports', label: 'هزینه‌ها', icon: Receipt },
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
   { id: 'active-students', label: 'طلاب فعال', icon: UserCheck },
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
@@ -89,6 +87,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی', icon: FileSpreadsheet },
+  { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
@@ -108,7 +107,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         'finance-teachers',
         'finance-lunch',
         'finance-claims',
-        'finance-loans-fund',
         'finance-expenses-reports',
         'workflow',
         'todos',
@@ -116,10 +114,20 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         'students',
         'teachers-bank',
         'staff-bank',
-        'teacher-transport',
-        'finance'
+        'teacher-transport'
       ];
       return allowedFinanceTabs.includes(item.id);
+    }
+
+    // صندوق قرض‌الحسنه و وام‌ها: زیرمجموعه مسئول آموزش، سوپرادمین و مدیران آموزشی
+    if (item.id === 'finance-loans-fund') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      );
     }
 
     // فعالیت‌های سایت و پشتیبان‌گیری: تنها برای سوپر ادمین / کاربران سطح ۱ و مسئول آموزش

@@ -1364,6 +1364,8 @@ export interface GradeMentorCalculationItem {
   lunchCount: number; // تعداد وعده نهار
   lunchDeduction: number; // کسر نهار
   bonusAmount: number; // اضافات / پاداش
+  debtDeduction?: number; // کسر بدهی‌ها و مطالبات فعال
+  debtNotes?: string; // شرح بدهی
   otherDeductions: number; // سایر کسورات
   netPayable: number; // خالص پرداختی
   bankName?: string;
@@ -1389,5 +1391,43 @@ export interface GradeMentorPeriod {
   finalizedAt?: string;
   finalizedByName?: string;
 }
+
+// -------------------------------------------------------------
+// Budget Rows & Expense Records Types (ردیف‌های بودجه و هزینه‌ها)
+// -------------------------------------------------------------
+
+export interface BudgetRow {
+  id: string;
+  code: string; // e.g. "013", "014", "102"
+  title: string; // e.g. "ردیف پذیرایی و تغذیه طلاب", "ردیف تاسیسات و تعمیرات", "ردیف فرهنگی و اردوها"
+  allocatedAmount: number; // سقف مصوب بودجه (تومان)
+  period: string; // e.g. "سال تحصیلی ۱۴۰۳-۱۴۰۴", "پاییز ۱۴۰۳"
+  startDate?: string;
+  endDate?: string;
+  spentAmount?: number; // مصرف شده
+  description?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ExpenseRecord {
+  id: string;
+  title: string; // عنوان هزینه
+  date: string; // تاریخ هزینه (شمسی)
+  amount: number; // مبلغ (تومان)
+  budgetRowId?: string; // شناسه ردیف بودجه (یا دستی)
+  budgetRowTitle?: string; // عنوان ردیف بودجه (انتخابی یا دستی)
+  budgetCode?: string; // کد ردیف مثلاً 013
+  payer: string; // پرداخت کننده / تنخواه‌دار / شخص
+  category: string; // موضوع/دسته‌بندی (تاسیسات، پذیرایی، فرهنگی، اداری، حق‌الزحمه، متفرقه)
+  description?: string; // توضیحات
+  attachmentUrl?: string; // لینک یا نام فایل پیوست/فاکتور
+  recipient?: string; // طرف حساب / فروشگاه / شخص
+  invoiceNumber?: string; // شماره فاکتور یا سند
+  status?: 'approved' | 'pending' | 'rejected';
+  createdAt: string;
+  createdByName?: string;
+}
+
 
 

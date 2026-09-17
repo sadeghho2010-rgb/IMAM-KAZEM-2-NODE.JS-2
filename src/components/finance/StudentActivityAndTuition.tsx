@@ -2050,11 +2050,69 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           {/* VIEW 2: INTERNAL DETAILED AUDIT WITH EDITABLE MANUAL ADJUSTMENTS */}
           {reportViewMode === 'internal_detailed' && (
             <div className="space-y-4">
+              {/* Filter & View Mode Controls Strip */}
+              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Filter size={15} className="text-indigo-600" />
+                    <span>فیلتر بر اساس پایه:</span>
+                  </span>
+                  {['all', 'پایه 7', 'پایه 8', 'پایه 9', 'پایه 10', 'پایه 11', 'پایه 12'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGradeFilter(g)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                        gradeFilter === g
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                      )}
+                    >
+                      {g === 'all' ? 'همه پایه‌ها' : g}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام یا کدملی..."
+                      className="pr-8 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 outline-hidden focus:border-indigo-500 w-44"
+                    />
+                  </div>
+
+                  {/* Compact / Detailed View Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCompactView(!isCompactView)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer",
+                      isCompactView
+                        ? "bg-amber-50 border-amber-300 text-amber-900"
+                        : "bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                    )}
+                  >
+                    <SlidersHorizontal size={14} />
+                    <span>{isCompactView ? 'حالت نمایش جمع و جور (فعال)' : 'حالت نمایش تفصیلی کامل'}</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
                   <div>
-                    <span className="font-black text-xs block">جدول تفصیلی شهریه با امکان ویرایش مستقیم و اعمال تغییرات موردی</span>
-                    <span className="text-[10px] text-slate-400">مسئول مالی می‌تواند مبالغ را مستقیماً در ستون‌های مربوطه ویرایش نماید.</span>
+                    <span className="font-black text-xs block">
+                      {isCompactView ? 'جدول تجمیعی شهریه (کسورات نوع ۱ و ۲ به صورت خلاصه)' : 'جدول تفصیلی شهریه با نمایش تمامی فاکتورها، بدهی‌ها، اضافات و کسورات مستقل'}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      مسئول مالی می‌تواند مبالغ تعدیل دستی و سایر فاکتورها را مستقیماً ویرایش نماید.
+                    </span>
                   </div>
                   <span className="font-mono text-xs text-emerald-400 font-bold">{calculatedTuitions.length} طلبه</span>
                 </div>
@@ -2063,49 +2121,129 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   <table className="w-full text-right text-xs">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
-                        <th className="py-3 px-2">ردیف</th>
-                        <th className="py-3 px-2">نام طلبه</th>
-                        <th className="py-3 px-2">پایه</th>
-                        <th className="py-3 px-2">شهریه پایه</th>
-                        <th className="py-3 px-2">مزایا (+)</th>
-                        <th className="py-3 px-2 text-rose-700">کسورات غیبت/مطالعه (-)</th>
-                        <th className="py-3 px-2 text-indigo-800 bg-indigo-50/50">افزایش/کاهش دستی (تومان)</th>
-                        <th className="py-3 px-2 text-indigo-800 bg-indigo-50/50">علت افزایش/کاهش دستی</th>
-                        <th className="py-3 px-2 text-amber-900">شهریه استحقاقی</th>
-                        <th className="py-3 px-3 font-black text-emerald-900">خالص واریزی</th>
-                        <th className="py-3 px-2 text-center">اصلاح موردی</th>
+                        <th className="py-3 px-2 text-center">ردیف</th>
+                        <th className="py-3 px-2">نام طلبه و کدملی</th>
+                        <th className="py-3 px-2 text-center">پایه</th>
+                        <th className="py-3 px-2 text-center">شهریه پایه</th>
+
+                        {isCompactView ? (
+                          <>
+                            <th className="py-3 px-2 text-center text-emerald-700">کل مزایا (+)</th>
+                            <th className="py-3 px-2 text-center text-rose-700">کسورات نوع ۱ (-)</th>
+                            <th className="py-3 px-2 text-center text-amber-900">شهریه استحقاقی</th>
+                            <th className="py-3 px-2 text-center text-rose-700">کسورات نوع ۲ (انتقالی)</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="py-3 px-2 text-center text-emerald-700">تاهل/اولاد</th>
+                            <th className="py-3 px-2 text-center text-emerald-700">معمم/مسکن</th>
+                            <th className="py-3 px-2 text-center text-emerald-700">مطالعه مازاد</th>
+                            <th className="py-3 px-2 text-center text-emerald-700">مشاوره</th>
+                            <th className="py-3 px-2 text-center text-rose-700">کسری مطالعه</th>
+                            <th className="py-3 px-2 text-center text-rose-700">غیبت غیرموجه</th>
+                            <th className="py-3 px-2 text-center text-rose-700">کسر نهار</th>
+                            <th className="py-3 px-2 text-center text-rose-700">وام/قرض‌الحسنه</th>
+                            <th className="py-3 px-2 text-center text-rose-700">سایر بدهی‌ها</th>
+                            <th className="py-3 px-2 text-center text-amber-900">شهریه استحقاقی</th>
+                          </>
+                        )}
+
+                        <th className="py-3 px-2 text-center text-indigo-800 bg-indigo-50/50">تعدیل دستی (تومان)</th>
+                        <th className="py-3 px-2 text-center text-indigo-800 bg-indigo-50/50">علت تعدیل دستی</th>
+                        <th className="py-3 px-3 text-center font-black text-emerald-900 bg-emerald-50/40">خالص واریزی</th>
+                        <th className="py-3 px-2 text-center">عملیات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {calculatedTuitions.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="text-center py-10 text-slate-400 font-bold">
-                            اطلاعاتی برای نمایش موجود نیست.
+                          <td colSpan={isCompactView ? 11 : 17} className="text-center py-10 text-slate-400 font-bold">
+                            اطلاعاتی مطابق با فیلتر انتخابی موجود نیست.
                           </td>
                         </tr>
                       ) : (
                         calculatedTuitions.map((calc, idx) => (
                           <tr key={calc.studentId} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-3 px-2 font-mono text-slate-400">{idx + 1}</td>
+                            <td className="py-3 px-2 text-center font-mono text-slate-400">{idx + 1}</td>
                             <td className="py-3 px-2">
                               <span className="font-bold text-slate-900 block">{calc.studentName}</span>
                               <span className="text-[10px] text-slate-400 font-mono">
                                 {calc.nationalId || '---'}
                               </span>
                             </td>
-                            <td className="py-3 px-2 text-slate-600 font-bold">{calc.grade}</td>
-                            <td className="py-3 px-2 font-mono text-slate-700">
+                            <td className="py-3 px-2 text-center text-slate-600 font-bold">{calc.grade}</td>
+                            <td className="py-3 px-2 text-center font-mono text-slate-700">
                               {(calc.baseTuition || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-2 font-mono text-emerald-700 font-bold">
-                              +{(calc.totalAdditions || 0).toLocaleString('fa-IR')}
-                            </td>
-                            <td className="py-3 px-2 font-mono text-rose-700 font-bold">
-                              -{(calc.type1DeductionsTotal || 0).toLocaleString('fa-IR')}
-                            </td>
+
+                            {isCompactView ? (
+                              <>
+                                <td className="py-3 px-2 text-center font-mono text-emerald-700 font-bold">
+                                  +{(calc.totalAdditions || 0).toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-3 px-2 text-center font-mono text-rose-700 font-bold">
+                                  -{(calc.type1DeductionsTotal || 0).toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-3 px-2 text-center font-mono text-amber-900 font-bold">
+                                  {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-3 px-2 text-center font-mono text-rose-700 font-bold">
+                                  -{(calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                {/* تاهل و اولاد */}
+                                <td className="py-3 px-2 text-center font-mono text-slate-600">
+                                  {((calc.maritalBonus || 0) + (calc.childAllowanceTotal || 0)) > 0
+                                    ? `+${((calc.maritalBonus || 0) + (calc.childAllowanceTotal || 0)).toLocaleString('fa-IR')}`
+                                    : '-'}
+                                </td>
+                                {/* معمم و مسکن */}
+                                <td className="py-3 px-2 text-center font-mono text-slate-600">
+                                  {((calc.turbanAllowance || 0) + (calc.housingAllowance || 0)) > 0
+                                    ? `+${((calc.turbanAllowance || 0) + (calc.housingAllowance || 0)).toLocaleString('fa-IR')}`
+                                    : '-'}
+                                </td>
+                                {/* مطالعه مازاد */}
+                                <td className="py-3 px-2 text-center font-mono text-emerald-700 font-bold">
+                                  {(calc.studyBonusAmount || 0) > 0 ? `+${(calc.studyBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* مشاوره */}
+                                <td className="py-3 px-2 text-center font-mono text-slate-600">
+                                  {(calc.counselingBonusAmount || 0) > 0 ? `+${(calc.counselingBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* کسری مطالعه */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  {(calc.studyPenaltyAmount || 0) > 0 ? `-${(calc.studyPenaltyAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* غیبت غیرموجه */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  {(calc.absencePenaltyAmount || 0) > 0 ? `-${(calc.absencePenaltyAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* کسر نهار */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  {(calc.kitchenTransferAmount || 0) > 0 ? `-${(calc.kitchenTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* وام و صندوق قرض‌الحسنه */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  {(calc.qardFundTransferAmount || 0) > 0 ? `-${(calc.qardFundTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                </td>
+                                {/* سایر بدهی‌ها */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  {((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)) > 0
+                                    ? `-${((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)).toLocaleString('fa-IR')}`
+                                    : '-'}
+                                </td>
+                                {/* شهریه استحقاقی */}
+                                <td className="py-3 px-2 text-center font-mono text-amber-900 font-bold">
+                                  {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
+                                </td>
+                              </>
+                            )}
 
                             {/* Editable Manual Adjustment Amount */}
-                            <td className="py-2.5 px-2 bg-indigo-50/20">
+                            <td className="py-2.5 px-2 bg-indigo-50/20 text-center">
                               <input
                                 type="number"
                                 placeholder="0"
@@ -2121,7 +2259,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                                   }));
                                 }}
                                 className={cn(
-                                  "w-24 px-2 py-1.5 border rounded-lg text-xs font-mono font-bold outline-none transition-all text-center",
+                                  "w-24 px-2 py-1.5 border rounded-lg text-xs font-mono font-bold outline-hidden transition-all text-center",
                                   (studentOverrides[calc.studentId]?.manualAdjustmentAmount || calc.manualAdjustmentAmount || 0) > 0
                                     ? "bg-emerald-50 border-emerald-300 text-emerald-800"
                                     : (studentOverrides[calc.studentId]?.manualAdjustmentAmount || calc.manualAdjustmentAmount || 0) < 0
@@ -2147,14 +2285,11 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                                     }
                                   }));
                                 }}
-                                className="w-32 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none focus:border-indigo-500"
+                                className="w-28 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-hidden focus:border-indigo-500"
                               />
                             </td>
 
-                            <td className="py-3 px-2 font-mono text-amber-900 font-bold">
-                              {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
-                            </td>
-                            <td className="py-3 px-2 font-mono font-black text-emerald-800 text-sm">
+                            <td className="py-3 px-3 text-center font-mono font-black text-emerald-800 text-sm bg-emerald-50/40">
                               {(calc.netPayableTuition || 0).toLocaleString('fa-IR')}
                             </td>
                             <td className="py-3 px-2 text-center">

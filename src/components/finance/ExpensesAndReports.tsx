@@ -6,7 +6,6 @@ import {
   FileSpreadsheet, 
   Plus, 
   Search, 
-  Check, 
   X, 
   CheckCircle2, 
   Printer, 
@@ -17,192 +16,270 @@ import {
   Calendar,
   Layers,
   Edit3,
-  ShieldCheck
+  Trash2,
+  PieChart as PieChartIcon,
+  BarChart3,
+  Paperclip,
+  ExternalLink,
+  Filter,
+  Check,
+  AlertTriangle,
+  FileText,
+  UserCheck,
+  Tag,
+  ArrowUpRight
 } from 'lucide-react';
+import { 
+  PieChart, 
+  Pie, 
+  Cell, 
+  ResponsiveContainer, 
+  Tooltip as RechartsTooltip, 
+  Legend, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid 
+} from 'recharts';
 import * as XLSX from 'xlsx';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { getTodayShamsi } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface StaffSalaryItem {
-  id: string;
-  name: string;
-  role: string;
-  baseSalary: number; // حقوق پایه (تومان)
-  overtimeHours: number; // اضافه کاری (ساعت)
-  overtimeRate: number; // نرخ هر ساعت اضافه کاری
-  bonus: number; // پاداش
-  deductions: number; // بیمه و کسورات
-  bankAccount: string;
-  status: 'pending' | 'paid';
-  lastUpdated?: string;
-}
-
-interface OperationalExpenseItem {
-  id: string;
-  title: string;
-  category: 'utilities' | 'maintenance' | 'supplies' | 'events' | 'other';
-  amount: number;
-  date: string;
-  recipient: string;
-  invoiceNumber?: string;
-  paidBy: string;
-  notes?: string;
-}
+import { BudgetRow, ExpenseRecord } from '../../types';
 
 interface ExpensesAndReportsProps {
   onNavigateTab?: (tab: string, params?: any) => void;
 }
 
-export default function ExpensesAndReports({ onNavigateTab }: ExpensesAndReportsProps) {
-  const { currentUser } = useAuth();
+const COLORS = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#64748b', '#ef4444'];
 
-  const [activeSubTab, setActiveSubTab] = useState<'expenses' | 'staff' | 'balance_sheet'>('expenses');
-  const [staffList, setStaffList] = useState<StaffSalaryItem[]>([]);
-  const [expenses, setExpenses] = useState<OperationalExpenseItem[]>([]);
+export default function ExpensesAndReports({ onNavigateTab }: ExpensesAndReportsProps) {
+  const { currentUser, users } = useAuth();
+
+  // Active Sub-Tab: 'budget_rows' | 'expenses' | 'statistics'
+  const [activeSubTab, setActiveSubTab] = useState<'budget_rows' | 'expenses' | 'statistics'>('budget_rows');
+
+  const [budgetRows, setBudgetRows] = useState<BudgetRow[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState('مهر ۱۴۰۳');
-  const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState('');
 
+  // Filters for Expenses Table
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBudgetFilter, setSelectedBudgetFilter] = useState('all');
+  const [selectedPayerFilter, setSelectedPayerFilter] = useState('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+
+  // Filters for Statistics Tab
+  const [statsPeriodFilter, setStatsPeriodFilter] = useState('all');
+  const [statsBudgetFilter, setStatsBudgetFilter] = useState('all');
+  const [statsPayerFilter, setStatsPayerFilter] = useState('all');
+
   // Modals
+  const [isAddBudgetOpen, setIsAddBudgetOpen] = useState(false);
+  const [editingBudget, setEditingBudget] = useState<BudgetRow | null>(null);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
-  const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseRecord | null>(null);
+  const [viewingExpense, setViewingExpense] = useState<ExpenseRecord | null>(null);
 
-  // New Expense Form
-  const [newExpTitle, setNewExpTitle] = useState('');
-  const [newExpCategory, setNewExpCategory] = useState<OperationalExpenseItem['category']>('utilities');
-  const [newExpAmount, setNewExpAmount] = useState('3500000');
-  const [newExpDate, setNewExpDate] = useState(getTodayShamsi());
-  const [newExpRecipient, setNewExpRecipient] = useState('');
-  const [newExpInvoice, setNewExpInvoice] = useState('');
-  const [newExpNotes, setNewExpNotes] = useState('');
+  // Budget Row Form States
+  const [budgetCode, setBudgetCode] = useState('');
+  const [budgetTitle, setBudgetTitle] = useState('');
+  const [budgetAllocated, setBudgetAllocated] = useState('');
+  const [budgetPeriod, setBudgetPeriod] = useState('سال تحصیلی ۱۴۰۳-۱۴۰۴');
+  const [budgetDesc, setBudgetDesc] = useState('');
 
-  // New Staff Form
-  const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState('مسئول امور اجرایی');
-  const [newStaffBase, setNewStaffBase] = useState('8500000');
-  const [newStaffOvertime, setNewStaffOvertime] = useState('10');
-  const [newStaffAccount, setNewStaffAccount] = useState('');
+  // Expense Form States
+  const [expTitle, setExpTitle] = useState('');
+  const [expDate, setExpDate] = useState(getTodayShamsi());
+  const [expAmount, setExpAmount] = useState('');
+  const [expBudgetMode, setExpBudgetMode] = useState<'select' | 'manual'>('select');
+  const [expSelectedBudgetRowId, setExpSelectedBudgetRowId] = useState('');
+  const [expManualBudgetTitle, setExpManualBudgetTitle] = useState('');
+  const [expManualBudgetCode, setExpManualBudgetCode] = useState('');
+  const [expPayer, setExpPayer] = useState('');
+  const [expCategory, setExpCategory] = useState('تغذیه و پذیرایی');
+  const [expRecipient, setExpRecipient] = useState('');
+  const [expInvoiceNum, setExpInvoiceNum] = useState('');
+  const [expAttachmentUrl, setExpAttachmentUrl] = useState('');
+  const [expDesc, setExpDesc] = useState('');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
   };
 
+  // Load Budget Rows and Expenses from Database
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [storedStaff, storedExpenses] = await Promise.all([
-        localDb.getDocs<StaffSalaryItem>('finance_staff_salaries'),
-        localDb.getDocs<OperationalExpenseItem>('finance_operational_expenses')
+      const [storedBudgets, storedExpenses] = await Promise.all([
+        localDb.getDocs<BudgetRow>('finance_budget_rows'),
+        localDb.getDocs<ExpenseRecord>('finance_operational_expenses')
       ]);
 
-      if (storedStaff && storedStaff.length > 0) {
-        setStaffList(storedStaff);
-      } else {
-        const initialStaff: StaffSalaryItem[] = [
+      let bList = storedBudgets || [];
+      if (bList.length === 0) {
+        // Initial Seed Budget Rows
+        bList = [
           {
-            id: 'staff-1',
-            name: 'آقای احمدی',
-            role: 'مدیر امور اداری و دفتری',
-            baseSalary: 11000000,
-            overtimeHours: 15,
-            overtimeRate: 80000,
-            bonus: 500000,
-            deductions: 900000,
-            bankAccount: '۶۰۳۷-۹۹۱۱-۱۲۳۴-۵۶۷۸',
-            status: 'paid'
+            id: 'b-013',
+            code: '013',
+            title: 'ردیف تغذیه، نهار و پذیرایی طلاب و اساتید',
+            allocatedAmount: 180000000,
+            period: 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+            description: 'بودجه مصوب خرید اقلام غذایی، نهار، پذیرایی جلسات و مراسمات',
+            createdAt: new Date().toISOString()
           },
           {
-            id: 'staff-2',
-            name: 'آقای حسینی',
-            role: 'مسئول تاسیسات و نگهداری ساختمان',
-            baseSalary: 9500000,
-            overtimeHours: 20,
-            overtimeRate: 70000,
-            bonus: 300000,
-            deductions: 800000,
-            bankAccount: '۶۰۳۷-۹۹۱۱-۸۷۶۵-۴۳۲۱',
-            status: 'paid'
+            id: 'b-014',
+            code: '014',
+            title: 'ردیف تاسیسات، تعمیرات و نگهداری ساختمان',
+            allocatedAmount: 95000000,
+            period: 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+            description: 'هزینه‌های تاسیساتی موتورخانه، برق، گاز، رنگ‌آمیزی و سرویس‌ها',
+            createdAt: new Date().toISOString()
           },
           {
-            id: 'staff-3',
-            name: 'آقای موسوی',
-            role: 'مسئول خدمات و پشتیبانی کتابخانه',
-            baseSalary: 8500000,
-            overtimeHours: 8,
-            overtimeRate: 65000,
-            bonus: 200000,
-            deductions: 700000,
-            bankAccount: '۶۰۳۷-۹۹۱۱-۱۱۴۴-۷۷۸۸',
-            status: 'pending'
+            id: 'b-015',
+            code: '015',
+            title: 'ردیف امور فرهنگی، مراسمات و اردوهای زیارتی',
+            allocatedAmount: 120000000,
+            period: 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+            description: 'برگزاری مراسم‌های مذهبی، اردوهای مشهد و عتبات و جوایز',
+            createdAt: new Date().toISOString()
+          },
+          {
+            id: 'b-016',
+            code: '016',
+            title: 'ردیف ملزومات اداری، چاپی و مصرفی مدرسه',
+            allocatedAmount: 45000000,
+            period: 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+            description: 'کاغذ، لوازم‌التحریر، شارژ کارتریج و ملزومات آموزشی',
+            createdAt: new Date().toISOString()
+          },
+          {
+            id: 'b-017',
+            code: '017',
+            title: 'ردیف فناوری اطلاعات، اینترنت و تجهیزات صوتی و تصویری',
+            allocatedAmount: 50000000,
+            period: 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+            description: 'تجهیزات رایانه، شبکه، ارتقاء دوربین‌ها و اشتراک سامانه‌ها',
+            createdAt: new Date().toISOString()
           }
         ];
-        for (const s of initialStaff) {
-          await localDb.setDoc('finance_staff_salaries', s);
+        for (const b of bList) {
+          await localDb.setDoc('finance_budget_rows', b);
         }
-        setStaffList(initialStaff);
       }
+      setBudgetRows(bList);
 
-      if (storedExpenses && storedExpenses.length > 0) {
-        setExpenses(storedExpenses);
-      } else {
-        const initialExpenses: OperationalExpenseItem[] = [
+      let eList = storedExpenses || [];
+      if (eList.length === 0) {
+        // Initial Seed Expenses
+        eList = [
           {
-            id: 'exp-1',
-            title: 'قبض گاز ساختمان آموزشی و خوابگاه',
-            category: 'utilities',
-            amount: 4200000,
-            date: '۱۴۰۳/۰۷/۰۵',
-            recipient: 'شرکت ملی گاز ایران',
-            invoiceNumber: 'GAS-98412',
-            paidBy: 'تنخواه‌گردان مدرسه',
-            notes: 'دوره شهریور ماه'
+            id: 'exp-101',
+            title: 'خرید برنج و روغن جهت آشپزخانه مدرسه',
+            date: '۱۴۰۳/۰۷/۱۰',
+            amount: 24500000,
+            budgetRowId: 'b-013',
+            budgetRowTitle: 'ردیف تغذیه، نهار و پذیرایی طلاب و اساتید',
+            budgetCode: '013',
+            payer: 'مسئول خرید و تدارکات (آقای رضایی)',
+            category: 'تغذیه و پذیرایی',
+            recipient: 'فروشگاه عمده مواد غذایی مروارید',
+            invoiceNumber: 'INV-8841',
+            attachmentUrl: 'https://example.com/invoices/inv-8841.pdf',
+            description: 'خرید ۲۰ کیسه برنج طارم و ۴ کارتن روغن مایع',
+            status: 'approved',
+            createdAt: new Date().toISOString(),
+            createdByName: 'مسئول مالی'
           },
           {
-            id: 'exp-2',
-            title: 'خرید لوازم‌التحریر و کاغذ A4 برای امتحانات',
-            category: 'supplies',
-            amount: 2800000,
-            date: '۱۴۰۳/۰۷/۰۸',
-            recipient: 'فروشگاه فرهنگ',
-            invoiceNumber: 'INV-4412',
-            paidBy: 'مسئول خرید',
-            notes: '۱۰ بسته کاغذ و کارتریج پرینتر اداری'
+            id: 'exp-102',
+            title: 'سرویس و تعویض پمپ موتورخانه خوابگاه',
+            date: '۱۴۰۳/۰۷/۱۵',
+            amount: 14200000,
+            budgetRowId: 'b-014',
+            budgetRowTitle: 'ردیف تاسیسات، تعمیرات و نگهداری ساختمان',
+            budgetCode: '014',
+            payer: 'مسئول تاسیسات (آقای حسینی)',
+            category: 'تاسیسات و نگهداری',
+            recipient: 'خدمات فنی تاسیسات البرز',
+            invoiceNumber: 'INV-9023',
+            attachmentUrl: '',
+            description: 'تعمیر اضطراری پمپ شوفاژ و تعویض پروانه',
+            status: 'approved',
+            createdAt: new Date().toISOString(),
+            createdByName: 'مسئول مالی'
           },
           {
-            id: 'exp-3',
-            title: 'تعمیر پمپ آب و تاسیسات موتورخانه',
-            category: 'maintenance',
-            amount: 3600000,
-            date: '۱۴۰۳/۰۷/۱۲',
-            recipient: 'تاسیساتی برادران کریمی',
-            invoiceNumber: 'FAC-102',
-            paidBy: 'مسئول تاسیسات',
-            notes: 'تعویض پروانه و سرویس دوره‌ای پمپ'
+            id: 'exp-103',
+            title: 'هزینه پذیرایی مراسم ولادت حضرت رسول (ص)',
+            date: '۱۴۰۳/۰۷/۲۱',
+            amount: 9800000,
+            budgetRowId: 'b-015',
+            budgetRowTitle: 'ردیف امور فرهنگی، مراسمات و اردوهای زیارتی',
+            budgetCode: '015',
+            payer: 'مسئول فرهنگی (حجت‌الاسلام موسوی)',
+            category: 'فرهنگی و مناسبت‌ها',
+            recipient: 'شیرینی‌سرای نخل',
+            invoiceNumber: 'INV-9110',
+            attachmentUrl: '',
+            description: 'خرید شیرینی، شربت و ظروف یکبار مصرف جشن',
+            status: 'approved',
+            createdAt: new Date().toISOString(),
+            createdByName: 'مسئول مالی'
           },
           {
-            id: 'exp-4',
-            title: 'پذیرایی و برگزاری مراسم آغاز سال تحصیلی حوزه',
-            category: 'events',
-            amount: 6500000,
-            date: '۱۴۰۳/۰۷/۰۱',
-            recipient: 'قنادی و پذیرایی بهار',
-            invoiceNumber: 'EV-889',
-            paidBy: 'امور فرهنگی',
-            notes: 'شیرینی، میوه و پک فرهنگی طلاب جدیدالورود'
+            id: 'exp-104',
+            title: 'خرید کاغذ A4 و کارتریج چاپگرهای اداری',
+            date: '۱۴۰۳/۰۷/۲۵',
+            amount: 6700000,
+            budgetRowId: 'b-016',
+            budgetRowTitle: 'ردیف ملزومات اداری، چاپی و مصرفی مدرسه',
+            budgetCode: '016',
+            payer: 'مسئول اداری (آقای احمدی)',
+            category: 'اداری و ملزومات',
+            recipient: 'لوازم‌التحریر نگین',
+            invoiceNumber: 'INV-9204',
+            attachmentUrl: '',
+            description: '۱۰ بسته کاغذ A4 دبل آ و ۲ عدد شارژ تونر',
+            status: 'approved',
+            createdAt: new Date().toISOString(),
+            createdByName: 'مسئول مالی'
+          },
+          {
+            id: 'exp-105',
+            title: 'شارژ اشتراک اینترنت اختصاصی و پهنای باند مدرسه',
+            date: '۱۴۰۳/۰۷/۲۸',
+            amount: 4500000,
+            budgetRowId: 'b-017',
+            budgetRowTitle: 'ردیف فناوری اطلاعات، اینترنت و تجهیزات صوتی و تصویری',
+            budgetCode: '017',
+            payer: 'مسئول انفورماتیک',
+            category: 'فناوری و ارتباطات',
+            recipient: 'شرکت ارتباطات شاتل',
+            invoiceNumber: 'INV-9311',
+            attachmentUrl: '',
+            description: 'اشتراک اینترنت ۳ ماهه پهنای باند اختصاصی',
+            status: 'approved',
+            createdAt: new Date().toISOString(),
+            createdByName: 'مسئول مالی'
           }
         ];
-        for (const exp of initialExpenses) {
-          await localDb.setDoc('finance_operational_expenses', exp);
+        for (const e of eList) {
+          await localDb.setDoc('finance_operational_expenses', e);
         }
-        setExpenses(initialExpenses);
       }
-    } catch (e) {
-      console.error('Error loading operational expenses & staff:', e);
+      setExpenses(eList);
+
+    } catch (err) {
+      console.error('Error loading expenses and budgets:', err);
     } finally {
       setIsLoading(false);
     }
@@ -212,701 +289,1386 @@ export default function ExpensesAndReports({ onNavigateTab }: ExpensesAndReports
     loadData();
   }, []);
 
-  const calculateStaffNet = (s: StaffSalaryItem) => {
-    const overtime = (s.overtimeHours || 0) * (s.overtimeRate || 0);
-    return (s.baseSalary || 0) + overtime + (s.bonus || 0) - (s.deductions || 0);
-  };
+  // Compute spent and remaining per budget row
+  const budgetRowsWithMetrics = useMemo(() => {
+    return budgetRows.map(b => {
+      const relatedExp = expenses.filter(e => e.budgetRowId === b.id || (e.budgetCode && e.budgetCode === b.code));
+      const spent = relatedExp.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      const remaining = Math.max(0, b.allocatedAmount - spent);
+      const percent = b.allocatedAmount > 0 ? Math.min(100, Math.round((spent / b.allocatedAmount) * 100)) : 0;
+      return {
+        ...b,
+        spentAmount: spent,
+        remainingAmount: remaining,
+        consumptionPercent: percent,
+        expenseCount: relatedExp.length
+      };
+    });
+  }, [budgetRows, expenses]);
 
-  const metrics = useMemo(() => {
-    const totalExpensesSum = expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
-    const totalStaffPayroll = staffList.reduce((acc, s) => acc + calculateStaffNet(s), 0);
-    const totalOutflows = totalExpensesSum + totalStaffPayroll;
+  // Total summary metrics
+  const totalAllocatedBudget = useMemo(() => budgetRows.reduce((acc, b) => acc + (Number(b.allocatedAmount) || 0), 0), [budgetRows]);
+  const totalSpentExpenses = useMemo(() => expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0), [expenses]);
+  const totalRemainingBudget = Math.max(0, totalAllocatedBudget - totalSpentExpenses);
+  const totalPercentUsed = totalAllocatedBudget > 0 ? Math.round((totalSpentExpenses / totalAllocatedBudget) * 100) : 0;
 
-    return {
-      totalExpensesSum,
-      totalStaffPayroll,
-      totalOutflows,
-      staffCount: staffList.length
-    };
-  }, [expenses, staffList]);
+  // Filtered Expenses List
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const matchSearch = 
+        !searchQuery || 
+        exp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (exp.recipient && exp.recipient.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (exp.payer && exp.payer.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (exp.budgetRowTitle && exp.budgetRowTitle.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (exp.invoiceNumber && exp.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // Add Expense
-  const handleAddExpense = async () => {
-    if (!newExpTitle.trim()) {
-      alert('لطفاً عنوان هزینه را وارد کنید.');
+      const matchBudget = 
+        selectedBudgetFilter === 'all' || 
+        exp.budgetRowId === selectedBudgetFilter || 
+        exp.budgetCode === selectedBudgetFilter;
+
+      const matchPayer = 
+        selectedPayerFilter === 'all' || 
+        exp.payer === selectedPayerFilter;
+
+      const matchCategory = 
+        selectedCategoryFilter === 'all' || 
+        exp.category === selectedCategoryFilter;
+
+      return matchSearch && matchBudget && matchPayer && matchCategory;
+    });
+  }, [expenses, searchQuery, selectedBudgetFilter, selectedPayerFilter, selectedCategoryFilter]);
+
+  // Unique lists for filter dropdowns
+  const uniquePayers = useMemo(() => {
+    const set = new Set<string>();
+    expenses.forEach(e => { if (e.payer) set.add(e.payer); });
+    return Array.from(set);
+  }, [expenses]);
+
+  const uniqueCategories = useMemo(() => {
+    const set = new Set<string>();
+    expenses.forEach(e => { if (e.category) set.add(e.category); });
+    return Array.from(set);
+  }, [expenses]);
+
+  // Pie Chart Data: Budget breakdown
+  const pieChartData = useMemo(() => {
+    return budgetRowsWithMetrics.map((b) => ({
+      name: `ردیف ${b.code}: ${b.title.length > 20 ? b.title.slice(0, 20) + '...' : b.title}`,
+      fullName: b.title,
+      code: b.code,
+      value: b.spentAmount || 0,
+      allocated: b.allocatedAmount,
+      remaining: b.remainingAmount
+    })).filter(d => d.value > 0);
+  }, [budgetRowsWithMetrics]);
+
+  // Bar Chart Data: Allocated vs Spent
+  const barChartData = useMemo(() => {
+    return budgetRowsWithMetrics.map((b) => ({
+      name: `کد ${b.code}`,
+      title: b.title,
+      مصوب: b.allocatedAmount / 1000000,
+      مصرف_شده: (b.spentAmount || 0) / 1000000,
+      مانده: (b.remainingAmount || 0) / 1000000
+    }));
+  }, [budgetRowsWithMetrics]);
+
+  // Payer Statistics
+  const payerStats = useMemo(() => {
+    const map: Record<string, { total: number; count: number }> = {};
+    expenses.forEach(e => {
+      const p = e.payer || 'نامشخص';
+      if (!map[p]) map[p] = { total: 0, count: 0 };
+      map[p].total += Number(e.amount) || 0;
+      map[p].count += 1;
+    });
+    return Object.entries(map).map(([payer, data]) => ({
+      payer,
+      total: data.total,
+      count: data.count,
+      percent: totalSpentExpenses > 0 ? Math.round((data.total / totalSpentExpenses) * 100) : 0
+    })).sort((a, b) => b.total - a.total);
+  }, [expenses, totalSpentExpenses]);
+
+  // Category Statistics
+  const categoryStats = useMemo(() => {
+    const map: Record<string, { total: number; count: number }> = {};
+    expenses.forEach(e => {
+      const c = e.category || 'متفرقه';
+      if (!map[c]) map[c] = { total: 0, count: 0 };
+      map[c].total += Number(e.amount) || 0;
+      map[c].count += 1;
+    });
+    return Object.entries(map).map(([category, data]) => ({
+      category,
+      total: data.total,
+      count: data.count,
+      percent: totalSpentExpenses > 0 ? Math.round((data.total / totalSpentExpenses) * 100) : 0
+    })).sort((a, b) => b.total - a.total);
+  }, [expenses, totalSpentExpenses]);
+
+  // Handle Save Budget Row
+  const handleSaveBudgetRow = async () => {
+    if (!budgetCode.trim() || !budgetTitle.trim()) {
+      showToast('لطفاً کد و عنوان ردیف بودجه را وارد نمایید.');
       return;
     }
-    const newDoc: OperationalExpenseItem = {
-      id: `exp-${Date.now()}`,
-      title: newExpTitle.trim(),
-      category: newExpCategory,
-      amount: Number(newExpAmount) || 0,
-      date: newExpDate,
-      recipient: newExpRecipient,
-      invoiceNumber: newExpInvoice,
-      paidBy: 'مسئول مالی',
-      notes: newExpNotes
-    };
-    await localDb.setDoc('finance_operational_expenses', newDoc);
-    setExpenses(prev => [newDoc, ...prev]);
-    showToast('هزینه جاری جدید با موفقیت ثبت شد.');
-    setIsAddExpenseOpen(false);
-    setNewExpTitle('');
-    setNewExpRecipient('');
-    setNewExpNotes('');
-  };
-
-  // Add Staff
-  const handleAddStaff = async () => {
-    if (!newStaffName.trim()) {
-      alert('لطفاً نام کارمند را وارد کنید.');
+    const alloc = Number(budgetAllocated) || 0;
+    if (alloc <= 0) {
+      showToast('لطفاً مبلغ مصوب بودجه را به درستی وارد نمایید.');
       return;
     }
-    const newDoc: StaffSalaryItem = {
-      id: `staff-${Date.now()}`,
-      name: newStaffName.trim(),
-      role: newStaffRole,
-      baseSalary: Number(newStaffBase) || 0,
-      overtimeHours: Number(newStaffOvertime) || 0,
-      overtimeRate: 75000,
-      bonus: 0,
-      deductions: 700000,
-      bankAccount: newStaffAccount,
-      status: 'pending'
+
+    const docId = editingBudget ? editingBudget.id : `b-${budgetCode.trim()}-${Date.now()}`;
+    const newBudget: BudgetRow = {
+      id: docId,
+      code: budgetCode.trim(),
+      title: budgetTitle.trim(),
+      allocatedAmount: alloc,
+      period: budgetPeriod.trim() || 'سال تحصیلی ۱۴۰۳-۱۴۰۴',
+      description: budgetDesc.trim(),
+      createdAt: editingBudget?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    await localDb.setDoc('finance_staff_salaries', newDoc);
-    setStaffList(prev => [...prev, newDoc]);
-    showToast(`کارمند جدید (${newStaffName}) ثبت شد.`);
-    setIsAddStaffOpen(false);
-    setNewStaffName('');
-    setNewStaffAccount('');
+
+    await localDb.setDoc('finance_budget_rows', newBudget);
+    setBudgetRows(prev => {
+      const idx = prev.findIndex(b => b.id === docId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newBudget;
+        return copy;
+      }
+      return [...prev, newBudget];
+    });
+
+    setIsAddBudgetOpen(false);
+    setEditingBudget(null);
+    setBudgetCode('');
+    setBudgetTitle('');
+    setBudgetAllocated('');
+    setBudgetDesc('');
+    showToast(`ردیف بودجه «${newBudget.title}» با موفقیت ذخیره شد.`);
   };
 
-  // Toggle staff payment
-  const handleToggleStaffStatus = async (staff: StaffSalaryItem) => {
-    const nextStatus: StaffSalaryItem['status'] = staff.status === 'paid' ? 'pending' : 'paid';
-    const updated = { ...staff, status: nextStatus };
-    await localDb.setDoc('finance_staff_salaries', updated);
-    setStaffList(prev => prev.map(s => s.id === staff.id ? updated : s));
-    showToast(`وضعیت حقوق ${staff.name} به "${nextStatus === 'paid' ? 'پرداخت شده' : 'معوقه'}" تغییر یافت.`);
-  };
+  // Handle Save Expense
+  const handleSaveExpense = async () => {
+    if (!expTitle.trim()) {
+      showToast('لطفاً عنوان هزینه را وارد نمایید.');
+      return;
+    }
+    const amt = Number(expAmount) || 0;
+    if (amt <= 0) {
+      showToast('لطفاً مبلغ معتبر برای هزینه وارد نمایید.');
+      return;
+    }
 
-  // Export Excel
-  const handleExportExcel = () => {
-    if (activeSubTab === 'expenses') {
-      const data = expenses.map((e, idx) => ({
-        'ردیف': idx + 1,
-        'شرح هزینه': e.title,
-        'دسته‌بندی': e.category,
-        'مبلغ (تومان)': e.amount,
-        'تاریخ پرداخت': e.date,
-        'دریافت‌کننده / فروشنده': e.recipient,
-        'شماره فاکتور': e.invoiceNumber || '---',
-        'پرداخت‌کننده': e.paidBy,
-        'توضیحات': e.notes || ''
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'هزینه‌های جاری حوزه');
-      XLSX.writeFile(wb, `هزینه_های_جاری_${selectedPeriod.replace(/\s+/g, '_')}.xlsx`);
+    let bRowId = '';
+    let bRowTitle = '';
+    let bCode = '';
+
+    if (expBudgetMode === 'select') {
+      const found = budgetRows.find(b => b.id === expSelectedBudgetRowId);
+      if (found) {
+        bRowId = found.id;
+        bRowTitle = found.title;
+        bCode = found.code;
+      } else {
+        bRowTitle = 'ردیف عمومی';
+        bCode = '000';
+      }
     } else {
-      const data = staffList.map((s, idx) => ({
-        'ردیف': idx + 1,
-        'نام کارمند': s.name,
-        'سمت': s.role,
-        'حقوق پایه (تومان)': s.baseSalary,
-        'ساعت اضافه کاری': s.overtimeHours,
-        'مبلغ اضافه کاری (تومان)': s.overtimeHours * s.overtimeRate,
-        'پاداش (تومان)': s.bonus,
-        'کسورات و بیمه (تومان)': s.deductions,
-        'خالص پرداختی (تومان)': calculateStaffNet(s),
-        'شماره حساب': s.bankAccount,
-        'وضعیت': s.status === 'paid' ? 'پرداخت شده' : 'در انتظار'
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'حقوق کارمندان');
-      XLSX.writeFile(wb, `حقوق_کارمندان_${selectedPeriod.replace(/\s+/g, '_')}.xlsx`);
+      bRowTitle = expManualBudgetTitle.trim() || 'ردیف دستی';
+      bCode = expManualBudgetCode.trim() || '000';
     }
-    showToast('فایل اکسل با موفقیت صادر گردید.');
+
+    const docId = editingExpense ? editingExpense.id : `exp-${Date.now()}`;
+    const newExp: ExpenseRecord = {
+      id: docId,
+      title: expTitle.trim(),
+      date: expDate.trim() || getTodayShamsi(),
+      amount: amt,
+      budgetRowId: bRowId || undefined,
+      budgetRowTitle: bRowTitle,
+      budgetCode: bCode,
+      payer: expPayer.trim() || currentUser?.fullName || 'تنخواه‌دار مدرسه',
+      category: expCategory.trim() || 'متفرقه',
+      recipient: expRecipient.trim(),
+      invoiceNumber: expInvoiceNum.trim(),
+      attachmentUrl: expAttachmentUrl.trim(),
+      description: expDesc.trim(),
+      status: 'approved',
+      createdAt: editingExpense?.createdAt || new Date().toISOString(),
+      createdByName: currentUser?.fullName || 'مسئول مالی'
+    };
+
+    await localDb.setDoc('finance_operational_expenses', newExp);
+    setExpenses(prev => {
+      const idx = prev.findIndex(e => e.id === docId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newExp;
+        return copy;
+      }
+      return [newExp, ...prev];
+    });
+
+    setIsAddExpenseOpen(false);
+    setEditingExpense(null);
+    setExpTitle('');
+    setExpAmount('');
+    setExpRecipient('');
+    setExpInvoiceNum('');
+    setExpAttachmentUrl('');
+    setExpDesc('');
+    showToast(`هزینه «${newExp.title}» با موفقیت ثبت شد.`);
   };
 
-  if (isLoading) {
-    return (
-      <div className="p-12 flex flex-col items-center justify-center space-y-3 font-vazir" dir="rtl">
-        <div className="w-8 h-8 border-3 border-slate-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs text-slate-500 font-bold">در حال بارگذاری گزارش‌ها و هزینه‌های مالی...</p>
-      </div>
-    );
-  }
+  // Delete Budget Row
+  const handleDeleteBudgetRow = async (id: string) => {
+    if (!window.confirm('آیا از حذف این ردیف بودجه اطمینان دارید؟')) return;
+    await localDb.deleteDoc('finance_budget_rows', id);
+    setBudgetRows(prev => prev.filter(b => b.id !== id));
+    showToast('ردیف بودجه با موفقیت حذف شد.');
+  };
+
+  // Delete Expense
+  const handleDeleteExpense = async (id: string) => {
+    if (!window.confirm('آیا از حذف این سند هزینه اطمینان دارید؟')) return;
+    await localDb.deleteDoc('finance_operational_expenses', id);
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    showToast('سند هزینه با موفقیت حذف شد.');
+  };
+
+  // Open Edit Modal for Budget Row
+  const handleOpenEditBudget = (b: BudgetRow) => {
+    setEditingBudget(b);
+    setBudgetCode(b.code);
+    setBudgetTitle(b.title);
+    setBudgetAllocated(b.allocatedAmount.toString());
+    setBudgetPeriod(b.period);
+    setBudgetDesc(b.description || '');
+    setIsAddBudgetOpen(true);
+  };
+
+  // Open Edit Modal for Expense
+  const handleOpenEditExpense = (e: ExpenseRecord) => {
+    setEditingExpense(e);
+    setExpTitle(e.title);
+    setExpDate(e.date);
+    setExpAmount(e.amount.toString());
+    if (e.budgetRowId) {
+      setExpBudgetMode('select');
+      setExpSelectedBudgetRowId(e.budgetRowId);
+    } else {
+      setExpBudgetMode('manual');
+      setExpManualBudgetTitle(e.budgetRowTitle || '');
+      setExpManualBudgetCode(e.budgetCode || '');
+    }
+    setExpPayer(e.payer);
+    setExpCategory(e.category);
+    setExpRecipient(e.recipient || '');
+    setExpInvoiceNum(e.invoiceNumber || '');
+    setExpAttachmentUrl(e.attachmentUrl || '');
+    setExpDesc(e.description || '');
+    setIsAddExpenseOpen(true);
+  };
+
+  // Export Expenses to Excel
+  const handleExportExpensesExcel = () => {
+    const data = filteredExpenses.map((exp, idx) => ({
+      'ردیف': idx + 1,
+      'عنوان هزینه': exp.title,
+      'تاریخ': exp.date,
+      'کد ردیف بودجه': exp.budgetCode || '-',
+      'ردیف بودجه': exp.budgetRowTitle || '-',
+      'پرداخت‌کننده / تنخواه‌دار': exp.payer,
+      'موضوع / دسته‌بندی': exp.category,
+      'مبلغ (تومان)': exp.amount,
+      'طرف حساب / فروشنده': exp.recipient || '-',
+      'شماره فاکتور / سند': exp.invoiceNumber || '-',
+      'پیوست / لینک فاکتور': exp.attachmentUrl || '-',
+      'توضیحات': exp.description || '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'گزارش هزینه‌ها');
+    XLSX.writeFile(wb, `گزارش_هزینه‌ها_${getTodayShamsi().replace(/\//g, '_')}.xlsx`);
+    showToast('فایل اکسل هزینه‌ها با موفقیت دانلود شد.');
+  };
+
+  // Export Budget Rows to Excel
+  const handleExportBudgetExcel = () => {
+    const data = budgetRowsWithMetrics.map((b, idx) => ({
+      'ردیف': idx + 1,
+      'کد ردیف': b.code,
+      'عنوان ردیف بودجه': b.title,
+      'دوره زمانی': b.period,
+      'سقف مصوب بودجه (تومان)': b.allocatedAmount,
+      'مبلغ مصرف‌شده (تومان)': b.spentAmount,
+      'مانده بودجه (تومان)': b.remainingAmount,
+      'درصد مصرف': `${b.consumptionPercent}%`,
+      'تعداد اسناد هزینه': b.expenseCount,
+      'توضیحات': b.description || '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ردیف‌های بودجه');
+    XLSX.writeFile(wb, `ردیف‌های_بودجه_${getTodayShamsi().replace(/\//g, '_')}.xlsx`);
+    showToast('فایل اکسل ردیف‌های بودجه با موفقیت دانلود شد.');
+  };
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
-      {/* Toast */}
+    <div className="space-y-6 font-vazir pb-16" dir="rtl">
+      {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-slate-700"
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl border border-slate-700 flex items-center gap-2 text-sm font-bold"
           >
-            <CheckCircle2 size={16} className="text-emerald-400" />
+            <CheckCircle2 size={18} className="text-emerald-400" />
             <span>{toastMessage}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-800 flex items-center justify-center shadow-xs border border-slate-200">
-            <Receipt size={24} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">سایر هزینه‌ها و تراز مالی حوزه</h1>
-              <span className="px-2.5 py-0.5 bg-slate-100 text-slate-800 border border-slate-200 text-[11px] font-black rounded-lg">
-                هزینه‌های جاری، حقوق و ترازنامه
-              </span>
+      {/* Main Header & Sub-Tabs Navigation */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
+              <Receipt size={24} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              ثبت قبوض و تعمیرات، حقوق کادر اجرایی و اداری، صدور صورت‌حساب مالی و ترازنامه جامع مدرسه
-            </p>
+            <div>
+              <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <span>مدیریت هزینه‌ها و ردیف‌های بودجه</span>
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                تعریف سرفصل‌های بودجه با کد اختصاصی، ثبت اسناد هزینه با پیوست فاکتور، پیگیری تنخواه‌داران و تحلیل آماری
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {activeSubTab === 'budget_rows' && (
+              <>
+                <button
+                  onClick={() => {
+                    setEditingBudget(null);
+                    setBudgetCode(`0${budgetRows.length + 13}`);
+                    setBudgetTitle('');
+                    setBudgetAllocated('');
+                    setBudgetPeriod('سال تحصیلی ۱۴۰۳-۱۴۰۴');
+                    setBudgetDesc('');
+                    setIsAddBudgetOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span>تعریف ردیف بودجه جدید</span>
+                </button>
+
+                <button
+                  onClick={handleExportBudgetExcel}
+                  className="flex items-center gap-1.5 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>اکسل ردیف‌ها</span>
+                </button>
+              </>
+            )}
+
+            {activeSubTab === 'expenses' && (
+              <>
+                <button
+                  onClick={() => {
+                    setEditingExpense(null);
+                    setExpTitle('');
+                    setExpDate(getTodayShamsi());
+                    setExpAmount('');
+                    setExpBudgetMode('select');
+                    setExpSelectedBudgetRowId(budgetRows[0]?.id || '');
+                    setExpPayer(currentUser?.fullName || 'مسئول خرید');
+                    setExpCategory('تغذیه و پذیرایی');
+                    setExpRecipient('');
+                    setExpInvoiceNum('');
+                    setExpAttachmentUrl('');
+                    setExpDesc('');
+                    setIsAddExpenseOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span>ثبت سند هزینه جدید</span>
+                </button>
+
+                <button
+                  onClick={handleExportExpensesExcel}
+                  className="flex items-center gap-1.5 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>اکسل هزینه‌ها</span>
+                </button>
+              </>
+            )}
+
+            {activeSubTab === 'statistics' && (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              >
+                <Printer size={16} />
+                <span>چاپ گزارش تحلیلی</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+        {/* 3 Primary Navigation Sub-Tabs */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
           <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            onClick={() => setActiveSubTab('budget_rows')}
+            className={cn(
+              "flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+              activeSubTab === 'budget_rows'
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+            )}
           >
-            <FileSpreadsheet size={15} />
-            <span>خروجی اکسل</span>
+            <Layers size={17} />
+            <span>ردیف‌های بودجه</span>
+            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeSubTab === 'budget_rows' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+              {budgetRows.length} ردیف
+            </span>
           </button>
 
-          {activeSubTab === 'expenses' ? (
-            <button
-              type="button"
-              onClick={() => setIsAddExpenseOpen(true)}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus size={15} />
-              <span>ثبت هزینه جاری جدید</span>
-            </button>
-          ) : activeSubTab === 'staff' ? (
-            <button
-              type="button"
-              onClick={() => setIsAddStaffOpen(true)}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus size={15} />
-              <span>ثبت کارمند جدید</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <Printer size={15} />
-              <span>چاپ ترازنامه دوره</span>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveSubTab('expenses')}
+            className={cn(
+              "flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+              activeSubTab === 'expenses'
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+            )}
+          >
+            <Receipt size={17} />
+            <span>ثبت و مدیریت هزینه‌ها</span>
+            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeSubTab === 'expenses' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+              {expenses.length} سند
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('statistics')}
+            className={cn(
+              "flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+              activeSubTab === 'statistics'
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+            )}
+          >
+            <BarChart3 size={17} />
+            <span>آمارها و گزارشات تحلیلی</span>
+            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeSubTab === 'statistics' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+              نمودار و تفکیک
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* Top Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">کل هزینه‌های جاری ثبت‌شده</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center">
-              <TrendingDown size={16} />
-            </div>
+      {/* Global Top Aggregate Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] text-slate-500 font-medium">کل بودجه مصوب مدرسه</span>
+          <div className="text-base font-black text-slate-800">
+            {totalAllocatedBudget.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
           </div>
-          <div className="text-2xl font-black text-rose-700 font-mono">
-            {metrics.totalExpensesSum.toLocaleString('fa-IR')} <span className="text-xs font-medium text-rose-600">تومان</span>
+          <div className="text-[10px] text-slate-400">
+            مجموع {budgetRows.length} ردیف مصوب
           </div>
-          <p className="text-[11px] text-slate-400">قبوض، تعمیرات، نگهداری و تشریفات</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">حقوق و دستمزد کادر اجرایی</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <Users size={16} />
-            </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] text-slate-500 font-medium">مجموع هزینه‌های مصرف‌شده</span>
+          <div className="text-base font-black text-rose-600">
+            {totalSpentExpenses.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
           </div>
-          <div className="text-2xl font-black text-indigo-900 font-mono">
-            {metrics.totalStaffPayroll.toLocaleString('fa-IR')} <span className="text-xs font-medium text-indigo-700">تومان</span>
+          <div className="text-[10px] text-rose-500 font-medium">
+            تعداد {expenses.length} سند فاکتور ثبت‌شده
           </div>
-          <p className="text-[11px] text-slate-400">{metrics.staffCount} پرسنل اداری، خدمات و تاسیسات</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">مجموع مصارف این بخش</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-              <Wallet size={16} />
-            </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] text-slate-500 font-medium">مانده کل بودجه</span>
+          <div className="text-base font-black text-emerald-700">
+            {totalRemainingBudget.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
           </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
-            {metrics.totalOutflows.toLocaleString('fa-IR')} <span className="text-xs font-medium text-slate-500">تومان</span>
+          <div className="text-[10px] text-emerald-600 font-medium">
+            قابل تخصیص تا پایان سال تحصیلی
           </div>
-          <p className="text-[11px] text-slate-400">دوره مالی: {selectedPeriod}</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">وضعیت انطباق با بودجه</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <ShieldCheck size={16} />
-            </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1 bg-linear-to-br from-indigo-50/50 to-indigo-100/30">
+          <span className="text-[11px] text-indigo-700 font-bold">درصد مصرف کل بودجه</span>
+          <div className="text-lg font-black text-indigo-900">
+            {totalPercentUsed.toLocaleString('fa-IR')}٪
           </div>
-          <div className="text-2xl font-black text-emerald-700 font-mono">
-            مجاز <span className="text-xs font-medium text-slate-500">طبق ردیف بودجه</span>
+          <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
+            <div 
+              className={cn("h-full transition-all", totalPercentUsed > 90 ? "bg-rose-500" : totalPercentUsed > 70 ? "bg-amber-500" : "bg-indigo-600")}
+              style={{ width: `${Math.min(100, totalPercentUsed)}%` }}
+            />
           </div>
-          <p className="text-[11px] text-slate-400">انحراف از سقف بودجه: ۰٪</p>
         </div>
       </div>
 
-      {/* Sub-Tabs Switcher */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('expenses')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'expenses'
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
-        >
-          <Receipt size={15} />
-          <span>هزینه‌های جاری، قبوض و نگهداری ({expenses.length})</span>
-        </button>
+      {/* ----------------------------------------------------------------- */}
+      {/* SUB-TAB 1: BUDGET ROWS (ردیف‌های بودجه) */}
+      {/* ----------------------------------------------------------------- */}
+      {activeSubTab === 'budget_rows' && (
+        <div className="space-y-6">
+          {/* Visual Pie Chart & Progress Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-1 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-3 flex flex-col justify-between">
+              <div>
+                <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
+                  <PieChartIcon size={16} className="text-indigo-600" />
+                  <span>نمودار دایره‌ای مصرف ردیف‌های بودجه</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  سهم هر یک از سرفصل‌های بودجه از کل مخارج ثبت‌شده
+                </p>
+              </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('staff')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'staff'
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
-        >
-          <Users size={15} />
-          <span>حقوق و دستمزد کادر اجرایی ({staffList.length})</span>
-        </button>
+              <div className="h-52 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={75}
+                      innerRadius={45}
+                      paddingAngle={3}
+                    >
+                      {pieChartData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip 
+                      formatter={(val: any) => [`${Number(val).toLocaleString('fa-IR')} تومان`, 'مصرف شده']}
+                      contentStyle={{ fontFamily: 'vazir', borderRadius: '12px', fontSize: '12px', direction: 'rtl' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('balance_sheet')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'balance_sheet'
-              ? "bg-slate-900 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
-        >
-          <TrendingUp size={15} />
-          <span>ترازنامه مالی جامع و مقایسه‌ای</span>
-        </button>
-      </div>
+              <div className="text-[10px] text-center text-slate-400">
+                مجموع هزینه‌کرد: {totalSpentExpenses.toLocaleString('fa-IR')} تومان
+              </div>
+            </div>
 
-      {/* VIEW 1: Operational Expenses */}
-      {activeSubTab === 'expenses' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                  <th className="p-3.5">شرح هزینه</th>
-                  <th className="p-3.5 text-center">دسته‌بندی</th>
-                  <th className="p-3.5 text-center">تاریخ پرداخت</th>
-                  <th className="p-3.5 text-center font-black text-rose-700 bg-rose-50/50">مبلغ هزینه</th>
-                  <th className="p-3.5">دریافت‌کننده / فروشنده</th>
-                  <th className="p-3.5 text-center">شماره فاکتور</th>
-                  <th className="p-3.5">توضیحات و بابت</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expenses.map(e => (
-                  <tr key={e.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3.5 font-bold text-slate-900">{e.title}</td>
-                    <td className="p-3.5 text-center">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
-                        {e.category === 'utilities' ? 'قبوض آب/برق/گاز' :
-                         e.category === 'maintenance' ? 'تعمیرات و نگهداری' :
-                         e.category === 'supplies' ? 'اقلام مصرفی و ملزومات' :
-                         e.category === 'events' ? 'مراسمات و مناسبت‌ها' : 'سایر'}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-center font-mono text-slate-600 text-[11px]">{e.date}</td>
-                    <td className="p-3.5 text-center font-mono font-black text-rose-700 text-sm bg-rose-50/30">
-                      {e.amount.toLocaleString('fa-IR')} تومان
-                    </td>
-                    <td className="p-3.5 text-slate-800 font-medium">{e.recipient}</td>
-                    <td className="p-3.5 text-center font-mono text-slate-500 text-[11px]">{e.invoiceNumber || '---'}</td>
-                    <td className="p-3.5 text-slate-500 text-[11px]">{e.notes || '---'}</td>
-                  </tr>
+            {/* Quick Rows Visual Progress List */}
+            <div className="lg:col-span-2 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
+                  <TrendingUp size={16} className="text-indigo-600" />
+                  <span>وضعیت مصرف در برابر سقف مصوب هر ردیف</span>
+                </h3>
+                <span className="text-[11px] text-slate-400 font-mono">سال تحصیلی ۱۴۰۳-۱۴۰۴</span>
+              </div>
+
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {budgetRowsWithMetrics.map((b, idx) => (
+                  <div key={b.id} className="p-3 bg-slate-50/80 hover:bg-slate-50 rounded-2xl border border-slate-200/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md font-mono font-bold text-[11px]">
+                          کد {b.code}
+                        </span>
+                        <span className="font-bold text-slate-800">{b.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="text-slate-500 font-mono">
+                          {b.spentAmount?.toLocaleString('fa-IR')} از {b.allocatedAmount.toLocaleString('fa-IR')} تومان
+                        </span>
+                        <span className={cn(
+                          "px-2 py-0.2 rounded-full font-black text-[10px]",
+                          (b.consumptionPercent || 0) > 90 ? "bg-rose-100 text-rose-800" :
+                          (b.consumptionPercent || 0) > 70 ? "bg-amber-100 text-amber-800" :
+                          "bg-emerald-100 text-emerald-800"
+                        )}>
+                          {b.consumptionPercent}٪
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full transition-all rounded-full",
+                          (b.consumptionPercent || 0) > 90 ? "bg-rose-500" :
+                          (b.consumptionPercent || 0) > 70 ? "bg-amber-500" :
+                          "bg-indigo-600"
+                        )}
+                        style={{ width: `${Math.min(100, b.consumptionPercent || 0)}%` }}
+                      />
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* VIEW 2: Staff Salaries */}
-      {activeSubTab === 'staff' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                  <th className="p-3.5">نام کارمند</th>
-                  <th className="p-3.5">سمت و مسئولیت</th>
-                  <th className="p-3.5 text-center">حقوق پایه</th>
-                  <th className="p-3.5 text-center">اضافه کاری</th>
-                  <th className="p-3.5 text-center text-emerald-800">پاداش</th>
-                  <th className="p-3.5 text-center text-rose-700">کسورات و بیمه</th>
-                  <th className="p-3.5 text-center font-black text-slate-900 bg-slate-200/50">خالص پرداختی</th>
-                  <th className="p-3.5 text-center">وضعیت پرداخت</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {staffList.map(s => {
-                  const net = calculateStaffNet(s);
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3.5">
-                        <div className="font-bold text-slate-900">{s.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">{s.bankAccount}</div>
+          {/* Budget Rows Master Table */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Layers size={17} className="text-indigo-600" />
+                <h2 className="text-xs font-black text-slate-800">
+                  جدول سرفصل‌ها و ردیف‌های بودجه مصوب ({budgetRows.length} ردیف)
+                </h2>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                مبالغ مصرف‌شده به صورت لحظه‌ای از اسناد هزینه کسر و محاسبه می‌شود.
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200/80">
+                  <tr>
+                    <th className="py-3 px-3 text-center">کد ردیف</th>
+                    <th className="py-3 px-4">عنوان ردیف بودجه</th>
+                    <th className="py-3 px-3 text-center">دوره / مدت زمان</th>
+                    <th className="py-3 px-3 text-center">سقف مصوب (تومان)</th>
+                    <th className="py-3 px-3 text-center text-rose-700">مصرف‌شده (تومان)</th>
+                    <th className="py-3 px-3 text-center text-emerald-700">مانده بودجه (تومان)</th>
+                    <th className="py-3 px-3 text-center">درصد مصرف</th>
+                    <th className="py-3 px-3 text-center">اسناد</th>
+                    <th className="py-3 px-3 text-center">عملیات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {budgetRowsWithMetrics.map((b) => (
+                    <tr key={b.id} className="hover:bg-indigo-50/30 transition-colors">
+                      <td className="py-3 px-3 text-center font-mono font-black text-indigo-700">
+                        {b.code}
                       </td>
-                      <td className="p-3.5 text-slate-700 font-medium">{s.role}</td>
-                      <td className="p-3.5 text-center font-mono text-slate-700">{s.baseSalary.toLocaleString('fa-IR')}</td>
-                      <td className="p-3.5 text-center font-mono text-slate-800 font-bold">{s.overtimeHours} س</td>
-                      <td className="p-3.5 text-center font-mono text-emerald-700 font-bold">+{s.bonus.toLocaleString('fa-IR')}</td>
-                      <td className="p-3.5 text-center font-mono text-rose-600 font-bold">-{s.deductions.toLocaleString('fa-IR')}</td>
-                      <td className="p-3.5 text-center font-mono font-black text-indigo-900 text-sm bg-indigo-50/40">
-                        {net.toLocaleString('fa-IR')} تومان
+
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-900">{b.title}</div>
+                        {b.description && (
+                          <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{b.description}</div>
+                        )}
                       </td>
-                      <td className="p-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStaffStatus(s)}
-                          className={cn(
-                            "px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-all",
-                            s.status === 'paid'
-                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                              : "bg-amber-100 text-amber-800 border border-amber-200"
-                          )}
-                        >
-                          {s.status === 'paid' ? 'پرداخت شده' : 'معوقه'}
-                        </button>
+
+                      <td className="py-3 px-3 text-center text-slate-600 font-medium">
+                        {b.period}
+                      </td>
+
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-800">
+                        {b.allocatedAmount.toLocaleString('fa-IR')}
+                      </td>
+
+                      <td className="py-3 px-3 text-center font-mono font-bold text-rose-600">
+                        {b.spentAmount?.toLocaleString('fa-IR')}
+                      </td>
+
+                      <td className="py-3 px-3 text-center font-mono font-bold text-emerald-700">
+                        {b.remainingAmount?.toLocaleString('fa-IR')}
+                      </td>
+
+                      <td className="py-3 px-3 text-center">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full font-mono font-black text-[10px]",
+                          (b.consumptionPercent || 0) > 90 ? "bg-rose-100 text-rose-800" :
+                          (b.consumptionPercent || 0) > 70 ? "bg-amber-100 text-amber-800" :
+                          "bg-emerald-100 text-emerald-800"
+                        )}>
+                          {b.consumptionPercent}٪
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3 text-center text-slate-500 font-mono">
+                        {b.expenseCount} فاکتور
+                      </td>
+
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditBudget(b)}
+                            className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-all cursor-pointer"
+                            title="ویرایش ردیف بودجه"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteBudgetRow(b.id)}
+                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-all cursor-pointer"
+                            title="حذف ردیف بودجه"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* VIEW 3: Comprehensive Balance Sheet */}
-      {activeSubTab === 'balance_sheet' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-6">
-          <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-black text-slate-900">ترازنامه مالی مدرسه و حوزه علمیه</h3>
-              <p className="text-xs text-slate-500 mt-0.5">صورت سود و زیان و گردش نقدینگی - دوره {selectedPeriod}</p>
-            </div>
-            <span className="px-3 py-1 bg-slate-100 text-slate-800 rounded-xl text-xs font-mono font-bold">
-              تاریخ گزارش: {getTodayShamsi()}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-            {/* Left: Revenues */}
-            <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200 space-y-3">
-              <div className="flex items-center gap-2 font-black text-emerald-900 text-sm border-b border-emerald-200 pb-2">
-                <TrendingUp size={16} />
-                <span>منابع ورودی و درآمدهای حوزه (تومان)</span>
-              </div>
-              <div className="space-y-2 divide-y divide-emerald-100">
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۱. شهریه دریافتی از مرکز مدیریت و مراجع:</span>
-                  <span className="font-mono font-black text-emerald-800">۸۵,۰۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۲. وجوهات شرعیه و موقوفات مدرسه:</span>
-                  <span className="font-mono font-black text-emerald-800">۴۵,۰۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۳. کمک‌های خیرین و حامیان:</span>
-                  <span className="font-mono font-black text-emerald-800">۳۰,۰۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۴. بازگشت اقساط وام‌های صندوق:</span>
-                  <span className="font-mono font-black text-emerald-800">۸,۰۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-2 border-t-2 border-emerald-300 font-black text-emerald-950 text-sm">
-                  <span>مجموع کل منابع ورودی:</span>
-                  <span className="font-mono text-base">۱۶۸,۰۰۰,۰۰۰ تومان</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Expenses */}
-            <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200 space-y-3">
-              <div className="flex items-center gap-2 font-black text-rose-900 text-sm border-b border-rose-200 pb-2">
-                <TrendingDown size={16} />
-                <span>مصارف، پرداختی‌ها و هزینه‌ها (تومان)</span>
-              </div>
-              <div className="space-y-2 divide-y divide-rose-100">
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۱. شهریه پرداختی به طلاب:</span>
-                  <span className="font-mono font-black text-rose-800">۵۲,۰۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۲. حق‌الزحمه اساتید و مدرسین:</span>
-                  <span className="font-mono font-black text-rose-800">۲۸,۵۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۳. حق سرپرستی و پیگیری اساتید پایه:</span>
-                  <span className="font-mono font-black text-rose-800">۱۸,۵۰۰,۰۰۰</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۴. حقوق و دستمزد کادر اجرایی:</span>
-                  <span className="font-mono font-black text-rose-800">{metrics.totalStaffPayroll.toLocaleString('fa-IR')}</span>
-                </div>
-                <div className="flex justify-between pt-1.5">
-                  <span className="text-slate-700">۵. هزینه‌های جاری و قبوض:</span>
-                  <span className="font-mono font-black text-rose-800">{metrics.totalExpensesSum.toLocaleString('fa-IR')}</span>
-                </div>
-                <div className="flex justify-between pt-2 border-t-2 border-rose-300 font-black text-rose-950 text-sm">
-                  <span>مجموع کل مصارف و هزینه‌ها:</span>
-                  <span className="font-mono text-base">
-                    {(52000000 + 28500000 + 18500000 + metrics.totalStaffPayroll + metrics.totalExpensesSum).toLocaleString('fa-IR')} تومان
-                  </span>
-                </div>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Expense Modal */}
-      {isAddExpenseOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Plus size={16} className="text-slate-800" />
-                <span>ثبت هزینه جاری جدید</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsAddExpenseOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-slate-600 font-bold">شرح هزینه:</label>
+      {/* ----------------------------------------------------------------- */}
+      {/* SUB-TAB 2: EXPENSES MANAGEMENT (ثبت و مدیریت هزینه‌ها) */}
+      {/* ----------------------------------------------------------------- */}
+      {activeSubTab === 'expenses' && (
+        <div className="space-y-6">
+          {/* Filters Strip */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              {/* Search */}
+              <div className="relative sm:col-span-1">
+                <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  value={newExpTitle}
-                  onChange={(e) => setNewExpTitle(e.target.value)}
-                  placeholder="مثلاً: قبض برق خوابگاه طلاب"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="جستجوی عنوان هزینه، فروشنده، فاکتور..."
+                  className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 transition-all"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">دسته‌بندی:</label>
-                  <select
-                    value={newExpCategory}
-                    onChange={(e: any) => setNewExpCategory(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+              {/* Filter Budget Row */}
+              <div>
+                <select
+                  value={selectedBudgetFilter}
+                  onChange={(e) => setSelectedBudgetFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                >
+                  <option value="all">همه ردیف‌های بودجه</option>
+                  {budgetRows.map(b => (
+                    <option key={b.id} value={b.id}>
+                      کد {b.code} - {b.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Payer */}
+              <div>
+                <select
+                  value={selectedPayerFilter}
+                  onChange={(e) => setSelectedPayerFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                >
+                  <option value="all">همه پرداخت‌کنندگان / اشخاص</option>
+                  {uniquePayers.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Category */}
+              <div>
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                >
+                  <option value="all">همه موضوعات و دسته‌بندی‌ها</option>
+                  {uniqueCategories.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Expenses Records Table */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt size={17} className="text-indigo-600" />
+                <h2 className="text-xs font-black text-slate-800">
+                  فهرست اسناد هزینه ثبت‌شده ({filteredExpenses.length} سند)
+                </h2>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                جمع مبالغ نمایش داده شده: {filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0).toLocaleString('fa-IR')} تومان
+              </div>
+            </div>
+
+            {filteredExpenses.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 space-y-3">
+                <Receipt size={36} className="mx-auto text-slate-300" />
+                <p className="text-xs font-bold text-slate-500">هیچ سند هزینه‌ای مطابق با فیلترهای انتخابی یافت نشد.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200/80">
+                    <tr>
+                      <th className="py-3 px-2 w-8 text-center">ردیف</th>
+                      <th className="py-3 px-3">عنوان هزینه</th>
+                      <th className="py-3 px-2 text-center">تاریخ</th>
+                      <th className="py-3 px-3">ردیف بودجه (کد)</th>
+                      <th className="py-3 px-3">پرداخت‌کننده / شخص</th>
+                      <th className="py-3 px-2 text-center">موضوع</th>
+                      <th className="py-3 px-3 text-center text-rose-700">مبلغ (تومان)</th>
+                      <th className="py-3 px-2 text-center">پیوست / فاکتور</th>
+                      <th className="py-3 px-3 text-center">عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredExpenses.map((exp, idx) => (
+                      <tr key={exp.id} className="hover:bg-indigo-50/30 transition-colors">
+                        <td className="py-3 px-2 text-center text-slate-400 font-mono">
+                          {(idx + 1).toLocaleString('fa-IR')}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900">{exp.title}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                            {exp.recipient && <span>طرف حساب: {exp.recipient}</span>}
+                            {exp.invoiceNumber && <span className="font-mono">سند: {exp.invoiceNumber}</span>}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-2 text-center font-mono text-slate-600">
+                          {exp.date}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1.5">
+                            {exp.budgetCode && (
+                              <span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 font-mono font-bold rounded-sm text-[10px]">
+                                {exp.budgetCode}
+                              </span>
+                            )}
+                            <span className="font-bold text-slate-800 text-[11px]">{exp.budgetRowTitle || 'ردیف عمومی'}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-3 text-slate-700 font-medium">
+                          {exp.payer}
+                        </td>
+
+                        <td className="py-3 px-2 text-center">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                            {exp.category}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-center font-black text-rose-600 font-mono text-xs">
+                          {exp.amount.toLocaleString('fa-IR')}
+                        </td>
+
+                        <td className="py-3 px-2 text-center">
+                          {exp.attachmentUrl ? (
+                            <a
+                              href={exp.attachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-200 transition-all"
+                            >
+                              <Paperclip size={12} />
+                              <span>فاکتور</span>
+                            </a>
+                          ) : (
+                            <span className="text-slate-300 text-[10px]">-</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleOpenEditExpense(exp)}
+                              className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-all cursor-pointer"
+                              title="ویرایش هزینه"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteExpense(exp.id)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-all cursor-pointer"
+                              title="حذف هزینه"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* SUB-TAB 3: STATISTICS & ANALYTICS (آمارها و گزارشات) */}
+      {/* ----------------------------------------------------------------- */}
+      {activeSubTab === 'statistics' && (
+        <div className="space-y-6">
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Bar Chart: Budget vs Spent */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
+                  <BarChart3 size={16} className="text-indigo-600" />
+                  <span>مقایسه سقف مصوب و مصرف ردیف‌های بودجه (میلیون تومان)</span>
+                </h3>
+              </div>
+
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'vazir' }} />
+                    <YAxis tick={{ fontSize: 10, fontFamily: 'vazir' }} />
+                    <RechartsTooltip 
+                      formatter={(val: any) => [`${Number(val).toLocaleString('fa-IR')} میلیون تومان`]}
+                      contentStyle={{ fontFamily: 'vazir', borderRadius: '12px', fontSize: '12px', direction: 'rtl' }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', fontFamily: 'vazir', paddingTop: '10px' }} />
+                    <Bar dataKey="مصوب" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="مصرف_شده" fill="#ef4444" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Payer Breakdown */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
+                  <Users size={16} className="text-indigo-600" />
+                  <span>گزارش هزینه‌کرد به تفکیک اشخاص و تنخواه‌داران</span>
+                </h3>
+                <span className="text-[11px] text-slate-400 font-mono">{payerStats.length} شخص</span>
+              </div>
+
+              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                {payerStats.map((p, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                        {idx + 1}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800 text-xs">{p.payer}</div>
+                        <div className="text-[10px] text-slate-400">{p.count} فاکتور ثبت شده</div>
+                      </div>
+                    </div>
+
+                    <div className="text-left">
+                      <div className="font-mono font-black text-xs text-indigo-900">
+                        {p.total.toLocaleString('fa-IR')} تومان
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-bold">{p.percent}٪ از کل مخارج</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Category Breakdown Table */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tag size={17} className="text-indigo-600" />
+                <h2 className="text-xs font-black text-slate-800">
+                  گزارش تجمیعی بر اساس موضوعات و سرفصل‌های هزینه
+                </h2>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                تفکیک درصدی و ریالی مصارف
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200/80">
+                  <tr>
+                    <th className="py-3 px-3 text-center">ردیف</th>
+                    <th className="py-3 px-4">موضوع و دسته‌بندی</th>
+                    <th className="py-3 px-3 text-center">تعداد اسناد</th>
+                    <th className="py-3 px-3 text-center">مجموع مبلغ (تومان)</th>
+                    <th className="py-3 px-3 text-center">سهم از کل مخارج</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {categoryStats.map((c, idx) => (
+                    <tr key={idx} className="hover:bg-indigo-50/30 transition-colors">
+                      <td className="py-3 px-3 text-center text-slate-400 font-mono">
+                        {(idx + 1).toLocaleString('fa-IR')}
+                      </td>
+                      <td className="py-3 px-4 font-bold text-slate-800">
+                        {c.category}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono text-slate-600">
+                        {c.count} سند
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono font-black text-rose-600">
+                        {c.total.toLocaleString('fa-IR')}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="font-mono font-bold text-slate-700">{c.percent}٪</span>
+                          <div className="w-16 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${c.percent}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* Modal: Add/Edit Budget Row */}
+      {/* ------------------------------------------------------------- */}
+      <AnimatePresence>
+        {isAddBudgetOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900">
+                  {editingBudget ? 'ویرایش ردیف بودجه' : 'تعریف ردیف بودجه جدید'}
+                </h3>
+                <button
+                  onClick={() => setIsAddBudgetOpen(false)}
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">کد ردیف *</label>
+                    <input
+                      type="text"
+                      value={budgetCode}
+                      onChange={(e) => setBudgetCode(e.target.value)}
+                      placeholder="مثال: 013"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block font-bold text-slate-700 mb-1">عنوان ردیف بودجه *</label>
+                    <input
+                      type="text"
+                      value={budgetTitle}
+                      onChange={(e) => setBudgetTitle(e.target.value)}
+                      placeholder="مثال: ردیف تغذیه و پذیرایی طلاب"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">سقف مصوب بودجه (تومان) *</label>
+                  <input
+                    type="number"
+                    value={budgetAllocated}
+                    onChange={(e) => setBudgetAllocated(e.target.value)}
+                    placeholder="مثال: 150000000"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">دوره / مدت زمان تخصیص</label>
+                  <input
+                    type="text"
+                    value={budgetPeriod}
+                    onChange={(e) => setBudgetPeriod(e.target.value)}
+                    placeholder="مثال: سال تحصیلی ۱۴۰۳-۱۴۰۴"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">توضیحات و شرح سرفصل</label>
+                  <textarea
+                    rows={2}
+                    value={budgetDesc}
+                    onChange={(e) => setBudgetDesc(e.target.value)}
+                    placeholder="توضیحات تکمیلی پیرامون مصارف مجاز این ردیف..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddBudgetOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
                   >
-                    <option value="utilities">قبوض آب/برق/گاز</option>
-                    <option value="maintenance">تعمیرات و نگهداری</option>
-                    <option value="supplies">اقلام مصرفی و ملزومات</option>
-                    <option value="events">مراسمات و مناسبت‌ها</option>
-                    <option value="other">سایر</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">مبلغ (تومان):</label>
-                  <input
-                    type="number"
-                    value={newExpAmount}
-                    onChange={(e) => setNewExpAmount(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800"
-                  />
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveBudgetRow}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-sm cursor-pointer"
+                  >
+                    ذخیره ردیف بودجه
+                  </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">دریافت‌کننده / فروشگاه:</label>
+      {/* ------------------------------------------------------------- */}
+      {/* Modal: Add/Edit Expense Record */}
+      {/* ------------------------------------------------------------- */}
+      <AnimatePresence>
+        {isAddExpenseOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 my-8"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900">
+                  {editingExpense ? 'ویرایش سند هزینه' : 'ثبت سند هزینه جدید'}
+                </h3>
+                <button
+                  onClick={() => setIsAddExpenseOpen(false)}
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">عنوان هزینه *</label>
                   <input
                     type="text"
-                    value={newExpRecipient}
-                    onChange={(e) => setNewExpRecipient(e.target.value)}
-                    placeholder="شرکت برق..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                    value={expTitle}
+                    onChange={(e) => setExpTitle(e.target.value)}
+                    placeholder="مثال: خرید مواد شوینده و بهداشتی خوابگاه"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">شماره فاکتور / پیگیری:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">مبلغ هزینه (تومان) *</label>
+                    <input
+                      type="number"
+                      value={expAmount}
+                      onChange={(e) => setExpAmount(e.target.value)}
+                      placeholder="مثال: 4500000"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">تاریخ سند *</label>
+                    <input
+                      type="text"
+                      value={expDate}
+                      onChange={(e) => setExpDate(e.target.value)}
+                      placeholder="۱۴۰۳/۰۷/۱۵"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Budget Source Selector / Manual Entry */}
+                <div className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-indigo-950">ردیف بودجه منبع *</label>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setExpBudgetMode('select')}
+                        className={cn("px-2 py-0.5 rounded-lg font-bold transition-all", expBudgetMode === 'select' ? "bg-indigo-600 text-white" : "text-indigo-700 hover:bg-indigo-100")}
+                      >
+                        انتخاب از ردیف‌ها
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpBudgetMode('manual')}
+                        className={cn("px-2 py-0.5 rounded-lg font-bold transition-all", expBudgetMode === 'manual' ? "bg-indigo-600 text-white" : "text-indigo-700 hover:bg-indigo-100")}
+                      >
+                        ورود دستی
+                      </button>
+                    </div>
+                  </div>
+
+                  {expBudgetMode === 'select' ? (
+                    <select
+                      value={expSelectedBudgetRowId}
+                      onChange={(e) => setExpSelectedBudgetRowId(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    >
+                      {budgetRows.map(b => (
+                        <option key={b.id} value={b.id}>
+                          کد {b.code} - {b.title} (مانده: {((b.allocatedAmount - (b.spentAmount || 0))).toLocaleString('fa-IR')} ت)
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <input
+                          type="text"
+                          value={expManualBudgetCode}
+                          onChange={(e) => setExpManualBudgetCode(e.target.value)}
+                          placeholder="کد ردیف مثلا 013"
+                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl font-mono font-bold text-slate-800 outline-hidden"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          value={expManualBudgetTitle}
+                          onChange={(e) => setExpManualBudgetTitle(e.target.value)}
+                          placeholder="عنوان ردیف بودجه دستی"
+                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl font-bold text-slate-800 outline-hidden"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">پرداخت‌کننده / شخص *</label>
+                    <input
+                      type="text"
+                      value={expPayer}
+                      onChange={(e) => setExpPayer(e.target.value)}
+                      placeholder="مثال: آقای رضایی (تنخواه‌دار)"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">موضوع / دسته‌بندی</label>
+                    <select
+                      value={expCategory}
+                      onChange={(e) => setExpCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden focus:border-indigo-500"
+                    >
+                      <option value="تغذیه و پذیرایی">تغذیه و پذیرایی</option>
+                      <option value="تاسیسات و نگهداری">تاسیسات و نگهداری</option>
+                      <option value="فرهنگی و مناسبت‌ها">فرهنگی و مناسبت‌ها</option>
+                      <option value="اداری و ملزومات">اداری و ملزومات</option>
+                      <option value="فناوری و ارتباطات">فناوری و ارتباطات</option>
+                      <option value="حق‌الزحمه و دستمزد">حق‌الزحمه و دستمزد</option>
+                      <option value="متفرقه">متفرقه</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">طرف حساب / فروشنده</label>
+                    <input
+                      type="text"
+                      value={expRecipient}
+                      onChange={(e) => setExpRecipient(e.target.value)}
+                      placeholder="مثال: شرکت تاسیساتی البرز"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">شماره سند / فاکتور</label>
+                    <input
+                      type="text"
+                      value={expInvoiceNum}
+                      onChange={(e) => setExpInvoiceNum(e.target.value)}
+                      placeholder="مثال: INV-1049"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-hidden"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">لینک فایل پیوست یا فاکتور</label>
                   <input
                     type="text"
-                    value={newExpInvoice}
-                    onChange={(e) => setNewExpInvoice(e.target.value)}
-                    placeholder="INV-..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800"
+                    value={expAttachmentUrl}
+                    onChange={(e) => setExpAttachmentUrl(e.target.value)}
+                    placeholder="https://... یا نام فایل فاکتور"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-hidden"
                   />
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-slate-600 font-bold">توضیحات و بابت:</label>
-                <input
-                  type="text"
-                  value={newExpNotes}
-                  onChange={(e) => setNewExpNotes(e.target.value)}
-                  placeholder="جزئیات هزینه..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
-                />
-              </div>
-            </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">توضیحات و شرح هزینه</label>
+                  <textarea
+                    rows={2}
+                    value={expDesc}
+                    onChange={(e) => setExpDesc(e.target.value)}
+                    placeholder="شرح اقلام خریداری‌شده یا خدمات ارائه‌شده..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 outline-hidden"
+                  />
+                </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsAddExpenseOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                انصراف
-              </button>
-              <button
-                type="button"
-                onClick={handleAddExpense}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
-              >
-                ثبت هزینه
-              </button>
-            </div>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddExpenseOpen(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveExpense}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-sm cursor-pointer"
+                  >
+                    ذخیره سند هزینه
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
-
-      {/* Add Staff Modal */}
-      {isAddStaffOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Plus size={16} className="text-slate-800" />
-                <span>ثبت کارمند جدید حوزه</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsAddStaffOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="space-y-1">
-                <label className="text-slate-600 font-bold">نام و نام خانوادگی:</label>
-                <input
-                  type="text"
-                  value={newStaffName}
-                  onChange={(e) => setNewStaffName(e.target.value)}
-                  placeholder="مثلاً: آقای کاظمی"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-slate-600 font-bold">سمت و مسئولیت:</label>
-                <input
-                  type="text"
-                  value={newStaffRole}
-                  onChange={(e) => setNewStaffRole(e.target.value)}
-                  placeholder="مسئول کتابخانه، انباردار..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">حقوق پایه (تومان):</label>
-                  <input
-                    type="number"
-                    value={newStaffBase}
-                    onChange={(e) => setNewStaffBase(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-slate-600 font-bold">اضافه کاری (ساعت):</label>
-                  <input
-                    type="number"
-                    value={newStaffOvertime}
-                    onChange={(e) => setNewStaffOvertime(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-slate-600 font-bold">شماره کارت یا حساب:</label>
-                <input
-                  type="text"
-                  value={newStaffAccount}
-                  onChange={(e) => setNewStaffAccount(e.target.value)}
-                  placeholder="۶۰۳۷-..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsAddStaffOpen(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                انصراف
-              </button>
-              <button
-                type="button"
-                onClick={handleAddStaff}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
-              >
-                ثبت کارمند
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

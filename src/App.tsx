@@ -140,8 +140,6 @@ function AppContent() {
         return <FundAndActiveLoans onNavigateTab={handleNavigate} />;
       case 'finance-expenses-reports':
         return <ExpensesAndReports onNavigateTab={handleNavigate} />;
-      case 'finance':
-        return <FinanceManagerDashboard />;
       case 'summary':
         return <Summary onNavigate={handleNavigate} initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-bank':
@@ -220,9 +218,8 @@ function AppContent() {
                      activeTab === 'finance-teachers' ? 'محاسبه حق‌الزحمه اساتید (ساعات تدریس و حق‌التدریس مصوب)' :
                      activeTab === 'finance-lunch' ? 'اطلاعات نهار و شام (رزرو غذا، لغو آشپزخانه و کسر شهریه)' :
                      activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌ها (طلاب، اساتید، کارکنان و سایر)' :
-                     activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌های فعال طلاب' :
-                     activeTab === 'finance-expenses-reports' ? 'سایر هزینه‌های حوزه، حقوق کارمندان و تراز مالی' :
-                     activeTab === 'finance' ? 'امور مالی، محاسبه شهریه و کارکرد' :
+                     activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌ها' :
+                     activeTab === 'finance-expenses-reports' ? 'هزینه‌ها (ردیف بودجه‌ها، ثبت هزینه‌ها و آمارها)' :
                      activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
                      activeTab === 'active-students' ? 'لیست کاربران فعال' :
                      activeTab === 'audit-logs' ? 'فعالیت‌های سایت و مانیتورینگ تغییرات' :
