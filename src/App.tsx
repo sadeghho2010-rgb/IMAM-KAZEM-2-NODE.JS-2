@@ -22,6 +22,7 @@ import StudyDiscussion from './components/StudyDiscussion';
 import AcademicCalendar from './components/AcademicCalendar';
 import PresenceHours from './components/PresenceHours';
 import TeachersBank from './components/TeachersBank';
+import StaffBank from './components/finance/StaffBank';
 import TeachersSchedule from './components/TeachersSchedule';
 import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
@@ -145,6 +146,8 @@ function AppContent() {
         return <Summary onNavigate={handleNavigate} initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-bank':
         return <TeachersBank />;
+      case 'staff-bank':
+        return <StaffBank />;
       case 'teacher-transport':
         return <TeacherTransportManagement />;
       case 'backup':
@@ -216,7 +219,7 @@ function AppContent() {
                      activeTab === 'finance-grade-mentors' ? 'محاسبه حق‌الزحمه اساتید پایه (حق سرپرستی و پیگیری)' :
                      activeTab === 'finance-teachers' ? 'محاسبه حق‌الزحمه اساتید (ساعات تدریس و حق‌التدریس مصوب)' :
                      activeTab === 'finance-lunch' ? 'اطلاعات نهار و شام (رزرو غذا، لغو آشپزخانه و کسر شهریه)' :
-                     activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌های طلاب (تعریف اقساط و حساب‌های واریز)' :
+                     activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌ها (طلاب، اساتید، کارکنان و سایر)' :
                      activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌های فعال طلاب' :
                      activeTab === 'finance-expenses-reports' ? 'سایر هزینه‌های حوزه، حقوق کارمندان و تراز مالی' :
                      activeTab === 'finance' ? 'امور مالی، محاسبه شهریه و کارکرد' :

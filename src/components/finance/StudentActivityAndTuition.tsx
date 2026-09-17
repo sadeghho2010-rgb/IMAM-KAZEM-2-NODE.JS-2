@@ -34,7 +34,9 @@ import {
   PlusCircle,
   CheckCheck,
   BookOpen,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Trash2,
+  HandCoins
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../../lib/utils';
@@ -49,6 +51,7 @@ import {
   StudentFinancialProfile, 
   TuitionCalculationBreakdown, 
   TuitionPeriod,
+  StudyTier,
   AttendanceSessionLog,
   PeriodicStudyLog,
   StudyPeriod,
@@ -116,26 +119,41 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     baseSingleTuition: 2000000,
     marriedBaseTuition: 3200000,
     baseMarriedTuition: 3200000,
+    hasMarriageBonus: true,
     marriageBonusType: 'percentage',
     marriageBonusPercent: 25,
     marriageBonusAmount: 1000000,
+    hasChildAllowance: true,
     childAllowance: 350000,
     childAllowancePerChild: 350000,
-    hasChildAllowance: true,
+    hasTurbanAllowance: true,
     turbanAllowance: 500000,
     clericalHabitBonus: 500000,
-    hasTurbanAllowance: true,
+    hasHousingAllowance: true,
     housingAllowanceRented: 600000,
     housingAllowanceDorm: 250000,
     housingSubsidy: 500000,
-    hasHousingAllowance: true,
     studyBonusEnabled: true,
+    studyBonusBase: 'mandatory',
+    studyBonusTiered: false,
+    studyBonusTiers: [
+      { id: '1', stepNumber: 1, minMinutes: 60, maxMinutes: 120, amount: 50000 },
+      { id: '2', stepNumber: 2, minMinutes: 120, maxMinutes: 240, amount: 80000 },
+      { id: '3', stepNumber: 3, minMinutes: 240, maxMinutes: 360, amount: 120000 }
+    ],
     studyBonusThresholdMinutes: 60,
     studyBonusCalculationType: 'per_hour',
     studyBonusPerHour: 30000,
     studyBonusRatePerHour: 30000,
     studyBonusFixedAmount: 150000,
     studyPenaltyEnabled: true,
+    studyPenaltyBase: 'mandatory',
+    studyPenaltyTiered: false,
+    studyPenaltyTiers: [
+      { id: '1', stepNumber: 1, minMinutes: 60, maxMinutes: 120, amount: 40000 },
+      { id: '2', stepNumber: 2, minMinutes: 120, maxMinutes: 240, amount: 70000 },
+      { id: '3', stepNumber: 3, minMinutes: 240, maxMinutes: 360, amount: 100000 }
+    ],
     studyPenaltyThreshold: 'below_mandatory',
     studyPenaltyCalculationType: 'per_hour',
     studyPenaltyPerHour: 25000,
@@ -157,6 +175,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     defaultLoanInstallment: 300000,
     deductFundContribution: true,
     defaultFundContribution: 100000,
+    deductClaims: true,
+    enabledClaimCategoryIds: [],
     enableGeneralIncentive: false,
     generalIncentiveType: 'fixed',
     generalIncentiveAmount: 200000,
@@ -210,6 +230,24 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [profActiveDepositAccount, setProfActiveDepositAccount] = useState<'account1' | 'account2' | 'both'>('account1');
   const [profManualAdjustment, setProfManualAdjustment] = useState<number>(0);
   const [profManualAdjustmentReason, setProfManualAdjustmentReason] = useState<string>('');
+
+  // Primary Tuition View Mode: 'create_period' (ایجاد دوره پرداخت شهریه) | 'archived_periods' (مشاهده دوره‌های شهریه {بایگانی})
+  const [tuitionMainMode, setTuitionMainMode] = useState<'create_period' | 'archived_periods'>('create_period');
+
+  // Manual Overrides state per student (indexed by studentId)
+  const [studentOverrides, setStudentOverrides] = useState<Record<string, {
+    manualAdjustmentAmount?: number;
+    manualAdjustmentReason?: string;
+    overrideStudyBonus?: number;
+    ignoreAbsencePenalty?: boolean;
+    overrideBaseTuition?: number;
+  }>>({});
+
+  // Active student being edited in the overrides modal
+  const [editingOverrideStudentId, setEditingOverrideStudentId] = useState<string | null>(null);
+
+  // Active selected archived period for viewing details
+  const [selectedArchivedPeriod, setSelectedArchivedPeriod] = useState<TuitionPeriod | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -301,6 +339,77 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     await localDb.setDoc('tuition_settings', updated);
     setIsSettingsModalOpen(false);
     showToast('تنظیمات فرمول و مبالغ محاسبه شهریه با موفقیت ذخیره شد.');
+  };
+
+  // Study Tiers Management Helpers
+  const handleAddBonusTier = () => {
+    const currentTiers = settings.studyBonusTiers || [];
+    if (currentTiers.length >= 5) return;
+    const nextStep = currentTiers.length + 1;
+    const lastTier = currentTiers[currentTiers.length - 1];
+    const minMins = lastTier ? lastTier.maxMinutes : 60;
+    const maxMins = minMins + 60;
+    const newTier: StudyTier = {
+      id: `tier_b_${Date.now()}_${nextStep}`,
+      stepNumber: nextStep,
+      minMinutes: minMins,
+      maxMinutes: maxMins,
+      amount: 50000 * nextStep
+    };
+    setSettings({
+      ...settings,
+      studyBonusTiers: [...currentTiers, newTier]
+    });
+  };
+
+  const handleRemoveBonusTier = (index: number) => {
+    const currentTiers = [...(settings.studyBonusTiers || [])];
+    currentTiers.splice(index, 1);
+    const updated = currentTiers.map((t, idx) => ({ ...t, stepNumber: idx + 1 }));
+    setSettings({ ...settings, studyBonusTiers: updated });
+  };
+
+  const handleUpdateBonusTier = (index: number, field: keyof StudyTier, value: number) => {
+    const currentTiers = [...(settings.studyBonusTiers || [])];
+    if (currentTiers[index]) {
+      currentTiers[index] = { ...currentTiers[index], [field]: value };
+      setSettings({ ...settings, studyBonusTiers: currentTiers });
+    }
+  };
+
+  const handleAddPenaltyTier = () => {
+    const currentTiers = settings.studyPenaltyTiers || [];
+    if (currentTiers.length >= 5) return;
+    const nextStep = currentTiers.length + 1;
+    const lastTier = currentTiers[currentTiers.length - 1];
+    const minMins = lastTier ? lastTier.maxMinutes : 60;
+    const maxMins = minMins + 60;
+    const newTier: StudyTier = {
+      id: `tier_p_${Date.now()}_${nextStep}`,
+      stepNumber: nextStep,
+      minMinutes: minMins,
+      maxMinutes: maxMins,
+      amount: 40000 * nextStep
+    };
+    setSettings({
+      ...settings,
+      studyPenaltyTiers: [...currentTiers, newTier]
+    });
+  };
+
+  const handleRemovePenaltyTier = (index: number) => {
+    const currentTiers = [...(settings.studyPenaltyTiers || [])];
+    currentTiers.splice(index, 1);
+    const updated = currentTiers.map((t, idx) => ({ ...t, stepNumber: idx + 1 }));
+    setSettings({ ...settings, studyPenaltyTiers: updated });
+  };
+
+  const handleUpdatePenaltyTier = (index: number, field: keyof StudyTier, value: number) => {
+    const currentTiers = [...(settings.studyPenaltyTiers || [])];
+    if (currentTiers[index]) {
+      currentTiers[index] = { ...currentTiers[index], [field]: value };
+      setSettings({ ...settings, studyPenaltyTiers: currentTiers });
+    }
   };
 
   // Save Student Profile Handler
@@ -561,9 +670,14 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       const isRobed = student.tammomStatus === 'معمم' || !!prof?.isRobed || !!prof?.isTammam;
       const livingStatus = student.livingStatus || prof?.livingStatus || 'پدری';
 
+      // Check for Manual Overrides for this student
+      const ov = studentOverrides[student.id];
+
       // 1. Base Tuition
       let baseAmount = 0;
-      if (settings.isBaseTuitionEqualForMarried) {
+      if (ov?.overrideBaseTuition !== undefined) {
+        baseAmount = ov.overrideBaseTuition;
+      } else if (settings.isBaseTuitionEqualForMarried) {
         baseAmount = settings.singleBaseTuition || settings.baseSingleTuition || 2000000;
       } else {
         baseAmount = isMarried
@@ -573,7 +687,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
 
       // 2. Marital Bonus
       let maritalBonus = 0;
-      if (isMarried) {
+      if (isMarried && settings.hasMarriageBonus) {
         if (settings.marriageBonusType === 'percentage') {
           maritalBonus = Math.round(baseAmount * ((settings.marriageBonusPercent || 25) / 100));
         } else if (settings.marriageBonusAmount) {
@@ -584,17 +698,23 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       }
 
       // 3. Child Allowance
-      const childAllowanceTotal = childrenCount * (settings.childAllowancePerChild || settings.childAllowance || 350000);
+      const childAllowanceTotal = (settings.hasChildAllowance && childrenCount > 0)
+        ? childrenCount * (settings.childAllowancePerChild || settings.childAllowance || 350000)
+        : 0;
 
       // 4. Robed Bonus
-      const turbanAllowance = isRobed ? (settings.turbanAllowance || settings.clericalHabitBonus || 500000) : 0;
+      const turbanAllowance = (settings.hasTurbanAllowance && isRobed)
+        ? (settings.turbanAllowance || settings.clericalHabitBonus || 500000)
+        : 0;
 
       // 5. Housing Allowance
       let housingAllowance = 0;
-      if (livingStatus === 'اجاره ای') {
-        housingAllowance = settings.housingAllowanceRented || settings.housingSubsidy || 600000;
-      } else if (livingStatus === 'خوابگاه') {
-        housingAllowance = settings.housingAllowanceDorm || 250000;
+      if (settings.hasHousingAllowance) {
+        if (livingStatus === 'اجاره ای') {
+          housingAllowance = settings.housingAllowanceRented || settings.housingSubsidy || 600000;
+        } else if (livingStatus === 'خوابگاه') {
+          housingAllowance = settings.housingAllowanceDorm || 250000;
+        }
       }
 
       // 6. Study Bonus & Penalty
@@ -604,43 +724,79 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       const isAboveStudyRequired = studyDiff > 0;
       const isAboveStudyAverage = studyMins >= avgMins;
 
+      // مبنای پاداش: موظفی یا میانگین
+      const bonusBaseMins = settings.studyBonusBase === 'average' ? avgMins : mandatoryMins;
+      const bonusDiffMins = Math.max(0, studyMins - bonusBaseMins);
+
       let studyBonusAmount = 0;
-      if (settings.studyBonusEnabled) {
-        const threshold = settings.studyBonusThresholdMinutes || 0;
-        const aboveThresholdMinutes = Math.max(0, studyDiff - threshold);
-        if (aboveThresholdMinutes > 0) {
-          const hours = aboveThresholdMinutes / 60;
-          const rate = settings.studyBonusRatePerHour || settings.studyBonusPerHour || 30000;
-          studyBonusAmount = Math.round(hours * rate);
+      if (ov?.overrideStudyBonus !== undefined) {
+        studyBonusAmount = ov.overrideStudyBonus;
+      } else if (settings.studyBonusEnabled && bonusDiffMins > 0) {
+        if (settings.studyBonusTiered && settings.studyBonusTiers && settings.studyBonusTiers.length > 0) {
+          // محاسبه پله‌ای تجمعی پاداش مطالعه
+          let cumulativeBonus = 0;
+          const sortedTiers = [...settings.studyBonusTiers].sort((a, b) => a.minMinutes - b.minMinutes);
+          for (const tier of sortedTiers) {
+            if (bonusDiffMins >= tier.minMinutes) {
+              cumulativeBonus += Number(tier.amount || 0);
+            }
+          }
+          studyBonusAmount = cumulativeBonus;
+        } else {
+          const threshold = settings.studyBonusThresholdMinutes || 0;
+          const aboveThresholdMinutes = Math.max(0, bonusDiffMins - threshold);
+          if (aboveThresholdMinutes > 0) {
+            if (settings.studyBonusCalculationType === 'fixed') {
+              studyBonusAmount = settings.studyBonusFixedAmount || 150000;
+            } else {
+              const hours = aboveThresholdMinutes / 60;
+              const rate = settings.studyBonusRatePerHour || settings.studyBonusPerHour || 30000;
+              studyBonusAmount = Math.round(hours * rate);
+            }
+          }
         }
       }
 
+      // مبنای جریمه: موظفی یا میانگین
+      const penaltyBaseMins = settings.studyPenaltyBase === 'average' ? avgMins : mandatoryMins;
+      const deficitMinutes = Math.max(0, penaltyBaseMins - studyMins);
+
       let studyPenaltyAmount = 0;
-      if (settings.studyPenaltyEnabled) {
-        let deficitMinutes = 0;
-        if (settings.studyPenaltyThreshold === 'below_average') {
-          deficitMinutes = Math.max(0, avgMins - studyMins);
+      if (settings.studyPenaltyEnabled && deficitMinutes > 0) {
+        if (settings.studyPenaltyTiered && settings.studyPenaltyTiers && settings.studyPenaltyTiers.length > 0) {
+          // محاسبه پله‌ای تجمعی جریمه مطالعه
+          let cumulativePenalty = 0;
+          const sortedTiers = [...settings.studyPenaltyTiers].sort((a, b) => a.minMinutes - b.minMinutes);
+          for (const tier of sortedTiers) {
+            if (deficitMinutes >= tier.minMinutes) {
+              cumulativePenalty += Number(tier.amount || 0);
+            }
+          }
+          studyPenaltyAmount = cumulativePenalty;
         } else {
-          deficitMinutes = Math.max(0, mandatoryMins - studyMins);
-        }
-        if (deficitMinutes > 0) {
-          const hours = deficitMinutes / 60;
-          const rate = settings.studyPenaltyRatePerHour || settings.studyPenaltyPerHour || 25000;
-          studyPenaltyAmount = Math.round(hours * rate);
+          if (settings.studyPenaltyCalculationType === 'fixed') {
+            studyPenaltyAmount = settings.studyPenaltyFixedAmount || 100000;
+          } else {
+            const hours = deficitMinutes / 60;
+            const rate = settings.studyPenaltyRatePerHour || settings.studyPenaltyPerHour || 25000;
+            studyPenaltyAmount = Math.round(hours * rate);
+          }
         }
       }
 
       // 7. Attendance Penalties
       let absencePenaltyAmount = 0;
-      if (settings.absenceDeductionMode === 'both_different') {
-        const unexcusedCost = att.absentUnexcused * (settings.absencePenaltyUnexcusedAmount || settings.absencePenaltyPerSession || 90000);
-        const excusedCost = att.absentExcused * (settings.absencePenaltyExcusedAmount || 25000);
-        absencePenaltyAmount = unexcusedCost + excusedCost;
-      } else {
-        if (settings.absencePenaltyUnexcusedType === 'percentage') {
-          absencePenaltyAmount = Math.round(baseAmount * ((settings.absencePenaltyUnexcusedPercent || 4) / 100) * att.absentUnexcused);
+      if (settings.absenceDeductionEnabled && !ov?.ignoreAbsencePenalty) {
+        if (settings.absenceDeductionMode === 'both_different') {
+          const unexcusedCost = att.absentUnexcused * (settings.absencePenaltyUnexcusedAmount || settings.absencePenaltyPerSession || 90000);
+          const excusedCost = att.absentExcused * (settings.absencePenaltyExcusedAmount || 25000);
+          absencePenaltyAmount = unexcusedCost + excusedCost;
         } else {
-          absencePenaltyAmount = att.absentUnexcused * (settings.absencePenaltyUnexcusedAmount || settings.absencePenaltyPerSession || 90000);
+          if (settings.absencePenaltyUnexcusedType === 'percentage') {
+            absencePenaltyAmount = Math.round(baseAmount * ((settings.absencePenaltyUnexcusedPercent || 4) / 100) * att.absentUnexcused);
+          } else {
+            absencePenaltyAmount = att.absentUnexcused * (settings.absencePenaltyUnexcusedAmount || settings.absencePenaltyPerSession || 90000);
+          }
         }
       }
 
@@ -650,15 +806,19 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       const gradeCBonus = (cGrades.countC || 0) * (settings.counselingGradeCBonus || 0);
       const counselingBonusAmount = gradeABonus + gradeBBonus + gradeCBonus;
 
+      // 9. Manual Adjustments (افزایش / کاهش دستی و علت)
+      const manualAdjustmentAmount = ov?.manualAdjustmentAmount ?? (prof?.manualAdjustmentAmount || 0);
+      const manualAdjustmentReason = ov?.manualAdjustmentReason ?? (prof?.manualAdjustmentReason || '');
+
       // ==============================================================
       // TYPE 1 DEDUCTIONS (کسورات مستقیم از شهریه)
       // غیبت‌ها و جریمه مطالعه که از استحقاقی کسر شده و تمام می‌شود
       // ==============================================================
-      const type1DeductionsTotal = studyPenaltyAmount + absencePenaltyAmount;
-      const totalAdditions = maritalBonus + childAllowanceTotal + turbanAllowance + housingAllowance + studyBonusAmount + counselingBonusAmount;
+      const type1DeductionsTotal = studyPenaltyAmount + absencePenaltyAmount + (manualAdjustmentAmount < 0 ? Math.abs(manualAdjustmentAmount) : 0);
+      const totalAdditions = maritalBonus + childAllowanceTotal + turbanAllowance + housingAllowance + studyBonusAmount + counselingBonusAmount + (manualAdjustmentAmount > 0 ? manualAdjustmentAmount : 0);
       
       // شهریه استحقاقی خالص (مبلغ فاکتور مصوب ارسالی به بالادستی)
-      const grossEarnedTuition = Math.max(0, baseAmount + totalAdditions - type1DeductionsTotal);
+      const grossEarnedTuition = Math.max(0, baseAmount + maritalBonus + childAllowanceTotal + turbanAllowance + housingAllowance + studyBonusAmount + counselingBonusAmount - (studyPenaltyAmount + absencePenaltyAmount) + manualAdjustmentAmount);
 
       // ==============================================================
       // TYPE 2 DEDUCTIONS (کسورات انتقالی و واریز به حساب‌های مقصد)
@@ -693,7 +853,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       const studentActiveClaims = claimsList.filter(c => 
         c.studentId === student.id && 
         c.status === 'active' && 
-        (c.remainingAmount ?? c.totalDebtAmount) > 0
+        (c.remainingAmount ?? c.totalDebtAmount) > 0 &&
+        (!settings.enabledClaimCategoryIds || settings.enabledClaimCategoryIds.length === 0 || settings.enabledClaimCategoryIds.includes(c.claimCategoryId))
       );
 
       let culturalTransferAmount = 0;
@@ -817,7 +978,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     newPeriodTitle,
     mealReservations,
     lunchItems,
-    claimsList
+    claimsList,
+    studentOverrides
   ]);
 
   // Aggregate Metrics for Current Calculation
@@ -885,6 +1047,47 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     setIsNewPeriodModalOpen(false);
     setCurrentSubTab('tuition_calc');
     showToast(`دوره جدید «${newPeriodTitle}» با موفقیت ایجاد و شهریه‌ها ذخیره گردید.`);
+  };
+
+  // Finalize & Archive Current Calculation
+  const handleFinalizeTuitionPeriod = async () => {
+    if (!newPeriodTitle) {
+      alert('لطفاً عنوان دوره شهریه را وارد کنید.');
+      return;
+    }
+
+    const periodId = `period-${Date.now()}`;
+    const finalizedDoc: TuitionPeriod = {
+      id: periodId,
+      title: newPeriodTitle,
+      startDate,
+      endDate,
+      status: 'finalized',
+      totalStudentsCalculated: calculatedTuitions.length,
+      totalPayoutAmount: totalNetPayoutSum,
+      calculations: calculatedTuitions,
+      createdAt: new Date().toISOString(),
+      createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username,
+      finalizedAt: new Date().toISOString(),
+      finalizedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
+    };
+
+    await localDb.setDoc('tuition_periods', finalizedDoc);
+    setTuitionPeriods(prev => [finalizedDoc, ...prev]);
+    setSelectedArchivedPeriod(finalizedDoc);
+    setTuitionMainMode('archived_periods');
+    showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت ثبت نهایی شد و به بایگانی منتقل گردید.`);
+  };
+
+  // Delete Archived Period
+  const handleDeleteArchivedPeriod = async (periodId: string, title: string) => {
+    if (!window.confirm(`آیا از حذف دوره شهریه بایگانی شده «${title}» اطمینان دارید؟`)) return;
+    await localDb.deleteDoc('tuition_periods', periodId);
+    setTuitionPeriods(prev => prev.filter(p => p.id !== periodId));
+    if (selectedArchivedPeriod?.id === periodId) {
+      setSelectedArchivedPeriod(null);
+    }
+    showToast(`دوره بایگانی «${title}» با موفقیت حذف گردید.`);
   };
 
   // -------------------------------------------------------------
@@ -1030,36 +1233,6 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
               مشاهده تمامی اطلاعات پایه، زندگی، مطالعه، حضور و غیاب، مشاوره‌ها، نهار، وام و محاسبه مکانیزه شهریه
             </p>
           </div>
-        </div>
-
-        {/* Global Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-          <button
-            type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <SlidersHorizontal size={14} />
-            <span>تنظیمات جامع محاسبه شهریه</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsNewPeriodModalOpen(true)}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus size={14} />
-            <span>ایجاد دوره پرداخت شهریه</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportUpperManagementExcel}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <FileSpreadsheet size={14} className="text-emerald-600" />
-            <span>خروجی اکسل بالادستی</span>
-          </button>
         </div>
       </div>
 
@@ -1436,95 +1609,164 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
 
       {/* TAB 2: محاسبه و فیش‌های شهریه */}
       {currentSubTab === 'tuition_calc' && (
-        <div className="space-y-4">
-          {/* Header Strip with Mode Switcher & Period Actions */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                <DollarSign size={20} />
+        <div className="space-y-5">
+          {/* Main Top Selector: Create Period vs Archived Periods */}
+          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setTuitionMainMode('create_period');
+                setSelectedArchivedPeriod(null);
+              }}
+              className={cn(
+                "flex-1 w-full py-3 px-5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer",
+                tuitionMainMode === 'create_period'
+                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
+              )}
+            >
+              <PlusCircle size={18} />
+              <span>ایجاد دوره پرداخت شهریه</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTuitionMainMode('archived_periods')}
+              className={cn(
+                "flex-1 w-full py-3 px-5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer",
+                tuitionMainMode === 'archived_periods'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
+              )}
+            >
+              <BookOpen size={18} />
+              <span>مشاهده دوره‌های شهریه {"{بایگانی}"}</span>
+              {tuitionPeriods.length > 0 && (
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[11px] font-mono font-bold mr-1",
+                  tuitionMainMode === 'archived_periods' ? "bg-indigo-800 text-white" : "bg-slate-200 text-slate-700"
+                )}>
+                  {tuitionPeriods.length} دوره
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* MODE 1: ایجاد دوره پرداخت شهریه */}
+          {tuitionMainMode === 'create_period' && (
+            <div className="space-y-5">
+              {/* Period Date & Formula Controls Header */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+                      <DollarSign size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900">تعریف و تنظیم بازه زمان محاسبات شهریه</h3>
+                      <p className="text-[11px] text-slate-500">
+                        بازه زمانی مورد نظر را مشخص کرده و اطلاعات جدول را بررسی و ویرایش نمایید.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsModalOpen(true)}
+                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <SlidersHorizontal size={14} className="text-emerald-400" />
+                      <span>تنظیمات فرمول شهریه</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Period Title & Dates Picker Form */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                  <div className="md:col-span-2 space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-700">عنوان دوره شهریه:</label>
+                    <input
+                      type="text"
+                      value={newPeriodTitle}
+                      onChange={e => setNewPeriodTitle(e.target.value)}
+                      placeholder="مثلا: شهریه مهر ماه ۱۴۰۳"
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-700">تاریخ شروع بازه:</label>
+                    <ShamsiDatePicker
+                      value={startDate}
+                      onChange={setStartDate}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-700">تاریخ پایان بازه:</label>
+                    <ShamsiDatePicker
+                      value={endDate}
+                      onChange={setEndDate}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900">محاسبه مکانیزه و صدور فیش‌های شهریه دوره</h3>
-                <p className="text-[11px] text-slate-500">
-                  بازه زمانی محاسبات: {startDate} تا {endDate} • {calculatedTuitions.length} طلبه تحت پوشش
-                </p>
-              </div>
-            </div>
 
-            {/* Mode Switcher */}
-            <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setReportViewMode('upper_management')}
-                className={cn(
-                  "py-2 px-3.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                  reportViewMode === 'upper_management'
-                    ? "bg-white text-emerald-800 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <FileText size={14} className={reportViewMode === 'upper_management' ? "text-emerald-600" : "text-slate-400"} />
-                <span>۱. صورت‌وضعیت و فاکتور تفکیکی بالادستی</span>
-              </button>
+              {/* Report View Mode Switcher Strip */}
+              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="bg-slate-100 p-1 rounded-2xl flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setReportViewMode('upper_management')}
+                    className={cn(
+                      "py-2 px-3.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                      reportViewMode === 'upper_management'
+                        ? "bg-white text-emerald-800 shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <FileText size={14} className={reportViewMode === 'upper_management' ? "text-emerald-600" : "text-slate-400"} />
+                    <span>۱. صورت‌وضعیت و فاکتور تفکیکی بالادستی</span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setReportViewMode('internal_detailed')}
-                className={cn(
-                  "py-2 px-3.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                  reportViewMode === 'internal_detailed'
-                    ? "bg-white text-emerald-800 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <BookOpen size={14} className={reportViewMode === 'internal_detailed' ? "text-emerald-600" : "text-slate-400"} />
-                <span>۲. گزارش تفصیلی داخلی مدرسه</span>
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={() => setReportViewMode('internal_detailed')}
+                    className={cn(
+                      "py-2 px-3.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                      reportViewMode === 'internal_detailed'
+                        ? "bg-white text-emerald-800 shadow-2xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <BookOpen size={14} className={reportViewMode === 'internal_detailed' ? "text-emerald-600" : "text-slate-400"} />
+                    <span>۲. گزارش تفصیلی و اصلاحات دستی</span>
+                  </button>
+                </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-2">
-              {reportViewMode === 'upper_management' ? (
-                <>
+                {/* Actions */}
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleExportUpperManagementExcel}
                     className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download size={14} />
-                    <span>اکسل بالادستی و پایا</span>
+                    <span>اکسل بالادستی</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsUpperManagementPrintOpen(true)}
-                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  >
-                    <Printer size={14} />
-                    <span>چاپ رسمی صورت‌وضعیت بالادستی</span>
-                  </button>
-                </>
-              ) : (
-                <>
                   <button
                     type="button"
                     onClick={handleExportInternalExcel}
-                    className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download size={14} />
-                    <span>اکسل گزارش تفصیلی</span>
+                    <span>اکسل تفصیلی</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handlePrintSlip}
-                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Printer size={14} />
-                    <span>چاپ کارنامه کلی</span>
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+                </div>
+              </div>
 
           {/* VIEW 1: UPPER MANAGEMENT RECONCILIATION & 4-WAY TRANSFERS */}
           {reportViewMode === 'upper_management' && (
@@ -1733,25 +1975,33 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
             </div>
           )}
 
-          {/* VIEW 2: INTERNAL DETAILED AUDIT */}
+          {/* VIEW 2: INTERNAL DETAILED AUDIT WITH EDITABLE MANUAL ADJUSTMENTS */}
           {reportViewMode === 'internal_detailed' && (
             <div className="space-y-4">
               <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                  <div>
+                    <span className="font-black text-xs block">جدول تفصیلی شهریه با امکان ویرایش مستقیم و اعمال تغییرات موردی</span>
+                    <span className="text-[10px] text-slate-400">مسئول مالی می‌تواند مبالغ را مستقیماً در ستون‌های مربوطه ویرایش نماید.</span>
+                  </div>
+                  <span className="font-mono text-xs text-emerald-400 font-bold">{calculatedTuitions.length} طلبه</span>
+                </div>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-right text-xs">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
-                        <th className="py-3 px-3">ردیف</th>
-                        <th className="py-3 px-3">نام طلبه</th>
-                        <th className="py-3 px-3">پایه</th>
-                        <th className="py-3 px-3">وضعیت زندگی</th>
-                        <th className="py-3 px-3">شهریه پایه</th>
-                        <th className="py-3 px-3">جمع اضافات (+)</th>
-                        <th className="py-3 px-3">کسورات نوع ۱ (-)</th>
-                        <th className="py-3 px-3 text-amber-900">شهریه استحقاقی</th>
-                        <th className="py-3 px-3">کسورات نوع ۲ (-)</th>
-                        <th className="py-3 px-3 font-black text-emerald-900">خالص پرداختی</th>
-                        <th className="py-3 px-3 text-center">ریز فاکتور</th>
+                        <th className="py-3 px-2">ردیف</th>
+                        <th className="py-3 px-2">نام طلبه</th>
+                        <th className="py-3 px-2">پایه</th>
+                        <th className="py-3 px-2">شهریه پایه</th>
+                        <th className="py-3 px-2">مزایا (+)</th>
+                        <th className="py-3 px-2 text-rose-700">کسورات غیبت/مطالعه (-)</th>
+                        <th className="py-3 px-2 text-indigo-800 bg-indigo-50/50">افزایش/کاهش دستی (تومان)</th>
+                        <th className="py-3 px-2 text-indigo-800 bg-indigo-50/50">علت افزایش/کاهش دستی</th>
+                        <th className="py-3 px-2 text-amber-900">شهریه استحقاقی</th>
+                        <th className="py-3 px-3 font-black text-emerald-900">خالص واریزی</th>
+                        <th className="py-3 px-2 text-center">اصلاح موردی</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1764,49 +2014,85 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                       ) : (
                         calculatedTuitions.map((calc, idx) => (
                           <tr key={calc.studentId} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-3 px-3 font-mono text-slate-400">{idx + 1}</td>
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-2 font-mono text-slate-400">{idx + 1}</td>
+                            <td className="py-3 px-2">
                               <span className="font-bold text-slate-900 block">{calc.studentName}</span>
                               <span className="text-[10px] text-slate-400 font-mono">
-                                {calc.nationalId || calc.instituteCode || '---'}
+                                {calc.nationalId || '---'}
                               </span>
                             </td>
-                            <td className="py-3 px-3 text-slate-600 font-bold">{calc.grade}</td>
-                            <td className="py-3 px-3">
-                              <div className="text-[11px] space-y-0.5">
-                                <span className="text-slate-700 font-medium">
-                                  {calc.maritalStatus} {calc.childrenCount ? `(${calc.childrenCount}ف)` : ''}
-                                </span>
-                                {calc.isTammam && (
-                                  <span className="text-teal-700 font-bold block text-[10px]">• معمم</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 font-mono text-slate-700">
+                            <td className="py-3 px-2 text-slate-600 font-bold">{calc.grade}</td>
+                            <td className="py-3 px-2 font-mono text-slate-700">
                               {(calc.baseTuition || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-3 font-mono text-emerald-700 font-bold">
+                            <td className="py-3 px-2 font-mono text-emerald-700 font-bold">
                               +{(calc.totalAdditions || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-3 font-mono text-rose-700 font-bold">
+                            <td className="py-3 px-2 font-mono text-rose-700 font-bold">
                               -{(calc.type1DeductionsTotal || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-3 font-mono text-amber-900 font-bold">
+
+                            {/* Editable Manual Adjustment Amount */}
+                            <td className="py-2.5 px-2 bg-indigo-50/20">
+                              <input
+                                type="number"
+                                placeholder="0"
+                                value={studentOverrides[calc.studentId]?.manualAdjustmentAmount ?? (calc.manualAdjustmentAmount || '')}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? undefined : Number(e.target.value);
+                                  setStudentOverrides(prev => ({
+                                    ...prev,
+                                    [calc.studentId]: {
+                                      ...prev[calc.studentId],
+                                      manualAdjustmentAmount: val
+                                    }
+                                  }));
+                                }}
+                                className={cn(
+                                  "w-24 px-2 py-1.5 border rounded-lg text-xs font-mono font-bold outline-none transition-all text-center",
+                                  (studentOverrides[calc.studentId]?.manualAdjustmentAmount || calc.manualAdjustmentAmount || 0) > 0
+                                    ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                                    : (studentOverrides[calc.studentId]?.manualAdjustmentAmount || calc.manualAdjustmentAmount || 0) < 0
+                                    ? "bg-rose-50 border-rose-300 text-rose-800"
+                                    : "bg-white border-slate-200 text-slate-700 focus:border-indigo-500"
+                                )}
+                              />
+                            </td>
+
+                            {/* Editable Manual Adjustment Reason */}
+                            <td className="py-2.5 px-2 bg-indigo-50/20">
+                              <input
+                                type="text"
+                                placeholder="علت..."
+                                value={studentOverrides[calc.studentId]?.manualAdjustmentReason ?? (calc.manualAdjustmentReason || '')}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setStudentOverrides(prev => ({
+                                    ...prev,
+                                    [calc.studentId]: {
+                                      ...prev[calc.studentId],
+                                      manualAdjustmentReason: val
+                                    }
+                                  }));
+                                }}
+                                className="w-32 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 outline-none focus:border-indigo-500"
+                              />
+                            </td>
+
+                            <td className="py-3 px-2 font-mono text-amber-900 font-bold">
                               {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-3 font-mono text-rose-700 font-bold">
-                              -{(calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}
-                            </td>
-                            <td className="py-3 px-3 font-mono font-black text-emerald-800 text-sm">
+                            <td className="py-3 px-2 font-mono font-black text-emerald-800 text-sm">
                               {(calc.netPayableTuition || 0).toLocaleString('fa-IR')}
                             </td>
-                            <td className="py-3 px-3 text-center">
+                            <td className="py-3 px-2 text-center">
                               <button
                                 type="button"
-                                onClick={() => setSelectedSlipDetail(calc)}
-                                className="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                onClick={() => setEditingOverrideStudentId(calc.studentId)}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer mx-auto"
                               >
-                                ریز فاکتور
+                                <Edit3 size={12} />
+                                <span>جزئیات</span>
                               </button>
                             </td>
                           </tr>
@@ -1833,8 +2119,208 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
               </div>
             </div>
           )}
+
+          {/* Bottom Action Banner: Finalize Tuition Period */}
+          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-3xl shadow-lg border border-indigo-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={20} className="text-emerald-400" />
+                <h3 className="font-black text-sm text-white">ثبت نهایی و انتقال دوره به بایگانی شهریه</h3>
+              </div>
+              <p className="text-xs text-slate-300">
+                پس از بررسی و ویرایش‌های موردی، با کلیک بر روی این دکمه این دوره محاسباتی ثبات یافته و در بایگانی ذخیره خواهد شد.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleFinalizeTuitionPeriod}
+              className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-95 shrink-0"
+            >
+              <CheckCheck size={18} />
+              <span>ثبت نهایی دوره محاسبه شهریه</span>
+            </button>
+          </div>
         </div>
       )}
+
+      {/* MODE 2: مشاهده دوره‌های شهریه {بایگانی} */}
+      {tuitionMainMode === 'archived_periods' && (
+        <div className="space-y-5">
+          {!selectedArchivedPeriod ? (
+            /* List of Archived Tuition Periods */
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
+                    <BookOpen size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">بایگانی دوره‌های محاسباتی و پرداختی شهریه</h3>
+                    <p className="text-[11px] text-slate-500">لیست تمامی دوره‌های شهریه ثبت نهایی شده به همراه جزئیات کامل</p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl text-xs font-bold font-mono">
+                  {tuitionPeriods.length} دوره بایگانی
+                </span>
+              </div>
+
+              {tuitionPeriods.length === 0 ? (
+                <div className="text-center py-12 space-y-3">
+                  <BookOpen size={40} className="mx-auto text-slate-300" />
+                  <p className="text-xs text-slate-500 font-bold">هنوز هیچ دوره شهریه‌ای ثبت نهایی نشده است.</p>
+                  <button
+                    type="button"
+                    onClick={() => setTuitionMainMode('create_period')}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <PlusCircle size={16} />
+                    <span>ایجاد اولین دوره شهریه</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {tuitionPeriods.map(period => (
+                    <div
+                      key={period.id}
+                      className="bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl p-4 transition-all space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-black text-sm text-slate-900">{period.title}</h4>
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
+                            نهایی‌شده
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-mono">
+                          بازه: {period.startDate} تا {period.endDate}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">تعداد طلاب:</span>
+                          <span className="font-bold font-mono text-slate-800">{period.totalStudentsCalculated} نفر</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">مجموع پرداخت:</span>
+                          <span className="font-bold font-mono text-emerald-700">
+                            {(period.totalPayoutAmount || 0).toLocaleString('fa-IR')} ت
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedArchivedPeriod(period)}
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye size={14} />
+                          <span>مشاهده و گزارش‌ها</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteArchivedPeriod(period.id, period.title)}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                          title="حذف دوره"
+                        >
+                          <XCircle size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Detailed View of Selected Archived Period */
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedArchivedPeriod(null)}
+                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+                    title="بازگشت"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900">{selectedArchivedPeriod.title}</h3>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md">
+                        بایگانی نهایی
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      بازه محاسباتی: {selectedArchivedPeriod.startDate} تا {selectedArchivedPeriod.endDate} • ثبت‌شده توسط: {selectedArchivedPeriod.createdByName || 'مسئول مالی'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportUpperManagementExcel}
+                    className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>خروجی اکسل</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintSlip}
+                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Printer size={14} />
+                    <span>چاپ فیش‌ها</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Archived Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
+                      <th className="py-3 px-3">ردیف</th>
+                      <th className="py-3 px-3">نام طلبه</th>
+                      <th className="py-3 px-3">پایه</th>
+                      <th className="py-3 px-3">کد ملی</th>
+                      <th className="py-3 px-3">شهریه استحقاقی</th>
+                      <th className="py-3 px-3 text-rose-700">جمع کسورات</th>
+                      <th className="py-3 px-3 font-black text-emerald-800">خالص واریزی</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(selectedArchivedPeriod.calculations || []).map((calc, idx) => (
+                      <tr key={calc.studentId} className="hover:bg-slate-50/70">
+                        <td className="py-3 px-3 font-mono text-slate-400">{idx + 1}</td>
+                        <td className="py-3 px-3 font-bold text-slate-900">{calc.studentName}</td>
+                        <td className="py-3 px-3 text-slate-600 font-bold">{calc.grade}</td>
+                        <td className="py-3 px-3 font-mono text-slate-500">{calc.nationalId || '---'}</td>
+                        <td className="py-3 px-3 font-mono text-amber-900 font-bold">
+                          {(calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-rose-700 font-bold">
+                          -{(calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-emerald-800 text-sm">
+                          {(calc.netPayableTuition || 0).toLocaleString('fa-IR')} تومان
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )}
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL 1: تنظیمات جامع فرمول محاسبه شهریه                       */}
@@ -1868,7 +2354,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
 
               <form onSubmit={handleSaveSettings} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto text-xs">
                 {/* 1. شهریه پایه و تاهل */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
                     <DollarSign size={16} className="text-emerald-600" />
                     <span>۱. ضوابط شهریه پایه و تاهل</span>
@@ -1886,7 +2372,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-slate-600 font-bold mb-1">
                         شهریه پایه مجردین (تومان):
@@ -1914,230 +2400,538 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     )}
                   </div>
 
-                  {/* نحوه اضافه تاهل */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">نوع اضافه بابت تاهل:</label>
-                      <select
-                        value={settings.marriageBonusType || 'percentage'}
-                        onChange={e => setSettings({ ...settings, marriageBonusType: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
-                      >
-                        <option value="percentage">افزایش درصدی از شهریه پایه</option>
-                        <option value="fixed">مبلغ تومانی ثابت</option>
-                      </select>
-                    </div>
+                  {/* شرط تاهل */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={settings.hasMarriageBonus ?? true}
+                        onChange={e => setSettings({ ...settings, hasMarriageBonus: e.target.checked })}
+                        className="rounded text-emerald-600 w-4 h-4"
+                      />
+                      <span className="text-slate-900">آیا تاهل سبب افزایش شهریه می‌شود؟</span>
+                    </label>
 
-                    {settings.marriageBonusType === 'percentage' ? (
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">درصد اضافه بابت تاهل (%):</label>
-                        <input
-                          type="number"
-                          value={settings.marriageBonusPercent || 25}
-                          onChange={e => setSettings({ ...settings, marriageBonusPercent: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
-                        />
+                    {(settings.hasMarriageBonus ?? true) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-1">نوع محاسبه افزایش تاهل:</label>
+                          <select
+                            value={settings.marriageBonusType || 'percentage'}
+                            onChange={e => setSettings({ ...settings, marriageBonusType: e.target.value as any })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                          >
+                            <option value="percentage">افزایش درصدی از شهریه پایه</option>
+                            <option value="fixed">مبلغ تومانی ثابت</option>
+                          </select>
+                        </div>
+
+                        {settings.marriageBonusType === 'percentage' ? (
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">درصد اضافه بابت تاهل (%):</label>
+                            <input
+                              type="number"
+                              value={settings.marriageBonusPercent || 25}
+                              onChange={e => setSettings({ ...settings, marriageBonusPercent: Number(e.target.value) })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">مبلغ اضافه بابت تاهل (تومان):</label>
+                            <input
+                              type="number"
+                              value={settings.marriageBonusAmount || 1000000}
+                              onChange={e => setSettings({ ...settings, marriageBonusAmount: Number(e.target.value) })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">مبلغ اضافه بابت تاهل (تومان):</label>
+                    )}
+                  </div>
+
+                  {/* حق اولاد */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={settings.hasChildAllowance ?? true}
+                        onChange={e => setSettings({ ...settings, hasChildAllowance: e.target.checked })}
+                        className="rounded text-emerald-600 w-4 h-4"
+                      />
+                      <span className="text-slate-900">آیا حق اولاد داریم؟</span>
+                    </label>
+
+                    {(settings.hasChildAllowance ?? true) && (
+                      <div className="pt-2 border-t border-slate-100">
+                        <label className="block text-slate-600 font-bold mb-1">مبلغ حق اولاد به ازای هر فرزند (تومان):</label>
                         <input
                           type="number"
-                          value={settings.marriageBonusAmount || 1000000}
-                          onChange={e => setSettings({ ...settings, marriageBonusAmount: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                          value={settings.childAllowancePerChild || settings.childAllowance || 350000}
+                          onChange={e => setSettings({ ...settings, childAllowancePerChild: Number(e.target.value), childAllowance: Number(e.target.value) })}
+                          className="w-full sm:w-1/2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
                         />
                       </div>
                     )}
                   </div>
 
-                  {/* حق اولاد، تلبس، مسکن */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">حق اولاد هر فرزند (تومان):</label>
+                  {/* تلبس و معمم بودن */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
                       <input
-                        type="number"
-                        value={settings.childAllowancePerChild || 350000}
-                        onChange={e => setSettings({ ...settings, childAllowancePerChild: Number(e.target.value), childAllowance: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                        type="checkbox"
+                        checked={settings.hasTurbanAllowance ?? true}
+                        onChange={e => setSettings({ ...settings, hasTurbanAllowance: e.target.checked })}
+                        className="rounded text-emerald-600 w-4 h-4"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">پاداش تلبس / معمم بودن:</label>
+                      <span className="text-slate-900">آیا تلبس و معمم بودن سبب افزایش شهریه می‌شود؟</span>
+                    </label>
+
+                    {(settings.hasTurbanAllowance ?? true) && (
+                      <div className="pt-2 border-t border-slate-100">
+                        <label className="block text-slate-600 font-bold mb-1">مبلغ پاداش تلبس / معمم بودن (تومان):</label>
+                        <input
+                          type="number"
+                          value={settings.turbanAllowance || settings.clericalHabitBonus || 500000}
+                          onChange={e => setSettings({ ...settings, turbanAllowance: Number(e.target.value), clericalHabitBonus: Number(e.target.value) })}
+                          className="w-full sm:w-1/2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* کمک هزینه مسکن */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
                       <input
-                        type="number"
-                        value={settings.turbanAllowance || 500000}
-                        onChange={e => setSettings({ ...settings, turbanAllowance: Number(e.target.value), clericalHabitBonus: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                        type="checkbox"
+                        checked={settings.hasHousingAllowance ?? true}
+                        onChange={e => setSettings({ ...settings, hasHousingAllowance: e.target.checked })}
+                        className="rounded text-emerald-600 w-4 h-4"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">کمک هزینه مسکن اجاره‌ای:</label>
-                      <input
-                        type="number"
-                        value={settings.housingAllowanceRented || 600000}
-                        onChange={e => setSettings({ ...settings, housingAllowanceRented: Number(e.target.value), housingSubsidy: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
-                      />
-                    </div>
+                      <span className="text-slate-900">آیا کمک هزینه مسکن پرداخت می‌شود؟</span>
+                    </label>
+
+                    {(settings.hasHousingAllowance ?? true) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-1">کمک هزینه مسکن اجاره‌ای (تومان):</label>
+                          <input
+                            type="number"
+                            value={settings.housingAllowanceRented || settings.housingSubsidy || 600000}
+                            onChange={e => setSettings({ ...settings, housingAllowanceRented: Number(e.target.value), housingSubsidy: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold mb-1">کمک هزینه مسکن خوابگاهی / سایر (تومان):</label>
+                          <input
+                            type="number"
+                            value={settings.housingAllowanceDorm || 250000}
+                            onChange={e => setSettings({ ...settings, housingAllowanceDorm: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* 2. ضوابط ساعت مطالعه */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
                     <Clock size={16} className="text-indigo-600" />
                     <span>۲. ضوابط پاداش و جریمه ساعت مطالعه</span>
                   </h4>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                  {/* بخش الف: پاداش مطالعه مازاد */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
                       <input
                         type="checkbox"
                         checked={settings.studyBonusEnabled}
                         onChange={e => setSettings({ ...settings, studyBonusEnabled: e.target.checked })}
                         className="rounded text-emerald-600 w-4 h-4"
                       />
-                      <span>آیا مطالعه بالای موظفی موجب افزایش شهریه شود؟</span>
+                      <span className="text-slate-900">آیا مطالعه مازاد موجب افزایش و پاداش شهریه شود؟</span>
                     </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                    {settings.studyBonusEnabled && (
+                      <div className="space-y-3 pt-2 border-t border-slate-100">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">مبنای سنجش مطالعه مازاد:</label>
+                            <select
+                              value={settings.studyBonusBase || 'mandatory'}
+                              onChange={e => setSettings({ ...settings, studyBonusBase: e.target.value as any })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                            >
+                              <option value="mandatory">نسبت به موظفی استاندارد</option>
+                              <option value="average">نسبت به میانگین مطالعه کل طلاب</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center pt-6">
+                            <label className="flex items-center gap-2 cursor-pointer font-bold text-indigo-700">
+                              <input
+                                type="checkbox"
+                                checked={settings.studyBonusTiered ?? false}
+                                onChange={e => setSettings({ ...settings, studyBonusTiered: e.target.checked })}
+                                className="rounded text-indigo-600 w-4 h-4"
+                              />
+                              <span>محاسبه پاداش به صورت پله‌ای انجام شود؟</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {settings.studyBonusTiered ? (
+                          <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-indigo-950 text-xs">
+                                تعریف پله‌های پاداش مطالعه (حداکثر ۵ پله) - تجمیعی:
+                              </span>
+                              {(settings.studyBonusTiers?.length || 0) < 5 && (
+                                <button
+                                  type="button"
+                                  onClick={handleAddBonusTier}
+                                  className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 cursor-pointer transition-all flex items-center gap-1"
+                                >
+                                  <Plus size={14} />
+                                  <span>افزودن پله</span>
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-indigo-800">
+                              * در محاسبه تجمیعی، هر پله‌ای که طلبه حد نصاب آن را کسب کند پاداش آن پله به همراه پله‌های قبلی به او تعلق می‌گیرد.
+                            </p>
+
+                            <div className="space-y-2">
+                              {(settings.studyBonusTiers || []).map((tier, idx) => (
+                                <div key={tier.id || idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-2.5 rounded-lg border border-indigo-200">
+                                  <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded font-black text-xs min-w-[55px] text-center">
+                                    پله {idx + 1}
+                                  </span>
+                                  <div className="flex items-center gap-1 text-xs text-slate-600 flex-1">
+                                    <span>از</span>
+                                    <input
+                                      type="number"
+                                      value={tier.minMinutes}
+                                      onChange={e => handleUpdateBonusTier(idx, 'minMinutes', Number(e.target.value))}
+                                      className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-center"
+                                    />
+                                    <span>تا</span>
+                                    <input
+                                      type="number"
+                                      value={tier.maxMinutes}
+                                      onChange={e => handleUpdateBonusTier(idx, 'maxMinutes', Number(e.target.value))}
+                                      className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-center"
+                                    />
+                                    <span>دقیقه مازاد:</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                                    <span className="font-bold">پاداش:</span>
+                                    <input
+                                      type="number"
+                                      value={tier.amount}
+                                      onChange={e => handleUpdateBonusTier(idx, 'amount', Number(e.target.value))}
+                                      className="w-28 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-emerald-700 font-bold text-center"
+                                    />
+                                    <span>تومان</span>
+                                  </div>
+                                  {(settings.studyBonusTiers?.length || 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveBonusTier(idx)}
+                                      className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer transition-all"
+                                      title="حذف پله"
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                حداقل دقیقه مازاد برای پاداش:
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.studyBonusThresholdMinutes || 60}
+                                onChange={e => setSettings({ ...settings, studyBonusThresholdMinutes: Number(e.target.value) })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">نوع محاسبه پاداش خطی:</label>
+                              <select
+                                value={settings.studyBonusCalculationType || 'per_hour'}
+                                onChange={e => setSettings({ ...settings, studyBonusCalculationType: e.target.value as any })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                              >
+                                <option value="per_hour">به ازای هر ساعت مازاد</option>
+                                <option value="fixed">مبلغ ثابت کلی</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                {settings.studyBonusCalculationType === 'fixed' ? 'مبلغ ثابت پاداش (تومان):' : 'پاداش هر ساعت مازاد (تومان):'}
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.studyBonusCalculationType === 'fixed' ? (settings.studyBonusFixedAmount || 150000) : (settings.studyBonusRatePerHour || 30000)}
+                                onChange={e => {
+                                  if (settings.studyBonusCalculationType === 'fixed') {
+                                    setSettings({ ...settings, studyBonusFixedAmount: Number(e.target.value) });
+                                  } else {
+                                    setSettings({ ...settings, studyBonusRatePerHour: Number(e.target.value), studyBonusPerHour: Number(e.target.value) });
+                                  }
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* بخش ب: جریمه کسری مطالعه */}
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
                       <input
                         type="checkbox"
                         checked={settings.studyPenaltyEnabled}
                         onChange={e => setSettings({ ...settings, studyPenaltyEnabled: e.target.checked })}
                         className="rounded text-rose-600 w-4 h-4"
                       />
-                      <span>آیا کسری مطالعه موجب کسر از شهریه شود؟</span>
+                      <span className="text-slate-900">آیا کسری مطالعه موجب کسر از شهریه شود؟</span>
                     </label>
+
+                    {settings.studyPenaltyEnabled && (
+                      <div className="space-y-3 pt-2 border-t border-slate-100">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">مبنای سنجش کسری مطالعه:</label>
+                            <select
+                              value={settings.studyPenaltyBase || (settings.studyPenaltyThreshold === 'below_average' ? 'average' : 'mandatory')}
+                              onChange={e => setSettings({ ...settings, studyPenaltyBase: e.target.value as any, studyPenaltyThreshold: e.target.value === 'average' ? 'below_average' : 'below_mandatory' })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                            >
+                              <option value="mandatory">کسری نسبت به موظفی استاندارد</option>
+                              <option value="average">کسری نسبت به میانگین مطالعه کل طلاب</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center pt-6">
+                            <label className="flex items-center gap-2 cursor-pointer font-bold text-rose-700">
+                              <input
+                                type="checkbox"
+                                checked={settings.studyPenaltyTiered ?? false}
+                                onChange={e => setSettings({ ...settings, studyPenaltyTiered: e.target.checked })}
+                                className="rounded text-rose-600 w-4 h-4"
+                              />
+                              <span>محاسبه کسر جریمه به صورت پله‌ای انجام شود؟</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {settings.studyPenaltyTiered ? (
+                          <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-rose-950 text-xs">
+                                تعریف پله‌های کسر کسری مطالعه (حداکثر ۵ پله) - تجمیعی:
+                              </span>
+                              {(settings.studyPenaltyTiers?.length || 0) < 5 && (
+                                <button
+                                  type="button"
+                                  onClick={handleAddPenaltyTier}
+                                  className="px-2.5 py-1 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 cursor-pointer transition-all flex items-center gap-1"
+                                >
+                                  <Plus size={14} />
+                                  <span>افزودن پله</span>
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-rose-800">
+                              * در محاسبه تجمیعی کسری، با عبور کسری مطالعه از هر پله، مبلغ آن پله به همراه پله‌های قبلی از شهریه کسر می‌گردد.
+                            </p>
+
+                            <div className="space-y-2">
+                              {(settings.studyPenaltyTiers || []).map((tier, idx) => (
+                                <div key={tier.id || idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-2.5 rounded-lg border border-rose-200">
+                                  <span className="px-2 py-1 bg-rose-100 text-rose-800 rounded font-black text-xs min-w-[55px] text-center">
+                                    پله {idx + 1}
+                                  </span>
+                                  <div className="flex items-center gap-1 text-xs text-slate-600 flex-1">
+                                    <span>از</span>
+                                    <input
+                                      type="number"
+                                      value={tier.minMinutes}
+                                      onChange={e => handleUpdatePenaltyTier(idx, 'minMinutes', Number(e.target.value))}
+                                      className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-center"
+                                    />
+                                    <span>تا</span>
+                                    <input
+                                      type="number"
+                                      value={tier.maxMinutes}
+                                      onChange={e => handleUpdatePenaltyTier(idx, 'maxMinutes', Number(e.target.value))}
+                                      className="w-20 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-center"
+                                    />
+                                    <span>دقیقه کسری:</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                                    <span className="font-bold">کسر جریمه:</span>
+                                    <input
+                                      type="number"
+                                      value={tier.amount}
+                                      onChange={e => handleUpdatePenaltyTier(idx, 'amount', Number(e.target.value))}
+                                      className="w-28 px-2 py-1 bg-slate-50 border border-slate-200 rounded font-mono text-rose-700 font-bold text-center"
+                                    />
+                                    <span>تومان</span>
+                                  </div>
+                                  {(settings.studyPenaltyTiers?.length || 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemovePenaltyTier(idx)}
+                                      className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer transition-all"
+                                      title="حذف پله"
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">نوع محاسبه جریمه خطی:</label>
+                              <select
+                                value={settings.studyPenaltyCalculationType || 'per_hour'}
+                                onChange={e => setSettings({ ...settings, studyPenaltyCalculationType: e.target.value as any })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                              >
+                                <option value="per_hour">به ازای هر ساعت کسری</option>
+                                <option value="fixed">مبلغ ثابت کلی</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                {settings.studyPenaltyCalculationType === 'fixed' ? 'مبلغ ثابت کسر کسری (تومان):' : 'جریمه کسر هر ساعت کسری (تومان):'}
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.studyPenaltyCalculationType === 'fixed' ? (settings.studyPenaltyFixedAmount || 100000) : (settings.studyPenaltyRatePerHour || 25000)}
+                                onChange={e => {
+                                  if (settings.studyPenaltyCalculationType === 'fixed') {
+                                    setSettings({ ...settings, studyPenaltyFixedAmount: Number(e.target.value) });
+                                  } else {
+                                    setSettings({ ...settings, studyPenaltyRatePerHour: Number(e.target.value), studyPenaltyPerHour: Number(e.target.value) });
+                                  }
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-
-                  {settings.studyBonusEnabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          چند دقیقه بالای موظفی موجب افزایش شود؟
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.studyBonusThresholdMinutes || 60}
-                          onChange={e => setSettings({ ...settings, studyBonusThresholdMinutes: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          پاداش هر ساعت مازاد بر موظفی (تومان):
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.studyBonusRatePerHour || 30000}
-                          onChange={e => setSettings({ ...settings, studyBonusRatePerHour: Number(e.target.value), studyBonusPerHour: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {settings.studyPenaltyEnabled && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">مبنای جریمه کسری مطالعه:</label>
-                        <select
-                          value={settings.studyPenaltyThreshold || 'below_mandatory'}
-                          onChange={e => setSettings({ ...settings, studyPenaltyThreshold: e.target.value as any })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
-                        >
-                          <option value="below_mandatory">زیر موظفی بودن</option>
-                          <option value="below_average">زیر میانگین بودن</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          جریمه کسر به ازای هر ساعت کسری (تومان):
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.studyPenaltyRatePerHour || 25000}
-                          onChange={e => setSettings({ ...settings, studyPenaltyRatePerHour: Number(e.target.value), studyPenaltyPerHour: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* 3. ضوابط غیبت و حضور و غیاب */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
                     <CheckSquare size={16} className="text-rose-600" />
                     <span>۳. ضوابط کسر غیبت‌های کلاسی</span>
                   </h4>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">روش کسر غیبت:</label>
-                      <select
-                        value={settings.absenceDeductionMode || 'unexcused_only'}
-                        onChange={e => setSettings({ ...settings, absenceDeductionMode: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
-                      >
-                        <option value="unexcused_only">تنها غیبت‌های غیرموجه موجب کسر شهریه شود</option>
-                        <option value="both_different">غیبت غیرموجه به یک میزان و غیبت موجه به میزانی دیگر کسر شود</option>
-                      </select>
-                    </div>
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={settings.absenceDeductionEnabled ?? true}
+                        onChange={e => setSettings({ ...settings, absenceDeductionEnabled: e.target.checked })}
+                        className="rounded text-rose-600 w-4 h-4"
+                      />
+                      <span className="text-slate-900">آیا غیبت‌ها موجب کسر از شهریه بشود؟</span>
+                    </label>
 
-                    <div>
-                      <label className="block text-slate-600 font-bold mb-1">نوع محاسبه کسر غیبت غیرموجه:</label>
-                      <select
-                        value={settings.absencePenaltyUnexcusedType || 'fixed'}
-                        onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedType: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
-                      >
-                        <option value="fixed">مبلغ تومانی ثابت به ازای هر جلسه</option>
-                        <option value="percentage">درصدی از شهریه پایه به ازای هر جلسه</option>
-                      </select>
-                    </div>
-                  </div>
+                    {(settings.absenceDeductionEnabled ?? true) && (
+                      <div className="space-y-3 pt-2 border-t border-slate-100">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">روش کسر غیبت:</label>
+                            <select
+                              value={settings.absenceDeductionMode || 'unexcused_only'}
+                              onChange={e => setSettings({ ...settings, absenceDeductionMode: e.target.value as any })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                            >
+                              <option value="unexcused_only">تنها غیبت‌های غیرموجه موجب کسر شهریه شود</option>
+                              <option value="both_different">غیبت غیرموجه به یک میزان و غیبت موجه به میزانی دیگر کسر شود</option>
+                            </select>
+                          </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    {settings.absencePenaltyUnexcusedType === 'percentage' ? (
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          درصد کسر به ازای هر جلسه غیبت غیرموجه (%):
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.absencePenaltyUnexcusedPercent || 4}
-                          onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedPercent: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
-                      </div>
-                    ) : (
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          مبلغ کسر هر جلسه غیبت غیرموجه (تومان):
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.absencePenaltyUnexcusedAmount || 90000}
-                          onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedAmount: Number(e.target.value), absencePenaltyPerSession: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
-                      </div>
-                    )}
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">نوع محاسبه کسر غیبت غیرموجه:</label>
+                            <select
+                              value={settings.absencePenaltyUnexcusedType || 'fixed'}
+                              onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedType: e.target.value as any })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                            >
+                              <option value="fixed">مبلغ تومانی ثابت به ازای هر جلسه</option>
+                              <option value="percentage">درصدی از شهریه پایه به ازای هر جلسه</option>
+                            </select>
+                          </div>
+                        </div>
 
-                    {settings.absenceDeductionMode === 'both_different' && (
-                      <div>
-                        <label className="block text-slate-600 font-bold mb-1">
-                          مبلغ کسر هر جلسه غیبت موجه (تومان):
-                        </label>
-                        <input
-                          type="number"
-                          value={settings.absencePenaltyExcusedAmount || 25000}
-                          onChange={e => setSettings({ ...settings, absencePenaltyExcusedAmount: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
-                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                          {settings.absencePenaltyUnexcusedType === 'percentage' ? (
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                درصد کسر به ازای هر جلسه غیبت غیرموجه (%):
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.absencePenaltyUnexcusedPercent || 4}
+                                onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedPercent: Number(e.target.value) })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                مبلغ کسر هر جلسه غیبت غیرموجه (تومان):
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.absencePenaltyUnexcusedAmount || 90000}
+                                onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedAmount: Number(e.target.value), absencePenaltyPerSession: Number(e.target.value) })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                          )}
+
+                          {settings.absenceDeductionMode === 'both_different' && (
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">
+                                مبلغ کسر هر جلسه غیبت موجه (تومان):
+                              </label>
+                              <input
+                                type="number"
+                                value={settings.absencePenaltyExcusedAmount || 25000}
+                                onChange={e => setSettings({ ...settings, absencePenaltyExcusedAmount: Number(e.target.value) })}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2190,11 +2984,11 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   </div>
                 </div>
 
-                {/* 5. نهار، وام و صندوق قرض‌الحسنه */}
-                <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                {/* 5. نهار، وام و صندوق قرض‌الحسنه و بانک بدهی‌ها */}
+                <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
                     <UtensilsCrossed size={16} className="text-amber-600" />
-                    <span>۵. ضوابط نهار، اقساط وام و صندوق قرض‌الحسنه</span>
+                    <span>۵. ضوابط نهار، اقساط وام، صندوق قرض‌الحسنه و بانک بدهی‌ها</span>
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2233,6 +3027,58 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                         <span>اعمال کسر کمک مالی به صندوق</span>
                       </label>
                     </div>
+                  </div>
+
+                  {/* عناوینی که در بانک بدهی‌ها ایجاد شده است */}
+                  <div className="pt-3 border-t border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <HandCoins size={14} className="text-emerald-600" />
+                        <span>عناوین مجاز کسر از بانک بدهی‌ها در محاسبه این دوره:</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500">
+                        (عناوینی که تیک می‌خورند در کسر شهریه این دوره محاسبه خواهند شد)
+                      </span>
+                    </div>
+
+                    {claimCategories.length === 0 ? (
+                      <p className="text-slate-400 text-xs italic bg-white p-3 rounded-xl border border-slate-200">
+                        هنوز عنوانی در بانک بدهی‌ها ثبت نشده است. عناوین ثبت‌شده در بخش مدیریت مطالبات در اینجا برای انتخاب ظاهر می‌شوند.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                        {claimCategories.map(cat => {
+                          const isChecked = !settings.enabledClaimCategoryIds || settings.enabledClaimCategoryIds.length === 0 || settings.enabledClaimCategoryIds.includes(cat.id);
+                          return (
+                            <label key={cat.id} className="flex items-center gap-2 p-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-400 cursor-pointer transition-all">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={e => {
+                                  const current = settings.enabledClaimCategoryIds && settings.enabledClaimCategoryIds.length > 0
+                                    ? settings.enabledClaimCategoryIds
+                                    : claimCategories.map(c => c.id);
+                                  let nextList: string[];
+                                  if (e.target.checked) {
+                                    nextList = [...current, cat.id];
+                                  } else {
+                                    nextList = current.filter(id => id !== cat.id);
+                                  }
+                                  setSettings({ ...settings, enabledClaimCategoryIds: nextList });
+                                }}
+                                className="rounded text-emerald-600 w-4 h-4"
+                              />
+                              <div className="truncate">
+                                <span className="font-bold text-slate-800 text-xs block truncate">{cat.title}</span>
+                                <span className="text-[9px] text-slate-400">
+                                  {cat.targetType === 'teacher' ? 'مربوط به اساتید' : cat.targetType === 'staff' ? 'مربوط به کارکنان' : 'مربوط به طلاب'}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 

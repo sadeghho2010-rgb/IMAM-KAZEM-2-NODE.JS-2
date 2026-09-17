@@ -69,6 +69,14 @@ export interface AttendanceSettings {
   updatedBy?: string;
 }
 
+export interface StudyTier {
+  id: string;
+  stepNumber: number; // پله ۱ تا ۵
+  minMinutes: number; // از چند دقیقه مازاد/کسری
+  maxMinutes: number; // تا چند دقیقه مازاد/کسری
+  amount: number; // مبلغ این پله (تومان)
+}
+
 export interface TuitionCalculationSettings {
   id: string;
   // شهریه پایه
@@ -78,42 +86,49 @@ export interface TuitionCalculationSettings {
   marriedBaseTuition?: number; // شهریه پایه متاهلین (تومان)
   baseMarriedTuition?: number; // سازگار با نگارش فارسی
   
-  // تاهل و اولاد و معمم بودن
+  // تاهل و اولاد و معمم بودن و مسکن (با پرسش اولیه آیا افزایش دارد یا خیر)
+  hasMarriageBonus?: boolean; // آیا تاهل سبب افزایش شهریه می‌شود؟
   marriageBonusType?: 'percentage' | 'fixed'; // نوع افزایش تاهل: درصدی یا تومانی
   marriageBonusAmount?: number; // مبلغ تومانی اضافه برای تاهل
   marriageBonusPercent?: number; // درصد اضافه برای تاهل
 
-  // پرسش اختیاری بودن حق اولاد، پاداش تلبس و کمک هزینه مسکن
   hasChildAllowance?: boolean; // آیا حق اولاد داریم یا نه؟
   childAllowance?: number; // مبلغ به ازای هر فرزند (تومان)
   childAllowancePerChild?: number;
 
-  hasTurbanAllowance?: boolean; // آیا پاداش تلبس داریم یا نه؟
+  hasTurbanAllowance?: boolean; // آیا پاداش تلبس و معمم بودن داریم یا نه؟
   turbanAllowance?: number; // پاداش معمم بودن (تومان)
   clericalHabitBonus?: number;
 
-  hasHousingAllowance?: boolean; // آیا کمک هزینه مسکن اجاره‌ای داریم یا نه؟
+  hasHousingAllowance?: boolean; // آیا کمک هزینه مسکن داریم یا نه؟
   housingAllowanceRented?: number; // کمک هزینه مسکن اجاره‌ای (تومان)
   housingAllowanceDorm?: number; // کمک هزینه خوابگاه (تومان)
   housingSubsidy?: number;
 
-  // مطالعه
-  studyBonusEnabled?: boolean; // آیا مطالعه بالای موظفی موجب افزایش شهریه شود؟
-  studyBonusThresholdMinutes?: number; // چند دقیقه بالای موظفی موجب افزایش شهریه شود؟
-  studyBonusCalculationType?: 'per_hour' | 'fixed'; // نوع افزایش: متناسب با هر ساعت اضافه یا عدد ثابت
-  studyBonusPerHour?: number; // پاداش به ازای هر ساعت مطالعه مازاد بر موظفی
+  // مطالعه: پاداش افزایش شهریه
+  studyBonusEnabled?: boolean; // آیا مطالعه بیشتر سبب افزایش شهریه شود؟
+  studyBonusBase?: 'mandatory' | 'average'; // مبنای محاسبه: نسبت با میانگین یا موظفی به طور مستقل
+  studyBonusTiered?: boolean; // آیا پله‌ای محاسبه شود؟
+  studyBonusTiers?: StudyTier[]; // تا ۵ پله تعریف پاداش مطالعه
+  studyBonusThresholdMinutes?: number; // چند دقیقه بالاتر از مبنا؟
+  studyBonusCalculationType?: 'per_hour' | 'fixed'; // در صورت غیر پله‌ای بودن: به ازای هر ساعت یا عدد ثابت
+  studyBonusPerHour?: number; // پاداش به ازای هر ساعت مطالعه مازاد
   studyBonusRatePerHour?: number;
   studyBonusFixedAmount?: number; // مبلغ پاداش ثابت ساعت مطالعه
 
-  studyPenaltyEnabled?: boolean; // آیا زیر میانگین و زیر موظفی بودن موجب کسر شهریه شود؟
+  // مطالعه: جریمه و کاهش شهریه
+  studyPenaltyEnabled?: boolean; // آیا مطالعه کمتر سبب کاهش شهریه شود؟
+  studyPenaltyBase?: 'mandatory' | 'average'; // مبنای محاسبه: نسبت با میانگین یا موظفی به طور مستقل
+  studyPenaltyTiered?: boolean; // آیا پله‌ای محاسبه شود؟
+  studyPenaltyTiers?: StudyTier[]; // تا ۵ پله تعریف جریمه مطالعه
   studyPenaltyThreshold?: 'below_mandatory' | 'below_average' | 'both';
-  studyPenaltyCalculationType?: 'per_hour' | 'fixed'; // نوع کاهش: متناسب با هر ساعت کسری یا عدد ثابت
+  studyPenaltyCalculationType?: 'per_hour' | 'fixed'; // نوع کاهش غیرپله‌ای: متناسب با هر ساعت کسری یا عدد ثابت
   studyPenaltyPerHour?: number; // جریمه کسری ساعت مطالعه به ازای هر ساعت
   studyPenaltyRatePerHour?: number;
   studyPenaltyFixedAmount?: number; // مبلغ جریمه ثابت کسری مطالعه
 
   // حضور و غیاب
-  absenceDeductionEnabled?: boolean; // آیا بخش غیبت‌ها تاثیری در شهریه دارد یا نه؟
+  absenceDeductionEnabled?: boolean; // آیا بخش غیبت‌ها موجب کسر از شهریه شود؟
   absenceDeductionMode?: 'unexcused_only' | 'both_different'; // فقط غیرموجه یا هر دو با نرخ متفاوت
   absencePenaltyUnexcusedType?: 'fixed' | 'percentage'; // کسر تومانی یا درصدی
   absencePenaltyPerSession?: number; // جریمه هر جلسه غیبت غیرموجه (تومان)
@@ -141,8 +156,9 @@ export interface TuitionCalculationSettings {
 
   // مطالبات و بدهی‌ها (کسورات نوع دوم)
   deductClaims?: boolean; // آیا مطالبات و بدهی‌های طلاب به صورت خودکار از شهریه کسر شود؟
+  enabledClaimCategoryIds?: string[]; // شناسه‌های عناوینی از بانک بدهی‌ها که برای کسر در این دوره تیک خورده‌اند
 
-  // ۶. اعمال تشویقی عمومی ماهانه برای همه طلاب (مبلغ ثابت یا درصدی)
+  // اعمال تشویقی عمومی ماهانه برای همه طلاب (مبلغ ثابت یا درصدی)
   enableGeneralIncentive?: boolean; // فعال‌سازی تشویقی ماهانه برای همه طلاب
   generalIncentiveType?: 'fixed' | 'percentage'; // مبلغ ثابت یا درصد از شهریه پایه
   generalIncentiveAmount?: number; // مبلغ تشویقی به تومان
@@ -881,6 +897,23 @@ export interface DriverInfo {
   createdAt: string;
 }
 
+export interface StaffMember {
+  id: string;
+  fullName: string;
+  staffCode?: string; // کد پرسنلی / شناسه
+  nationalId?: string; // کد ملی
+  roleTitle: string; // سمت / عنوان شغلی (مثلاً مسئول آشپزخانه، خادم، انباردار، راننده، مسئول دفتر)
+  phoneNumber?: string; // شماره تماس
+  bankName?: string;
+  bankAccount?: string;
+  bankSheba?: string;
+  monthlySalary?: number; // حقوق پرداختی (تومان)
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface TeacherTransportSchedule {
   id: string;
   teacherId: string;
@@ -994,7 +1027,8 @@ export type AppModuleId =
   | 'audit-logs'
   | 'education-financial-report'
   | 'counseling-classes'
-  | 'teacher-transport';
+  | 'teacher-transport'
+  | 'staff-bank';
 
 export type CounselingScore = 'الف' | 'ب' | 'ج';
 
@@ -1179,6 +1213,7 @@ export interface AppUser {
   roleTitle: string; // e.g. "سوپر ادمین", "مدیر مدرسه", "مسئول آموزش", "مسئول پایه ۷", "نماینده کلاس", "طلبه"
   scope: UserScope;
   gradeLabel?: string; // e.g. "پایه ۷", "پایه ۸", "کل پایه‌ها"
+  managedGrades?: string[]; // e.g. ['پایه ۷', 'پایه ۸']
   linkedStudentId?: string; // For Level 3 student or class rep
   isReadOnly?: boolean; // If true, can view all authorized tabs but cannot create/edit/delete
   isActive: boolean;
@@ -1282,8 +1317,9 @@ export interface FinanceDestinationAccount {
 
 export interface FinanceClaimCategory {
   id: string;
-  title: string; // e.g. "وام اردو عتبات", "بدهی کتب درسی", "هزینه بیمه تکمیلی", "خسارت تجهیزات", "اردوی مشهد"
+  title: string; // e.g. "وام اردو عتبات", "بدهی کتب درسی", "مساعده اساتید", "بیمه تکمیلی پرسنل"
   defaultDestinationAccountId: string; // شناسه حساب پیش‌فرض جهت واریز
+  targetType?: 'student' | 'teacher' | 'staff' | 'all'; // بخش مربوطه: مطالبات از طلاب / اساتید / کارکنان و سایر یا عمومی
   description?: string;
   createdAt: string;
 }
@@ -1292,6 +1328,9 @@ export interface StudentClaimRecord {
   id: string;
   claimCategoryId: string;
   claimTitle: string;
+  targetType?: 'student' | 'teacher' | 'staff';
+  targetId?: string; // شناسه فرد (طلبه، استاد یا کارمند)
+  targetName?: string; // نام فرد
   destinationAccountId: string; // شناسه حسابی که مبلغ کسر شده باید به آن واریز شود
   destinationAccountTitle?: string;
   destinationBankInfo?: string;
@@ -1299,8 +1338,9 @@ export interface StudentClaimRecord {
   studentName: string;
   nationalId?: string;
   grade?: string;
+  roleOrTitle?: string;
   totalDebtAmount: number; // مبلغ کل بدهی (تومان)
-  monthlyDeductionAmount: number; // مبلغی که ماهانه از شهریه طلبه کسر می‌شود (تومان)
+  monthlyDeductionAmount: number; // مبلغی که ماهانه کسر می‌شود (تومان)
   paidAmount: number; // کل مبالغ کسر / پرداخت شده تاکنون
   remainingAmount: number; // مانده بدهی
   status: 'active' | 'completed' | 'paused'; // فعال / تسویه کامل / متوقف شده
@@ -1309,4 +1349,45 @@ export interface StudentClaimRecord {
   createdAt: string;
   updatedAt?: string;
 }
+
+export type ClaimRecord = StudentClaimRecord;
+
+export interface GradeMentorCalculationItem {
+  id: string;
+  userId: string;
+  name: string;
+  gradesStr: string; // پایه‌های تحت مسئولیت
+  teacherCode?: string;
+  totalHours: number; // ساعت حضور و کارکرد
+  hourlyRate: number; // نرخ ساعتی
+  baseCompensation: number; // مبلغ پایه کارکرد
+  lunchCount: number; // تعداد وعده نهار
+  lunchDeduction: number; // کسر نهار
+  bonusAmount: number; // اضافات / پاداش
+  otherDeductions: number; // سایر کسورات
+  netPayable: number; // خالص پرداختی
+  bankName?: string;
+  bankAccount: string;
+  bankSheba?: string;
+  status?: 'pending' | 'approved' | 'paid';
+  notes?: string;
+}
+
+export interface GradeMentorPeriod {
+  id: string;
+  title: string; // e.g. "حق‌الزحمه اساتید پایه مهر ماه ۱۴۰۳"
+  startDate: string;
+  endDate: string;
+  status: 'draft' | 'finalized' | 'paid';
+  totalProfessors: number;
+  totalPayoutAmount: number;
+  lunchCostPerMeal: number; // مبلغ هر وعده نهار در تنظیمات
+  baseHourlyRate: number; // نرخ مصوب هر ساعت
+  items: GradeMentorCalculationItem[];
+  createdAt: string;
+  createdByName?: string;
+  finalizedAt?: string;
+  finalizedByName?: string;
+}
+
 

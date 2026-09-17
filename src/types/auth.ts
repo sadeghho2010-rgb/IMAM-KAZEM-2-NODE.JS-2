@@ -42,6 +42,7 @@ export interface AppUser {
   roleTitle: string;
   scope: UserScope;
   gradeLabel?: string;
+  managedGrades?: string[]; // پایه‌های تحت مسئولیت استاد (مثلا ['پایه ۷', 'پایه ۸'])
   mentorId?: 'hayati' | 'hosseini' | 'soleimani' | 'asadi' | 'shahpoori';
   studentId?: string;
   studentName?: string;

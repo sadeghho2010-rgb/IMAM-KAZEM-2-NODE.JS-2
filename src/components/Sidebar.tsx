@@ -62,7 +62,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'finance-grade-mentors', label: 'محاسبه حق‌الزحمه اساتید پایه', icon: BookOpen },
   { id: 'finance-teachers', label: 'محاسبه حق‌الزحمه اساتید', icon: Clock },
   { id: 'finance-lunch', label: 'اطلاعات نهار و شام', icon: UtensilsCrossed },
-  { id: 'finance-claims', label: 'مطالبات و بدهی‌های طلاب', icon: HandCoins },
+  { id: 'finance-claims', label: 'مطالبات و بدهی‌ها', icon: HandCoins },
   { id: 'finance-loans-fund', label: 'گزارشات صندوق و وام‌های فعال', icon: Building2 },
   { id: 'finance-expenses-reports', label: 'سایر هزینه‌ها و تراز مالی', icon: Receipt },
   { id: 'finance', label: 'بخش جامع امور مالی', icon: Wallet },
@@ -81,6 +81,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'comments', label: 'نظرات و ارزیابی‌ها', icon: MessageSquare },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی', icon: BrainCircuit },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', icon: GraduationCap },
+  { id: 'staff-bank', label: 'بانک کارکنان مجموعه', icon: Users },
   { id: 'teacher-transport', label: 'سرویس و ایاب و ذهاب اساتید', icon: Car },
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
@@ -114,6 +115,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         'academic-calendar',
         'students',
         'teachers-bank',
+        'staff-bank',
         'teacher-transport',
         'finance'
       ];

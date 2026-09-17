@@ -57,8 +57,12 @@ import {
   MealReservationPeriod, 
   StudentMealReservation, 
   MealCancelledDay,
-  MealPersonCategory
+  MealPersonCategory,
+  Teacher,
+  DriverInfo,
+  StaffMember
 } from '../../types';
+import { AppUser } from '../../types/auth';
 
 interface LunchManagementProps {
   onNavigateTab?: (tab: string, params?: any) => void;
@@ -94,6 +98,10 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
   const [kitchenHolidays, setKitchenHolidays] = useState<MealCancelledDay[]>([]);
   const [personCategories, setPersonCategories] = useState<MealPersonCategory[]>(DEFAULT_PERSON_CATEGORIES);
   const [students, setStudents] = useState<Student[]>([]);
+  const [teachersList, setTeachersList] = useState<Teacher[]>([]);
+  const [driversList, setDriversList] = useState<DriverInfo[]>([]);
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [gradeProfessorsList, setGradeProfessorsList] = useState<{ id: string; fullName: string; grade: string; roleTitle: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
@@ -143,6 +151,9 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
 
   // Manual Reservation Form State
   const [manualStudentMode, setManualStudentMode] = useState<'from_list' | 'custom'>('from_list');
+  const [manualRoleType, setManualRoleType] = useState<'student' | 'teacher' | 'grade_professor' | 'driver' | 'staff' | 'guest'>('student');
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
+  const [manualSelectedEntityId, setManualSelectedEntityId] = useState('');
   const [manualSelectedStudentId, setManualSelectedStudentId] = useState('');
   const [manualCustomName, setManualCustomName] = useState('');
   const [manualGrade, setManualGrade] = useState('پایه ۷');
@@ -163,15 +174,69 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [storedPeriods, storedRes, storedHolidays, storedCategories, storedStudents] = await Promise.all([
+      const [
+        storedPeriods, 
+        storedRes, 
+        storedHolidays, 
+        storedCategories, 
+        storedStudents,
+        storedTeachers,
+        storedDrivers,
+        storedStaff,
+        storedGradeMentors,
+        storedUsers
+      ] = await Promise.all([
         localDb.getDocs<MealReservationPeriod>('finance_meal_periods'),
         localDb.getDocs<StudentMealReservation>('finance_student_meal_reservations'),
         localDb.getDocs<MealCancelledDay>('finance_meal_holidays'),
         localDb.getDocs<MealPersonCategory>('finance_meal_person_categories'),
-        localDb.getDocs<Student>('students')
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<Teacher>('teachers'),
+        localDb.getDocs<DriverInfo>('drivers'),
+        localDb.getDocs<StaffMember>('staff'),
+        localDb.getDocs<any>('finance_grade_mentors'),
+        localDb.getDocs<AppUser>('users')
       ]);
 
       setStudents(storedStudents || []);
+      setTeachersList(storedTeachers || []);
+      setDriversList(storedDrivers || []);
+      setStaffList(storedStaff || []);
+
+      // Build grade professors list from finance_grade_mentors and users
+      const gradeProfMap = new Map<string, { id: string; fullName: string; grade: string; roleTitle: string }>();
+
+      (storedGradeMentors || []).forEach((gm: any) => {
+        if (gm.name) {
+          gradeProfMap.set(gm.id || gm.name, {
+            id: gm.id || `gm_${gm.name}`,
+            fullName: gm.name,
+            grade: gm.grade || 'استاد پایه',
+            roleTitle: 'مسئول پایه'
+          });
+        }
+      });
+
+      (storedUsers || []).forEach((u: AppUser) => {
+        const title = u.roleTitle || '';
+        const role = u.role || '';
+        const isGradeRole = role.includes('grade_') || role === 'grade_supervisor';
+        const isGradeTitle = title.includes('استاد پایه') || title.includes('مسئول پایه');
+        const hasManagedGrades = u.managedGrades && u.managedGrades.length > 0;
+
+        if (isGradeRole || isGradeTitle || hasManagedGrades) {
+          const key = u.id || u.fullName || u.name;
+          const gradeLabel = u.managedGrades?.join('، ') || u.gradeLabel || 'استاد پایه';
+          gradeProfMap.set(key, {
+            id: u.id,
+            fullName: u.fullName || u.name,
+            grade: gradeLabel,
+            roleTitle: u.roleTitle || 'استاد پایه'
+          });
+        }
+      });
+
+      setGradeProfessorsList(Array.from(gradeProfMap.values()));
       setKitchenHolidays(storedHolidays || []);
 
       // Load or seed categories
@@ -692,9 +757,10 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
     let nationalId = '';
     let grade = manualGrade;
     let isDorm = false;
+    let roleTitle = manualCategory;
 
-    if (manualStudentMode === 'from_list') {
-      const found = students.find(s => s.id === manualSelectedStudentId);
+    if (manualRoleType === 'student') {
+      const found = students.find(s => s.id === manualSelectedEntityId || s.id === manualSelectedStudentId);
       if (!found) {
         showToast('لطفاً طلبه را از لیست انتخاب فرمایید.');
         return;
@@ -702,16 +768,67 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       studentId = found.id;
       studentName = found.name;
       nationalId = found.nationalId || '';
-      grade = found.grade || manualGrade;
+      grade = found.grade || 'پایه ۷';
       isDorm = found.livingStatus === 'خوابگاه';
-    } else {
-      if (!manualCustomName.trim()) {
-        showToast('لطفاً نام و نام خانوادگی را وارد فرمایید.');
+      roleTitle = 'طلبه';
+    } else if (manualRoleType === 'teacher') {
+      const found = teachersList.find(t => t.id === manualSelectedEntityId);
+      if (!found) {
+        showToast('لطفاً استاد را از لیست اساتید انتخاب فرمایید.');
         return;
       }
-      studentId = editingReservation ? editingReservation.studentId : `custom_${Date.now()}`;
-      studentName = manualCustomName.trim();
+      studentId = found.id;
+      studentName = found.fullName;
+      nationalId = found.phoneNumber || '';
+      grade = found.subjectSpecialty || 'کادر اساتید';
       isDorm = false;
+      roleTitle = 'استاد';
+    } else if (manualRoleType === 'grade_professor') {
+      const found = gradeProfessorsList.find(gp => gp.id === manualSelectedEntityId);
+      if (!found) {
+        showToast('لطفاً استاد پایه را از لیست انتخاب فرمایید.');
+        return;
+      }
+      studentId = found.id;
+      studentName = found.fullName;
+      nationalId = '';
+      grade = found.grade || 'اساتید پایه';
+      isDorm = false;
+      roleTitle = 'استاد پایه';
+    } else if (manualRoleType === 'driver') {
+      const found = driversList.find(d => d.id === manualSelectedEntityId);
+      if (!found) {
+        showToast('لطفاً راننده را از لیست رانندگان انتخاب فرمایید.');
+        return;
+      }
+      studentId = found.id;
+      studentName = found.fullName || found.name || '';
+      nationalId = found.phoneNumber || found.phone || '';
+      grade = found.carModel ? `راننده (${found.carModel})` : 'راننده سرویس';
+      isDorm = false;
+      roleTitle = 'راننده';
+    } else if (manualRoleType === 'staff') {
+      const found = staffList.find(s => s.id === manualSelectedEntityId);
+      if (!found) {
+        showToast('لطفاً کارمند را از لیست پرسنل انتخاب فرمایید.');
+        return;
+      }
+      studentId = found.id;
+      studentName = found.fullName;
+      nationalId = found.nationalId || found.phoneNumber || '';
+      grade = found.roleTitle || 'کادر اجرایی';
+      isDorm = false;
+      roleTitle = found.roleTitle || 'کادر / پرسنل';
+    } else { // guest
+      if (!manualCustomName.trim()) {
+        showToast('لطفاً نام و نام خانوادگی فرد مهمان را وارد فرمایید.');
+        return;
+      }
+      studentId = editingReservation ? editingReservation.studentId : `guest_${Date.now()}`;
+      studentName = manualCustomName.trim();
+      grade = manualGrade.trim() || 'مهمان';
+      isDorm = false;
+      roleTitle = manualCategory || 'مهمان';
     }
 
     // Calculate portions for this student in current period
@@ -748,7 +865,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       studentName,
       nationalId,
       grade,
-      personRoleTitle: manualCategory,
+      personRoleTitle: roleTitle,
       isDormitory: isDorm,
       selectedLunchDays: manualLunchDays,
       selectedDinnerDays: manualDinnerDays,
@@ -2331,7 +2448,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <UtensilsCrossed size={18} className="text-indigo-600" />
-                <span>{editingReservation ? 'ویرایش رزرو غذا' : 'ثبت دستی رزرو برای فرد'}</span>
+                <span>{editingReservation ? 'ویرایش رزرو غذا' : 'ثبت دستی رزرو نهار و شام بر اساس عنوان و نقش'}</span>
               </h3>
               <button onClick={() => setIsManualReservationModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400">
                 <X size={18} />
@@ -2339,89 +2456,205 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
             </div>
 
             <div className="space-y-4 text-xs">
-              {!editingReservation && (
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setManualStudentMode('from_list')}
-                    className={cn(
-                      "p-2 rounded-xl font-bold transition-all",
-                      manualStudentMode === 'from_list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600"
-                    )}
-                  >
-                    انتخاب از لیست طلاب
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setManualStudentMode('custom')}
-                    className={cn(
-                      "p-2 rounded-xl font-bold transition-all",
-                      manualStudentMode === 'custom' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600"
-                    )}
-                  >
-                    ثبت نام سفارشی (استاد/مهمان/کادر)
-                  </button>
-                </div>
-              )}
-
-              {manualStudentMode === 'from_list' && !editingReservation ? (
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">انتخاب طلبه:</label>
-                  <select
-                    value={manualSelectedStudentId}
-                    onChange={(e) => setManualSelectedStudentId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                  >
-                    {students.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.grade || 'نامشخص'}) {s.livingStatus === 'خوابگاه' ? '[خوابگاهی]' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">نام و نام خانوادگی:</label>
-                    <input
-                      type="text"
-                      value={manualCustomName}
-                      onChange={(e) => setManualCustomName(e.target.value)}
-                      placeholder="نام و نام خانوادگی فرد"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">پایه / گروه:</label>
-                    <input
-                      type="text"
-                      value={manualGrade}
-                      onChange={(e) => setManualGrade(e.target.value)}
-                      placeholder="مثلاً: پایه ۷ یا اساتید"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Person Category Dropdown */}
+              {/* Role Selector Grid */}
               <div>
-                <label className="font-bold text-slate-700 block mb-1">عنوان فرد (سمت):</label>
-                <select
-                  value={manualCategory}
-                  onChange={(e) => setManualCategory(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
-                >
-                  {personCategories.map(cat => (
-                    <option key={cat.id} value={cat.title}>{cat.title}</option>
+                <label className="font-bold text-slate-800 block mb-1.5">۱. انتخاب عنوان / نقش فرد متقاضی:</label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 p-1 bg-slate-100 rounded-2xl">
+                  {[
+                    { id: 'student', label: 'طلبه', icon: '🎓' },
+                    { id: 'teacher', label: 'استاد', icon: '👨‍🏫' },
+                    { id: 'grade_professor', label: 'استاد پایه', icon: '📖' },
+                    { id: 'driver', label: 'راننده', icon: '🚗' },
+                    { id: 'staff', label: 'کارکنان', icon: '💼' },
+                    { id: 'guest', label: 'مهمان', icon: '👤' },
+                  ].map(role => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => {
+                        setManualRoleType(role.id as any);
+                        setManualSearchQuery('');
+                        setManualSelectedEntityId('');
+                      }}
+                      className={cn(
+                        "py-2 px-1 rounded-xl font-bold transition-all text-center flex flex-col items-center justify-center gap-1 text-[11px]",
+                        manualRoleType === role.id ? "bg-white text-indigo-800 shadow-xs ring-1 ring-indigo-200 font-black" : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      <span className="text-sm">{role.icon}</span>
+                      <span>{role.label}</span>
+                    </button>
                   ))}
-                </select>
+                </div>
+              </div>
+
+              {/* Dynamic Search & Selection Area based on Role */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                {manualRoleType === 'student' && (
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">جستجو و انتخاب طلبه:</label>
+                    <input
+                      type="text"
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام یا شماره ملی طلبه..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none mb-2 font-medium"
+                    />
+                    <select
+                      value={manualSelectedEntityId}
+                      onChange={(e) => setManualSelectedEntityId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold text-slate-800"
+                    >
+                      <option value="">-- انتخاب طلبه از بانک اطلاعات طلاب --</option>
+                      {students
+                        .filter(s => s.name.includes(manualSearchQuery) || (s.nationalId && s.nationalId.includes(manualSearchQuery)))
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.grade || 'نامشخص'}) {s.livingStatus === 'خوابگاه' ? '[خوابگاهی]' : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {manualRoleType === 'teacher' && (
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">جستجو و انتخاب استاد از بانک اساتید:</label>
+                    <input
+                      type="text"
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام استاد یا تخصص..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none mb-2 font-medium"
+                    />
+                    <select
+                      value={manualSelectedEntityId}
+                      onChange={(e) => setManualSelectedEntityId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold text-slate-800"
+                    >
+                      <option value="">-- انتخاب استاد از بانک اساتید --</option>
+                      {teachersList
+                        .filter(t => t.fullName.includes(manualSearchQuery) || (t.subjectSpecialty && t.subjectSpecialty.includes(manualSearchQuery)))
+                        .map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.fullName} {t.subjectSpecialty ? `(${t.subjectSpecialty})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {manualRoleType === 'grade_professor' && (
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">جستجو و انتخاب استاد پایه (تعیین‌شده توسط سوپرادمین):</label>
+                    <input
+                      type="text"
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام مسئول/استاد پایه..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none mb-2 font-medium"
+                    />
+                    <select
+                      value={manualSelectedEntityId}
+                      onChange={(e) => setManualSelectedEntityId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold text-slate-800"
+                    >
+                      <option value="">-- انتخاب استاد پایه --</option>
+                      {gradeProfessorsList
+                        .filter(gp => gp.fullName.includes(manualSearchQuery) || gp.grade.includes(manualSearchQuery))
+                        .map(gp => (
+                          <option key={gp.id} value={gp.id}>
+                            {gp.fullName} ({gp.grade})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {manualRoleType === 'driver' && (
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">جستجو و انتخاب راننده از بانک رانندگان:</label>
+                    <input
+                      type="text"
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام یا تلفن راننده..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none mb-2 font-medium"
+                    />
+                    <select
+                      value={manualSelectedEntityId}
+                      onChange={(e) => setManualSelectedEntityId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold text-slate-800"
+                    >
+                      <option value="">-- انتخاب راننده --</option>
+                      {driversList
+                        .filter(d => (d.fullName || d.name || '').includes(manualSearchQuery) || (d.phoneNumber || d.phone || '').includes(manualSearchQuery))
+                        .map(d => (
+                          <option key={d.id} value={d.id}>
+                            {d.fullName || d.name} {d.carModel ? `(${d.carModel})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {manualRoleType === 'staff' && (
+                  <div>
+                    <label className="font-bold text-slate-800 block mb-1">جستجو و انتخاب از بانک کارکنان مجموعه:</label>
+                    <input
+                      type="text"
+                      value={manualSearchQuery}
+                      onChange={(e) => setManualSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام، سمت، کد پرسنلی..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none mb-2 font-medium"
+                    />
+                    <select
+                      value={manualSelectedEntityId}
+                      onChange={(e) => setManualSelectedEntityId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold text-slate-800"
+                    >
+                      <option value="">-- انتخاب از لیست کارکنان --</option>
+                      {staffList
+                        .filter(s => s.fullName.includes(manualSearchQuery) || s.roleTitle.includes(manualSearchQuery) || (s.staffCode && s.staffCode.includes(manualSearchQuery)))
+                        .map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.fullName} - {s.roleTitle} {s.staffCode ? `[${s.staffCode}]` : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+
+                {manualRoleType === 'guest' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">نام و نام خانوادگی مهمان (*):</label>
+                      <input
+                        type="text"
+                        value={manualCustomName}
+                        onChange={(e) => setManualCustomName(e.target.value)}
+                        placeholder="نام کامل فرد مهمان"
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">سازمان / علت حضور:</label>
+                      <input
+                        type="text"
+                        value={manualGrade}
+                        onChange={(e) => setManualGrade(e.target.value)}
+                        placeholder="مثلاً: سخنران، بازرس حوزه، استاد مدعو"
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none font-bold"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Lunch Day Selector */}
               <div>
                 <label className="font-bold text-slate-700 block mb-1">روزهای هفتگی نهار:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-7 gap-1.5">
                   {WEEK_DAYS.map(day => {
                     const isSelected = manualLunchDays.includes(day);
                     return (
@@ -2434,8 +2667,8 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                           );
                         }}
                         className={cn(
-                          "p-2 rounded-xl font-bold border transition-all text-xs",
-                          isSelected ? "bg-amber-500 text-white border-amber-600" : "bg-white text-slate-700 border-slate-200"
+                          "p-2 rounded-xl font-bold border transition-all text-xs text-center",
+                          isSelected ? "bg-amber-500 text-white border-amber-600 shadow-2xs" : "bg-white text-slate-700 border-slate-200"
                         )}
                       >
                         {day}
@@ -2448,7 +2681,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
               {/* Dinner Day Selector */}
               <div>
                 <label className="font-bold text-slate-700 block mb-1">روزهای هفتگی شام:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-7 gap-1.5">
                   {WEEK_DAYS.map(day => {
                     const isSelected = manualDinnerDays.includes(day);
                     return (
@@ -2461,8 +2694,8 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                           );
                         }}
                         className={cn(
-                          "p-2 rounded-xl font-bold border transition-all text-xs",
-                          isSelected ? "bg-indigo-600 text-white border-indigo-700" : "bg-white text-slate-700 border-slate-200"
+                          "p-2 rounded-xl font-bold border transition-all text-xs text-center",
+                          isSelected ? "bg-indigo-600 text-white border-indigo-700 shadow-2xs" : "bg-white text-slate-700 border-slate-200"
                         )}
                       >
                         {day}

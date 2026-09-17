@@ -72,6 +72,7 @@ export default function UserManagement() {
   const [formRoleTitle, setFormRoleTitle] = useState('مسئول آموزش');
   const [formScope, setFormScope] = useState<UserScope>('global');
   const [formGradeLabel, setFormGradeLabel] = useState('کل پایه‌ها');
+  const [formManagedGrades, setFormManagedGrades] = useState<string[]>([]);
   const [formIsReadOnly, setFormIsReadOnly] = useState(false);
   const [formAllowedModules, setFormAllowedModules] = useState<AppModuleId[]>([
     'todos', 'students', 'active-students', 'programs', 'attendance', 'stats', 'discussion'
@@ -87,6 +88,7 @@ export default function UserManagement() {
     setFormRoleTitle('مسئول آموزش');
     setFormScope('global');
     setFormGradeLabel('کل پایه‌ها');
+    setFormManagedGrades([]);
     setFormIsReadOnly(false);
     setFormAllowedModules([
       'todos', 'students', 'active-students', 'programs', 'attendance', 'stats', 'discussion'
@@ -110,6 +112,7 @@ export default function UserManagement() {
     setFormRoleTitle(user.roleTitle);
     setFormScope(user.scope);
     setFormGradeLabel(user.gradeLabel || 'کل پایه‌ها');
+    setFormManagedGrades(user.managedGrades || []);
     setFormIsReadOnly(user.isReadOnly || false);
     setFormAllowedModules((user.allowedModules as AppModuleId[]) || (user.allowedTabs as AppModuleId[]) || []);
     setFormError(null);
@@ -150,6 +153,7 @@ export default function UserManagement() {
         roleTitle: formRoleTitle,
         scope: formScope,
         gradeLabel: formGradeLabel,
+        managedGrades: formManagedGrades,
         isReadOnly: formIsReadOnly,
         allowedModules: formAllowedModules,
       });
@@ -166,6 +170,7 @@ export default function UserManagement() {
         roleTitle: formRoleTitle,
         scope: formScope,
         gradeLabel: formGradeLabel,
+        managedGrades: formManagedGrades,
         isReadOnly: formIsReadOnly,
         isActive: true,
         allowedModules: formAllowedModules,
@@ -369,7 +374,9 @@ export default function UserManagement() {
 
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
-                        {u.gradeLabel || 'عمومی'}
+                        {u.managedGrades && u.managedGrades.length > 0 
+                          ? u.managedGrades.join('، ') 
+                          : (u.gradeLabel || 'عمومی')}
                       </span>
                     </td>
 
@@ -522,7 +529,7 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              {/* Level & Role Selector */}
+              {/* Level & Role Title Selector */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
@@ -552,75 +559,125 @@ export default function UserManagement() {
                   </select>
                 </div>
 
-                <div>
+                <div className="sm:col-span-2">
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    نقش سازمانی *
+                    عنوان نقش *
                   </label>
                   <select
-                    value={formRole}
+                    value={formRoleTitle}
                     onChange={(e) => {
-                      const role = e.target.value as UserRole;
-                      setFormRole(role);
-                      if (role === 'super_admin') setFormRoleTitle('سوپر ادمین');
-                      else if (role === 'manager_principal') setFormRoleTitle('مدیر مدرسه');
-                      else if (role === 'vice_principal') setFormRoleTitle('معاون مدرسه');
-                      else if (role === 'education_officer') setFormRoleTitle('مسئول آموزش');
-                      else if (role === 'research_officer') setFormRoleTitle('مسئول پژوهش');
-                      else if (role === 'grade_supervisor') setFormRoleTitle('مسئول پایه');
-                      else if (role === 'financial_officer') setFormRoleTitle('مسئول مالی');
-                      else if (role === 'class_representative') setFormRoleTitle('نماینده کلاس');
-                      else setFormRoleTitle('طلبه');
+                      const title = e.target.value;
+                      setFormRoleTitle(title);
+                      if (title === 'سوپر ادمین') {
+                        setFormRole('super_admin');
+                      } else if (title === 'مدیر مدرسه') {
+                        setFormRole('manager_principal');
+                      } else if (title === 'معاون مدرسه') {
+                        setFormRole('vice_principal');
+                      } else if (title === 'مسئول آموزش') {
+                        setFormRole('education_officer');
+                      } else if (title === 'مسئول پژوهش') {
+                        setFormRole('research_officer');
+                      } else if (title === 'مسئول فرهنگی') {
+                        setFormRole('education_officer');
+                      } else if (title === 'مسئول مالی') {
+                        setFormRole('financial_officer');
+                      } else if (title === 'استاد پایه 7') {
+                        setFormRole('grade_supervisor_7');
+                        if (!formManagedGrades.includes('پایه ۷')) setFormManagedGrades(prev => [...prev, 'پایه ۷']);
+                      } else if (title === 'استاد پایه 8') {
+                        setFormRole('grade_supervisor_8');
+                        if (!formManagedGrades.includes('پایه ۸')) setFormManagedGrades(prev => [...prev, 'پایه ۸']);
+                      } else if (title === 'استاد پایه 9') {
+                        setFormRole('grade_supervisor_9');
+                        if (!formManagedGrades.includes('پایه ۹')) setFormManagedGrades(prev => [...prev, 'پایه ۹']);
+                      } else if (title === 'استاد پایه 10') {
+                        setFormRole('grade_supervisor_10');
+                        if (!formManagedGrades.includes('پایه ۱۰')) setFormManagedGrades(prev => [...prev, 'پایه ۱۰']);
+                      } else if (title === 'استاد پایه 11') {
+                        setFormRole('grade_supervisor');
+                        if (!formManagedGrades.includes('پایه ۱۱')) setFormManagedGrades(prev => [...prev, 'پایه ۱۱']);
+                      } else if (title === 'نماینده کلاس') {
+                        setFormRole('class_representative');
+                      } else if (title === 'طلبه') {
+                        setFormRole('student');
+                      }
                     }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
                   >
                     {formLevel === 1 && (
                       <>
-                        <option value="super_admin">سوپر ادمین (Super Admin)</option>
-                        <option value="manager_principal">مدیر مدرسه</option>
-                        <option value="vice_principal">معاون مدرسه</option>
+                        <option value="سوپر ادمین">سوپر ادمین (دسترسی کامل)</option>
+                        <option value="مدیر مدرسه">مدیر مدرسه</option>
+                        <option value="معاون مدرسه">معاون مدرسه</option>
                       </>
                     )}
                     {formLevel === 2 && (
                       <>
-                        <option value="education_officer">مسئول آموزش</option>
-                        <option value="research_officer">مسئول پژوهش</option>
-                        <option value="grade_supervisor">مسئول پایه</option>
-                        <option value="financial_officer">مسئول مالی</option>
+                        <option value="مسئول آموزش">مسئول آموزش</option>
+                        <option value="مسئول پژوهش">مسئول پژوهش</option>
+                        <option value="مسئول فرهنگی">مسئول فرهنگی</option>
+                        <option value="مسئول مالی">مسئول مالی</option>
+                        <option value="استاد پایه 7">استاد پایه 7</option>
+                        <option value="استاد پایه 8">استاد پایه 8</option>
+                        <option value="استاد پایه 9">استاد پایه 9</option>
+                        <option value="استاد پایه 10">استاد پایه 10</option>
+                        <option value="استاد پایه 11">استاد پایه 11</option>
                       </>
                     )}
                     {formLevel === 3 && (
                       <>
-                        <option value="class_representative">نماینده کلاس</option>
-                        <option value="student">طلبه / دانش‌پژوه</option>
+                        <option value="نماینده کلاس">نماینده کلاس</option>
+                        <option value="طلبه">طلبه / دانش‌پژوه</option>
                       </>
                     )}
                   </select>
                 </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    حوزه نظارت (پایه / Scope)
-                  </label>
-                  <select
-                    value={formGradeLabel}
-                    onChange={(e) => {
-                      setFormGradeLabel(e.target.value);
-                      if (e.target.value === 'پایه ۷') setFormScope('grade_7');
-                      else if (e.target.value === 'پایه ۸') setFormScope('grade_8');
-                      else if (e.target.value === 'پایه ۹') setFormScope('grade_9');
-                      else if (e.target.value === 'پایه ۱۰') setFormScope('grade_10');
-                      else setFormScope('global');
-                    }}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold"
-                  >
-                    <option value="کل پایه‌ها">کل پایه‌ها (سراسری)</option>
-                    <option value="پایه ۷">پایه ۷</option>
-                    <option value="پایه ۸">پایه ۸</option>
-                    <option value="پایه ۹">پایه ۹</option>
-                    <option value="پایه ۱۰">پایه ۱۰</option>
-                  </select>
-                </div>
               </div>
+
+              {/* Multiple Grades Checkboxes for Grade Professors */}
+              {(formLevel === 2 || formRoleTitle.startsWith('استاد پایه') || formRole.includes('grade_')) && (
+                <div className="p-3.5 bg-amber-50/70 rounded-2xl border border-amber-200/90 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <GraduationCap size={15} className="text-amber-700" />
+                      <span>پایه‌های تحت مسئولیت (انتخاب یک یا چند پایه):</span>
+                    </label>
+                    <span className="text-[10px] text-amber-700 font-medium">استاد پایه می‌تواند همزمان مسئول چند پایه باشد</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰', 'پایه ۱۱'].map((g) => {
+                      const isChecked = formManagedGrades.includes(g);
+                      return (
+                        <label
+                          key={g}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer transition-all select-none",
+                            isChecked 
+                              ? "bg-amber-600 text-white border-amber-700 shadow-xs" 
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormManagedGrades(prev => [...prev, g]);
+                              } else {
+                                setFormManagedGrades(prev => prev.filter(item => item !== g));
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <span>{g}</span>
+                          {isChecked && <Check size={13} className="stroke-[3]" />}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Read Only Toggle */}
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">

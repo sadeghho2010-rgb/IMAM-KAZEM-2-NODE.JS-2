@@ -44,6 +44,7 @@ import LunchManagement from './finance/LunchManagement';
 import ClaimsManagement from './finance/ClaimsManagement';
 import FundAndActiveLoans from './finance/FundAndActiveLoans';
 import ExpensesAndReports from './finance/ExpensesAndReports';
+import StaffBank from './finance/StaffBank';
 import { 
   TuitionCalculationSettings, 
   PresenceReport, 
@@ -59,6 +60,7 @@ type FinanceTabType =
   | 'students_activity_tuition'
   | 'teachers'
   | 'grade_professors'
+  | 'staff_bank'
   | 'staff'
   | 'lunch'
   | 'claims'
@@ -379,6 +381,20 @@ export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManage
 
         <button
           type="button"
+          onClick={() => setActiveTab('staff_bank')}
+          className={cn(
+            "px-3.5 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
+            activeTab === 'staff_bank'
+              ? "bg-emerald-600 text-white shadow-xs"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+          )}
+        >
+          <Building2 size={15} />
+          <span>بانک کارکنان مجموعه</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('staff')}
           className={cn(
             "px-3.5 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
@@ -416,7 +432,7 @@ export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManage
           )}
         >
           <HandCoins size={15} />
-          <span>مطالبات و بدهی‌های طلاب</span>
+          <span>مطالبات و بدهی‌ها</span>
         </button>
 
         <button
@@ -487,145 +503,21 @@ export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManage
       {/* 2. اطلاعات و حق‌الزحمه اساتید                                            */}
       {/* ========================================================================= */}
       {activeTab === 'teachers' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-900">گزارش‌های کارکرد، ساعات تدریس و حق‌الزحمه اساتید</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  اساتید پس از ثبت گزارش جلسات تدریس در منوی حضور و غیاب، کارکرد خود را ارسال می‌کنند تا پس از تایید مسئول مالی پرداخت گردد.
-                </p>
-              </div>
-            </div>
-
-            <div className="divide-y divide-slate-100 pt-2">
-              {presenceReports.length === 0 ? (
-                <div className="p-12 text-center text-slate-400 text-xs">
-                  هیچ گزارش کارکردی از طرف اساتید برای دوره جاری ثبت نشده است.
-                </div>
-              ) : (
-                presenceReports.map(rep => {
-                  const hourlyRate = 180000;
-                  const totalPayable = (rep.totalHours || 0) * hourlyRate;
-
-                  return (
-                    <div key={rep.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-slate-900 text-sm">{rep.teacherName}</span>
-                          <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg">
-                            {rep.grade || 'مدرس دروس فقه و اصول'}
-                          </span>
-                          <span className={cn(
-                            "px-2.5 py-0.5 text-[10px] font-bold rounded-lg",
-                            rep.status === 'received' ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                          )}>
-                            {rep.status === 'received' ? 'تایید و در لیست پرداخت' : 'در انتظار تایید مالی'}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-mono">
-                          <span>بازه: {rep.dateRange}</span>
-                          <span>•</span>
-                          <span>ساعات حضور: <strong className="text-slate-800">{rep.totalHours} ساعت</strong></span>
-                          <span>•</span>
-                          <span>نرخ ساعتی: {hourlyRate.toLocaleString('fa-IR')} ت</span>
-                          <span>•</span>
-                          <span>مبلغ قابل پرداخت: <strong className="text-emerald-700">{totalPayable.toLocaleString('fa-IR')} تومان</strong></span>
-                        </div>
-                        {rep.notes && (
-                          <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                            یادداشت استاد: {rep.notes}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 self-start md:self-auto">
-                        {rep.status !== 'received' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAcknowledgeTeacherReport(rep)}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Check size={14} />
-                            <span>تایید و محاسبه حق‌الزحمه</span>
-                          </button>
-                        ) : (
-                          <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold">
-                            تایید شده
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
+        <TeachersCompensation onNavigateTab={onNavigateTab} />
       )}
 
       {/* ========================================================================= */}
       {/* 3. اطلاعات و حق‌الزحمه اساتید پایه                                       */}
       {/* ========================================================================= */}
       {activeTab === 'grade_professors' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">اطلاعات و حق‌الزحمه اساتید راهنما و مسئولین پایه‌ها</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                محاسبه حق‌الزحمه اساتید پایه بر مبنای حق مسئولیت پایه، ساعات مشاوره، جلسات مباحثه و پیگیری وضعیت طلاب
-              </p>
-            </div>
+        <GradeProfessorsCompensation onNavigateTab={onNavigateTab} />
+      )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-black">
-                    <th className="p-3">ردیف</th>
-                    <th className="p-3">نام استاد پایه</th>
-                    <th className="p-3">پایه مربوطه</th>
-                    <th className="p-3 text-center">حق سرپرستی پایه</th>
-                    <th className="p-3 text-center">ساعات مشاوره و پیگیری</th>
-                    <th className="p-3 text-center">نرخ هر ساعت</th>
-                    <th className="p-3 text-center font-black text-emerald-900">مجموع دریافتی ماهانه</th>
-                    <th className="p-3 text-center">شماره حساب / شبا</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {gradeMentors.map((gm, idx) => {
-                    const totalMentoring = gm.baseMentoringFee + (gm.totalHours * gm.hourlyRate);
-                    return (
-                      <tr key={gm.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
-                        <td className="p-3 font-bold text-slate-900">{gm.name}</td>
-                        <td className="p-3">
-                          <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded-lg">
-                            {gm.grade}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center font-mono text-slate-700">
-                          {Number(gm.baseMentoringFee).toLocaleString('fa-IR')} ت
-                        </td>
-                        <td className="p-3 text-center font-mono font-bold text-slate-800">
-                          {gm.totalHours} ساعت
-                        </td>
-                        <td className="p-3 text-center font-mono text-slate-600">
-                          {Number(gm.hourlyRate).toLocaleString('fa-IR')} ت
-                        </td>
-                        <td className="p-3 text-center font-mono font-black text-emerald-800 text-sm">
-                          {totalMentoring.toLocaleString('fa-IR')} تومان
-                        </td>
-                        <td className="p-3 text-center font-mono text-[11px] text-slate-500">
-                          {gm.bankAccount}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+      {/* ========================================================================= */}
+      {/* 3.1 بانک کارکنان مجموعه                                                   */}
+      {/* ========================================================================= */}
+      {activeTab === 'staff_bank' && (
+        <StaffBank />
       )}
 
       {/* ========================================================================= */}
