@@ -160,7 +160,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     // رزرو نهار و شام طلاب: برای کاربران سطح ۳ و همچنین مدیران قابل مشاهده است
     if (item.id === 'student-meals') {
       if (currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative') return true;
-      return currentUser.level === 1 || currentUser.level === 2;
+      return currentUser.level === 1;
     }
     // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
     if (item.id === 'presence-hours') {

@@ -629,7 +629,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // رزرو نهار و شام طلاب: برای تمامی کاربران سطح ۳ (طلاب) و مدیران قابل دسترسی است
     if (tabId === 'student-meals') {
       if (currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative') return true;
-      return currentUser.level === 1 || currentUser.level === 2;
+      return currentUser.level === 1;
     }
     // بخش برنامه‌های مدرسه، مَدرَس‌ها و تقویم آموزشی به صورت پیش‌فرض برای تمامی سطوح کاربران قابل مشاهده است
     if (tabId === 'programs' || tabId === 'classrooms' || tabId === 'academic-calendar') return true;
