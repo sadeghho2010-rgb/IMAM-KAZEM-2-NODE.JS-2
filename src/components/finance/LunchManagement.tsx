@@ -42,7 +42,15 @@ import {
   getTodayShamsi, 
   getShamsiDayOfWeekName, 
   generateShamsiDateRange, 
-  compareShamsi 
+  compareShamsi,
+  SHAMSI_MONTH_NAMES,
+  SHAMSI_WEEKDAY_NAMES_SHORT,
+  getDaysInShamsiMonth,
+  getShamsiDayOfWeek,
+  formatShamsiDate,
+  parseShamsiDate,
+  dateToShamsi,
+  isDateBetween
 } from '../../lib/jalali';
 import { 
   Student, 
@@ -89,6 +97,12 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
   const [isLoading, setIsLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Filters for Date Range and Meals in Stats Report
+  const [dateFilterMode, setDateFilterMode] = useState<'period' | 'custom'>('period');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [selectedMealTypeFilter, setSelectedMealTypeFilter] = useState<'all' | 'lunch' | 'dinner'>('all');
+
   // Filters for Student Breakdown in Stats
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState('all');
@@ -119,6 +133,8 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
 
   // Holiday Form State
   const [holidayDate, setHolidayDate] = useState(getTodayShamsi());
+  const [holidayCalYear, setHolidayCalYear] = useState<number>(1403);
+  const [holidayCalMonth, setHolidayCalMonth] = useState<number>(7);
   const [holidayMealType, setHolidayMealType] = useState<'lunch' | 'dinner' | 'both'>('lunch');
   const [holidayReason, setHolidayReason] = useState('تعطیلی آشپزخانه و عدم پخت غذا');
 
@@ -259,15 +275,106 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
     return periods.find(p => p.id === activePeriodId) || periods[0] || null;
   }, [periods, activePeriodId]);
 
-  // Filter reservations for current period
-  const currentPeriodReservations = useMemo(() => {
-    if (!currentPeriod) return [];
-    return reservations.filter(r => r.periodId === currentPeriod.id);
-  }, [reservations, currentPeriod]);
+  // Sync initial custom dates when period changes or is selected
+  useEffect(() => {
+    if (currentPeriod) {
+      if (!customStartDate) setCustomStartDate(currentPeriod.startDate);
+      if (!customEndDate) setCustomEndDate(currentPeriod.endDate);
+    }
+  }, [currentPeriod]);
+
+  // Helper to compute date offset in Shamsi (e.g. 7 days ago)
+  const getShamsiDaysOffset = (offsetDays: number): string => {
+    try {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      return dateToShamsi(d);
+    } catch (e) {
+      return getTodayShamsi();
+    }
+  };
+
+  // Effective Start Date for Stats/Reports
+  const effectiveStartDate = useMemo(() => {
+    if (dateFilterMode === 'custom' && customStartDate) {
+      return customStartDate;
+    }
+    return currentPeriod?.startDate || getTodayShamsi();
+  }, [dateFilterMode, customStartDate, currentPeriod]);
+
+  // Effective End Date for Stats/Reports
+  const effectiveEndDate = useMemo(() => {
+    if (dateFilterMode === 'custom' && customEndDate) {
+      return customEndDate;
+    }
+    return currentPeriod?.endDate || getTodayShamsi();
+  }, [dateFilterMode, customEndDate, currentPeriod]);
+
+  // Base reservations according to dateFilterMode
+  const baseReservations = useMemo(() => {
+    if (dateFilterMode === 'period' && currentPeriod) {
+      return reservations.filter(r => r.periodId === currentPeriod.id);
+    }
+    // In custom mode, consider all reservations
+    return reservations;
+  }, [reservations, dateFilterMode, currentPeriod]);
+
+  // Calculate student breakdown with recalculated counts for effective date range
+  const studentBreakdownList = useMemo(() => {
+    if (!effectiveStartDate || !effectiveEndDate) return [];
+    const dateRange = generateShamsiDateRange(effectiveStartDate, effectiveEndDate);
+
+    return baseReservations.map(r => {
+      const p = periods.find(period => period.id === r.periodId) || currentPeriod;
+      let rangeLunches = 0;
+      let rangeDinnersInstitute = 0;
+      let rangeDinnersDormitory = 0;
+
+      dateRange.forEach(date => {
+        // If reservation is bound to a period, ensure date falls within period bounds
+        if (p && p.startDate && p.endDate && !isDateBetween(date, p.startDate, p.endDate)) {
+          return;
+        }
+
+        const dayOfWeek = getShamsiDayOfWeekName(date);
+        const holiday = kitchenHolidays.find(h => h.date === date);
+        const isLunchCancelled = holiday?.mealType === 'lunch' || holiday?.mealType === 'both';
+        const isDinnerCancelled = holiday?.mealType === 'dinner' || holiday?.mealType === 'both';
+
+        const isLunchDayDisabledInPeriod = p?.lunchDisabledDays?.includes(dayOfWeek) || p?.enableLunch === false;
+        const isDinnerDayDisabledInPeriod = p?.dinnerDisabledDays?.includes(dayOfWeek) || p?.enableDinner === false;
+
+        if (selectedMealTypeFilter !== 'dinner' && !isLunchCancelled && !isLunchDayDisabledInPeriod && r.selectedLunchDays?.includes(dayOfWeek)) {
+          rangeLunches++;
+        }
+
+        if (selectedMealTypeFilter !== 'lunch' && !isDinnerCancelled && !isDinnerDayDisabledInPeriod && r.selectedDinnerDays?.includes(dayOfWeek)) {
+          const loc = r.dinnerLocation || (r.isDormitory ? 'dormitory' : 'institute');
+          if (loc === 'dormitory') {
+            rangeDinnersDormitory++;
+          } else {
+            rangeDinnersInstitute++;
+          }
+        }
+      });
+
+      const rangeDinners = rangeDinnersInstitute + rangeDinnersDormitory;
+      const rangeTotalMeals = rangeLunches + rangeDinners;
+
+      return {
+        ...r,
+        calculatedLunchesForRange: rangeLunches,
+        calculatedDinnersForRange: rangeDinners,
+        calculatedDinnersInstituteForRange: rangeDinnersInstitute,
+        calculatedDinnersDormitoryForRange: rangeDinnersDormitory,
+        calculatedTotalMealsForRange: rangeTotalMeals
+      };
+    });
+  }, [effectiveStartDate, effectiveEndDate, baseReservations, periods, currentPeriod, kitchenHolidays, selectedMealTypeFilter]);
 
   // Filtered reservations for Student Breakdown Table
   const filteredReservations = useMemo(() => {
-    return currentPeriodReservations.filter(r => {
+    return studentBreakdownList.filter(r => {
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchesName = r.studentName.toLowerCase().includes(q);
@@ -286,12 +393,12 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
 
       return true;
     });
-  }, [currentPeriodReservations, searchQuery, selectedGradeFilter, selectedCategoryFilter, selectedDormFilter]);
+  }, [studentBreakdownList, searchQuery, selectedGradeFilter, selectedCategoryFilter, selectedDormFilter]);
 
-  // Generate Daily Summary Breakdown for Current Period (Method 2: بدون نام افراد)
+  // Generate Daily Summary Breakdown for Effective Date Range (Method 2: بدون نام افراد)
   const dailySummaryList = useMemo(() => {
-    if (!currentPeriod) return [];
-    const dateRange = generateShamsiDateRange(currentPeriod.startDate, currentPeriod.endDate);
+    if (!effectiveStartDate || !effectiveEndDate) return [];
+    const dateRange = generateShamsiDateRange(effectiveStartDate, effectiveEndDate);
 
     return dateRange.map((date, idx) => {
       const dayOfWeek = getShamsiDayOfWeekName(date);
@@ -299,33 +406,37 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       const isLunchCancelled = holiday?.mealType === 'lunch' || holiday?.mealType === 'both';
       const isDinnerCancelled = holiday?.mealType === 'dinner' || holiday?.mealType === 'both';
 
-      const isLunchDayDisabledInPeriod = currentPeriod.lunchDisabledDays?.includes(dayOfWeek) || !currentPeriod.enableLunch;
-      const isDinnerDayDisabledInPeriod = currentPeriod.dinnerDisabledDays?.includes(dayOfWeek) || !currentPeriod.enableDinner;
-
       let lunchCount = 0;
       let dinnerInstituteCount = 0;
       let dinnerDormitoryCount = 0;
 
-      if (!isLunchCancelled && !isLunchDayDisabledInPeriod) {
-        currentPeriodReservations.forEach(r => {
-          if (r.selectedLunchDays?.includes(dayOfWeek)) {
-            lunchCount++;
-          }
-        });
-      }
+      // Find active reservations for this date
+      const activeResForDate = reservations.filter(r => {
+        const p = periods.find(period => period.id === r.periodId) || currentPeriod;
+        if (p && p.startDate && p.endDate && !isDateBetween(date, p.startDate, p.endDate)) {
+          return false;
+        }
+        return true;
+      });
 
-      if (!isDinnerCancelled && !isDinnerDayDisabledInPeriod) {
-        currentPeriodReservations.forEach(r => {
-          if (r.selectedDinnerDays?.includes(dayOfWeek)) {
-            const loc = r.dinnerLocation || (r.isDormitory ? 'dormitory' : 'institute');
-            if (loc === 'dormitory') {
-              dinnerDormitoryCount++;
-            } else {
-              dinnerInstituteCount++;
-            }
+      activeResForDate.forEach(r => {
+        const p = periods.find(period => period.id === r.periodId) || currentPeriod;
+        const isLunchDayDisabled = p?.lunchDisabledDays?.includes(dayOfWeek) || p?.enableLunch === false;
+        const isDinnerDayDisabled = p?.dinnerDisabledDays?.includes(dayOfWeek) || p?.enableDinner === false;
+
+        if (selectedMealTypeFilter !== 'dinner' && !isLunchCancelled && !isLunchDayDisabled && r.selectedLunchDays?.includes(dayOfWeek)) {
+          lunchCount++;
+        }
+
+        if (selectedMealTypeFilter !== 'lunch' && !isDinnerCancelled && !isDinnerDayDisabled && r.selectedDinnerDays?.includes(dayOfWeek)) {
+          const loc = r.dinnerLocation || (r.isDormitory ? 'dormitory' : 'institute');
+          if (loc === 'dormitory') {
+            dinnerDormitoryCount++;
+          } else {
+            dinnerInstituteCount++;
           }
-        });
-      }
+        }
+      });
 
       const totalDinnerDay = dinnerInstituteCount + dinnerDormitoryCount;
       const totalMealsDay = lunchCount + totalDinnerDay;
@@ -345,9 +456,9 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
         totalMealsDay
       };
     });
-  }, [currentPeriod, currentPeriodReservations, kitchenHolidays]);
+  }, [effectiveStartDate, effectiveEndDate, reservations, periods, currentPeriod, kitchenHolidays, selectedMealTypeFilter]);
 
-  // Overall KPIs for current period
+  // Overall KPIs for current date range & filters
   const periodKPIs = useMemo(() => {
     let totalLunches = 0;
     let totalDinnersInstitute = 0;
@@ -363,14 +474,14 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
     const totalAllMeals = totalLunches + totalDinners;
 
     return {
-      totalStudentsRegistered: currentPeriodReservations.length,
+      totalStudentsRegistered: filteredReservations.length,
       totalLunches,
       totalDinnersInstitute,
       totalDinnersDormitory,
       totalDinners,
       totalAllMeals
     };
-  }, [currentPeriodReservations, dailySummaryList]);
+  }, [dailySummaryList, filteredReservations]);
 
   // Period Open / Closed Status Check
   const getPeriodStatusInfo = (p: MealReservationPeriod) => {
@@ -703,8 +814,6 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
 
   // EXCEL EXPORT 1: Student Breakdown (آمار تفصیلی طلاب)
   const exportStudentBreakdownToExcel = () => {
-    if (!currentPeriod) return;
-
     const dataRows = filteredReservations.map((r, idx) => ({
       'ردیف': idx + 1,
       'نام و نام خانوادگی': r.studentName,
@@ -715,29 +824,28 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       'محل دریافت شام': r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه',
       'روزهای نهار': (r.selectedLunchDays || []).join('، ') || 'ندارد',
       'روزهای شام': (r.selectedDinnerDays || []).join('، ') || 'ندارد',
-      'تعداد وعده نهار': r.totalCalculatedLunches || 0,
-      'تعداد شام موسسه': r.totalDinnersInstitute || (r.dinnerLocation === 'institute' ? r.totalCalculatedDinners : 0) || 0,
-      'تعداد شام خوابگاه': r.totalDinnersDormitory || (r.dinnerLocation === 'dormitory' ? r.totalCalculatedDinners : 0) || 0,
-      'مجموع شام': r.totalCalculatedDinners || 0,
-      'جمع کل وعده‌ها': (r.totalCalculatedLunches || 0) + (r.totalCalculatedDinners || 0),
+      'تعداد وعده نهار': r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0),
+      'تعداد شام موسسه': r.calculatedDinnersInstituteForRange ?? (r.totalDinnersInstitute || 0),
+      'تعداد شام خوابگاه': r.calculatedDinnersDormitoryForRange ?? (r.totalDinnersDormitory || 0),
+      'مجموع شام': r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0),
+      'جمع کل وعده‌ها در بازه': r.calculatedTotalMealsForRange ?? ((r.totalCalculatedLunches || 0) + (r.totalCalculatedDinners || 0)),
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataRows);
     ws['!cols'] = [
       { wch: 6 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
       { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 30 }, { wch: 14 },
-      { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }
+      { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }
     ];
 
+    const rangeTag = `${effectiveStartDate.replace(/\//g, '-')}_الی_${effectiveEndDate.replace(/\//g, '-')}`;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'آمار تفصیلی طلاب');
-    XLSX.writeFile(wb, `گزارش_تفصیلی_غذا_${currentPeriod.title.replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `گزارش_تفصیلی_تغذیه_${rangeTag}.xlsx`);
   };
 
   // EXCEL EXPORT 2: Daily Summary (آمار اجمالی و روزانه بدون نام افراد)
   const exportDailySummaryToExcel = () => {
-    if (!currentPeriod) return;
-
     const dataRows: Record<string, any>[] = dailySummaryList.map((d) => ({
       'ردیف': d.rowNumber,
       'تاریخ شمسی': d.date,
@@ -753,7 +861,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
     // Add totals row at bottom
     dataRows.push({
       'ردیف': 'جمع کل',
-      'تاریخ شمسی': `بازه ${currentPeriod.startDate} الی ${currentPeriod.endDate}`,
+      'تاریخ شمسی': `بازه ${effectiveStartDate} الی ${effectiveEndDate}`,
       'روز هفته': '-',
       'وضعیت آشپزخانه': '-',
       'تعداد نهار': periodKPIs.totalLunches,
@@ -769,9 +877,10 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 18 }
     ];
 
+    const rangeTag = `${effectiveStartDate.replace(/\//g, '-')}_الی_${effectiveEndDate.replace(/\//g, '-')}`;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'آمار اجمالی روزانه');
-    XLSX.writeFile(wb, `گزارش_اجمالی_روزانه_${currentPeriod.title.replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `گزارش_اجمالی_روزانه_تغذیه_${rangeTag}.xlsx`);
   };
 
   if (isLoading) {
@@ -1059,59 +1168,227 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       {/* ========================================================================= */}
       {mainTab === 'stats' && (
         <div className="space-y-6">
-          {/* Period Selector & Mode Switch Bar */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs font-bold text-slate-600">انتخاب دوره گزارش:</span>
-              <select
-                value={activePeriodId}
-                onChange={(e) => setActivePeriodId(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-              >
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} (بازه {p.startDate} الی {p.endDate})
-                  </option>
-                ))}
-              </select>
-
-              {currentPeriod && (
-                <span className={cn(
-                  "text-[10px] font-bold px-2.5 py-1 rounded-full border",
-                  getPeriodStatusInfo(currentPeriod).color
-                )}>
-                  {getPeriodStatusInfo(currentPeriod).label}
+          {/* Enhanced Date Range & Filtering Control Bar */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              {/* Report Mode & Range Selection */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 ml-1">
+                  <Filter size={15} className="text-indigo-600" />
+                  <span>فیلتر زمان گزارش:</span>
                 </span>
-              )}
+
+                <div className="flex items-center bg-slate-100 p-1 rounded-2xl">
+                  <button
+                    onClick={() => setDateFilterMode('period')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      dateFilterMode === 'period'
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Layers size={14} />
+                    <span>بر اساس دوره فعال</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setDateFilterMode('custom');
+                      if (!customStartDate && currentPeriod) setCustomStartDate(currentPeriod.startDate);
+                      if (!customEndDate && currentPeriod) setCustomEndDate(currentPeriod.endDate);
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      dateFilterMode === 'custom'
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Calendar size={14} />
+                    <span>بازه زمانی دلخواه</span>
+                  </button>
+                </div>
+
+                {dateFilterMode === 'period' ? (
+                  <div className="flex items-center gap-2 mr-2">
+                    <select
+                      value={activePeriodId}
+                      onChange={(e) => setActivePeriodId(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                    >
+                      {periods.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({p.startDate} الی {p.endDate})
+                        </option>
+                      ))}
+                    </select>
+
+                    {currentPeriod && (
+                      <span className={cn(
+                        "text-[10px] font-bold px-2.5 py-0.5 rounded-full border hidden sm:inline-block",
+                        getPeriodStatusInfo(currentPeriod).color
+                      )}>
+                        {getPeriodStatusInfo(currentPeriod).label}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 bg-indigo-50/60 border border-indigo-100 p-2 rounded-2xl mr-1">
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="text-indigo-900 font-bold text-[11px]">از:</span>
+                      <input
+                        type="text"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        placeholder="1403/07/01"
+                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1 text-center outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="text-indigo-900 font-bold text-[11px]">تا:</span>
+                      <input
+                        type="text"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        placeholder="1403/07/30"
+                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1 text-center outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* Presets */}
+                    <div className="flex items-center gap-1 mr-2 border-r border-indigo-200 pr-2">
+                      <button
+                        onClick={() => {
+                          setCustomStartDate(getTodayShamsi());
+                          setCustomEndDate(getTodayShamsi());
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-bold border border-indigo-200 cursor-pointer"
+                      >
+                        امروز
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCustomStartDate(getShamsiDaysOffset(-6));
+                          setCustomEndDate(getTodayShamsi());
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-bold border border-indigo-200 cursor-pointer"
+                      >
+                        ۷ روز اخیر
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCustomStartDate(getShamsiDaysOffset(-29));
+                          setCustomEndDate(getTodayShamsi());
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-bold border border-indigo-200 cursor-pointer"
+                      >
+                        ۳۰ روز اخیر
+                      </button>
+                      {currentPeriod && (
+                        <button
+                          onClick={() => {
+                            setCustomStartDate(currentPeriod.startDate);
+                            setCustomEndDate(currentPeriod.endDate);
+                          }}
+                          className="px-2 py-1 bg-white hover:bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-bold border border-indigo-200 cursor-pointer"
+                        >
+                          بازه دوره فعال
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* View Method Switcher */}
+              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl self-start lg:self-auto">
+                <button
+                  onClick={() => setStatsViewMode('student_breakdown')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                    statsViewMode === 'student_breakdown'
+                      ? "bg-white text-indigo-700 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <Users size={14} />
+                  <span>آمار تفصیلی افراد</span>
+                </button>
+
+                <button
+                  onClick={() => setStatsViewMode('daily_summary')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                    statsViewMode === 'daily_summary'
+                      ? "bg-white text-indigo-700 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <CalendarDays size={14} />
+                  <span>آمار اجمالی روزانه</span>
+                </button>
+              </div>
             </div>
 
-            {/* Switch between Method 1 and Method 2 */}
-            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl">
-              <button
-                onClick={() => setStatsViewMode('student_breakdown')}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
-                  statsViewMode === 'student_breakdown'
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <Users size={14} />
-                <span>روش ۱: آمار تفصیلی به ازای هر طلبه</span>
-              </button>
+            {/* Filter Bar Row 2: Meal Type Selector & Active Info Banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+              {/* Meal Type Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">انتخاب وعده:</span>
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                  <button
+                    onClick={() => setSelectedMealTypeFilter('all')}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      selectedMealTypeFilter === 'all'
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <UtensilsCrossed size={13} />
+                    <span>همه (نهار و شام)</span>
+                  </button>
 
-              <button
-                onClick={() => setStatsViewMode('daily_summary')}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
-                  statsViewMode === 'daily_summary'
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <CalendarDays size={14} />
-                <span>روش ۲: آمار اجمالی و روزانه (بدون نام)</span>
-              </button>
+                  <button
+                    onClick={() => setSelectedMealTypeFilter('lunch')}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      selectedMealTypeFilter === 'lunch'
+                        ? "bg-amber-500 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Sun size={13} />
+                    <span>فقط نهار</span>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedMealTypeFilter('dinner')}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      selectedMealTypeFilter === 'dinner'
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Moon size={13} />
+                    <span>فقط شام</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Active Date Range Info Tag */}
+              <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
+                <Clock size={14} className="text-indigo-600" />
+                <span>
+                  بازه فعال گزارش: <strong className="text-slate-900 font-mono">{effectiveStartDate}</strong> الی <strong className="text-slate-900 font-mono">{effectiveEndDate}</strong>
+                </span>
+                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-bold font-mono">
+                  {generateShamsiDateRange(effectiveStartDate, effectiveEndDate).length} روز
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1265,116 +1542,240 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                 </select>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                <table className="w-full text-right border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold">
-                      <th className="py-3 px-3">ردیف</th>
-                      <th className="py-3 px-3">نام و نام خانوادگی</th>
-                      <th className="py-3 px-3">عنوان / سمت</th>
-                      <th className="py-3 px-3">پایه</th>
-                      <th className="py-3 px-3">محل دریافت شام</th>
-                      <th className="py-3 px-3">روزهای نهار</th>
-                      <th className="py-3 px-3">روزهای شام</th>
-                      <th className="py-3 px-3 text-center">وعده نهار</th>
-                      <th className="py-3 px-3 text-center">شام (موسسه/خوابگاه)</th>
-                      <th className="py-3 px-3 text-center">مجموع وعده‌ها</th>
-                      <th className="py-3 px-3 text-center">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredReservations.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="py-8 text-center text-slate-400 font-bold">
-                          هیچ رزروی برای فیلترهای انتخابی یافت نشد.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredReservations.map((r, idx) => {
-                        const totalMeals = (r.totalCalculatedLunches || 0) + (r.totalCalculatedDinners || 0);
+              {/* Two Separate Tables: Table 1 for Lunch, Table 2 for Dinner */}
+              <div className="space-y-6 pt-2">
+                {/* TABLE 1: LUNCH STATISTICS */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between bg-amber-50/80 px-4 py-2.5 rounded-2xl border border-amber-200">
+                    <div className="flex items-center gap-2">
+                      <Sun size={18} className="text-amber-600" />
+                      <h4 className="text-xs font-black text-amber-950">جدول شماره ۱: آمار و اطلاعات تفصیلی نهار</h4>
+                    </div>
+                    <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-lg border border-amber-300">
+                      مجموع نهار دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')} وعده
+                    </span>
+                  </div>
 
-                        return (
-                          <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
-                            <td className="py-2.5 px-3">
-                              <span className="font-black text-slate-900 block">{r.studentName}</span>
-                              {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
-                            </td>
-                            {/* Person Category Column as requested */}
-                            <td className="py-2.5 px-3">
-                              <span className={cn(
-                                "px-2 py-0.5 rounded-md text-[10px] font-bold border",
-                                r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
-                                r.personRoleTitle === 'کارمند / کادر' ? "bg-blue-50 text-blue-800 border-blue-200" :
-                                r.personRoleTitle === 'مهمان' ? "bg-rose-50 text-rose-800 border-rose-200" :
-                                "bg-emerald-50 text-emerald-800 border-emerald-200"
-                              )}>
-                                {r.personRoleTitle || 'طلبه'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 font-bold">{r.grade || '-'}</td>
-                            {/* Dinner Location Column as requested */}
-                            <td className="py-2.5 px-3">
-                              <span className={cn(
-                                "px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 w-fit",
-                                r.dinnerLocation === 'dormitory'
-                                  ? "bg-purple-50 text-purple-800 border border-purple-200"
-                                  : "bg-indigo-50 text-indigo-800 border border-indigo-200"
-                              )}>
-                                {r.dinnerLocation === 'dormitory' ? <Bed size={11} /> : <Building2 size={11} />}
-                                <span>{r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه'}</span>
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 max-w-[150px] truncate text-[11px]" title={r.selectedLunchDays?.join('، ')}>
-                              {r.selectedLunchDays?.length ? r.selectedLunchDays.join('، ') : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 max-w-[150px] truncate text-[11px]" title={r.selectedDinnerDays?.join('، ')}>
-                              {r.selectedDinnerDays?.length ? r.selectedDinnerDays.join('، ') : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-700">
-                              {r.totalCalculatedLunches || 0}
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
-                              <span>{r.totalCalculatedDinners || 0}</span>
-                              <span className="text-[10px] text-slate-400 block font-normal">
-                                ({r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه'})
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900 bg-slate-50/50">
-                              {totalMeals}
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => setSelectedStudentForCalendar(r)}
-                                  className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg"
-                                  title="مشاهده تقویم و روزهای رزرو شده فرد"
-                                >
-                                  <Calendar size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleEditReservation(r)}
-                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
-                                  title="ویرایش دستی رزرو"
-                                >
-                                  <Edit3 size={13} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteReservation(r.id)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg"
-                                  title="حذف رزرو"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
+                  <div className="overflow-x-auto border border-amber-200/80 rounded-2xl bg-white shadow-xs">
+                    <table className="w-full text-right border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-amber-100/50 text-amber-950 border-b border-amber-200 font-black">
+                          <th className="py-3 px-3">ردیف</th>
+                          <th className="py-3 px-3">نام و نام خانوادگی</th>
+                          <th className="py-3 px-3">عنوان / سمت</th>
+                          <th className="py-3 px-3">پایه تحصیلی</th>
+                          <th className="py-3 px-3">روزهای رزرو نهار</th>
+                          <th className="py-3 px-3 text-center">تعداد نهار در بازه</th>
+                          <th className="py-3 px-3 text-center">مبلغ کسر نهار (تومان)</th>
+                          <th className="py-3 px-3 text-center">عملیات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredReservations.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-6 text-center text-slate-400 font-bold">
+                              هیچ داده‌ای برای نمایش اطلاعات نهار وجود ندارد.
                             </td>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                        ) : (
+                          filteredReservations.map((r, idx) => {
+                            const rangeLunches = r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0);
+                            const lunchCost = rangeLunches * (currentPeriod?.lunchPrice || 45000);
+
+                            return (
+                              <tr key={`lunch_${r.id}`} className="hover:bg-amber-50/30 transition-colors">
+                                <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className="font-black text-slate-900 block">{r.studentName}</span>
+                                  {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-md text-[10px] font-bold border",
+                                    r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                                    r.personRoleTitle === 'کارمند / کادر' ? "bg-blue-50 text-blue-800 border-blue-200" :
+                                    "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  )}>
+                                    {r.personRoleTitle || 'طلبه'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 font-bold">{r.grade || '-'}</td>
+                                <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedLunchDays?.join('، ')}>
+                                  {r.selectedLunchDays?.length ? r.selectedLunchDays.join('، ') : <span className="text-slate-300">بدون نهار</span>}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-black text-amber-700 bg-amber-50/40">
+                                  {rangeLunches}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                                  {lunchCost.toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => setSelectedStudentForCalendar(r)}
+                                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg"
+                                      title="مشاهده تقویم نهار"
+                                    >
+                                      <Calendar size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditReservation(r)}
+                                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
+                                      title="ویرایش رزرو"
+                                    >
+                                      <Edit3 size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-amber-900 text-white font-black text-xs">
+                          <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل نهار دوره:</td>
+                          <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
+                            {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono text-amber-200">
+                            {(filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0) * (currentPeriod?.lunchPrice || 45000)).toLocaleString('fa-IR')} تومان
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* TABLE 2: DINNER STATISTICS */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between bg-indigo-50/80 px-4 py-2.5 rounded-2xl border border-indigo-200">
+                    <div className="flex items-center gap-2">
+                      <Moon size={18} className="text-indigo-600" />
+                      <h4 className="text-xs font-black text-indigo-950">جدول شماره ۲: آمار و اطلاعات تفصیلی شام</h4>
+                    </div>
+                    <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100/80 px-2.5 py-0.5 rounded-lg border border-indigo-300">
+                      مجموع شام دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')} وعده
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-indigo-200/80 rounded-2xl bg-white shadow-xs">
+                    <table className="w-full text-right border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-indigo-100/50 text-indigo-950 border-b border-indigo-200 font-black">
+                          <th className="py-3 px-3">ردیف</th>
+                          <th className="py-3 px-3">نام و نام خانوادگی</th>
+                          <th className="py-3 px-3">عنوان / سمت</th>
+                          <th className="py-3 px-3">محل دریافت شام</th>
+                          <th className="py-3 px-3">روزهای رزرو شام</th>
+                          <th className="py-3 px-3 text-center">شام موسسه</th>
+                          <th className="py-3 px-3 text-center">شام خوابگاه</th>
+                          <th className="py-3 px-3 text-center">مجموع شام</th>
+                          <th className="py-3 px-3 text-center">مبلغ کسر شام (تومان)</th>
+                          <th className="py-3 px-3 text-center">عملیات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredReservations.length === 0 ? (
+                          <tr>
+                            <td colSpan={10} className="py-6 text-center text-slate-400 font-bold">
+                              هیچ داده‌ای برای نمایش اطلاعات شام وجود ندارد.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredReservations.map((r, idx) => {
+                            const rangeDinners = r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0);
+                            const instDinners = r.dinnerLocation === 'institute' ? rangeDinners : 0;
+                            const dormDinners = r.dinnerLocation === 'dormitory' ? rangeDinners : 0;
+                            const dinnerCost = rangeDinners * (currentPeriod?.dinnerPrice || 35000);
+
+                            return (
+                              <tr key={`dinner_${r.id}`} className="hover:bg-indigo-50/30 transition-colors">
+                                <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
+                                <td className="py-2.5 px-3">
+                                  <span className="font-black text-slate-900 block">{r.studentName}</span>
+                                  {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-md text-[10px] font-bold border",
+                                    r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                                    "bg-indigo-50 text-indigo-800 border-indigo-200"
+                                  )}>
+                                    {r.personRoleTitle || 'طلبه'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 w-fit",
+                                    r.dinnerLocation === 'dormitory'
+                                      ? "bg-purple-50 text-purple-800 border border-purple-200"
+                                      : "bg-indigo-50 text-indigo-800 border border-indigo-200"
+                                  )}>
+                                    {r.dinnerLocation === 'dormitory' ? <Bed size={11} /> : <Building2 size={11} />}
+                                    <span>{r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه'}</span>
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedDinnerDays?.join('، ')}>
+                                  {r.selectedDinnerDays?.length ? r.selectedDinnerDays.join('، ') : <span className="text-slate-300">بدون شام</span>}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
+                                  {instDinners}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
+                                  {dormDinners}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-black text-indigo-950 bg-indigo-50/50">
+                                  {rangeDinners}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                                  {dinnerCost.toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => setSelectedStudentForCalendar(r)}
+                                      className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg"
+                                      title="مشاهده تقویم شام"
+                                    >
+                                      <Calendar size={13} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleEditReservation(r)}
+                                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
+                                      title="ویرایش رزرو"
+                                    >
+                                      <Edit3 size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-indigo-950 text-white font-black text-xs">
+                          <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل شام دوره:</td>
+                          <td className="py-2.5 px-3 text-center font-mono text-indigo-300">
+                            {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'institute' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono text-purple-300">
+                            {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'dormitory' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
+                            {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono text-indigo-200">
+                            {(filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0) * (currentPeriod?.dinnerPrice || 35000)).toLocaleString('fa-IR')} تومان
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1717,15 +2118,120 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
             </div>
 
             <div className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">تاریخ تعطیلی (شمسی):</label>
-                <input
-                  type="text"
-                  value={holidayDate}
-                  onChange={(e) => setHolidayDate(e.target.value)}
-                  placeholder="۱۴۰۳/۰۷/۱۵"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none font-mono font-bold"
-                />
+              {/* Interactive Shamsi Calendar Picker for Kitchen Holiday */}
+              <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <Calendar size={15} className="text-rose-600" />
+                    <span>انتخاب روز تعطیلی روی تقویم شمسی:</span>
+                  </label>
+                  <span className="font-mono font-black text-rose-700 bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-200 text-xs">
+                    {holidayDate || 'تاریخی انتخاب نشده'}
+                  </span>
+                </div>
+
+                {/* Calendar Month Navigation */}
+                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (holidayCalMonth === 1) {
+                        setHolidayCalMonth(12);
+                        setHolidayCalYear(y => y - 1);
+                      } else {
+                        setHolidayCalMonth(m => m - 1);
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold"
+                  >
+                    ماه قبل
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={holidayCalMonth}
+                      onChange={(e) => setHolidayCalMonth(Number(e.target.value))}
+                      className="bg-slate-50 border border-slate-200 text-xs font-bold rounded-lg px-2 py-1 outline-none"
+                    >
+                      {SHAMSI_MONTH_NAMES.map((mName, idx) => (
+                        <option key={mName} value={idx + 1}>{mName}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={holidayCalYear}
+                      onChange={(e) => setHolidayCalYear(Number(e.target.value))}
+                      className="bg-slate-50 border border-slate-200 text-xs font-mono font-bold rounded-lg px-2 py-1 outline-none"
+                    >
+                      {[1402, 1403, 1404, 1405, 1406].map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (holidayCalMonth === 12) {
+                        setHolidayCalMonth(1);
+                        setHolidayCalYear(y => y + 1);
+                      } else {
+                        setHolidayCalMonth(m => m + 1);
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold"
+                  >
+                    ماه بعد
+                  </button>
+                </div>
+
+                {/* Weekday Headers */}
+                <div className="grid grid-cols-7 text-center text-[10px] font-black text-slate-500 pb-1">
+                  {SHAMSI_WEEKDAY_NAMES_SHORT.map((wd) => (
+                    <div key={wd}>{wd}</div>
+                  ))}
+                </div>
+
+                {/* Days Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {(() => {
+                    const totalDays = getDaysInShamsiMonth(holidayCalYear, holidayCalMonth);
+                    const firstDayOfWeek = getShamsiDayOfWeek(formatShamsiDate(holidayCalYear, holidayCalMonth, 1));
+                    const emptySlots = Array.from({ length: firstDayOfWeek });
+                    const daysArray = Array.from({ length: totalDays }, (_, i) => i + 1);
+
+                    return (
+                      <>
+                        {emptySlots.map((_, idx) => (
+                          <div key={`empty_${idx}`} className="h-8"></div>
+                        ))}
+                        {daysArray.map((dNum) => {
+                          const dateStr = formatShamsiDate(holidayCalYear, holidayCalMonth, dNum);
+                          const isSelected = holidayDate === dateStr;
+                          const isFriday = (firstDayOfWeek + dNum - 1) % 7 === 6;
+
+                          return (
+                            <button
+                              key={`day_${dNum}`}
+                              type="button"
+                              onClick={() => setHolidayDate(dateStr)}
+                              className={cn(
+                                "h-8 rounded-xl font-mono text-xs font-bold transition-all flex items-center justify-center border cursor-pointer",
+                                isSelected
+                                  ? "bg-rose-600 text-white border-rose-600 shadow-md scale-105"
+                                  : isFriday
+                                    ? "bg-rose-50/60 text-rose-700 border-rose-200 hover:bg-rose-100"
+                                    : "bg-white text-slate-800 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300"
+                              )}
+                            >
+                              {dNum}
+                            </button>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div>

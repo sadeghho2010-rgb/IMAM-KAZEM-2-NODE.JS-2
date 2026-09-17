@@ -48,6 +48,11 @@ export interface AttendanceSessionLog {
   dayOfWeek: string;
   isCancelled: boolean;
   cancellationReason?: string;
+  // حضور استاد جایگزین
+  hasSubstituteTeacher?: boolean; // آیا استاد جایگزین حضور داشته است؟
+  substituteTeacherId?: string; // شناسه استاد جایگزین از بانک اساتید
+  substituteTeacherName?: string; // نام استاد جایگزین (انتخابی یا دستی)
+  substituteTeacherNotes?: string; // توضیحات استاد جایگزین
   notes?: string;
   recordedByUserId?: string;
   recordedByName?: string;
@@ -840,15 +845,86 @@ export interface TeacherDetailedSpecialties {
 export interface Teacher {
   id: string;
   fullName: string;
+  teacherCode?: string; // کد استادی
   phoneNumber?: string;
+  phone?: string; // alias
+  subjectSpecialty?: string; // تخصص اصلی
   photoUrl?: string;
   categories: TeacherCategory[];
   detailedSpecialties?: TeacherDetailedSpecialties;
   notes?: string;
   experienceHistory?: string;
+  bankName?: string; // نام بانک
+  bankAccount?: string; // شماره حساب
+  bankSheba?: string; // شماره شبا
   priority: 1 | 2 | 3 | '1' | '2' | '3';
   isActive: boolean;
   createdAt: string;
+  updatedAt?: string;
+}
+
+// -------------------------------------------------------------
+// Driver & Teacher Transport Types (سرویس اساتید)
+// -------------------------------------------------------------
+
+export interface DriverInfo {
+  id: string;
+  fullName: string;
+  name?: string;
+  phoneNumber?: string;
+  phone?: string;
+  carModel?: string;
+  plateNumber?: string;
+  carPlate?: string;
+  isActive?: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface TeacherTransportSchedule {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  date?: string;
+  dayOfWeek?: string;
+  days?: string[];
+  pickupTime?: string;
+  returnTime?: string;
+  timeSchedule?: string;
+  routeDescription?: string;
+  serviceNeedType?: 'arrival_departure' | 'arrival_only' | 'departure_only' | 'custom';
+  driverId?: string;
+  driverName?: string;
+  cost?: number;
+  notes?: string;
+  isEducationApproved?: boolean;
+  isApprovedByEducation?: boolean;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvedByName?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TeacherCompensationSettings {
+  id: string;
+  // آیا نرخ یکسان است یا تفکیکی؟
+  rateMode: 'uniform' | 'separate'; // uniform: یکسان | separate: تفکیکی
+  uniformHourlyRate: number; // نرخ ساعتی یکسان (تومان)
+  mainClassRate: number; // نرخ درس اصلی (تومان)
+  counselingResearchRate: number; // نرخ مشاوره و پژوهش (تومان)
+  thursdayClassRate: number; // نرخ درس پنج‌شنبه (تومان)
+
+  // تعرفه نهار استاد
+  teacherMealCostPerMeal: number; // هزینه نهار استاد به ازای هر وعده (تومان)
+
+  // هزینه سرویس اساتید
+  enableTransportFee: boolean; // آیا هزینه سرویس اعمال شود؟
+  transportCalculationMode: 'single_trip' | 'double_trip'; // ۱ هزینه یا ۲ هزینه
+  transportRatePerTrip: number; // مبلغ هزینه هر بار سرویس (تومان)
+
+  // کسورات (وام و صندوق)
+  enableDeductions: boolean; // اعمال کسورات و وام‌ها
   updatedAt?: string;
 }
 
@@ -917,7 +993,8 @@ export type AppModuleId =
   | 'student-meals'
   | 'audit-logs'
   | 'education-financial-report'
-  | 'counseling-classes';
+  | 'counseling-classes'
+  | 'teacher-transport';
 
 export type CounselingScore = 'الف' | 'ب' | 'ج';
 

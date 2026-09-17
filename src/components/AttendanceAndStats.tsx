@@ -35,7 +35,11 @@ import {
   FileSpreadsheet,
   Printer,
   CalendarCheck,
-  AlertOctagon
+  AlertOctagon,
+  UserPlus,
+  UserCheck2,
+  Edit3,
+  User
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '../lib/utils';
@@ -58,7 +62,8 @@ import {
   AttendanceSettings, 
   WorkflowItem,
   AcademicHolidayItem,
-  AcademicCalendarPeriod
+  AcademicCalendarPeriod,
+  Teacher
 } from '../types';
 
 export type AttendanceRecord = AttendanceSessionLog;
@@ -77,6 +82,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Data states
   const [programs, setPrograms] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceSessionLog[]>([]);
   const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
@@ -96,6 +102,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Current session edit state
   const [isCancelled, setIsCancelled] = useState(false);
   const [cancellationReason, setCancellationReason] = useState('');
+  const [hasSubstituteTeacher, setHasSubstituteTeacher] = useState(false);
+  const [substituteTeacherId, setSubstituteTeacherId] = useState<string | undefined>(undefined);
+  const [substituteTeacherName, setSubstituteTeacherName] = useState<string>('');
+  const [substituteTeacherNotes, setSubstituteTeacherNotes] = useState<string>('');
+  const [isSubstituteModalOpen, setIsSubstituteModalOpen] = useState(false);
+  const [substituteTeacherSearch, setSubstituteTeacherSearch] = useState('');
+  const [manualSubstituteName, setManualSubstituteName] = useState('');
+  const [manualSubstituteNotes, setManualSubstituteNotes] = useState('');
+  const [selectedTeacherFromList, setSelectedTeacherFromList] = useState<Teacher | null>(null);
+
   const [sessionNotes, setSessionNotes] = useState('');
   const [studentsAttendance, setStudentsAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [studentNotes, setStudentNotes] = useState<Record<string, string>>({});
@@ -154,9 +170,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [progs, studs, enrolls, atts, settList, hols, periods] = await Promise.all([
+      const [progs, studs, teaList, enrolls, atts, settList, hols, periods] = await Promise.all([
         localDb.getDocs('programs'),
         localDb.getDocs('students'),
+        localDb.getDocs<Teacher>('teachers'),
         localDb.getDocs('enrollments'),
         localDb.getDocs<AttendanceSessionLog>('attendance'),
         localDb.getDocs<AttendanceSettings>('attendance_settings'),
@@ -165,6 +182,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       ]);
       setPrograms(progs || []);
       setStudents(studs || []);
+      setTeachers(teaList || []);
       setEnrollments(enrolls || []);
       setAttendanceRecords(atts || []);
       setAcademicHolidays(hols || []);
@@ -370,7 +388,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               status = 'recorded';
               const pCount = rec.students?.filter(s => s.status === 'present').length || 0;
               const aCount = rec.students?.filter(s => s.status === 'absent').length || 0;
-              summary = `${pCount} حاضر، ${aCount} غایب`;
+              summary = `${pCount} حاضر، ${aCount} غایب` + (rec.hasSubstituteTeacher ? ` (استاد جایگزین: ${rec.substituteTeacherName || 'دارد'})` : '');
             }
           } else if (hol) {
             status = 'holiday';
@@ -427,6 +445,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     if (existingRecord) {
       setIsCancelled(existingRecord.isCancelled || false);
       setCancellationReason(existingRecord.cancellationReason || '');
+      setHasSubstituteTeacher(existingRecord.hasSubstituteTeacher || false);
+      setSubstituteTeacherId(existingRecord.substituteTeacherId);
+      setSubstituteTeacherName(existingRecord.substituteTeacherName || '');
+      setSubstituteTeacherNotes(existingRecord.substituteTeacherNotes || '');
       setSessionNotes(existingRecord.notes || '');
 
       const attMap: Record<string, AttendanceStatus> = {};
@@ -460,6 +482,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     } else {
       setIsCancelled(false);
       setCancellationReason('');
+      setHasSubstituteTeacher(false);
+      setSubstituteTeacherId(undefined);
+      setSubstituteTeacherName('');
+      setSubstituteTeacherNotes('');
       setSessionNotes('');
 
       const defaultMap: Record<string, AttendanceStatus> = {};
@@ -540,6 +566,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         dayOfWeek: dayOfWeekName,
         isCancelled,
         cancellationReason: isCancelled ? cancellationReason : '',
+        hasSubstituteTeacher,
+        substituteTeacherId: hasSubstituteTeacher ? substituteTeacherId : undefined,
+        substituteTeacherName: hasSubstituteTeacher ? substituteTeacherName : undefined,
+        substituteTeacherNotes: hasSubstituteTeacher ? substituteTeacherNotes : undefined,
         notes: sessionNotes,
         recordedByUserId: currentUser?.id,
         recordedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'نماینده کلاس',
@@ -1092,10 +1122,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     >
                       <span className="text-[10px] text-slate-500 font-bold">{sess.dayOfWeek}</span>
                       <span className="text-xs font-black font-mono mt-0.5">{sess.date.slice(5)}</span>
-                      <div className="mt-1">
+                      <div className="mt-1 flex flex-col items-center gap-0.5">
                         {sess.status === 'recorded' && (
                           <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[9px] font-bold">
                             ثبت شد
+                          </span>
+                        )}
+                        {sess.record?.hasSubstituteTeacher && (
+                          <span className="px-1 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[8px] font-black">
+                            استاد جایگزین
                           </span>
                         )}
                         {sess.status === 'cancelled' && (
@@ -1143,69 +1178,178 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </div>
           )}
 
-          {/* Class Cancellation Toggle (اعلام عدم تشکیل کلاس) */}
-          <div className={cn(
-            "p-4 sm:p-5 rounded-2xl border transition-all space-y-3",
-            isCancelled 
-              ? "bg-rose-50/90 border-rose-200 shadow-xs" 
-              : "bg-white border-slate-200 shadow-xs"
-          )}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={isDateLockedForRepresentative}
-                  onClick={() => setIsCancelled(!isCancelled)}
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                    isCancelled ? "bg-rose-600" : "bg-slate-200",
-                    isDateLockedForRepresentative && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
-                      isCancelled ? "-translate-x-5" : "translate-x-0"
-                    )}
-                  />
-                </button>
-                <div>
-                  <h4 className={cn("text-xs font-black", isCancelled ? "text-rose-900" : "text-slate-800")}>
-                    اعلام عدم برگزاری کلاس (تعطیل / لغو شده)
-                  </h4>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    در صورت عدم تشکیل کلاس در این تاریخ (تعطیلی، عدم حضور استاد و ...)، این گزینه را فعال فرمایید.
-                  </p>
-                </div>
-              </div>
+          {/* Class Status Controls: Class Cancellation & Substitute Teacher */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 1. Class Cancellation Toggle (اعلام عدم تشکیل کلاس) */}
+            <div className={cn(
+              "p-4 sm:p-5 rounded-2xl border transition-all space-y-3 flex flex-col justify-between",
+              isCancelled 
+                ? "bg-rose-50/90 border-rose-200 shadow-xs" 
+                : "bg-white border-slate-200 shadow-xs"
+            )}>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isDateLockedForRepresentative}
+                      onClick={() => {
+                        const nextCancelled = !isCancelled;
+                        setIsCancelled(nextCancelled);
+                        if (nextCancelled && hasSubstituteTeacher) {
+                          setHasSubstituteTeacher(false);
+                          setSubstituteTeacherId(undefined);
+                          setSubstituteTeacherName('');
+                          setSubstituteTeacherNotes('');
+                        }
+                      }}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        isCancelled ? "bg-rose-600" : "bg-slate-200",
+                        isDateLockedForRepresentative && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                          isCancelled ? "-translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                    <div>
+                      <h4 className={cn("text-xs font-black", isCancelled ? "text-rose-900" : "text-slate-800")}>
+                        اعلام عدم برگزاری کلاس (تعطیلی / لغو)
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        در صورت تعطیلی رسمی، عدم تشکیل یا لغو کامل جلسه
+                      </p>
+                    </div>
+                  </div>
 
-              {isCancelled && (
-                <span className="px-3 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-black border border-rose-200 flex items-center gap-1 self-start sm:self-auto">
-                  <UserX size={14} />
-                  <span>کلاس تشکیل نشد</span>
-                </span>
-              )}
+                  {isCancelled && (
+                    <span className="px-2.5 py-1 bg-rose-100 text-rose-800 rounded-full text-[11px] font-black border border-rose-200 flex items-center gap-1 shrink-0">
+                      <UserX size={13} />
+                      <span>کلاس لغو شد</span>
+                    </span>
+                  )}
+                </div>
+
+                {isCancelled && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }} 
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="pt-2 border-t border-rose-200/80 space-y-2"
+                  >
+                    <label className="block text-xs font-bold text-rose-900">
+                      علت عدم برگزاری کلاس:
+                    </label>
+                    <input
+                      type="text"
+                      disabled={isDateLockedForRepresentative}
+                      placeholder="مثلاً: تعطیلی رسمی، مراسم، فوق‌برنامه..."
+                      className="w-full px-3.5 py-2 text-xs border border-rose-300 rounded-xl bg-white outline-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-800"
+                      value={cancellationReason}
+                      onChange={(e) => setCancellationReason(e.target.value)}
+                    />
+                  </motion.div>
+                )}
+              </div>
             </div>
 
-            {isCancelled && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }} 
-                animate={{ opacity: 1, height: 'auto' }}
-                className="pt-2 border-t border-rose-200/80 space-y-2"
-              >
-                <label className="block text-xs font-bold text-rose-900">
-                  علت عدم برگزاری کلاس:
-                </label>
-                <input
-                  type="text"
-                  disabled={isDateLockedForRepresentative}
-                  placeholder="مثلاً: تعطیلی رسمی، عدم حضور استاد، مراسم مدرسه، فوق‌برنامه..."
-                  className="w-full px-3.5 py-2 text-xs border border-rose-300 rounded-xl bg-white outline-none focus:ring-2 focus:ring-rose-500 font-medium text-slate-800"
-                  value={cancellationReason}
-                  onChange={(e) => setCancellationReason(e.target.value)}
-                />
-              </motion.div>
-            )}
+            {/* 2. Substitute Teacher (حضور استاد جایگزین) */}
+            <div className={cn(
+              "p-4 sm:p-5 rounded-2xl border transition-all space-y-3 flex flex-col justify-between",
+              hasSubstituteTeacher 
+                ? "bg-amber-50/90 border-amber-300 shadow-xs" 
+                : "bg-white border-slate-200 shadow-xs"
+            )}>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isDateLockedForRepresentative || isCancelled}
+                      onClick={() => {
+                        if (isCancelled) return;
+                        if (isEducationManager || isSuperAdmin) {
+                          // Open modal directly for education manager
+                          setIsSubstituteModalOpen(true);
+                        } else {
+                          // Class representative toggle
+                          const nextState = !hasSubstituteTeacher;
+                          setHasSubstituteTeacher(nextState);
+                          if (!nextState) {
+                            setSubstituteTeacherId(undefined);
+                            setSubstituteTeacherName('');
+                            setSubstituteTeacherNotes('');
+                          }
+                        }
+                      }}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        hasSubstituteTeacher ? "bg-amber-600" : "bg-slate-200",
+                        (isDateLockedForRepresentative || isCancelled) && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                          hasSubstituteTeacher ? "-translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                    <div>
+                      <h4 className={cn("text-xs font-black", hasSubstituteTeacher ? "text-amber-950" : "text-slate-800")}>
+                        حضور استاد جایگزین
+                      </h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        در صورت حضور استاد دیگر به جای استاد اصلی کلاس
+                      </p>
+                    </div>
+                  </div>
+
+                  {hasSubstituteTeacher && (
+                    <span className="px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full text-[11px] font-black border border-amber-300 flex items-center gap-1 shrink-0">
+                      <UserCheck2 size={13} />
+                      <span>استاد جایگزین حاضر</span>
+                    </span>
+                  )}
+                </div>
+
+                {hasSubstituteTeacher && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }} 
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="pt-2 border-t border-amber-200/80 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs">
+                        <span className="text-slate-500 font-medium ml-1">استاد حاضر شده:</span>
+                        <span className="font-black text-amber-900">
+                          {substituteTeacherName ? substituteTeacherName : 'استاد جایگزین (ثبت شده توسط نماینده)'}
+                        </span>
+                        {substituteTeacherNotes && (
+                          <p className="text-[11px] text-amber-800 mt-0.5">
+                            توضیحات: {substituteTeacherNotes}
+                          </p>
+                        )}
+                      </div>
+
+                      {(isEducationManager || isSuperAdmin) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsSubstituteModalOpen(true)}
+                          className="px-2.5 py-1 bg-white hover:bg-amber-100/60 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-colors shrink-0"
+                        >
+                          <Edit3 size={12} />
+                          <span>انتخاب / ویرایش استاد</span>
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Main Attendance Marking Section */}
@@ -2049,6 +2193,221 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <AlertTriangle size={14} />
                   <span>تایید و ارسال اخطار آموزشی</span>
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* Modal 5: Substitute Teacher Selection Modal (انتخاب یا درج استاد جایگزین) */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {isSubstituteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs font-vazir" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-amber-200 space-y-4 max-h-[90vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-amber-100 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                    <UserPlus size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-amber-950">ثبت حضور استاد جایگزین</h3>
+                    <p className="text-[11px] text-amber-800">
+                      انتخاب از بانک اساتید یا درج دستی نام استاد جایگزین
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSubstituteModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="space-y-4 text-xs overflow-y-auto flex-1 pr-1">
+                {/* Search in Teacher Bank */}
+                <div className="space-y-2">
+                  <label className="block font-bold text-slate-800">
+                    جستجو و انتخاب از بانک اساتید:
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute right-3 top-2.5 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="نام استاد، کد، یا تخصص..."
+                      value={substituteTeacherSearch}
+                      onChange={(e) => setSubstituteTeacherSearch(e.target.value)}
+                      className="w-full pr-8 pl-3 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* Teachers list */}
+                  <div className="border border-slate-200 rounded-xl p-2 max-h-40 overflow-y-auto space-y-1.5 bg-slate-50/50">
+                    {teachers.filter(t => {
+                      if (!substituteTeacherSearch.trim()) return true;
+                      const q = substituteTeacherSearch.toLowerCase();
+                      return (
+                        t.fullName?.toLowerCase().includes(q) ||
+                        t.subjectSpecialty?.toLowerCase().includes(q) ||
+                        t.teacherCode?.toLowerCase().includes(q) ||
+                        t.phone?.includes(q)
+                      );
+                    }).length === 0 ? (
+                      <p className="text-[11px] text-slate-400 text-center py-3">
+                        استادی با این مشخصات در بانک اساتید یافت نشد. می‌توانید از کادر زیر نام استاد را دستی وارد کنید.
+                      </p>
+                    ) : (
+                      teachers
+                        .filter(t => {
+                          if (!substituteTeacherSearch.trim()) return true;
+                          const q = substituteTeacherSearch.toLowerCase();
+                          return (
+                            t.fullName?.toLowerCase().includes(q) ||
+                            t.subjectSpecialty?.toLowerCase().includes(q) ||
+                            t.teacherCode?.toLowerCase().includes(q) ||
+                            t.phone?.includes(q)
+                          );
+                        })
+                        .map(t => {
+                          const isSelected = selectedTeacherFromList?.id === t.id || (substituteTeacherId === t.id && !selectedTeacherFromList && !manualSubstituteName);
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => {
+                                setSelectedTeacherFromList(t);
+                                setManualSubstituteName('');
+                              }}
+                              className={cn(
+                                "p-2 rounded-lg border flex items-center justify-between cursor-pointer transition-all text-xs",
+                                isSelected 
+                                  ? "bg-amber-100/80 border-amber-300 text-amber-950 font-bold shadow-2xs" 
+                                  : "bg-white border-slate-200 hover:bg-slate-100 text-slate-700"
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <User size={14} className={isSelected ? "text-amber-700" : "text-slate-400"} />
+                                <div>
+                                  <div className="font-bold">{t.fullName}</div>
+                                  {t.subjectSpecialty && (
+                                    <div className="text-[10px] text-slate-400">{t.subjectSpecialty}</div>
+                                  )}
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Check size={14} className="text-amber-700 font-black shrink-0" />
+                              )}
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+
+                {/* Manual entry fallback */}
+                <div className="pt-2 border-t border-slate-150 space-y-2">
+                  <label className="block font-bold text-slate-800">
+                    یا درج دستی نام استاد (در صورتی که در بانک اساتید نباشد):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثلاً: حجت‌الاسلام والمسلمین حسینی..."
+                    value={manualSubstituteName}
+                    onChange={(e) => {
+                      setManualSubstituteName(e.target.value);
+                      if (e.target.value) {
+                        setSelectedTeacherFromList(null);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-800">
+                    توضیحات و علت جایگزینی (اختیاری):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثلاً: به جای استاد اصلی به دلیل کسالت..."
+                    value={manualSubstituteNotes}
+                    onChange={(e) => setManualSubstituteNotes(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Information banner */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed">
+                  <p className="font-bold flex items-center gap-1 mb-0.5">
+                    <Info size={13} className="text-amber-700" />
+                    <span>محاسبه حق‌الزحمه:</span>
+                  </p>
+                  با ثبت استاد جایگزین، حق‌الزحمه تدریس این جلسه برای استاد حاضر ثبت و محاسبه خواهد شد.
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 shrink-0">
+                {hasSubstituteTeacher && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasSubstituteTeacher(false);
+                      setSubstituteTeacherId(undefined);
+                      setSubstituteTeacherName('');
+                      setSubstituteTeacherNotes('');
+                      setSelectedTeacherFromList(null);
+                      setManualSubstituteName('');
+                      setManualSubstituteNotes('');
+                      setIsSubstituteModalOpen(false);
+                      showToast("وضعیت استاد جایگزین لغو گردید.");
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 cursor-pointer"
+                  >
+                    حذف استاد جایگزین
+                  </button>
+                )}
+                
+                <div className="flex items-center gap-2 mr-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsSubstituteModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const finalName = selectedTeacherFromList?.fullName || manualSubstituteName.trim();
+                      if (!finalName && !hasSubstituteTeacher) {
+                        alert("لطفاً یک استاد از لیست انتخاب کنید یا نام استاد را دستی وارد فرمایید.");
+                        return;
+                      }
+
+                      setHasSubstituteTeacher(true);
+                      setSubstituteTeacherId(selectedTeacherFromList?.id || undefined);
+                      setSubstituteTeacherName(finalName || 'استاد جایگزین');
+                      setSubstituteTeacherNotes(manualSubstituteNotes);
+                      setIsSubstituteModalOpen(false);
+                      showToast(`استاد جایگزین (${finalName}) برای این جلسه تعیین شد.`);
+                    }}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Check size={14} />
+                    <span>ثبت و تایید استاد جایگزین</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

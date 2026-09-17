@@ -15,6 +15,7 @@ import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
 import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
+import TeacherTransportManagement from './components/education/TeacherTransportManagement';
 import TodoList from './components/TodoList';
 import StudentComments from './components/StudentComments';
 import StudyDiscussion from './components/StudyDiscussion';
@@ -144,6 +145,8 @@ function AppContent() {
         return <Summary onNavigate={handleNavigate} initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-bank':
         return <TeachersBank />;
+      case 'teacher-transport':
+        return <TeacherTransportManagement />;
       case 'backup':
         return <BackupAndRestore />;
       case 'audit-logs':

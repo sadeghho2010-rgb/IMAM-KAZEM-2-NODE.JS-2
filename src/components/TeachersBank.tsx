@@ -27,7 +27,8 @@ import {
   FileText,
   Printer,
   PhoneCall,
-  ShieldAlert
+  ShieldAlert,
+  Building2
 } from 'lucide-react';
 import { Teacher, TeacherCategory, TeacherDetailedSpecialties } from '../types';
 import { localDb } from '../lib/localDb';
@@ -79,6 +80,7 @@ export default function TeachersBank() {
 
   // Form State
   const [fullName, setFullName] = useState<string>('');
+  const [teacherCode, setTeacherCode] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [priority, setPriority] = useState<1 | 2 | 3>(1);
@@ -86,6 +88,9 @@ export default function TeachersBank() {
   const [selectedCategories, setSelectedCategories] = useState<TeacherCategory[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [experienceHistory, setExperienceHistory] = useState<string>('');
+  const [bankName, setBankName] = useState<string>('');
+  const [bankAccount, setBankAccount] = useState<string>('');
+  const [bankSheba, setBankSheba] = useState<string>('');
 
   // Detailed Specialties State
   const [usulSpecialties, setUsulSpecialties] = useState<('رسائل' | 'کفایه' | 'حلقات')[]>([]);
@@ -130,6 +135,7 @@ export default function TeachersBank() {
   const openAddModal = () => {
     setEditingTeacher(null);
     setFullName('');
+    setTeacherCode('');
     setPhoneNumber('');
     setPhotoUrl('');
     setPriority(1);
@@ -137,6 +143,9 @@ export default function TeachersBank() {
     setSelectedCategories(['اصول']);
     setNotes('');
     setExperienceHistory('');
+    setBankName('بانک ملی');
+    setBankAccount('');
+    setBankSheba('');
     setUsulSpecialties([]);
     setFiqhSpecialties([]);
     setFalsafaSpecialties([]);
@@ -147,6 +156,7 @@ export default function TeachersBank() {
   const openEditModal = (t: Teacher) => {
     setEditingTeacher(t);
     setFullName(t.fullName || '');
+    setTeacherCode(t.teacherCode || '');
     setPhoneNumber(t.phoneNumber || '');
     setPhotoUrl(t.photoUrl || '');
     setPriority((Number(t.priority) || 1) as 1 | 2 | 3);
@@ -154,6 +164,9 @@ export default function TeachersBank() {
     setSelectedCategories(t.categories || []);
     setNotes(t.notes || '');
     setExperienceHistory(t.experienceHistory || '');
+    setBankName(t.bankName || '');
+    setBankAccount(t.bankAccount || '');
+    setBankSheba(t.bankSheba || '');
     setUsulSpecialties(t.detailedSpecialties?.usul || []);
     setFiqhSpecialties(t.detailedSpecialties?.fiqh || []);
     setFalsafaSpecialties(t.detailedSpecialties?.falsafa || []);
@@ -167,6 +180,7 @@ export default function TeachersBank() {
 
     const teacherData: Partial<Teacher> = {
       fullName: fullName.trim(),
+      teacherCode: teacherCode.trim(),
       phoneNumber: phoneNumber.trim(),
       photoUrl,
       priority,
@@ -174,6 +188,9 @@ export default function TeachersBank() {
       categories: selectedCategories,
       notes: notes.trim(),
       experienceHistory: experienceHistory.trim(),
+      bankName: bankName.trim(),
+      bankAccount: bankAccount.trim(),
+      bankSheba: bankSheba.trim(),
       detailedSpecialties: {
         usul: (selectedCategories.includes('اصول') || selectedCategories.includes('مشاوره اصول')) ? usulSpecialties : [],
         fiqh: (selectedCategories.includes('فقه') || selectedCategories.includes('مشاوره فقه')) ? fiqhSpecialties : [],
@@ -1254,7 +1271,18 @@ export default function TeachersBank() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">کد استادی</label>
+                        <input 
+                          type="text" 
+                          placeholder="مثلاً T-104"
+                          value={teacherCode}
+                          onChange={(e) => setTeacherCode(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">شماره تماس</label>
                         <input 
@@ -1262,7 +1290,7 @@ export default function TeachersBank() {
                           placeholder="0912..."
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
 
@@ -1271,13 +1299,53 @@ export default function TeachersBank() {
                         <select
                           value={priority}
                           onChange={(e) => setPriority(Number(e.target.value) as 1 | 2 | 3)}
-                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                           <option value={1}>اولویت ۱ (عالی)</option>
                           <option value={2}>اولویت ۲ (خوب)</option>
                           <option value={3}>اولویت ۳ (معمولی)</option>
                         </select>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Financial & Bank Details Section */}
+                <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/80 space-y-2">
+                  <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                    <Building2 size={14} className="text-emerald-700" />
+                    <span>اطلاعات مالی و حساب بانکی استاد جهت واریز حق‌الزحمه</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">نام بانک</label>
+                      <input
+                        type="text"
+                        placeholder="مثلا: بانک ملی"
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">شماره حساب / کارت</label>
+                      <input
+                        type="text"
+                        placeholder="۶۰۳۷-..."
+                        value={bankAccount}
+                        onChange={(e) => setBankAccount(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">شماره شبا (IR...)</label>
+                      <input
+                        type="text"
+                        placeholder="IR120..."
+                        value={bankSheba}
+                        onChange={(e) => setBankSheba(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
                     </div>
                   </div>
                 </div>

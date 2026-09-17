@@ -30,7 +30,8 @@ import {
   Building2,
   Receipt,
   FileSpreadsheet,
-  HandCoins
+  HandCoins,
+  Car
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -80,6 +81,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'comments', label: 'نظرات و ارزیابی‌ها', icon: MessageSquare },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی', icon: BrainCircuit },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', icon: GraduationCap },
+  { id: 'teacher-transport', label: 'سرویس و ایاب و ذهاب اساتید', icon: Car },
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
@@ -112,6 +114,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         'academic-calendar',
         'students',
         'teachers-bank',
+        'teacher-transport',
         'finance'
       ];
       return allowedFinanceTabs.includes(item.id);
