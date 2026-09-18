@@ -165,7 +165,29 @@ export async function uploadBackupToCloud(
     supabaseUrl: supabasePublicUrl
   };
 
-  // 2. Try saving metadata to Firestore database
+  // 2. Try saving metadata to Supabase table
+  try {
+    await supabase.from('cloud_backups').upsert({
+      id: record.id,
+      mentor_id: record.mentorId,
+      mentor_name: record.mentorName,
+      mentor_role: record.mentorRole,
+      file_name: record.fileName,
+      folder_path: record.folderPath,
+      file_size_bytes: record.fileSizeBytes,
+      file_size_formatted: record.fileSizeFormatted,
+      total_records: record.totalRecords,
+      student_count: record.studentCount,
+      persian_date: record.persianDate,
+      supabase_url: record.supabaseUrl,
+      data: record,
+      created_at: record.createdAt
+    });
+  } catch (e) {
+    console.warn('Supabase cloud_backups table write fallback:', e);
+  }
+
+  // 3. Try saving metadata to Firestore database
   try {
     const docRef = await addDoc(collection(db, 'cloud_backups'), record);
     record.id = docRef.id;
@@ -173,7 +195,7 @@ export async function uploadBackupToCloud(
     console.warn('Firestore fallback to local database:', e);
   }
 
-  // 3. Always store in local IndexedDB store
+  // 4. Always store in local IndexedDB store
   await localDb.addDoc('cloud_backups', record);
 
   return record;
@@ -188,7 +210,39 @@ export async function fetchCloudBackups(
 ): Promise<CloudBackupRecord[]> {
   const allRecordsMap = new Map<string, CloudBackupRecord>();
 
-  // 1. Fetch from Firestore
+  // 1. Fetch from Supabase Table
+  try {
+    const { data: supaRows, error: supaErr } = await supabase
+      .from('cloud_backups')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!supaErr && supaRows) {
+      supaRows.forEach((row: any) => {
+        const item = row.data || row;
+        allRecordsMap.set(row.id, {
+          id: row.id,
+          mentorId: row.mentor_id || item.mentorId,
+          mentorName: row.mentor_name || item.mentorName,
+          mentorRole: row.mentor_role || item.mentorRole || '',
+          fileName: row.file_name || item.fileName,
+          folderPath: row.folder_path || item.folderPath,
+          createdAt: row.created_at || item.createdAt,
+          persianDate: row.persian_date || item.persianDate || '',
+          fileSizeBytes: row.file_size_bytes || item.fileSizeBytes || 0,
+          fileSizeFormatted: row.file_size_formatted || item.fileSizeFormatted || '',
+          totalRecords: row.total_records || item.totalRecords || 0,
+          studentCount: row.student_count || item.studentCount || 0,
+          supabaseUrl: row.supabase_url || item.supabaseUrl || '',
+          backupData: item.backupData
+        });
+      });
+    }
+  } catch (e) {
+    console.warn('Supabase cloud_backups table fetch fallback:', e);
+  }
+
+  // 2. Fetch from Firestore
   try {
     const colRef = collection(db, 'cloud_backups');
     const snapshot = await getDocs(colRef);
@@ -336,8 +390,15 @@ export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promis
     try {
       await supabase.storage.from(BUCKET_NAME).remove([backupRecord.folderPath]);
     } catch (e) {
-      console.warn('Supabase delete error:', e);
+      console.warn('Supabase storage delete error:', e);
     }
+  }
+
+  // Delete from Supabase Table
+  try {
+    await supabase.from('cloud_backups').delete().eq('id', backupRecord.id);
+  } catch (e) {
+    console.warn('Supabase table delete error:', e);
   }
 
   // Delete from Firestore

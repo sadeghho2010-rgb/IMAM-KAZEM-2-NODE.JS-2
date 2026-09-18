@@ -29,7 +29,11 @@ import {
   FileText,
   FolderDown,
   Camera,
-  FolderUp
+  FolderUp,
+  Copy,
+  ExternalLink,
+  Server,
+  Code
 } from 'lucide-react';
 import { localDb, getMentorKeyForGrade, normalizeNationalId } from '../lib/localDb';
 import { Student } from '../types';
@@ -43,6 +47,8 @@ import {
   generateBackupFilename,
   getPersianDateTime
 } from '../lib/cloudBackups';
+import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSqlScript';
+import { testSupabaseConnection, syncAllToSupabase, ConnectionStatus } from '../lib/supabaseSync';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -158,6 +164,73 @@ export default function BackupAndRestore() {
     unmatched: string[];
     totalFiles: number;
   } | null>(null);
+
+  // Supabase Database Setup & Testing State
+  const [isTestingDb, setIsTestingDb] = useState<boolean>(false);
+  const [dbTestResult, setDbTestResult] = useState<ConnectionStatus | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState<boolean>(false);
+  const [syncProgress, setSyncProgress] = useState<{ col: string; pct: number } | null>(null);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [showSqlCodeModal, setShowSqlCodeModal] = useState<boolean>(false);
+
+  const handleTestDatabase = async () => {
+    setIsTestingDb(true);
+    setDbTestResult(null);
+    try {
+      const res = await testSupabaseConnection();
+      setDbTestResult(res);
+    } catch (err: any) {
+      setDbTestResult({
+        connected: false,
+        message: `خطای تست اتصال: ${err?.message || 'نامشخص'}`
+      });
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
+  const handleCopySqlScript = async () => {
+    try {
+      await navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 3000);
+    } catch (e) {
+      console.error('Failed to copy SQL:', e);
+    }
+  };
+
+  const handleDownloadSqlScript = () => {
+    const blob = new Blob([SUPABASE_SCHEMA_SQL], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'supabase_schema.sql';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSyncAllToCloud = async () => {
+    setIsSyncingAll(true);
+    setSyncProgress(null);
+    try {
+      const results = await syncAllToSupabase((col, pct) => {
+        setSyncProgress({ col, pct });
+      });
+      const totalCount = results.reduce((acc, r) => acc + r.count, 0);
+      setStatusMessage({
+        type: 'success',
+        text: `همگام‌سازی کامل شد: تعداد ${totalCount} رکورد در دیتابیس Supabase ذخیره شدند.`
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: `خطا در همگام‌سازی با Supabase: ${err?.message || 'نامشخص'}`
+      });
+    } finally {
+      setIsSyncingAll(false);
+      setSyncProgress(null);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -886,6 +959,134 @@ export default function BackupAndRestore() {
         </div>
       </div>
 
+      {/* SUPABASE DATABASE SETUP & SCHEMA CARD */}
+      <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg border border-slate-800 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold shrink-0">
+              <Database size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black text-white">پیکربندی و ساخت جدول‌های دیتابیس ابری (Supabase)</h2>
+                <span className="text-[11px] px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 rounded-full font-bold">
+                  PostgreSQL
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                تولید ساختار کامل جدول‌ها، باکت ذخیره‌سازی backups و دسترسی‌های RLS برای اتصال کامل سامانه به پایگاه داده
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTestDatabase}
+              disabled={isTestingDb}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+            >
+              {isTestingDb ? <RefreshCw size={15} className="animate-spin text-emerald-400" /> : <Server size={15} className="text-emerald-400" />}
+              <span>تست اتصال و سلامت جدول‌ها</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Database Test Result Status Message */}
+        {dbTestResult && (
+          <div className={cn(
+            "p-4 rounded-2xl border text-xs leading-relaxed flex items-start gap-3",
+            dbTestResult.connected
+              ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-200"
+              : "bg-amber-950/60 border-amber-500/40 text-amber-200"
+          )}>
+            {dbTestResult.connected ? (
+              <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-1">
+              <strong className="block font-bold">
+                {dbTestResult.connected ? 'اتصال موفق به دیتابیس Supabase' : 'توجه: نیاز به ساخت جدول‌ها در Supabase'}
+              </strong>
+              <p className="text-[11px]">{dbTestResult.message}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Step-by-step setup guide */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+              <span className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px]">۱</span>
+              <span>کپی یا دانلود اسکریپت SQL</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              کدهای استاندارد شامل جدول‌های طلاب، اساتید، حضورغیاب، شهریه، باکت backups و مجوزها آماده شده‌اند.
+            </p>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+              <span className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px]">۲</span>
+              <span>اجرا در SQL Editor سوپابیس</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              در پنل Supabase وارد بخش <strong>SQL Editor</strong> شده، کدهای کپی شده را Paste کنید و دکمه <strong>Run</strong> را بزنید.
+            </p>
+          </div>
+
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+              <span className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px]">۳</span>
+              <span>همگام‌سازی و بهره‌برداری</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              پس از اجرای اسکریپت، دکمه «تست اتصال» را بزنید و اطلاعات را با یک کلیک به دیتابیس منتقل نمایید.
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons for SQL Script */}
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button
+            onClick={handleCopySqlScript}
+            className="flex items-center gap-2 py-3 px-5 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            {copiedSql ? <Check size={16} /> : <Copy size={16} />}
+            <span>{copiedSql ? 'کد اسکریپت SQL کپی شد!' : 'کپی اسکریپت کامل SQL ساخت جدول‌ها'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadSqlScript}
+            className="flex items-center gap-2 py-3 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all"
+          >
+            <Download size={15} />
+            <span>دانلود فایل supabase_schema.sql</span>
+          </button>
+
+          <button
+            onClick={() => setShowSqlCodeModal(true)}
+            className="flex items-center gap-2 py-3 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all"
+          >
+            <Code size={15} />
+            <span>مشاهده متن اسکریپت</span>
+          </button>
+
+          <button
+            onClick={handleSyncAllToCloud}
+            disabled={isSyncingAll}
+            className="flex items-center gap-2 py-3 px-5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md mr-auto disabled:opacity-50"
+          >
+            {isSyncingAll ? <RefreshCw size={16} className="animate-spin" /> : <CloudUpload size={16} />}
+            <span>
+              {isSyncingAll
+                ? `در حال همگام‌سازی (${syncProgress?.col || ''} - ${syncProgress?.pct || 0}%)...`
+                : 'همگام‌سازی و انتقال کلیه اطلاعات به دیتابیس ابری'}
+            </span>
+          </button>
+        </div>
+      </div>
+
       {/* SECTION 2: Download Data from Database (Password Protected + Admin Access) */}
       <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -1609,6 +1810,66 @@ export default function BackupAndRestore() {
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all"
                 >
                   متوجه شدم و بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Supabase SQL Script Code Modal */}
+        {showSqlCodeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-3xl w-full shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-slate-100"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Database size={20} className="text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white">کدهای SQL ایجاد جدول‌ها و تنظیمات Supabase</h3>
+                </div>
+                <button
+                  onClick={() => setShowSqlCodeModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                این اسکریپت را کپی کرده و در داشبورد Supabase در مسیر <strong>SQL Editor</strong> قرار داده و دکمه <strong>Run</strong> را بزنید:
+              </p>
+
+              <div className="flex-1 overflow-y-auto bg-slate-950 p-4 rounded-2xl border border-slate-800 font-mono text-xs text-emerald-300 leading-relaxed dir-ltr select-all">
+                <pre>{SUPABASE_SCHEMA_SQL}</pre>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopySqlScript}
+                    className="flex items-center gap-1.5 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedSql ? 'کپی شد!' : 'کپی کدهای SQL'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleDownloadSqlScript}
+                    className="flex items-center gap-1.5 py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all border border-slate-700"
+                  >
+                    <Download size={14} />
+                    <span>دانلود فایل supabase_schema.sql</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowSqlCodeModal(false)}
+                  className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+                >
+                  بستن
                 </button>
               </div>
             </motion.div>

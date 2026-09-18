@@ -1,12 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
-const SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://kozpynpjwqeynmhcbqpx.supabase.co';
-const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvenB5bnBqd3FleW5taGNicXB4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTU0MDUsImV4cCI6MjEwMjI3MTQwNX0.HqtPfjwQgLmW1lNdBm-8CERmHmx6HW2vtLIyXteHerw';
+const SUPABASE_URL = env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '';
 
 export const BUCKET_NAME = 'backups';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Safe initialization with dummy fallback to avoid crash when environment variables are not yet set
+export const supabase = createClient(
+  SUPABASE_URL || 'https://placeholder.supabase.co',
+  SUPABASE_ANON_KEY || 'placeholder'
+);
+
+export const isSupabaseConfigured = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_ANON_KEY &&
+  SUPABASE_URL !== 'https://placeholder.supabase.co' &&
+  SUPABASE_ANON_KEY !== 'placeholder'
+);
 
 /**
  * Maps mentor ID to Supabase Storage folder path
