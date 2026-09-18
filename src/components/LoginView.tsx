@@ -35,13 +35,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      const result = login(username, password);
+    try {
+      const result = await login(username, password);
       setIsLoading(false);
 
       if (result.success) {
@@ -49,7 +49,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       } else {
         setErrorMessage(result.message || (result as any).error || 'خطا در ورود به سامانه.');
       }
-    }, 350);
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage('خطا در برقراری ارتباط با سامانه ورود.');
+    }
   };
 
   const handleSelectQuickUser = (user: AppUser) => {

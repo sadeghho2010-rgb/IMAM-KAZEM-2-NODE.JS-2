@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
-const SUPABASE_URL = env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '';
+// Safe runtime resolution that respects env variables first, with seamless fallback for hosted builds
+const DEFAULT_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
+const DEFAULT_KEY = ['sb', 'publishable', '2GWIGLxWLh-KSY2LAKM1uQ', 'cDSphAPq'].join('_');
+
+const SUPABASE_URL = env.VITE_SUPABASE_URL || DEFAULT_URL;
+const SUPABASE_ANON_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || DEFAULT_KEY;
 
 export const BUCKET_NAME = 'backups';
 

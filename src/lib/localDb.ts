@@ -3,6 +3,24 @@
  * Uses IndexedDB with automatic schema migration and fallback.
  * All photos are stored directly in the local database as Base64 data URLs.
  */
+import { supabase, isSupabaseConfigured } from './supabase';
+
+function sanitizeForCloud(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(sanitizeForCloud);
+  const copy: any = {};
+  for (const key of Object.keys(data)) {
+    if (key === 'photo' || key === 'image' || key === 'avatar' || key === 'picture') {
+      continue;
+    }
+    const val = data[key];
+    if (typeof val === 'string' && val.startsWith('data:image/')) {
+      continue;
+    }
+    copy[key] = val;
+  }
+  return copy;
+}
 
 export interface BackupMetadata {
   version: string;
@@ -434,6 +452,7 @@ class LocalDatabase {
     if (!db.objectStoreNames.contains(resolvedCol)) {
       this.setLocalStorageDoc(resolvedCol, record);
       this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+      this.mirrorToSupabase('upsert', resolvedCol, id, record);
       this.notify();
       return id;
     }
@@ -446,12 +465,14 @@ class LocalDatabase {
 
         request.onsuccess = () => {
           this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+          this.mirrorToSupabase('upsert', resolvedCol, id, record);
           this.notify();
           resolve(id);
         };
         request.onerror = () => {
           this.setLocalStorageDoc(resolvedCol, record);
           this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+          this.mirrorToSupabase('upsert', resolvedCol, id, record);
           this.notify();
           resolve(id);
         };
@@ -459,6 +480,7 @@ class LocalDatabase {
         console.warn(`Object store ${resolvedCol} put error:`, e);
         this.setLocalStorageDoc(resolvedCol, record);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+        this.mirrorToSupabase('upsert', resolvedCol, id, record);
         this.notify();
         resolve(id);
       }
@@ -474,6 +496,7 @@ class LocalDatabase {
       const updatedLS = { ...existingLS, ...data, id };
       this.setLocalStorageDoc(resolvedCol, updatedLS);
       this.autoLogAudit(db, 'update', resolvedCol, id, existingLS, updatedLS);
+      this.mirrorToSupabase('upsert', resolvedCol, id, updatedLS);
       this.notify();
       return;
     }
@@ -493,24 +516,30 @@ class LocalDatabase {
           const putReq = store.put(updated);
           putReq.onsuccess = () => {
             this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
+            this.mirrorToSupabase('upsert', resolvedCol, id, updated);
             this.notify();
             resolve();
           };
           putReq.onerror = () => {
             this.setLocalStorageDoc(resolvedCol, updated);
             this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
+            this.mirrorToSupabase('upsert', resolvedCol, id, updated);
             this.notify();
             resolve();
           };
         };
         getReq.onerror = () => {
-          this.setLocalStorageDoc(resolvedCol, { ...data, id });
+          const fallbackDoc = { ...data, id };
+          this.setLocalStorageDoc(resolvedCol, fallbackDoc);
+          this.mirrorToSupabase('upsert', resolvedCol, id, fallbackDoc);
           this.notify();
           resolve();
         };
       } catch (e) {
         console.warn(`Object store ${resolvedCol} update error:`, e);
-        this.setLocalStorageDoc(resolvedCol, { ...data, id });
+        const fallbackDoc = { ...data, id };
+        this.setLocalStorageDoc(resolvedCol, fallbackDoc);
+        this.mirrorToSupabase('upsert', resolvedCol, id, fallbackDoc);
         this.notify();
         resolve();
       }
@@ -531,6 +560,7 @@ class LocalDatabase {
 
     if (!db.objectStoreNames.contains(resolvedCol)) {
       this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+      this.mirrorToSupabase('delete', resolvedCol, id);
       this.notify();
       return;
     }
@@ -543,20 +573,82 @@ class LocalDatabase {
 
         request.onsuccess = () => {
           this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+          this.mirrorToSupabase('delete', resolvedCol, id);
           this.notify();
           resolve();
         };
         request.onerror = () => {
           this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+          this.mirrorToSupabase('delete', resolvedCol, id);
           this.notify();
           resolve();
         };
       } catch (e) {
         console.warn(`Object store ${resolvedCol} delete error:`, e);
+        this.mirrorToSupabase('delete', resolvedCol, id);
         this.notify();
         resolve();
       }
     });
+  }
+
+  // Background Non-blocking Real-time Mirror to Supabase
+  private mirrorToSupabase(action: 'upsert' | 'delete', collectionName: string, id: string, data?: any) {
+    if (!isSupabaseConfigured || typeof window === 'undefined') return;
+    try {
+      if (action === 'delete') {
+        supabase.from('app_collections').delete().match({ collection_name: collectionName, id }).then();
+        const dedicated = [
+          'students', 'teachers', 'attendance', 'study_stats', 'programs',
+          'oral_exams', 'todos', 'workflow_items', 'lunch_periods',
+          'lunch_reservations', 'tuition_records', 'finance_expenses', 'audit_logs'
+        ];
+        if (dedicated.includes(collectionName)) {
+          supabase.from(collectionName).delete().eq('id', id).then();
+        }
+      } else {
+        const sanitized = sanitizeForCloud(data);
+        supabase.from('app_collections').upsert({
+          collection_name: collectionName,
+          id,
+          data: sanitized,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'collection_name,id' }).then();
+
+        if (collectionName === 'students') {
+          supabase.from('students').upsert({
+            id,
+            national_id: data.nationalId || data.national_id || '',
+            name: data.name || '',
+            grade: data.grade || '',
+            is_active: data.isActive !== false,
+            data: sanitized,
+            updated_at: new Date().toISOString()
+          }).then();
+        } else if (collectionName === 'teachers') {
+          supabase.from('teachers').upsert({
+            id,
+            name: data.name || '',
+            national_id: data.nationalId || '',
+            phone: data.phone || '',
+            data: sanitized,
+            updated_at: new Date().toISOString()
+          }).then();
+        } else if (collectionName === 'attendance') {
+          supabase.from('attendance').upsert({
+            id,
+            student_id: data.studentId || '',
+            date: data.date || '',
+            grade: data.grade || '',
+            status: data.status || '',
+            data: sanitized,
+            updated_at: new Date().toISOString()
+          }).then();
+        }
+      }
+    } catch (e) {
+      // Non-blocking background sync, safe to ignore
+    }
   }
 
   // Automatic Audit Logging Interceptor

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const ALL_SYSTEM_TABS = [
   { id: 'todos', label: 'پیگیری‌ها' },
@@ -283,7 +284,7 @@ export const DEFAULT_USERS: AppUser[] = [
 interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
-  login: (username: string, password: string) => { success: boolean; message?: string };
+  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   addUser: (user: Partial<AppUser>) => { success: boolean; error?: string };
   updateUser: (id: string, updates: Partial<AppUser>) => void;
@@ -360,15 +361,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
 
+  // Fetch users from Supabase Cloud on mount (synchronizes across hosts & devices)
+  useEffect(() => {
+    let isMounted = true;
+    const syncWithCloud = async () => {
+      if (!isSupabaseConfigured || typeof window === 'undefined') return;
+      try {
+        const { data, error } = await supabase
+          .from('app_collections')
+          .select('id, data')
+          .eq('collection_name', 'system_users');
+
+        if (!error && data) {
+          const cloudUsers: AppUser[] = [];
+          for (const row of data) {
+            if (row.id === 'all_users' && Array.isArray(row.data?.users)) {
+              cloudUsers.push(...row.data.users);
+            } else if (row.data && row.data.username) {
+              cloudUsers.push(row.data);
+            }
+          }
+
+          if (cloudUsers.length > 0 && isMounted) {
+            setUsers(prev => {
+              const map = new Map<string, AppUser>();
+              // Base defaults
+              DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
+              // Overlay current local users
+              prev.forEach(u => map.set(u.username.toUpperCase(), u));
+              // Overlay cloud users as source of truth
+              cloudUsers.forEach(u => {
+                if (u && u.username) {
+                  const uname = u.username.toUpperCase();
+                  map.set(uname, {
+                    ...u,
+                    username: uname,
+                    name: u.name || u.fullName || u.username,
+                    allowedTabs: Array.isArray(u.allowedTabs) 
+                      ? u.allowedTabs 
+                      : (Array.isArray((u as any).allowedModules) ? (u as any).allowedModules : ['todos', 'students'])
+                  });
+                }
+              });
+
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+              } catch (e) {}
+              return merged;
+            });
+          } else if (data.length === 0) {
+            // Seed initial default users to Supabase if completely empty
+            for (const defUser of DEFAULT_USERS) {
+              supabase.from('app_collections').upsert({
+                collection_name: 'system_users',
+                id: defUser.username.toUpperCase(),
+                data: defUser,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'collection_name,id' }).then();
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Initial cloud users sync error:', e);
+      }
+    };
+
+    syncWithCloud();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Save to local storage and sync batch backup
   useEffect(() => {
     try {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+      if (isSupabaseConfigured && typeof window !== 'undefined') {
+        supabase.from('app_collections').upsert({
+          collection_name: 'system_users',
+          id: 'all_users',
+          data: { users },
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'collection_name,id' }).then();
+      }
     } catch (e) {
       console.error('Error saving users:', e);
     }
   }, [users]);
 
-  const login = (usernameInput: string, passwordInput: string): { success: boolean; message?: string } => {
+  const login = async (usernameInput: string, passwordInput: string): Promise<{ success: boolean; message?: string }> => {
     const cleanUser = usernameInput.trim().toUpperCase();
     const cleanPass = passwordInput.trim();
 
@@ -376,7 +456,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'لطفاً نام کاربری و رمز عبور را وارد نمایید.' };
     }
 
-    const matched = users.find(u => u.username.toUpperCase() === cleanUser);
+    let matched = users.find(u => u.username.toUpperCase() === cleanUser);
+
+    // If not found in memory, query Supabase directly in real-time (cross-device verification)
+    if (!matched && isSupabaseConfigured && typeof window !== 'undefined') {
+      try {
+        const { data: row } = await supabase
+          .from('app_collections')
+          .select('data')
+          .eq('collection_name', 'system_users')
+          .eq('id', cleanUser)
+          .maybeSingle();
+
+        if (row?.data && row.data.username) {
+          matched = row.data;
+          setUsers(prev => {
+            const next = [...prev.filter(u => u.username.toUpperCase() !== cleanUser), matched!];
+            try { localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next)); } catch (e) {}
+            return next;
+          });
+        }
+      } catch (e) {
+        console.warn('Real-time cloud user lookup error:', e);
+      }
+    }
+
     if (!matched) {
       return { success: false, message: 'نام کاربری وارد شده در سامانه یافت نشد.' };
     }
@@ -451,10 +555,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: newUser.password || '8411924',
       name: newUser.name || newUser.fullName || username,
       fullName: newUser.fullName || newUser.name || username,
-      level: newUser.level || 2,
-      role: newUser.role || 'custom',
-      roleTitle: newUser.roleTitle || 'کاربر سفارشی',
-      scope: newUser.scope || 'all',
+      level: newUser.level || 3,
+      role: newUser.role || 'student',
+      roleTitle: newUser.roleTitle || (newUser.level === 3 ? 'طلبه' : 'کاربر سفارشی'),
+      scope: newUser.scope || (newUser.level === 3 ? 'self' : 'all'),
       gradeLabel: newUser.gradeLabel || '',
       mentorId: newUser.mentorId || 'shahpoori',
       linkedStudentId: newUser.linkedStudentId || newUser.studentId,
@@ -467,32 +571,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isActive: newUser.isActive !== undefined ? newUser.isActive : true,
       allowedTabs: newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : ['todos', 'students']),
       allowedModules: newUser.allowedModules,
-      avatarBg: newUser.avatarBg || 'bg-indigo-600',
+      avatarBg: newUser.avatarBg || (newUser.level === 1 ? 'bg-indigo-700' : newUser.level === 2 ? 'bg-amber-600' : 'bg-emerald-600'),
       createdAt: newUser.createdAt || new Date().toISOString(),
     };
 
-    setUsers(prev => [...prev.filter(u => u.username.toUpperCase() !== username), user]);
+    setUsers(prev => {
+      const updated = [...prev.filter(u => u.username.toUpperCase() !== username), user];
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    // Save individual user record in Supabase IMMEDIATELY!
+    if (isSupabaseConfigured && typeof window !== 'undefined') {
+      supabase.from('app_collections').upsert({
+        collection_name: 'system_users',
+        id: username,
+        data: user,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'collection_name,id' }).then(({ error }) => {
+        if (error) {
+          console.error('Error saving user to Supabase:', error);
+        }
+      });
+    }
+
     return { success: true };
   };
 
   const updateUser = (id: string, updates: Partial<AppUser>) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === id) {
-        const updated = { ...u, ...updates };
-        if (currentUser && currentUser.id === id) {
-          setCurrentUser(updated);
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
+    setUsers(prev => {
+      let targetUser: AppUser | undefined;
+      const updatedList = prev.map(u => {
+        if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
+          const updated = { ...u, ...updates };
+          targetUser = updated;
+          if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
+            setCurrentUser(updated);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
+          }
+          return updated;
         }
-        return updated;
+        return u;
+      });
+
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
+      } catch (e) {}
+
+      if (targetUser && isSupabaseConfigured && typeof window !== 'undefined') {
+        supabase.from('app_collections').upsert({
+          collection_name: 'system_users',
+          id: targetUser.username.toUpperCase(),
+          data: targetUser,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'collection_name,id' }).then();
       }
-      return u;
-    }));
+
+      return updatedList;
+    });
   };
 
   const deleteUser = (id: string) => {
-    setUsers(prev => prev.filter(u => u.id !== id));
-    if (currentUser && currentUser.id === id) {
+    const target = users.find(u => u.id === id || u.username.toUpperCase() === id.toUpperCase());
+    const usernameToDelete = target ? target.username.toUpperCase() : id.toUpperCase();
+
+    setUsers(prev => {
+      const filtered = prev.filter(u => u.id !== id && u.username.toUpperCase() !== id.toUpperCase());
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(filtered));
+      } catch (e) {}
+      return filtered;
+    });
+
+    if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
       logout();
+    }
+
+    if (isSupabaseConfigured && typeof window !== 'undefined') {
+      supabase.from('app_collections').delete().match({
+        collection_name: 'system_users',
+        id: usernameToDelete
+      }).then();
     }
   };
 

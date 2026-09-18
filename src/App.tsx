@@ -37,7 +37,6 @@ import ClaimsManagement from './components/finance/ClaimsManagement';
 import FundAndActiveLoans from './components/finance/FundAndActiveLoans';
 import ExpensesAndReports from './components/finance/ExpensesAndReports';
 import { ConsultationAdvisor } from './components/ConsultationAdvisor';
-import MentorSelectorModal from './components/MentorSelectorModal';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
 import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
@@ -315,9 +314,6 @@ function AppContent() {
           </AnimatePresence>
         </main>
       </div>
-
-      {/* Mentor/User Selector Modal */}
-      <MentorSelectorModal />
     </div>
   );
 }

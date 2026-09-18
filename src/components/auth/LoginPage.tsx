@@ -31,29 +31,34 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activePresetTab, setActivePresetTab] = useState<1 | 2 | 3>(1);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      const res = login(username, password);
+    try {
+      const res = await login(username, password);
       if (!res.success) {
         setError(res.message || 'خطا در ورود به سامانه');
         setIsLoading(false);
       }
-    }, 300);
+    } catch (err: any) {
+      setError('خطا در برقراری ارتباط با سامانه ورود.');
+      setIsLoading(false);
+    }
   };
 
-  const handleQuickLogin = (user: AppUser) => {
+  const handleQuickLogin = async (user: AppUser) => {
     setUsername(user.username);
     setPassword(user.password || '8411924');
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
-      login(user.username, user.password || '8411924');
-    }, 250);
+    try {
+      await login(user.username, user.password || '8411924');
+    } catch (err) {
+      setIsLoading(false);
+    }
   };
 
   const level1Users = (users.length ? users : DEFAULT_USERS).filter(u => u.level === 1);

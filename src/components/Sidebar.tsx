@@ -91,7 +91,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
-  const { currentMentor, setIsMentorModalOpen } = useMentor();
+  const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly } = useAuth();
 
   // Filter items based on user's authorized modules
@@ -240,25 +240,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-              {currentUser.level <= 2 && (
-                <button
-                  onClick={() => setIsMentorModalOpen(true)}
-                  className="flex-1 flex items-center justify-center gap-1 py-1 px-1.5 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg text-[10px] font-bold text-slate-600 transition-all border border-slate-200/70"
-                  title="تغییر محیط استاد / پایه"
-                >
-                  <RefreshCw size={11} className="text-slate-400" />
-                  <span>تغییر محیط</span>
-                </button>
-              )}
-
+            <div className="pt-1 border-t border-slate-100">
               <button
                 onClick={logout}
-                className="flex items-center justify-center gap-1 py-1 px-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold transition-all border border-rose-200/60 cursor-pointer"
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold transition-all border border-rose-200/60 cursor-pointer"
                 title="خروج از حساب کاربری"
               >
-                <LogOut size={11} />
-                <span>خروج</span>
+                <LogOut size={12} />
+                <span>خروج از حساب کاربری</span>
               </button>
             </div>
           </div>
