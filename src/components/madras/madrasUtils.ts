@@ -119,13 +119,33 @@ export const DEFAULT_MADRAS_ROOMS: MadrasRoom[] = [
   },
 ];
 
+export function toEnglishDigits(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
+    .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+}
+
+export function cleanPersianText(str: string): string {
+  if (!str) return '';
+  return toEnglishDigits(str)
+    .replace(/[\u064B-\u065F\u0670]/g, '') // remove Arabic diacritics / tashkeel (fatha, damma, kasra, etc.)
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/\u200c/g, '') // remove half-space
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function normalizeDay(dayStr: string): string {
-  return (dayStr || '').replace(/\s+/g, '').replace(/‌/g, '');
+  return cleanPersianText(dayStr).replace(/\s+/g, '');
 }
 
 export function timeToMinutes(timeStr: string): number | null {
   if (!timeStr) return null;
-  const match = timeStr.match(/(\d{1,2})[:：](\d{1,2})/);
+  const eng = toEnglishDigits(timeStr);
+  const match = eng.match(/(\d{1,2})[:：](\d{1,2})/);
   if (!match) return null;
   const h = parseInt(match[1], 10);
   const m = parseInt(match[2], 10);
@@ -136,12 +156,28 @@ export function timeToMinutes(timeStr: string): number | null {
 export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
   const pRoom = (prog.madrasRoom || prog.classroom || '').trim();
   if (!pRoom) return false;
-  if (pRoom === room.name || pRoom === room.code) return true;
-  if (room.name && pRoom.includes(room.name)) return true;
-  if (room.code && pRoom.includes(room.code)) return true;
 
-  const roomNameClean = room.name.replace(/\(.*?\)/g, '').trim();
-  if (roomNameClean && pRoom.includes(roomNameClean)) return true;
+  const cleanPRoom = cleanPersianText(pRoom);
+  const cleanRoomName = cleanPersianText(room.name);
+  const cleanRoomCode = cleanPersianText(room.code || '');
+
+  if (cleanPRoom === cleanRoomName || (cleanRoomCode && cleanPRoom === cleanRoomCode)) return true;
+  if (cleanPRoom.includes(cleanRoomName) || cleanRoomName.includes(cleanPRoom)) return true;
+  if (cleanRoomCode && (cleanPRoom.includes(cleanRoomCode) || cleanRoomCode.includes(cleanPRoom))) return true;
+
+  // Compare without parentheses e.g. "مدرس ۱"
+  const roomNameNoParen = cleanPersianText(room.name.replace(/\(.*?\)/g, ''));
+  if (roomNameNoParen && (cleanPRoom.includes(roomNameNoParen) || roomNameNoParen.includes(cleanPRoom))) return true;
+
+  // Check matching room number e.g. "مدرس 1" vs "مدرس ۱"
+  const numInPRoom = cleanPRoom.match(/\d+/);
+  const numInRoom = cleanRoomName.match(/\d+/);
+  if (numInPRoom && numInRoom && numInPRoom[0] === numInRoom[0]) {
+    if (cleanPRoom.includes('مدرس') || cleanPRoom.includes('کلاس') || cleanPRoom.includes('م-')) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -153,14 +189,15 @@ export function isDayMatch(program: Program, day: string): boolean {
 }
 
 export function isProgramInTimeRange(prog: Program, startMinutes: number, endMinutes: number): boolean {
-  const timeStr = prog.time || `${prog.startTime || ''} - ${prog.endTime || ''}`;
-  if (!timeStr.trim()) return false;
+  const rawTimeStr = prog.time || `${prog.startTime || ''} - ${prog.endTime || ''}`;
+  if (!rawTimeStr.trim()) return false;
 
-  const times = timeStr.match(/\d{1,2}[:：](\d{1,2})/g);
+  const engTime = toEnglishDigits(rawTimeStr);
+  const times = engTime.match(/\d{1,2}[:：]\d{1,2}/g);
   if (!times || times.length === 0) {
     // If it has a slot name like "زنگ اول"
     for (const slot of MADRAS_TIME_SLOTS_7_TO_17) {
-      if (timeStr.includes(slot.label) || timeStr.includes(slot.periodName)) {
+      if (rawTimeStr.includes(slot.label) || rawTimeStr.includes(slot.periodName)) {
         const sM = timeToMinutes(slot.startTime) || 0;
         const eM = timeToMinutes(slot.endTime) || 0;
         return sM < endMinutes && startMinutes < eM;
@@ -174,7 +211,7 @@ export function isProgramInTimeRange(prog: Program, startMinutes: number, endMin
   const pEnd = times.length > 1 ? timeToMinutes(times[1]) : pStart + 60;
   if (pEnd === null) return false;
 
-  // Strict overlap within 7 to 17
+  // Overlap condition: class start is before slot end, and class end is after slot start
   return pStart < endMinutes && startMinutes < pEnd;
 }
 

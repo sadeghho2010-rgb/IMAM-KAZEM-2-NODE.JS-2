@@ -136,6 +136,10 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
   // Load all initial data
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   const loadData = async () => {

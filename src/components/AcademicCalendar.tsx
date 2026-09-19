@@ -323,6 +323,10 @@ export default function AcademicCalendar() {
   // Load Initial Data
   useEffect(() => {
     loadAllData();
+    const unsub = localDb.subscribe(() => {
+      loadAllData();
+    });
+    return () => unsub();
   }, []);
 
   const loadAllData = async () => {

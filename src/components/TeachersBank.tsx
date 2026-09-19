@@ -130,6 +130,10 @@ export default function TeachersBank() {
 
   useEffect(() => {
     fetchTeachers();
+    const unsub = localDb.subscribe(() => {
+      fetchTeachers();
+    });
+    return () => unsub();
   }, []);
 
   const openAddModal = () => {

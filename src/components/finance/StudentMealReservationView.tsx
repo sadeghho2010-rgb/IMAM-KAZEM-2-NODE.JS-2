@@ -142,6 +142,10 @@ export default function StudentMealReservationView() {
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, [currentUser]);
 
   // Handle period change

@@ -441,6 +441,35 @@ export default function Programs() {
     setShowRepModal(false);
   };
 
+  const syncTeacherWithBank = async (teacherName?: string, courseTitle?: string) => {
+    if (!teacherName || !teacherName.trim() || teacherName === '__OTHER__') return;
+    const rawName = teacherName.trim();
+    const cleanName = rawName.replace(/^(استاد|حجت الاسلام|دکتر)\s+/, '').trim();
+
+    try {
+      const existing = await localDb.getDocs<Teacher>('teachers');
+      const match = existing.some(t => {
+        const tFull = (t.fullName || '').trim();
+        const tName = (t.name || '').trim();
+        return tFull === rawName || tFull === cleanName || tName === rawName || tName === cleanName;
+      });
+
+      if (!match) {
+        await localDb.addDoc('teachers', {
+          name: rawName,
+          fullName: rawName,
+          priority: 2,
+          isActive: true,
+          categories: courseTitle ? [courseTitle] : ['دروس حوزوی'],
+          classes: courseTitle ? [courseTitle] : [],
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.warn('Error auto-syncing teacher with bank:', e);
+    }
+  };
+
   const handleAddProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     const title = (newProgram.title || '').trim();
@@ -453,6 +482,11 @@ export default function Programs() {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
       const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
+
+      // Auto-register teacher in bank if assigned
+      if (newProgram.teacher) {
+        await syncTeacherWithBank(newProgram.teacher, title);
+      }
 
       await localDb.addDoc('programs', {
         ...newProgram,
@@ -502,6 +536,11 @@ export default function Programs() {
     if (!editingProgram) return;
     try {
       const dayStr = editModalDays.join(' ، ');
+
+      if (editingProgram.teacher) {
+        await syncTeacherWithBank(editingProgram.teacher, editingProgram.title);
+      }
+
       await localDb.updateDoc('programs', editingProgram.id, {
         title: editingProgram.title,
         type: editingProgram.type,

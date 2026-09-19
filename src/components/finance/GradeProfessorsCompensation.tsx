@@ -204,6 +204,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   // Step 1: Trigger Calculation Date Range Modal

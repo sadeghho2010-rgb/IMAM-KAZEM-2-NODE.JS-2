@@ -115,6 +115,10 @@ export default function CounselingClasses() {
 
   useEffect(() => {
     fetchData();
+    const unsub = localDb.subscribe(() => {
+      fetchData();
+    });
+    return () => unsub();
   }, []);
 
   // Filtered Students based on User Grade Scope (for grade mentors)

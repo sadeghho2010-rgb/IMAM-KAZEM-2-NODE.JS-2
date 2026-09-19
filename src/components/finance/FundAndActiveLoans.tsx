@@ -255,6 +255,10 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   // Filtered loans

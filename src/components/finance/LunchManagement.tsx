@@ -333,6 +333,10 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   // Active Selected Period

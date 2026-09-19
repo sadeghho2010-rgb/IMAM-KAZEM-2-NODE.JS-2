@@ -287,6 +287,10 @@ export default function ExpensesAndReports({ onNavigateTab }: ExpensesAndReports
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   // Compute spent and remaining per budget row

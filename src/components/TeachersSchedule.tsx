@@ -94,9 +94,15 @@ function matchTeacherWithBank(teacherName: string, bankTeachers: Teacher[]): Tea
   if (!teacherName) return undefined;
   const clean = (s: string) => 
     s.replace(/^استاد\s+/, '')
-     .replace(/^حجت\s*الاسلام\s+(و\s*المسلمین\s+)?/, '')
+     .replace(/^حجت\s*الاسلام(\s+و\s*المسلمین)?\s+/, '')
+     .replace(/^شیخ\s+/, '')
      .replace(/^دکتر\s+/, '')
      .replace(/^آیت\s*الله\s+/, '')
+     .replace(/[\u064B-\u065F\u0670]/g, '') // remove Arabic diacritics
+     .replace(/[ي]/g, 'ی')
+     .replace(/[ك]/g, 'ک')
+     .replace(/\u200c/g, '')
+     .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
      .replace(/\s+/g, ' ')
      .trim()
      .toLowerCase();
@@ -106,14 +112,14 @@ function matchTeacherWithBank(teacherName: string, bankTeachers: Teacher[]): Tea
 
   // 1. Exact match on fullName or cleaned fullName
   const direct = bankTeachers.find(t => {
-    const tClean = clean(t.fullName || '');
+    const tClean = clean(t.fullName || t.name || '');
     return tClean === target || (t.fullName && t.fullName.trim().toLowerCase() === teacherName.trim().toLowerCase());
   });
   if (direct) return direct;
 
   // 2. Substring matching for compound names
   return bankTeachers.find(t => {
-    const tClean = clean(t.fullName || '');
+    const tClean = clean(t.fullName || t.name || '');
     if (tClean.length < 3) return false;
     return target.includes(tClean) || tClean.includes(target);
   });
@@ -302,6 +308,57 @@ export default function TeachersSchedule() {
         });
       }
     });
+
+    // Also capture any teachers present in scheduled items who may not yet be in the bank
+    const matchedItemIds = new Set<string>();
+    result.forEach(r => r.items.forEach(it => matchedItemIds.add(it.id)));
+
+    const unmatchedItems = allScheduledItems.filter(it => !matchedItemIds.has(it.id));
+    if (unmatchedItems.length > 0) {
+      const unmatchedByTeacher = new Map<string, typeof unmatchedItems>();
+      unmatchedItems.forEach(it => {
+        const rawName = (it.teacherName || '').trim();
+        if (!rawName || rawName === 'نامشخص') return;
+        if (!unmatchedByTeacher.has(rawName)) {
+          unmatchedByTeacher.set(rawName, []);
+        }
+        unmatchedByTeacher.get(rawName)!.push(it);
+      });
+
+      unmatchedByTeacher.forEach((itemsList, teacherName) => {
+        const daysSet = new Set<string>();
+        itemsList.forEach(it => it.days.forEach(d => daysSet.add(d)));
+        const activeDays = WEEK_DAYS.filter(d => daysSet.has(d));
+
+        const gradesSet = new Set<string>();
+        itemsList.forEach(it => {
+          if (it.grade && it.grade !== 'نامشخص') gradesSet.add(it.grade);
+        });
+
+        const roomsSet = new Set<string>();
+        itemsList.forEach(it => {
+          if (it.madrasRoom && it.madrasRoom !== 'نامشخص') roomsSet.add(it.madrasRoom);
+        });
+
+        result.push({
+          id: `unregistered_${teacherName}`,
+          name: teacherName,
+          teacherObj: {
+            id: `unregistered_${teacherName}`,
+            fullName: teacherName,
+            name: teacherName,
+            priority: 2,
+            isActive: true
+          } as Teacher,
+          items: itemsList,
+          classesCount: itemsList.length,
+          activeDays,
+          grades: Array.from(gradesSet),
+          rooms: Array.from(roomsSet),
+          totalHoursApprox: Number((itemsList.length * 1.5).toFixed(1))
+        });
+      });
+    }
 
     // Sort by priority (1 first) then alphabetically
     return result.sort((a, b) => {

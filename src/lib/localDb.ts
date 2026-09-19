@@ -127,7 +127,7 @@ export interface StudentBackupPackage {
 }
 
 const DB_NAME = 'TOLAB_OFFLINE_LOCAL_DB';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 export const COLLECTIONS = [
   'students',
@@ -156,6 +156,7 @@ export const COLLECTIONS = [
   'academic_sub_periods',
   'academic_weekly_programs',
   'teachers',
+  'teacher_schedules',
   'classrooms',
   'workflow_items',
   'workflow_settings',
@@ -171,8 +172,34 @@ export const COLLECTIONS = [
   'assigned_todos',
   'user_todo_categories',
   'finance_expenses',
+  'finance_operational_expenses',
   'finance_loans',
   'finance_staff',
+  'finance_meal_holidays',
+  'finance_meal_periods',
+  'finance_meal_person_categories',
+  'finance_student_meal_reservations',
+  'finance_grade_mentors',
+  'finance_grade_mentor_periods',
+  'finance_destination_accounts',
+  'finance_student_claims',
+  'finance_claim_categories',
+  'finance_budget_rows',
+  'finance_fund_contributions',
+  'finance_lunch_students',
+  'finance_teachers_periods',
+  'meal_reservation_periods',
+  'meal_reservations',
+  'lunch_reservations',
+  'drivers',
+  'staff',
+  'education_financial_reports',
+  'teacher_transport_routines',
+  'teacher_transport_trips',
+  'custom_student_schedules',
+  'destination_accounts',
+  'student_claims',
+  'users',
   'attendance_settings'
 ] as const;
 
@@ -269,6 +296,14 @@ class LocalDatabase {
 
   private resolveCollection(name: string): string {
     if (name === 'research_records') return 'research';
+    if (name === 'student_claims') return 'finance_student_claims';
+    if (name === 'destination_accounts') return 'finance_destination_accounts';
+    if (name === 'loans') return 'finance_loans';
+    if (name === 'fund_contributions') return 'finance_fund_contributions';
+    if (name === 'lunch_students') return 'finance_lunch_students';
+    if (name === 'lunch_periods' || name === 'meal_reservation_periods') return 'finance_meal_periods';
+    if (name === 'lunch_reservations' || name === 'meal_reservations') return 'finance_student_meal_reservations';
+    if (name === 'operational_expenses' || name === 'expenses') return 'finance_operational_expenses';
     return name;
   }
 
@@ -359,41 +394,167 @@ class LocalDatabase {
     }
   }
 
+  // Track synced collections in current session
+  private syncedCollections = new Set<string>();
+
+  // Fetch and sync a collection from Supabase Cloud
+  async syncCollectionFromCloud(collectionName: CollectionName): Promise<any[]> {
+    if (!isSupabaseConfigured || typeof window === 'undefined') return [];
+    const resolvedCol = this.resolveCollection(collectionName as string);
+    try {
+      const { data, error } = await supabase
+        .from('app_collections')
+        .select('id, data')
+        .eq('collection_name', resolvedCol);
+
+      if (error) {
+        console.warn(`Error syncing ${resolvedCol} from Supabase:`, error);
+        return [];
+      }
+
+      if (data && Array.isArray(data)) {
+        const cloudDocs = data
+          .map(row => ({ ...row.data, id: row.id || row.data?.id }))
+          .filter(d => d && d.id);
+
+        if (cloudDocs.length > 0) {
+          const db = await this.getDb();
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            const tx = db.transaction(resolvedCol, 'readwrite');
+            const store = tx.objectStore(resolvedCol);
+            for (const doc of cloudDocs) {
+              store.put(doc);
+            }
+          }
+
+          // Also update localStorage fallback
+          const key = `fallback_idb_${resolvedCol}`;
+          const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
+          const map = new Map<string, any>();
+          currentLS.forEach(item => map.set(item.id, item));
+          cloudDocs.forEach(item => map.set(item.id, item));
+          try {
+            localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+          } catch (e) {}
+
+          this.syncedCollections.add(resolvedCol);
+          this.notify();
+          return cloudDocs;
+        }
+      }
+      this.syncedCollections.add(resolvedCol);
+    } catch (e) {
+      console.warn(`Exception syncing ${resolvedCol} from cloud:`, e);
+    }
+    return [];
+  }
+
+  // Realtime Supabase change listener to synchronize changes between devices instantly
+  private realtimeChannel: any = null;
+
+  public setupRealtimeSync() {
+    if (!isSupabaseConfigured || typeof window === 'undefined' || this.realtimeChannel) return;
+
+    try {
+      this.realtimeChannel = supabase
+        .channel('app_collections_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'app_collections' },
+          async (payload: any) => {
+            const { eventType, new: newRecord, old: oldRecord } = payload;
+            const collectionName = newRecord?.collection_name || oldRecord?.collection_name;
+            const id = newRecord?.id || oldRecord?.id;
+            if (!collectionName || !id) return;
+
+            const resolvedCol = this.resolveCollection(collectionName);
+            const db = await this.getDb();
+
+            if (eventType === 'DELETE') {
+              if (db.objectStoreNames.contains(resolvedCol)) {
+                try {
+                  const tx = db.transaction(resolvedCol, 'readwrite');
+                  tx.objectStore(resolvedCol).delete(id);
+                } catch (e) {}
+              }
+              const currentLS = this.getLocalStorageDocs(resolvedCol);
+              const filtered = currentLS.filter((x: any) => x.id !== id);
+              try {
+                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(filtered));
+              } catch (e) {}
+            } else if (eventType === 'INSERT' || eventType === 'UPDATE') {
+              const doc = { ...(newRecord.data || {}), id };
+              if (db.objectStoreNames.contains(resolvedCol)) {
+                try {
+                  const tx = db.transaction(resolvedCol, 'readwrite');
+                  tx.objectStore(resolvedCol).put(doc);
+                } catch (e) {}
+              }
+              const currentLS = this.getLocalStorageDocs(resolvedCol);
+              const map = new Map<string, any>();
+              currentLS.forEach((x: any) => map.set(x.id, x));
+              map.set(id, doc);
+              try {
+                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(Array.from(map.values())));
+              } catch (e) {}
+            }
+
+            this.notify();
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      console.warn('Realtime channel error:', e);
+    }
+  }
+
   // Get all documents from a collection
   async getDocs<T = any>(collectionName: CollectionName): Promise<T[]> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
+
+    let localItems: T[] = [];
     if (!db.objectStoreNames.contains(resolvedCol)) {
-      return this.getLocalStorageDocs<T>(resolvedCol);
+      localItems = this.getLocalStorageDocs<T>(resolvedCol);
+    } else {
+      localItems = await new Promise((resolve) => {
+        try {
+          const transaction = db.transaction(resolvedCol, 'readonly');
+          const store = transaction.objectStore(resolvedCol);
+          const request = store.getAll();
+
+          request.onsuccess = () => {
+            const idbResult = (request.result || []) as T[];
+            const lsResult = this.getLocalStorageDocs<T>(resolvedCol);
+            const idSet = new Set((idbResult as any[]).map(x => x.id));
+            const combined = [...idbResult];
+            for (const item of lsResult as any[]) {
+              if (!idSet.has(item.id)) {
+                combined.push(item);
+              }
+            }
+            resolve(combined as T[]);
+          };
+          request.onerror = () => {
+            resolve(this.getLocalStorageDocs<T>(resolvedCol));
+          };
+        } catch (e) {
+          resolve(this.getLocalStorageDocs<T>(resolvedCol));
+        }
+      });
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        const transaction = db.transaction(resolvedCol, 'readonly');
-        const store = transaction.objectStore(resolvedCol);
-        const request = store.getAll();
-
-        request.onsuccess = () => {
-          const idbResult = (request.result || []) as T[];
-          const lsResult = this.getLocalStorageDocs<T>(resolvedCol);
-          // Combine IDB result with any LS fallback docs
-          const idSet = new Set((idbResult as any[]).map(x => x.id));
-          const combined = [...idbResult];
-          for (const item of lsResult as any[]) {
-            if (!idSet.has(item.id)) {
-              combined.push(item);
-            }
-          }
-          resolve(combined as T[]);
-        };
-        request.onerror = () => {
-          reject(request.error);
-        };
-      } catch (e) {
-        console.warn(`Object store ${resolvedCol} error:`, e);
-        resolve(this.getLocalStorageDocs<T>(resolvedCol));
+    // If collection hasn't been synced from cloud yet in this session, await cloud sync!
+    if (!this.syncedCollections.has(resolvedCol) && isSupabaseConfigured) {
+      const cloudDocs = await this.syncCollectionFromCloud(resolvedCol);
+      if (cloudDocs && cloudDocs.length > 0) {
+        const cloudIdSet = new Set(cloudDocs.map(c => c.id));
+        const unSyncedLocal = localItems.filter(l => !cloudIdSet.has((l as any).id));
+        return [...cloudDocs, ...unSyncedLocal] as T[];
       }
-    });
+    }
+
+    return localItems;
   }
 
   // Get single document by ID
@@ -597,9 +758,15 @@ class LocalDatabase {
     if (!isSupabaseConfigured || typeof window === 'undefined') return;
     try {
       if (action === 'delete') {
-        supabase.from('app_collections').delete().match({ collection_name: collectionName, id }).then();
+        supabase
+          .from('app_collections')
+          .delete()
+          .match({ collection_name: collectionName, id })
+          .then(({ error }) => {
+            if (error) console.error(`Error deleting ${collectionName}/${id} in Supabase:`, error);
+          });
         const dedicated = [
-          'students', 'teachers', 'attendance', 'study_stats', 'programs',
+          'students', 'teachers', 'attendance', 'study_stats', 'programs', 'classrooms',
           'oral_exams', 'todos', 'workflow_items', 'lunch_periods',
           'lunch_reservations', 'tuition_records', 'finance_expenses', 'audit_logs'
         ];
@@ -613,7 +780,11 @@ class LocalDatabase {
           id,
           data: sanitized,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }).then();
+        }, { onConflict: 'collection_name,id' }).then(({ error }) => {
+          if (error) {
+            console.error(`Error upserting ${collectionName}/${id} into Supabase app_collections:`, error);
+          }
+        });
 
         if (collectionName === 'students') {
           supabase.from('students').upsert({
@@ -628,9 +799,9 @@ class LocalDatabase {
         } else if (collectionName === 'teachers') {
           supabase.from('teachers').upsert({
             id,
-            name: data.name || '',
+            name: data.name || data.fullName || '',
             national_id: data.nationalId || '',
-            phone: data.phone || '',
+            phone: data.phone || data.phoneNumber || '',
             data: sanitized,
             updated_at: new Date().toISOString()
           }).then();
@@ -644,10 +815,27 @@ class LocalDatabase {
             data: sanitized,
             updated_at: new Date().toISOString()
           }).then();
+        } else if (collectionName === 'classrooms') {
+          supabase.from('classrooms').upsert({
+            id,
+            name: data.name || '',
+            code: data.code || '',
+            data: sanitized,
+            updated_at: new Date().toISOString()
+          }).then();
+        } else if (collectionName === 'programs') {
+          supabase.from('programs').upsert({
+            id,
+            title: data.title || '',
+            teacher: data.teacher || '',
+            classroom: data.classroom || data.madrasRoom || '',
+            data: sanitized,
+            updated_at: new Date().toISOString()
+          }).then();
         }
       }
     } catch (e) {
-      // Non-blocking background sync, safe to ignore
+      console.warn(`Exception during mirrorToSupabase for ${collectionName}:`, e);
     }
   }
 
@@ -913,6 +1101,7 @@ class LocalDatabase {
           record.id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         }
         store.put(record);
+        this.mirrorToSupabase('upsert', resolvedCol, record.id, record);
       }
 
       transaction.oncomplete = () => {
@@ -2439,9 +2628,87 @@ class LocalDatabase {
       console.warn('Seed data check error:', e);
     }
   }
+
+  // Proactively fetch all major collections from Supabase on application launch
+  async initCloudSync(): Promise<void> {
+    if (!isSupabaseConfigured || typeof window === 'undefined') return;
+    const coreCollections: CollectionName[] = [
+      'classrooms',
+      'teachers',
+      'teacher_schedules',
+      'programs',
+      'students',
+      'enrollments',
+      'attendance',
+      'attendance_settings',
+      'study_stats',
+      'study_periods',
+      'periodic_study_logs',
+      'discussion_groups',
+      'research',
+      'research_history',
+      'research_skills_def',
+      'student_research_skills',
+      'conversation_archives',
+      'student_comments',
+      'oral_exams',
+      'counseling_session_grades',
+      'academic_calendar_periods',
+      'academic_holidays',
+      'academic_holiday_types',
+      'academic_sub_periods',
+      'academic_weekly_programs',
+      'tuition_settings',
+      'tuition_periods',
+      'tuition_records',
+      'student_financial_profiles',
+      'finance_loans',
+      'finance_fund_contributions',
+      'finance_student_claims',
+      'finance_claim_categories',
+      'finance_destination_accounts',
+      'finance_budget_rows',
+      'finance_operational_expenses',
+      'finance_expenses',
+      'finance_meal_holidays',
+      'finance_meal_periods',
+      'finance_meal_person_categories',
+      'finance_student_meal_reservations',
+      'finance_teachers_periods',
+      'finance_grade_mentor_periods',
+      'finance_grade_mentors',
+      'drivers',
+      'staff',
+      'teacher_transport_routines',
+      'teacher_transport_trips',
+      'todos',
+      'personal_todos',
+      'assigned_todos',
+      'user_todo_categories',
+      'workflow_items',
+      'workflow_settings',
+      'settings'
+    ];
+    try {
+      await Promise.allSettled(coreCollections.map(col => this.syncCollectionFromCloud(col)));
+    } catch (e) {
+      console.warn('Error during initCloudSync:', e);
+    }
+  }
 }
 
 export const localDb = new LocalDatabase();
+
+if (typeof window !== 'undefined' && isSupabaseConfigured) {
+  setTimeout(() => {
+    localDb.setupRealtimeSync();
+    localDb.initCloudSync();
+  }, 100);
+
+  window.addEventListener('focus', () => {
+    localDb.initCloudSync();
+  });
+}
 
 export async function getCollection<T = any>(collectionName: CollectionName): Promise<T[]> {
   return localDb.getDocs<T>(collectionName);

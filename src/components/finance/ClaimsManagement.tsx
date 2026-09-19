@@ -424,6 +424,10 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
 
   useEffect(() => {
     loadData();
+    const unsub = localDb.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
   }, []);
 
   // Filtered Claims for Current Active Group

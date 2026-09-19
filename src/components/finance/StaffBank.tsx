@@ -138,6 +138,10 @@ export default function StaffBank() {
 
   useEffect(() => {
     loadStaffData();
+    const unsub = localDb.subscribe(() => {
+      loadStaffData();
+    });
+    return () => unsub();
   }, []);
 
   const openAddModal = () => {

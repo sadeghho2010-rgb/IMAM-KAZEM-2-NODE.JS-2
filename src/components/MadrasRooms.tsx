@@ -130,6 +130,10 @@ export default function MadrasRooms() {
 
   useEffect(() => {
     fetchData();
+    const unsub = localDb.subscribe(() => {
+      fetchData();
+    });
+    return () => unsub();
   }, []);
 
   // Extract unique floors for filter dropdown
