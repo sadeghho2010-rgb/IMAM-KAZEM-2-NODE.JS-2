@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { localDb, COLLECTIONS, CollectionName } from './localDb';
 
 export interface SyncResult {
@@ -18,6 +18,12 @@ export interface ConnectionStatus {
  * Tests connection to Supabase database and checks if schema tables exist
  */
 export async function testSupabaseConnection(): Promise<ConnectionStatus> {
+  if (!isSupabaseConfigured) {
+    return {
+      connected: false,
+      message: 'کلید اتصال به دیتابیس Supabase در متغیرهای سیستم تنظیم نشده است. سیستم در حالت محلی (آفلاین) فعال است.'
+    };
+  }
   try {
     // 1. Try querying cloud_backups table
     const { error: tableError } = await supabase

@@ -42,12 +42,23 @@ export interface StoredUser extends SafeUser {
 const JWT_SECRET = process.env.JWT_SECRET || 'x9Kf8Nm2Qr7Lp4Wz1Tb6Vy0Cj3Hs5Ga8De1Ux4Zq7Pw0Mt3Jv6Ys9Br2El5Oi8';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'm2Qp7Ls4Wv1Tz6Yc0Bj3Hw5Gr8Dx1Ua4Ze7Pn0Mt3Jy6Vs9Bg2Ek5Or8Xf1Uq4';
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 
-export const serverSupabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false }
-});
+export const isServerSupabaseConfigured = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_KEY &&
+  SUPABASE_URL !== 'https://placeholder.supabase.co' &&
+  SUPABASE_KEY !== 'placeholder' &&
+  !SUPABASE_KEY.startsWith('sb_publishable_') &&
+  (SUPABASE_KEY.startsWith('eyJ') || SUPABASE_KEY.startsWith('sbp_'))
+);
+
+export const serverSupabase = createClient(
+  SUPABASE_URL || 'https://placeholder.supabase.co',
+  SUPABASE_KEY || 'placeholder',
+  { auth: { persistSession: false } }
+);
 
 // Revoked token IDs / tokens (Session invalidation / Logout / Invalidate all)
 const revokedTokens = new Set<string>();
@@ -391,6 +402,9 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
 // =================== Server-Side User Storage and Migration ===================
 
 export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
+  if (!isServerSupabaseConfigured) {
+    return [];
+  }
   try {
     // 1. Try reading from dedicated system_users table first
     const { data: dedicatedData, error: dedicatedError } = await serverSupabase
@@ -422,7 +436,9 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       .eq('collection_name', 'system_users');
 
     if (error) {
-      console.warn('Backend failed to fetch users from Supabase:', error.message);
+      if (!error.message?.includes('Invalid API key')) {
+        console.warn('Backend notice fetching users from Supabase:', error.message);
+      }
       return [];
     }
 
@@ -458,6 +474,9 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
 }
 
 export async function saveUserToStorage(user: StoredUser): Promise<void> {
+  if (!isServerSupabaseConfigured) {
+    return;
+  }
   try {
     const cleanId = user.username.trim().toUpperCase();
     
@@ -576,13 +595,15 @@ export async function logServerAudit(params: {
       created_at: new Date().toISOString()
     };
 
-    // Store in app_collections audit_logs
-    await serverSupabase.from('app_collections').upsert({
-      collection_name: 'audit_logs',
-      id: logEntry.id,
-      data: logEntry,
-      updated_at: new Date().toISOString()
-    });
+    // Store in app_collections audit_logs if configured
+    if (isServerSupabaseConfigured) {
+      await serverSupabase.from('app_collections').upsert({
+        collection_name: 'audit_logs',
+        id: logEntry.id,
+        data: logEntry,
+        updated_at: new Date().toISOString()
+      });
+    }
   } catch (e: any) {
     console.error('Server audit log error:', e?.message || e);
   }
