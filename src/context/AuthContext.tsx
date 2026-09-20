@@ -32,7 +32,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_sadegh',
     username: 'SADEGH',
-    password: '8411924',
     name: 'صادق (سوپر ادمین)',
     level: 1,
     role: 'super_admin',
@@ -54,7 +53,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_rahnama',
     username: 'RAHNAMA',
-    password: '8411924',
     name: 'استاد رهنما (مدیر مدرسه / معاون)',
     level: 1,
     role: 'school_manager',
@@ -78,7 +76,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_shah',
     username: 'SHAH',
-    password: '8411924',
     name: 'استاد شاهپوری (مسئول آموزش)',
     level: 2,
     role: 'education_manager',
@@ -100,7 +97,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_isj',
     username: 'ISJ',
-    password: '8411924',
     name: 'استاد حیاتی (مسئول پایه ۷)',
     level: 2,
     role: 'grade_mentor',
@@ -122,7 +118,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_ho',
     username: 'HO',
-    password: '8411924',
     name: 'استاد حسینی (مسئول پایه ۸)',
     level: 2,
     role: 'grade_mentor',
@@ -144,7 +139,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_sol',
     username: 'SOL',
-    password: '8411924',
     name: 'استاد سلیمانی (مسئول پایه ۹)',
     level: 2,
     role: 'grade_mentor',
@@ -166,7 +160,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_asadi',
     username: 'ASADI',
-    password: '8411924',
     name: 'استاد اسدی (مسئول پایه ۱۰)',
     level: 2,
     role: 'grade_mentor',
@@ -188,7 +181,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_yazdani',
     username: 'YAZDANI',
-    password: '8411924',
     name: 'استاد یزدانی (مسئول پژوهش)',
     level: 2,
     role: 'research_manager',
@@ -208,7 +200,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_mali',
     username: 'MALI',
-    password: '8411924',
     name: 'مسئول مالی و اداری',
     level: 2,
     role: 'finance_manager',
@@ -242,7 +233,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_sarlak',
     username: 'SARLAK',
-    password: '8411924',
     name: 'طلبه سرلک (نماینده کلاس)',
     level: 3,
     role: 'class_representative',
@@ -262,7 +252,6 @@ export const DEFAULT_USERS: AppUser[] = [
   {
     id: 'user_jalili',
     username: 'JALILI',
-    password: '8411924',
     name: 'طلبه جلیلی',
     level: 3,
     role: 'student',
@@ -286,6 +275,9 @@ interface AuthContextType {
   users: AppUser[];
   login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
+  logoutAllSessions: () => Promise<{ success: boolean; message?: string }>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
+  adminResetPassword: (targetUserId: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   addUser: (user: Partial<AppUser>) => { success: boolean; error?: string };
   updateUser: (id: string, updates: Partial<AppUser>) => void;
   deleteUser: (id: string) => void;
@@ -365,32 +357,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
     const syncWithCloud = async () => {
-      if (!isSupabaseConfigured || typeof window === 'undefined') return;
       try {
-        const { data, error } = await supabase
-          .from('app_collections')
-          .select('id, data')
-          .eq('collection_name', 'system_users');
+        // Fetch sanitized users list securely through backend API (protected by JWT & RLS)
+        const res = await fetch('/api/auth/users', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include'
+        });
 
-        if (!error && data) {
-          const cloudUsers: AppUser[] = [];
-          for (const row of data) {
-            if (row.id === 'all_users' && Array.isArray(row.data?.users)) {
-              cloudUsers.push(...row.data.users);
-            } else if (row.data && row.data.username) {
-              cloudUsers.push(row.data);
-            }
-          }
-
-          if (cloudUsers.length > 0 && isMounted) {
+        if (res.ok) {
+          const result = await res.json();
+          if (result.success && Array.isArray(result.users) && result.users.length > 0 && isMounted) {
             setUsers(prev => {
               const map = new Map<string, AppUser>();
-              // Base defaults
               DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
-              // Overlay current local users
               prev.forEach(u => map.set(u.username.toUpperCase(), u));
-              // Overlay cloud users as source of truth
-              cloudUsers.forEach(u => {
+              result.users.forEach((u: any) => {
                 if (u && u.username) {
                   const uname = u.username.toUpperCase();
                   map.set(uname, {
@@ -399,31 +381,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     name: u.name || u.fullName || u.username,
                     allowedTabs: Array.isArray(u.allowedTabs) 
                       ? u.allowedTabs 
-                      : (Array.isArray((u as any).allowedModules) ? (u as any).allowedModules : ['todos', 'students'])
+                      : ['todos', 'students']
                   });
                 }
               });
-
               const merged = Array.from(map.values());
               try {
                 localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
               } catch (e) {}
               return merged;
             });
-          } else if (data.length === 0) {
-            // Seed initial default users to Supabase if completely empty
-            for (const defUser of DEFAULT_USERS) {
-              supabase.from('app_collections').upsert({
-                collection_name: 'system_users',
-                id: defUser.username.toUpperCase(),
-                data: defUser,
-                updated_at: new Date().toISOString()
-              }, { onConflict: 'collection_name,id' }).then();
-            }
           }
         }
       } catch (e) {
-        console.warn('Initial cloud users sync error:', e);
+        // Fallback to local storage
       }
     };
 
@@ -431,22 +402,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { isMounted = false; };
   }, []);
 
-  // Save to local storage and sync batch backup
+  // Save to local storage
   useEffect(() => {
     try {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-      if (isSupabaseConfigured && typeof window !== 'undefined') {
-        supabase.from('app_collections').upsert({
-          collection_name: 'system_users',
-          id: 'all_users',
-          data: { users },
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }).then();
-      }
     } catch (e) {
-      console.error('Error saving users:', e);
+      console.error('Error saving users to local storage:', e);
     }
   }, [users]);
+
+  // Automatically verify server session on app initialization
+  useEffect(() => {
+    let isMounted = true;
+    const verifySession = async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.user && isMounted) {
+            setCurrentUser(data.user);
+            try {
+              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data.user));
+            } catch (e) {}
+          }
+        }
+      } catch (e) {
+        // Backend might be offline or starting up, fall back to cached session
+      }
+    };
+
+    verifySession();
+    return () => { isMounted = false; };
+  }, []);
 
   const login = async (usernameInput: string, passwordInput: string): Promise<{ success: boolean; message?: string }> => {
     const cleanUser = usernameInput.trim().toUpperCase();
@@ -456,9 +447,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'لطفاً نام کاربری و رمز عبور را وارد نمایید.' };
     }
 
-    let matched = users.find(u => u.username.toUpperCase() === cleanUser);
+    // 1. Call secure backend authentication endpoint (bcrypt validation, rate limiting, and httpOnly cookie)
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username: cleanUser, password: cleanPass })
+      });
 
-    // If not found in memory, query Supabase directly in real-time (cross-device verification)
+      const result = await response.json();
+
+      if (response.ok && result.success && result.user) {
+        const user = result.user as AppUser;
+        setCurrentUser(user);
+        try {
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+        } catch (e) {}
+
+        if (user.mentorId) {
+          localStorage.setItem('current_mentor_id', user.mentorId);
+          if (user.role === 'grade_mentor') {
+            localStorage.setItem('shahpoori_active_filter', user.mentorId);
+          }
+        }
+
+        return { success: true };
+      } else if (!response.ok && result?.message) {
+        return { success: false, message: result.message };
+      }
+    } catch (apiErr) {
+      console.warn('Backend login endpoint unavailable, attempting fallback verification...', apiErr);
+    }
+
+    // Fallback: in-memory or Supabase check if backend endpoint is unreachable during cold boot
+    let matched = users.find(u => u.username.toUpperCase() === cleanUser);
     if (!matched && isSupabaseConfigured && typeof window !== 'undefined') {
       try {
         const { data: row } = await supabase
@@ -470,78 +493,97 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (row?.data && row.data.username) {
           matched = row.data;
-          setUsers(prev => {
-            const next = [...prev.filter(u => u.username.toUpperCase() !== cleanUser), matched!];
-            try { localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next)); } catch (e) {}
-            return next;
-          });
         }
-      } catch (e) {
-        console.warn('Real-time cloud user lookup error:', e);
-      }
+      } catch (e) {}
     }
 
     if (!matched) {
       return { success: false, message: 'نام کاربری وارد شده در سامانه یافت نشد.' };
     }
 
-    // Check if user account is deactivated
     if (matched.isActive === false) {
       return { 
         success: false, 
-        message: 'این حساب کاربری در وضعیت غیرفعال قرار دارد و امکان ورود به سامانه را ندارد. تمامی اطلاعات کاربری شما محفوظ می‌باشد.' 
+        message: 'این حساب کاربری در وضعیت غیرفعال قرار دارد و امکان ورود به سامانه را ندارد.' 
       };
     }
 
-    // Check linked student status if applicable
-    try {
-      const storedStudentsRaw = localStorage.getItem('school_students_v1') || localStorage.getItem('localdb_students');
-      if (storedStudentsRaw) {
-        const studentList = JSON.parse(storedStudentsRaw);
-        if (Array.isArray(studentList)) {
-          const linkedStudent = studentList.find(s => 
-            (matched.linkedStudentId && s.id === matched.linkedStudentId) ||
-            (matched.studentId && s.id === matched.studentId) ||
-            (s.nationalId && s.nationalId.trim().toUpperCase() === cleanUser)
-          );
-          if (linkedStudent && linkedStudent.isActive === false) {
-            return {
-              success: false,
-              message: 'حساب کاربری این طلبه در وضعیت غیرفعال قرار گرفته است و امکان ورود وجود ندارد. پرونده و اطلاعات تحصیلی در سامانه محفوظ است.'
-            };
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Student activity check non-blocking error:', err);
-    }
-
+    // In fallback mode, check password only if exists
     if (matched.password && matched.password !== cleanPass) {
       return { success: false, message: 'رمز عبور وارد شده نادرست است.' };
     }
 
-    const updatedUser = {
+    const updatedUser: AppUser = {
       ...matched,
       lastLogin: new Date().toISOString()
     };
 
     setCurrentUser(updatedUser);
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-
-    // Also sync with mentor context if user has mentorId
-    if (updatedUser.mentorId) {
-      localStorage.setItem('current_mentor_id', updatedUser.mentorId);
-      if (updatedUser.role === 'grade_mentor') {
-        localStorage.setItem('shahpoori_active_filter', updatedUser.mentorId);
-      }
-    }
+    try {
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+    } catch (e) {}
 
     return { success: true };
   };
 
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem(CURRENT_USER_KEY);
+    try {
+      localStorage.removeItem(CURRENT_USER_KEY);
+    } catch (e) {}
+
+    // Invalidate server token & clear httpOnly cookies
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include'
+    }).catch(() => {});
+  };
+
+  const logoutAllSessions = async (): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch('/api/auth/logout-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+      const data = await res.json();
+      setCurrentUser(null);
+      try { localStorage.removeItem(CURRENT_USER_KEY); } catch (e) {}
+      return { success: res.ok && data.success, message: data.message };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'خطا در ابطال نشست‌ها.' };
+    }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      const data = await res.json();
+      return { success: res.ok && data.success, message: data.message };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'خطا در ارتباط با سرور تغییر رمز عبور.' };
+    }
+  };
+
+  const adminResetPassword = async (targetUserId: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await fetch('/api/auth/admin-reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ targetUserId, newPassword })
+      });
+      const data = await res.json();
+      return { success: res.ok && data.success, message: data.message };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'خطا در بازنشانی رمز عبور.' };
+    }
   };
 
   const addUser = (newUser: Partial<AppUser>): { success: boolean; error?: string } => {
@@ -828,6 +870,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         users,
         login,
         logout,
+        logoutAllSessions,
+        changePassword,
+        adminResetPassword,
         addUser,
         updateUser,
         deleteUser,

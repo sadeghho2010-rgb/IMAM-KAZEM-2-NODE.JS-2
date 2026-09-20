@@ -25,7 +25,7 @@ import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function UserCredentialsSettings() {
-  const { users, currentUser, addUser, updateUser, deleteUser } = useAuth();
+  const { users, currentUser, addUser, updateUser, deleteUser, adminResetPassword } = useAuth();
   
   const [students, setStudents] = useState<Student[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(true);
@@ -218,7 +218,6 @@ export default function UserCredentialsSettings() {
       // Edit mode
       updateUser(editingUser.id, {
         username: cleanUsername,
-        password: formPassword.trim(),
         name: formName.trim(),
         level: formLevel,
         role: formRole,
@@ -226,6 +225,14 @@ export default function UserCredentialsSettings() {
         linkedStudentId: linkedStudentId || undefined,
         studentId: linkedStudentId || undefined,
       });
+
+      // Secure backend password update if changed
+      if (formPassword.trim()) {
+        adminResetPassword(editingUser.id, formPassword.trim()).catch(err => {
+          console.error('Password reset backend error:', err);
+        });
+      }
+
       alert('مشخصات ورود با موفقیت بروزرسانی شد.');
     } else {
       // Create mode

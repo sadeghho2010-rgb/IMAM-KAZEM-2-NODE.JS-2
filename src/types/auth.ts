@@ -64,6 +64,9 @@ export interface AppUser {
   createdAt?: string;
   updatedAt?: string;
   lastLogin?: string;
+  mustChangePassword?: boolean;
+  failedLoginAttempts?: number;
+  accountLockedUntil?: string;
 }
 
 export interface MenuItemConfig {
