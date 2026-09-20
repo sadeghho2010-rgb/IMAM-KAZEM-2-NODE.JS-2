@@ -961,13 +961,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               <select
                 value={selectedProgramId}
                 onChange={(e) => setSelectedProgramId(e.target.value)}
-                className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800"
+                className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
               >
-                {representativePrograms.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} {p.grade ? `(${p.grade})` : ''} {p.teacherName ? `- استاد ${p.teacherName}` : ''}
-                  </option>
-                ))}
+                {(representativePrograms.length > 0 ? representativePrograms : programs).map(p => {
+                  const titleStr = p.title || p.name || 'کلاس بدون عنوان';
+                  const gradeStr = p.grade ? ` (${p.grade})` : '';
+                  const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {titleStr}{gradeStr}{teacherStr}
+                    </option>
+                  );
+                })}
               </select>
 
               {currentProgram && (
@@ -977,9 +982,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       {currentProgram.grade}
                     </span>
                   )}
-                  {currentProgram.teacherName && (
+                  {(currentProgram.teacher || currentProgram.teacherName) && (
                     <span className="bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded-md">
-                      استاد: {currentProgram.teacherName}
+                      استاد: {currentProgram.teacher || currentProgram.teacherName}
                     </span>
                   )}
                   {(currentProgram.madrasRoom || currentProgram.classroom) && (
@@ -1498,6 +1503,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               {student.grade && (
                                 <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded border border-indigo-100">
                                   {student.grade}
+                                </span>
+                              )}
+                              {(!currentStatus || currentStatus === 'unspecified') && (
+                                <span className="text-[10px] bg-amber-50 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
+                                  تعیین‌نشده (نامشخص)
                                 </span>
                               )}
                               {hasWarning && (

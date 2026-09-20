@@ -317,21 +317,17 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [items, studentsWithoutAccounts, isSuperAdmin, isEducationManager, settings.requireAccountCreationPrompt]);
 
-  // Filter items tailored to current user
-  const filteredItems = useMemo(() => {
+  // 1. Role-Filtered Items base for current user's role scope
+  const roleFilteredItems = useMemo(() => {
     return allDisplayItems.filter(item => {
-      // 1. Strict Role Scope Filtering for Level 2 & Level 3 users
       if (!isSuperAdmin && !isManagerOrPrincipal) {
         if (isResearchManager) {
-          // مسئول پژوهش فقط فرآیندهای پژوهشی و جلسات مشاوره پژوهشی را می‌بیند
           const isResearchCategory = ['research', 'research_article_submission', 'counseling_evaluation'].includes(item.category);
           if (!isResearchCategory) return false;
         } else if (isFinanceManager) {
-          // مسئول مالی فرآیندهای مربوط به کارکرد، حضور و امور مالی را می‌بیند
           const isFinanceCategory = ['presence_finance_report', 'presence_hours', 'finance', 'general'].includes(item.category) || item.title?.includes('حضور') || item.title?.includes('کارکرد');
           if (!isFinanceCategory) return false;
         } else if (isEducationManager) {
-          // مسئول آموزش فرآیندهای آموزشی، اخطار غیبت/مطالعه، حساب‌های کاربری و دوره‌ها را می‌بیند
           const isEduCategory = [
             'unexcused_absence_warning',
             'study_deficit_warning',
@@ -342,7 +338,6 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
           ].includes(item.category);
           if (!isEduCategory) return false;
         } else if (isGradeSupervisor) {
-          // مسئولین پایه فقط اعلام‌های ثبت اخطار غیبت/مطالعه، دوره‌های مطالعه و پیام‌های مرتبط با پایه خود را می‌بینند
           const isSupervisorCategory = [
             'unexcused_absence_warning',
             'study_deficit_warning',
@@ -355,13 +350,18 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
           const matchesGrade = !item.grade || item.grade === 'همه پایه‌ها' || item.grade === 'عمومی' || item.grade === userGrade;
           if (!matchesGrade) return false;
         } else {
-          // سایر کاربران
           const matchesGrade = !item.grade || item.grade === 'همه پایه‌ها' || item.grade === userGrade;
           if (!matchesGrade) return false;
         }
       }
+      return true;
+    });
+  }, [allDisplayItems, isSuperAdmin, isManagerOrPrincipal, isResearchManager, isFinanceManager, isEducationManager, isGradeSupervisor, userGrade]);
 
-      // 2. Tab Filter
+  // 2. Filter items with UI filters (tab, category, grade, search)
+  const filteredItems = useMemo(() => {
+    return roleFilteredItems.filter(item => {
+      // Tab Filter
       if (tabFilter === 'pending') {
         if (item.status !== 'pending') return false;
       } else if (tabFilter === 'reports') {
@@ -370,12 +370,12 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
         if (item.type !== 'notice') return false;
       }
 
-      // 3. Category Filter
+      // Category Filter
       if (categoryFilter !== 'all' && item.category !== categoryFilter) {
         return false;
       }
 
-      // 4. Grade Filter
+      // Grade Filter
       if (gradeFilter !== 'all') {
         if (gradeFilter === 'عمومی') {
           if (item.grade && item.grade !== 'همه پایه‌ها' && item.grade !== 'عمومی' && item.grade !== 'عمومی و مشترک') {
@@ -388,7 +388,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
         }
       }
 
-      // 5. Search Query
+      // Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matches = 
@@ -401,42 +401,42 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
 
       return true;
     });
-  }, [allDisplayItems, tabFilter, categoryFilter, gradeFilter, searchQuery, isSuperAdmin, isEducationManager, isFinanceManager, isResearchManager, isGradeSupervisor, isManagerOrPrincipal, userGrade]);
+  }, [roleFilteredItems, tabFilter, categoryFilter, gradeFilter, searchQuery]);
 
-  // Counts for Badges & Segmentations
+  // Counts for Badges & Segmentations (strict to user role)
   const pendingCount = useMemo(() => {
-    return allDisplayItems.filter(i => i.status === 'pending').length;
-  }, [allDisplayItems]);
+    return roleFilteredItems.filter(i => i.status === 'pending').length;
+  }, [roleFilteredItems]);
 
   const noticesCount = useMemo(() => {
-    return allDisplayItems.filter(i => i.type === 'notice').length;
-  }, [allDisplayItems]);
+    return roleFilteredItems.filter(i => i.type === 'notice').length;
+  }, [roleFilteredItems]);
 
   const reportsCount = useMemo(() => {
-    return allDisplayItems.filter(i => i.type === 'report_notice' || i.reportAction).length;
-  }, [allDisplayItems]);
+    return roleFilteredItems.filter(i => i.type === 'report_notice' || i.reportAction).length;
+  }, [roleFilteredItems]);
 
   const gradeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: allDisplayItems.length };
+    const counts: Record<string, number> = { all: roleFilteredItems.length };
     WORKFLOW_GRADES.forEach(g => {
       if (g.id === 'all') return;
       if (g.id === 'عمومی') {
-        counts[g.id] = allDisplayItems.filter(i => !i.grade || i.grade === 'همه پایه‌ها' || i.grade === 'عمومی' || i.grade === 'عمومی و مشترک').length;
+        counts[g.id] = roleFilteredItems.filter(i => !i.grade || i.grade === 'همه پایه‌ها' || i.grade === 'عمومی' || i.grade === 'عمومی و مشترک').length;
       } else {
-        counts[g.id] = allDisplayItems.filter(i => i.grade === g.id || i.grade === 'همه پایه‌ها').length;
+        counts[g.id] = roleFilteredItems.filter(i => i.grade === g.id || i.grade === 'همه پایه‌ها').length;
       }
     });
     return counts;
-  }, [allDisplayItems]);
+  }, [roleFilteredItems]);
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: allDisplayItems.length };
+    const counts: Record<string, number> = { all: roleFilteredItems.length };
     WORKFLOW_CATEGORIES.forEach(c => {
       if (c.id === 'all') return;
-      counts[c.id] = allDisplayItems.filter(i => i.category === c.id).length;
+      counts[c.id] = roleFilteredItems.filter(i => i.category === c.id).length;
     });
     return counts;
-  }, [allDisplayItems]);
+  }, [roleFilteredItems]);
 
   // Handle Approve
   const handleApprove = async (item: WorkflowItem) => {

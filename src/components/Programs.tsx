@@ -179,6 +179,26 @@ export default function Programs() {
                              currentUser?.role === 'education_officer' || 
                              currentUser?.username?.toUpperCase() === 'SHAH';
 
+  const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
+
+  const copyGroupTeacherPhones = (groupProgs: Program[]) => {
+    const teacherNames = groupProgs.map(p => (p.teacher || '').trim()).filter(Boolean);
+    const matchedPhones = teachers
+      .filter(t => t.fullName && teacherNames.some(tn => tn.includes(t.fullName.trim()) || t.fullName.trim().includes(tn)))
+      .map(t => t.phoneNumber?.trim())
+      .filter((p): p is string => !!p && p.length > 3);
+
+    const uniquePhones = Array.from(new Set(matchedPhones));
+
+    if (uniquePhones.length === 0) {
+      alert('هیچ شماره تماسی برای اساتید این بخش یافت نشد.');
+      return;
+    }
+
+    navigator.clipboard.writeText(uniquePhones.join('\n'));
+    alert(`${uniquePhones.length.toLocaleString('fa-IR')} شماره تلفن اساتید این بخش با موفقیت کپی شد! می‌توانید همگی را یکجا Paste کنید.`);
+  };
+
   const [programs, setPrograms] = useState<Program[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -945,9 +965,22 @@ export default function Programs() {
                   )}></div>
                   {label}
                 </h3>
-                <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
-                  {groupPrograms.length} کلاس
-                </span>
+                <div className="flex items-center gap-2">
+                  {isLevel2User && groupPrograms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => copyGroupTeacherPhones(groupPrograms)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/90 rounded-xl text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+                      title="کپی شماره تلفن تمام اساتید این بخش"
+                    >
+                      <Copy size={13} className="text-amber-700" />
+                      <span>کپی تلفن اساتید این بخش</span>
+                    </button>
+                  )}
+                  <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
+                    {groupPrograms.length} کلاس
+                  </span>
+                </div>
               </div>
 
               <div className="divide-y divide-slate-100 flex-1">

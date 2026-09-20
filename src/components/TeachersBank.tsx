@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { Teacher, TeacherCategory, TeacherDetailedSpecialties } from '../types';
 import { localDb } from '../lib/localDb';
+import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -49,8 +50,15 @@ const ALL_CATEGORIES: TeacherCategory[] = [
 ];
 
 export default function TeachersBank() {
+  const { currentUser } = useAuth();
+  const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
+
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Multi-copy phone state (Level 2)
+  const [isMultiCopyMode, setIsMultiCopyMode] = useState<boolean>(false);
+  const [selectedMultiPhoneIds, setSelectedMultiPhoneIds] = useState<string[]>([]);
   
   // Search and Filters State
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -271,6 +279,22 @@ export default function TeachersBank() {
     navigator.clipboard.writeText(num);
     setCopiedPhoneId(id);
     setTimeout(() => setCopiedPhoneId(null), 2000);
+  };
+
+  const handleCopySelectedPhones = () => {
+    const selectedTeachers = filteredTeachers.filter(t => selectedMultiPhoneIds.includes(t.id));
+    const phones = selectedTeachers
+      .map(t => t.phoneNumber?.trim())
+      .filter((p): p is string => !!p && p.length > 3);
+
+    if (phones.length === 0) {
+      alert('هیچ شماره تلفنی برای اساتید انتخاب‌شده یافت نشد.');
+      return;
+    }
+
+    const textToCopy = phones.join('\n');
+    navigator.clipboard.writeText(textToCopy);
+    alert(`${phones.length.toLocaleString('fa-IR')} شماره تلفن اساتید با موفقیت کپی شد! می‌توانید همگی را یکجا Paste کنید.`);
   };
 
   // Filter logic
@@ -596,6 +620,23 @@ export default function TeachersBank() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto shrink-0">
+            {isLevel2User && (
+              <button
+                type="button"
+                onClick={() => setIsMultiCopyMode(prev => !prev)}
+                className={cn(
+                  "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer border",
+                  isMultiCopyMode
+                    ? "bg-amber-400 text-slate-950 border-amber-300 font-black"
+                    : "bg-amber-500 hover:bg-amber-400 text-white border-amber-600"
+                )}
+                title="انتخاب و کپی چندگانه شماره تلفن اساتید"
+              >
+                <Copy size={15} />
+                <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی چندگانه تلفن'}</span>
+              </button>
+            )}
+
             <button
               onClick={handleExportExcel}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
@@ -642,6 +683,39 @@ export default function TeachersBank() {
           </div>
         </div>
       </div>
+
+      {/* Multi-copy Phone Banner */}
+      {isLevel2User && isMultiCopyMode && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-black text-amber-900">
+              کپی چندگانه شماره تلفن اساتید: ({selectedMultiPhoneIds.length} از {filteredTeachers.length} استاد)
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedMultiPhoneIds.length === filteredTeachers.length) {
+                  setSelectedMultiPhoneIds([]);
+                } else {
+                  setSelectedMultiPhoneIds(filteredTeachers.map(t => t.id));
+                }
+              }}
+              className="text-xs text-amber-800 underline font-bold cursor-pointer hover:text-amber-950"
+            >
+              {selectedMultiPhoneIds.length === filteredTeachers.length ? 'لغو انتخاب همه' : 'انتخاب همه اساتید'}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopySelectedPhones}
+            disabled={selectedMultiPhoneIds.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+          >
+            <Copy size={15} />
+            <span>کپی یکجای شماره‌ها ({selectedMultiPhoneIds.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Filters and Controls Bar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-4">
@@ -793,6 +867,22 @@ export default function TeachersBank() {
             <table className="w-full text-right text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                 <tr>
+                  {isLevel2User && isMultiCopyMode && (
+                    <th className="py-3.5 px-4 text-center bg-amber-50 text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={selectedMultiPhoneIds.length > 0 && selectedMultiPhoneIds.length === filteredTeachers.length}
+                        onChange={() => {
+                          if (selectedMultiPhoneIds.length === filteredTeachers.length) {
+                            setSelectedMultiPhoneIds([]);
+                          } else {
+                            setSelectedMultiPhoneIds(filteredTeachers.map(t => t.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="py-3.5 px-4">#</th>
                   <th className="py-3.5 px-4">استاد</th>
                   <th className="py-3.5 px-4">شماره تماس</th>
@@ -814,9 +904,26 @@ export default function TeachersBank() {
                       key={teacher.id} 
                       className={cn(
                         "hover:bg-slate-50/80 transition-colors",
-                        !teacher.isActive && "bg-slate-50/50 opacity-70"
+                        !teacher.isActive && "bg-slate-50/50 opacity-70",
+                        isMultiCopyMode && selectedMultiPhoneIds.includes(teacher.id) && "bg-amber-50/60"
                       )}
                     >
+                      {isLevel2User && isMultiCopyMode && (
+                        <td className="py-3 px-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedMultiPhoneIds.includes(teacher.id)}
+                            onChange={() => {
+                              setSelectedMultiPhoneIds(prev =>
+                                prev.includes(teacher.id)
+                                  ? prev.filter(i => i !== teacher.id)
+                                  : [...prev, teacher.id]
+                              );
+                            }}
+                            className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-4 font-bold text-slate-400">{idx + 1}</td>
                       
                       {/* Name & Photo */}

@@ -24,7 +24,9 @@ import {
   X,
   User,
   ExternalLink,
-  Layers
+  Layers,
+  Copy,
+  Check
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -168,6 +170,12 @@ export default function TeachersSchedule() {
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const allTeachersPrintRef = useRef<HTMLDivElement>(null);
   const singleTeacherPrintRef = useRef<HTMLDivElement>(null);
+
+  // Phone multi-copy state (Level 2)
+  const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
+  const [isMultiCopyMode, setIsMultiCopyMode] = useState<boolean>(false);
+  const [selectedMultiPhoneIds, setSelectedMultiPhoneIds] = useState<string[]>([]);
+  const [copiedPhoneId, setCopiedPhoneId] = useState<string | null>(null);
 
   // Authorization check: Only Education Officer / Manager / SuperAdmin can edit/add
   const isAuthorizedToEdit = useMemo(() => {
@@ -570,6 +578,23 @@ export default function TeachersSchedule() {
     }
   };
 
+  // Handle copying all selected teacher phone numbers
+  const handleCopySelectedPhones = () => {
+    const selectedTeachers = registeredTeachersWithClasses.filter(t => selectedMultiPhoneIds.includes(t.id));
+    const phones = selectedTeachers
+      .map(t => t.teacherObj.phoneNumber?.trim())
+      .filter((p): p is string => !!p && p.length > 3);
+
+    if (phones.length === 0) {
+      alert('هیچ شماره تلفنی برای اساتید انتخاب‌شده یافت نشد.');
+      return;
+    }
+
+    const textToCopy = phones.join('\n');
+    navigator.clipboard.writeText(textToCopy);
+    alert(`${phones.length.toLocaleString('fa-IR')} شماره تلفن اساتید با موفقیت کپی شد! می‌توانید همگی را در یکجا Paste کنید.`);
+  };
+
   // Access denied guard
   if (!isAuthorizedToView) {
     return (
@@ -635,6 +660,23 @@ export default function TeachersSchedule() {
           ) : (
             <>
               {/* Reports for ALL teachers */}
+              {isLevel2User && (
+                <button
+                  type="button"
+                  onClick={() => setIsMultiCopyMode(prev => !prev)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-2xs",
+                    isMultiCopyMode 
+                      ? "bg-amber-500 text-white border-amber-600" 
+                      : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                  )}
+                  title="انتخاب و کپی چندگانه شماره تلفن اساتید جهت خروج و Paste خارج از سامانه"
+                >
+                  <Copy size={15} />
+                  <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی کردن چندگانه شماره تلفن'}</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleExportAllExcel}
@@ -765,6 +807,39 @@ export default function TeachersSchedule() {
             </div>
           </div>
 
+          {/* Multi-copy Phone Action Banner */}
+          {isLevel2User && isMultiCopyMode && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-black text-amber-900">
+                  انتخاب اساتید جهت کپی شماره تلفن: ({selectedMultiPhoneIds.length} از {displayedTeachers.length} استاد)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedMultiPhoneIds.length === displayedTeachers.length) {
+                      setSelectedMultiPhoneIds([]);
+                    } else {
+                      setSelectedMultiPhoneIds(displayedTeachers.map(t => t.id));
+                    }
+                  }}
+                  className="text-xs text-amber-800 underline font-bold cursor-pointer hover:text-amber-950"
+                >
+                  {selectedMultiPhoneIds.length === displayedTeachers.length ? 'لغو انتخاب همه' : 'انتخاب همه اساتید'}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopySelectedPhones}
+                disabled={selectedMultiPhoneIds.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                <Copy size={15} />
+                <span>کپی یکجای شماره‌ها ({selectedMultiPhoneIds.length})</span>
+              </button>
+            </div>
+          )}
+
           {/* Teachers Grid / List */}
           {displayedTeachers.length === 0 ? (
             <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
@@ -781,20 +856,45 @@ export default function TeachersSchedule() {
               {displayedTeachers.map(teacherGroup => {
                 const tObj = teacherGroup.teacherObj;
                 const priorityNum = Number(tObj.priority) || 3;
+                const isSelectedForMulti = selectedMultiPhoneIds.includes(teacherGroup.id);
 
                 return (
                   <div
                     key={teacherGroup.id}
-                    onClick={() => setSelectedTeacherId(teacherGroup.id)}
-                    className="group bg-white rounded-3xl p-5 border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between space-y-4"
+                    onClick={() => {
+                      if (isMultiCopyMode) {
+                        setSelectedMultiPhoneIds(prev => 
+                          prev.includes(teacherGroup.id)
+                            ? prev.filter(i => i !== teacherGroup.id)
+                            : [...prev, teacherGroup.id]
+                        );
+                      } else {
+                        setSelectedTeacherId(teacherGroup.id);
+                      }
+                    }}
+                    className={cn(
+                      "group bg-white rounded-3xl p-5 border transition-all cursor-pointer flex flex-col justify-between space-y-4",
+                      isMultiCopyMode && isSelectedForMulti
+                        ? "border-amber-500 bg-amber-50/40 shadow-md ring-2 ring-amber-400"
+                        : "border-slate-200 hover:border-indigo-400 hover:shadow-md"
+                    )}
                   >
                     {/* Header: Name, Specialty, Priority */}
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-base flex items-center justify-center shadow-xs group-hover:bg-indigo-700 transition-colors">
-                            {teacherGroup.name[0] || 'ا'}
-                          </div>
+                          {isMultiCopyMode ? (
+                            <input
+                              type="checkbox"
+                              checked={isSelectedForMulti}
+                              onChange={() => {}}
+                              className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-base flex items-center justify-center shadow-xs group-hover:bg-indigo-700 transition-colors">
+                              {teacherGroup.name[0] || 'ا'}
+                            </div>
+                          )}
                           <div>
                             <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-700 transition-colors flex items-center gap-1.5">
                               <span>استاد {teacherGroup.name}</span>
@@ -821,11 +921,31 @@ export default function TeachersSchedule() {
                       </div>
 
                       {/* Phone & Info if available */}
-                      {tObj.phoneNumber && (
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-                          <Phone size={12} className="text-slate-400" />
-                          <span className="font-mono">{tObj.phoneNumber}</span>
+                      {tObj.phoneNumber ? (
+                        <div className="flex items-center justify-between gap-1.5 text-[11px] font-medium pt-1">
+                          <div className="flex items-center gap-1.5 text-slate-600">
+                            <Phone size={12} className="text-slate-400" />
+                            <span className="font-mono">{tObj.phoneNumber}</span>
+                          </div>
+                          {isLevel2User && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(tObj.phoneNumber!.trim());
+                                setCopiedPhoneId(tObj.id);
+                                setTimeout(() => setCopiedPhoneId(null), 2000);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
+                              title="کپی شماره تلفن این استاد"
+                            >
+                              {copiedPhoneId === tObj.id ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                              <span>{copiedPhoneId === tObj.id ? 'کپی شد' : 'کپی شماره'}</span>
+                            </button>
+                          )}
                         </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400 italic">بدون شماره تماس ثبت‌شده</div>
                       )}
 
                       {/* Badges: Total Classes, Active Days */}

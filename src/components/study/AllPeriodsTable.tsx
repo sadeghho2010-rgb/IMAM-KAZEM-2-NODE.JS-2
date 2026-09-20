@@ -14,13 +14,16 @@ import {
   FileText,
   Printer,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
 import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
 import { exportAllPeriodsToExcel, prepareAggregatedData } from './allPeriodsExport';
 import AllPeriodsPDFModal from './AllPeriodsPDFModal';
 import { useMentor } from '../../context/MentorContext';
+import { useAuth } from '../../context/AuthContext';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -40,6 +43,17 @@ export default function AllPeriodsTable({
   selectedStudentId,
   onSelectStudent
 }: AllPeriodsTableProps) {
+  const { currentUser } = useAuth();
+  const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
+  const [copiedPhoneId, setCopiedPhoneId] = useState<string | null>(null);
+
+  const handleCopyPhone = (studentName: string, phone: string, studentId: string) => {
+    if (!phone) return;
+    navigator.clipboard.writeText(phone.trim());
+    setCopiedPhoneId(studentId);
+    setTimeout(() => setCopiedPhoneId(null), 2000);
+  };
+
   const { currentMentor } = useMentor();
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState('ALL');
@@ -305,6 +319,7 @@ export default function AllPeriodsTable({
               {cols.avgStudy && <th className="px-3 py-3.5 text-center">میانگین مطالعه</th>}
               {cols.avgDisc && <th className="px-3 py-3.5 text-center">میانگین مباحثه</th>}
               {cols.statusAvg && <th className="px-3 py-3.5 text-center bg-indigo-50/40 text-indigo-800">وضعیت میانگین</th>}
+              {isLevel2User && <th className="px-3 py-3.5 text-center bg-indigo-50/80 text-indigo-900 font-extrabold whitespace-nowrap">کپی شماره تماس</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -454,6 +469,25 @@ export default function AllPeriodsTable({
                         <span className="bg-amber-50 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-100 whitespace-nowrap">
                           زیر میانگین
                         </span>
+                      )}
+                    </td>
+                  )}
+
+                  {/* Copy Phone Cell for Level 2 Users */}
+                  {isLevel2User && (
+                    <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                      {item.student.phoneNumber ? (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPhone(item.student.name, item.student.phoneNumber!, item.student.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/90 rounded-xl transition-all cursor-pointer shadow-2xs"
+                          title={`کپی شماره تماس ${item.student.name} (${item.student.phoneNumber})`}
+                        >
+                          {copiedPhoneId === item.student.id ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                          <span className="font-mono">{item.student.phoneNumber}</span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-300 text-[11px]">بدون شماره</span>
                       )}
                     </td>
                   )}

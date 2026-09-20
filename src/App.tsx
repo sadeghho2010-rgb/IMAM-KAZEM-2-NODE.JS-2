@@ -45,7 +45,7 @@ import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -53,6 +53,21 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<string>('todos');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
+
+  const [theme, setTheme] = useState<'default' | 'emerald'>(() => {
+    return (localStorage.getItem('app_theme') as 'default' | 'emerald') || 'default';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('app_theme', theme);
+    if (theme === 'emerald') {
+      document.documentElement.setAttribute('data-theme', 'emerald');
+      document.body.classList.add('theme-emerald');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      document.body.classList.remove('theme-emerald');
+    }
+  }, [theme]);
 
   const { 
     currentMentor, 
@@ -263,6 +278,21 @@ function AppContent() {
 
             {/* Top Right Header Space - User Badge, Settings & Logout */}
             <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setTheme(prev => prev === 'emerald' ? 'default' : 'emerald')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all border cursor-pointer shadow-xs",
+                  theme === 'emerald'
+                    ? "bg-emerald-800 text-white border-emerald-900"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                )}
+                title="تغییر پوسته اصلی نرم‌افزار (تم سبز پررنگ و سفید)"
+              >
+                <Palette size={14} className={theme === 'emerald' ? "text-emerald-300" : "text-emerald-600"} />
+                <span className="hidden sm:inline">{theme === 'emerald' ? 'تم سبز پررنگ (زمردی)' : 'تم لاجوردی'}</span>
+              </button>
+
               {currentUser.role === 'super_admin' && (
                 <button
                   onClick={() => setActiveTab('user-management')}
