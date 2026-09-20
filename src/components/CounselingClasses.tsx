@@ -31,9 +31,11 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string; bg: string }> = {
-  'الف': { label: 'الف (سطح عالی)', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black', bg: 'bg-emerald-50' },
-  'ب': { label: 'ب (سطح متوسط)', badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 font-black', bg: 'bg-amber-50' },
-  'ج': { label: 'ج (سطح ضعیف)', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 font-black', bg: 'bg-rose-50' }
+  'الف': { label: 'الف (عالی)', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black', bg: 'bg-emerald-50' },
+  'ب': { label: 'ب (خوب)', badgeClass: 'bg-blue-100 text-blue-800 border-blue-300 font-black', bg: 'bg-blue-50' },
+  'ج': { label: 'ج (متوسط)', badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 font-black', bg: 'bg-amber-50' },
+  'د': { label: 'د (ضعیف - نیازمند پیگیری)', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 font-black', bg: 'bg-rose-50' },
+  'غیبت': { label: 'غیبت در جلسه', badgeClass: 'bg-slate-200 text-slate-700 border-slate-300 font-black', bg: 'bg-slate-100' }
 };
 
 const DEFAULT_COURSES = [
@@ -46,7 +48,28 @@ const DEFAULT_COURSES = [
 ];
 
 export default function CounselingClasses() {
-  const { currentUser, isReadOnly } = useAuth();
+  const { currentUser, isReadOnly, isSuperAdmin } = useAuth();
+
+  const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
+  const isResearchManager = currentUser?.role === 'research_manager';
+  const isLevel3Student = currentUser?.level === 3;
+
+  // Can edit counseling evaluations: Research Manager & Super Admin, or Education Manager if explicitly granted
+  const canEditCounseling = useMemo(() => {
+    if (isReadOnly) return false;
+    if (isSuperAdmin || isResearchManager || currentUser?.level === 1) return true;
+    const uAny = currentUser as any;
+    if (isEducationManager && (uAny?.canEditCounseling || uAny?.permissions?.includes('counseling_edit'))) return true;
+    return false;
+  }, [currentUser, isReadOnly, isSuperAdmin, isResearchManager, isEducationManager]);
+
+  // Can view counseling evaluations: Staff/Managers by default, Level 3 students only if explicitly granted
+  const canViewCounseling = useMemo(() => {
+    if (isSuperAdmin || isResearchManager || isEducationManager || currentUser?.level === 1 || currentUser?.level === 2) return true;
+    const uAny = currentUser as any;
+    if (isLevel3Student && (uAny?.canViewCounseling || uAny?.permissions?.includes('counseling_view'))) return true;
+    return false;
+  }, [currentUser, isSuperAdmin, isResearchManager, isEducationManager, isLevel3Student]);
 
   // Data states
   const [grades, setGrades] = useState<CounselingSessionGrade[]>([]);
@@ -410,9 +433,55 @@ export default function CounselingClasses() {
     }
   };
 
+  // Create Follow-up item for student with low grade ('ج' or 'د')
+  const handleCreateFollowUp = async (g: CounselingSessionGrade) => {
+    try {
+      const todoItem = {
+        title: `پیگیری مشاوره (${g.studentName}) - درس ${g.courseTitle}`,
+        studentId: g.studentId,
+        completed: false,
+        priority: (g.participationScore === 'د' || g.researchScore === 'د') ? 'high' : 'medium',
+        isResearchFollowUp: true,
+        researchRecordId: g.id,
+        createdAt: new Date().toISOString(),
+        notes: `پیگیری نمره ارزیابی مشاوره: مشارکت (${g.participationScore})، پژوهش (${g.researchScore}) - تاریخ جلسه: ${g.sessionDate}`
+      };
+      await localDb.addDoc('todos', todoItem);
+
+      // Workflow notice
+      const wfItem = {
+        id: `wf-counseling-followup-${g.id}-${Date.now()}`,
+        type: 'notice',
+        category: 'counseling_grade_warning',
+        title: `پیگیری ارزیابی مشاوره: ${g.studentName}`,
+        description: `طلبه ${g.studentName} در درس مشاوره «${g.courseTitle}» نمره ${g.participationScore === 'د' || g.researchScore === 'د' ? 'د' : 'ج'} دریافت نمود. پیگیری آموزشی/مشاوره‌ای ثبت گردید.`,
+        status: 'pending',
+        grade: g.grade || 'عمومی',
+        studentId: g.studentId,
+        studentName: g.studentName,
+        createdByUserId: currentUser?.id,
+        createdByName: currentUser?.name || currentUser?.username,
+        createdAt: new Date().toISOString()
+      };
+      await localDb.setDoc('workflow_items', wfItem);
+
+      alert(`پیگیری آموزشی و کارتابل برای طلبه "${g.studentName}" با موفقیت ثبت شد.`);
+    } catch (err) {
+      console.error('Error creating follow-up:', err);
+      alert('خطا در ثبت پیگیری.');
+    }
+  };
+
   // Filtered List for Table
   const filteredGrades = useMemo(() => {
     return grades.filter(item => {
+      // Level 3 students see only their own data
+      if (isLevel3Student) {
+        const isOwn = (currentUser?.linkedStudentId && item.studentId === currentUser.linkedStudentId) ||
+                      (currentUser?.studentName && item.studentName.trim() === currentUser.studentName.trim()) ||
+                      (currentUser?.name && item.studentName.trim() === currentUser.name.trim());
+        if (!isOwn) return false;
+      }
       if (selectedGrade !== 'all' && item.grade !== selectedGrade) {
         return false;
       }
@@ -514,6 +583,20 @@ export default function CounselingClasses() {
     return Array.from(set);
   }, [grades]);
 
+  if (!canViewCounseling) {
+    return (
+      <div className="p-8 text-center bg-white rounded-3xl border border-rose-200 shadow-xs space-y-3 max-w-xl mx-auto my-12 dir-rtl font-vazir">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto border border-rose-200">
+          <Info size={24} />
+        </div>
+        <h3 className="text-base font-black text-rose-900">عدم دسترسی به بخش ارزیابی و نمرات مشاوره</h3>
+        <p className="text-xs text-slate-600 leading-relaxed font-medium">
+          مشاهده اطلاعات ارزیابی و نمرات مشاوره نیازمند صدور دسترسی ویژه از سوی مدیر ارشد (سوپر ادمین) می‌باشد.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-6 dir-rtl font-vazir max-w-7xl mx-auto">
       {/* Header Banner */}
@@ -534,7 +617,7 @@ export default function CounselingClasses() {
             </div>
           </div>
 
-          {!isReadOnly && (
+          {canEditCounseling && (
             <button
               onClick={() => handleOpenModal()}
               className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0"
@@ -801,26 +884,38 @@ export default function CounselingClasses() {
                         </td>
 
                         {/* Actions */}
-                        {!isReadOnly && (
-                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          <div className="flex flex-col items-center justify-center gap-1">
+                            {(g.participationScore === 'ج' || g.participationScore === 'د' || g.researchScore === 'ج' || g.researchScore === 'د') && (
                               <button
-                                onClick={() => handleOpenModal(g)}
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
-                                title="ویرایش"
+                                onClick={() => handleCreateFollowUp(g)}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-xs mb-1"
+                                title="ثبت پیگیری آموزشی/مشاوره‌ای"
                               >
-                                <Edit size={15} />
+                                <Sparkles size={11} />
+                                <span>ثبت پیگیری</span>
                               </button>
-                              <button
-                                onClick={() => handleDelete(g.id, g.studentName)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
-                                title="حذف"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        )}
+                            )}
+                            {canEditCounseling && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleOpenModal(g)}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                                  title="ویرایش"
+                                >
+                                  <Edit size={15} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(g.id, g.studentName)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
+                                  title="حذف"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1114,7 +1209,7 @@ export default function CounselingClasses() {
                 <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-3">
                   <span className="font-black text-indigo-900 block text-xs flex items-center gap-1">
                     <Award size={15} className="text-indigo-600" />
-                    <span>۴. نمره‌دهی استانداردهای مشاوره (الف / ب / ج):</span>
+                    <span>۴. نمره‌دهی استانداردهای مشاوره (الف / ب / ج / د / غیبت):</span>
                   </span>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1123,14 +1218,14 @@ export default function CounselingClasses() {
                       <label className="font-black text-slate-800 block text-xs">
                         ۱. نمره مشارکت در جلسه
                       </label>
-                      <div className="flex items-center gap-2">
-                        {(['الف', 'ب', 'ج'] as CounselingScore[]).map((score) => (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(['الف', 'ب', 'ج', 'د', 'غیبت'] as CounselingScore[]).map((score) => (
                           <button
                             key={score}
                             type="button"
                             onClick={() => setFormParticipationScore(score)}
                             className={cn(
-                              "flex-1 py-2 rounded-lg font-black text-xs transition-all cursor-pointer border",
+                              "flex-1 min-w-[42px] py-2 rounded-lg font-black text-xs transition-all cursor-pointer border",
                               formParticipationScore === score
                                 ? SCORE_BADGES[score].badgeClass + " ring-2 ring-indigo-500/40"
                                 : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -1147,14 +1242,14 @@ export default function CounselingClasses() {
                       <label className="font-black text-slate-800 block text-xs">
                         ۲. نمره پژوهش و تقریر
                       </label>
-                      <div className="flex items-center gap-2">
-                        {(['الف', 'ب', 'ج'] as CounselingScore[]).map((score) => (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(['الف', 'ب', 'ج', 'د', 'غیبت'] as CounselingScore[]).map((score) => (
                           <button
                             key={score}
                             type="button"
                             onClick={() => setFormResearchScore(score)}
                             className={cn(
-                              "flex-1 py-2 rounded-lg font-black text-xs transition-all cursor-pointer border",
+                              "flex-1 min-w-[42px] py-2 rounded-lg font-black text-xs transition-all cursor-pointer border",
                               formResearchScore === score
                                 ? SCORE_BADGES[score].badgeClass + " ring-2 ring-indigo-500/40"
                                 : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"

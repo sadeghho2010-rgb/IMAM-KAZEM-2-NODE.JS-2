@@ -1149,6 +1149,28 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </div>
           )}
 
+          {/* Unrecorded Attendance Notice Banner */}
+          {!attendanceRecords.some(r => r.programId === selectedProgramId && r.date === selectedDate) && !isCancelled && !currentHoliday && (
+            <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-rose-950 shadow-xs animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-600 text-white rounded-xl shrink-0">
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <div className="text-xs font-black flex items-center gap-1.5">
+                    <span>⚠️ عدم انجام حضور و غیاب برای این جلسه:</span>
+                    <span className="text-rose-700 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">وضعیت: هنوز ثبت نهایی نشده است</span>
+                  </div>
+                  <div className="text-[11px] text-rose-800 mt-0.5 font-medium">
+                    {isRepresentative 
+                      ? 'نماینده محترم، لطفاً وضعیت حضور، غیبت یا تاخیر طلاب را تعیین کرده و دکمه «ثبت نهایی حضور و غیاب» را بفشارید.'
+                      : 'این جلسه توسط نماینده کلاس یا استاد هنوز ثبت نهایی نشده است و در گزارش‌های آموزشی به عنوان «عدم ثبت» مشخص می‌شود.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Education Manager Special Toolbar */}
           {(isEducationManager || isSuperAdmin) && (
             <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1349,12 +1371,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           {!isCancelled ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
               {/* Section Toolbar and Stats */}
-              <div className="bg-slate-50/90 p-4 sm:p-5 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="bg-slate-50/90 p-4 sm:p-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <Users className="text-indigo-600" size={18} />
-                    <span>لیست طلاب کلاس ({enrolledStudents.length} نفر)</span>
-                  </h3>
+                  <div className="flex flex-col">
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <Users className="text-indigo-600" size={18} />
+                      <span>لیست طلاب درس: «{currentProgram?.title}» ({enrolledStudents.length} نفر)</span>
+                    </h3>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium mt-0.5">
+                      <span>{currentProgram?.grade ? `پایه ${currentProgram.grade}` : ''}</span>
+                      {currentProgram?.teacherName && <span>• استاد: {currentProgram.teacherName}</span>}
+                      {currentProgram?.madrasRoom && <span>• مَدرَس: {currentProgram.madrasRoom}</span>}
+                    </div>
+                  </div>
 
                   {/* Status Counters */}
                   <div className="flex items-center gap-1.5 flex-wrap text-xs">
@@ -1371,35 +1400,63 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       {activeSessionStats.excused} موجه
                     </span>
                     {activeSessionStats.unspecified > 0 && (
-                      <span className="px-2.5 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200">
-                        {activeSessionStats.unspecified} نامشخص
+                      <span className="px-2.5 py-1 bg-amber-100/90 text-amber-900 font-bold rounded-lg border border-amber-300">
+                        {activeSessionStats.unspecified} نامشخص / تعیین‌نشده
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Quick Bulk Actions */}
-                {!isDateLockedForRepresentative && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold text-slate-400">تیک همگانی:</span>
-                    <button
-                      type="button"
-                      onClick={() => handleMarkAll('present')}
-                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
-                    >
-                      <CheckCircle2 size={13} className="text-emerald-600" />
-                      <span>حضور همه</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMarkAll('absent')}
-                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
-                    >
-                      <XCircle size={13} className="text-rose-600" />
-                      <span>غیبت همه</span>
-                    </button>
-                  </div>
-                )}
+                {/* Quick Bulk Actions & Top Save Button */}
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {!isDateLockedForRepresentative && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-slate-400">تیک همگانی:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAll('present')}
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                      >
+                        <CheckCircle2 size={13} className="text-emerald-600" />
+                        <span>حضور همه</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAll('absent')}
+                        className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                      >
+                        <XCircle size={13} className="text-rose-600" />
+                        <span>غیبت همه</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStudentsAttendance({})}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                        title="ریست وضعیت همه طلاب به نامشخص"
+                      >
+                        <span>پاکسازی تیک‌ها</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Top Final Save Button */}
+                  <button
+                    type="button"
+                    onClick={handleSaveAttendance}
+                    disabled={isSaving || !currentProgram || isDateLockedForRepresentative}
+                    className={cn(
+                      "px-4 py-2 rounded-xl font-black text-xs transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0",
+                      isDateLockedForRepresentative
+                        ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                        : isSavedRecently 
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200" 
+                          : "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white shadow-indigo-200"
+                    )}
+                  >
+                    <Save size={15} />
+                    <span>{isSaving ? 'در حال ثبت...' : 'ثبت نهایی حضور و غیاب'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Student Roster Table */}
@@ -1411,7 +1468,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               ) : (
                 <div className="divide-y divide-slate-100 px-3 sm:px-5">
                   {enrolledStudents.map((student, index) => {
-                    const currentStatus = studentsAttendance[student.id] || 'present';
+                    const currentStatus = studentsAttendance[student.id]; // undefined if not chosen yet
                     const studentNote = studentNotes[student.id] || '';
                     const hasWarning = !!studentWarnings[student.id];
                     const isExc = studentExcused[student.id]?.isExcused;
@@ -1425,7 +1482,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           "py-3 sm:py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-2 rounded-xl transition-all duration-300",
                           isHighlighted 
                             ? "bg-amber-50/90 ring-2 ring-amber-400 shadow-sm" 
-                            : "hover:bg-slate-50/80"
+                            : !currentStatus
+                              ? "bg-slate-50/40 hover:bg-slate-50/80"
+                              : "hover:bg-slate-50/80"
                         )}
                       >
                         {/* Student Info */}

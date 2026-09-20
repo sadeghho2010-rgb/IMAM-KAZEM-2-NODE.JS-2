@@ -12,22 +12,23 @@ import {
   Sparkles, 
   GitFork, 
   GraduationCap, 
-  CalendarDays,
-  Printer,
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-  Check,
-  CheckCircle2,
-  HelpCircle,
-  Layers,
-  Plus,
-  Trash2,
-  ExternalLink,
-  ShieldAlert
+  CalendarDays, 
+  Printer, 
+  ChevronLeft, 
+  ChevronRight, 
+  Filter, 
+  Check, 
+  CheckCircle2, 
+  HelpCircle, 
+  Layers, 
+  Plus, 
+  Trash2, 
+  ExternalLink, 
+  ShieldAlert,
+  Phone
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Student, Program, Enrollment, CustomStudentSchedule } from '../types';
+import { Student, Program, Enrollment, CustomStudentSchedule, Teacher } from '../types';
 import { localDb } from '../lib/localDb';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -45,6 +46,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   
   const [students, setStudents] = useState<Student[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [customSchedules, setCustomSchedules] = useState<CustomStudentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,11 +95,13 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     try {
       const rawStudents = await localDb.getDocs<Student>('students');
       const rawPrograms = await localDb.getDocs<Program>('programs');
+      const rawTeachers = await localDb.getDocs<Teacher>('teachers');
       const rawEnrollments = await localDb.getDocs<Enrollment>('enrollments');
       const rawCustoms = await localDb.getDocs<CustomStudentSchedule>('custom_student_schedules');
 
       setStudents(rawStudents);
       setPrograms(rawPrograms);
+      setTeachers(rawTeachers || []);
       setEnrollments(rawEnrollments);
       setCustomSchedules(rawCustoms || []);
 
@@ -257,6 +261,14 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     if (!parentProgramId) return null;
     const parent = programs.find(p => p.id === parentProgramId);
     return parent ? parent.title : null;
+  };
+
+  // Helper to find teacher phone number from teacher's bank
+  const getTeacherPhone = (teacherName?: string) => {
+    if (!teacherName) return null;
+    const clean = teacherName.trim();
+    const t = teachers.find(item => item.fullName.trim() === clean || clean.includes(item.fullName.trim()) || item.fullName.trim().includes(clean));
+    return t?.phoneNumber || null;
   };
 
   // Export Single Student Schedule to Excel
@@ -661,15 +673,30 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                 </div>
 
                                 <div className={cn(
-                                  "flex items-center justify-between text-[10px] font-bold",
+                                  "flex flex-col gap-1 text-[10px] font-bold pt-1",
                                   prog.type === 'اصلی' ? "text-indigo-200" : "text-slate-600"
                                 )}>
-                                  <span className="flex items-center gap-1">
-                                    <Clock size={11} /> {prog.time || 'زمان مشخص‌نشده'}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <User size={11} /> {prog.teacher || 'استاد ثبت‌نشده'}
-                                  </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="flex items-center gap-1">
+                                      <Clock size={11} /> {prog.time || 'زمان مشخص‌نشده'}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <User size={11} /> {prog.teacher || 'استاد ثبت‌نشده'}
+                                    </span>
+                                  </div>
+                                  {getTeacherPhone(prog.teacher) && (
+                                    <div className="flex items-center justify-end gap-1 text-[9px] font-mono opacity-90">
+                                      <Phone size={9} />
+                                      <a 
+                                        href={`tel:${getTeacherPhone(prog.teacher)}`}
+                                        className="hover:underline tracking-tight"
+                                        title={`تماس با استاد ${prog.teacher}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {getTeacherPhone(prog.teacher)}
+                                      </a>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {prog.type === 'مشاوره' && parentTitle && (
@@ -751,15 +778,30 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                     </div>
 
                     <div className="space-y-2">
-                      {mainClasses.map(p => (
-                        <div key={p.id} className="bg-white p-3 rounded-xl border border-indigo-200 space-y-1 text-xs shadow-2xs">
-                          <div className="font-black text-indigo-950 text-sm">{p.title}</div>
-                          <div className="flex justify-between text-slate-600 font-bold text-[11px]">
-                            <span>استاد: {p.teacher || '---'}</span>
-                            <span>زمان: {p.day || ''} {p.time || ''}</span>
+                      {mainClasses.map(p => {
+                        const phone = getTeacherPhone(p.teacher);
+                        return (
+                          <div key={p.id} className="bg-white p-3 rounded-xl border border-indigo-200 space-y-1.5 text-xs shadow-2xs">
+                            <div className="font-black text-indigo-950 text-sm">{p.title}</div>
+                            <div className="flex flex-wrap items-center justify-between text-slate-600 font-bold text-[11px] gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span>استاد: {p.teacher || '---'}</span>
+                                {phone && (
+                                  <a 
+                                    href={`tel:${phone}`} 
+                                    className="flex items-center gap-0.5 text-indigo-600 font-mono text-[10px] bg-indigo-50 px-1.5 py-0.5 rounded hover:underline"
+                                    title="تماس با استاد"
+                                  >
+                                    <Phone size={9} />
+                                    <span>{phone}</span>
+                                  </a>
+                                )}
+                              </div>
+                              <span>زمان: {p.day || ''} {p.time || ''}</span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {mainClasses.length === 0 && (
                         <p className="text-xs text-indigo-400 italic text-center py-2">هیچ درس اصلی ثبت‌نام نشده است.</p>
                       )}
@@ -778,11 +820,24 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                     <div className="space-y-2">
                       {counselingClasses.map(p => {
                         const parentTitle = getParentProgramTitle(p.parentProgramId);
+                        const phone = getTeacherPhone(p.teacher);
                         return (
-                          <div key={p.id} className="bg-white p-3 rounded-xl border border-amber-200 space-y-1 text-xs shadow-2xs">
+                          <div key={p.id} className="bg-white p-3 rounded-xl border border-amber-200 space-y-1.5 text-xs shadow-2xs">
                             <div className="font-black text-amber-950 text-sm">{p.title}</div>
-                            <div className="flex justify-between text-slate-600 font-bold text-[11px]">
-                              <span>استاد: {p.teacher || '---'}</span>
+                            <div className="flex flex-wrap items-center justify-between text-slate-600 font-bold text-[11px] gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span>استاد: {p.teacher || '---'}</span>
+                                {phone && (
+                                  <a 
+                                    href={`tel:${phone}`} 
+                                    className="flex items-center gap-0.5 text-amber-800 font-mono text-[10px] bg-amber-50 px-1.5 py-0.5 rounded hover:underline"
+                                    title="تماس با استاد"
+                                  >
+                                    <Phone size={9} />
+                                    <span>{phone}</span>
+                                  </a>
+                                )}
+                              </div>
                               <span>زمان: {p.day || ''} {p.time || ''}</span>
                             </div>
                             {parentTitle && (
@@ -810,18 +865,33 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                     </div>
 
                     <div className="space-y-2">
-                      {[...researchClasses, ...thursdayClasses].map(p => (
-                        <div key={p.id} className="bg-white p-3 rounded-xl border border-emerald-200 space-y-1 text-xs shadow-2xs">
-                          <div className="font-black text-emerald-950 text-sm flex items-center justify-between">
-                            <span>{p.title}</span>
-                            <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded font-bold">{p.type}</span>
+                      {[...researchClasses, ...thursdayClasses].map(p => {
+                        const phone = getTeacherPhone(p.teacher);
+                        return (
+                          <div key={p.id} className="bg-white p-3 rounded-xl border border-emerald-200 space-y-1.5 text-xs shadow-2xs">
+                            <div className="font-black text-emerald-950 text-sm flex items-center justify-between">
+                              <span>{p.title}</span>
+                              <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded font-bold">{p.type}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between text-slate-600 font-bold text-[11px] gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span>استاد/مسئول: {p.teacher || '---'}</span>
+                                {phone && (
+                                  <a 
+                                    href={`tel:${phone}`} 
+                                    className="flex items-center gap-0.5 text-emerald-800 font-mono text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded hover:underline"
+                                    title="تماس با استاد"
+                                  >
+                                    <Phone size={9} />
+                                    <span>{phone}</span>
+                                  </a>
+                                )}
+                              </div>
+                              <span>زمان: {p.day || ''} {p.time || ''}</span>
+                            </div>
                           </div>
-                          <div className="flex justify-between text-slate-600 font-bold text-[11px]">
-                            <span>استاد/مسئول: {p.teacher || '---'}</span>
-                            <span>زمان: {p.day || ''} {p.time || ''}</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {researchClasses.length === 0 && thursdayClasses.length === 0 && (
                         <p className="text-xs text-emerald-500 italic text-center py-2">برنامه‌ای در این بخش ثبت نشده است.</p>
                       )}

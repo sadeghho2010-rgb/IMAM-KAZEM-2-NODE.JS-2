@@ -453,6 +453,10 @@ export interface Enrollment {
   id: string;
   studentId: string;
   programId: string;
+  enrollmentDate?: string;
+  status?: string;
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface ResearchRecord {
@@ -1031,10 +1035,57 @@ export type AppModuleId =
   | 'audit-logs'
   | 'education-financial-report'
   | 'counseling-classes'
+  | 'course-selection'
   | 'teacher-transport'
   | 'staff-bank';
 
-export type CounselingScore = 'الف' | 'ب' | 'ج';
+export type CounselingScore = 'الف' | 'ب' | 'ج' | 'د' | 'غیبت';
+
+export interface CourseSelectionPeriod {
+  id: string;
+  title: string;
+  academicYear?: string;
+  term?: string;
+  allowedProgramTypes: ProgramType[];
+  allowedGrades: string[]; // e.g. ['پایه ۷', 'پایه ۸'] or ['all']
+  startDate: string; // Shamsi YYYY/MM/DD
+  endDate: string; // Shamsi YYYY/MM/DD
+  isActive: boolean; // فعال بودن دوره
+  isArchived?: boolean; // بایگانی دوره
+  description?: string;
+  createdAt: string;
+  createdByUserName?: string;
+  updatedAt?: string;
+}
+
+export interface StudentCourseSelectionChoice {
+  programId: string;
+  programTitle: string;
+  programType: ProgramType;
+  teacherName?: string;
+  teacherPhone?: string;
+  day?: string;
+  time?: string;
+  madrasRoom?: string;
+  grade?: string;
+}
+
+export interface CourseSelectionRequest {
+  id: string;
+  periodId: string;
+  periodTitle: string;
+  studentId: string;
+  studentName: string;
+  studentGrade: string;
+  nationalId?: string;
+  selectedCourses: StudentCourseSelectionChoice[];
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  adminNotes?: string;
+  isArchived?: boolean;
+}
 
 export interface CounselingSessionGrade {
   id: string;
@@ -1224,6 +1275,9 @@ export interface AppUser {
   avatarBg?: string;
   allowedModules?: AppModuleId[]; // If specified, overrides default role menu
   modulePermissions?: Partial<Record<AppModuleId, 'none' | 'view' | 'edit'>>;
+  canEditCounseling?: boolean;
+  canViewCounseling?: boolean;
+  permissions?: string[];
   createdAt: string;
   updatedAt?: string;
 }

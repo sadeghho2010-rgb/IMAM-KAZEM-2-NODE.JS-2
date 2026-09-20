@@ -31,7 +31,8 @@ import {
   Receipt,
   FileSpreadsheet,
   HandCoins,
-  Car
+  Car,
+  BookOpenCheck
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -74,6 +75,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'discussion', label: 'گروه‌های بحثی', icon: Users },
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
+  { id: 'course-selection', label: 'سامانه انتخاب واحد', icon: BookOpenCheck },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', icon: BookCheck },
   { id: 'comments', label: 'نظرات و ارزیابی‌ها', icon: MessageSquare },

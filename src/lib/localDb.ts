@@ -200,7 +200,9 @@ export const COLLECTIONS = [
   'destination_accounts',
   'student_claims',
   'users',
-  'attendance_settings'
+  'attendance_settings',
+  'course_selection_periods',
+  'course_selection_requests'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;
