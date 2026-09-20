@@ -25,7 +25,8 @@ import {
   Trash2, 
   ExternalLink, 
   ShieldAlert,
-  Phone
+  Phone,
+  DoorOpen
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Student, Program, Enrollment, CustomStudentSchedule, Teacher } from '../types';
@@ -684,6 +685,12 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                       <User size={11} /> {prog.teacher || 'استاد ثبت‌نشده'}
                                     </span>
                                   </div>
+                                  {(prog.madrasRoom || prog.classroom) && (
+                                    <div className="flex items-center gap-1 text-[10px] font-bold">
+                                      <DoorOpen size={11} className={prog.type === 'اصلی' ? 'text-indigo-300' : 'text-slate-500'} />
+                                      <span>مَدرَس: {prog.madrasRoom || prog.classroom}</span>
+                                    </div>
+                                  )}
                                   {getTeacherPhone(prog.teacher) && (
                                     <div className="flex items-center justify-end gap-1 text-[9px] font-mono opacity-90">
                                       <Phone size={9} />
@@ -797,7 +804,15 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                   </a>
                                 )}
                               </div>
-                              <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              <div className="flex items-center gap-2">
+                                {(p.madrasRoom || p.classroom) && (
+                                  <span className="flex items-center gap-1 text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 text-[10px]">
+                                    <DoorOpen size={10} />
+                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                  </span>
+                                )}
+                                <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -838,7 +853,15 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                   </a>
                                 )}
                               </div>
-                              <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              <div className="flex items-center gap-2">
+                                {(p.madrasRoom || p.classroom) && (
+                                  <span className="flex items-center gap-1 text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-200 text-[10px]">
+                                    <DoorOpen size={10} />
+                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                  </span>
+                                )}
+                                <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              </div>
                             </div>
                             {parentTitle && (
                               <div className="text-[10px] font-bold text-amber-800 pt-1 border-t border-amber-100 flex items-center gap-1">
@@ -887,7 +910,15 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
                                   </a>
                                 )}
                               </div>
-                              <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              <div className="flex items-center gap-2">
+                                {(p.madrasRoom || p.classroom) && (
+                                  <span className="flex items-center gap-1 text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200 text-[10px]">
+                                    <DoorOpen size={10} />
+                                    <span>مَدرَس: {p.madrasRoom || p.classroom}</span>
+                                  </span>
+                                )}
+                                <span>زمان: {p.day || ''} {p.time || ''}</span>
+                              </div>
                             </div>
                           </div>
                         );

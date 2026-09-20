@@ -1,6 +1,6 @@
 export const SUPABASE_SCHEMA_SQL = `-- ==============================================================================
--- اسکریپت جامع ساخت جداول و تنظیمات دیتابیس Supabase
--- نرم‌افزار مدیریت آموزشی و مالی طلاب و اساتید
+-- اسکریپت جامع ساخت جداول و تنظیمات دیتابیس Supabase / PostgreSQL
+-- نرم‌افزار مدیریت آموزشی، پژوهشی و مالی طلاب و اساتید
 -- ==============================================================================
 
 -- ۱. فعال‌سازی اکستنشن‌های ضروری
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS public.cloud_backups (
   student_count INT DEFAULT 0,
   persian_date TEXT,
   supabase_url TEXT,
-  data JSONB,
+  data JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS public.teachers (
 CREATE TABLE IF NOT EXISTS public.attendance (
   id TEXT PRIMARY KEY,
   student_id TEXT,
+  program_id TEXT,
   date TEXT,
   grade TEXT,
   status TEXT,
@@ -101,18 +102,93 @@ CREATE TABLE IF NOT EXISTS public.study_stats (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۸. جدول برنامه‌های آموزشی و کلاسی (programs)
+-- ۸. جدول برنامه‌های آموزشی و کلاس‌ها (programs)
 CREATE TABLE IF NOT EXISTS public.programs (
   id TEXT PRIMARY KEY,
   title TEXT,
   grade TEXT,
+  teacher_name TEXT,
+  type TEXT,
+  madras_room TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۹. جدول ثبت‌نام طلاب در دروس (enrollments)
+CREATE TABLE IF NOT EXISTS public.enrollments (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  program_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student ON public.enrollments (student_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_program ON public.enrollments (program_id);
+
+-- ۱۰. جدول مدرس‌ها و فضاهای آموزشی (classrooms)
+CREATE TABLE IF NOT EXISTS public.classrooms (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  capacity INT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۱۱. جدول بازه‌های زمانی انتخاب واحد (course_selection_periods)
+CREATE TABLE IF NOT EXISTS public.course_selection_periods (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  grade TEXT,
+  start_date TEXT,
+  end_date TEXT,
+  is_active BOOLEAN DEFAULT true,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۱۲. جدول درخواست‌های ثبت کلاس و انتخاب واحد طلاب (course_selection_requests)
+CREATE TABLE IF NOT EXISTS public.course_selection_requests (
+  id TEXT PRIMARY KEY,
+  period_id TEXT,
+  student_id TEXT,
+  student_name TEXT,
+  grade TEXT,
+  status TEXT DEFAULT 'pending',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_course_requests_period ON public.course_selection_requests (period_id);
+CREATE INDEX IF NOT EXISTS idx_course_requests_student ON public.course_selection_requests (student_id);
+CREATE INDEX IF NOT EXISTS idx_course_requests_status ON public.course_selection_requests (status);
+
+-- ۱۳. جدول برنامه‌های درسی اختصاصی/خارج از موسسه طلاب (custom_student_schedules)
+CREATE TABLE IF NOT EXISTS public.custom_student_schedules (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  title TEXT,
+  day TEXT,
+  time TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۱۴. جدول برنامه‌های دستی زمان‌بندی اساتید (teacher_schedules)
+CREATE TABLE IF NOT EXISTS public.teacher_schedules (
+  id TEXT PRIMARY KEY,
+  teacher_id TEXT,
   teacher_name TEXT,
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۹. جدول آزمون‌های شفاهی طلاب (oral_exams)
+-- ۱۵. جدول آزمون‌های شفاهی طلاب (oral_exams)
 CREATE TABLE IF NOT EXISTS public.oral_exams (
   id TEXT PRIMARY KEY,
   student_id TEXT,
@@ -123,7 +199,7 @@ CREATE TABLE IF NOT EXISTS public.oral_exams (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۰. جدول ارزیابی کلاس‌های مشاوره (counseling_session_grades)
+-- ۱۶. جدول ارزیابی کلاس‌های مشاوره (counseling_session_grades)
 CREATE TABLE IF NOT EXISTS public.counseling_session_grades (
   id TEXT PRIMARY KEY,
   student_id TEXT,
@@ -133,7 +209,7 @@ CREATE TABLE IF NOT EXISTS public.counseling_session_grades (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۱. جدول پیگیری‌ها و وظایف (todos)
+-- ۱۷. جدول پیگیری‌ها و وظایف (todos)
 CREATE TABLE IF NOT EXISTS public.todos (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -144,18 +220,49 @@ CREATE TABLE IF NOT EXISTS public.todos (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۲. جدول جریان کار (workflow_items)
+-- ۱۸. جدول جریان کار و درخواست‌های تایید (workflow_items)
 CREATE TABLE IF NOT EXISTS public.workflow_items (
   id TEXT PRIMARY KEY,
   title TEXT,
   status TEXT,
   stage TEXT,
+  category TEXT,
+  grade TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_status ON public.workflow_items (status);
+CREATE INDEX IF NOT EXISTS idx_workflow_category ON public.workflow_items (category);
+
+-- ۱۹. جدول تنظیمات جریان کار (workflow_settings)
+CREATE TABLE IF NOT EXISTS public.workflow_settings (
+  id TEXT PRIMARY KEY,
   data JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۳. جدول دوره‌های نهار و شام (lunch_periods) و رزروها (lunch_reservations)
+-- ۲۰. جدول کارکرد و ساعت‌های حضور کادر (presence_hours_logs & presence_reports)
+CREATE TABLE IF NOT EXISTS public.presence_hours_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  log_date TEXT,
+  hours NUMERIC DEFAULT 0,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.presence_reports (
+  id TEXT PRIMARY KEY,
+  report_month TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۲۱. جدول دوره‌های نهار و شام (lunch_periods) و رزروها (lunch_reservations)
 CREATE TABLE IF NOT EXISTS public.lunch_periods (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -176,7 +283,7 @@ CREATE TABLE IF NOT EXISTS public.lunch_reservations (
 );
 CREATE INDEX IF NOT EXISTS idx_lunch_reservations_period ON public.lunch_reservations (period_id);
 
--- ۱۴. جدول شهریه و مطالبات طلاب (tuition_records)
+-- ۲۲. جدول شهریه و مطالبات طلاب (tuition_records)
 CREATE TABLE IF NOT EXISTS public.tuition_records (
   id TEXT PRIMARY KEY,
   period_id TEXT,
@@ -187,7 +294,7 @@ CREATE TABLE IF NOT EXISTS public.tuition_records (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۵. جدول هزینه‌ها و مخارج مدرسه (finance_expenses)
+-- ۲۳. جدول هزینه‌ها و مخارج مدرسه (finance_expenses)
 CREATE TABLE IF NOT EXISTS public.finance_expenses (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -199,7 +306,17 @@ CREATE TABLE IF NOT EXISTS public.finance_expenses (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۶. جدول گزارش فعالیت‌ها و رویدادهای سیستم (audit_logs)
+-- ۲۴. جدول گروه مباحثات (discussion_groups)
+CREATE TABLE IF NOT EXISTS public.discussion_groups (
+  id TEXT PRIMARY KEY,
+  title TEXT,
+  program_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۲۵. جدول گزارش فعالیت‌ها و رویدادهای سیستم (audit_logs)
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id TEXT PRIMARY KEY,
   user_name TEXT,
@@ -209,7 +326,93 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۷. جدول جامع همگام‌سازی تمامی بخش‌های دیتابیس (app_collections)
+-- ۲۶. جدول تقویم آموزشی و تعطیلات (academic_calendar_periods, academic_holidays, academic_holiday_types, academic_sub_periods, academic_weekly_programs)
+CREATE TABLE IF NOT EXISTS public.academic_calendar_periods (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.academic_holidays (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.academic_holiday_types (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.academic_sub_periods (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.academic_weekly_programs (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۲۷. جدول سوابق و مهارت‌های پژوهشی طلاب (research_records, research_skills_def, student_research_skills)
+CREATE TABLE IF NOT EXISTS public.research_records (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.research_skills_def (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.student_research_skills (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۲۸. جدول گزارش مطالعه دوره‌ای طلاب (periodic_study_logs & study_periods)
+CREATE TABLE IF NOT EXISTS public.periodic_study_logs (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  period_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.study_periods (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۲۹. جدول ملاحظات و پیام‌های طلاب (student_comments)
+CREATE TABLE IF NOT EXISTS public.student_comments (
+  id TEXT PRIMARY KEY,
+  student_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۳۰. جدول جامع همگام‌سازی تمامی بخش‌های دیتابیس (app_collections)
 CREATE TABLE IF NOT EXISTS public.app_collections (
   collection_name TEXT NOT NULL,
   id TEXT NOT NULL,
@@ -220,7 +423,7 @@ CREATE TABLE IF NOT EXISTS public.app_collections (
 );
 CREATE INDEX IF NOT EXISTS idx_app_collections_name ON public.app_collections (collection_name);
 
--- ۱۸. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
+-- ۳۱. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
 DO $$
 DECLARE
   tbl text;
@@ -231,15 +434,36 @@ DECLARE
     'attendance',
     'study_stats',
     'programs',
+    'enrollments',
+    'classrooms',
+    'course_selection_periods',
+    'course_selection_requests',
+    'custom_student_schedules',
+    'teacher_schedules',
     'oral_exams',
     'counseling_session_grades',
     'todos',
     'workflow_items',
+    'workflow_settings',
+    'presence_hours_logs',
+    'presence_reports',
     'lunch_periods',
     'lunch_reservations',
     'tuition_records',
     'finance_expenses',
+    'discussion_groups',
     'audit_logs',
+    'academic_calendar_periods',
+    'academic_holidays',
+    'academic_holiday_types',
+    'academic_sub_periods',
+    'academic_weekly_programs',
+    'research_records',
+    'research_skills_def',
+    'student_research_skills',
+    'periodic_study_logs',
+    'study_periods',
+    'student_comments',
     'app_collections'
   ];
 BEGIN

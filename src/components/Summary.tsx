@@ -40,7 +40,8 @@ import {
   Percent,
   ArrowUpRight,
   ArrowDownRight,
-  XCircle
+  XCircle,
+  DoorOpen
 } from 'lucide-react';
 import { localDb } from '../lib/localDb';
 import { 
@@ -1072,6 +1073,12 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
                         <User size={13} className="text-slate-400" />
                         <span>استاد: <b className="text-slate-700">{prog.teacher || 'نامشخص'}</b></span>
                       </div>
+                      {(prog.madrasRoom || prog.classroom) && (
+                        <div className="flex items-center gap-1.5 text-indigo-800 font-bold bg-indigo-50/80 px-2 py-0.5 rounded-md border border-indigo-100">
+                          <DoorOpen size={13} className="text-indigo-600" />
+                          <span>مَدرَس (کلاس درس): <b className="text-indigo-950">{prog.madrasRoom || prog.classroom}</b></span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
