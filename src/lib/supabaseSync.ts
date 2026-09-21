@@ -21,33 +21,51 @@ export async function testSupabaseConnection(): Promise<ConnectionStatus> {
   if (!isSupabaseConfigured) {
     return {
       connected: false,
-      message: 'کلید اتصال به دیتابیس Supabase در متغیرهای سیستم تنظیم نشده است. سیستم در حالت محلی (آفلاین) فعال است.'
+      message: 'کلید و آدرس دیتابیس آنلاین (Supabase) هنوز در متغیرهای سیستم تنظیم نشده است. سامانه در حالت آفلاین و دیتابیس داخلی (Local DB / Storage) فعال است.'
     };
   }
   try {
-    // 1. Try querying cloud_backups table
-    const { error: tableError } = await supabase
-      .from('cloud_backups')
-      .select('id')
-      .limit(1);
+    const tablesToCheck = [
+      { name: 'app_collections', label: 'جدول اصلی داده‌ها (app_collections)' },
+      { name: 'cloud_backups', label: 'جدول پشتیبان‌گیری ابری (cloud_backups)' },
+      { name: 'students', label: 'جدول طلاب (students)' },
+      { name: 'programs', label: 'جدول برنامه‌های درسی (programs)' },
+      { name: 'system_users', label: 'جدول کاربران سیستم (system_users)' }
+    ];
 
-    if (tableError) {
-      if (tableError.code === '42P01' || tableError.message.includes('relation') || tableError.message.includes('not exist')) {
-        return {
-          connected: false,
-          message: 'جدول‌های دیتابیس در Supabase هنوز ساخته نشده‌اند. لطفاً اسکریپت SQL را در SQL Editor سوپابیس اجرا کنید.'
-        };
+    const foundTables: string[] = [];
+    const missingTables: string[] = [];
+
+    for (const t of tablesToCheck) {
+      const { error } = await supabase.from(t.name).select('id').limit(1);
+      if (!error) {
+        foundTables.push(t.label);
+      } else if (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist')) {
+        missingTables.push(t.label);
+      } else {
+        // Table exists but maybe empty or restricted by policy
+        foundTables.push(t.label);
       }
-      return {
-        connected: false,
-        message: `خطای اتصال به Supabase: ${tableError.message}`
-      };
     }
 
-    return {
-      connected: true,
-      message: 'اتصال به دیتابیس Supabase و جدول‌های سیستم با موفقیت تأیید شد.'
-    };
+    if (foundTables.length === tablesToCheck.length) {
+      return {
+        connected: true,
+        message: 'اتصال به دیتابیس Supabase و تمامی جدول‌های کلیدی با موفقیت تأیید شد.',
+        tablesFound: foundTables
+      };
+    } else if (foundTables.length > 0) {
+      return {
+        connected: true,
+        message: `اتصال به Supabase برقرار است (${foundTables.length} جدول از ${tablesToCheck.length} جدول فعال است). جدول‌های موجود: [${foundTables.join('، ')}]. ${missingTables.length > 0 ? `جدول‌های باقی‌مانده: [${missingTables.join('، ')}]. لطفاً دکمه «کپی اسکریپت کامل SQL» را بزنید و کد را در SQL Editor سوپابیس اجرا کنید.` : ''}`,
+        tablesFound: foundTables
+      };
+    } else {
+      return {
+        connected: false,
+        message: 'جدول‌های دیتابیس آنلاین در پروژه Supabase شما هنوز ایجاد نشده‌اند. لطفاً دکمه «کپی اسکریپت کامل SQL ساخت جدول‌ها» را بزنید و کد کپی شده را در بخش SQL Editor در سایت Supabase Paste کرده و دکمه Run را بزنید تا تمامی ۳۲ جدول سیستم به صورت یکجا و خودکار ساخته شوند.'
+      };
+    }
   } catch (err: any) {
     return {
       connected: false,

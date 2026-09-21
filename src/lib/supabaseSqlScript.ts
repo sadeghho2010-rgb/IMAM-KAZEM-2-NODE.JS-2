@@ -423,7 +423,23 @@ CREATE TABLE IF NOT EXISTS public.app_collections (
 );
 CREATE INDEX IF NOT EXISTS idx_app_collections_name ON public.app_collections (collection_name);
 
--- ۳۱. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
+-- ۳۱. جدول کاربران اختصاصی سیستم (system_users)
+CREATE TABLE IF NOT EXISTS public.system_users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE,
+  password_hash TEXT,
+  role TEXT,
+  level INT DEFAULT 3,
+  is_active BOOLEAN DEFAULT true,
+  allowed_tabs JSONB DEFAULT '[]'::jsonb,
+  mentor_id TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_system_users_username ON public.system_users (username);
+
+-- ۳۲. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
 DO $$
 DECLARE
   tbl text;
@@ -464,7 +480,8 @@ DECLARE
     'periodic_study_logs',
     'study_periods',
     'student_comments',
-    'app_collections'
+    'app_collections',
+    'system_users'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

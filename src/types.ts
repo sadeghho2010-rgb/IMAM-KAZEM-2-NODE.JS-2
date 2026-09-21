@@ -1047,7 +1047,11 @@ export interface CourseSelectionPeriod {
   academicYear?: string;
   term?: string;
   allowedProgramTypes: ProgramType[];
-  allowedGrades: string[]; // e.g. ['پایه ۷', 'پایه ۸'] or ['all']
+  allowedGrades: string[]; // e.g. ['پایه ۷', 'پایه ۸'] or ['همه پایه‌ها']
+  customStudentIds?: string[]; // لیست آی‌دی طلاب اضافه شده به صورت دستی
+  customIncludedProgramIds?: string[]; // لیست آی‌دی دروس اضافه شده به صورت دستی
+  customExcludedProgramIds?: string[]; // لیست آی‌دی دروس حذف شده به صورت دستی
+  allowCrossGradeSelection?: boolean; // اجازه انتخاب درس از سایر پایه‌ها (پیش‌فرض: true)
   startDate: string; // Shamsi YYYY/MM/DD
   endDate: string; // Shamsi YYYY/MM/DD
   isActive: boolean; // فعال بودن دوره
