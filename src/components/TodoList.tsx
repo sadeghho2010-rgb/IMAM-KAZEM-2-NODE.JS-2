@@ -34,7 +34,7 @@ import { AppUser } from '../types/auth';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
-const DEFAULT_CATEGORIES = ['عمومی', 'آموزش', 'پژوهش', 'اردو و برنامه‌ها'];
+const DEFAULT_CATEGORIES = ['عمومی'];
 
 export default function TodoList() {
   const { currentUser, users, isReadOnly } = useAuth();
@@ -125,24 +125,9 @@ export default function TodoList() {
     return () => unsub();
   }, [currentUser?.id]);
 
-  const isFinanceOfficer = 
-    currentUser?.role === 'finance_manager' || 
-    currentUser?.role === 'financial_officer' || 
-    currentUser?.username?.toUpperCase() === 'MALI';
-
   const defaultUserCategories = useMemo(() => {
-    if (isFinanceOfficer) {
-      return [
-        'کارکرد و حضور اساتید',
-        'محاسبه و پرداخت شهریه طلاب',
-        'کسورات نهار و غیبت‌ها',
-        'وام و صندوق قرض‌الحسنه',
-        'هزینه‌های جاری و تنخواه مدرسه',
-        'اسناد و گزارشات مالی'
-      ];
-    }
     return DEFAULT_CATEGORIES;
-  }, [isFinanceOfficer]);
+  }, []);
 
   // Available categories array (defaults + user created)
   const allCategoryNames = useMemo(() => {
@@ -619,6 +604,39 @@ export default function TodoList() {
       {/* TAB 1: PERSONAL TODOS */}
       {activeTab === 'personal' && (
         <div className="space-y-4">
+          {/* Global Super-Fast Quick Add Bar - Write & Press Enter */}
+          <div className="bg-white p-3.5 rounded-2xl border border-indigo-200 shadow-sm flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+              <Plus size={18} />
+            </div>
+            <input
+              type="text"
+              placeholder="ثبت سریع کار جدید... (عنوان پیگیری را بنویسید و کلید Enter را بزنید)"
+              value={globalQuickInput}
+              onChange={(e) => setGlobalQuickInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (globalQuickInput.trim()) {
+                    handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                  }
+                }
+              }}
+              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 placeholder:font-normal"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (globalQuickInput.trim()) {
+                  handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                }
+              }}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shrink-0 shadow-sm cursor-pointer transition-colors"
+            >
+              + ثبت کار
+            </button>
+          </div>
+
           {/* Bar Controls */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
             {/* Search and Category Filters */}
