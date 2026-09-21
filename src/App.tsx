@@ -28,6 +28,7 @@ import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
 import CounselingClasses from './components/CounselingClasses';
 import CourseSelection from './components/CourseSelection';
+import ArticleEvaluations from './components/ArticleEvaluations';
 import FinanceManagerDashboard from './components/FinanceManagerDashboard';
 import StudentActivityAndTuition from './components/finance/StudentActivityAndTuition';
 import GradeProfessorsCompensation from './components/finance/GradeProfessorsCompensation';
@@ -123,6 +124,8 @@ function AppContent() {
         return <TeachersSchedule />;
       case 'research':
         return <ResearchAndFeedback initialStudentId={selectedStudentIdForTab} />;
+      case 'article-evaluations':
+        return <ArticleEvaluations />;
       case 'attendance':
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
       case 'course-selection':

@@ -195,7 +195,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-teal-600',
     allowedTabs: [
-      'active-students', 'research', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
+      'active-students', 'research', 'article-evaluations', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
     ],
   },
   {
@@ -247,7 +247,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-blue-600',
     allowedTabs: [
-      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats'
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'article-evaluations'
     ],
   },
   {
@@ -266,7 +266,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-emerald-700',
     allowedTabs: [
-      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments'
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments', 'article-evaluations'
     ],
   },
 ];
@@ -734,8 +734,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
 
-    // سامانه انتخاب واحد / انتخاب درس
+    // سامانه انتخاب واحد / انتخاب درس (برای مسئول پژوهش مخفی است)
     if (tabId === 'course-selection') {
+      if (
+        currentUser.role === 'research_manager' ||
+        currentUser.role === 'research_officer' ||
+        currentUser.roleTitle === 'مسئول پژوهش' ||
+        currentUser.username.toUpperCase() === 'YAZDANI'
+      ) {
+        return false;
+      }
       return (
         currentUser.level === 1 ||
         currentUser.level === 2 ||
@@ -746,8 +754,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser.role === 'grade_mentor' ||
         currentUser.role === 'student' ||
         currentUser.role === 'class_representative' ||
-        ['SHAH', 'SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI', 'YAZDANI'].includes(currentUser.username.toUpperCase())
+        ['SHAH', 'SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase())
       );
+    }
+
+    // ارزیابی مقالات: برای مسئول پژوهش، کاربران سطح ۳ و مدیران مجاز است
+    if (tabId === 'article-evaluations') {
+      return true;
     }
 
     // پشتیبان‌گیری: فقط سوپر ادمین (سطح ۱) و مسئول آموزش

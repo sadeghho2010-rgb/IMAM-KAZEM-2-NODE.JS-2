@@ -520,6 +520,58 @@ export interface ConversationArchive {
   createdAt: string;
 }
 
+export interface ReceivedArticle {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentGrade?: string;
+  title: string;
+  summary?: string;
+  type?: 'individual' | 'group';
+  deliveryYear?: string;
+  pageCount?: number | string;
+  evaluationScores?: string;
+  evaluatorComments?: string;
+  isCompleted?: boolean;
+  source?: 'auto_completed' | 'manual';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ArticleEvaluationSession {
+  id: string;
+  articleId?: string;
+  title: string;
+  presenterStudentId?: string;
+  presenterName: string;
+  studentGrade?: string;
+  refereeCount: number; // تعداد داور
+  criticCount: number;  // تعداد ناقد
+  allowedRoleRegistration: 'critic' | 'referee' | 'both';
+  hasAbstract: boolean;
+  abstractText?: string;
+  hasDownloadLink: boolean;
+  downloadUrl?: string;
+  status: 'active' | 'completed' | 'archived';
+  approvedCriticStudentIds?: string[];
+  approvedRefereeStudentIds?: string[];
+  createdAt: string;
+}
+
+export interface EvaluationRequest {
+  id: string;
+  type: 'evaluation_request' | 'role_registration';
+  studentId: string;
+  studentName: string;
+  studentGrade?: string;
+  articleId?: string;
+  articleTitle: string;
+  requestedRole?: 'critic' | 'referee';
+  status: 'pending' | 'approved' | 'rejected';
+  adminNotes?: string;
+  createdAt: string;
+}
+
 export interface Attendance {
   id: string;
   studentId: string;
@@ -1037,6 +1089,7 @@ export type AppModuleId =
   | 'education-financial-report'
   | 'counseling-classes'
   | 'course-selection'
+  | 'article-evaluations'
   | 'teacher-transport'
   | 'staff-bank';
 

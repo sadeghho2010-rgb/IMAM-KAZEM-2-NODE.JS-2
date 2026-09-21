@@ -74,6 +74,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'stats', label: 'آمار مطالعه طلاب', icon: BarChart2 },
   { id: 'discussion', label: 'گروه‌های بحثی', icon: Users },
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
+  { id: 'article-evaluations', label: 'ارزیابی مقالات', icon: Award },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
   { id: 'course-selection', label: 'سامانه انتخاب واحد', icon: BookOpenCheck },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
@@ -153,6 +154,23 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         currentUser.username.toUpperCase() === 'SHAH' ||
         currentUser.level === 2
       );
+    }
+
+    // ارزیابی مقالات: برای تمامی سطوح (۱، ۲ و ۳) به خصوص مسئول پژوهش و طلاب
+    if (item.id === 'article-evaluations') {
+      return true;
+    }
+
+    // سامانه انتخاب واحد: برای مسئول پژوهش ممنوع است
+    if (item.id === 'course-selection') {
+      if (
+        currentUser.role === 'research_manager' ||
+        currentUser.role === 'research_officer' ||
+        currentUser.roleTitle === 'مسئول پژوهش' ||
+        currentUser.username.toUpperCase() === 'YAZDANI'
+      ) {
+        return false;
+      }
     }
 
     // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است

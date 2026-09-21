@@ -22,7 +22,12 @@ import {
   FolderMinus,
   Edit2,
   Bookmark,
-  Download
+  Download,
+  FileSpreadsheet,
+  Search,
+  FileText,
+  Layers,
+  UserCheck
 } from 'lucide-react';
 import { localDb } from '../lib/localDb';
 import { 
@@ -31,7 +36,8 @@ import {
   ConversationArchive,
   ResearchHistoryItem,
   ResearchSkillDef,
-  StudentResearchSkills
+  StudentResearchSkills,
+  ReceivedArticle
 } from '../types';
 import { useMentor } from '../context/MentorContext';
 import { cn } from '../lib/utils';
@@ -48,8 +54,27 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [loading, setLoading] = useState(false);
 
-  // Active Tab: 'active_research' | 'history' | 'skills'
-  const [activeTab, setActiveTab] = useState<'active_research' | 'history' | 'skills'>('active_research');
+  // Grade filter state for Grade View
+  const [selectedGradeTab, setSelectedGradeTab] = useState<string>('all');
+  const [gradeSearchQuery, setGradeSearchQuery] = useState<string>('');
+  const [studentResearchMap, setStudentResearchMap] = useState<Record<string, ResearchRecord>>({});
+
+  // Active Tab: 'active_research' | 'history' | 'skills' | 'received_articles'
+  const [activeTab, setActiveTab] = useState<'active_research' | 'history' | 'skills' | 'received_articles'>('active_research');
+
+  // Received Articles State
+  const [studentReceivedArticles, setStudentReceivedArticles] = useState<ReceivedArticle[]>([]);
+  const [showReceivedArticleModal, setShowReceivedArticleModal] = useState(false);
+  const [editingReceivedArticle, setEditingReceivedArticle] = useState<ReceivedArticle | null>(null);
+  const [receivedArticleForm, setReceivedArticleForm] = useState<Partial<ReceivedArticle>>({
+    title: '',
+    summary: '',
+    type: 'individual',
+    deliveryYear: '۱۴۰۳',
+    pageCount: '',
+    evaluationScores: '',
+    evaluatorComments: ''
+  });
 
   // Main research record for active year
   const [research, setResearch] = useState<ResearchRecord | null>(null);
@@ -135,16 +160,22 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
   }, [initialStudentId]);
 
   useEffect(() => {
-    const fetchStudents = async () => {
+    const fetchStudentsAndMap = async () => {
       const all = await localDb.getDocs<Student>('students');
       const active = all.filter(s => s.isActive);
-      setStudents(filterStudents(active, true));
+      const filtered = filterStudents(active, true);
+      setStudents(filtered);
+
+      const allRecords = await localDb.getDocs<ResearchRecord>('research_records');
+      const rMap: Record<string, ResearchRecord> = {};
+      allRecords.forEach(r => { rMap[r.studentId] = r; });
+      setStudentResearchMap(rMap);
     };
-    fetchStudents();
+    fetchStudentsAndMap();
     loadSkillDefinitions();
 
     const unsub = localDb.subscribe(() => {
-      fetchStudents();
+      fetchStudentsAndMap();
       loadSkillDefinitions();
     });
     return () => unsub();
@@ -165,12 +196,17 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
     setLoading(true);
     isFirstLoad.current = true;
     try {
-      const [allResearch, allArchives, allHistory, allStudentSkills] = await Promise.all([
+      const [allResearch, allArchives, allHistory, allStudentSkills, allReceived] = await Promise.all([
         localDb.getDocs<ResearchRecord>('research_records'),
         localDb.getDocs<ConversationArchive>('conversation_archives'),
         localDb.getDocs<ResearchHistoryItem>('research_history'),
-        localDb.getDocs<StudentResearchSkills>('student_research_skills')
+        localDb.getDocs<StudentResearchSkills>('student_research_skills'),
+        localDb.getDocs<ReceivedArticle>('received_articles')
       ]);
+
+      const rMap: Record<string, ResearchRecord> = {};
+      allResearch.forEach(r => { rMap[r.studentId] = r; });
+      setStudentResearchMap(rMap);
 
       const studentArchives = allArchives.filter(a => a.studentId === studentId);
       setArchives(studentArchives);
@@ -179,7 +215,8 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
       setResearch(studentResearch || null);
 
       const studentHist = allHistory.filter(h => h.studentId === studentId);
-      setHistoryItems(studentHist.sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime()));
+      const sortedHist = studentHist.sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
+      setHistoryItems(sortedHist);
 
       const skillsRec = allStudentSkills.find(s => s.studentId === studentId);
       if (skillsRec) {
@@ -194,6 +231,59 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
           updatedAt: new Date().toISOString()
         });
       }
+
+      // Received Articles: combine manual and auto-completed articles
+      const selStudent = students.find(s => s.id === studentId);
+      const manualReceived = allReceived.filter(ra => ra.studentId === studentId);
+      const autoCompleted: ReceivedArticle[] = [];
+
+      if (studentResearch && (studentResearch.stage === 'تکمیل شده' || studentResearch.stage === 'تکمیل شده و تحویل شده')) {
+        autoCompleted.push({
+          id: `auto_${studentResearch.id}`,
+          studentId,
+          studentName: selStudent?.name || 'طلبه',
+          studentGrade: selStudent?.grade || '---',
+          title: studentResearch.topic || 'پژوهش تکمیل شده',
+          summary: studentResearch.description || '',
+          type: studentResearch.type || 'individual',
+          deliveryYear: 'سال جاری',
+          pageCount: '---',
+          evaluationScores: studentResearch.score || '---',
+          evaluatorComments: studentResearch.criticNotes || studentResearch.supervisorNotes || studentResearch.professorNotes || '---',
+          isCompleted: true,
+          source: 'auto_completed',
+          createdAt: studentResearch.updatedAt || new Date().toISOString()
+        });
+      }
+
+      sortedHist.forEach(h => {
+        if (h.stage === 'تکمیل شده' || h.stage === 'تکمیل شده و تحویل شده') {
+          autoCompleted.push({
+            id: `auto_hist_${h.id}`,
+            studentId,
+            studentName: selStudent?.name || 'طلبه',
+            studentGrade: selStudent?.grade || '---',
+            title: h.topic || 'مقاله آرشیو شده',
+            summary: h.summary || h.description || '',
+            type: 'individual',
+            deliveryYear: h.academicYearOrPeriod || '---',
+            pageCount: '---',
+            evaluationScores: h.score || '---',
+            evaluatorComments: h.criticNotes || h.supervisorNotes || h.professorNotes || '---',
+            isCompleted: true,
+            source: 'auto_completed',
+            createdAt: h.archivedAt || new Date().toISOString()
+          });
+        }
+      });
+
+      const combinedReceived = [...manualReceived];
+      autoCompleted.forEach(ac => {
+        if (!combinedReceived.some(m => m.id === ac.id || m.title === ac.title)) {
+          combinedReceived.push(ac);
+        }
+      });
+      setStudentReceivedArticles(combinedReceived);
     } catch (error) {
       console.error("Error fetching details:", error);
     } finally {
@@ -259,6 +349,136 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
     } catch (err) {
       console.error("PDF export error:", err);
       alert("خطا در دانلود فایل PDF.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const gradeListPrintRef = useRef<HTMLDivElement>(null);
+
+  const handleSaveReceivedArticle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentId || !receivedArticleForm.title?.trim()) {
+      alert("لطفاً عنوان مقاله را وارد کنید.");
+      return;
+    }
+
+    const selStudent = students.find(s => s.id === selectedStudentId);
+
+    try {
+      if (editingReceivedArticle?.id && !editingReceivedArticle.id.startsWith('auto_')) {
+        await localDb.updateDoc('received_articles', editingReceivedArticle.id, {
+          ...receivedArticleForm,
+          studentId: selectedStudentId,
+          studentName: selStudent?.name || 'طلبه',
+          studentGrade: selStudent?.grade || '---',
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        await localDb.addDoc('received_articles', {
+          ...receivedArticleForm,
+          studentId: selectedStudentId,
+          studentName: selStudent?.name || 'طلبه',
+          studentGrade: selStudent?.grade || '---',
+          title: receivedArticleForm.title.trim(),
+          summary: receivedArticleForm.summary || '',
+          type: receivedArticleForm.type || 'individual',
+          deliveryYear: receivedArticleForm.deliveryYear || '۱۴۰۳',
+          pageCount: receivedArticleForm.pageCount || '',
+          evaluationScores: receivedArticleForm.evaluationScores || '',
+          evaluatorComments: receivedArticleForm.evaluatorComments || '',
+          isCompleted: true,
+          source: 'manual',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      setShowReceivedArticleModal(false);
+      setEditingReceivedArticle(null);
+      setReceivedArticleForm({
+        title: '',
+        summary: '',
+        type: 'individual',
+        deliveryYear: '۱۴۰۳',
+        pageCount: '',
+        evaluationScores: '',
+        evaluatorComments: ''
+      });
+      fetchStudentDetails(selectedStudentId);
+    } catch (err) {
+      console.error("Error saving received article:", err);
+      alert("خطا در ذخیره‌سازی مقاله دریافتی.");
+    }
+  };
+
+  const handleDeleteReceivedArticle = async (id: string) => {
+    if (id.startsWith('auto_')) {
+      alert("این مقاله به صورت خودکار از پرونده پژوهشی استخراج شده و قابل حذف نیست.");
+      return;
+    }
+    if (!confirm("آیا از حذف این مقاله دریافتی اطمینان دارید؟")) return;
+    try {
+      await localDb.deleteDoc('received_articles', id);
+      if (selectedStudentId) fetchStudentDetails(selectedStudentId);
+    } catch (err) {
+      console.error("Error deleting received article:", err);
+    }
+  };
+
+  const handleExportGradeExcel = () => {
+    const filteredList = students.filter(s => {
+      if (selectedGradeTab === 'all') return true;
+      return s.grade === selectedGradeTab || (s.grade && s.grade.includes(selectedGradeTab.replace('پایه ', '')));
+    }).filter(s => {
+      if (!gradeSearchQuery.trim()) return true;
+      const q = gradeSearchQuery.trim().toLowerCase();
+      const res = studentResearchMap[s.id];
+      return s.name.toLowerCase().includes(q) || (res?.topic && res.topic.toLowerCase().includes(q));
+    });
+
+    const rows = filteredList.map(s => {
+      const res = studentResearchMap[s.id];
+      return [
+        s.name,
+        s.grade || '---',
+        s.nationalId || '---',
+        res?.topic || 'ثبت نشده',
+        res?.type === 'group' ? 'گروهی' : 'فردی',
+        res?.stage || 'نامشخص',
+        res?.score || '---',
+        res?.supervisorNotes || res?.professorNotes || '---'
+      ];
+    });
+
+    let csvContent = "\uFEFFنام طلبه,پایه,کد ملی,موضوع پژوهش,نوع,مرحله,نمره,استاد راهنما/پژوهش\n";
+    rows.forEach(r => {
+      csvContent += r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(",") + "\n";
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `لیست_پژوهشی_${selectedGradeTab.replace(/\s+/g, '_')}_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportGradePdf = async () => {
+    if (!gradeListPrintRef.current) return;
+    setIsExporting(true);
+    try {
+      const fileName = `لیست_پژوهشی_${selectedGradeTab.replace(/\s+/g, '_')}_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.pdf`;
+      await exportElementToPdf({
+        element: gradeListPrintRef.current,
+        filename: fileName,
+        orientation: 'portrait',
+        marginMM: 8
+      });
+    } catch (err) {
+      console.error("Error exporting grade pdf:", err);
     } finally {
       setIsExporting(false);
     }
@@ -794,8 +1014,20 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 </div>
               </div>
 
-              {/* Status Pills */}
+              {/* Status Pills & Return Button */}
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStudentId('');
+                    setResearch(null);
+                  }}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
+                >
+                  <X size={15} />
+                  <span>بازگشت به لیست پایه‌ها</span>
+                </button>
+
                 <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black border border-indigo-100 flex items-center gap-1">
                   <BookOpen size={12} />
                   <span>پژوهش فعال: {research?.topic ? 'دارد' : 'ثبت نشده'}</span>
@@ -811,25 +1043,25 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
               </div>
             </div>
 
-            {/* 3 Main Tabs Navigation */}
+            {/* 4 Main Tabs Navigation */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <button
                 onClick={() => setActiveTab('active_research')}
                 className={cn(
-                  "flex-1 min-w-[160px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
                   activeTab === 'active_research'
                     ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
                     : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                 )}
               >
                 <BookOpen size={16} />
-                <span>پرونده پژوهشی فعال (امسال)</span>
+                <span>پرونده پژوهشی فعال</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('history')}
                 className={cn(
-                  "flex-1 min-w-[160px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
                   activeTab === 'history'
                     ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-100"
                     : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -847,7 +1079,7 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
               <button
                 onClick={() => setActiveTab('skills')}
                 className={cn(
-                  "flex-1 min-w-[160px] py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
                   activeTab === 'skills'
                     ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-100"
                     : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
@@ -858,6 +1090,24 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 {(studentSkills?.skillIds?.length || 0) > 0 && (
                   <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'skills' ? "bg-emerald-700 text-white" : "bg-emerald-100 text-emerald-800")}>
                     {studentSkills?.skillIds?.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('received_articles')}
+                className={cn(
+                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                  activeTab === 'received_articles'
+                    ? "bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-100"
+                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                )}
+              >
+                <FileText size={16} />
+                <span>مقالات و کارهای پژوهشی</span>
+                {studentReceivedArticles.length > 0 && (
+                  <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'received_articles' ? "bg-purple-700 text-white" : "bg-purple-100 text-purple-800")}>
+                    {studentReceivedArticles.length}
                   </span>
                 )}
               </button>
@@ -1483,11 +1733,344 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
               </div>
             </div>
           )}
+
+          {/* TAB 4: RECEIVED ARTICLES & RESEARCH WORKS */}
+          {activeTab === 'received_articles' && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <FileText className="text-purple-600" size={18} />
+                    بخش ویژه: مقالات و کارهای پژوهشی دریافتی از این طلبه
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    مقالاتی که در پرونده پژوهشی وضعیت «تکمیل شده» دارند به همراه مقالات ثبت‌شده دستی در این بخش نمایش داده می‌شوند.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setEditingReceivedArticle(null);
+                    setReceivedArticleForm({
+                      title: '',
+                      summary: '',
+                      type: 'individual',
+                      deliveryYear: '۱۴۰۳',
+                      pageCount: '',
+                      evaluationScores: '',
+                      evaluatorComments: ''
+                    });
+                    setShowReceivedArticleModal(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition-all shadow-md shadow-purple-100 flex items-center gap-2 shrink-0"
+                >
+                  <Plus size={16} />
+                  <span>افزودن مقاله دریافتی به صورت دستی</span>
+                </button>
+              </div>
+
+              {studentReceivedArticles.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                  <BookOpen className="mx-auto text-slate-300" size={32} />
+                  <p className="text-xs font-bold text-slate-600">هنوز مقاله دریافتی برای این طلبه ثبت نشده است.</p>
+                  <p className="text-[11px] text-slate-400">می‌توانید مقاله جدید اضافه کنید یا پرونده پژوهشی طلبه را به مرحله «تکمیل شده» تغییر دهید.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {studentReceivedArticles.map(art => (
+                    <div
+                      key={art.id}
+                      className="p-5 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-3 hover:border-purple-300 transition-all"
+                    >
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-xs font-black text-slate-900">{art.title}</h4>
+                            <span className={cn(
+                              "px-2.5 py-0.5 rounded-full text-[10px] font-bold border",
+                              art.type === 'group' ? "bg-purple-50 text-purple-700 border-purple-100" : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                            )}>
+                              {art.type === 'group' ? 'پژوهش گروهی' : 'پژوهش فردی'}
+                            </span>
+                            {art.source === 'auto_completed' && (
+                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold border border-emerald-100">
+                                تکمیل شده در سامانه
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 font-medium">
+                            <span>سال تحویل: <strong className="text-slate-800">{art.deliveryYear || '---'}</strong></span>
+                            {art.pageCount && <span>تعداد صفحات: <strong className="text-slate-800">{art.pageCount} صفحه</strong></span>}
+                            {art.evaluationScores && <span>نمره ارزیابی: <strong className="text-purple-600 font-bold">{art.evaluationScores}</strong></span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              setEditingReceivedArticle(art);
+                              setReceivedArticleForm({
+                                title: art.title,
+                                summary: art.summary,
+                                type: art.type,
+                                deliveryYear: art.deliveryYear,
+                                pageCount: art.pageCount,
+                                evaluationScores: art.evaluationScores,
+                                evaluatorComments: art.evaluatorComments
+                              });
+                              setShowReceivedArticleModal(true);
+                            }}
+                            className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5"
+                          >
+                            <Edit3 size={13} />
+                            <span>مشاهده و ویرایش خلاصه و جزییات</span>
+                          </button>
+
+                          {art.source !== 'auto_completed' && (
+                            <button
+                              onClick={() => handleDeleteReceivedArticle(art.id)}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl border border-rose-100 transition-colors"
+                              title="حذف مقاله"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {art.summary && (
+                        <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-700 space-y-1">
+                          <strong className="text-[10px] text-slate-400 block">خلاصه مقاله:</strong>
+                          <p className="leading-relaxed whitespace-pre-wrap">{art.summary}</p>
+                        </div>
+                      )}
+
+                      {art.evaluatorComments && (
+                        <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100 text-xs text-amber-950 space-y-1">
+                          <strong className="text-[10px] text-amber-700 block">نظرات اساتید ارزیاب:</strong>
+                          <p className="leading-relaxed">{art.evaluatorComments}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="py-24 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-sm space-y-2">
-          <GraduationCap size={48} className="mx-auto text-slate-300" />
-          <p className="font-bold text-slate-600">برای مشاهده، ثبت و مدیریت وضعیت پژوهشی، لطفا ابتدا یک طلبه را انتخاب کنید.</p>
+        /* MAIN GRADE VIEW (When no specific student is selected) */
+        <div className="space-y-6">
+          {/* Grade Navigation & Export Bar */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Layers className="text-indigo-600" size={18} />
+                  نمایش اطلاعات پژوهش و مقالات بر اساس پایه تحصیلی
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">جهت مشاهده مختصر پرونده پژوهشی طلاب، پایه مورد نظر را انتخاب نمایید.</p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleExportGradePdf}
+                  disabled={isExporting}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-colors border border-rose-100 shadow-sm"
+                >
+                  <Printer size={14} />
+                  <span>خروجی PDF لیست</span>
+                </button>
+                <button
+                  onClick={handleExportGradeExcel}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-colors border border-emerald-100 shadow-sm"
+                >
+                  <FileSpreadsheet size={14} />
+                  <span>خروجی اکسل</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Grade Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+              {[
+                { id: 'all', label: 'همه پایه‌ها' },
+                { id: 'پایه ۷', label: 'پایه ۷' },
+                { id: 'پایه ۸', label: 'پایه ۸' },
+                { id: 'پایه ۹', label: 'پایه ۹' },
+                { id: 'پایه ۱۰', label: 'پایه ۱۰' },
+                { id: 'سایر', label: 'سایر پایه‌ها' },
+              ].map(g => (
+                <button
+                  key={g.id}
+                  onClick={() => setSelectedGradeTab(g.id)}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black transition-all border flex items-center gap-2",
+                    selectedGradeTab === g.id
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  <span>{g.label}</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full text-[10px]",
+                    selectedGradeTab === g.id ? "bg-indigo-700 text-white" : "bg-slate-200 text-slate-700"
+                  )}>
+                    {students.filter(s => {
+                      if (g.id === 'all') return true;
+                      if (g.id === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
+                      return s.grade === g.id || (s.grade && s.grade.includes(g.id.replace('پایه ', '')));
+                    }).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative pt-2">
+              <Search className="absolute right-3.5 top-5 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="جستجوی نام طلبه یا موضوع پژوهش..."
+                className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                value={gradeSearchQuery}
+                onChange={(e) => setGradeSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Hidden Printable Container for Grade PDF */}
+          <div className="hidden">
+            <div ref={gradeListPrintRef} className="p-6 bg-white font-sans dir-rtl space-y-4" dir="rtl">
+              <div className="border-b-2 border-indigo-600 pb-3 flex justify-between items-center">
+                <div>
+                  <h1 className="text-lg font-bold text-slate-900">گزارش وضعیت پژوهش طلاب - {selectedGradeTab === 'all' ? 'همه پایه‌ها' : selectedGradeTab}</h1>
+                  <p className="text-xs text-slate-500 mt-1">تاریخ گزارش: {new Date().toLocaleDateString('fa-IR')}</p>
+                </div>
+              </div>
+
+              <table className="w-full text-right border-collapse text-xs">
+                <thead>
+                  <tr className="bg-indigo-50 text-indigo-950 font-bold border-b border-indigo-200">
+                    <th className="p-2 border border-slate-200">ردیف</th>
+                    <th className="p-2 border border-slate-200">نام طلبه</th>
+                    <th className="p-2 border border-slate-200">پایه</th>
+                    <th className="p-2 border border-slate-200">کد ملی</th>
+                    <th className="p-2 border border-slate-200">موضوع پژوهش فعال</th>
+                    <th className="p-2 border border-slate-200">نوع</th>
+                    <th className="p-2 border border-slate-200">مرحله</th>
+                    <th className="p-2 border border-slate-200">نمره</th>
+                    <th className="p-2 border border-slate-200">استاد راهنما/پژوهش</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.filter(s => {
+                    if (selectedGradeTab === 'all') return true;
+                    if (selectedGradeTab === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
+                    return s.grade === selectedGradeTab || (s.grade && s.grade.includes(selectedGradeTab.replace('پایه ', '')));
+                  }).filter(s => {
+                    if (!gradeSearchQuery.trim()) return true;
+                    const q = gradeSearchQuery.trim().toLowerCase();
+                    const res = studentResearchMap[s.id];
+                    return s.name.toLowerCase().includes(q) || (res?.topic && res.topic.toLowerCase().includes(q));
+                  }).map((s, idx) => {
+                    const res = studentResearchMap[s.id];
+                    return (
+                      <tr key={s.id} className="border-b border-slate-200">
+                        <td className="p-2 border border-slate-200 text-center">{idx + 1}</td>
+                        <td className="p-2 border border-slate-200 font-bold">{s.name}</td>
+                        <td className="p-2 border border-slate-200 text-center">{s.grade || '---'}</td>
+                        <td className="p-2 border border-slate-200 text-center">{s.nationalId || '---'}</td>
+                        <td className="p-2 border border-slate-200">{res?.topic || 'ثبت نشده'}</td>
+                        <td className="p-2 border border-slate-200 text-center">{res?.type === 'group' ? 'گروهی' : 'فردی'}</td>
+                        <td className="p-2 border border-slate-200 text-center">{res?.stage || 'نامشخص'}</td>
+                        <td className="p-2 border border-slate-200 text-center">{res?.score || '---'}</td>
+                        <td className="p-2 border border-slate-200">{res?.supervisorNotes || res?.professorNotes || '---'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Students Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {students.filter(s => {
+              if (selectedGradeTab === 'all') return true;
+              if (selectedGradeTab === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
+              return s.grade === selectedGradeTab || (s.grade && s.grade.includes(selectedGradeTab.replace('پایه ', '')));
+            }).filter(s => {
+              if (!gradeSearchQuery.trim()) return true;
+              const q = gradeSearchQuery.trim().toLowerCase();
+              const res = studentResearchMap[s.id];
+              return s.name.toLowerCase().includes(q) || (res?.topic && res.topic.toLowerCase().includes(q));
+            }).map(s => {
+              const res = studentResearchMap[s.id];
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    setSelectedStudentId(s.id);
+                    fetchStudentDetails(s.id);
+                  }}
+                  className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group space-y-3"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 font-black flex items-center justify-center shrink-0 border border-indigo-200">
+                          {s.photoUrl ? (
+                            <img src={s.photoUrl} alt={s.name} className="w-full h-full object-cover rounded-xl" />
+                          ) : (
+                            s.name.charAt(0)
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{s.name}</h4>
+                          <span className="text-[10px] font-bold text-slate-500">پایه: {s.grade || 'نامشخص'}</span>
+                        </div>
+                      </div>
+
+                      <span className={cn(
+                        "px-2.5 py-1 rounded-xl text-[10px] font-black border shrink-0",
+                        res?.topic
+                          ? "bg-indigo-50 text-indigo-700 border-indigo-100"
+                          : "bg-slate-50 text-slate-500 border-slate-200"
+                      )}>
+                        {res?.topic ? (res.stage || 'دارای پژوهش') : 'بدون پژوهش'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex items-start gap-1.5 text-slate-700">
+                        <BookOpen size={13} className="text-indigo-500 shrink-0 mt-0.5" />
+                        <span className="font-bold text-slate-800 line-clamp-1">
+                          موضوع: {res?.topic || 'ثبت نشده'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-slate-500 text-[10px]">
+                        <span>نوع: <strong className="text-slate-700">{res?.type === 'group' ? 'گروهی' : 'فردی'}</strong></span>
+                        {res?.score && <span>نمره: <strong className="text-indigo-600 font-bold">{res.score}</strong></span>}
+                      </div>
+
+                      {(res?.supervisorNotes || res?.professorNotes) && (
+                        <p className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded-lg line-clamp-2 border border-slate-100">
+                          استاد: {res.supervisorNotes || res.professorNotes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-indigo-600 text-[11px] font-bold group-hover:translate-x-1 transition-transform">
+                    <span>مشاهده پرونده کامل، سوابق و مقالات</span>
+                    <span>←</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -2327,6 +2910,134 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 )}
               </div>
             </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL 8: Add / Edit Received Article Modal */}
+      <AnimatePresence>
+        {showReceivedArticleModal && (
+          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl space-y-5 dir-rtl overflow-y-auto max-h-[90vh]"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="text-purple-600" size={18} />
+                  {editingReceivedArticle ? 'مشاهده و ویرایش مقاله دریافتی' : 'ثبت مقاله یا کار پژوهشی دریافتی جدید'}
+                </h3>
+                <button
+                  onClick={() => setShowReceivedArticleModal(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveReceivedArticle} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">عنوان مقاله یا پژوهش *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="عنوان کامل مقاله..."
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+                    value={receivedArticleForm.title || ''}
+                    onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, title: e.target.value }))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">نوع پژوهش</label>
+                    <select
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none bg-white focus:ring-2 focus:ring-purple-500"
+                      value={receivedArticleForm.type || 'individual'}
+                      onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, type: e.target.value as any }))}
+                    >
+                      <option value="individual">فردی</option>
+                      <option value="group">گروهی</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">سال تحویل مقاله</label>
+                    <input
+                      type="text"
+                      placeholder="مثلا: ۱۴۰۳"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+                      value={receivedArticleForm.deliveryYear || ''}
+                      onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, deliveryYear: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">تعداد صفحات</label>
+                    <input
+                      type="text"
+                      placeholder="مثلا: ۲۵"
+                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+                      value={receivedArticleForm.pageCount || ''}
+                      onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, pageCount: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">نمرات ارزیابی / امتیاز</label>
+                  <input
+                    type="text"
+                    placeholder="مثلا: ۹۵/۱۰۰ یا عالی"
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
+                    value={receivedArticleForm.evaluationScores || ''}
+                    onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, evaluationScores: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">خلاصه مقاله</label>
+                  <textarea
+                    rows={4}
+                    placeholder="خلاصه، چکیده و توضیحات محتوای مقاله..."
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500 leading-relaxed"
+                    value={receivedArticleForm.summary || ''}
+                    onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, summary: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">نظر متنی اساتید ارزیاب</label>
+                  <textarea
+                    rows={3}
+                    placeholder="نقد، پیشنهادها و نظرات اساتید ارزیاب..."
+                    className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500 leading-relaxed"
+                    value={receivedArticleForm.evaluatorComments || ''}
+                    onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, evaluatorComments: e.target.value }))}
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowReceivedArticleModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                  >
+                    انصراف
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-100"
+                  >
+                    ذخیره اطلاعات مقاله
+                  </button>
+                </div>
+              </form>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
