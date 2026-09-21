@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -953,6 +954,28 @@ async function startServer() {
     } catch (error: any) {
       console.error("Gemini Analysis Error:", error);
       return res.status(500).json({ error: error.message || "Failed to analyze student data" });
+    }
+  });
+
+  // API to upload/save custom login background directly to public directory
+  app.post("/api/upload-login-bg", express.json({ limit: "50mb" }), async (req, res) => {
+    try {
+      const { imageBase64 } = req.body;
+      if (!imageBase64) {
+        return res.status(400).json({ error: "تصویری ارسال نشده است." });
+      }
+      const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const publicDir = path.join(process.cwd(), "public");
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(publicDir, "login-bg.jpg"), buffer);
+      fs.writeFileSync(path.join(publicDir, "000.jpg"), buffer);
+      return res.json({ success: true, message: "تصویر پس‌زمینه با موفقیت در دیسک ذخیره شد." });
+    } catch (e: any) {
+      console.error("Error saving background image:", e);
+      return res.status(500).json({ error: e.message || "خطا در ذخیره تصویر" });
     }
   });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth, DEFAULT_USERS } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,9 +17,11 @@ import {
   Loader2,
   Users,
   ChevronDown,
-  X
+  X,
+  Image as ImageIcon,
+  UploadCloud,
+  Check
 } from 'lucide-react';
-const LOGIN_BG_URL = '/login-bg.jpg';
 import { AppUser } from '../../types/auth';
 
 interface LoginViewProps {
@@ -34,6 +36,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Brute force protection: 3 failed attempts => 5s cooldown
   const [failedAttempts, setFailedAttempts] = useState(0);
@@ -43,15 +46,30 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [showQuickPresets, setShowQuickPresets] = useState(false);
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
 
-  // Background image loaded state to smoothly fade in
+  // Primary Background Image (/000.jpg is in /public)
+  const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.jpg');
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Preload background image
+  // Preload /000.jpg
   useEffect(() => {
+    // Clear any outdated base64 cached background to guarantee exact 000.jpg display
+    try {
+      localStorage.removeItem('custom_login_bg');
+    } catch {}
+
     const img = new Image();
-    img.src = LOGIN_BG_URL;
-    img.onload = () => setImageLoaded(true);
-    img.onerror = () => setImageLoaded(true); // fallback still shows gradient
+    img.src = '/000.jpg';
+    img.onload = () => {
+      setCurrentBgUrl('/000.jpg');
+      setImageLoaded(true);
+    };
+    img.onerror = () => {
+      // Fallback to /login-bg.jpg which is identical
+      setCurrentBgUrl('/login-bg.jpg');
+      setImageLoaded(true);
+    };
   }, []);
 
   // Cooldown countdown timer
@@ -69,6 +87,37 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
+
+  // Handle direct file upload for background (e.g. user selects 000.jpg)
+  const handleBgFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingBg(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      setCurrentBgUrl(base64);
+      localStorage.setItem('custom_login_bg', base64);
+      setImageLoaded(true);
+
+      // Save to server
+      try {
+        await fetch('/api/upload-login-bg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64 })
+        });
+      } catch (err) {
+        console.warn('Could not persist to server disk, kept in browser cache:', err);
+      }
+
+      setIsUploadingBg(false);
+      setSuccessMessage('عکس ارسالی شما (000.jpg) با موفقیت به عنوان پس‌زمینه اصلی صفحه ورود اعمال و ذخیره شد.');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,12 +204,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       dir="rtl"
       className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-slate-900 select-none"
     >
+      {/* Hidden file input for uploading the exact background image */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleBgFileSelect}
+        className="hidden"
+      />
+
       {/* 1. Full Screen Background Image with Cover & Center */}
       <div
         id="login-bg-container"
         className="absolute inset-0 w-full h-full bg-slate-900 transition-opacity duration-1000 ease-out"
         style={{
-          backgroundImage: `url(${LOGIN_BG_URL})`,
+          backgroundImage: `url(${currentBgUrl})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
@@ -178,6 +236,24 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-10 right-10 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+      </div>
+
+      {/* Discreet floating button in top-left to select/upload exact 000.jpg photo */}
+      <div className="absolute top-4 left-4 z-20">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploadingBg}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95"
+          title="انتخاب و اعمال مستقیم فایل 000.jpg برای پس‌زمینه"
+        >
+          {isUploadingBg ? (
+            <Loader2 size={14} className="animate-spin text-blue-400" />
+          ) : (
+            <ImageIcon size={14} className="text-blue-300" />
+          )}
+          <span>تغییر / بارگذاری عکس زمینه (000.jpg)</span>
+        </button>
       </div>
 
       {/* 2. Glassmorphic Login Window (Center aligned) */}
@@ -211,6 +287,30 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </div>
           </div>
         </div>
+
+        {/* Success Toast */}
+        <AnimatePresence>
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.96 }}
+              transition={{ duration: 0.25 }}
+              className="mb-5 p-3.5 rounded-xl bg-emerald-500/25 border border-emerald-400/50 backdrop-blur-md text-white text-xs sm:text-sm font-medium flex items-start gap-2.5 shadow-lg"
+              role="alert"
+            >
+              <CheckCircle2 size={18} className="text-emerald-300 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed text-emerald-100">{successMessage}</div>
+              <button
+                type="button"
+                onClick={() => setSuccessMessage(null)}
+                className="text-white/60 hover:text-white transition-colors p-0.5 rounded"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Glassmorphic Error Toast Message */}
         <AnimatePresence>
@@ -322,7 +422,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           </div>
         </form>
 
-        {/* Quick Presets Toggle (ایده جذاب برای دسترسی سریع مدیران و اساتید) */}
+        {/* Quick Presets Toggle (راهنمای ورود سریع کاربران و مدیران) */}
         <div className="mt-5 pt-4 border-t border-white/15 text-center">
           <button
             type="button"
