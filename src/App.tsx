@@ -45,6 +45,7 @@ import UserCredentialsSettings from './components/admin/UserCredentialsSettings'
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import DatabaseToastBanner from './components/DatabaseToastBanner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -359,6 +360,7 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <MentorProvider>
+          <DatabaseToastBanner />
           <AppContent />
         </MentorProvider>
       </AuthProvider>

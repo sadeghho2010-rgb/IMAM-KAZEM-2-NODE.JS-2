@@ -49,6 +49,7 @@ import {
 } from '../lib/cloudBackups';
 import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSqlScript';
 import { testSupabaseConnection, syncAllToSupabase, ConnectionStatus } from '../lib/supabaseSync';
+import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -110,7 +111,31 @@ interface MentorStats {
 
 export default function BackupAndRestore() {
   const { currentMentor, currentMentorId } = useMentor();
+  const { currentUser } = useAuth();
   const isManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori';
+  
+  const isEduOrFinanceManager = 
+    currentUser?.role === 'education_manager' || 
+    currentUser?.role === 'finance_manager' || 
+    currentUser?.username === 'SHAH' || 
+    currentUser?.username === 'FINANCE' ||
+    currentUser?.role === 'super_admin';
+
+  const [allowOfflineMode, setAllowOfflineMode] = useState<boolean>(() => {
+    return localStorage.getItem('allow_offline_storage_mode') === 'true';
+  });
+
+  const handleToggleOfflineMode = (enabled: boolean) => {
+    setAllowOfflineMode(enabled);
+    localStorage.setItem('allow_offline_storage_mode', enabled ? 'true' : 'false');
+    setStatusMessage({
+      type: 'info',
+      text: enabled 
+        ? 'حالت ذخیره محلی (آفلاین) برای شما فعال شد. در صورت قطعی اینترنت، داده‌ها محلی ثبت و بعداً همگام خواهند شد.'
+        : 'حالت ذخیره مستقیم ابری فعال است. در صورت قطعی اینترنت، ثبت اطلاعات متوقف و خطا اعلام می‌شود.'
+    });
+  };
+
   const [students, setStudents] = useState<Student[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportingMentorId, setExportingMentorId] = useState<string | null>(null);
@@ -1084,6 +1109,55 @@ export default function BackupAndRestore() {
                 : 'همگام‌سازی و انتقال کلیه اطلاعات به دیتابیس ابری'}
             </span>
           </button>
+        </div>
+
+        {/* DATABASE STRICT SYNC POLICY & MANAGER OFFLINE TOGGLE */}
+        <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-5 space-y-4 text-right" dir="rtl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                <ShieldCheck size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">سیاست ثبت همگام اطلاعات در پایگاه داده و مهلت ۴ ثانیه</h3>
+                <p className="text-[11px] text-slate-400">
+                  برای کلیه کاربران (به ویژه طلاب و سطح ۳)، ذخیره‌سازی آفلاین غیرفعال است و در صورت عدم اتصال یا ثبت نشدن ظرف ۴ ثانیه، خطا صادر می‌شود.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isEduOrFinanceManager ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/80 p-4 rounded-xl border border-slate-700/80">
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-amber-300 flex items-center gap-2">
+                  <span>حالت آفلاین اختیاری (ویژه مسئول آموزش و مسئول مالی)</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-300 rounded-full font-mono">
+                    {allowOfflineMode ? 'فعال' : 'غیرفعال (ثبت مستقیم ابری)'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  با فعال‌سازی این گزینه، در صورت قطعی اینترنت اطلاعات شما موقتاً در حافظه لپ‌تاپ ذخیره و در اتصال بعدی با پایگاه داده همگام می‌شود. در صورت خاموش بودن، در قطعی اینترنت ثبت اطلاعات متوقف و خطا داده می‌شود.
+                </p>
+              </div>
+              <button
+                onClick={() => handleToggleOfflineMode(!allowOfflineMode)}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-2",
+                  allowOfflineMode
+                    ? "bg-amber-500 hover:bg-amber-600 text-slate-950 font-black shadow-md shadow-amber-500/20"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600"
+                )}
+              >
+                <HardDrive size={15} />
+                <span>{allowOfflineMode ? 'غیرفعال‌سازی حالت آفلاین' : 'فعال‌سازی حالت آفلاین اختیاری'}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+              ⚡ سیستم روی حالت «ثبت برخط و مستقیم در پایگاه داده» تنظیم است. هرگونه قطعی اینترنت یا تأخیر بیش از ۴ ثانیه بلافاصله توسط سیستم لغو شده و خطای عدم ثبت نمایش داده می‌شود.
+            </div>
+          )}
         </div>
       </div>
 

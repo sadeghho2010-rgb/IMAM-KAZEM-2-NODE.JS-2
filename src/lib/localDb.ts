@@ -4,6 +4,132 @@
  * All photos are stored directly in the local database as Base64 data URLs.
  */
 import { supabase, isSupabaseConfigured } from './supabase';
+import { dispatchDatabaseErrorToast } from './databaseToast';
+
+/**
+ * Check if the current logged-in user is authorized to use optional offline storage mode.
+ * Only Education Manager (SHAH) and Finance Manager (FINANCE) or Super Admin can enable this option.
+ * For all other users (Level 3 students, teachers, etc.), offline saving is strictly disabled.
+ */
+export function isOfflineStorageAllowedForUser(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('system_auth_current_user_v2');
+    if (!raw) return false;
+    const user = JSON.parse(raw);
+    if (!user) return false;
+
+    const isManagerRole = 
+      user.role === 'education_manager' || 
+      user.role === 'finance_manager' || 
+      user.username === 'SHAH' || 
+      user.username === 'FINANCE' ||
+      user.role === 'super_admin';
+
+    if (!isManagerRole) return false;
+
+    return localStorage.getItem('allow_offline_storage_mode') === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Direct authoritative Cloud Database write with a strict 4-second timeout.
+ */
+export async function saveToCloudWithTimeout(
+  action: 'upsert' | 'delete',
+  collectionName: string,
+  id: string,
+  data?: any,
+  timeoutMs = 4000
+): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+  }
+
+  const cloudPromise = new Promise<void>(async (resolve, reject) => {
+    try {
+      let isSaved = false;
+
+      // 1. Direct Supabase write
+      if (isSupabaseConfigured) {
+        if (action === 'delete') {
+          const { error } = await supabase
+            .from('app_collections')
+            .delete()
+            .match({ collection_name: collectionName, id });
+
+          if (error) {
+            reject(new Error(error.message || 'خطا در حذف از پایگاه داده'));
+            return;
+          }
+          isSaved = true;
+        } else {
+          const sanitized = sanitizeForCloud(data);
+          const { error } = await supabase
+            .from('app_collections')
+            .upsert({
+              collection_name: collectionName,
+              id,
+              data: sanitized,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'collection_name,id' });
+
+          if (error) {
+            reject(new Error(error.message || 'خطا در ثبت پایگاه داده'));
+            return;
+          }
+          isSaved = true;
+        }
+      }
+
+      // 2. Also notify Dedicated Server API if running
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        if (action === 'delete') {
+          await fetch(`/api/data/${collectionName}/${id}`, {
+            method: 'DELETE',
+            headers,
+            credentials: 'include'
+          });
+        } else {
+          await fetch(`/api/data/${collectionName}`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify({ ...data, id })
+          });
+        }
+        isSaved = true;
+      } catch (e) {}
+
+      if (isSaved || !isSupabaseConfigured) {
+        resolve();
+      } else {
+        reject(new Error('خطا در ذخیره‌سازی داده‌ها در سرور'));
+      }
+    } catch (err) {
+      reject(err);
+    }
+  });
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('مهلت زمانی اتصال به دیتابیس پایان یافت (بیش از ۴ ثانیه).'));
+    }, timeoutMs);
+  });
+
+  try {
+    await Promise.race([cloudPromise, timeoutPromise]);
+  } catch (err: any) {
+    console.error(`[Cloud Write Error] ${collectionName}/${id}:`, err);
+    throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+  }
+}
 
 function sanitizeForCloud(data: any): any {
   if (!data || typeof data !== 'object') return data;
@@ -626,7 +752,7 @@ class LocalDatabase {
     return this.addDoc(collectionName, idOrData);
   }
 
-  // Add a new document (auto assigns ID if missing)
+  // Add a new document (with optimistic UI, strict 4s online sync & automatic rollback)
   async addDoc(collectionName: CollectionName, data: any): Promise<string> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -637,104 +763,109 @@ class LocalDatabase {
     const id = record.id || `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
 
-    if (!db.objectStoreNames.contains(resolvedCol)) {
-      this.setLocalStorageDoc(resolvedCol, record);
-      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-      this.mirrorToSupabase('upsert', resolvedCol, id, record);
-      this.notify();
-      return id;
-    }
-
-    return new Promise((resolve, reject) => {
+    // 1. Optimistic Local Write for instant UI responsiveness
+    this.setLocalStorageDoc(resolvedCol, record);
+    if (db.objectStoreNames.contains(resolvedCol)) {
       try {
         const transaction = db.transaction(resolvedCol, 'readwrite');
         const store = transaction.objectStore(resolvedCol);
-        const request = store.put(record);
-
-        request.onsuccess = () => {
-          this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-          this.mirrorToSupabase('upsert', resolvedCol, id, record);
-          this.notify();
-          resolve(id);
-        };
-        request.onerror = () => {
-          this.setLocalStorageDoc(resolvedCol, record);
-          this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-          this.mirrorToSupabase('upsert', resolvedCol, id, record);
-          this.notify();
-          resolve(id);
-        };
+        store.put(record);
       } catch (e) {
-        console.warn(`Object store ${resolvedCol} put error:`, e);
-        this.setLocalStorageDoc(resolvedCol, record);
-        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-        this.mirrorToSupabase('upsert', resolvedCol, id, record);
-        this.notify();
-        resolve(id);
+        console.warn(`Object store ${resolvedCol} write warning:`, e);
       }
-    });
+    }
+    this.notify();
+
+    // 2. Direct Cloud Database Write with strict 4-second timeout
+    try {
+      await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 4000);
+      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+      return id;
+    } catch (err: any) {
+      if (isOfflineStorageAllowedForUser()) {
+        console.warn(`[Offline Mode Permitted] Record ${id} in ${resolvedCol} stored locally.`);
+        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+        return id;
+      }
+
+      // Strict Rollback: Remove the newly added record
+      try {
+        this.deleteLocalStorageDoc(resolvedCol, id);
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          const rollbackTx = db.transaction(resolvedCol, 'readwrite');
+          rollbackTx.objectStore(resolvedCol).delete(id);
+        }
+      } catch (e) {}
+      this.notify();
+
+      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+    }
   }
 
-  // Update existing document
+  // Update existing document (with optimistic UI, strict 4s online sync & automatic rollback)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
-    if (!db.objectStoreNames.contains(resolvedCol)) {
-      const existingLS = (this.getLocalStorageDocs(resolvedCol) as any[]).find(x => x.id === id);
-      const updatedLS = { ...existingLS, ...data, id };
-      this.setLocalStorageDoc(resolvedCol, updatedLS);
-      this.autoLogAudit(db, 'update', resolvedCol, id, existingLS, updatedLS);
-      this.mirrorToSupabase('upsert', resolvedCol, id, updatedLS);
-      this.notify();
-      return;
+
+    let existingDoc: any = null;
+    try {
+      existingDoc = await this.getDoc(resolvedCol, id);
+    } catch (e) {}
+
+    let updated = { ...(existingDoc || {}), ...data, id };
+    if (resolvedCol === 'students') {
+      updated = normalizeStudent(updated);
     }
 
-    return new Promise((resolve, reject) => {
+    // 1. Optimistic Local Write
+    this.setLocalStorageDoc(resolvedCol, updated);
+    if (db.objectStoreNames.contains(resolvedCol)) {
       try {
         const transaction = db.transaction(resolvedCol, 'readwrite');
         const store = transaction.objectStore(resolvedCol);
-        const getReq = store.get(id);
-
-        getReq.onsuccess = () => {
-          const existing = getReq.result || { id };
-          let updated = { ...existing, ...data, id };
-          if (resolvedCol === 'students') {
-            updated = normalizeStudent(updated);
-          }
-          const putReq = store.put(updated);
-          putReq.onsuccess = () => {
-            this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
-            this.mirrorToSupabase('upsert', resolvedCol, id, updated);
-            this.notify();
-            resolve();
-          };
-          putReq.onerror = () => {
-            this.setLocalStorageDoc(resolvedCol, updated);
-            this.autoLogAudit(db, 'update', resolvedCol, id, existing, updated);
-            this.mirrorToSupabase('upsert', resolvedCol, id, updated);
-            this.notify();
-            resolve();
-          };
-        };
-        getReq.onerror = () => {
-          const fallbackDoc = { ...data, id };
-          this.setLocalStorageDoc(resolvedCol, fallbackDoc);
-          this.mirrorToSupabase('upsert', resolvedCol, id, fallbackDoc);
-          this.notify();
-          resolve();
-        };
+        store.put(updated);
       } catch (e) {
-        console.warn(`Object store ${resolvedCol} update error:`, e);
-        const fallbackDoc = { ...data, id };
-        this.setLocalStorageDoc(resolvedCol, fallbackDoc);
-        this.mirrorToSupabase('upsert', resolvedCol, id, fallbackDoc);
-        this.notify();
-        resolve();
+        console.warn(`Object store ${resolvedCol} update warning:`, e);
       }
-    });
+    }
+    this.notify();
+
+    // 2. Direct Cloud Database Write with strict 4-second timeout
+    try {
+      await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 4000);
+      this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+    } catch (err: any) {
+      if (isOfflineStorageAllowedForUser()) {
+        console.warn(`[Offline Mode Permitted] Update ${id} in ${resolvedCol} stored locally.`);
+        this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+        return;
+      }
+
+      // Strict Rollback: Restore previous state
+      try {
+        if (existingDoc) {
+          this.setLocalStorageDoc(resolvedCol, existingDoc);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
+            rollbackTx.objectStore(resolvedCol).put(existingDoc);
+          }
+        } else {
+          this.deleteLocalStorageDoc(resolvedCol, id);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
+            rollbackTx.objectStore(resolvedCol).delete(id);
+          }
+        }
+      } catch (e) {}
+      this.notify();
+
+      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+    }
   }
 
-  // Delete a document
+  // Delete a document (with optimistic UI, strict 4s online sync & automatic rollback)
   async deleteDoc(collectionName: CollectionName, id: string): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -744,40 +875,43 @@ class LocalDatabase {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
 
+    // 1. Optimistic Local Delete
     this.deleteLocalStorageDoc(resolvedCol, id);
-
-    if (!db.objectStoreNames.contains(resolvedCol)) {
-      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-      this.mirrorToSupabase('delete', resolvedCol, id);
-      this.notify();
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
+    if (db.objectStoreNames.contains(resolvedCol)) {
       try {
         const transaction = db.transaction(resolvedCol, 'readwrite');
         const store = transaction.objectStore(resolvedCol);
-        const request = store.delete(id);
+        store.delete(id);
+      } catch (e) {}
+    }
+    this.notify();
 
-        request.onsuccess = () => {
-          this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-          this.mirrorToSupabase('delete', resolvedCol, id);
-          this.notify();
-          resolve();
-        };
-        request.onerror = () => {
-          this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-          this.mirrorToSupabase('delete', resolvedCol, id);
-          this.notify();
-          resolve();
-        };
-      } catch (e) {
-        console.warn(`Object store ${resolvedCol} delete error:`, e);
-        this.mirrorToSupabase('delete', resolvedCol, id);
-        this.notify();
-        resolve();
+    // 2. Direct Cloud Database Write with strict 4-second timeout
+    try {
+      await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 4000);
+      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+    } catch (err: any) {
+      if (isOfflineStorageAllowedForUser()) {
+        console.warn(`[Offline Mode Permitted] Deletion ${id} in ${resolvedCol} stored locally.`);
+        this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+        return;
       }
-    });
+
+      // Strict Rollback: Restore the deleted item
+      if (existingDoc) {
+        try {
+          this.setLocalStorageDoc(resolvedCol, existingDoc);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
+            rollbackTx.objectStore(resolvedCol).put(existingDoc);
+          }
+        } catch (e) {}
+        this.notify();
+      }
+
+      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+    }
   }
 
   // Background Non-blocking Real-time Mirror to Server & Supabase
@@ -1083,27 +1217,65 @@ class LocalDatabase {
     if (!items || items.length === 0) return;
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(resolvedCol, 'readwrite');
-      const store = transaction.objectStore(resolvedCol);
 
-      for (const item of items) {
-        let record = { ...item };
-        if (resolvedCol === 'students') {
-          record = normalizeStudent(record);
-        } else if (!record.id) {
-          record.id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        }
-        store.put(record);
-        this.mirrorToSupabase('upsert', resolvedCol, record.id, record);
+    const processedItems: any[] = [];
+    for (const item of items) {
+      let record = { ...item };
+      if (resolvedCol === 'students') {
+        record = normalizeStudent(record);
+      } else if (!record.id) {
+        record.id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       }
+      processedItems.push(record);
+      this.setLocalStorageDoc(resolvedCol, record);
+    }
 
-      transaction.oncomplete = () => {
-        this.notify();
-        resolve();
-      };
-      transaction.onerror = () => reject(transaction.error);
-    });
+    if (db.objectStoreNames.contains(resolvedCol)) {
+      try {
+        const transaction = db.transaction(resolvedCol, 'readwrite');
+        const store = transaction.objectStore(resolvedCol);
+        for (const record of processedItems) {
+          store.put(record);
+        }
+      } catch (e) {}
+    }
+    this.notify();
+
+    // Direct Cloud sync
+    try {
+      const rows = processedItems.map((item: any) => ({
+        collection_name: resolvedCol,
+        id: String(item.id),
+        data: sanitizeForCloud(item),
+        updated_at: new Date().toISOString()
+      }));
+
+      const cloudPromise = (async () => {
+        if (isSupabaseConfigured) {
+          const chunkSize = 50;
+          for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunk = rows.slice(i, i + chunkSize);
+            const { error } = await supabase
+              .from('app_collections')
+              .upsert(chunk, { onConflict: 'collection_name,id' });
+            if (error) throw error;
+          }
+        }
+      })();
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('مهلت ۴ ثانیه ذخیره گروهی پایان یافت')), 4000);
+      });
+
+      await Promise.race([cloudPromise, timeoutPromise]);
+    } catch (err: any) {
+      if (isOfflineStorageAllowedForUser()) {
+        console.warn(`[Offline Mode Permitted] Bulk write in ${resolvedCol} stored locally.`);
+        return;
+      }
+      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+    }
   }
 
   // Clear all data in all collections
