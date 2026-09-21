@@ -211,6 +211,16 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [editingProfileStudent, setEditingProfileStudent] = useState<Student | null>(null);
   const [isGeneralPrintOpen, setIsGeneralPrintOpen] = useState(false);
   const [isUpperManagementPrintOpen, setIsUpperManagementPrintOpen] = useState(false);
+
+  // Targeted Calculation Scope & Debt Detail Modals
+  const [calcScopeMode, setCalcScopeMode] = useState<'all' | 'grade' | 'individual'>('all');
+  const [selectedCalcGrade, setSelectedCalcGrade] = useState<string>('پایه ۷');
+  const [selectedCalcStudentId, setSelectedCalcStudentId] = useState<string>('');
+  const [isFinalizeWarningModalOpen, setIsFinalizeWarningModalOpen] = useState(false);
+  const [selectedStudentForDebtDetail, setSelectedStudentForDebtDetail] = useState<any | null>(null);
+  const [newDebtTitle, setNewDebtTitle] = useState('');
+  const [newDebtAmount, setNewDebtAmount] = useState('');
+  const [newDebtCategory, setNewDebtCategory] = useState('سایر بدهی‌ها');
   
   // New Period Form
   const [newPeriodTitle, setNewPeriodTitle] = useState(`شهریه دوره ${today.substring(0, 7)}`);
@@ -599,27 +609,31 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     };
   }, [students, studyLogs, studyPeriods, profiles, startDate, endDate]);
 
-  // 3. Counseling Session Grades Aggregation (الف، ب، ج)
+  // 3. Counseling Session Grades Aggregation (الف، ب، ج، د، غیبت)
   const counselingAggregations = useMemo(() => {
-    const map: Record<string, { countA: number; countB: number; countC: number; total: number }> = {};
+    const map: Record<string, { countA: number; countB: number; countC: number; countD: number; countAbsence: number; total: number }> = {};
 
     students.forEach(s => {
-      map[s.id] = { countA: 0, countB: 0, countC: 0, total: 0 };
+      map[s.id] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
     });
 
     counselingGrades.forEach(cg => {
       if (cg.sessionDate >= startDate && cg.sessionDate <= endDate) {
         if (!map[cg.studentId]) {
-          map[cg.studentId] = { countA: 0, countB: 0, countC: 0, total: 0 };
+          map[cg.studentId] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
         }
         map[cg.studentId].total += 2; // participation + research
         if (cg.participationScore === 'الف') map[cg.studentId].countA++;
         else if (cg.participationScore === 'ب') map[cg.studentId].countB++;
         else if (cg.participationScore === 'ج') map[cg.studentId].countC++;
+        else if (cg.participationScore === 'د') map[cg.studentId].countD++;
+        else if (cg.participationScore === 'غیبت') map[cg.studentId].countAbsence++;
 
         if (cg.researchScore === 'الف') map[cg.studentId].countA++;
         else if (cg.researchScore === 'ب') map[cg.studentId].countB++;
         else if (cg.researchScore === 'ج') map[cg.studentId].countC++;
+        else if (cg.researchScore === 'د') map[cg.studentId].countD++;
+        else if (cg.researchScore === 'غیبت') map[cg.studentId].countAbsence++;
       }
     });
 
@@ -648,6 +662,11 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   // -------------------------------------------------------------
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
+      // Scope filtering for mechanized calculation
+      if (currentSubTab === 'mechanized_calc') {
+        if (calcScopeMode === 'grade' && s.grade !== selectedCalcGrade) return false;
+        if (calcScopeMode === 'individual' && selectedCalcStudentId && s.id !== selectedCalcStudentId) return false;
+      }
       if (gradeFilter !== 'all' && s.grade !== gradeFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -658,7 +677,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       }
       return true;
     });
-  }, [students, gradeFilter, searchQuery]);
+  }, [students, gradeFilter, searchQuery, currentSubTab, calcScopeMode, selectedCalcGrade, selectedCalcStudentId]);
 
   // -------------------------------------------------------------
   // Tuition Calculation Engine for Filtered Students
@@ -669,7 +688,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       const att = attendanceAggregations[student.id] || { present: 0, absentUnexcused: 0, absentExcused: 0, late: 0, unspecified: 0, warningCount: 0, totalSessions: 0 };
       const studyMins = studyAggregations.minutesMap[student.id] || (42 * 60);
       const studyWarn = studyAggregations.warningMap[student.id] || false;
-      const cGrades = counselingAggregations[student.id] || { countA: 2, countB: 1, countC: 0, total: 3 };
+      const cGrades = counselingAggregations[student.id] || { countA: 2, countB: 1, countC: 0, countD: 0, countAbsence: 0, total: 3 };
       const loansInfo = financialInstallmentsMap[student.id] || { totalActive: 0, monthlyDeduction: 0 };
 
       // Life Status
@@ -945,6 +964,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         counselingGradeACount: cGrades.countA,
         counselingGradeBCount: cGrades.countB,
         counselingGradeCCount: cGrades.countC,
+        counselingGradeDCount: cGrades.countD,
         counselingBonusAmount,
         
         // Type 1 Deductions
@@ -1067,8 +1087,50 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     };
 
     await localDb.setDoc('tuition_periods', finalizedDoc);
+
+    // Save confirmed Fund Donations for each student
+    for (const calc of calculatedTuitions) {
+      const fundAmount = calc.fundContributionDeduction || calc.fundDeduction || 0;
+      if (fundAmount > 0) {
+        const fundDoc = {
+          id: `fund-don-${calc.studentId}-${periodId}`,
+          personId: calc.studentId,
+          personType: 'student',
+          personName: calc.studentName,
+          amount: fundAmount,
+          periodTitle: newPeriodTitle,
+          deductionDate: getTodayShamsi(),
+          isConfirmed: true,
+          confirmedAt: new Date().toISOString(),
+          confirmedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
+        };
+        await localDb.setDoc('fund_donations', fundDoc);
+      }
+
+      // Deduct paid debts from claimsList if any
+      const debtDeducted = (calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0);
+      if (debtDeducted > 0) {
+        const studentClaims = claimsList.filter(c => c.studentId === calc.studentId && (c.remainingAmount || 0) > 0);
+        let remDeduct = debtDeducted;
+        for (const clm of studentClaims) {
+          if (remDeduct <= 0) break;
+          const currentRem = clm.remainingAmount ?? clm.totalDebtAmount;
+          const apply = Math.min(remDeduct, currentRem);
+          const updatedClm = {
+            ...clm,
+            paidAmount: (clm.paidAmount || 0) + apply,
+            remainingAmount: Math.max(0, currentRem - apply),
+            status: (currentRem - apply) <= 0 ? 'completed' as const : 'active' as const
+          };
+          await localDb.setDoc('claims', updatedClm);
+          remDeduct -= apply;
+        }
+      }
+    }
+
     setTuitionPeriods(prev => [finalizedDoc, ...prev]);
     setSelectedArchivedPeriod(finalizedDoc);
+    setIsFinalizeWarningModalOpen(false);
     setPageMode('archived_periods');
     showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت ثبت نهایی شد و به بایگانی منتقل گردید.`);
   };
@@ -1960,8 +2022,102 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   <SlidersHorizontal size={14} className="text-emerald-400" />
                   <span>تنظیمات فرمول محاسبه شهریه</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFinalizeWarningModalOpen(true)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCheck size={16} />
+                  <span>ثبت نهایی شهریه</span>
+                </button>
               </div>
             </div>
+
+                {/* Targeted Calculation Scope Control Bar */}
+                <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-900 flex items-center gap-1">
+                      <Filter size={14} className="text-emerald-700" />
+                      <span>دامنه محاسبه مکانیزه:</span>
+                    </span>
+
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-emerald-200 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => setCalcScopeMode('all')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                          calcScopeMode === 'all'
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        همه طلاب ({students.length} نفر)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCalcScopeMode('grade')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                          calcScopeMode === 'grade'
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        پایه تحصیلی خاص
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCalcScopeMode('individual')}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                          calcScopeMode === 'individual'
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        یک طلبه خاص (دستی)
+                      </button>
+                    </div>
+                  </div>
+
+                  {calcScopeMode === 'grade' && (
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-emerald-200">
+                      <span className="text-xs text-slate-700 font-bold">پایه تحصیلی:</span>
+                      <select
+                        value={selectedCalcGrade}
+                        onChange={e => setSelectedCalcGrade(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-900 outline-none cursor-pointer"
+                      >
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                        <option value="پایه ۱۱">پایه ۱۱</option>
+                        <option value="پایه ۱۲">پایه ۱۲</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {calcScopeMode === 'individual' && (
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-emerald-200">
+                      <span className="text-xs text-slate-700 font-bold">انتخاب طلبه:</span>
+                      <select
+                        value={selectedCalcStudentId}
+                        onChange={e => setSelectedCalcStudentId(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-900 outline-none cursor-pointer max-w-xs"
+                      >
+                        <option value="">-- انتخاب طلبه --</option>
+                        {students.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} (پایه {s.grade || ''})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
 
                 {/* Period Title & Dates Picker Form */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
@@ -2351,7 +2507,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                             <th className="py-3 px-2 text-center text-rose-700">کسری مطالعه</th>
                             <th className="py-3 px-2 text-center text-rose-700">غیبت غیرموجه</th>
                             <th className="py-3 px-2 text-center text-rose-700">کسر نهار</th>
-                            <th className="py-3 px-2 text-center text-rose-700">وام/قرض‌الحسنه</th>
+                            <th className="py-3 px-2 text-center text-rose-700">وام/اقساط</th>
+                            <th className="py-3 px-2 text-center text-teal-800">کمک به صندوق</th>
                             <th className="py-3 px-2 text-center text-rose-700">سایر بدهی‌ها</th>
                             <th className="py-3 px-2 text-center text-amber-900">شهریه استحقاقی</th>
                           </>
@@ -2418,9 +2575,19 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                                 <td className="py-3 px-2 text-center font-mono text-emerald-700 font-bold">
                                   {(calc.studyBonusAmount || 0) > 0 ? `+${(calc.studyBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}
                                 </td>
-                                {/* مشاوره */}
+                                {/* مشاوره (ارزیابی الف، ب، ج، د) */}
                                 <td className="py-3 px-2 text-center font-mono text-slate-600">
-                                  {(calc.counselingBonusAmount || 0) > 0 ? `+${(calc.counselingBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                  <div>
+                                    <span>{(calc.counselingBonusAmount || 0) > 0 ? `+${(calc.counselingBonusAmount || 0).toLocaleString('fa-IR')}` : '-'}</span>
+                                    {(calc.counselingGradeACount || calc.counselingGradeBCount || calc.counselingGradeCCount || calc.counselingGradeDCount) ? (
+                                      <div className="text-[10px] text-slate-500 font-sans flex items-center justify-center gap-0.5 mt-0.5">
+                                        {calc.counselingGradeACount > 0 && <span className="bg-emerald-100 text-emerald-800 px-1 rounded font-bold">{calc.counselingGradeACount}الف</span>}
+                                        {calc.counselingGradeBCount > 0 && <span className="bg-blue-100 text-blue-800 px-1 rounded font-bold">{calc.counselingGradeBCount}ب</span>}
+                                        {calc.counselingGradeCCount > 0 && <span className="bg-amber-100 text-amber-800 px-1 rounded font-bold">{calc.counselingGradeCCount}ج</span>}
+                                        {calc.counselingGradeDCount > 0 && <span className="bg-rose-100 text-rose-800 px-1 rounded font-bold">{calc.counselingGradeDCount}د</span>}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 </td>
                                 {/* کسری مطالعه */}
                                 <td className="py-3 px-2 text-center font-mono text-rose-700">
@@ -2434,15 +2601,31 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                                 <td className="py-3 px-2 text-center font-mono text-rose-700">
                                   {(calc.kitchenTransferAmount || 0) > 0 ? `-${(calc.kitchenTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
                                 </td>
-                                {/* وام و صندوق قرض‌الحسنه */}
+                                {/* اقساط وام */}
                                 <td className="py-3 px-2 text-center font-mono text-rose-700">
-                                  {(calc.qardFundTransferAmount || 0) > 0 ? `-${(calc.qardFundTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
+                                  {(calc.loanInstallmentDeduction || calc.qardFundTransferAmount || 0) > 0 ? `-${(calc.loanInstallmentDeduction || calc.qardFundTransferAmount || 0).toLocaleString('fa-IR')}` : '-'}
                                 </td>
-                                {/* سایر بدهی‌ها */}
-                                <td className="py-3 px-2 text-center font-mono text-rose-700">
-                                  {((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)) > 0
-                                    ? `-${((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)).toLocaleString('fa-IR')}`
+                                {/* کمک به صندوق */}
+                                <td className="py-3 px-2 text-center font-mono text-teal-800 font-bold">
+                                  {(calc.fundContributionDeduction || calc.fundDeduction || 0) > 0
+                                    ? `-${(calc.fundContributionDeduction || calc.fundDeduction || 0).toLocaleString('fa-IR')}`
                                     : '-'}
+                                </td>
+                                {/* سایر بدهی‌ها (تفصیلی) */}
+                                <td className="py-3 px-2 text-center font-mono text-rose-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedStudentForDebtDetail(calc)}
+                                    className="hover:underline hover:text-rose-900 cursor-pointer font-bold inline-flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200"
+                                    title="کلیک جهت مشاهده عناوین و ویرایش تفصیلی بدهی‌ها"
+                                  >
+                                    <span>
+                                      {((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)) > 0
+                                        ? `-${((calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0)).toLocaleString('fa-IR')}`
+                                        : '۰'}
+                                    </span>
+                                    <Eye size={12} className="text-rose-600" />
+                                  </button>
                                 </td>
                                 {/* شهریه استحقاقی */}
                                 <td className="py-3 px-2 text-center font-mono text-amber-900 font-bold">

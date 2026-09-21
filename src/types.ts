@@ -248,6 +248,7 @@ export interface TuitionCalculationBreakdown {
   counselingGradeACount?: number;
   counselingGradeBCount?: number;
   counselingGradeCCount?: number;
+  counselingGradeDCount?: number;
   counselingBonusAmount?: number;
   lunchDaysCount?: number;
   lunchDeductionAmount?: number;

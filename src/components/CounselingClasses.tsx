@@ -433,7 +433,7 @@ export default function CounselingClasses() {
     }
   };
 
-  // Create Follow-up item for student with low grade ('ج' or 'د')
+  // Create Follow-up item for student (sent to Education Manager and Grade Mentor)
   const handleCreateFollowUp = async (g: CounselingSessionGrade) => {
     try {
       const todoItem = {
@@ -465,7 +465,58 @@ export default function CounselingClasses() {
       };
       await localDb.setDoc('workflow_items', wfItem);
 
-      alert(`پیگیری آموزشی و کارتابل برای طلبه "${g.studentName}" با موفقیت ثبت شد.`);
+      // Fetch all system users to dispatch assigned_todos specifically to Education Manager and Grade Supervisor
+      const sysUsers = await localDb.getDocs<any>('system_users');
+      const allUsers = sysUsers || [];
+
+      // 1. Education Managers
+      const eduManagers = allUsers.filter(u => 
+        u.role === 'education_manager' || 
+        u.role === 'education_officer' || 
+        u.role === 'education_supervisor' || 
+        u.role === 'super_admin' || 
+        u.username === 'SHAH'
+      );
+
+      // 2. Grade Mentor / Supervisor for this student's grade
+      const studentGrade = g.grade || '';
+      const gradeMentors = allUsers.filter(u => 
+        u.role === 'grade_supervisor' || 
+        u.role === 'grade_mentor' || 
+        u.assignedGrade === studentGrade || 
+        (Array.isArray(u.assignedGrades) && u.assignedGrades.includes(studentGrade))
+      );
+
+      // Combine target recipient users without duplicates
+      const targetRecipientsMap = new Map<string, any>();
+      [...eduManagers, ...gradeMentors].forEach(u => {
+        if (u.id && u.id !== currentUser?.id) {
+          targetRecipientsMap.set(u.id, u);
+        }
+      });
+
+      // Dispatch assigned_todos to each recipient
+      let dispatchedCount = 0;
+      for (const recipient of targetRecipientsMap.values()) {
+        const assignedTodoDoc = {
+          id: `assigned-counseling-${g.id}-${recipient.id}-${Date.now()}`,
+          senderUserId: currentUser?.id || 'sys',
+          senderUserName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'استاد مشاوره',
+          senderRoleTitle: 'استاد / مشاور',
+          recipientUserId: recipient.id,
+          recipientUserName: recipient.fullName || recipient.name || recipient.username,
+          recipientRoleTitle: recipient.roleTitle || recipient.role || 'مسئول',
+          title: `پیگیری ارزیابی مشاوره (${g.studentName}) - پایه ${studentGrade}`,
+          description: `طلبه ${g.studentName} در ارزیابی مشاوره درس «${g.courseTitle}» ارزیابی ${g.participationScore || ''}/${g.researchScore || ''} دریافت کرده است. تاریخ جلسه: ${g.sessionDate}. لطفاً پیگیری فرمايید.`,
+          priority: (g.participationScore === 'د' || g.researchScore === 'د') ? 'high' : 'medium',
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        };
+        await localDb.setDoc('assigned_todos', assignedTodoDoc);
+        dispatchedCount++;
+      }
+
+      alert(`پیگیری ارزیابی مشاوره برای مسئول آموزش و مسئول پایه ثبت و ارسال گردید (${dispatchedCount > 0 ? `${dispatchedCount} ارجاع ارسالی` : 'در عمومی پیگیری‌ها'}).`);
     } catch (err) {
       console.error('Error creating follow-up:', err);
       alert('خطا در ثبت پیگیری.');

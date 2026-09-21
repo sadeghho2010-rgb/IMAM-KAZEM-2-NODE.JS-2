@@ -45,6 +45,7 @@ import ClaimsManagement from './finance/ClaimsManagement';
 import FundAndActiveLoans from './finance/FundAndActiveLoans';
 import ExpensesAndReports from './finance/ExpensesAndReports';
 import StaffBank from './finance/StaffBank';
+import FundDonations from './finance/FundDonations';
 import { 
   TuitionCalculationSettings, 
   PresenceReport, 
@@ -67,6 +68,7 @@ type FinanceTabType =
   | 'expenses'
   | 'loans'
   | 'qard_fund'
+  | 'fund_donations'
   | 'financial_reports';
 
 export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManagerDashboardProps) {
@@ -479,6 +481,20 @@ export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManage
 
         <button
           type="button"
+          onClick={() => setActiveTab('fund_donations')}
+          className={cn(
+            "px-3.5 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
+            activeTab === 'fund_donations'
+              ? "bg-emerald-600 text-white shadow-xs"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+          )}
+        >
+          <HandCoins size={15} />
+          <span>کمک به صندوق</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('financial_reports')}
           className={cn(
             "px-3.5 py-2.5 rounded-xl text-xs font-black transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
@@ -753,6 +769,13 @@ export default function FinanceManagerDashboard({ onNavigateTab }: FinanceManage
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8.1 کمک به صندوق                                                         */}
+      {/* ========================================================================= */}
+      {activeTab === 'fund_donations' && (
+        <FundDonations />
       )}
 
       {/* ========================================================================= */}

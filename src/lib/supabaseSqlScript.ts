@@ -439,7 +439,36 @@ CREATE TABLE IF NOT EXISTS public.system_users (
 );
 CREATE INDEX IF NOT EXISTS idx_system_users_username ON public.system_users (username);
 
--- ۳۲. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
+-- ۳۳. جدول تنظیمات کمک ماهانه به صندوق (fund_donation_configs)
+CREATE TABLE IF NOT EXISTS public.fund_donation_configs (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL,
+  person_type TEXT NOT NULL, -- 'student' | 'teacher' | 'staff'
+  person_name TEXT NOT NULL,
+  monthly_amount NUMERIC DEFAULT 0,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۳۴. جدول کسرها و کمک‌های قطعی شده به صندوق (fund_donations)
+CREATE TABLE IF NOT EXISTS public.fund_donations (
+  id TEXT PRIMARY KEY,
+  person_id TEXT NOT NULL,
+  person_type TEXT NOT NULL, -- 'student' | 'teacher' | 'staff'
+  person_name TEXT NOT NULL,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  period_title TEXT,
+  deduction_date TEXT,
+  is_confirmed BOOLEAN DEFAULT false,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fund_donations_person ON public.fund_donations (person_id);
+CREATE INDEX IF NOT EXISTS idx_fund_donations_confirmed ON public.fund_donations (is_confirmed);
+
+-- ۳۵. فعال‌سازی دسترسی و امنیت Row Level Security (RLS)
 DO $$
 DECLARE
   tbl text;
@@ -481,7 +510,9 @@ DECLARE
     'study_periods',
     'student_comments',
     'app_collections',
-    'system_users'
+    'system_users',
+    'fund_donation_configs',
+    'fund_donations'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP
