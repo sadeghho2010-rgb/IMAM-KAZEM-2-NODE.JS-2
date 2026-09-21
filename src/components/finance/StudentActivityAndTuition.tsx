@@ -226,6 +226,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [selectedStudentForDebtDetail, setSelectedStudentForDebtDetail] = useState<any | null>(null);
   const [newDebtTitle, setNewDebtTitle] = useState('');
   const [newDebtAmount, setNewDebtAmount] = useState('');
+  const [newDebtMonthly, setNewDebtMonthly] = useState('');
   const [newDebtCategory, setNewDebtCategory] = useState('سایر بدهی‌ها');
   
   // New Period Form
@@ -272,6 +273,57 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [archivedSearchQuery, setArchivedSearchQuery] = useState('');
   const [archivedGradeFilter, setArchivedGradeFilter] = useState('all');
   const [isArchivedModified, setIsArchivedModified] = useState(false);
+
+  const handleAddDebtDetail = async () => {
+    if (!selectedStudentForDebtDetail) return;
+    if (!newDebtTitle.trim() || !newDebtAmount.trim()) {
+      showToast('لطفاً عنوان و مبلغ کل بدهی را وارد نمایید.');
+      return;
+    }
+    const total = Number(newDebtAmount);
+    const monthly = Number(newDebtMonthly || (total / 5).toFixed(0));
+    if (isNaN(total) || total <= 0) {
+      showToast('مبلغ کل بدهی باید یک عدد مثبت باشد.');
+      return;
+    }
+
+    const newClaim: any = {
+      id: `clm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      studentId: selectedStudentForDebtDetail.studentId,
+      studentName: selectedStudentForDebtDetail.studentName,
+      claimTitle: newDebtTitle.trim(),
+      totalDebtAmount: total,
+      remainingAmount: total,
+      monthlyDeductionAmount: monthly,
+      status: 'active',
+      destinationAccountTitle: newDebtCategory,
+      destinationAccountId: 'cultural_account',
+      targetType: 'student',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      await localDb.addDoc('finance_student_claims', newClaim);
+      setClaimsList(prev => [...prev, newClaim]);
+      setNewDebtTitle('');
+      setNewDebtAmount('');
+      setNewDebtMonthly('');
+      showToast(`بدهی جدید برای ${selectedStudentForDebtDetail.studentName} با موفقیت ثبت شد.`);
+    } catch (e: any) {
+      showToast(`خطا در ثبت بدهی: ${e?.message || 'مشکل در ذخیره‌سازی ابری'}`);
+    }
+  };
+
+  const handleDeleteDebtDetail = async (claimId: string) => {
+    if (!window.confirm('آیا از حذف این بدهی مطمئن هستید؟')) return;
+    try {
+      await localDb.deleteDoc('finance_student_claims', claimId);
+      setClaimsList(prev => prev.filter(c => c.id !== claimId));
+      showToast('بدهی مورد نظر با موفقیت حذف شد.');
+    } catch (e: any) {
+      showToast(`خطا در حذف بدهی: ${e?.message || 'مشکل در ذخیره‌سازی ابری'}`);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -4858,6 +4910,250 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     <div>ریاست و مدیریت عالی مدرسه</div>
                     <div className="border-t border-slate-400 pt-2 font-normal text-slate-500">تایید نهایی و صدور چک/پایا</div>
                   </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 3.6: تفصیل و مدیریت بدهی‌های سایر کلاینت (تفصیل بدهی‌ها) */}
+      {/* ------------------------------------------------------------- */}
+      <AnimatePresence>
+        {selectedStudentForDebtDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8"
+              dir="rtl"
+            >
+              <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-black">تفصیل و مدیریت بدهی‌های {selectedStudentForDebtDetail.studentName}</h3>
+                  <span className="text-xs text-slate-400">پایه تحصیلی: {selectedStudentForDebtDetail.grade || 'نامشخص'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStudentForDebtDetail(null);
+                    setNewDebtTitle('');
+                    setNewDebtAmount('');
+                    setNewDebtMonthly('');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {/* Existing Debts list */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-800">لیست بدهی‌ها و مطالبات ثبت‌شده:</h4>
+                  
+                  {claimsList.filter(c => c.studentId === selectedStudentForDebtDetail.studentId).length === 0 ? (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center">
+                      <p className="text-xs text-slate-500 font-bold">هیچ بدهی فعالی برای این طلبه ثبت نشده است.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                            <th className="py-2.5 px-3">عنوان بدهی</th>
+                            <th className="py-2.5 px-3 text-center">مبلغ کل (تومان)</th>
+                            <th className="py-2.5 px-3 text-center">مانده (تومان)</th>
+                            <th className="py-2.5 px-3 text-center">قسط این دوره (تومان)</th>
+                            <th className="py-2.5 px-3 text-center">وضعیت</th>
+                            <th className="py-2.5 px-3 text-center">حذف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {claimsList
+                            .filter(c => c.studentId === selectedStudentForDebtDetail.studentId)
+                            .map((claim) => (
+                              <tr key={claim.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-2.5 px-3 font-bold text-slate-800">{claim.claimTitle}</td>
+                                <td className="py-2.5 px-3 text-center font-mono font-bold">
+                                  {claim.totalDebtAmount.toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-rose-600 font-bold">
+                                  {(claim.remainingAmount ?? claim.totalDebtAmount).toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-2.5 px-3 text-center font-mono text-amber-900">
+                                  {(claim.monthlyDeductionAmount || 0).toLocaleString('fa-IR')}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                                    claim.status === 'active' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                    claim.status === 'completed' ? "bg-slate-100 text-slate-600 border border-slate-200" :
+                                    "bg-amber-50 text-amber-700 border border-amber-200"
+                                  )}>
+                                    {claim.status === 'active' ? 'فعال' : claim.status === 'completed' ? 'تسویه شده' : 'متوقف'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDebtDetail(claim.id)}
+                                    className="p-1 text-rose-600 hover:text-rose-900 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                    title="حذف بدهی"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Add New Debt Form */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <PlusCircle size={16} className="text-indigo-600" />
+                    <span>ثبت و انتساب بدهی جدید به طلبه</span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 block">عنوان بدهی / کسر ماهانه</label>
+                      <input
+                        type="text"
+                        placeholder="مثال: اقساط خرید کتب آموزشی"
+                        value={newDebtTitle}
+                        onChange={e => setNewDebtTitle(e.target.value)}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 block">دسته‌بندی بدهی</label>
+                      <select
+                        value={newDebtCategory}
+                        onChange={e => setNewDebtCategory(e.target.value)}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                      >
+                        <option value="سایر بدهی‌ها">سایر بدهی‌ها (عمومی)</option>
+                        <option value="امور فرهنگی (عتبات/اردو)">امور فرهنگی (عتبات/اردو)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 block">مبلغ کل بدهی (تومان)</label>
+                      <input
+                        type="number"
+                        placeholder="مثال: 500000"
+                        value={newDebtAmount}
+                        onChange={e => setNewDebtAmount(e.target.value)}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-600 block">مبلغ کسر قسط هر دوره (تومان)</label>
+                      <input
+                        type="number"
+                        placeholder="خالی بگذارید تا خودکار در ۵ قسط محاسبه شود"
+                        value={newDebtMonthly}
+                        onChange={e => setNewDebtMonthly(e.target.value)}
+                        className="w-full p-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddDebtDetail}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Plus size={16} />
+                    <span>افزودن و ثبت نهایی بدهی روی پرونده مالی طلبه</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 3.7: تایید نهایی و بایگانی کل دوره شهریه طلاب          */}
+      {/* ------------------------------------------------------------- */}
+      <AnimatePresence>
+        {isFinalizeWarningModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
+              dir="rtl"
+            >
+              <div className="p-5 bg-rose-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-amber-400 animate-pulse" />
+                  <h3 className="text-sm font-black">تایید و ثبت نهایی دوره شهریه جاری</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsFinalizeWarningModalOpen(false)}
+                  className="p-1.5 text-rose-300 hover:text-white rounded-xl hover:bg-rose-800 transition-all cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  آیا از بستن، ثبت نهایی و انتقال دوره شهریه <span className="font-bold text-slate-900">«{newPeriodTitle}»</span> به بایگانی اطمینان کامل دارید؟
+                </p>
+                
+                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-rose-900 space-y-2">
+                  <h4 className="text-[11px] font-bold">⚠️ توجه فرمایید:</h4>
+                  <ul className="list-disc list-inside text-[11px] space-y-1">
+                    <li>پس از تایید، کلیه محاسبات، کسری‌ها و پاداش‌های این دوره فریز خواهند شد.</li>
+                    <li>مانده بدهی‌های طلاب به صورت خودکار بر اساس اقساط این دوره کسر و به‌روزرسانی خواهد شد.</li>
+                    <li>گزارش اکسل رسمی پایا و گزارش‌های بالادستی این دوره قفل و بایگانی می‌شوند.</li>
+                  </ul>
+                </div>
+
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">تعداد پرونده‌های محاسبه شده:</span>
+                    <span className="font-bold text-slate-800">{calculatedTuitions.length.toLocaleString('fa-IR')} نفر</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">مجموع خالص پرداختی طلاب:</span>
+                    <span className="font-mono font-black text-slate-900">{totalNetPayoutSum.toLocaleString('fa-IR')} تومان</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-200 pt-2 text-[11px]">
+                    <span className="text-slate-500">سهم انتقالی به صندوق قرض‌الحسنه:</span>
+                    <span className="font-mono text-teal-800 font-bold">{totalQardFundTransferSum.toLocaleString('fa-IR')} تومان</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleFinalizeTuitionPeriod}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCheck size={16} />
+                    <span>تایید و ثبت نهایی در دیتابیس</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFinalizeWarningModalOpen(false)}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    انصراف
+                  </button>
                 </div>
               </div>
             </motion.div>
