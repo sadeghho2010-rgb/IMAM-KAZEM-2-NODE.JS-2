@@ -18,6 +18,7 @@ export const ALL_SYSTEM_TABS = [
   { id: 'stats', label: 'آمار مطالعه' },
   { id: 'research', label: 'بخش پژوهش و مقالات' },
   { id: 'attendance', label: 'حضور و غیاب طلاب' },
+  { id: 'course-selection', label: 'سامانه انتخاب واحد / انتخاب درس' },
   { id: 'comments', label: 'نظرات، صحبت‌ها و آزمون شفاهی' },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی' },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین' },
@@ -47,7 +48,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
     ],
   },
   {
@@ -68,7 +69,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
 
@@ -90,7 +91,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-amber-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'comments',
       'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
@@ -307,8 +308,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const tabs = Array.isArray(u.allowedTabs) 
               ? u.allowedTabs 
               : (Array.isArray(u.allowedModules) ? u.allowedModules : ['todos', 'students']);
-            if ((u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH') && !tabs.includes('user-credentials')) {
-              tabs.push('user-credentials');
+            if (u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH' || u.level === 1 || u.level === 2) {
+              if (!tabs.includes('user-credentials') && (u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH')) {
+                tabs.push('user-credentials');
+              }
+              if (!tabs.includes('course-selection')) {
+                tabs.push('course-selection');
+              }
             }
             return {
               ...u,
@@ -339,9 +345,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === normalized.username?.toUpperCase());
           const activeUser = found || normalized;
-          if (activeUser && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH')) {
-            if (Array.isArray(activeUser.allowedTabs) && !activeUser.allowedTabs.includes('user-credentials')) {
-              activeUser.allowedTabs.push('user-credentials');
+          if (activeUser && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH' || activeUser.level === 1 || activeUser.level === 2)) {
+            if (Array.isArray(activeUser.allowedTabs)) {
+              if (!activeUser.allowedTabs.includes('user-credentials') && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH')) {
+                activeUser.allowedTabs.push('user-credentials');
+              }
+              if (!activeUser.allowedTabs.includes('course-selection')) {
+                activeUser.allowedTabs.push('course-selection');
+              }
             }
           }
           return activeUser;
@@ -722,6 +733,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
+
+    // سامانه انتخاب واحد / انتخاب درس
+    if (tabId === 'course-selection') {
+      return (
+        currentUser.level === 1 ||
+        currentUser.level === 2 ||
+        currentUser.level === 3 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.role === 'grade_mentor' ||
+        currentUser.role === 'student' ||
+        currentUser.role === 'class_representative' ||
+        ['SHAH', 'SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI', 'YAZDANI'].includes(currentUser.username.toUpperCase())
+      );
+    }
 
     // پشتیبان‌گیری: فقط سوپر ادمین (سطح ۱) و مسئول آموزش
     if (tabId === 'backup') {
