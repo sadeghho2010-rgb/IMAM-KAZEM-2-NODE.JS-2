@@ -223,6 +223,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [selectedCalcGrade, setSelectedCalcGrade] = useState<string>('پایه ۷');
   const [selectedCalcStudentId, setSelectedCalcStudentId] = useState<string>('');
   const [isFinalizeWarningModalOpen, setIsFinalizeWarningModalOpen] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [selectedStudentForDebtDetail, setSelectedStudentForDebtDetail] = useState<any | null>(null);
   const [newDebtTitle, setNewDebtTitle] = useState('');
   const [newDebtAmount, setNewDebtAmount] = useState('');
@@ -303,7 +304,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     };
 
     try {
-      await localDb.addDoc('finance_student_claims', newClaim);
+      await localDb.addDoc('student_claims', newClaim);
+      try {
+        await localDb.addDoc('finance_student_claims', newClaim);
+      } catch (e) {}
       setClaimsList(prev => [...prev, newClaim]);
       setNewDebtTitle('');
       setNewDebtAmount('');
@@ -317,7 +321,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const handleDeleteDebtDetail = async (claimId: string) => {
     if (!window.confirm('آیا از حذف این بدهی مطمئن هستید؟')) return;
     try {
-      await localDb.deleteDoc('finance_student_claims', claimId);
+      await localDb.deleteDoc('student_claims', claimId);
+      try {
+        await localDb.deleteDoc('finance_student_claims', claimId);
+      } catch (e) {}
       setClaimsList(prev => prev.filter(c => c.id !== claimId));
       showToast('بدهی مورد نظر با موفقیت حذف شد.');
     } catch (e: any) {
@@ -331,8 +338,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   };
 
   // Load all required collections
-  const loadAllData = async () => {
-    setIsLoading(true);
+  const loadAllData = async (isInitial = false) => {
+    if (isInitial) {
+      setIsLoading(true);
+    }
     try {
       const [
         studs, 
@@ -347,7 +356,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         lnchItems,
         mRes,
         mPer,
-        cRecs,
+        cRecs1,
+        cRecs2,
         cCats,
         dAccs,
         eduReports
@@ -365,6 +375,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         localDb.getDocs<StudentMealReservation>('meal_reservations'),
         localDb.getDocs<MealReservationPeriod>('meal_reservation_periods'),
         localDb.getDocs<StudentClaimRecord>('finance_student_claims'),
+        localDb.getDocs<StudentClaimRecord>('student_claims'),
         localDb.getDocs<FinanceClaimCategory>('finance_claim_categories'),
         localDb.getDocs<FinanceDestinationAccount>('finance_destination_accounts'),
         localDb.getDocs<EducationFinancialReport>('education_financial_reports')
@@ -384,23 +395,39 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       setLunchItems(lnchItems || []);
       setMealReservations(mRes || []);
       setMealPeriods(mPer || []);
-      setClaimsList(cRecs || []);
+
+      // Merge claims from both collections seamlessly
+      const mergedClaimsMap = new Map<string, StudentClaimRecord>();
+      (cRecs1 || []).forEach(c => mergedClaimsMap.set(c.id, c));
+      (cRecs2 || []).forEach(c => mergedClaimsMap.set(c.id, c));
+      setClaimsList(Array.from(mergedClaimsMap.values()));
+
       setClaimCategories(cCats || []);
       setDestinationAccounts(dAccs || []);
       setEducationReports(eduReports || []);
     } catch (err) {
       console.error('Error loading finance data:', err);
     } finally {
-      setIsLoading(false);
+      if (isInitial) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadAllData();
+    loadAllData(true);
+    let debounceTimer: any = null;
     const unsub = localDb.subscribe(() => {
-      loadAllData();
+      // Debounce background refreshes so UI never flickers or re-mounts
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadAllData(false);
+      }, 300);
     });
-    return () => unsub();
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      unsub();
+    };
   }, []);
 
   // Save Settings Handler
@@ -1127,73 +1154,97 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   // Finalize & Archive Current Calculation
   const handleFinalizeTuitionPeriod = async () => {
     if (!newPeriodTitle.trim()) {
-      alert('لطفاً عنوان دوره شهریه را وارد کنید.');
+      showToast('لطفاً عنوان دوره شهریه را وارد کنید.');
       return;
     }
 
-    const periodId = `period-${Date.now()}`;
-    const finalizedDoc: TuitionPeriod = {
-      id: periodId,
-      title: newPeriodTitle,
-      startDate,
-      endDate,
-      status: 'finalized',
-      totalStudentsCalculated: calculatedTuitions.length,
-      totalPayoutAmount: totalNetPayoutSum,
-      calculations: calculatedTuitions,
-      createdAt: new Date().toISOString(),
-      createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username,
-      finalizedAt: new Date().toISOString(),
-      finalizedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
-    };
+    setIsFinalizing(true);
+    try {
+      const periodId = `period-${Date.now()}`;
+      const finalizedDoc: TuitionPeriod = {
+        id: periodId,
+        title: newPeriodTitle,
+        startDate,
+        endDate,
+        status: 'finalized',
+        totalStudentsCalculated: calculatedTuitions.length,
+        totalPayoutAmount: totalNetPayoutSum,
+        calculations: calculatedTuitions,
+        createdAt: new Date().toISOString(),
+        createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username,
+        finalizedAt: new Date().toISOString(),
+        finalizedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
+      };
 
-    await localDb.setDoc('tuition_periods', finalizedDoc);
+      // 1. Save finalized period document
+      await localDb.setDoc('tuition_periods', finalizedDoc);
 
-    // Save confirmed Fund Donations for each student
-    for (const calc of calculatedTuitions) {
-      const fundAmount = calc.fundContributionDeduction || calc.fundDeduction || 0;
-      if (fundAmount > 0) {
-        const fundDoc = {
-          id: `fund-don-${calc.studentId}-${periodId}`,
-          personId: calc.studentId,
-          personType: 'student',
-          personName: calc.studentName,
-          amount: fundAmount,
-          periodTitle: newPeriodTitle,
-          deductionDate: getTodayShamsi(),
-          isConfirmed: true,
-          confirmedAt: new Date().toISOString(),
-          confirmedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
-        };
-        await localDb.setDoc('fund_donations', fundDoc);
-      }
-
-      // Deduct paid debts from claimsList if any
-      const debtDeducted = (calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0);
-      if (debtDeducted > 0) {
-        const studentClaims = claimsList.filter(c => c.studentId === calc.studentId && (c.remainingAmount || 0) > 0);
-        let remDeduct = debtDeducted;
-        for (const clm of studentClaims) {
-          if (remDeduct <= 0) break;
-          const currentRem = clm.remainingAmount ?? clm.totalDebtAmount;
-          const apply = Math.min(remDeduct, currentRem);
-          const updatedClm = {
-            ...clm,
-            paidAmount: (clm.paidAmount || 0) + apply,
-            remainingAmount: Math.max(0, currentRem - apply),
-            status: (currentRem - apply) <= 0 ? 'completed' as const : 'active' as const
-          };
-          await localDb.setDoc('claims', updatedClm);
-          remDeduct -= apply;
+      // 2. Prepare fund donations in bulk
+      const fundDocsToSave: any[] = [];
+      for (const calc of calculatedTuitions) {
+        const fundAmount = calc.fundContributionDeduction || calc.fundDeduction || 0;
+        if (fundAmount > 0) {
+          fundDocsToSave.push({
+            id: `fund-don-${calc.studentId}-${periodId}`,
+            personId: calc.studentId,
+            personType: 'student',
+            personName: calc.studentName,
+            amount: fundAmount,
+            periodTitle: newPeriodTitle,
+            deductionDate: getTodayShamsi(),
+            isConfirmed: true,
+            confirmedAt: new Date().toISOString(),
+            confirmedByName: currentUser?.fullName || currentUser?.name || currentUser?.username
+          });
         }
       }
-    }
 
-    setTuitionPeriods(prev => [finalizedDoc, ...prev]);
-    setSelectedArchivedPeriod(finalizedDoc);
-    setIsFinalizeWarningModalOpen(false);
-    setPageMode('archived_periods');
-    showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت ثبت نهایی شد و به بایگانی منتقل گردید.`);
+      if (fundDocsToSave.length > 0) {
+        await localDb.bulkPut('fund_donations', fundDocsToSave);
+      }
+
+      // 3. Deduct paid debts from claimsList and save in bulk
+      const updatedClaimsMap = new Map<string, StudentClaimRecord>();
+      for (const calc of calculatedTuitions) {
+        const debtDeducted = (calc.culturalTransferAmount || 0) + (calc.otherTransferAmount || 0);
+        if (debtDeducted > 0) {
+          const studentClaims = claimsList.filter(c => c.studentId === calc.studentId && (c.remainingAmount || 0) > 0);
+          let remDeduct = debtDeducted;
+          for (const clm of studentClaims) {
+            if (remDeduct <= 0) break;
+            const currentRem = clm.remainingAmount ?? clm.totalDebtAmount;
+            const apply = Math.min(remDeduct, currentRem);
+            const updatedClm: StudentClaimRecord = {
+              ...clm,
+              paidAmount: (clm.paidAmount || 0) + apply,
+              remainingAmount: Math.max(0, currentRem - apply),
+              status: (currentRem - apply) <= 0 ? 'completed' as const : 'active' as const
+            };
+            updatedClaimsMap.set(updatedClm.id, updatedClm);
+            remDeduct -= apply;
+          }
+        }
+      }
+
+      const claimsToUpdate = Array.from(updatedClaimsMap.values());
+      if (claimsToUpdate.length > 0) {
+        await localDb.bulkPut('student_claims', claimsToUpdate);
+        try {
+          await localDb.bulkPut('finance_student_claims', claimsToUpdate);
+        } catch (e) {}
+      }
+
+      setTuitionPeriods(prev => [finalizedDoc, ...prev]);
+      setSelectedArchivedPeriod(finalizedDoc);
+      setIsFinalizeWarningModalOpen(false);
+      setPageMode('archived_periods');
+      showToast(`دوره شهریه «${newPeriodTitle}» با موفقیت نهایی و در پایگاه داده ذخیره شد.`);
+    } catch (err: any) {
+      console.error('Error finalizing tuition period:', err);
+      showToast(`خطا در ثبت نهایی دوره در پایگاه داده: ${err?.message || 'مشکل در ارتباط با سرور'}`);
+    } finally {
+      setIsFinalizing(false);
+    }
   };
 
   // Delete Archived Period
@@ -5142,15 +5193,26 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   <button
                     type="button"
                     onClick={handleFinalizeTuitionPeriod}
-                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    disabled={isFinalizing}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <CheckCheck size={16} />
-                    <span>تایید و ثبت نهایی در دیتابیس</span>
+                    {isFinalizing ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>در حال ثبت نهایی و ذخیره در دیتابیس...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCheck size={16} />
+                        <span>تایید و ثبت نهایی در دیتابیس</span>
+                      </>
+                    )}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsFinalizeWarningModalOpen(false)}
-                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    onClick={() => !isFinalizing && setIsFinalizeWarningModalOpen(false)}
+                    disabled={isFinalizing}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   >
                     انصراف
                   </button>

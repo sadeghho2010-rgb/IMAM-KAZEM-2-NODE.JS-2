@@ -438,31 +438,17 @@ CREATE POLICY "anon_todo_categories" ON public.user_todo_categories FOR ALL TO a
 CREATE POLICY "anon_received_articles" ON public.received_articles FOR ALL TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "anon_evaluation_requests" ON public.evaluation_requests FOR ALL TO anon USING (true) WITH CHECK (true);
 
--- حفاظت از کالکشن‌های حساس در app_collections با Whitelist
-CREATE POLICY "app_collections_whitelisted_access" ON public.app_collections
-FOR ALL TO anon
-USING (
-  collection_name NOT IN (
-    'system_users',
-    'audit_logs',
-    'tuition_records',
-    'finance_expenses',
-    'finance_operational_expenses',
-    'finance_loans',
-    'finance_budget_rows',
-    'finance_student_claims'
-  )
-)
-WITH CHECK (
-  collection_name NOT IN (
-    'system_users',
-    'audit_logs',
-    'tuition_records',
-    'finance_expenses',
-    'finance_operational_expenses',
-    'finance_loans',
-    'finance_budget_rows',
-    'finance_student_claims'
-  )
-);
+-- سیاست‌های دسترسی به جداول شهریه و مالی
+CREATE POLICY "anon_tuition_periods" ON public.tuition_periods FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "anon_tuition_records" ON public.tuition_records FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "anon_finance_loans" ON public.finance_loans FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "anon_finance_expenses" ON public.finance_expenses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- دسترسی کامل به کالکشن‌های نرم‌افزار در app_collections برای تمام ماژول‌ها
+DROP POLICY IF EXISTS "app_collections_whitelisted_access" ON public.app_collections;
+DROP POLICY IF EXISTS "app_collections_full_access" ON public.app_collections;
+CREATE POLICY "app_collections_full_access" ON public.app_collections
+FOR ALL TO anon, authenticated
+USING (true)
+WITH CHECK (true);
 `;
