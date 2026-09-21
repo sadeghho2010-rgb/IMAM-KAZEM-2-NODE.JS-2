@@ -713,6 +713,23 @@ export default function TodoList() {
                         </button>
                       </div>
 
+                      {/* Quick Add Input Box - Type & Press Enter */}
+                      <div className="pt-1">
+                        <input
+                          type="text"
+                          placeholder="+ عنوان کار جدید را بنویسید و Enter بزنید..."
+                          value={columnQuickInputs[categoryName] || ''}
+                          onChange={(e) => setColumnQuickInputs({ ...columnQuickInputs, [categoryName]: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleQuickAddPersonalTodo(categoryName);
+                            }
+                          }}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 rounded-xl text-xs font-bold text-slate-800 outline-none transition-all placeholder:text-slate-400 placeholder:font-normal shadow-2xs"
+                        />
+                      </div>
+
                       {/* Items inside column */}
                       <div className="space-y-2 min-h-[120px]">
                         {sortedItems.length === 0 ? (

@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS public.counseling_session_grades (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۷. جدول پیگیری‌ها و وظایف (todos)
+-- ۱۷. جدول پیگیری‌ها و وظایف (todos, personal_todos, user_todo_categories, assigned_todos)
 CREATE TABLE IF NOT EXISTS public.todos (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -219,6 +219,45 @@ CREATE TABLE IF NOT EXISTS public.todos (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS public.personal_todos (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT DEFAULT 'عمومی',
+  completed BOOLEAN DEFAULT false,
+  archived BOOLEAN DEFAULT false,
+  priority TEXT DEFAULT 'medium',
+  due_date TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.user_todo_categories (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  name TEXT NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.assigned_todos (
+  id TEXT PRIMARY KEY,
+  sender_user_id TEXT,
+  recipient_user_id TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'pending',
+  priority TEXT DEFAULT 'medium',
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_personal_todos_user ON public.personal_todos (user_id);
+CREATE INDEX IF NOT EXISTS idx_assigned_todos_recipient ON public.assigned_todos (recipient_user_id);
 
 -- ۱۸. جدول جریان کار و درخواست‌های تایید (workflow_items)
 CREATE TABLE IF NOT EXISTS public.workflow_items (
@@ -488,6 +527,9 @@ DECLARE
     'oral_exams',
     'counseling_session_grades',
     'todos',
+    'personal_todos',
+    'user_todo_categories',
+    'assigned_todos',
     'workflow_items',
     'workflow_settings',
     'presence_hours_logs',

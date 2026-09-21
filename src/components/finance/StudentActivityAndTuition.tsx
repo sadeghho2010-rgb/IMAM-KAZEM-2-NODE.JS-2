@@ -92,6 +92,12 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   // Sub-tab: 'activity_info' (اطلاعات حضور و فعالیت طلاب) | 'mechanized_calc' (محاسبه مکانیزه)
   const [currentSubTab, setCurrentSubTab] = useState<'activity_info' | 'mechanized_calc'>('activity_info');
 
+  // Archive sub-tab & Student Reports
+  const [archiveSubTab, setArchiveSubTab] = useState<'period_list' | 'student_reports'>('period_list');
+  const [reportSelectedStudentId, setReportSelectedStudentId] = useState<string>('');
+  const [reportSelectedPeriodId, setReportSelectedPeriodId] = useState<string>('all_cumulative');
+  const [reportViewType, setReportViewType] = useState<'summary_bill' | 'detailed'>('summary_bill');
+
   // Filters & Date Range
   const [gradeFilter, setGradeFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -865,7 +871,10 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         kitchenTransferAmount = Math.max(0, (count * price) - discount);
       } else {
         const lunchDaysCount = prof?.monthlyLunchDays ?? prof?.lunchDaysCount ?? 20;
-        kitchenTransferAmount = lunchDaysCount * (settings.dailyLunchCost || settings.lunchCostPerDay || 45000);
+        const dinnerDaysCount = prof?.monthlyDinnerDays ?? prof?.dinnerDaysCount ?? 0;
+        const lunchTotal = lunchDaysCount * (settings.dailyLunchCost || settings.lunchCostPerDay || 45000);
+        const dinnerTotal = dinnerDaysCount * (settings.dailyDinnerCost || settings.dinnerCostPerDay || 35000);
+        kitchenTransferAmount = lunchTotal + dinnerTotal;
       }
 
       // 2. سهم وام فعال صندوق قرض‌الحسنه
@@ -2778,8 +2787,47 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
             </span>
           </div>
 
-          {!selectedArchivedPeriod ? (
-            /* List of Archived Tuition Periods */
+          {/* Sub-tabs for Archive: Period List vs Student Reports */}
+          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit">
+            <button
+              type="button"
+              onClick={() => {
+                setArchiveSubTab('period_list');
+                setSelectedArchivedPeriod(null);
+              }}
+              className={cn(
+                "px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                archiveSubTab === 'period_list' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <BookOpen size={15} />
+              <span>لیست دوره‌های بایگانی‌شده</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setArchiveSubTab('student_reports');
+                setSelectedArchivedPeriod(null);
+                if (!reportSelectedStudentId && students.length > 0) {
+                  setReportSelectedStudentId(students[0].id);
+                }
+              }}
+              className={cn(
+                "px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                archiveSubTab === 'student_reports' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Users size={15} />
+              <span>گزارش طلاب در بایگانی</span>
+            </button>
+          </div>
+
+          {/* TAB 1 OF ARCHIVE: PERIOD LIST */}
+          {archiveSubTab === 'period_list' && (
+            <>
+              {!selectedArchivedPeriod ? (
+                /* List of Archived Tuition Periods */
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
@@ -3177,6 +3225,274 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+          </>
+          )}
+
+          {/* TAB 2 OF ARCHIVE: STUDENT INDIVIDUAL & CUMULATIVE REPORTS */}
+          {archiveSubTab === 'student_reports' && (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-6">
+              {/* Report Controls Header */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3 flex-1">
+                  {/* Student Selector */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500">انتخاب طلبه:</label>
+                    <select
+                      value={reportSelectedStudentId}
+                      onChange={e => setReportSelectedStudentId(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[180px]"
+                    >
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.grade || 'عمومی'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Period Selector */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500">دوره شهریه:</label>
+                    <select
+                      value={reportSelectedPeriodId}
+                      onChange={e => setReportSelectedPeriodId(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="all_cumulative">📊 تجمیعی برای تمام دوره‌های بایگانی‌شده</option>
+                      {tuitionPeriods.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({p.startDate} تا {p.endDate})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Report View Type */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500">حالت نمایش:</label>
+                    <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setReportViewType('summary_bill')}
+                        className={cn(
+                          "px-3 py-1 rounded-lg font-bold transition-all cursor-pointer",
+                          reportViewType === 'summary_bill' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        صورت‌حساب و فاکتور
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportViewType('detailed')}
+                        className={cn(
+                          "px-3 py-1 rounded-lg font-bold transition-all cursor-pointer",
+                          reportViewType === 'detailed' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        گزارش تفصیلی
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs transition-all"
+                >
+                  <Printer size={15} />
+                  <span>چاپ گزارش</span>
+                </button>
+              </div>
+
+              {/* REPORT CONTENT BODY */}
+              {(() => {
+                const currentStudent = students.find(s => s.id === reportSelectedStudentId) || students[0];
+                if (!currentStudent) {
+                  return (
+                    <div className="text-center py-10 text-slate-400 font-bold text-xs">
+                      هیچ طلبی یافت نشد.
+                    </div>
+                  );
+                }
+
+                // Gather all archived calculation rows for this student
+                const studentArchivedRows: { periodTitle: string; periodDates: string; calc: TuitionCalculationBreakdown }[] = [];
+                tuitionPeriods.forEach(p => {
+                  const match = (p.calculations || []).find(c => c.studentId === currentStudent.id || c.nationalId === currentStudent.nationalId);
+                  if (match) {
+                    studentArchivedRows.push({
+                      periodTitle: p.title,
+                      periodDates: `${p.startDate} تا ${p.endDate}`,
+                      calc: match
+                    });
+                  }
+                });
+
+                if (studentArchivedRows.length === 0) {
+                  return (
+                    <div className="text-center py-12 space-y-2 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                      <BookOpen size={36} className="mx-auto text-slate-300" />
+                      <p className="text-xs text-slate-500 font-bold">
+                        هیچ سابقه بایگانی‌شده‌ای برای «{currentStudent.name}» ثبت نشده است.
+                      </p>
+                    </div>
+                  );
+                }
+
+                // If Cumulative Mode chosen:
+                if (reportSelectedPeriodId === 'all_cumulative') {
+                  const totalNet = studentArchivedRows.reduce((sum, r) => sum + (r.calc.netPayableTuition || 0), 0);
+                  const totalGross = studentArchivedRows.reduce((sum, r) => sum + (r.calc.grossEarnedTuition || 0), 0);
+
+                  return (
+                    <div className="space-y-6">
+                      {/* KPI Summary Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
+                          <span className="text-slate-500 text-xs block font-bold">نام و پایه:</span>
+                          <span className="text-sm font-black text-indigo-950 block mt-1">{currentStudent.name}</span>
+                          <span className="text-[11px] text-indigo-700 font-bold block">{currentStudent.grade || 'عمومی'}</span>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                          <span className="text-slate-500 text-xs block font-bold">تعداد دوره‌های بایگانی:</span>
+                          <span className="text-lg font-mono font-black text-emerald-900 block mt-1">{studentArchivedRows.length} دوره</span>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                          <span className="text-slate-500 text-xs block font-bold">جمع کل استحقاقی:</span>
+                          <span className="text-lg font-mono font-black text-amber-950 block mt-1">{totalGross.toLocaleString('fa-IR')} تومان</span>
+                        </div>
+                        <div className="bg-emerald-600 text-white rounded-2xl p-4 shadow-md">
+                          <span className="text-emerald-100 text-xs block font-bold">مجموع خالص واریزی تجمیعی:</span>
+                          <span className="text-xl font-mono font-black block mt-1">{totalNet.toLocaleString('fa-IR')} تومان</span>
+                        </div>
+                      </div>
+
+                      {/* Cumulative Table */}
+                      <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                        <table className="w-full text-right text-xs">
+                          <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
+                            <tr>
+                              <th className="p-3">عنوان دوره بایگانی</th>
+                              <th className="p-3 text-center">بازه زمانی</th>
+                              <th className="p-3 text-center">شهریه پایه</th>
+                              <th className="p-3 text-center text-emerald-800">جمع افزایش و مزایا</th>
+                              <th className="p-3 text-center text-rose-800">کسورات انضباطی</th>
+                              <th className="p-3 text-center text-amber-900 font-black">شهریه استحقاقی</th>
+                              <th className="p-3 text-center text-rose-800">کسورات رفاهی و بدهی</th>
+                              <th className="p-3 text-center text-emerald-900 bg-emerald-100/60 font-black">خالص دریافتی</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {studentArchivedRows.map((r, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-3 font-bold text-slate-900">{r.periodTitle}</td>
+                                <td className="p-3 text-center font-mono text-slate-500">{r.periodDates}</td>
+                                <td className="p-3 text-center font-mono">{(r.calc.baseTuition || 0).toLocaleString('fa-IR')}</td>
+                                <td className="p-3 text-center font-mono text-emerald-700 font-bold">+{(r.calc.totalAdditions || 0).toLocaleString('fa-IR')}</td>
+                                <td className="p-3 text-center font-mono text-rose-700">-{(r.calc.type1DeductionsTotal || 0).toLocaleString('fa-IR')}</td>
+                                <td className="p-3 text-center font-mono text-amber-900 font-bold">{(r.calc.grossEarnedTuition || 0).toLocaleString('fa-IR')}</td>
+                                <td className="p-3 text-center font-mono text-rose-700">-{(r.calc.type2DeductionsTotal || 0).toLocaleString('fa-IR')}</td>
+                                <td className="p-3 text-center font-mono font-black text-emerald-900 bg-emerald-50/50">{(r.calc.netPayableTuition || 0).toLocaleString('fa-IR')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // If specific period chosen:
+                const selectedRow = studentArchivedRows.find(r => {
+                  const periodObj = tuitionPeriods.find(p => p.id === reportSelectedPeriodId);
+                  return periodObj && r.periodTitle === periodObj.title;
+                }) || studentArchivedRows[0];
+
+                const c = selectedRow.calc;
+
+                return (
+                  <div className="space-y-6">
+                    {/* Compact Statement Bill (صورت حساب) */}
+                    <div className="border-2 border-slate-900 rounded-3xl p-6 bg-white space-y-6 shadow-xs">
+                      {/* Statement Header */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between border-b-2 border-slate-900 pb-4 gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-900 text-white flex items-center justify-center font-black text-lg">
+                            م
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900">صورت‌حساب و فاکتور تفصیلی شهریه</h3>
+                            <p className="text-xs text-slate-500 font-bold">{selectedRow.periodTitle} ({selectedRow.periodDates})</p>
+                          </div>
+                        </div>
+
+                        <div className="text-left font-mono text-xs space-y-1">
+                          <div className="font-bold text-slate-700">نام طلبه: <span className="text-slate-900 font-black">{c.studentName}</span></div>
+                          <div className="text-slate-500">کد ملی: {c.nationalId || '---'} | پایه: {c.grade || '---'}</div>
+                          <div className="text-slate-500">حساب/شبا: {c.bankSheba || c.bankAccount || '---'}</div>
+                        </div>
+                      </div>
+
+                      {/* Statement Breakdown Table */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Column 1: Additions & Earned Tuition */}
+                        <div className="border border-slate-200 rounded-2xl p-4 bg-emerald-50/30 space-y-3">
+                          <h4 className="font-black text-emerald-900 text-xs border-b border-emerald-200 pb-2">۱. مزایا و موارد افزایش</h4>
+                          <div className="space-y-2 text-xs font-medium">
+                            <div className="flex justify-between"><span>شهریه پایه:</span><span className="font-mono font-bold">{(c.baseTuition || 0).toLocaleString('fa-IR')} تومان</span></div>
+                            {(c.maritalBonus || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>حق تاهل:</span><span className="font-mono font-bold">+{(c.maritalBonus || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.childAllowanceTotal || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>حق اولاد:</span><span className="font-mono font-bold">+{(c.childAllowanceTotal || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.turbanAllowance || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>پاداش معمم بودن:</span><span className="font-mono font-bold">+{(c.turbanAllowance || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.housingAllowance || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>کمک هزینه مسکن:</span><span className="font-mono font-bold">+{(c.housingAllowance || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.studyBonusAmount || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>پاداش ساعت مطالعه مازاد:</span><span className="font-mono font-bold">+{(c.studyBonusAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.counselingBonusAmount || 0) > 0 && <div className="flex justify-between text-emerald-800"><span>پاداش کلاس‌های مشاوره:</span><span className="font-mono font-bold">+{(c.counselingBonusAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                          </div>
+                          <div className="border-t border-emerald-200 pt-2 flex justify-between font-black text-amber-950 text-xs">
+                            <span>مجموع شهریه استحقاقی:</span>
+                            <span className="font-mono">{(c.grossEarnedTuition || 0).toLocaleString('fa-IR')} تومان</span>
+                          </div>
+                        </div>
+
+                        {/* Column 2: Deductions & Transfers */}
+                        <div className="border border-slate-200 rounded-2xl p-4 bg-rose-50/30 space-y-3">
+                          <h4 className="font-black text-rose-900 text-xs border-b border-rose-200 pb-2">۲. کسورات و بازپرداخت‌ها</h4>
+                          <div className="space-y-2 text-xs font-medium">
+                            {(c.studyPenaltyAmount || 0) > 0 && <div className="flex justify-between text-rose-800"><span>جریمه کسری مطالعه:</span><span className="font-mono font-bold">-{(c.studyPenaltyAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.absencePenaltyAmount || 0) > 0 && <div className="flex justify-between text-rose-800"><span>جریمه غیبت‌ها:</span><span className="font-mono font-bold">-{(c.absencePenaltyAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.kitchenTransferAmount || 0) > 0 && <div className="flex justify-between text-rose-800"><span>هزینه نهار و شام:</span><span className="font-mono font-bold">-{(c.kitchenTransferAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.loanInstallmentDeduction || 0) > 0 && <div className="flex justify-between text-rose-800"><span>قسط وام صندوق:</span><span className="font-mono font-bold">-{(c.loanInstallmentDeduction || 0).toLocaleString('fa-IR')}</span></div>}
+                            {(c.qardFundTransferAmount || 0) > 0 && <div className="flex justify-between text-rose-800"><span>کمک به صندوق:</span><span className="font-mono font-bold">-{(c.qardFundTransferAmount || 0).toLocaleString('fa-IR')}</span></div>}
+                            {((c.culturalTransferAmount || 0) + (c.otherTransferAmount || 0)) > 0 && <div className="flex justify-between text-rose-800"><span>سایر بدهی‌ها:</span><span className="font-mono font-bold">-{( (c.culturalTransferAmount || 0) + (c.otherTransferAmount || 0) ).toLocaleString('fa-IR')}</span></div>}
+                            {(c.manualAdjustmentAmount || 0) !== 0 && (
+                              <div className="flex justify-between text-indigo-900 font-bold border-t border-slate-200 pt-1">
+                                <span>تعدیل دستی:</span>
+                                <span className="font-mono">{(c.manualAdjustmentAmount || 0) > 0 ? `+${c.manualAdjustmentAmount}` : c.manualAdjustmentAmount}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="border-t border-rose-200 pt-2 flex justify-between font-black text-rose-950 text-xs">
+                            <span>مجموع کل کسورات:</span>
+                            <span className="font-mono">-{(c.type2DeductionsTotal || 0).toLocaleString('fa-IR')} تومان</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Net Total Payable Highlight Footer */}
+                      <div className="bg-slate-900 text-white rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="text-xs font-bold">
+                          خالص واریزی و قابل پرداخت این دوره به حساب طلبه:
+                        </div>
+                        <div className="text-2xl font-mono font-black text-emerald-400">
+                          {(c.netPayableTuition || 0).toLocaleString('fa-IR')} <span className="text-xs font-normal text-white">تومان</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -3851,7 +4167,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     <span>۵. ضوابط نهار، اقساط وام، صندوق قرض‌الحسنه و بانک بدهی‌ها</span>
                   </h4>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-slate-600 font-bold mb-1">
                         هزینه روزانه نهار (تومان):
@@ -3860,6 +4176,18 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                         type="number"
                         value={settings.dailyLunchCost || 45000}
                         onChange={e => setSettings({ ...settings, dailyLunchCost: Number(e.target.value), lunchCostPerDay: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1">
+                        هزینه روزانه شام (تومان):
+                      </label>
+                      <input
+                        type="number"
+                        value={settings.dailyDinnerCost || settings.dinnerCostPerDay || 35000}
+                        onChange={e => setSettings({ ...settings, dailyDinnerCost: Number(e.target.value), dinnerCostPerDay: Number(e.target.value) })}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 outline-none"
                       />
                     </div>
