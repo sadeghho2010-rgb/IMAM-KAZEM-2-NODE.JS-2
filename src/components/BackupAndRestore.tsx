@@ -340,8 +340,16 @@ export default function BackupAndRestore() {
       const targetId = mentorIdTarget || currentMentorId;
       const targetMentor = MENTORS[targetId] || currentMentor;
       
+      const isFullBackup = 
+        targetId === 'shahpoori' || 
+        targetMentor.isHeadManager || 
+        isEduOrFinanceManager ||
+        currentUser?.role === 'super_admin' || 
+        currentUser?.role === 'education_manager' || 
+        currentUser?.role === 'finance_manager';
+
       let backupPackage: any;
-      if (targetId === 'shahpoori' || targetMentor.isHeadManager) {
+      if (isFullBackup && (!mentorIdTarget || mentorIdTarget === 'shahpoori')) {
         backupPackage = await localDb.exportFullBackup();
       } else {
         backupPackage = await localDb.exportMentorBackup(targetId);
@@ -370,8 +378,16 @@ export default function BackupAndRestore() {
     setIsUploadingToCloud(true);
     setStatusMessage(null);
     try {
+      const isFullBackup = 
+        currentMentorId === 'shahpoori' || 
+        currentMentor.isHeadManager || 
+        isEduOrFinanceManager ||
+        currentUser?.role === 'super_admin' || 
+        currentUser?.role === 'education_manager' || 
+        currentUser?.role === 'finance_manager';
+
       let backupPackage: any;
-      if (currentMentorId === 'shahpoori' || currentMentor.isHeadManager) {
+      if (isFullBackup) {
         backupPackage = await localDb.exportFullBackup();
       } else {
         backupPackage = await localDb.exportMentorBackup(currentMentorId);
@@ -835,7 +851,7 @@ export default function BackupAndRestore() {
     );
   });
 
-  const isHeadManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori';
+  const isHeadManager = currentMentor.isHeadManager || currentMentorId === 'shahpoori' || isEduOrFinanceManager;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-right font-vazir" dir="rtl">

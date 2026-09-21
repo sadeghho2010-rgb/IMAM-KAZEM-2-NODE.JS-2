@@ -212,6 +212,7 @@ export interface FullBackupPackage {
   manager_files?: any[];
   settings?: any[];
   teachers?: any[];
+  [key: string]: any;
 }
 
 export interface MentorBackupPackage {
@@ -1322,130 +1323,37 @@ class LocalDatabase {
   // BACKUP & RESTORE FUNCTIONALITY
   // ==========================================
 
-  // Export full database backup (including all Base64 photos)
+  // Export full database backup (including all Base64 photos and all modules: education, research, finance, tuition, attendance, etc.)
   async exportFullBackup(): Promise<FullBackupPackage> {
-    const [
-      students,
-      programs,
-      enrollments,
-      research,
-      research_records,
-      research_history,
-      research_skills_def,
-      student_research_skills,
-      conversation_archives,
-      attendance,
-      study_stats,
-      study_periods,
-      periodic_study_logs,
-      todos,
-      student_comments,
-      oral_exams,
-      discussion_groups,
-      manager_files,
-      academic_calendar_periods,
-      academic_holidays,
-      academic_holiday_types,
-      academic_sub_periods,
-      academic_weekly_programs,
-      settings,
-      teachers
-    ] = await Promise.all([
-      this.getDocs('students'),
-      this.getDocs('programs'),
-      this.getDocs('enrollments'),
-      this.getDocs('research'),
-      this.getDocs('research_records'),
-      this.getDocs('research_history'),
-      this.getDocs('research_skills_def'),
-      this.getDocs('student_research_skills'),
-      this.getDocs('conversation_archives'),
-      this.getDocs('attendance'),
-      this.getDocs('study_stats'),
-      this.getDocs('study_periods'),
-      this.getDocs('periodic_study_logs'),
-      this.getDocs('todos'),
-      this.getDocs('student_comments'),
-      this.getDocs('oral_exams'),
-      this.getDocs('discussion_groups'),
-      this.getDocs('manager_files'),
-      this.getDocs('academic_calendar_periods'),
-      this.getDocs('academic_holidays'),
-      this.getDocs('academic_holiday_types'),
-      this.getDocs('academic_sub_periods'),
-      this.getDocs('academic_weekly_programs'),
-      this.getDocs('settings'),
-      this.getDocs('teachers')
-    ]);
-
-    const collections = [
-      students,
-      programs,
-      enrollments,
-      research,
-      research_records,
-      research_history,
-      research_skills_def,
-      student_research_skills,
-      conversation_archives,
-      attendance,
-      study_stats,
-      study_periods,
-      periodic_study_logs,
-      todos,
-      student_comments,
-      oral_exams,
-      discussion_groups,
-      manager_files,
-      academic_calendar_periods,
-      academic_holidays,
-      academic_holiday_types,
-      academic_sub_periods,
-      settings,
-      teachers
-    ];
-
-    const totalRecords = collections.reduce((acc, colItems) => acc + (colItems ? colItems.length : 0), 0);
-    const hasPhotos = students.some((s) => !!s.photoUrl);
-
-    const backupPackage: FullBackupPackage = {
+    const backupPackage: any = {
       _meta: {
-        version: '2.0.0-offline',
+        version: '3.0.0-full-system',
         exportDate: new Date().toISOString(),
-        systemName: 'سیستم جامع مدیریت طلاب (آفلاین)',
+        systemName: 'سیستم جامع مدیریت حوزه (آموزش، پژوهش، مالی و شهریه)',
         totalCollections: COLLECTIONS.length,
-        totalRecords,
-        hasPhotos,
+        totalRecords: 0,
+        hasPhotos: false,
         exportType: 'full'
-      },
-      students,
-      programs,
-      enrollments,
-      research,
-      research_records,
-      research_history,
-      research_skills_def,
-      student_research_skills,
-      conversation_archives,
-      attendance,
-      study_stats,
-      study_periods,
-      periodic_study_logs,
-      todos,
-      student_comments,
-      oral_exams,
-      discussion_groups,
-      manager_files,
-      academic_calendar_periods,
-      academic_holidays,
-      academic_holiday_types,
-      academic_sub_periods,
-      academic_weekly_programs,
-      settings,
-      teachers
+      }
     };
 
-    return backupPackage;
+    let totalRecords = 0;
+    await Promise.all(
+      COLLECTIONS.map(async (col) => {
+        try {
+          const docs = await this.getDocs(col);
+          backupPackage[col] = docs || [];
+          totalRecords += (docs ? docs.length : 0);
+        } catch {
+          backupPackage[col] = [];
+        }
+      })
+    );
+
+    backupPackage._meta.totalRecords = totalRecords;
+    backupPackage._meta.hasPhotos = Array.isArray(backupPackage.students) && backupPackage.students.some((s: any) => !!s.photoUrl);
+
+    return backupPackage as FullBackupPackage;
   }
 
   // Export individual mentor/professor backup (e.g. استاد حسینی، استاد حیاتی، استاد سلیمانی، استاد شاهپوری)
@@ -1773,40 +1681,17 @@ class LocalDatabase {
 
     const counts: Record<string, number> = {};
 
-    const collectionsToRestore: CollectionName[] = [
-      'students',
-      'programs',
-      'enrollments',
-      'research',
-      'research_records',
-      'research_history',
-      'research_skills_def',
-      'student_research_skills',
-      'conversation_archives',
-      'attendance',
-      'study_stats',
-      'study_periods',
-      'periodic_study_logs',
-      'todos',
-      'student_comments',
-      'oral_exams',
-      'discussion_groups',
-      'manager_files',
-      'academic_calendar_periods',
-      'academic_holidays',
-      'academic_holiday_types',
-      'academic_sub_periods',
-      'settings',
-      'teachers'
-    ];
+    // Restore all collections present in COLLECTIONS or in the backup payload
+    const allCollectionKeys = Array.from(new Set([
+      ...COLLECTIONS,
+      ...Object.keys(backupData).filter(k => !k.startsWith('_'))
+    ]));
 
-    for (const col of collectionsToRestore) {
+    for (const col of allCollectionKeys) {
       const items = (backupData as any)[col];
       if (Array.isArray(items) && items.length > 0) {
-        await this.bulkPut(col, items);
+        await this.bulkPut(col as CollectionName, items);
         counts[col] = items.length;
-      } else {
-        counts[col] = 0;
       }
     }
 
