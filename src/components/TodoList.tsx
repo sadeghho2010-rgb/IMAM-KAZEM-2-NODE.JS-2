@@ -38,6 +38,7 @@ const DEFAULT_CATEGORIES = ['عمومی'];
 
 export default function TodoList() {
   const { currentUser, users, isReadOnly } = useAuth();
+  const isFinanceOfficer = currentUser?.role === 'financial_officer' || currentUser?.role === 'finance_manager' || currentUser?.username?.toUpperCase() === 'MALI';
 
   // Primary navigation tabs
   const [activeTab, setActiveTab] = useState<'personal' | 'assigned' | 'archive'>('personal');

@@ -184,6 +184,8 @@ export interface StudentFinancialProfile {
   currentBalance?: number; // تراز مالی فعلی (تومان)
   lunchDaysCount?: number; // تعداد روزهای استفاده از نهار
   monthlyLunchDays?: number;
+  dinnerDaysCount?: number; // تعداد روزهای استفاده از شام
+  monthlyDinnerDays?: number;
   activeLoanTotal?: number; // کل مبلغ وام فعال
   monthlyLoanInstallment?: number; // قسط ماهانه کسر از شهریه
   activeLoanInstallment?: number;

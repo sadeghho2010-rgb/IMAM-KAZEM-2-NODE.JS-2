@@ -29,6 +29,12 @@ import {
   logServerAudit,
   StoredUser
 } from "./src/lib/serverAuth";
+import {
+  serverSaveDoc,
+  serverDeleteDoc,
+  serverQueryCollection,
+  authorizeCollectionAccess
+} from "./src/lib/serverDataApi";
 
 dotenv.config();
 
@@ -679,6 +685,193 @@ async function startServer() {
       });
     } catch (e: any) {
       return res.status(500).json({ success: false, message: e.message || "خطا در مهاجرت کلمات عبور" });
+    }
+  });
+
+  // ===================== SECURE DEDICATED DATA API ENDPOINTS =====================
+
+  // GET /api/data/:collection - Fetch collection records with server-side authorization
+  app.get("/api/data/:collection", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'read');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const items = await serverQueryCollection(collection, callerUser);
+      return res.json({ success: true, items });
+    } catch (err: any) {
+      console.error(`Error querying collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در دریافت اطلاعات از سرور.' });
+    }
+  });
+
+  // POST /api/data/:collection - Add or update document in dedicated tables & app_collections
+  app.post("/api/data/:collection", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const data = req.body;
+    const recordOwnerId = data?.userId || data?.studentId;
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const saveRes = await serverSaveDoc(collection, data, callerUser);
+      if (!saveRes.success) {
+        return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
+      }
+
+      // Audit Log for data modification
+      if (callerUser) {
+        logServerAudit({
+          userId: callerUser.userId,
+          username: callerUser.username,
+          userRole: callerUser.role,
+          action: 'DATA_WRITE',
+          entityType: collection,
+          entityId: saveRes.id,
+          description: `ثبت یا ویرایش رکورد در کالکشن ${collection} توسط ${callerUser.username}`,
+          ipAddress: getClientIp(req)
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, id: saveRes.id });
+    } catch (err: any) {
+      console.error(`Error writing to collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره اطلاعات در سرور.' });
+    }
+  });
+
+  // PUT /api/data/:collection/:id - Update specific document
+  app.put("/api/data/:collection/:id", async (req, res) => {
+    const { collection, id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const data = { ...req.body, id };
+    const recordOwnerId = data?.userId || data?.studentId;
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const saveRes = await serverSaveDoc(collection, data, callerUser);
+      if (!saveRes.success) {
+        return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ویرایش داده' });
+      }
+
+      return res.json({ success: true, id: saveRes.id });
+    } catch (err: any) {
+      console.error(`Error updating collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ویرایش اطلاعات در سرور.' });
+    }
+  });
+
+  // DELETE /api/data/:collection/:id - Delete document from dedicated tables & app_collections
+  app.delete("/api/data/:collection/:id", async (req, res) => {
+    const { collection, id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'delete');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const delRes = await serverDeleteDoc(collection, id, callerUser);
+      if (!delRes.success) {
+        return res.status(500).json({ success: false, message: delRes.error || 'خطا در حذف داده' });
+      }
+
+      if (callerUser) {
+        logServerAudit({
+          userId: callerUser.userId,
+          username: callerUser.username,
+          userRole: callerUser.role,
+          action: 'DATA_DELETE',
+          entityType: collection,
+          entityId: id,
+          description: `حذف رکورد ${id} از کالکشن ${collection} توسط ${callerUser.username}`,
+          ipAddress: getClientIp(req)
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, message: 'رکورد با موفقیت حذف شد.' });
+    } catch (err: any) {
+      console.error(`Error deleting from collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در حذف اطلاعات در سرور.' });
+    }
+  });
+
+  // POST /api/data/:collection/batch - Bulk insert / update
+  app.post("/api/data/:collection/batch", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    const { items } = req.body || {};
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ success: false, message: 'آیتم‌ها باید آرایه‌ای باشند.' });
+    }
+
+    try {
+      for (const item of items) {
+        await serverSaveDoc(collection, item, callerUser);
+      }
+      return res.json({ success: true, count: items.length });
+    } catch (err: any) {
+      console.error(`Error batch saving ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره دسته‌ای اطلاعات.' });
     }
   });
 

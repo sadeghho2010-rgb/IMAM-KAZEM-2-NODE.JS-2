@@ -402,51 +402,73 @@ class LocalDatabase {
   // Track synced collections in current session
   private syncedCollections = new Set<string>();
 
-  // Fetch and sync a collection from Supabase Cloud
+  // Fetch and sync a collection from Server / Supabase Cloud
   async syncCollectionFromCloud(collectionName: CollectionName): Promise<any[]> {
-    if (!isSupabaseConfigured || typeof window === 'undefined') return [];
+    if (typeof window === 'undefined') return [];
     const resolvedCol = this.resolveCollection(collectionName as string);
     try {
-      const { data, error } = await supabase
-        .from('app_collections')
-        .select('id, data')
-        .eq('collection_name', resolvedCol);
+      // 1. First try secure Server-Side Dedicated Data API
+      let cloudDocs: any[] = [];
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (error) {
-        console.warn(`Error syncing ${resolvedCol} from Supabase:`, error);
-        return [];
+        const apiRes = await fetch(`/api/data/${resolvedCol}`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
+
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && Array.isArray(json.items)) {
+            cloudDocs = json.items.filter((d: any) => d && d.id);
+          }
+        }
+      } catch (apiErr) {
+        // Fall back to direct Supabase if server API is unavailable
       }
 
-      if (data && Array.isArray(data)) {
-        const cloudDocs = data
-          .map(row => ({ ...row.data, id: row.id || row.data?.id }))
-          .filter(d => d && d.id);
+      // 2. Direct Supabase fallback if API yielded no results but Supabase client is configured
+      if (cloudDocs.length === 0 && isSupabaseConfigured) {
+        const { data, error } = await supabase
+          .from('app_collections')
+          .select('id, data')
+          .eq('collection_name', resolvedCol);
 
-        if (cloudDocs.length > 0) {
-          const db = await this.getDb();
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            const tx = db.transaction(resolvedCol, 'readwrite');
-            const store = tx.objectStore(resolvedCol);
-            for (const doc of cloudDocs) {
-              store.put(doc);
-            }
-          }
-
-          // Also update localStorage fallback
-          const key = `fallback_idb_${resolvedCol}`;
-          const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
-          const map = new Map<string, any>();
-          currentLS.forEach(item => map.set(item.id, item));
-          cloudDocs.forEach(item => map.set(item.id, item));
-          try {
-            localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
-          } catch (e) {}
-
-          this.syncedCollections.add(resolvedCol);
-          this.notify();
-          return cloudDocs;
+        if (!error && data && Array.isArray(data)) {
+          cloudDocs = data
+            .map(row => ({ ...row.data, id: row.id || row.data?.id }))
+            .filter(d => d && d.id);
         }
       }
+
+      if (cloudDocs.length > 0) {
+        const db = await this.getDb();
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          const tx = db.transaction(resolvedCol, 'readwrite');
+          const store = tx.objectStore(resolvedCol);
+          for (const doc of cloudDocs) {
+            store.put(doc);
+          }
+        }
+
+        // Also update localStorage fallback
+        const key = `fallback_idb_${resolvedCol}`;
+        const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
+        const map = new Map<string, any>();
+        currentLS.forEach(item => map.set(item.id, item));
+        cloudDocs.forEach(item => map.set(item.id, item));
+        try {
+          localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+        } catch (e) {}
+
+        this.syncedCollections.add(resolvedCol);
+        this.notify();
+        return cloudDocs;
+      }
+
       this.syncedCollections.add(resolvedCol);
     } catch (e) {
       console.warn(`Exception syncing ${resolvedCol} from cloud:`, e);
@@ -758,85 +780,52 @@ class LocalDatabase {
     });
   }
 
-  // Background Non-blocking Real-time Mirror to Supabase
+  // Background Non-blocking Real-time Mirror to Server & Supabase
   private mirrorToSupabase(action: 'upsert' | 'delete', collectionName: string, id: string, data?: any) {
-    if (!isSupabaseConfigured || typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
     try {
-      if (action === 'delete') {
-        supabase
-          .from('app_collections')
-          .delete()
-          .match({ collection_name: collectionName, id })
-          .then(({ error }) => {
-            if (error) console.error(`Error deleting ${collectionName}/${id} in Supabase:`, error);
-          });
-        const dedicated = [
-          'students', 'teachers', 'attendance', 'study_stats', 'programs', 'classrooms',
-          'oral_exams', 'todos', 'workflow_items', 'lunch_periods',
-          'lunch_reservations', 'tuition_records', 'finance_expenses', 'audit_logs'
-        ];
-        if (dedicated.includes(collectionName)) {
-          supabase.from(collectionName).delete().eq('id', id).then();
-        }
-      } else {
-        const sanitized = sanitizeForCloud(data);
-        supabase.from('app_collections').upsert({
-          collection_name: collectionName,
-          id,
-          data: sanitized,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }).then(({ error }) => {
-          if (error) {
-            console.error(`Error upserting ${collectionName}/${id} into Supabase app_collections:`, error);
-          }
-        });
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        if (collectionName === 'students') {
-          supabase.from('students').upsert({
+      // 1. Sync through Secure Dedicated Server Data API
+      if (action === 'delete') {
+        fetch(`/api/data/${collectionName}/${id}`, {
+          method: 'DELETE',
+          headers,
+          credentials: 'include'
+        }).catch(() => {});
+      } else {
+        fetch(`/api/data/${collectionName}`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({ ...data, id })
+        }).catch(() => {});
+      }
+
+      // 2. Direct Supabase Fallback if Supabase client is configured
+      if (isSupabaseConfigured) {
+        if (action === 'delete') {
+          supabase
+            .from('app_collections')
+            .delete()
+            .match({ collection_name: collectionName, id })
+            .then(({ error }) => {
+              if (error) console.error(`Error deleting ${collectionName}/${id} in Supabase:`, error);
+            });
+        } else {
+          const sanitized = sanitizeForCloud(data);
+          supabase.from('app_collections').upsert({
+            collection_name: collectionName,
             id,
-            national_id: data.nationalId || data.national_id || '',
-            name: data.name || '',
-            grade: data.grade || '',
-            is_active: data.isActive !== false,
             data: sanitized,
             updated_at: new Date().toISOString()
-          }).then();
-        } else if (collectionName === 'teachers') {
-          supabase.from('teachers').upsert({
-            id,
-            name: data.name || data.fullName || '',
-            national_id: data.nationalId || '',
-            phone: data.phone || data.phoneNumber || '',
-            data: sanitized,
-            updated_at: new Date().toISOString()
-          }).then();
-        } else if (collectionName === 'attendance') {
-          supabase.from('attendance').upsert({
-            id,
-            student_id: data.studentId || '',
-            date: data.date || '',
-            grade: data.grade || '',
-            status: data.status || '',
-            data: sanitized,
-            updated_at: new Date().toISOString()
-          }).then();
-        } else if (collectionName === 'classrooms') {
-          supabase.from('classrooms').upsert({
-            id,
-            name: data.name || '',
-            code: data.code || '',
-            data: sanitized,
-            updated_at: new Date().toISOString()
-          }).then();
-        } else if (collectionName === 'programs') {
-          supabase.from('programs').upsert({
-            id,
-            title: data.title || '',
-            teacher: data.teacher || '',
-            classroom: data.classroom || data.madrasRoom || '',
-            data: sanitized,
-            updated_at: new Date().toISOString()
-          }).then();
+          }, { onConflict: 'collection_name,id' }).then(({ error }) => {
+            if (error) {
+              console.error(`Error upserting ${collectionName}/${id} into Supabase app_collections:`, error);
+            }
+          });
         }
       }
     } catch (e) {
