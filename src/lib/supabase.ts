@@ -1,29 +1,73 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
-// Safe runtime resolution that respects env variables first, with seamless fallback for hosted builds
-const DEFAULT_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const DEFAULT_KEY = ['sb', 'publishable', '2GWIGLxWLh-KSY2LAKM1uQ', 'cDSphAPq'].join('_');
 
-const SUPABASE_URL = env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '';
+// مقادیر پیش‌فرض پروژه سوپابیس
+const DEFAULT_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
 
 export const BUCKET_NAME = 'backups';
 
-export const isSupabaseConfigured = Boolean(
-  SUPABASE_URL &&
-  SUPABASE_ANON_KEY &&
-  SUPABASE_URL !== 'https://placeholder.supabase.co' &&
-  SUPABASE_ANON_KEY !== 'placeholder' &&
-  !SUPABASE_ANON_KEY.startsWith('sb_publishable_') &&
-  (SUPABASE_ANON_KEY.startsWith('eyJ') || SUPABASE_ANON_KEY.startsWith('sbp_'))
-);
+export function getSupabaseCredentials(): { url: string; anonKey: string } {
+  const localUrl = typeof window !== 'undefined' ? (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL')) : '';
+  const localKey = typeof window !== 'undefined' ? (localStorage.getItem('supabase_anon_key') || localStorage.getItem('VITE_SUPABASE_ANON_KEY')) : '';
 
-// Safe initialization with dummy fallback to avoid crash when environment variables are not yet set
-export const supabase = createClient(
-  SUPABASE_URL || 'https://placeholder.supabase.co',
-  SUPABASE_ANON_KEY || 'placeholder'
-);
+  const url = (localUrl || env.VITE_SUPABASE_URL || DEFAULT_URL || '').trim();
+  const anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+  return { url, anonKey };
+}
+
+export function saveSupabaseCredentials(url: string, anonKey: string) {
+  if (typeof window !== 'undefined') {
+    if (url) localStorage.setItem('supabase_url', url.trim());
+    if (anonKey) localStorage.setItem('supabase_anon_key', anonKey.trim());
+    _cachedClient = null; // Reset cached client
+  }
+}
+
+let _cachedClient: SupabaseClient | null = null;
+
+export function getSupabaseClient(): SupabaseClient {
+  const { url, anonKey } = getSupabaseCredentials();
+  if (!_cachedClient) {
+    _cachedClient = createClient(
+      url || 'https://placeholder.supabase.co',
+      anonKey || 'placeholder'
+    );
+  }
+  return _cachedClient;
+}
+
+// Proxy wrapper for backward compatibility
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    const value = (client as any)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  }
+});
+
+export const isSupabaseConfigured = (() => {
+  const { url, anonKey } = getSupabaseCredentials();
+  return Boolean(
+    url &&
+    anonKey &&
+    url !== 'https://placeholder.supabase.co' &&
+    anonKey !== 'placeholder' &&
+    anonKey.length > 20
+  );
+})();
+
+export function checkIsSupabaseConfigured(): boolean {
+  const { url, anonKey } = getSupabaseCredentials();
+  return Boolean(
+    url &&
+    anonKey &&
+    url !== 'https://placeholder.supabase.co' &&
+    anonKey !== 'placeholder' &&
+    anonKey.length > 20
+  );
+}
 
 /**
  * Maps mentor ID to Supabase Storage folder path

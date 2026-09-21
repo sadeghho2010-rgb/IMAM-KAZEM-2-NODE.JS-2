@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, checkIsSupabaseConfigured, getSupabaseCredentials } from './supabase';
 import { localDb, COLLECTIONS, CollectionName } from './localDb';
 
 export interface SyncResult {
@@ -18,10 +18,10 @@ export interface ConnectionStatus {
  * Tests connection to Supabase database and checks if schema tables exist
  */
 export async function testSupabaseConnection(): Promise<ConnectionStatus> {
-  if (!isSupabaseConfigured) {
+  if (!checkIsSupabaseConfigured()) {
     return {
       connected: false,
-      message: 'کلید و آدرس دیتابیس آنلاین (Supabase) هنوز در متغیرهای سیستم تنظیم نشده است. سامانه در حالت آفلاین و دیتابیس داخلی (Local DB / Storage) فعال است.'
+      message: 'کلید و آدرس دیتابیس آنلاین (Supabase) در تنظیمات هاست یا متغیرهای مرورگر یافت نشد. لطفاً در بخش تنظیمات یا کلادفلر، متغیرهای VITE_SUPABASE_URL و VITE_SUPABASE_ANON_KEY را وارد نمایید یا از فرم تنظیم اتصال آنلاین استفاده کنید.'
     };
   }
   try {
