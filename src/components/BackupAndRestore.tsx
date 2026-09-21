@@ -49,7 +49,6 @@ import {
 } from '../lib/cloudBackups';
 import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSqlScript';
 import { testSupabaseConnection, syncAllToSupabase, ConnectionStatus } from '../lib/supabaseSync';
-import { getSupabaseCredentials, saveSupabaseCredentials } from '../lib/supabase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -173,26 +172,6 @@ export default function BackupAndRestore() {
   const [syncProgress, setSyncProgress] = useState<{ col: string; pct: number } | null>(null);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
   const [showSqlCodeModal, setShowSqlCodeModal] = useState<boolean>(false);
-  const [showCredentialsModal, setShowCredentialsModal] = useState<boolean>(false);
-  const [customSupabaseUrl, setCustomSupabaseUrl] = useState<string>('');
-  const [customSupabaseAnonKey, setCustomSupabaseAnonKey] = useState<string>('');
-
-  const handleOpenCredentialsModal = () => {
-    const creds = getSupabaseCredentials();
-    setCustomSupabaseUrl(creds.url);
-    setCustomSupabaseAnonKey(creds.anonKey);
-    setShowCredentialsModal(true);
-  };
-
-  const handleSaveCredentials = () => {
-    saveSupabaseCredentials(customSupabaseUrl, customSupabaseAnonKey);
-    setShowCredentialsModal(false);
-    setStatusMessage({
-      type: 'success',
-      text: 'تنظیمات آدرس و کلید Supabase ذخیره شد. در حال بررسی اتصال...'
-    });
-    handleTestDatabase();
-  };
 
   const handleTestDatabase = async () => {
     setIsTestingDb(true);
@@ -1001,15 +980,6 @@ export default function BackupAndRestore() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleOpenCredentialsModal}
-              className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold transition-all"
-              title="تنظیم آدرس و کلید پروژه آنلاین Supabase"
-            >
-              <KeyRound size={15} />
-              <span>تنظیم کلید و آدرس Supabase</span>
-            </button>
-
             <button
               onClick={handleTestDatabase}
               disabled={isTestingDb}
@@ -1906,82 +1876,6 @@ export default function BackupAndRestore() {
           </div>
         )}
 
-        {/* Supabase Credentials Configuration Modal */}
-        {showCredentialsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-7 max-w-xl w-full shadow-2xl space-y-5 text-right font-vazir"
-              dir="rtl"
-            >
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                    <KeyRound size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white">تنظیم آدرس و کلید پروژه Supabase</h3>
-                    <p className="text-xs text-slate-400">اتصال مستقیم کلاینت به پایگاه داده آنلاین (مناسب برای هاست‌های کلادفلر و استاتیک)</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCredentialsModal(false)}
-                  className="p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-300">آدرس پروژه (Project URL):</label>
-                  <input
-                    type="text"
-                    value={customSupabaseUrl}
-                    onChange={(e) => setCustomSupabaseUrl(e.target.value)}
-                    placeholder="https://your-project.supabase.co"
-                    className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-emerald-400 font-mono text-xs focus:border-amber-500 focus:outline-none dir-ltr text-left"
-                  />
-                  <p className="text-[11px] text-slate-500">از مسیر Project Settings {'>'} API در پنل Supabase قابل کپی است.</p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-300">کلید عمومی ناشناس (anon / publishable key):</label>
-                  <textarea
-                    rows={3}
-                    value={customSupabaseAnonKey}
-                    onChange={(e) => setCustomSupabaseAnonKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-700 rounded-xl text-emerald-400 font-mono text-xs focus:border-amber-500 focus:outline-none dir-ltr text-left break-all"
-                  />
-                  <p className="text-[11px] text-slate-500">کلید `anon` / `public` از بخش Project API Keys در پنل Supabase.</p>
-                </div>
-
-                <div className="p-3 bg-indigo-950/60 border border-indigo-500/30 rounded-xl text-[11px] text-indigo-200 leading-relaxed">
-                  💡 <strong>نکته:</strong> این مقادیر در حافظه مرورگر دستگاه شما ذخیره شده و سامانه بلافاصله بدون نیاز به بیلد مجدد، به دیتابیس متصل خواهد شد.
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  onClick={() => setShowCredentialsModal(false)}
-                  className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
-                >
-                  انصراف
-                </button>
-                <button
-                  onClick={handleSaveCredentials}
-                  className="flex items-center gap-2 py-2.5 px-5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl text-xs font-black transition-all shadow-md"
-                >
-                  <Check size={16} />
-                  <span>ذخیره تنظیمات و تست اتصال</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
     </div>
   );
