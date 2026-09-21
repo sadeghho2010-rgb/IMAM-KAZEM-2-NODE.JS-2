@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS public.system_users (
 -- تضمین وجود تمامی ستون‌های کاربران در صورت وجود جدول با ساختار قبلی
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS username VARCHAR(100);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE public.system_users ALTER COLUMN password_hash DROP NOT NULL;
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS name VARCHAR(200);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS role VARCHAR(50);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS role_title VARCHAR(100);
