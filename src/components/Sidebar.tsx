@@ -156,21 +156,60 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       );
     }
 
-    // ارزیابی مقالات: برای تمامی سطوح (۱، ۲ و ۳) به خصوص مسئول پژوهش و طلاب
+    // ارزیابی مقالات: کلاً مربوط به مسئول پژوهش است؛ مسئول آموزش و مسئولین پایه نباید ببینند
     if (item.id === 'article-evaluations') {
-      return true;
-    }
+      const isEducationStaff = currentUser.role === 'education_manager' || 
+                               currentUser.role === 'education_officer' || 
+                               currentUser.roleTitle?.includes('آموزش') || 
+                               currentUser.username.toUpperCase() === 'SHAH';
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.roleTitle?.includes('استاد پایه') || 
+                                currentUser.roleTitle?.includes('مسئول پایه') || 
+                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
+      const isFinanceStaff = currentUser.role === 'finance_manager' || 
+                             currentUser.username.toUpperCase() === 'MALI';
 
-    // سامانه انتخاب واحد: برای مسئول پژوهش ممنوع است
-    if (item.id === 'course-selection') {
-      if (
-        currentUser.role === 'research_manager' ||
-        currentUser.role === 'research_officer' ||
-        currentUser.roleTitle === 'مسئول پژوهش' ||
-        currentUser.username.toUpperCase() === 'YAZDANI'
-      ) {
+      if (isEducationStaff || isGradeSupervisor || isFinanceStaff) {
         return false;
       }
+      return (
+        currentUser.level === 1 || 
+        currentUser.role === 'super_admin' || 
+        currentUser.role === 'research_manager' || 
+        currentUser.role === 'research_officer' || 
+        currentUser.roleTitle?.includes('پژوهش') || 
+        currentUser.username.toUpperCase() === 'YAZDANI' ||
+        currentUser.level === 3
+      );
+    }
+
+    // سامانه انتخاب واحد: کلاً مربوط به مسئول آموزش است و اساتید پایه و پژوهش نباید ببینند
+    if (item.id === 'course-selection') {
+      const isResearchStaff = currentUser.role === 'research_manager' ||
+                              currentUser.role === 'research_officer' ||
+                              currentUser.roleTitle?.includes('پژوهش') ||
+                              currentUser.username.toUpperCase() === 'YAZDANI';
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.roleTitle?.includes('استاد پایه') || 
+                                currentUser.roleTitle?.includes('مسئول پایه') || 
+                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
+      const isFinanceStaff = currentUser.role === 'finance_manager' || 
+                             currentUser.username.toUpperCase() === 'MALI';
+
+      if (isResearchStaff || isGradeSupervisor || isFinanceStaff) {
+        return false;
+      }
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.roleTitle?.includes('آموزش') ||
+        currentUser.username.toUpperCase() === 'SHAH' ||
+        currentUser.level === 3
+      );
     }
 
     // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است

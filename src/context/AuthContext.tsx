@@ -734,33 +734,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string): boolean => {
     if (!currentUser) return false;
 
-    // سامانه انتخاب واحد / انتخاب درس (برای مسئول پژوهش مخفی است)
+    // سامانه انتخاب واحد: کلاً مربوط به مسئول آموزش است و اساتید پایه و پژوهش نباید ببینند
     if (tabId === 'course-selection') {
-      if (
-        currentUser.role === 'research_manager' ||
-        currentUser.role === 'research_officer' ||
-        currentUser.roleTitle === 'مسئول پژوهش' ||
-        currentUser.username.toUpperCase() === 'YAZDANI'
-      ) {
+      const isResearchStaff = currentUser.role === 'research_manager' ||
+                              currentUser.role === 'research_officer' ||
+                              currentUser.roleTitle?.includes('پژوهش') ||
+                              currentUser.username.toUpperCase() === 'YAZDANI';
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.roleTitle?.includes('استاد پایه') || 
+                                currentUser.roleTitle?.includes('مسئول پایه') || 
+                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
+      const isFinanceStaff = currentUser.role === 'finance_manager' || 
+                             currentUser.username.toUpperCase() === 'MALI';
+
+      if (isResearchStaff || isGradeSupervisor || isFinanceStaff) {
         return false;
       }
       return (
         currentUser.level === 1 ||
-        currentUser.level === 2 ||
-        currentUser.level === 3 ||
         currentUser.role === 'super_admin' ||
         currentUser.role === 'education_manager' ||
         currentUser.role === 'education_officer' ||
-        currentUser.role === 'grade_mentor' ||
+        currentUser.roleTitle?.includes('آموزش') ||
+        currentUser.username.toUpperCase() === 'SHAH' ||
         currentUser.role === 'student' ||
         currentUser.role === 'class_representative' ||
-        ['SHAH', 'SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase())
+        currentUser.level === 3
       );
     }
 
-    // ارزیابی مقالات: برای مسئول پژوهش، کاربران سطح ۳ و مدیران مجاز است
+    // ارزیابی مقالات: کلاً مربوط به مسئول پژوهش است و نه مسئول آموزش و نه مسئولین پایه نباید ببینند
     if (tabId === 'article-evaluations') {
-      return true;
+      const isEducationStaff = currentUser.role === 'education_manager' || 
+                               currentUser.role === 'education_officer' || 
+                               currentUser.roleTitle?.includes('آموزش') || 
+                               currentUser.username.toUpperCase() === 'SHAH';
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.roleTitle?.includes('استاد پایه') || 
+                                currentUser.roleTitle?.includes('مسئول پایه') || 
+                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
+      const isFinanceStaff = currentUser.role === 'finance_manager' || 
+                             currentUser.username.toUpperCase() === 'MALI';
+
+      if (isEducationStaff || isGradeSupervisor || isFinanceStaff) {
+        return false;
+      }
+      return (
+        currentUser.level === 1 || 
+        currentUser.role === 'super_admin' || 
+        currentUser.role === 'research_manager' || 
+        currentUser.role === 'research_officer' || 
+        currentUser.roleTitle?.includes('پژوهش') || 
+        currentUser.username.toUpperCase() === 'YAZDANI' ||
+        currentUser.role === 'student' ||
+        currentUser.role === 'class_representative' ||
+        currentUser.level === 3
+      );
     }
 
     // پشتیبان‌گیری: فقط سوپر ادمین (سطح ۱) و مسئول آموزش

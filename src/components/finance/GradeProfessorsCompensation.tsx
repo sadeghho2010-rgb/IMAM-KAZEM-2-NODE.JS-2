@@ -840,18 +840,29 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
     showToast('خروجی اکسل ویژه بالادستی به همراه تفکیک واریزی حساب‌های مقصد دانلود شد.');
   };
 
-  // Filter professors in selector modal
+  // Filter professors in selector modal (افرادی که سوپرادمین نقش آن‌ها را استاد پایه تعیین کرده است)
   const eligibleProfessors = useMemo(() => {
     return users.filter(u => {
       const title = (u.roleTitle || '').toLowerCase();
       const role = (u.role || '').toLowerCase();
+      const username = (u.username || '').toUpperCase();
       
-      // Specifically recognize individuals designated as Grade Professor (استاد پایه)
-      const isGradeSupervisorRole = role.includes('grade_') || role === 'grade_supervisor' || role === 'grade_mentor';
-      const isGradeProfessorTitle = title.includes('استاد پایه') || title.includes('مسئول پایه') || title.includes('مسول پایه') || title.includes('پایه');
-      const hasManagedGrades = u.managedGrades && u.managedGrades.length > 0;
+      // Specifically recognize individuals designated as Grade Professor (استاد پایه) by Super Admin
+      const isGradeSupervisorRole = 
+        role === 'grade_mentor' || 
+        role === 'grade_supervisor' || 
+        role.startsWith('grade_supervisor_') ||
+        role.includes('grade_');
+      const isGradeProfessorTitle = 
+        title.includes('استاد پایه') || 
+        title.includes('مسئول پایه') || 
+        title.includes('مسول پایه') || 
+        (title.includes('پایه') && (title.includes('استاد') || title.includes('مسئول') || title.includes('مسول')));
+      const hasManagedGrades = Array.isArray(u.managedGrades) && u.managedGrades.length > 0;
+      const isKnownGradeSupervisor = ['ISJ', 'HO', 'SOL', 'ASADI', 'SADEGH', 'RAHNAMA'].includes(username);
+      const isGradeScope = (u.scope || '').startsWith('grade_');
 
-      const isGradeProfessor = isGradeSupervisorRole || isGradeProfessorTitle || hasManagedGrades;
+      const isGradeProfessor = isGradeSupervisorRole || isGradeProfessorTitle || hasManagedGrades || isKnownGradeSupervisor || isGradeScope;
       if (!isGradeProfessor) return false;
 
       const userDisplayName = u.fullName || u.name || '';
@@ -2065,12 +2076,14 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
               {/* Modal Header */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                    <UserPlus size={20} />
+                  <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
+                    <UserPlus size={22} />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-900">انتخاب اساتید و مسئولین پایه جهت پرداخت</h3>
-                    <p className="text-[11px] text-slate-500">انتخاب از لیست اساتید ثبت‌شده در نرم‌افزار</p>
+                    <p className="text-[11px] text-slate-500">
+                      کاربرانی که در سامانه توسط سوپر ادمین نقش «استاد پایه» برای آن‌ها تعیین شده است
+                    </p>
                   </div>
                 </div>
 
@@ -2080,6 +2093,14 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                 >
                   <X size={15} />
                 </button>
+              </div>
+
+              {/* Informative Note */}
+              <div className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl flex items-center gap-2 text-[11px] text-emerald-900 font-medium">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span>
+                  کلیه افرادی که سوپرادمین در بخش مدیریت کاربران نقش آن‌ها را <strong>«استاد پایه»</strong> تعیین کرده به همراه <strong>نام کامل</strong>، <strong>نام کاربری</strong> و <strong>پایه تحصیلی</strong> در زیر قابل انتخاب هستند.
+                </span>
               </div>
 
               {/* Filters in Picker */}
@@ -2178,17 +2199,27 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                             onChange={() => {}}
                             className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
                           />
-                          <div>
-                            <div className="font-bold text-slate-900 text-xs">
-                              {prof.fullName || prof.name} <span className="text-slate-500 font-normal mr-1">({prof.username})</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-slate-900 text-xs">
+                                {prof.fullName || prof.name || prof.username}
+                              </span>
+                              <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                                نام کاربری: {prof.username}
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                                نقش: استاد پایه ({prof.roleTitle || 'مسئول پایه'})
+                              </span>
                             </div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
-                              <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-700 font-bold">
+
+                            <div className="text-[10px] text-slate-500 flex items-center gap-2 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">
                                 {grades}
                               </span>
-                              {prof.roleTitle && <span>{prof.roleTitle}</span>}
-                              {prof.phone && <span className="font-mono">{prof.phone}</span>}
+                              {prof.phone && <span className="font-mono">تلفن: {prof.phone}</span>}
+                              {prof.personnelCode && <span className="font-mono">کد پرسنلی: {prof.personnelCode}</span>}
                             </div>
+
                             {profMatchingReport && (
                               <div className="mt-1 flex items-center gap-1 text-[10px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200 w-fit">
                                 <Clock size={11} className="text-teal-600 shrink-0" />

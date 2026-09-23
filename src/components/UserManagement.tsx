@@ -602,19 +602,21 @@ export default function UserManagement() {
                         setFormRole('education_officer');
                       } else if (title === 'مسئول مالی') {
                         setFormRole('financial_officer');
-                      } else if (title === 'استاد پایه 7') {
+                      } else if (title === 'استاد پایه') {
+                        setFormRole('grade_mentor');
+                      } else if (title === 'استاد پایه 7' || title === 'استاد پایه ۷') {
                         setFormRole('grade_supervisor_7');
                         if (!formManagedGrades.includes('پایه ۷')) setFormManagedGrades(prev => [...prev, 'پایه ۷']);
-                      } else if (title === 'استاد پایه 8') {
+                      } else if (title === 'استاد پایه 8' || title === 'استاد پایه ۸') {
                         setFormRole('grade_supervisor_8');
                         if (!formManagedGrades.includes('پایه ۸')) setFormManagedGrades(prev => [...prev, 'پایه ۸']);
-                      } else if (title === 'استاد پایه 9') {
+                      } else if (title === 'استاد پایه 9' || title === 'استاد پایه ۹') {
                         setFormRole('grade_supervisor_9');
                         if (!formManagedGrades.includes('پایه ۹')) setFormManagedGrades(prev => [...prev, 'پایه ۹']);
-                      } else if (title === 'استاد پایه 10') {
+                      } else if (title === 'استاد پایه 10' || title === 'استاد پایه ۱۰') {
                         setFormRole('grade_supervisor_10');
                         if (!formManagedGrades.includes('پایه ۱۰')) setFormManagedGrades(prev => [...prev, 'پایه ۱۰']);
-                      } else if (title === 'استاد پایه 11') {
+                      } else if (title === 'استاد پایه 11' || title === 'استاد پایه ۱۱') {
                         setFormRole('grade_supervisor');
                         if (!formManagedGrades.includes('پایه ۱۱')) setFormManagedGrades(prev => [...prev, 'پایه ۱۱']);
                       } else if (title === 'نماینده کلاس') {
@@ -638,11 +640,12 @@ export default function UserManagement() {
                         <option value="مسئول پژوهش">مسئول پژوهش</option>
                         <option value="مسئول فرهنگی">مسئول فرهنگی</option>
                         <option value="مسئول مالی">مسئول مالی</option>
-                        <option value="استاد پایه 7">استاد پایه 7</option>
-                        <option value="استاد پایه 8">استاد پایه 8</option>
-                        <option value="استاد پایه 9">استاد پایه 9</option>
-                        <option value="استاد پایه 10">استاد پایه 10</option>
-                        <option value="استاد پایه 11">استاد پایه 11</option>
+                        <option value="استاد پایه">استاد پایه (تعریف عمومی)</option>
+                        <option value="استاد پایه 7">استاد پایه ۷</option>
+                        <option value="استاد پایه 8">استاد پایه ۸</option>
+                        <option value="استاد پایه 9">استاد پایه ۹</option>
+                        <option value="استاد پایه 10">استاد پایه ۱۰</option>
+                        <option value="استاد پایه 11">استاد پایه ۱۱</option>
                       </>
                     )}
                     {formLevel === 3 && (

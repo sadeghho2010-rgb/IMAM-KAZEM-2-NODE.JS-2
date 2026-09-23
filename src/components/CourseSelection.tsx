@@ -40,6 +40,27 @@ export default function CourseSelection() {
   const { currentUser, isSuperAdmin } = useAuth();
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
 
+  const isGradeSupervisor = currentUser?.role === 'grade_supervisor' || 
+                            currentUser?.role === 'grade_mentor' || 
+                            currentUser?.roleTitle?.includes('استاد پایه') || 
+                            currentUser?.roleTitle?.includes('مسئول پایه') || 
+                            ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');
+
+  // Guard for grade supervisor
+  if (isGradeSupervisor) {
+    return (
+      <div className="p-8 max-w-lg mx-auto text-center bg-white rounded-3xl border border-rose-200 shadow-xl my-12">
+        <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <AlertCircle size={32} />
+        </div>
+        <h3 className="text-lg font-black text-slate-800 mb-2">عدم دسترسی به سامانه انتخاب واحد</h3>
+        <p className="text-xs text-slate-500 leading-relaxed font-bold">
+          سامانه انتخاب واحد منحصراً مربوط به مسئول محترم آموزش می‌باشد و اساتید محترم پایه به این بخش دسترسی ندارند.
+        </p>
+      </div>
+    );
+  }
+
   const [periods, setPeriods] = useState<CourseSelectionPeriod[]>([]);
   const [requests, setRequests] = useState<CourseSelectionRequest[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);

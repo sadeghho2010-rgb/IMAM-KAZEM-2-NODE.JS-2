@@ -957,10 +957,10 @@ async function startServer() {
     }
   });
 
-  // API to upload/save custom login background directly to public directory
+  // API to upload/save custom login background directly to public directory (supports desktop and mobile)
   app.post("/api/upload-login-bg", express.json({ limit: "50mb" }), async (req, res) => {
     try {
-      const { imageBase64 } = req.body;
+      const { imageBase64, target = 'desktop' } = req.body;
       if (!imageBase64) {
         return res.status(400).json({ error: "تصویری ارسال نشده است." });
       }
@@ -970,8 +970,12 @@ async function startServer() {
       if (!fs.existsSync(publicDir)) {
         fs.mkdirSync(publicDir, { recursive: true });
       }
-      fs.writeFileSync(path.join(publicDir, "login-bg.jpg"), buffer);
-      fs.writeFileSync(path.join(publicDir, "000.jpg"), buffer);
+      if (target === 'mobile') {
+        fs.writeFileSync(path.join(publicDir, "000-mobile.jpg"), buffer);
+      } else {
+        fs.writeFileSync(path.join(publicDir, "login-bg.jpg"), buffer);
+        fs.writeFileSync(path.join(publicDir, "000.jpg"), buffer);
+      }
       return res.json({ success: true, message: "تصویر پس‌زمینه با موفقیت در دیسک ذخیره شد." });
     } catch (e: any) {
       console.error("Error saving background image:", e);

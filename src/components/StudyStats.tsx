@@ -206,15 +206,18 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     }
   };
 
-  // Grade supervisor: Exempt their grade from this period
-  const handleToggleGradeExemption = async (period: StudyPeriod) => {
-    if (!mentorGradeLabel) return;
+  // Education Officer / Super Admin: Toggle grade exemption
+  const handleToggleGradeExemption = async (period: StudyPeriod, gradeName: string) => {
+    if (isGradeMentor) {
+      alert("استاد پایه مجاز به معاف کردن کل پایه نمی‌باشد. تنها مسئول آموزش این دسترسی را دارد. شما می‌توانید طلاب را به صورت موردی معاف فرمایید.");
+      return;
+    }
     try {
       const currentExemptGrades = period.exemptGrades || [];
-      const isExempt = currentExemptGrades.includes(mentorGradeLabel);
+      const isExempt = currentExemptGrades.includes(gradeName);
       const updated = isExempt
-        ? currentExemptGrades.filter(g => g !== mentorGradeLabel)
-        : [...currentExemptGrades, mentorGradeLabel];
+        ? currentExemptGrades.filter(g => g !== gradeName)
+        : [...currentExemptGrades, gradeName];
 
       await localDb.updateDoc('study_periods', period.id, {
         exemptGrades: updated,
@@ -226,23 +229,35 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     }
   };
 
-  // Grade supervisor: Clear their grade logs for this period
-  const handleClearGradeLogsInPeriod = async (period: StudyPeriod) => {
-    if (!mentorGradeLabel) return;
-    const confirmClear = window.confirm(`آیا از پاک کردن تمامی ساعت‌های ثبت‌شده طلاب ${mentorGradeLabel} در دوره «${period.title}» اطمینان دارید؟`);
-    if (!confirmClear) return;
+  // Education Officer / Super Admin: Clear logs for a period
+  const handleClearPeriodLogs = async (period: StudyPeriod, targetGrade?: string) => {
+    if (isGradeMentor) {
+      alert("استاد پایه مجاز به پاک کردن ساعات دوره نمی‌باشد. تنها مسئول آموزش این دسترسی را دارد.");
+      return;
+    }
+    const confirmMsg = targetGrade 
+      ? `آیا از پاک کردن تمامی ساعت‌های ثبت‌شده طلاب «${targetGrade}» در دوره «${period.title}» اطمینان دارید؟`
+      : `آیا از پاک کردن تمامی ساعت‌های ثبت‌شده در دوره «${period.title}» اطمینان دارید؟ این عملیات غیرقابل بازگشت است.`;
+    
+    if (!window.confirm(confirmMsg)) return;
 
     try {
-      const gradeStudents = students.filter(s => s.grade === mentorGradeLabel || s.grade?.includes(mentorGradeLabel.replace('پایه ', '')));
-      const gradeStudentIds = new Set(gradeStudents.map(s => s.id));
-      const logsToDelete = allLogs.filter(l => l.periodId === period.id && gradeStudentIds.has(l.studentId));
+      let logsToDelete: PeriodicStudyLog[] = [];
+      if (targetGrade) {
+        const gradeStudents = students.filter(s => s.grade === targetGrade || s.grade?.includes(targetGrade.replace('پایه ', '')));
+        const gradeStudentIds = new Set(gradeStudents.map(s => s.id));
+        logsToDelete = allLogs.filter(l => l.periodId === period.id && gradeStudentIds.has(l.studentId));
+      } else {
+        logsToDelete = allLogs.filter(l => l.periodId === period.id);
+      }
 
       for (const log of logsToDelete) {
         await localDb.deleteDoc('periodic_study_logs', log.id);
       }
       await fetchData();
+      alert(`ساعات دوره با موفقیت پاک‌سازی شد.`);
     } catch (err) {
-      console.error("Error clearing grade logs:", err);
+      console.error("Error clearing logs:", err);
     }
   };
 
@@ -847,30 +862,59 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                   </button>
                 )}
 
-                {/* Grade Supervisor Specific Actions */}
-                {isGradeMentor && mentorGradeLabel && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleGradeExemption(selectedPeriod)}
-                      className={cn(
-                        "px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer",
-                        isGradeExemptForSelected
-                          ? "bg-purple-600 text-white"
-                          : "bg-white border border-purple-200 text-purple-700 hover:bg-purple-50"
-                      )}
-                    >
-                      <ShieldCheck size={14} />
-                      <span>{isGradeExemptForSelected ? `لغو معافیت ${mentorGradeLabel}` : `معاف کردن ${mentorGradeLabel}`}</span>
-                    </button>
+                {/* Informational badge for Grade Supervisor - Grade supervisors cannot clear hours or exempt entire grade */}
+                {isGradeMentor && (
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-purple-50/90 border border-purple-200 text-purple-900 rounded-xl text-xs font-bold shadow-2xs">
+                    <ShieldCheck size={14} className="text-purple-600 shrink-0" />
+                    <span>معافیت موردی: جهت معاف کردن یک یا چند طلبه، از ستون «معافیت موردی» در جدول استفاده نمایید.</span>
+                  </div>
+                )}
+
+                {/* Exemption and Period Management Controls Exclusively for Education Officer & Admin */}
+                {!isGradeMentor && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative group">
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 shadow-xs cursor-pointer"
+                        title="معافیت کلی پایه‌ها توسط مسئول آموزش"
+                      >
+                        <ShieldCheck size={14} className="text-purple-600" />
+                        <span>معافیت کلی پایه‌ها ({selectedPeriod.exemptGrades?.length || 0})</span>
+                        <ChevronDown size={12} className="text-purple-400" />
+                      </button>
+                      <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-56 p-3 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 space-y-2">
+                        <p className="text-[11px] font-black text-slate-700 border-b pb-1.5">معافیت کلی پایه از این دوره (توسط مسئول آموزش):</p>
+                        {['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].map(grade => {
+                          const isExempt = (selectedPeriod.exemptGrades || []).includes(grade);
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              onClick={() => handleToggleGradeExemption(selectedPeriod, grade)}
+                              className={cn(
+                                "w-full text-right px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center justify-between transition-colors cursor-pointer",
+                                isExempt ? "bg-purple-100 text-purple-900 font-black" : "hover:bg-slate-100 text-slate-700"
+                              )}
+                            >
+                              <span>{grade}</span>
+                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded", isExempt ? "bg-purple-600 text-white" : "bg-slate-200 text-slate-600")}>
+                                {isExempt ? 'معاف' : 'فعال'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
                     <button
                       type="button"
-                      onClick={() => handleClearGradeLogsInPeriod(selectedPeriod)}
-                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-black transition-all cursor-pointer"
-                      title="پاک‌کردن ثبت‌های این دوره برای طلاب پایه"
+                      onClick={() => handleClearPeriodLogs(selectedPeriod)}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1"
+                      title="پاک کردن تمامی ساعت‌های ثبت‌شده این دوره (مخصوص مسئول آموزش)"
                     >
-                      <span>پاک‌کردن ساعات این دوره</span>
+                      <Trash2 size={13} />
+                      <span>پاک‌کردن ساعات دوره</span>
                     </button>
                   </div>
                 )}

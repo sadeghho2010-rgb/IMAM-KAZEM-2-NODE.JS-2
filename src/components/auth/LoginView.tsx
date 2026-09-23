@@ -20,9 +20,13 @@ import {
   X,
   Image as ImageIcon,
   UploadCloud,
-  Check
+  Check,
+  Monitor,
+  Smartphone,
+  RotateCcw
 } from 'lucide-react';
 import { AppUser } from '../../types/auth';
+import { cn } from '../../lib/utils';
 
 interface LoginViewProps {
   onLoginSuccess?: () => void;
@@ -49,30 +53,51 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   // Mobile preview mode for viewing background image without form
   const [hideFormForPreview, setHideFormForPreview] = useState(false);
 
-  // Primary Background Image (/000.jpg is in /public)
+  // Screen orientation / Mobile portrait detection
+  const [isMobilePortrait, setIsMobilePortrait] = useState(false);
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      if (typeof window !== 'undefined') {
+        const isPortrait = window.innerHeight > window.innerWidth && window.innerWidth < 768;
+        setIsMobilePortrait(isPortrait);
+      }
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
+
+  // Primary Background Images
   const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.jpg');
+  const [customMobileBg, setCustomMobileBg] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isUploadingBg, setIsUploadingBg] = useState(false);
+  const [uploadTarget, setUploadTarget] = useState<'desktop' | 'mobile'>('desktop');
+  const [showBgSettingsModal, setShowBgSettingsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Preload /000.jpg
+  // Preload images and load saved backgrounds from localStorage
   useEffect(() => {
-    // Clear any outdated base64 cached background to guarantee exact 000.jpg display
     try {
-      localStorage.removeItem('custom_login_bg');
+      const savedMobile = localStorage.getItem('custom_mobile_bg');
+      if (savedMobile) setCustomMobileBg(savedMobile);
+
+      const savedDesktop = localStorage.getItem('custom_login_bg');
+      if (savedDesktop) setCurrentBgUrl(savedDesktop);
     } catch {}
 
-    const img = new Image();
-    img.src = '/000.jpg';
-    img.onload = () => {
-      setCurrentBgUrl('/000.jpg');
+    const imgDesktop = new Image();
+    imgDesktop.src = '/000.jpg';
+    imgDesktop.onload = () => {
       setImageLoaded(true);
     };
-    img.onerror = () => {
-      // Fallback to /login-bg.jpg which is identical
-      setCurrentBgUrl('/login-bg.jpg');
+    imgDesktop.onerror = () => {
       setImageLoaded(true);
     };
+
+    const imgMobile = new Image();
+    imgMobile.src = '/000-mobile.jpg';
   }, []);
 
   // Cooldown countdown timer
@@ -91,7 +116,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
 
-  // Handle direct file upload for background (e.g. user selects 000.jpg)
+  // Handle direct file upload for background (desktop or mobile)
   const handleBgFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -100,8 +125,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result as string;
-      setCurrentBgUrl(base64);
-      localStorage.setItem('custom_login_bg', base64);
+
+      if (uploadTarget === 'mobile') {
+        setCustomMobileBg(base64);
+        localStorage.setItem('custom_mobile_bg', base64);
+      } else {
+        setCurrentBgUrl(base64);
+        localStorage.setItem('custom_login_bg', base64);
+      }
       setImageLoaded(true);
 
       // Save to server
@@ -109,18 +140,44 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         await fetch('/api/upload-login-bg', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64 })
+          body: JSON.stringify({ 
+            imageBase64: base64,
+            target: uploadTarget 
+          })
         });
       } catch (err) {
         console.warn('Could not persist to server disk, kept in browser cache:', err);
       }
 
       setIsUploadingBg(false);
-      setSuccessMessage('عکس ارسالی شما (000.jpg) با موفقیت به عنوان پس‌زمینه اصلی صفحه ورود اعمال و ذخیره شد.');
+      setShowBgSettingsModal(false);
+      setSuccessMessage(
+        uploadTarget === 'mobile'
+          ? 'عکس عمودی مخصوص صفحه گوشی (موبایل) با موفقیت ذخیره و اعمال گردید.'
+          : 'عکس افقی مخصوص صفحه دسکتاپ با موفقیت ذخیره و اعمال گردید.'
+      );
       setTimeout(() => setSuccessMessage(null), 5000);
     };
     reader.readAsDataURL(file);
   };
+
+  // Reset to default school images
+  const handleResetToDefaultImages = () => {
+    try {
+      localStorage.removeItem('custom_login_bg');
+      localStorage.removeItem('custom_mobile_bg');
+    } catch {}
+    setCurrentBgUrl('/000.jpg');
+    setCustomMobileBg(null);
+    setShowBgSettingsModal(false);
+    setSuccessMessage('تصاویر پس‌زمینه به حالت پیش‌فرض مدرسه (000.jpg و 000-mobile.jpg) بازگردانی شدند.');
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
+
+  // Determine active background image URL
+  const effectiveBgUrl = isMobilePortrait 
+    ? (customMobileBg || '/000-mobile.jpg') 
+    : currentBgUrl;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,9 +283,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         id="login-bg-container"
         className="absolute inset-0 w-full h-full bg-slate-900 transition-opacity duration-1000 ease-out"
         style={{
-          backgroundImage: `url(${currentBgUrl})`,
+          backgroundImage: `url(${effectiveBgUrl})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundPosition: isMobilePortrait ? 'center top' : 'center center',
           backgroundRepeat: 'no-repeat',
           opacity: imageLoaded ? 1 : 0
         }}
@@ -237,7 +294,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       {/* Dark semi-transparent overlay to ensure contrast and readability */}
       <div
         id="login-bg-overlay"
-        className="absolute inset-0 bg-black/40 backdrop-brightness-[0.8] backdrop-saturate-[1.1] pointer-events-none"
+        className={cn(
+          "absolute inset-0 transition-all duration-500 pointer-events-none",
+          hideFormForPreview 
+            ? "bg-black/10 backdrop-brightness-[0.95]" 
+            : isMobilePortrait 
+            ? "bg-black/35 backdrop-brightness-[0.85]" 
+            : "bg-black/40 backdrop-brightness-[0.8] backdrop-saturate-[1.1]"
+        )}
       />
 
       {/* Atmospheric ambient lighting effects */}
@@ -246,40 +310,68 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Discreet floating button in top-left to select/upload background or preview it */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            fileInputRef.current?.click();
-          }}
-          disabled={isUploadingBg}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95"
-          title="انتخاب و اعمال مستقیم فایل 000.jpg برای پس‌زمینه"
-        >
-          {isUploadingBg ? (
-            <Loader2 size={14} className="animate-spin text-blue-400" />
-          ) : (
-            <ImageIcon size={14} className="text-blue-300" />
-          )}
-          <span className="hidden sm:inline">بارگذاری عکس زمینه</span>
-          <span className="sm:hidden">بارگذاری عکس</span>
-        </button>
+      {/* Discreet floating button in top-left (desktop) or top bar (mobile) to select/upload background or preview it */}
+      {!isMobilePortrait ? (
+        <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowBgSettingsModal(true);
+            }}
+            disabled={isUploadingBg}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95 cursor-pointer"
+            title="مدیریت و بارگذاری عکس زمینه دسکتاپ و موبایل"
+          >
+            {isUploadingBg ? (
+              <Loader2 size={14} className="animate-spin text-blue-400" />
+            ) : (
+              <ImageIcon size={14} className="text-blue-300" />
+            )}
+            <span>تنظیمات عکس پس‌زمینه</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setHideFormForPreview(true);
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95"
-          title="مشاهده کامل و تمام صفحه عکس پس‌زمینه"
-        >
-          <Eye size={14} className="text-emerald-300" />
-          <span>مشاهده کامل عکس</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setHideFormForPreview(true);
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95 cursor-pointer"
+            title="مشاهده کامل و تمام صفحه عکس پس‌زمینه"
+          >
+            <Eye size={14} className="text-emerald-300" />
+            <span>مشاهده کامل عکس</span>
+          </button>
+        </div>
+      ) : !hideFormForPreview ? (
+        /* Mobile Top Bar to ensure user can always see photo and control view */
+        <div className="absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowBgSettingsModal(true);
+            }}
+            className="px-2.5 py-1 rounded-xl bg-black/45 hover:bg-black/65 text-white/90 border border-white/20 backdrop-blur-md text-[11px] font-bold flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+          >
+            <ImageIcon size={13} className="text-blue-300" />
+            <span>تنظیمات عکس</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setHideFormForPreview(true);
+            }}
+            className="px-3 py-1 rounded-xl bg-emerald-600/85 hover:bg-emerald-600 text-white border border-emerald-400/50 backdrop-blur-md text-[11px] font-bold flex items-center gap-1.5 shadow-md animate-pulse active:scale-95 cursor-pointer"
+          >
+            <Eye size={13} />
+            <span>دیدن کامل عکس ساختمان</span>
+          </button>
+        </div>
+      ) : null}
 
       {/* 2. Glassmorphic Login Window (Center aligned) */}
       <motion.div
@@ -292,7 +384,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           pointerEvents: hideFormForPreview ? 'none' : 'auto' as any
         }}
         transition={{ duration: 0.4, ease: 'easeInOut' }}
-        className="relative z-10 w-full max-w-md mx-4 rounded-2xl bg-white/10 sm:bg-white/15 backdrop-blur-[6px] sm:backdrop-blur-xl border border-white/25 sm:border-white/30 shadow-2xl p-6 sm:p-8 text-white transition-all duration-300"
+        className={cn(
+          "relative z-10 w-full max-w-md rounded-3xl bg-white/10 sm:bg-white/15 backdrop-blur-[8px] sm:backdrop-blur-xl border border-white/25 sm:border-white/30 shadow-2xl p-5 sm:p-8 text-white transition-all duration-300",
+          isMobilePortrait ? "mt-auto mb-2 mx-auto max-h-[85vh] overflow-y-auto" : "my-auto mx-4"
+        )}
       >
         {/* Top subtle highlight reflection */}
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-white/50 to-transparent rounded-t-2xl pointer-events-none" />
@@ -546,11 +641,142 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-10 z-20 px-5 py-3 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-md text-white text-xs font-bold text-center animate-pulse cursor-pointer shadow-2xl flex items-center gap-2"
+            onClick={(e) => {
+              e.stopPropagation();
+              setHideFormForPreview(false);
+            }}
+            className="absolute bottom-10 z-30 px-6 py-3.5 rounded-2xl bg-black/75 border border-white/20 backdrop-blur-xl text-white text-xs font-bold text-center cursor-pointer shadow-2xl flex items-center gap-2 hover:bg-black/90 active:scale-95 transition-all"
           >
-            <Sparkles size={14} className="text-amber-400" />
-            <span>جهت بازگشت به صفحه ورود، هر کجای صفحه را که می‌خواهید لمس کنید.</span>
+            <Sparkles size={16} className="text-amber-400 shrink-0" />
+            <span>جهت بازگشت به فرم ورود، اینجا را لمس کنید یا کلیک نمایید.</span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Background Settings Modal (Desktop & Mobile customization) */}
+      <AnimatePresence>
+        {showBgSettingsModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowBgSettingsModal(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-slate-900 border border-white/20 rounded-3xl p-6 w-full max-w-md shadow-2xl text-white space-y-5"
+              dir="rtl"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                    <ImageIcon size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">تنظیمات تصاویر پس‌زمینه ورود</h3>
+                    <p className="text-[11px] text-white/60">تفکیک عکس برای صفحه عریض (دسکتاپ) و عمودی (موبایل)</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBgSettingsModal(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Notice */}
+              <div className="p-3 bg-blue-500/15 border border-blue-400/30 rounded-2xl text-[11px] leading-relaxed text-blue-200">
+                در صفحه عمودی موبایل به دلیل کشیدگی تصویر، می‌توانید <strong>عکس عمودی اختصاصی</strong> آپلود کنید یا اجازه دهید سامانه به طور خودکار نسخه متناسب‌سازی شده عمودی (000-mobile.jpg) را نمایش دهد.
+              </div>
+
+              {/* Target Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-white/80 block">انتخاب جهت آپلود تصویر جدید:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setUploadTarget('desktop')}
+                    className={cn(
+                      "p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-2 transition-all cursor-pointer",
+                      uploadTarget === 'desktop'
+                        ? "bg-indigo-600/40 border-indigo-400 text-white shadow-md shadow-indigo-600/20"
+                        : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                    )}
+                  >
+                    <Monitor size={22} className={uploadTarget === 'desktop' ? 'text-indigo-300' : 'text-white/50'} />
+                    <span>عکس دسکتاپ (افقی ۱۶:۹)</span>
+                    <span className="text-[10px] text-white/50">فایل 000.jpg</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setUploadTarget('mobile')}
+                    className={cn(
+                      "p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-2 transition-all cursor-pointer",
+                      uploadTarget === 'mobile'
+                        ? "bg-indigo-600/40 border-indigo-400 text-white shadow-md shadow-indigo-600/20"
+                        : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                    )}
+                  >
+                    <Smartphone size={22} className={uploadTarget === 'mobile' ? 'text-indigo-300' : 'text-white/50'} />
+                    <span>عکس موبایل (عمودی ۹:۱۶)</span>
+                    <span className="text-[10px] text-white/50">فایل 000-mobile.jpg</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Upload Trigger Button */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingBg}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-2xl text-xs font-black shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                >
+                  {isUploadingBg ? (
+                    <Loader2 size={16} className="animate-spin text-white" />
+                  ) : (
+                    <UploadCloud size={16} />
+                  )}
+                  <span>
+                    بارگذاری عکس جدید برای {uploadTarget === 'mobile' ? 'گوشی همراه (عمودی)' : 'رایانه و لپ‌تاپ (افقی)'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetToDefaultImages}
+                  className="px-3 py-2 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RotateCcw size={13} />
+                  <span>بازنشانی به تصاویر پیش‌فرض مدرسه</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBgSettingsModal(false);
+                    setHideFormForPreview(true);
+                  }}
+                  className="px-3 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-400/30 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Eye size={13} />
+                  <span>پیش‌نمایش تمام‌صفحه</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

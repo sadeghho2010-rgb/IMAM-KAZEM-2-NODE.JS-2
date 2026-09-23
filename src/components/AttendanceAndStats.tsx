@@ -154,12 +154,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const isGradeSupervisor = 
     currentUser?.role === 'grade_mentor' || 
     currentUser?.role === 'grade_supervisor' || 
-    currentUser?.role?.startsWith('grade_supervisor_');
+    currentUser?.role?.startsWith('grade_supervisor_') ||
+    currentUser?.roleTitle?.includes('استاد پایه') ||
+    currentUser?.roleTitle?.includes('مسئول پایه') ||
+    ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');
   const isRepresentative = currentUser?.role === 'class_representative';
   const isStudent = currentUser?.role === 'student';
 
-  const canManageSettings = isSuperAdmin || isEducationManager || isGradeSupervisor;
+  const canManageSettings = isSuperAdmin || isEducationManager || (isGradeSupervisor && settings.allowGradeProfessorSettingsEdit);
   const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
+  const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
 
   // Toast helper
   const showToast = (msg: string) => {
@@ -497,7 +501,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Bulk actions
   const handleMarkAll = (status: AttendanceStatus) => {
-    if (isDateLockedForRepresentative) return;
+    if (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) return;
     const updated: Record<string, AttendanceStatus> = {};
     enrolledStudents.forEach(s => {
       updated[s.id] = status;
@@ -506,7 +510,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   };
 
   const handleSetStudentStatus = (studentId: string, status: AttendanceStatus) => {
-    if (isDateLockedForRepresentative) return;
+    if (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) return;
     setStudentsAttendance(prev => ({
       ...prev,
       [studentId]: status
@@ -530,6 +534,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     if (!currentProgram || !selectedDate) return;
     if (isDateLockedForRepresentative) {
       alert("مهلت ثبت و ویرایش توسط نماینده کلاس به پایان رسیده است.");
+      return;
+    }
+    if (isAttendanceReadOnlyForGradeSupervisor) {
+      alert("ثبت و ویرایش حضور و غیاب توسط مسئول محترم آموزش برای اساتید پایه غیرفعال شده است (حالت فقط مشاهده).");
       return;
     }
     setIsSaving(true);
@@ -1177,6 +1185,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </div>
           )}
 
+          {/* Informational banner for Grade Supervisor when in View-Only mode */}
+          {isAttendanceReadOnlyForGradeSupervisor && (
+            <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-950 font-bold shadow-2xs">
+              <AlertCircle size={18} className="text-amber-600 shrink-0" />
+              <span>حالت فقط مشاهده: ثبت و ویرایش جلسات حضور و غیاب توسط مسئول محترم آموزش برای اساتید پایه غیرفعال شده است. شما می‌توانید اطلاعات، آمار، کارنامه و گزارش‌ها را مشاهده فرمایید.</span>
+            </div>
+          )}
+
           {/* Education Manager Special Toolbar */}
           {(isEducationManager || isSuperAdmin) && (
             <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1213,7 +1229,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      disabled={isDateLockedForRepresentative}
+                      disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                       onClick={() => {
                         const nextCancelled = !isCancelled;
                         setIsCancelled(nextCancelled);
@@ -1227,7 +1243,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       className={cn(
                         "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
                         isCancelled ? "bg-rose-600" : "bg-slate-200",
-                        isDateLockedForRepresentative && "opacity-50 cursor-not-allowed"
+                        (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) && "opacity-50 cursor-not-allowed"
                       )}
                     >
                       <span
@@ -1309,7 +1325,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       className={cn(
                         "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
                         hasSubstituteTeacher ? "bg-amber-600" : "bg-slate-200",
-                        (isDateLockedForRepresentative || isCancelled) && "opacity-50 cursor-not-allowed"
+                        (isDateLockedForRepresentative || isCancelled || isAttendanceReadOnlyForGradeSupervisor) && "opacity-50 cursor-not-allowed"
                       )}
                     >
                       <span
@@ -1415,7 +1431,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
                 {/* Quick Bulk Actions & Top Save Button */}
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {!isDateLockedForRepresentative && (
+                  {!isDateLockedForRepresentative && !isAttendanceReadOnlyForGradeSupervisor && (
                     <div className="flex items-center gap-1.5">
                       <span className="text-[11px] font-bold text-slate-400">تیک همگانی:</span>
                       <button
@@ -1449,18 +1465,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <button
                     type="button"
                     onClick={handleSaveAttendance}
-                    disabled={isSaving || !currentProgram || isDateLockedForRepresentative}
+                    disabled={isSaving || !currentProgram || isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                     className={cn(
                       "px-4 py-2 rounded-xl font-black text-xs transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0",
-                      isDateLockedForRepresentative
-                        ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                      isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor
+                        ? "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none"
                         : isSavedRecently 
                           ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200" 
                           : "bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white shadow-indigo-200"
                     )}
                   >
                     <Save size={15} />
-                    <span>{isSaving ? 'در حال ثبت...' : 'ثبت نهایی حضور و غیاب'}</span>
+                    <span>
+                      {isAttendanceReadOnlyForGradeSupervisor
+                        ? 'حالت فقط مشاهده'
+                        : isSaving 
+                          ? 'در حال ثبت...' 
+                          : 'ثبت نهایی حضور و غیاب'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1531,13 +1553,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             {/* 1. Present */}
                             <button
                               type="button"
-                              disabled={isDateLockedForRepresentative}
+                              disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'present')}
                               className={cn(
                                 "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
                                 currentStatus === 'present'
                                   ? "bg-emerald-600 text-white shadow-xs scale-102"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
+                                (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) && "opacity-60 cursor-not-allowed"
                               )}
                             >
                               <CheckCircle2 size={12} />
@@ -1547,13 +1570,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             {/* 2. Absent */}
                             <button
                               type="button"
-                              disabled={isDateLockedForRepresentative}
+                              disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'absent')}
                               className={cn(
                                 "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
                                 currentStatus === 'absent'
                                   ? "bg-rose-600 text-white shadow-xs scale-102"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
+                                (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) && "opacity-60 cursor-not-allowed"
                               )}
                             >
                               <XCircle size={12} />
@@ -1563,24 +1587,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             {/* 3. Late */}
                             <button
                               type="button"
-                              disabled={isDateLockedForRepresentative}
+                              disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'late')}
                               className={cn(
                                 "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
                                 currentStatus === 'late'
                                   ? "bg-amber-500 text-white shadow-xs scale-102"
-                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
+                                (isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor) && "opacity-60 cursor-not-allowed"
                               )}
                             >
                               <Clock3 size={12} />
                               <span>تاخیر</span>
                             </button>
 
-                            {/* 4. Excused - ONLY for Education Manager & Super Admin */}
-                            {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
+                            {/* 4. Excused - ONLY for Education Manager & Super Admin (and Grade Supervisor if editable) */}
+                            {(isSuperAdmin || isEducationManager || (isGradeSupervisor && !isAttendanceReadOnlyForGradeSupervisor)) && (
                               <button
                                 type="button"
-                                disabled={isDateLockedForRepresentative}
+                                disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                                 onClick={() => handleSetStudentStatus(student.id, 'excused')}
                                 className={cn(
                                   "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
@@ -1594,10 +1619,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             )}
 
                             {/* 5. Unspecified - ONLY for Education Manager & Super Admin */}
-                            {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
+                            {(isSuperAdmin || isEducationManager || (isGradeSupervisor && !isAttendanceReadOnlyForGradeSupervisor)) && (
                               <button
                                 type="button"
-                                disabled={isDateLockedForRepresentative}
+                                disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                                 onClick={() => handleSetStudentStatus(student.id, 'unspecified')}
                                 className={cn(
                                   "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
@@ -1619,7 +1644,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           )}
 
                           {/* Justify Absence Button for Admins & Supervisors */}
-                          {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
+                          {(isSuperAdmin || isEducationManager || (isGradeSupervisor && !isAttendanceReadOnlyForGradeSupervisor)) && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1699,10 +1724,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               <button
                 type="button"
                 onClick={handleSaveAttendance}
-                disabled={isSaving || !currentProgram || isDateLockedForRepresentative}
+                disabled={isSaving || !currentProgram || isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                 className={cn(
                   "w-full sm:w-auto px-8 py-2.5 rounded-xl font-black text-xs transition-all shadow-md cursor-pointer flex items-center justify-center gap-2",
-                  isDateLockedForRepresentative
+                  isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor
                     ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
                     : isSavedRecently 
                       ? "bg-emerald-600 text-white shadow-emerald-200" 
@@ -1710,7 +1735,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 )}
               >
                 <Save size={16} />
-                <span>{isSaving ? 'در حال ثبت...' : 'ثبت نهایی حضور و غیاب و توضیحات'}</span>
+                <span>
+                  {isAttendanceReadOnlyForGradeSupervisor 
+                    ? 'حالت فقط مشاهده (ویرایش محدود شده توسط آموزش)' 
+                    : isSaving 
+                      ? 'در حال ثبت...' 
+                      : 'ثبت نهایی حضور و غیاب و توضیحات'}
+                </span>
               </button>
             </div>
           </div>
@@ -2046,12 +2077,35 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     </select>
                   </div>
 
-                  {/* Option for Education Manager / Admin to control Grade Professor edit permissions */}
+                  {/* Option for Education Manager / Admin to control Grade Professor Attendance Edit permission */}
+                  {(isSuperAdmin || isEducationManager) && (
+                    <div className="p-3 bg-purple-50/70 rounded-2xl border border-purple-200 flex items-center justify-between">
+                      <div className="pl-2">
+                        <div className="font-bold text-purple-900 text-xs">مجوز ثبت و ویرایش جلسات حضور و غیاب توسط اساتید پایه:</div>
+                        <p className="text-[10px] text-purple-700 font-medium leading-relaxed mt-0.5">
+                          در صورت فعال بودن، اساتید پایه می‌توانند حضور و غیاب کلاس‌های پایه خود را ثبت، ویرایش و موجه نمایند. در غیر این صورت، این بخش برای اساتید پایه فقط قابل مشاهده خواهد بود.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={settings.allowGradeProfessorAttendanceEdit || false}
+                          onChange={(e) => setSettings({ ...settings, allowGradeProfessorAttendanceEdit: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Option for Education Manager / Admin to control Grade Professor Settings Edit permissions */}
                   {(isSuperAdmin || isEducationManager) && (
                     <div className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center justify-between">
                       <div className="pl-2">
-                        <div className="font-bold text-indigo-900">دسترسی اساتید پایه به تنظیمات:</div>
-                        <p className="text-[10px] text-indigo-700 font-medium leading-relaxed">اساتید پایه بتوانند تنظیمات حضور غیاب را تغییر دهند (در غیر این صورت فقط مشاهده می‌کنند).</p>
+                        <div className="font-bold text-indigo-900 text-xs">دسترسی اساتید پایه به تغییر همین صفحه تنظیمات:</div>
+                        <p className="text-[10px] text-indigo-700 font-medium leading-relaxed mt-0.5">
+                          اساتید پایه بتوانند تنظیمات حضور غیاب را تغییر دهند (در غیر این صورت فقط مشاهده می‌کنند).
+                        </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer shrink-0">
                         <input

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { ShamsiDatePicker } from './ShamsiDatePicker';
 
 const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string; bg: string }> = {
   'الف': { label: 'الف (عالی)', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black', bg: 'bg-emerald-50' },
@@ -814,28 +815,22 @@ export default function CounselingClasses() {
           </div>
 
           {/* Start Date Filter */}
-          <div className="relative">
-            <span className="absolute right-3.5 top-[11px] text-[10px] text-slate-400 font-bold select-none pointer-events-none">از:</span>
-            <input
-              type="text"
-              placeholder="مثال: 1403/07/01"
+          <div className="min-w-[130px]">
+            <ShamsiDatePicker
               value={startDateFilter}
-              onChange={(e) => setStartDateFilter(e.target.value)}
-              className="w-full pr-8 pl-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono"
-              title="فیلتر تاریخ شروع جلسه ارزیابی"
+              onChange={(val) => setStartDateFilter(val)}
+              placeholder="از تاریخ..."
+              className="w-full text-xs"
             />
           </div>
 
           {/* End Date Filter */}
-          <div className="relative">
-            <span className="absolute right-3.5 top-[11px] text-[10px] text-slate-400 font-bold select-none pointer-events-none">تا:</span>
-            <input
-              type="text"
-              placeholder="مثال: 1403/08/30"
+          <div className="min-w-[130px]">
+            <ShamsiDatePicker
               value={endDateFilter}
-              onChange={(e) => setEndDateFilter(e.target.value)}
-              className="w-full pr-8 pl-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono"
-              title="فیلتر تاریخ پایان جلسه ارزیابی"
+              onChange={(val) => setEndDateFilter(val)}
+              placeholder="تا تاریخ..."
+              className="w-full text-xs"
             />
           </div>
 
@@ -1265,17 +1260,18 @@ export default function CounselingClasses() {
                           </option>
                         ))}
                       </optgroup>
-                      <option value="custom_entry">✍️ ورود تاریخ سفارشی دیگر...</option>
+                      <option value="custom_entry">✍️ انتخاب تاریخ از تقویم شمسی...</option>
                     </select>
                   ) : (
-                    <input
-                      type="text"
-                      value={formSessionDate}
-                      onChange={(e) => setFormSessionDate(e.target.value)}
-                      placeholder="تاریخ شمسی جلسه (مثال: 1405/06/15)"
-                      required
-                      className="w-full p-2.5 border border-amber-300 rounded-xl font-mono font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
+                    <div className="space-y-1">
+                      <ShamsiDatePicker
+                        value={formSessionDate}
+                        onChange={(val) => setFormSessionDate(val)}
+                        placeholder="انتخاب تاریخ جلسه..."
+                        className="w-full"
+                        required
+                      />
+                    </div>
                   )}
 
                   <div className="pt-2">

@@ -51,7 +51,7 @@ interface TeachersCompensationProps {
 }
 
 export default function TeachersCompensation({ onNavigateTab }: TeachersCompensationProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, users } = useAuth();
 
   // Top level screen view: 'create_period' (active editor) vs 'periods_archive' (archive list)
   const [activeView, setActiveView] = useState<'create_period' | 'periods_archive'>('create_period');
@@ -144,7 +144,40 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
         localDb.getDocs<TeacherWeeklyTransportRoutine>('teacher_transport_routines')
       ]);
 
-      setTeachersList(storedTeachers || []);
+      const baseTeachers = storedTeachers || [];
+      // Combine with users marked as Grade Professors by Super Admin
+      const gradeProfessorsFromUsers: Teacher[] = (users || [])
+        .filter(u => {
+          const role = (u.role || '').toLowerCase();
+          const title = (u.roleTitle || '').toLowerCase();
+          const username = (u.username || '').toUpperCase();
+          const isGradeSupervisorRole = role === 'grade_mentor' || role === 'grade_supervisor' || role.startsWith('grade_supervisor_');
+          const isGradeTitle = title.includes('استاد پایه') || title.includes('مسئول پایه') || title.includes('مسول پایه');
+          const isKnownSupervisor = ['ISJ', 'HO', 'SOL', 'ASADI', 'SADEGH', 'RAHNAMA'].includes(username);
+          return isGradeSupervisorRole || isGradeTitle || isKnownSupervisor || (u.managedGrades && u.managedGrades.length > 0);
+        })
+        .map(u => ({
+          id: u.id,
+          fullName: u.fullName || u.name || u.username,
+          name: u.fullName || u.name || u.username,
+          categories: ['grade_mentor' as any],
+          phoneNumber: u.phone,
+          courses: (u.managedGrades && u.managedGrades.length > 0) ? u.managedGrades : [u.roleTitle || 'استاد و مسئول پایه'],
+          managedGrades: u.managedGrades,
+          teacherCode: u.personnelCode || `PROF-${u.username}`,
+          priority: 1 as const,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        }));
+
+      const combinedTeachers = [...baseTeachers];
+      gradeProfessorsFromUsers.forEach(gp => {
+        if (!combinedTeachers.some(t => t.id === gp.id || (t.fullName && t.fullName === gp.fullName))) {
+          combinedTeachers.push(gp);
+        }
+      });
+
+      setTeachersList(combinedTeachers);
       setPeriods((storedPeriods || []).sort((a, b) => compareShamsi(b.startDate, a.startDate)));
       setClaimsList(storedClaims || []);
       setAttendanceSessions(storedAtt || []);
@@ -1639,8 +1672,15 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
                           className="accent-amber-600 rounded"
                         />
                         <div>
-                          <div className="text-xs font-black text-slate-900">{teacher.fullName || teacher.name}</div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">{teacher.courses?.join('، ') || 'دروس فقه و اصول'}</div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-slate-900">{teacher.fullName || teacher.name}</span>
+                            {teacher.categories?.includes('grade_mentor' as any) && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                                استاد پایه
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{teacher.courses?.join('، ') || 'دروس فقه و اصول و اشراف پایه'}</div>
                         </div>
                       </div>
 

@@ -39,12 +39,22 @@ export default function ArticleEvaluations() {
   const { currentUser } = useAuth();
   const { filterStudents } = useMentor();
 
+  const isEducationStaff = currentUser?.role === 'education_manager' || 
+                           currentUser?.role === 'education_officer' || 
+                           currentUser?.roleTitle?.includes('آموزش') || 
+                           currentUser?.username?.toUpperCase() === 'SHAH';
+  const isGradeSupervisor = currentUser?.role === 'grade_supervisor' || 
+                            currentUser?.role === 'grade_mentor' || 
+                            currentUser?.roleTitle?.includes('استاد پایه') || 
+                            currentUser?.roleTitle?.includes('مسئول پایه') || 
+                            ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');
+
   const isResearchManager = 
-    currentUser?.level === 1 || 
-    currentUser?.level === 2 || 
     currentUser?.role === 'research_manager' || 
     currentUser?.role === 'research_officer' || 
-    currentUser?.username?.toUpperCase() === 'YAZDANI';
+    currentUser?.roleTitle?.includes('پژوهش') || 
+    currentUser?.username?.toUpperCase() === 'YAZDANI' ||
+    currentUser?.role === 'super_admin';
 
   // Active Sub-tab for Research Manager: 'requests' | 'activate' | 'reports'
   const [managerTab, setManagerTab] = useState<'requests' | 'activate' | 'reports'>('requests');
@@ -58,6 +68,21 @@ export default function ArticleEvaluations() {
   const [evaluationSessions, setEvaluationSessions] = useState<ArticleEvaluationSession[]>([]);
   const [requests, setRequests] = useState<EvaluationRequest[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // If user is education officer or grade supervisor, block access
+  if (isEducationStaff || isGradeSupervisor) {
+    return (
+      <div className="p-8 max-w-lg mx-auto text-center bg-white rounded-3xl border border-rose-200 shadow-xl my-12">
+        <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <AlertCircle size={32} />
+        </div>
+        <h3 className="text-lg font-black text-slate-800 mb-2">عدم دسترسی به سامانه ارزیابی مقالات</h3>
+        <p className="text-xs text-slate-500 leading-relaxed font-bold">
+          ارزیابی مقالات منحصراً در اختیار مسئول محترم پژوهش می‌باشد و مسئول آموزش و اساتید محترم پایه به این بخش دسترسی ندارند.
+        </p>
+      </div>
+    );
+  }
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');

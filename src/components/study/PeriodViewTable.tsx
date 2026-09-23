@@ -16,11 +16,13 @@ import {
   Layers,
   Filter,
   AlertCircle,
-  Copy
+  Copy,
+  ShieldCheck,
+  Shield
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, StudyPeriod, PeriodicStudyLog, Todo, WorkflowItem } from '../../types';
-import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
+import { getLogMetrics, calculatePeriodAverages, isStudentExempt } from './studyUtils';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
@@ -30,6 +32,7 @@ export type TableDisplayMode = 'ALL_SPLIT' | 'TOTAL_ONLY' | 'STUDY_ONLY' | 'DISC
 export interface PeriodColumnsVisibility {
   grade: boolean;
   needsFollowUp: boolean;
+  individualExempt: boolean;
   warningNotice: boolean;
   warningStatus: boolean;
   studyMinutes: boolean;
@@ -80,6 +83,7 @@ export default function PeriodViewTable({
   const [cols, setCols] = useState<PeriodColumnsVisibility>({
     grade: true,
     needsFollowUp: true,
+    individualExempt: true,
     warningNotice: true,
     warningStatus: true,
     studyMinutes: true,
@@ -94,8 +98,53 @@ export default function PeriodViewTable({
     action: true
   });
 
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
+
+  // Toggle individual student exemption (For Grade Supervisor & Education Officer)
+  const handleToggleIndividualExempt = async (studentId: string) => {
+    try {
+      const currentExemptIds = period.exemptStudentIds || [];
+      const isExempt = currentExemptIds.includes(studentId);
+      const updated = isExempt
+        ? currentExemptIds.filter(id => id !== studentId)
+        : [...currentExemptIds, studentId];
+
+      await localDb.updateDoc('study_periods', period.id, {
+        exemptStudentIds: updated,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error toggling student exemption:", err);
+      alert("خطا در تغییر وضعیت معافیت موردی طلبه");
+    }
+  };
+
+  // Batch toggle exemption for selected students
+  const handleBatchExempt = async (setExempt: boolean) => {
+    if (selectedStudentIds.length === 0) return;
+    try {
+      const currentExemptIds = new Set(period.exemptStudentIds || []);
+      selectedStudentIds.forEach(id => {
+        if (setExempt) {
+          currentExemptIds.add(id);
+        } else {
+          currentExemptIds.delete(id);
+        }
+      });
+
+      await localDb.updateDoc('study_periods', period.id, {
+        exemptStudentIds: Array.from(currentExemptIds),
+        updatedAt: new Date().toISOString()
+      });
+      setSelectedStudentIds([]);
+      alert(setExempt ? 'معافیت موردی طلاب با موفقیت ثبت شد.' : 'معافیت موردی طلاب لغو گردید.');
+    } catch (err) {
+      console.error("Error batch exempting students:", err);
+      alert("خطا در بروزرسانی معافیت گروهی طلاب");
+    }
+  };
 
   useEffect(() => {
     const fetchTodosAndWorkflows = async () => {
@@ -343,6 +392,7 @@ export default function PeriodViewTable({
                         diffDiscussionAvg: true,
                         statusMandatory: true,
                         statusAvg: true,
+                        individualExempt: true,
                         action: true
                       })}
                       className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
@@ -359,6 +409,10 @@ export default function PeriodViewTable({
                     <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
                       <input type="checkbox" checked={cols.needsFollowUp} onChange={() => setCols(p => ({ ...p, needsFollowUp: !p.needsFollowUp }))} className="rounded text-amber-600" />
                       <span className="text-amber-800 font-black">نیاز به پیگیری</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-purple-50/50 cursor-pointer bg-purple-50/30">
+                      <input type="checkbox" checked={cols.individualExempt} onChange={() => setCols(p => ({ ...p, individualExempt: !p.individualExempt }))} className="rounded text-purple-600" />
+                      <span className="text-purple-800 font-black">معافیت موردی</span>
                     </label>
                     <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-rose-50/50 cursor-pointer bg-rose-50/30">
                       <input type="checkbox" checked={cols.warningNotice} onChange={() => setCols(p => ({ ...p, warningNotice: !p.warningNotice }))} className="rounded text-rose-600" />
@@ -412,15 +466,65 @@ export default function PeriodViewTable({
         </div>
       </div>
 
+      {/* Batch Selection / Exemption Toolbar */}
+      {selectedStudentIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-purple-50/90 border border-purple-200 p-3 sm:p-4 rounded-2xl shadow-xs">
+          <div className="flex items-center gap-2 text-xs font-black text-purple-900">
+            <ShieldCheck size={18} className="text-purple-700" />
+            <span>تعداد {selectedStudentIds.length.toLocaleString('fa-IR')} طلبه برای اعمال معافیت موردی انتخاب شده است:</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleBatchExempt(true)}
+              className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <ShieldCheck size={14} />
+              <span>معاف کردن موردی طلاب انتخاب‌شده</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchExempt(false)}
+              className="px-3.5 py-1.5 bg-white hover:bg-purple-100 text-purple-800 border border-purple-300 rounded-xl text-xs font-black transition-colors cursor-pointer"
+            >
+              <span>لغو معافیت موردی انتخاب‌شده‌ها</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedStudentIds([])}
+              className="px-2.5 py-1.5 text-slate-500 hover:text-slate-700 text-xs font-bold cursor-pointer"
+            >
+              انصراف
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Table */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm bg-white">
         <table className="w-full text-right text-xs">
           <thead>
             <tr className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-              <th className="px-4 py-3.5">ردیف</th>
+              <th className="px-3 py-3.5 text-center w-8">
+                <input
+                  type="checkbox"
+                  checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.includes(s.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedStudentIds(filteredStudents.map(s => s.id));
+                    } else {
+                      setSelectedStudentIds([]);
+                    }
+                  }}
+                  className="w-3.5 h-3.5 rounded text-purple-600 cursor-pointer"
+                  title="انتخاب همه طلاب جهت معافیت موردی"
+                />
+              </th>
+              <th className="px-3 py-3.5 text-center">ردیف</th>
               <th className="px-4 py-3.5">نام و نام خانوادگی</th>
               {cols.grade && <th className="px-3 py-3.5 text-center">پایه</th>}
               {cols.needsFollowUp && <th className="px-3 py-3.5 text-center bg-amber-50/60 text-amber-800 font-extrabold">نیاز به پیگیری</th>}
+              {cols.individualExempt && <th className="px-3 py-3.5 text-center bg-purple-50/70 text-purple-900 font-extrabold whitespace-nowrap">معافیت موردی</th>}
               {cols.warningNotice && <th className="px-3 py-3.5 text-center bg-rose-50/70 text-rose-800 font-extrabold">ثبت اخطار</th>}
               {cols.warningStatus && <th className="px-3 py-3.5 text-center bg-amber-50/70 text-amber-900 font-extrabold">وضعیت اخطار</th>}
 
@@ -464,7 +568,11 @@ export default function PeriodViewTable({
                 const gradeStudents = students.filter(s => s.grade === student.grade);
                 const gradeAvg = calculatePeriodAverages(period.id, allLogs, gradeStudents.map(s => s.id));
 
-                const diffMandatory = metrics.totalMinutes - mandatoryMinutes;
+                const isStudentIndividuallyExempt = (period.exemptStudentIds || []).includes(student.id);
+                const isGradeExempt = (period.exemptGrades || []).includes(student.grade || '');
+                const isAnyExempt = isStudentIndividuallyExempt || isGradeExempt;
+
+                const diffMandatory = isAnyExempt ? 0 : (metrics.totalMinutes - mandatoryMinutes);
                 const diffTotalAvg = metrics.totalMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.totalAvgMinutes : overallAvg.totalAvgMinutes);
                 const diffStudyAvg = metrics.studyMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.studyAvgMinutes : overallAvg.studyAvgMinutes);
                 const diffDiscAvg = metrics.discussionMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.discussionAvgMinutes : overallAvg.discussionAvgMinutes);
@@ -488,7 +596,19 @@ export default function PeriodViewTable({
                       isSelected ? "bg-indigo-50/70 font-semibold" : "hover:bg-slate-50/80"
                     )}
                   >
-                    <td className="px-4 py-3.5 text-slate-400 text-[11px] font-bold">{index + 1}</td>
+                    <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedStudentIds.includes(student.id)}
+                        onChange={() => {
+                          setSelectedStudentIds(prev => 
+                            prev.includes(student.id) ? prev.filter(id => id !== student.id) : [...prev, student.id]
+                          );
+                        }}
+                        className="w-3.5 h-3.5 rounded text-purple-600 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-3 py-3.5 text-slate-400 text-[11px] font-bold text-center">{index + 1}</td>
                     <td className="px-4 py-3.5 font-bold text-slate-800 flex items-center gap-2">
                       {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
                       <span>{student.name}</span>
@@ -520,12 +640,38 @@ export default function PeriodViewTable({
                       </td>
                     )}
 
+                    {/* Individual Exemption Column */}
+                    {cols.individualExempt && (
+                      <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        {isGradeExempt ? (
+                          <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-200 whitespace-nowrap" title="کل این پایه توسط مسئول آموزش معاف شده است">
+                            معاف پایه
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleIndividualExempt(student.id)}
+                            className={cn(
+                              "px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 mx-auto border shadow-2xs cursor-pointer",
+                              isStudentIndividuallyExempt
+                                ? "bg-purple-600 text-white border-purple-700 hover:bg-purple-700"
+                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300"
+                            )}
+                            title={isStudentIndividuallyExempt ? "کلیک کنید تا معافیت موردی لغو شود" : "معاف کردن موردی این طلبه از موظفی دوره"}
+                          >
+                            <ShieldCheck size={12} className={isStudentIndividuallyExempt ? "text-white" : "text-purple-600"} />
+                            <span>{isStudentIndividuallyExempt ? "معاف موردی" : "معافیت موردی"}</span>
+                          </button>
+                        )}
+                      </td>
+                    )}
+
                     {/* Register Warning Column */}
                     {cols.warningNotice && (
                       <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        {period.exemptGrades?.includes(student.grade || '') ? (
-                          <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-100 whitespace-nowrap">
-                            معاف از موظفی
+                        {isAnyExempt ? (
+                          <span className="bg-purple-50 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-200 whitespace-nowrap">
+                            {isStudentIndividuallyExempt ? '🛡️ معاف موردی' : 'معاف از موظفی'}
                           </span>
                         ) : diffMandatory < 0 ? (
                           <div className="flex flex-col items-center gap-1">
@@ -575,8 +721,8 @@ export default function PeriodViewTable({
                                 در انتظار تایید
                               </span>
                             )
-                          ) : period.exemptGrades?.includes(student.grade || '') ? (
-                            <span className="text-slate-400 text-[10px]">---</span>
+                          ) : isAnyExempt ? (
+                            <span className="text-purple-600 text-[10px] font-bold">معاف</span>
                           ) : diffMandatory < 0 ? (
                             <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
                               ثبت نشده
@@ -677,7 +823,11 @@ export default function PeriodViewTable({
                     {/* Status Mandatory */}
                     {cols.statusMandatory && (
                       <td className="px-3 py-3.5 text-center">
-                        {metrics.totalMinutes >= mandatoryMinutes && mandatoryMinutes > 0 ? (
+                        {isAnyExempt ? (
+                          <span className="bg-purple-50 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-purple-200 whitespace-nowrap">
+                            معاف از موظفی
+                          </span>
+                        ) : metrics.totalMinutes >= mandatoryMinutes && mandatoryMinutes > 0 ? (
                           <span className="bg-emerald-50 text-emerald-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-100 whitespace-nowrap">
                             موفق موظفی
                           </span>
