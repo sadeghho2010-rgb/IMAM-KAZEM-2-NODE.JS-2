@@ -288,7 +288,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       const baseComp = hours * rate;
       const lunchMeals = 12; // Default lunch meals
       const lunchDed = lunchMeals * lunchCostPerMeal;
-      const debtInfo = getProfessorDebt(u.id, u.fullName, claimsList);
+      const debtInfo = getProfessorDebt(u.id, u.fullName || u.name, claimsList);
       const debtDed = debtInfo.monthlyDed || 0;
       const loanDed = 0;
       const fundDed = 0;
@@ -301,7 +301,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       newItems.push({
         id: `gmi-${u.id}-${Date.now() + idx}`,
         userId: u.id,
-        name: u.fullName,
+        name: u.fullName || u.name,
         gradesStr: grades,
         teacherCode: u.personnelCode || `PROF-${101 + items.length + idx}`,
         nationalId: u.nationalId || '',
@@ -416,9 +416,9 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       baseHourlyRate,
       items,
       createdAt: new Date().toISOString(),
-      createdByName: currentUser?.fullName || 'مسئول مالی',
+      createdByName: currentUser?.fullName || currentUser?.name || 'مسئول مالی',
       finalizedAt: new Date().toISOString(),
-      finalizedByName: currentUser?.fullName || 'مسئول مالی'
+      finalizedByName: currentUser?.fullName || currentUser?.name || 'مسئول مالی'
     };
 
     await localDb.setDoc('finance_grade_mentor_periods', periodData);
@@ -657,18 +657,20 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
     return users.filter(u => {
       const title = (u.roleTitle || '').toLowerCase();
       const role = (u.role || '').toLowerCase();
-      const scope = (u.scope || '').toLowerCase();
-      const isGradeRole = role.includes('grade_') || role === 'grade_supervisor' || role === 'grade_mentor' || role === 'teacher' || role.includes('mentor');
-      const isGradeTitle = title.includes('استاد') || title.includes('مسئول پایه') || title.includes('مسول پایه') || title.includes('پایه');
+      
+      // Specifically recognize individuals designated as Grade Professor (استاد پایه)
+      const isGradeSupervisorRole = role.includes('grade_') || role === 'grade_supervisor' || role === 'grade_mentor';
+      const isGradeProfessorTitle = title.includes('استاد پایه') || title.includes('مسئول پایه') || title.includes('مسول پایه') || title.includes('پایه');
       const hasManagedGrades = u.managedGrades && u.managedGrades.length > 0;
-      const isGradeScope = scope.startsWith('grade_') || scope.includes('grade');
 
-      const matchesRole = isGradeRole || isGradeTitle || hasManagedGrades || isGradeScope;
-      if (!matchesRole) return false;
+      const isGradeProfessor = isGradeSupervisorRole || isGradeProfessorTitle || hasManagedGrades;
+      if (!isGradeProfessor) return false;
 
+      const userDisplayName = u.fullName || u.name || '';
       const matchesSearch = 
         !profSearchQuery || 
-        u.fullName.toLowerCase().includes(profSearchQuery.toLowerCase()) ||
+        userDisplayName.toLowerCase().includes(profSearchQuery.toLowerCase()) ||
+        u.username.toLowerCase().includes(profSearchQuery.toLowerCase()) ||
         (u.phone && u.phone.includes(profSearchQuery)) ||
         (u.roleTitle && u.roleTitle.toLowerCase().includes(profSearchQuery.toLowerCase()));
 
@@ -1857,7 +1859,9 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                             className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
                           />
                           <div>
-                            <div className="font-bold text-slate-900 text-xs">{prof.fullName}</div>
+                            <div className="font-bold text-slate-900 text-xs">
+                              {prof.fullName || prof.name} <span className="text-slate-500 font-normal mr-1">({prof.username})</span>
+                            </div>
                             <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
                               <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-700 font-bold">
                                 {grades}

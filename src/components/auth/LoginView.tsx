@@ -46,6 +46,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [showQuickPresets, setShowQuickPresets] = useState(false);
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
 
+  // Mobile preview mode for viewing background image without form
+  const [hideFormForPreview, setHideFormForPreview] = useState(false);
+
   // Primary Background Image (/000.jpg is in /public)
   const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.jpg');
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -202,7 +205,12 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     <div
       id="login-page-root"
       dir="rtl"
-      className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-slate-900 select-none"
+      className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-slate-900 select-none cursor-pointer"
+      onClick={() => {
+        if (hideFormForPreview) {
+          setHideFormForPreview(false);
+        }
+      }}
     >
       {/* Hidden file input for uploading the exact background image */}
       <input
@@ -238,11 +246,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Discreet floating button in top-left to select/upload exact 000.jpg photo */}
-      <div className="absolute top-4 left-4 z-20">
+      {/* Discreet floating button in top-left to select/upload background or preview it */}
+      <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={(e) => {
+            e.stopPropagation();
+            fileInputRef.current?.click();
+          }}
           disabled={isUploadingBg}
           className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95"
           title="انتخاب و اعمال مستقیم فایل 000.jpg برای پس‌زمینه"
@@ -252,7 +263,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           ) : (
             <ImageIcon size={14} className="text-blue-300" />
           )}
-          <span>تغییر / بارگذاری عکس زمینه (000.jpg)</span>
+          <span className="hidden sm:inline">بارگذاری عکس زمینه</span>
+          <span className="sm:hidden">بارگذاری عکس</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setHideFormForPreview(true);
+          }}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95"
+          title="مشاهده کامل و تمام صفحه عکس پس‌زمینه"
+        >
+          <Eye size={14} className="text-emerald-300" />
+          <span>مشاهده کامل عکس</span>
         </button>
       </div>
 
@@ -260,9 +285,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       <motion.div
         id="login-glass-card"
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-md mx-4 rounded-2xl bg-white/15 backdrop-blur-xl border border-white/30 shadow-2xl p-6 sm:p-8 text-white transition-all duration-300"
+        animate={{ 
+          opacity: hideFormForPreview ? 0 : 1, 
+          scale: hideFormForPreview ? 0.90 : 1, 
+          y: hideFormForPreview ? 30 : 0,
+          pointerEvents: hideFormForPreview ? 'none' : 'auto' as any
+        }}
+        transition={{ duration: 0.4, ease: 'easeInOut' }}
+        className="relative z-10 w-full max-w-md mx-4 rounded-2xl bg-white/10 sm:bg-white/15 backdrop-blur-[6px] sm:backdrop-blur-xl border border-white/25 sm:border-white/30 shadow-2xl p-6 sm:p-8 text-white transition-all duration-300"
       >
         {/* Top subtle highlight reflection */}
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-white/50 to-transparent rounded-t-2xl pointer-events-none" />
@@ -508,6 +538,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <span>نسخه ۵.۲.۰ • ارتباط امن و رمزنگاری داده‌ها</span>
         </div>
       </motion.div>
+
+      {/* Gentle helper message in preview mode */}
+      <AnimatePresence>
+        {hideFormForPreview && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute bottom-10 z-20 px-5 py-3 rounded-2xl bg-black/60 border border-white/10 backdrop-blur-md text-white text-xs font-bold text-center animate-pulse cursor-pointer shadow-2xl flex items-center gap-2"
+          >
+            <Sparkles size={14} className="text-amber-400" />
+            <span>جهت بازگشت به صفحه ورود، هر کجای صفحه را که می‌خواهید لمس کنید.</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
