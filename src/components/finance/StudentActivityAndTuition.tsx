@@ -49,6 +49,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ShamsiDatePicker } from '../ShamsiDatePicker';
 import { getTodayShamsi } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
+import ActivityInfoTabbedView from './tuition/ActivityInfoTabbedView';
 import { 
   Student, 
   TuitionCalculationSettings, 
@@ -1234,6 +1235,33 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         } catch (e) {}
       }
 
+      // 4. Deduct paid loan installments from active loans in finance_loans
+      const updatedLoansMap = new Map<string, any>();
+      for (const calc of calculatedTuitions) {
+        const loanDeduct = calc.loanInstallmentDeduction || calc.loanDeduction || 0;
+        if (loanDeduct > 0) {
+          const studentLoans = loans.filter(l => l.studentId === calc.studentId && l.status === 'active' && ((l.remainingBalance ?? l.remainingAmount ?? l.amount ?? 0) > 0));
+          let rem = loanDeduct;
+          for (const l of studentLoans) {
+            if (rem <= 0) break;
+            const currentRem = l.remainingBalance ?? l.remainingAmount ?? l.amount ?? 0;
+            const apply = Math.min(rem, currentRem);
+            const updatedLoan = {
+              ...l,
+              paidInstallments: (l.paidInstallments || 0) + 1,
+              remainingBalance: Math.max(0, currentRem - apply),
+              status: (currentRem - apply) <= 0 ? 'settled' : 'active'
+            };
+            updatedLoansMap.set(l.id, updatedLoan);
+            rem -= apply;
+          }
+        }
+      }
+      const loansToUpdate = Array.from(updatedLoansMap.values());
+      if (loansToUpdate.length > 0) {
+        await localDb.bulkPut('finance_loans', loansToUpdate);
+      }
+
       setTuitionPeriods(prev => [finalizedDoc, ...prev]);
       setSelectedArchivedPeriod(finalizedDoc);
       setIsFinalizeWarningModalOpen(false);
@@ -1861,250 +1889,38 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         </div>
       </div>
 
-      {/* TAB 1: اطلاعات حضور و فعالیت طلاب */}
+      {/* TAB 1: اطلاعات حضور و فعالیت طلاب (سربرگ‌های ۹ گانه تفکیک‌شده) */}
       {currentSubTab === 'activity_info' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-              <Users size={16} className="text-emerald-600" />
-              <span>فهرست جامع اطلاعات، حضور، مطالعه و تسهیلات طلاب ({filteredStudents.length} طلبه)</span>
-            </h3>
-            <span className="text-xs text-slate-400">
-              داده‌های بازه: {startDate} تا {endDate}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {calculatedTuitions.length === 0 ? (
-              <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-2">
-                <Users size={32} className="mx-auto text-slate-300" />
-                <p className="text-xs font-bold text-slate-500">هیچ طلبه‌ای با فیلترهای انتخابی یافت نشد.</p>
-              </div>
-            ) : (
-              calculatedTuitions.map((item, index) => {
-                const s = students.find(st => st.id === item.studentId);
-                const prof = profiles.find(p => p.studentId === item.studentId);
-
-                return (
-                  <div
-                    key={item.studentId}
-                    className="bg-white rounded-2xl border border-slate-200 shadow-xs hover:border-emerald-300 transition-all p-5 space-y-4"
-                  >
-                    {/* Top Row: Basic Info & Badges */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 font-black flex items-center justify-center text-sm border border-slate-200">
-                          {item.studentName[0]}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-slate-900">{item.studentName}</span>
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md">
-                              {item.grade}
-                            </span>
-                            {item.isTammam && (
-                              <span className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold rounded-md">
-                                معمم
-                              </span>
-                            )}
-                            {item.maritalStatus === 'متاهل' ? (
-                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold rounded-md">
-                                متاهل {item.childrenCount ? `(${item.childrenCount} فرزند)` : ''}
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded-md">
-                                مجرد
-                              </span>
-                            )}
-                            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold rounded-md">
-                              سکونت: {item.livingStatus || 'پدری'}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono mt-0.5">
-                            <span>کد موسسه: {item.instituteCode || '---'}</span>
-                            <span>•</span>
-                            <span>کد ملی: {item.nationalId || '---'}</span>
-                            {item.phoneNumber && (
-                              <>
-                                <span>•</span>
-                                <span>تماس: {item.phoneNumber}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Financial info & Edit Profile Button */}
-                      <div className="flex items-center gap-2 self-start md:self-auto">
-                        <div className="text-left hidden sm:block">
-                          <span className="text-[10px] text-slate-400 block font-sans">اطلاعات حساب / شبا</span>
-                          <span className="text-xs font-bold text-slate-700 font-mono">
-                            {item.bankSheba || item.bankAccount || 'شماره حساب ثبت‌نشده'}
-                          </span>
-                        </div>
-                        {s && (
-                          <button
-                            type="button"
-                            onClick={() => openEditProfile(s)}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                          >
-                            <Edit3 size={13} />
-                            <span>ویرایش پرونده</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSlipDetail(item)}
-                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <Eye size={13} />
-                          <span>مشاهده فیش</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Middle Grid: Detailed Stats in the period */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                      {/* 1. آمار مطالعه */}
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-700 flex items-center gap-1">
-                            <Clock size={13} className="text-indigo-600" />
-                            <span>آمار مطالعه در بازه</span>
-                          </span>
-                          <span className="font-mono font-bold text-slate-800">
-                            {Math.floor((item.studyMinutesTotal || 0) / 60)}س و {(item.studyMinutesTotal || 0) % 60}د
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">نسبت به موظفی ({Math.round((item.studyRequiredMinutes || 2400) / 60)}س):</span>
-                          {(item.studyDiffMinutes || 0) >= 0 ? (
-                            <span className="text-emerald-600 font-bold font-mono">
-                              +{(item.studyDiffMinutes || 0)} دقیقه بالای موظفی
-                            </span>
-                          ) : (
-                            <span className="text-rose-600 font-bold font-mono">
-                              {item.studyDiffMinutes} دقیقه زیر موظفی
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">نسبت به میانگین:</span>
-                          {item.isAboveStudyAverage ? (
-                            <span className="text-emerald-700 font-bold">بالای میانگین</span>
-                          ) : (
-                            <span className="text-amber-700 font-bold">زیر میانگین</span>
-                          )}
-                        </div>
-                        {item.studyWarningIssued && (
-                          <div className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <AlertCircle size={11} />
-                            <span>دارای اخطار ثبت‌شده ساعت مطالعه</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 2. حضور و غیاب */}
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-700 flex items-center gap-1">
-                            <CheckSquare size={13} className="text-emerald-600" />
-                            <span>حضور و غیاب کلاس‌ها</span>
-                          </span>
-                          <span className="font-mono text-emerald-700 font-black">
-                            {item.totalPresentSessions || 0} حضور
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">غیبت غیرموجه:</span>
-                          <span className={cn("font-bold font-mono", (item.unexcusedAbsenceCount || 0) > 0 ? "text-rose-600" : "text-slate-600")}>
-                            {item.unexcusedAbsenceCount || 0} جلسه
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">غیبت موجه:</span>
-                          <span className="font-mono text-slate-700">{item.excusedAbsenceCount || 0} جلسه</span>
-                        </div>
-                        {(item.totalEducationalWarnings || 0) > 0 && (
-                          <div className="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <AlertTriangle size={11} />
-                            <span>{item.totalEducationalWarnings} اخطار آموزشی حضور و غیاب</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 3. ارزیابی کلاس‌های مشاوره */}
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-700 flex items-center gap-1">
-                            <BookCheck size={13} className="text-teal-600" />
-                            <span>ارزیابی مشاوره‌ها</span>
-                          </span>
-                          <span className="text-[11px] text-slate-400">الف / ب / ج</span>
-                        </div>
-                        <div className="flex items-center gap-2 pt-1">
-                          <div className="flex-1 bg-emerald-100 text-emerald-800 text-center py-1 rounded font-bold">
-                            <span className="block text-[10px]">الف</span>
-                            <span className="font-mono text-xs">{item.counselingGradeACount || 0}</span>
-                          </div>
-                          <div className="flex-1 bg-amber-100 text-amber-800 text-center py-1 rounded font-bold">
-                            <span className="block text-[10px]">ب</span>
-                            <span className="font-mono text-xs">{item.counselingGradeBCount || 0}</span>
-                          </div>
-                          <div className="flex-1 bg-slate-200 text-slate-700 text-center py-1 rounded font-bold">
-                            <span className="block text-[10px]">ج</span>
-                            <span className="font-mono text-xs">{item.counselingGradeCCount || 0}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 4. تسهیلات، وام و صندوق */}
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-700 flex items-center gap-1">
-                            <Coins size={13} className="text-amber-600" />
-                            <span>تسهیلات و کسورات</span>
-                          </span>
-                          <span className="text-[11px] text-slate-500">نهار: {item.lunchDaysCount || 0} روز</span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">قسط وام فعال:</span>
-                          <span className="font-mono font-bold text-slate-700">
-                            {(item.loanInstallmentDeduction || 0).toLocaleString('fa-IR')} ت
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">کمک به صندوق:</span>
-                          <span className="font-mono font-bold text-slate-700">
-                            {(item.fundContributionDeduction || 0).toLocaleString('fa-IR')} ت
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-200">
-                          <span className="font-bold text-emerald-800">خالص شهریه:</span>
-                          <span className="font-mono font-black text-emerald-700 text-xs">
-                            {(item.netPayableTuition || 0).toLocaleString('fa-IR')} تومان
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            {/* Step Next Button */}
-            <div className="flex justify-end pt-3 pb-2">
-              <button
-                type="button"
-                onClick={() => setCurrentSubTab('mechanized_calc')}
-                className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-2 cursor-pointer hover:scale-[1.01]"
-              >
-                <span>مرحله بعد: ورود به سربرگ محاسبه مکانیزه شهریه</span>
-                <ChevronLeft size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
+        <ActivityInfoTabbedView
+          students={students}
+          profiles={profiles}
+          calculatedTuitions={calculatedTuitions}
+          studyPeriods={studyPeriods}
+          studyLogs={studyLogs}
+          attendanceLogs={attendanceLogs}
+          counselingGrades={counselingGrades}
+          mealReservations={mealReservations}
+          lunchItems={lunchItems}
+          claimsList={claimsList}
+          claimCategories={claimCategories}
+          destinationAccounts={destinationAccounts}
+          loans={loans}
+          settings={settings}
+          startDate={startDate}
+          endDate={endDate}
+          gradeFilter={gradeFilter}
+          setGradeFilter={setGradeFilter}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          studentOverrides={studentOverrides}
+          setStudentOverrides={setStudentOverrides}
+          onOpenSlipDetail={(item) => setSelectedSlipDetail(item)}
+          onOpenEditProfile={(s) => openEditProfile(s)}
+          onNavigateToMechanized={() => setCurrentSubTab('mechanized_calc')}
+          onOpenDebtModal={(st) => {
+            setSelectedStudentForDebtDetail(st);
+          }}
+        />
       )}
 
       {/* TAB 2: محاسبه مکانیزه */}

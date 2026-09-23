@@ -42,6 +42,7 @@ export default function CourseSelection() {
 
   const isGradeSupervisor = currentUser?.role === 'grade_supervisor' || 
                             currentUser?.role === 'grade_mentor' || 
+                            currentUser?.role?.startsWith('grade_supervisor_') ||
                             currentUser?.roleTitle?.includes('استاد پایه') || 
                             currentUser?.roleTitle?.includes('مسئول پایه') || 
                             ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');

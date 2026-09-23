@@ -74,7 +74,6 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const [rankingModalData, setRankingModalData] = useState<RankingModalData | null>(null);
 
   const isLevel3Student = currentUser?.level === 3;
-  const isGradeMentor = currentUser?.role === 'grade_mentor' || currentUser?.role === 'grade_supervisor';
 
   const isEducationManager = 
     currentUser?.role === 'education_manager' || 
@@ -88,6 +87,15 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     currentUser?.level === 1 || 
     currentUser?.role === 'manager_principal' || 
     currentUser?.role === 'school_manager';
+
+  const isGradeMentor = !isEducationManager && !isLevel1Admin && (
+    currentUser?.role === 'grade_mentor' || 
+    currentUser?.role === 'grade_supervisor' || 
+    currentUser?.role?.startsWith('grade_supervisor_') ||
+    currentUser?.roleTitle?.includes('استاد پایه') ||
+    currentUser?.roleTitle?.includes('مسئول پایه') ||
+    ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '')
+  );
 
   // "به شرطی که کاربر مسول اموزش و یا کاربر سطح 1 با قابلیت انجام ویرایش باشه"
   const canManagePeriods = Boolean((isEducationManager || isLevel1Admin) && !currentUser?.isReadOnly);

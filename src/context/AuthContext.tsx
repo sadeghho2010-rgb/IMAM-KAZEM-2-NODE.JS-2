@@ -308,12 +308,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const tabs = Array.isArray(u.allowedTabs) 
               ? u.allowedTabs 
               : (Array.isArray(u.allowedModules) ? u.allowedModules : ['todos', 'students']);
-            if (u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH' || u.level === 1 || u.level === 2) {
-              if (!tabs.includes('user-credentials') && (u.role === 'education_manager' || u.role === 'super_admin' || u.username === 'SHAH')) {
+            const isEduOrAdmin = u.role === 'education_manager' || u.role === 'education_officer' || u.role === 'super_admin' || u.username === 'SHAH';
+            if (isEduOrAdmin) {
+              if (!tabs.includes('user-credentials')) {
                 tabs.push('user-credentials');
               }
               if (!tabs.includes('course-selection')) {
                 tabs.push('course-selection');
+              }
+            } else {
+              // Ensure grade supervisors or other non-edu users do not retain course-selection in their tabs
+              const isGradeStaff = u.role === 'grade_supervisor' || u.role === 'grade_mentor' || u.role?.startsWith('grade_supervisor_') || ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(u.username?.toUpperCase());
+              if (isGradeStaff) {
+                const idx = tabs.indexOf('course-selection');
+                if (idx > -1) tabs.splice(idx, 1);
+                const artIdx = tabs.indexOf('article-evaluations');
+                if (artIdx > -1) tabs.splice(artIdx, 1);
               }
             }
             return {
@@ -345,14 +355,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === normalized.username?.toUpperCase());
           const activeUser = found || normalized;
-          if (activeUser && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH' || activeUser.level === 1 || activeUser.level === 2)) {
+          const isEduOrAdmin = activeUser.role === 'education_manager' || activeUser.role === 'education_officer' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH';
+          if (activeUser && isEduOrAdmin) {
             if (Array.isArray(activeUser.allowedTabs)) {
-              if (!activeUser.allowedTabs.includes('user-credentials') && (activeUser.role === 'education_manager' || activeUser.role === 'super_admin' || activeUser.username === 'SHAH')) {
+              if (!activeUser.allowedTabs.includes('user-credentials')) {
                 activeUser.allowedTabs.push('user-credentials');
               }
               if (!activeUser.allowedTabs.includes('course-selection')) {
                 activeUser.allowedTabs.push('course-selection');
               }
+            }
+          } else if (activeUser && Array.isArray(activeUser.allowedTabs)) {
+            const isGradeStaff = activeUser.role === 'grade_supervisor' || activeUser.role === 'grade_mentor' || activeUser.role?.startsWith('grade_supervisor_') || ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(activeUser.username?.toUpperCase());
+            if (isGradeStaff) {
+              const idx = activeUser.allowedTabs.indexOf('course-selection');
+              if (idx > -1) activeUser.allowedTabs.splice(idx, 1);
+              const artIdx = activeUser.allowedTabs.indexOf('article-evaluations');
+              if (artIdx > -1) activeUser.allowedTabs.splice(artIdx, 1);
             }
           }
           return activeUser;
