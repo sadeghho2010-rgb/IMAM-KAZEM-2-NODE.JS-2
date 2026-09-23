@@ -65,6 +65,7 @@ export interface AttendanceSettings {
   representativeEditWindowDays: number; // default: 7
   unspecifiedCountAs: 'unspecified' | 'absent' | 'present' | 'late'; // in reporting
   unexcusedWarningThreshold?: number; // حد نصاب اخطار آموزشی غیبت (پیش‌فرض: ۳ جلسه)
+  allowGradeProfessorSettingsEdit?: boolean; // آیا اساتید پایه می‌توانند تنظیمات حضور غیاب را تغییر دهند؟
   updatedAt?: string;
   updatedBy?: string;
 }

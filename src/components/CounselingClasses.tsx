@@ -89,6 +89,8 @@ export default function CounselingClasses() {
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('all');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -545,6 +547,12 @@ export default function CounselingClasses() {
       if (selectedStudentId !== 'all' && item.studentId !== selectedStudentId) {
         return false;
       }
+      if (startDateFilter.trim() && item.sessionDate < startDateFilter.trim()) {
+        return false;
+      }
+      if (endDateFilter.trim() && item.sessionDate > endDateFilter.trim()) {
+        return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matches = 
@@ -556,7 +564,7 @@ export default function CounselingClasses() {
       }
       return true;
     });
-  }, [grades, selectedGrade, selectedCourse, selectedTeacher, selectedStudentId, searchQuery]);
+  }, [grades, selectedGrade, selectedCourse, selectedTeacher, selectedStudentId, searchQuery, startDateFilter, endDateFilter]);
 
   // Aggregated Summary by Student
   const studentSummaries = useMemo(() => {
@@ -749,7 +757,7 @@ export default function CounselingClasses() {
         </div>
 
         {/* Filters Bar */}
-        <div className="p-4 bg-slate-50/80 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="p-4 bg-slate-50/80 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
           {/* Search Input */}
           <div className="relative">
             <Search className="w-4 h-4 absolute right-3 top-3 text-slate-400" />
@@ -805,6 +813,32 @@ export default function CounselingClasses() {
             </select>
           </div>
 
+          {/* Start Date Filter */}
+          <div className="relative">
+            <span className="absolute right-3.5 top-[11px] text-[10px] text-slate-400 font-bold select-none pointer-events-none">از:</span>
+            <input
+              type="text"
+              placeholder="مثال: 1403/07/01"
+              value={startDateFilter}
+              onChange={(e) => setStartDateFilter(e.target.value)}
+              className="w-full pr-8 pl-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono"
+              title="فیلتر تاریخ شروع جلسه ارزیابی"
+            />
+          </div>
+
+          {/* End Date Filter */}
+          <div className="relative">
+            <span className="absolute right-3.5 top-[11px] text-[10px] text-slate-400 font-bold select-none pointer-events-none">تا:</span>
+            <input
+              type="text"
+              placeholder="مثال: 1403/08/30"
+              value={endDateFilter}
+              onChange={(e) => setEndDateFilter(e.target.value)}
+              className="w-full pr-8 pl-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono"
+              title="فیلتر تاریخ پایان جلسه ارزیابی"
+            />
+          </div>
+
           {/* Reset Filters */}
           <div className="flex items-center">
             <button
@@ -814,8 +848,10 @@ export default function CounselingClasses() {
                 setSelectedCourse('all');
                 setSelectedTeacher('all');
                 setSelectedStudentId('all');
+                setStartDateFilter('');
+                setEndDateFilter('');
               }}
-              className="w-full py-2 px-3 border border-slate-200 hover:bg-slate-200/60 text-slate-600 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+              className="w-full py-2 px-3 border border-slate-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-600 rounded-xl text-xs font-bold cursor-pointer transition-colors"
             >
               پاکسازی فیلترها
             </button>

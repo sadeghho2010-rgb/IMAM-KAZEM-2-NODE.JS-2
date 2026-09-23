@@ -158,7 +158,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const isRepresentative = currentUser?.role === 'class_representative';
   const isStudent = currentUser?.role === 'student';
 
-  const canManageSettings = isSuperAdmin || isEducationManager;
+  const canManageSettings = isSuperAdmin || isEducationManager || isGradeSupervisor;
+  const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
 
   // Toast helper
   const showToast = (msg: string) => {
@@ -1986,72 +1987,113 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </div>
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    مهلت ثبت و ویرایش توسط نماینده کلاس (روز):
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={settings.representativeEditWindowDays}
-                    onChange={(e) => setSettings({ ...settings, representativeEditWindowDays: parseInt(e.target.value) || 7 })}
-                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-mono font-bold"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    نماینده کلاس تا این تعداد روز فرصت ثبت و ویرایش دارد. پس از آن تنها مسئول آموزش مجاز خواهد بود.
-                  </p>
-                </div>
+                {isGradeSupervisor && (
+                  <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-[11px] font-bold">
+                    {settings.allowGradeProfessorSettingsEdit 
+                      ? '✓ شما به عنوان استاد پایه دسترسی ویرایش به تنظیمات حضور و غیاب را دارید.' 
+                      : '🔒 شما به عنوان استاد پایه فقط مجاز به مشاهده تنظیمات حضور و غیاب هستید.'}
+                  </div>
+                )}
 
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    حد نصاب غیبت غیرموجه برای اخطار آموزشی (جلسه):
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={settings.unexcusedWarningThreshold || 3}
-                    onChange={(e) => setSettings({ ...settings, unexcusedWarningThreshold: parseInt(e.target.value) || 3 })}
-                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-mono font-bold"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    طلابی که به این تعداد غیبت غیرموجه برسند در گزارش به عنوان مشمول اخطار آموزشی مشخص می‌شوند.
-                  </p>
-                </div>
+                <fieldset disabled={isSettingsReadOnly} className="space-y-4">
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      مهلت ثبت و ویرایش توسط نماینده کلاس (روز):
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={settings.representativeEditWindowDays}
+                      onChange={(e) => setSettings({ ...settings, representativeEditWindowDays: parseInt(e.target.value) || 7 })}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-mono font-bold"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      نماینده کلاس تا این تعداد روز فرصت ثبت و ویرایش دارد. پس از آن تنها مسئول آموزش مجاز خواهد بود.
+                    </p>
+                  </div>
 
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">
-                    نحوه محاسبه وضعیت «نامشخص» در آمار و گزارش‌ها:
-                  </label>
-                  <select
-                    value={settings.unspecifiedCountAs}
-                    onChange={(e) => setSettings({ ...settings, unspecifiedCountAs: e.target.value as any })}
-                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-bold"
-                  >
-                    <option value="unspecified">جداگانه به عنوان نامشخص درج شود</option>
-                    <option value="absent">به عنوان غیبت محاسبه شود</option>
-                    <option value="present">به عنوان حضور محاسبه شود</option>
-                    <option value="late">به عنوان تاخیر محاسبه شود</option>
-                  </select>
-                </div>
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      حد نصاب غیبت غیرموجه برای اخطار آموزشی (جلسه):
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={settings.unexcusedWarningThreshold || 3}
+                      onChange={(e) => setSettings({ ...settings, unexcusedWarningThreshold: parseInt(e.target.value) || 3 })}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-mono font-bold"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      طلابی که به این تعداد غیبت غیرموجه برسند در گزارش به عنوان مشمول اخطار آموزشی مشخص می‌شوند.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      نحوه محاسبه وضعیت «نامشخص» در آمار و گزارش‌ها:
+                    </label>
+                    <select
+                      value={settings.unspecifiedCountAs}
+                      onChange={(e) => setSettings({ ...settings, unspecifiedCountAs: e.target.value as any })}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-bold"
+                    >
+                      <option value="unspecified">جداگانه به عنوان نامشخص درج شود</option>
+                      <option value="absent">به عنوان غیبت محاسبه شود</option>
+                      <option value="present">به عنوان حضور محاسبه شود</option>
+                      <option value="late">به عنوان تاخیر محاسبه شود</option>
+                    </select>
+                  </div>
+
+                  {/* Option for Education Manager / Admin to control Grade Professor edit permissions */}
+                  {(isSuperAdmin || isEducationManager) && (
+                    <div className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center justify-between">
+                      <div className="pl-2">
+                        <div className="font-bold text-indigo-900">دسترسی اساتید پایه به تنظیمات:</div>
+                        <p className="text-[10px] text-indigo-700 font-medium leading-relaxed">اساتید پایه بتوانند تنظیمات حضور غیاب را تغییر دهند (در غیر این صورت فقط مشاهده می‌کنند).</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={settings.allowGradeProfessorSettingsEdit || false}
+                          onChange={(e) => setSettings({ ...settings, allowGradeProfessorSettingsEdit: e.target.checked })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </label>
+                    </div>
+                  )}
+                </fieldset>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  انصراف
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSaveSettings(settings)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
-                >
-                  ذخیره تنظیمات
-                </button>
+                {isSettingsReadOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(false)}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                  >
+                    بستن صفحه تنظیمات
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveSettings(settings)}
+                      className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                    >
+                      ذخیره تنظیمات
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>

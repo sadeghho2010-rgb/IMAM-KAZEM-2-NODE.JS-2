@@ -46,6 +46,8 @@ export default function MadrasRooms() {
 
   // Role permissions: Only Super Admin and Education Officer can search and edit
   const canEditAndSearch = canManageAndSearchMadras(currentUser);
+  const isGradeProf = currentUser?.role === 'grade_supervisor' || currentUser?.role === 'grade_mentor' || (currentUser?.roleTitle && (currentUser.roleTitle.includes('استاد پایه') || currentUser.roleTitle.includes('مسئول پایه')));
+  const canUseFinder = canEditAndSearch || isGradeProf;
 
   // Data state
   const [rooms, setRooms] = useState<MadrasRoom[]>([]);
@@ -355,22 +357,24 @@ export default function MadrasRooms() {
 
         {/* Quick Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {canEditAndSearch ? (
-            <>
-              <button
-                onClick={() => setShowEmptyFinder(!showEmptyFinder)}
-                className={cn(
-                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs",
-                  showEmptyFinder 
-                    ? "bg-slate-900 text-white hover:bg-black" 
-                    : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
-                )}
-                title="ابزار جستجو و یافتن سریع مَدرَس خالی"
-              >
-                <Search size={15} />
-                <span>یافتن مَدرَس خالی</span>
-              </button>
+          {canUseFinder && (
+            <button
+              onClick={() => setShowEmptyFinder(!showEmptyFinder)}
+              className={cn(
+                "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs",
+                showEmptyFinder 
+                  ? "bg-slate-900 text-white hover:bg-black" 
+                  : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+              )}
+              title="ابزار جستجو و یافتن سریع مَدرَس خالی"
+            >
+              <Search size={15} />
+              <span>یافتن مَدرَس خالی</span>
+            </button>
+          )}
 
+          {canEditAndSearch && (
+            <>
               <button
                 onClick={() => handleOpenAddClass()}
                 className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
@@ -395,7 +399,9 @@ export default function MadrasRooms() {
                 <span>افزودن مَدرَس</span>
               </button>
             </>
-          ) : (
+          )}
+
+          {!canEditAndSearch && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
               <DoorOpen size={15} className="text-indigo-600" />
               <span>مشاهده برنامه مَدرَس‌ها (جهت مشاهده جدول هفتگی روی هر کارت کلیک کنید)</span>
@@ -420,9 +426,9 @@ export default function MadrasRooms() {
         </div>
       </div>
 
-      {/* 2. Quick Empty Room Finder Section (Collapsible / Interactive - Super Admin & Education Officer Only) */}
+      {/* 2. Quick Empty Room Finder Section (Collapsible / Interactive - Super Admin, Education Officer, and Grade Professors) */}
       <AnimatePresence>
-        {showEmptyFinder && canEditAndSearch && (
+        {showEmptyFinder && canUseFinder && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}

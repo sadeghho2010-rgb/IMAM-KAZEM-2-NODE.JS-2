@@ -79,6 +79,8 @@ export default function UserManagement() {
   ]);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const isAuthorizedToManage = currentUser?.role === 'super_admin' || currentUser?.role === 'education_manager' || currentUser?.username?.toUpperCase() === 'SHAH';
+
   const resetForm = () => {
     setFormUsername('');
     setFormPassword('8411924');
@@ -219,22 +221,26 @@ export default function UserManagement() {
         </div>
 
         <div className="flex items-center gap-2.5 w-full md:w-auto">
-          <button
-            onClick={resetToDefaultUsers}
-            className="flex-1 md:flex-initial px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-            title="بازگردانی تمامی کاربران پیش‌فرض تعریف شده در SRS"
-          >
-            <RotateCcw size={15} />
-            <span>بازنشانی به پیش‌فرض SRS</span>
-          </button>
+          {isAuthorizedToManage && (
+            <>
+              <button
+                onClick={resetToDefaultUsers}
+                className="flex-1 md:flex-initial px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                title="بازگردانی تمامی کاربران پیش‌فرض تعریف شده در SRS"
+              >
+                <RotateCcw size={15} />
+                <span>بازنشانی به پیش‌فرض SRS</span>
+              </button>
 
-          <button
-            onClick={openCreateModal}
-            className="flex-1 md:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-1.5"
-          >
-            <UserPlus size={16} />
-            <span>تعریف کاربر جدید</span>
-          </button>
+              <button
+                onClick={openCreateModal}
+                className="flex-1 md:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-1.5"
+              >
+                <UserPlus size={16} />
+                <span>تعریف کاربر جدید</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -397,13 +403,13 @@ export default function UserManagement() {
                     <td className="py-3.5 px-4">
                       <button
                         onClick={() => toggleUserActive(u.id)}
-                        disabled={isSelf || isSuper}
+                        disabled={isSelf || isSuper || !isAuthorizedToManage}
                         className={cn(
                           "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all",
                           u.isActive 
                             ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" 
                             : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
-                          (isSelf || isSuper) && "opacity-80 cursor-default"
+                          (isSelf || isSuper || !isAuthorizedToManage) && "opacity-80 cursor-default"
                         )}
                       >
                         {u.isActive ? (
@@ -422,25 +428,38 @@ export default function UserManagement() {
 
                     <td className="py-3.5 px-4 sm:px-6 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => openEditModal(u)}
-                          className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl transition-all"
-                          title="ویرایش کاربر و دسترسی‌ها"
-                        >
-                          <Edit size={15} />
-                        </button>
+                        {isAuthorizedToManage ? (
+                          <>
+                            <button
+                              onClick={() => openEditModal(u)}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl transition-all"
+                              title="ویرایش کاربر و دسترسی‌ها"
+                            >
+                              <Edit size={15} />
+                            </button>
 
-                        {!isSuper && !isSelf && (
+                            {!isSuper && !isSelf && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`آیا از حذف حساب کاربری "${u.fullName}" اطمینان دارید؟`)) {
+                                    deleteUser(u.id);
+                                  }
+                                }}
+                                className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-xl transition-all"
+                                title="حذف کاربر"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </>
+                        ) : (
                           <button
-                            onClick={() => {
-                              if (window.confirm(`آیا از حذف حساب کاربری "${u.fullName}" اطمینان دارید؟`)) {
-                                deleteUser(u.id);
-                              }
-                            }}
-                            className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-xl transition-all"
-                            title="حذف کاربر"
+                            onClick={() => openEditModal(u)}
+                            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 rounded-xl transition-all flex items-center gap-1 text-[11px] font-bold"
+                            title="مشاهده دسترسی‌های کاربر"
                           >
-                            <Trash2 size={15} />
+                            <Eye size={13} className="text-slate-500" />
+                            <span>مشاهده</span>
                           </button>
                         )}
                       </div>
@@ -484,8 +503,9 @@ export default function UserManagement() {
                 </div>
               )}
 
-              {/* Basic Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <fieldset disabled={!isAuthorizedToManage} className="space-y-4">
+                {/* Basic Fields */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     نام کاربری (لاتین) *
@@ -746,22 +766,35 @@ export default function UserManagement() {
                   })}
                 </div>
               </div>
+              </fieldset>
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
-                >
-                  انصراف
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center gap-1.5"
-                >
-                  <Save size={15} />
-                  <span>{editingUser ? 'ذخیره تغییرات' : 'ایجاد کاربر'}</span>
-                </button>
+                {isAuthorizedToManage ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateModalOpen(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center gap-1.5"
+                    >
+                      <Save size={15} />
+                      <span>{editingUser ? 'ذخیره تغییرات' : 'ایجاد کاربر'}</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    بستن صفحه پیش‌نمایش
+                  </button>
+                )}
               </div>
             </form>
           </div>

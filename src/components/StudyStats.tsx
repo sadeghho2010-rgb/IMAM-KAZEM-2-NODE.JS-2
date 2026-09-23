@@ -376,16 +376,18 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
               </p>
             </div>
 
-            <div className="relative z-10 flex flex-wrap items-center gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={handleOpenCreatePeriod}
-                className="px-5 py-3.5 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-950/40 hover:-translate-y-0.5 cursor-pointer"
-              >
-                <Plus size={18} />
-                <span>ثبت دوره مطالعاتی جدید</span>
-              </button>
-            </div>
+            {!isGradeMentor && (
+              <div className="relative z-10 flex flex-wrap items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenCreatePeriod}
+                  className="px-5 py-3.5 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-lg shadow-indigo-950/40 hover:-translate-y-0.5 cursor-pointer"
+                >
+                  <Plus size={18} />
+                  <span>ثبت دوره مطالعاتی جدید</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Periods Grid */}
@@ -407,16 +409,22 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                 </div>
                 <div className="space-y-1">
                   <h4 className="text-base font-black text-slate-800">هنوز هیچ دوره مطالعاتی ثبت نشده است</h4>
-                  <p className="text-xs text-slate-500 font-medium">برای شروع، روی دکمه «ثبت دوره مطالعاتی جدید» کلیک فرمایید.</p>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {isGradeMentor 
+                      ? 'موردی توسط مسئول آموزش ثبت نشده است.' 
+                      : 'برای شروع، روی دکمه «ثبت دوره مطالعاتی جدید» کلیک فرمایید.'}
+                  </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleOpenCreatePeriod}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs transition-all shadow-md shadow-indigo-200 inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus size={16} />
-                  <span>ثبت اولین دوره مطالعاتی</span>
-                </button>
+                {!isGradeMentor && (
+                  <button
+                    type="button"
+                    onClick={handleOpenCreatePeriod}
+                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs transition-all shadow-md shadow-indigo-200 inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={16} />
+                    <span>ثبت اولین دوره مطالعاتی</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -514,31 +522,35 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
                           className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                         >
                           <Edit size={14} />
-                          <span>ویرایش و ثبت ساعات طلاب</span>
+                          <span>{isGradeMentor ? 'مشاهده و پیگیری ساعات طلاب' : 'ویرایش و ثبت ساعات طلاب'}</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePeriodLock(period)}
-                          className={cn(
-                            "p-2.5 rounded-xl text-xs font-bold transition-colors border cursor-pointer",
-                            period.isClosed
-                              ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
-                              : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                          )}
-                          title={period.isClosed ? 'بازگشایی ثبت دوره' : 'قفل کردن دوره'}
-                        >
-                          {period.isClosed ? <Unlock size={15} /> : <Lock size={15} />}
-                        </button>
+                        {!isGradeMentor && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePeriodLock(period)}
+                              className={cn(
+                                "p-2.5 rounded-xl text-xs font-bold transition-colors border cursor-pointer",
+                                period.isClosed
+                                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                  : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                              )}
+                              title={period.isClosed ? 'بازگشایی ثبت دوره' : 'قفل کردن دوره'}
+                            >
+                              {period.isClosed ? <Unlock size={15} /> : <Lock size={15} />}
+                            </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setDeleteConfirmPeriod(period)}
-                          className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-colors border border-rose-200 cursor-pointer"
-                          title="حذف دوره"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmPeriod(period)}
+                              className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-colors border border-rose-200 cursor-pointer"
+                              title="حذف دوره"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
