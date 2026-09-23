@@ -675,11 +675,16 @@ export interface PresenceReport {
   cycleEnd: string;
   totalHours: number;
   logsCount: number;
-  status: 'submitted' | 'received';
+  status: 'submitted' | 'received' | 'approved';
   submittedAt: string;
   receivedAt?: string;
   receivedByUserId?: string;
   receivedByUserName?: string;
+  isApprovedByFinance?: boolean;
+  approvedAt?: string;
+  approvedByName?: string;
+  isUsedAsBasis?: boolean;
+  usedInPeriodTitle?: string;
   teacherName?: string;
   grade?: string;
   dateRange?: string;
@@ -1500,6 +1505,16 @@ export interface GradeMentorCalculationItem {
   bankSheba?: string;
   status?: 'pending' | 'approved' | 'paid';
   notes?: string;
+  // فیلدهای اتصال به گزارش‌های کارکرد تاییدشده در جریان کار:
+  reportedPresenceHours?: number; // ساعت کارکرد ارسال شده توسط استاد پایه در بازه زمانی
+  reportedPresenceCycle?: string; // عنوان یا شرح بازه زمانی گزارش کارکرد (مثلاً مهر ۱۴۰۳)
+  reportedPresenceCycleStart?: string; // تاریخ شروع بازه کارکرد
+  reportedPresenceCycleEnd?: string; // تاریخ پایان بازه کارکرد
+  presenceReportId?: string; // شناسه گزارش کارکرد در presence_reports
+  isPresenceApprovedInWorkflow?: boolean; // آیا در جریان کار توسط مسئول مالی تایید شده است؟
+  isPresenceBasisConfirmed?: boolean; // آیا مسئول مالی تایید کرده که این ساعت ارسالی مبنای محاسبه حق‌الزحمه قرار گیرد؟
+  presenceBasisConfirmedAt?: string; // تاریخ و ساعت تایید مبنا توسط مسئول مالی
+  presenceBasisConfirmedByName?: string; // نام کاربری مسئول مالی تاییدکننده مبنا
 }
 
 export interface GradeMentorPeriod {

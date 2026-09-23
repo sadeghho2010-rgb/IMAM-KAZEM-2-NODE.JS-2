@@ -481,16 +481,39 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
       }
 
       // If this item is associated with a presence report, update presence_reports doc
-      if (item.details?.reportId) {
+      if (item.category === 'presence_finance_report' || item.details?.reportId) {
         try {
-          const reportId = item.details.reportId;
+          const reportId = item.details?.reportId || `rep-${item.id}`;
           const rep = await localDb.getDoc<any>('presence_reports', reportId);
+          const approverName = currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی';
           if (rep) {
             await localDb.updateDoc('presence_reports', reportId, {
-              status: 'received',
-              receivedAt: new Date().toISOString(),
+              status: 'approved',
+              isApprovedByFinance: true,
+              receivedAt: rep.receivedAt || new Date().toISOString(),
               receivedByUserId: currentUser?.id,
-              receivedByUserName: currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی'
+              receivedByUserName: approverName,
+              approvedAt: new Date().toISOString(),
+              approvedByName: approverName
+            });
+          } else if (item.details) {
+            await localDb.setDoc('presence_reports', {
+              id: reportId,
+              senderUserId: item.createdByUserId || '',
+              senderUserName: item.createdByName || '',
+              senderRoleTitle: 'استاد پایه',
+              mentorId: item.details.mentorId || item.createdByUserId || '',
+              cycleTitle: item.details.cycleTitle || 'دوره کارکرد',
+              cycleStart: item.details.cycleStart || '',
+              cycleEnd: item.details.cycleEnd || '',
+              totalHours: Number(item.details.totalHours) || 0,
+              logsCount: Number(item.details.logsCount) || 1,
+              status: 'approved',
+              isApprovedByFinance: true,
+              submittedAt: item.createdAt || new Date().toISOString(),
+              approvedAt: new Date().toISOString(),
+              approvedByName: approverName,
+              notes: item.details.notes
             });
           }
         } catch (repErr) {
@@ -1274,6 +1297,34 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
                               <div>
                                 <span className="text-slate-400">ساعات ثبت‌شده: </span>
                                 <span className="font-bold text-slate-800">{item.details.loggedHours} از {item.details.mandatoryHours} ساعت</span>
+                              </div>
+                            )}
+                            {isPresenceReport && (
+                              <div className="w-full flex flex-wrap items-center gap-3 text-xs bg-emerald-50 text-emerald-950 p-2.5 rounded-xl border border-emerald-200 mt-1">
+                                {item.details.cycleTitle && (
+                                  <div>
+                                    <span className="text-emerald-700 font-bold">عنوان بازه: </span>
+                                    <span className="font-bold text-slate-800">{item.details.cycleTitle}</span>
+                                  </div>
+                                )}
+                                {item.details.cycleStart && item.details.cycleEnd && (
+                                  <div>
+                                    <span className="text-emerald-700 font-bold">بازه زمانی: </span>
+                                    <span className="font-mono font-bold text-slate-800">{item.details.cycleStart} تا {item.details.cycleEnd}</span>
+                                  </div>
+                                )}
+                                {item.details.totalHours !== undefined && (
+                                  <div>
+                                    <span className="text-emerald-700 font-bold">ساعت کارکرد ارسالی: </span>
+                                    <span className="font-mono font-black text-emerald-800 text-sm">{item.details.totalHours} ساعت</span>
+                                  </div>
+                                )}
+                                {item.details.logsCount !== undefined && (
+                                  <div>
+                                    <span className="text-emerald-700 font-bold">تعداد روزهای ثبت‌شده: </span>
+                                    <span className="font-mono font-bold">{item.details.logsCount} جلسه</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </>

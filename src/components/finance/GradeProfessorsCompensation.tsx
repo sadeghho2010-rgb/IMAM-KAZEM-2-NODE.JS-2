@@ -31,7 +31,7 @@ import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { getTodayShamsi } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
-import { GradeMentorCalculationItem, GradeMentorPeriod, StudentClaimRecord } from '../../types';
+import { GradeMentorCalculationItem, GradeMentorPeriod, StudentClaimRecord, PresenceReport, WorkflowItem } from '../../types';
 import { AppUser } from '../../types/auth';
 
 interface GradeProfessorsCompensationProps {
@@ -57,6 +57,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
   const [periodStatus, setPeriodStatus] = useState<'draft' | 'finalized' | 'paid'>('draft');
   const [items, setItems] = useState<GradeMentorCalculationItem[]>([]);
   const [claimsList, setClaimsList] = useState<StudentClaimRecord[]>([]);
+
+  // Presence Hours & Workflow Reports State (اتصال به جریان کار و حضور و غیاب)
+  const [presenceReports, setPresenceReports] = useState<PresenceReport[]>([]);
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
 
   // Archived Periods
   const [periods, setPeriods] = useState<GradeMentorPeriod[]>([]);
@@ -177,13 +181,15 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
     };
   };
 
-  // Load Saved Periods & Claims
+  // Load Saved Periods & Claims & Presence Reports & Workflow
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [storedPeriods, storedClaims] = await Promise.all([
+      const [storedPeriods, storedClaims, storedReports, storedWorkflow] = await Promise.all([
         localDb.getDocs<GradeMentorPeriod>('finance_grade_mentor_periods'),
-        localDb.getDocs<StudentClaimRecord>('finance_student_claims')
+        localDb.getDocs<StudentClaimRecord>('finance_student_claims'),
+        localDb.getDocs<PresenceReport>('presence_reports'),
+        localDb.getDocs<WorkflowItem>('workflow_items')
       ]);
       
       const claims = storedClaims || [];
@@ -191,6 +197,9 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
 
       const periodList = storedPeriods || [];
       setPeriods(periodList);
+
+      setPresenceReports(storedReports || []);
+      setWorkflowItems(storedWorkflow || []);
 
       if (periodList.length > 0) {
         setSelectedArchivedPeriod(periodList[0]);
@@ -209,6 +218,173 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
     });
     return () => unsub();
   }, []);
+
+  // Consolidated list of presence reports approved by Finance Manager (in presence_reports or workflow_items)
+  const approvedPresenceReports = useMemo(() => {
+    const list: PresenceReport[] = [];
+    const seenReportIds = new Set<string>();
+
+    (presenceReports || []).forEach(r => {
+      if (r.status === 'received' || r.status === 'approved' || r.isApprovedByFinance) {
+        list.push(r);
+        seenReportIds.add(r.id);
+      }
+    });
+
+    (workflowItems || []).forEach(wf => {
+      if (wf.category === 'presence_finance_report' && wf.status === 'approved' && wf.details) {
+        const repId = wf.details.reportId || `rep-${wf.id}`;
+        if (!seenReportIds.has(repId)) {
+          list.push({
+            id: repId,
+            senderUserId: wf.createdByUserId || '',
+            senderUserName: wf.createdByName || '',
+            senderRoleTitle: 'استاد پایه',
+            mentorId: wf.details.mentorId || wf.createdByUserId || '',
+            cycleTitle: wf.details.cycleTitle || 'دوره کارکرد',
+            cycleStart: wf.details.cycleStart || '',
+            cycleEnd: wf.details.cycleEnd || '',
+            totalHours: Number(wf.details.totalHours) || 0,
+            logsCount: Number(wf.details.logsCount) || 1,
+            status: 'approved',
+            isApprovedByFinance: true,
+            submittedAt: wf.createdAt,
+            approvedAt: wf.approvedAt,
+            approvedByName: wf.approvedByName,
+            notes: wf.details.notes
+          });
+          seenReportIds.add(repId);
+        }
+      }
+    });
+
+    return list;
+  }, [presenceReports, workflowItems]);
+
+  // Helper to find matching approved presence report for a given professor
+  const findMatchingApprovedReport = (
+    userId: string, 
+    professorName: string, 
+    pStart?: string, 
+    pEnd?: string
+  ): PresenceReport | null => {
+    const userMatches = approvedPresenceReports.filter(rep => {
+      const matchId = (rep.senderUserId && rep.senderUserId === userId) || (rep.mentorId && rep.mentorId === userId);
+      const matchName = rep.senderUserName && professorName && (
+        rep.senderUserName.trim() === professorName.trim() ||
+        rep.senderUserName.includes(professorName) ||
+        professorName.includes(rep.senderUserName)
+      );
+      return matchId || matchName;
+    });
+
+    if (userMatches.length === 0) return null;
+
+    if (pStart && pEnd) {
+      // Look for cycle overlap or exact match
+      const dateMatch = userMatches.find(r => 
+        (r.cycleStart === pStart && r.cycleEnd === pEnd) ||
+        (r.cycleStart && r.cycleEnd && r.cycleStart <= pEnd && r.cycleEnd >= pStart)
+      );
+      if (dateMatch) return dateMatch;
+    }
+
+    // Default to latest report
+    return userMatches[userMatches.length - 1];
+  };
+
+  // Confirm reported presence hours as calculation basis for a single professor
+  const handleConfirmPresenceBasis = async (itemId: string, report: PresenceReport) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const updated: GradeMentorCalculationItem = {
+        ...item,
+        totalHours: report.totalHours,
+        reportedPresenceHours: report.totalHours,
+        reportedPresenceCycle: report.cycleTitle || `${report.cycleStart} تا ${report.cycleEnd}`,
+        reportedPresenceCycleStart: report.cycleStart,
+        reportedPresenceCycleEnd: report.cycleEnd,
+        presenceReportId: report.id,
+        isPresenceApprovedInWorkflow: true,
+        isPresenceBasisConfirmed: true,
+        presenceBasisConfirmedAt: new Date().toISOString(),
+        presenceBasisConfirmedByName: currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی'
+      };
+      return recalculateItem(updated, updated.hourlyRate, lunchCostPerMeal);
+    }));
+
+    if (report.id) {
+      try {
+        await localDb.updateDoc('presence_reports', report.id, {
+          isUsedAsBasis: true,
+          usedInPeriodTitle: periodTitle || `بازه ${startDate} تا ${endDate}`
+        });
+      } catch (err) {
+        console.error('Error updating presence report basis flag:', err);
+      }
+    }
+
+    showToast(`کارکرد ارسالی استاد «${report.senderUserName || 'پایه'}» (${report.totalHours} ساعت) به عنوان مبنای محاسبه حق‌الزحمه تایید شد.`);
+  };
+
+  // Reset confirmed presence basis back to manual
+  const handleResetPresenceBasis = (itemId: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const updated: GradeMentorCalculationItem = {
+        ...item,
+        isPresenceBasisConfirmed: false
+      };
+      return recalculateItem(updated, updated.hourlyRate, lunchCostPerMeal);
+    }));
+    showToast('مبنای تاییدشده کارکرد بازنشانی شد و می‌توانید ساعت را به دلخواه ویرایش نمایید.');
+  };
+
+  // Batch confirm all matching reports for active items
+  const handleApplyAllPresenceBasis = async () => {
+    let appliedCount = 0;
+    const reportIdsToMark: string[] = [];
+
+    setItems(prev => prev.map(item => {
+      const matching = findMatchingApprovedReport(item.userId, item.name, startDate, endDate);
+      if (matching) {
+        appliedCount++;
+        if (matching.id) reportIdsToMark.push(matching.id);
+        const updated: GradeMentorCalculationItem = {
+          ...item,
+          totalHours: matching.totalHours,
+          reportedPresenceHours: matching.totalHours,
+          reportedPresenceCycle: matching.cycleTitle || `${matching.cycleStart} تا ${matching.cycleEnd}`,
+          reportedPresenceCycleStart: matching.cycleStart,
+          reportedPresenceCycleEnd: matching.cycleEnd,
+          presenceReportId: matching.id,
+          isPresenceApprovedInWorkflow: true,
+          isPresenceBasisConfirmed: true,
+          presenceBasisConfirmedAt: new Date().toISOString(),
+          presenceBasisConfirmedByName: currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی'
+        };
+        return recalculateItem(updated, updated.hourlyRate, lunchCostPerMeal);
+      }
+      return item;
+    }));
+
+    for (const rId of reportIdsToMark) {
+      try {
+        await localDb.updateDoc('presence_reports', rId, {
+          isUsedAsBasis: true,
+          usedInPeriodTitle: periodTitle || `بازه ${startDate} تا ${endDate}`
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (appliedCount > 0) {
+      showToast(`کارکرد ارسالی ${appliedCount} استاد پایه با موفقیت به عنوان مبنای محاسبه حق‌الزحمه تایید و اعمال شد.`);
+    } else {
+      showToast('گزارش کارکرد تاییدشده‌ای منطبق با اساتید این دوره یافت نشد.');
+    }
+  };
 
   // Step 1: Trigger Calculation Date Range Modal
   const handleOpenDateRangeModal = () => {
@@ -282,8 +458,9 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       // Avoid duplicate
       if (items.some(it => it.userId === u.id)) return;
 
+      const matchingReport = findMatchingApprovedReport(u.id, u.fullName || u.name, startDate, endDate);
       const grades = getUserGradeString(u);
-      const hours = 24; // Default standard hours per month
+      const hours = matchingReport ? matchingReport.totalHours : 24;
       const rate = baseHourlyRate;
       const baseComp = hours * rate;
       const lunchMeals = 12; // Default lunch meals
@@ -324,7 +501,18 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
         bankAccount: u.bankAccount || `۶۲۷۳-۸۱۱۰-${1000 + (items.length + idx) * 10}-${2000 + (items.length + idx) * 10}`,
         bankSheba: u.bankSheba || `IR98018000000000${1000000000 + (items.length + idx) * 100}`,
         status: 'approved',
-        notes: `افزوده شده در بازه ${startDate} تا ${endDate}`
+        notes: matchingReport 
+          ? `کارکرد ارسالی در جریان کار: ${matchingReport.totalHours} ساعت (${matchingReport.cycleTitle || 'بازه تاییدشده'})`
+          : `افزوده شده در بازه ${startDate} تا ${endDate}`,
+        reportedPresenceHours: matchingReport?.totalHours,
+        reportedPresenceCycle: matchingReport?.cycleTitle || (matchingReport ? `${matchingReport.cycleStart} تا ${matchingReport.cycleEnd}` : undefined),
+        reportedPresenceCycleStart: matchingReport?.cycleStart,
+        reportedPresenceCycleEnd: matchingReport?.cycleEnd,
+        presenceReportId: matchingReport?.id,
+        isPresenceApprovedInWorkflow: !!matchingReport,
+        isPresenceBasisConfirmed: !!matchingReport,
+        presenceBasisConfirmedAt: matchingReport ? new Date().toISOString() : undefined,
+        presenceBasisConfirmedByName: matchingReport ? (currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول مالی') : undefined
       });
     });
 
@@ -828,6 +1016,18 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                       <span>اضافه کردن استاد پایه جهت پرداخت</span>
                     </button>
 
+                    {/* Batch confirm/apply approved presence hours button */}
+                    {items.length > 0 && approvedPresenceReports.length > 0 && (
+                      <button
+                        onClick={handleApplyAllPresenceBasis}
+                        className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
+                        title="تایید و اعمال ساعات ارسالی کارتابل جریان کار برای تمام اساتید حاضر در این جدول"
+                      >
+                        <Clock size={15} />
+                        <span>تایید مبنای کارکرد ارسالی جریان کار ({approvedPresenceReports.length})</span>
+                      </button>
+                    )}
+
                     {/* Compact / Detailed Toggle */}
                     <button
                       onClick={() => setIsCompactView(!isCompactView)}
@@ -962,6 +1162,46 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                 </div>
               </div>
 
+              {/* Presence Reports Summary & Sync Notification */}
+              {approvedPresenceReports.length > 0 && (
+                <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200 rounded-3xl p-4 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Clock size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-black text-slate-900">ساعات کارکرد ارسالی اساتید پایه (تاییدشده در کارتابل جریان کار)</h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300">
+                          {approvedPresenceReports.length} گزارش تاییدشده در جریان کار
+                        </span>
+                        {items.filter(it => it.isPresenceBasisConfirmed).length > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 text-[10px] font-black border border-indigo-300">
+                            {items.filter(it => it.isPresenceBasisConfirmed).length} استاد با مبنای تاییدشده
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1">
+                        اساتید پایه پس از ثبت ساعات و بازه زمانی حضور، کارکرد را برای مسئول مالی ارسال کرده‌اند. این آمار پس از تأیید در جریان کار در این جدول نمایش داده می‌شود و با تأیید مجدد مسئول مالی، به عنوان مبنای کارکرد و محاسبه حق‌الزحمه قرار می‌گیرد.
+                      </p>
+                    </div>
+                  </div>
+
+                  {items.length > 0 && (
+                    <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={handleApplyAllPresenceBasis}
+                        className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <CheckCircle2 size={15} />
+                        <span>تایید و اعمال همه ساعات ارسالی به عنوان مبنا</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Filter Strip */}
               <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1073,6 +1313,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                       <tbody className="divide-y divide-slate-100">
                         {filteredActiveItems.map((item, idx) => {
                           const totalDed = (item.lunchDeduction || 0) + (item.debtDeduction || 0) + (item.loanInstallment || 0) + (item.fundContribution || 0) + (item.otherDeductions || 0);
+                          const matchingReport = findMatchingApprovedReport(item.userId, item.name, startDate, endDate);
 
                           return (
                             <tr key={item.id} className="hover:bg-indigo-50/30 transition-colors">
@@ -1094,6 +1335,15 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                                     <span className="font-mono text-slate-400">کدملی: {item.nationalId}</span>
                                   )}
                                 </div>
+                                {matchingReport && (
+                                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                    <div className="inline-flex items-center gap-1 text-[10px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200">
+                                      <Clock size={11} className="text-teal-600 shrink-0" />
+                                      <span>کارکرد ارسالی در جریان کار: <strong>{matchingReport.totalHours} ساعت</strong></span>
+                                      <span className="text-slate-400 font-normal">({matchingReport.cycleTitle || `${matchingReport.cycleStart} تا ${matchingReport.cycleEnd}`})</span>
+                                    </div>
+                                  </div>
+                                )}
                               </td>
 
                               {isCompactView ? (
@@ -1106,6 +1356,37 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                                       onChange={(e) => handleItemFieldChange(item.id, 'totalHours', Number(e.target.value))}
                                       className="w-14 px-1 py-1 text-center bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-800 outline-hidden"
                                     />
+                                    {matchingReport && (
+                                      <div className="mt-1 flex justify-center">
+                                        {item.isPresenceBasisConfirmed ? (
+                                          <div 
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-black shadow-2xs whitespace-nowrap"
+                                            title={`مبنای تاییدشده توسط ${item.presenceBasisConfirmedByName || 'مسئول مالی'}`}
+                                          >
+                                            <CheckCircle2 size={11} className="text-emerald-600 shrink-0" />
+                                            <span>مبنای تاییدشده ({item.totalHours} س)</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleResetPresenceBasis(item.id)}
+                                              title="لغو مبنا و ویرایش آزاد ساعت"
+                                              className="text-slate-400 hover:text-rose-600 mr-0.5 cursor-pointer"
+                                            >
+                                              <X size={10} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleConfirmPresenceBasis(item.id, matchingReport)}
+                                            title={`تایید ${matchingReport.totalHours} ساعت ارسالی در جریان کار به عنوان مبنای محاسبه حق‌الزحمه`}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black transition-all cursor-pointer shadow-2xs whitespace-nowrap"
+                                          >
+                                            <Check size={11} className="text-amber-700 shrink-0" />
+                                            <span>تایید مبنا ({matchingReport.totalHours} س)</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="py-3 px-2 text-center font-bold text-slate-700 font-mono">
                                     {item.baseCompensation.toLocaleString('fa-IR')}
@@ -1156,6 +1437,37 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                                       className="w-14 px-1 py-1 text-center bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-800 outline-hidden focus:border-indigo-500"
                                       min={0}
                                     />
+                                    {matchingReport && (
+                                      <div className="mt-1 flex justify-center">
+                                        {item.isPresenceBasisConfirmed ? (
+                                          <div 
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-black shadow-2xs whitespace-nowrap"
+                                            title={`مبنای تاییدشده توسط ${item.presenceBasisConfirmedByName || 'مسئول مالی'}`}
+                                          >
+                                            <CheckCircle2 size={11} className="text-emerald-600 shrink-0" />
+                                            <span>مبنای تاییدشده ({item.totalHours} س)</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleResetPresenceBasis(item.id)}
+                                              title="لغو مبنا و ویرایش آزاد ساعت"
+                                              className="text-slate-400 hover:text-rose-600 mr-0.5 cursor-pointer"
+                                            >
+                                              <X size={10} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleConfirmPresenceBasis(item.id, matchingReport)}
+                                            title={`تایید ${matchingReport.totalHours} ساعت ارسالی در جریان کار به عنوان مبنای محاسبه حق‌الزحمه`}
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black transition-all cursor-pointer shadow-2xs whitespace-nowrap"
+                                          >
+                                            <Check size={11} className="text-amber-700 shrink-0" />
+                                            <span>تایید مبنا ({matchingReport.totalHours} س)</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
                                   </td>
 
                                   {/* Editable Rate */}
@@ -1483,7 +1795,14 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                                   </td>
                                   <td className="py-3 px-3">
                                     <div className="font-bold text-slate-900">{item.name}</div>
-                                    <div className="text-[10px] text-slate-500 mt-0.5">{item.gradesStr}</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                      <span>{item.gradesStr}</span>
+                                      {item.isPresenceBasisConfirmed && (
+                                        <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                          ✓ مبنای کارکرد جریان کار ({item.totalHours} س)
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
 
                                   {isCompactView ? (
@@ -1829,6 +2148,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                     const isAlreadyAdded = items.some(it => it.userId === prof.id);
                     const isChecked = selectedProfessorIds.includes(prof.id) || isAlreadyAdded;
                     const grades = getUserGradeString(prof);
+                    const profMatchingReport = findMatchingApprovedReport(prof.id, prof.fullName || prof.name, startDate, endDate);
 
                     return (
                       <div
@@ -1869,6 +2189,12 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                               {prof.roleTitle && <span>{prof.roleTitle}</span>}
                               {prof.phone && <span className="font-mono">{prof.phone}</span>}
                             </div>
+                            {profMatchingReport && (
+                              <div className="mt-1 flex items-center gap-1 text-[10px] text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200 w-fit">
+                                <Clock size={11} className="text-teal-600 shrink-0" />
+                                <span>کارکرد ارسالی تاییدشده: <strong>{profMatchingReport.totalHours} ساعت</strong> ({profMatchingReport.cycleTitle || 'جریان کار'})</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -2234,7 +2560,14 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           <tr>
-                            <td className="p-2 font-bold text-slate-800">ساعت حضور و کارکرد نظارت</td>
+                            <td className="p-2 font-bold text-slate-800">
+                              <div>ساعت حضور و کارکرد نظارت</div>
+                              {slip.isPresenceBasisConfirmed && (
+                                <div className="text-[10px] text-emerald-700 font-normal">
+                                  (مبنای تاییدشده جریان کار: {slip.reportedPresenceCycle || `${slip.totalHours} ساعت`})
+                                </div>
+                              )}
+                            </td>
                             <td className="p-2 text-center font-mono">{slip.totalHours} ساعت</td>
                             <td className="p-2 text-center font-mono">{slip.hourlyRate.toLocaleString('fa-IR')}</td>
                             <td className="p-2 text-center font-mono font-bold text-emerald-700">

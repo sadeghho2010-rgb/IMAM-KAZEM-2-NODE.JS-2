@@ -868,17 +868,25 @@ export default function PresenceHours() {
               <div key={rep.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-black text-xs text-slate-900">{rep.cycleTitle}</h3>
-                  {rep.status === 'received' ? (
-                    <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-emerald-200">
-                      <CheckCircle2 size={12} />
-                      <span>تأیید و دریافت شد ✅</span>
-                    </span>
-                  ) : (
-                    <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-amber-200">
-                      <Clock size={12} />
-                      <span>در انتظار بررسی مسئول مالی ⏳</span>
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {rep.isUsedAsBasis && (
+                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-900 text-[10px] font-black rounded-lg flex items-center gap-1 border border-indigo-300">
+                        <CheckCircle2 size={12} className="text-indigo-700" />
+                        <span>مبنای محاسبه حق‌الزحمه 💰</span>
+                      </span>
+                    )}
+                    {rep.status === 'received' || rep.status === 'approved' ? (
+                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-emerald-200">
+                        <CheckCircle2 size={12} />
+                        <span>تأیید و دریافت شد ✅</span>
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-lg flex items-center gap-1 border border-amber-200">
+                        <Clock size={12} />
+                        <span>در انتظار بررسی مسئول مالی ⏳</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
                   <span>بازه: {rep.cycleStart} تا {rep.cycleEnd}</span>
