@@ -270,9 +270,44 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         )}
       </div>
 
-      {/* Active Logged-in User Profile Card */}
+      {/* Navigation Menu Items */}
+      <nav className="flex-1 p-2.5 overflow-y-auto space-y-1 custom-scrollbar">
+        {visibleMenuItems.map((item) => {
+          const Icon = item.icon;
+          let label = item.label;
+
+          // Contextual label adjustments
+          if (currentUser?.level === 3) {
+            if (item.id === 'student-schedule') label = 'برنامه درسی من';
+            if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
+            if (item.id === 'stats') label = 'ساعات مطالعه من';
+            if (item.id === 'research') label = 'پژوهش و مقالات من';
+          }
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={cn(
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
+                activeTab === item.id 
+                  ? "bg-indigo-50 text-indigo-700 font-bold shadow-xs border border-indigo-100" 
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <Icon size={16} className={cn(
+                "shrink-0 transition-colors",
+                activeTab === item.id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
+              )} />
+              <span className="text-xs font-semibold truncate">{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Active Logged-in User Profile Card (Moved to bottom of menu) */}
       {currentUser && (
-        <div className="p-3 border-b border-slate-100 bg-slate-50/70">
+        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
           <div className="bg-white rounded-2xl p-2.5 border border-slate-200/90 shadow-xs space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400">حساب کاربری فعال:</span>
@@ -314,41 +349,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
           </div>
         </div>
       )}
-
-      {/* Navigation Menu Items */}
-      <nav className="flex-1 p-2.5 overflow-y-auto space-y-1 custom-scrollbar">
-        {visibleMenuItems.map((item) => {
-          const Icon = item.icon;
-          let label = item.label;
-
-          // Contextual label adjustments
-          if (currentUser?.level === 3) {
-            if (item.id === 'student-schedule') label = 'برنامه درسی من';
-            if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
-            if (item.id === 'stats') label = 'ساعات مطالعه من';
-            if (item.id === 'research') label = 'پژوهش و مقالات من';
-          }
-
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
-                activeTab === item.id 
-                  ? "bg-indigo-50 text-indigo-700 font-bold shadow-xs border border-indigo-100" 
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <Icon size={16} className={cn(
-                "shrink-0 transition-colors",
-                activeTab === item.id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
-              )} />
-              <span className="text-xs font-semibold truncate">{label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       {/* Footer System Info */}
       <div className="p-3 border-t border-slate-100">
