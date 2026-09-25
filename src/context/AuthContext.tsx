@@ -213,7 +213,7 @@ export const DEFAULT_USERS: AppUser[] = [
     isReadOnly: false,
     canEdit: true,
     canManageUsers: false,
-    canBackup: false,
+    canBackup: true,
     avatarBg: 'bg-cyan-700',
     allowedTabs: [
       'finance-tuition',
@@ -227,7 +227,10 @@ export const DEFAULT_USERS: AppUser[] = [
       'academic-calendar',
       'students',
       'teachers-bank',
+      'staff-bank',
+      'teacher-transport',
       'finance',
+      'backup',
       'user-credentials',
       'audit-logs',
       'app-logs'
@@ -893,7 +896,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (currentUser.level === 1 && currentUser.role === 'super_admin') return true;
 
-    // مسئول مالی منحصراً به این تب‌ها دسترسی دارد: بخش‌های منفک مالی + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
+    // مسئول مالی منحصراً به این تب‌ها دسترسی دارد: بخش‌های منفک مالی + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید و کارکنان + مدیریت کامل سایت
     const isFinanceUser = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI';
     if (isFinanceUser) {
       const allowedForFinance = [
@@ -908,8 +911,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'academic-calendar',
         'students',
         'teachers-bank',
+        'staff-bank',
+        'teacher-transport',
         'finance',
-        'user-credentials'
+        'backup',
+        'user-credentials',
+        'audit-logs',
+        'app-logs'
       ];
       return allowedForFinance.includes(tabId);
     }

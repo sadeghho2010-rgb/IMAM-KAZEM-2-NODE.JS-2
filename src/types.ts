@@ -317,13 +317,19 @@ export interface EducationFinancialReport {
   id: string;
   title: string; // عنوان گزارش (مثلاً گزارش تشویقی و کسورات آموزشی مهرماه ۱۴۰۳)
   month: string; // ماه مربوطه (مثلاً مهر ۱۴۰۳)
+  startDate?: string; // تاریخ شروع بازه زمانی گزارش (مثلا ۱۴۰۳/۰۷/۰۱)
+  endDate?: string; // تاریخ پایان بازه زمانی گزارش (مثلا ۱۴۰۳/۰۷/۳۰)
+  dateRangeStr?: string; // بازه زمانی گزارش
   senderUserId?: string;
   senderUserName: string;
   senderRoleTitle: string;
-  status: 'sent' | 'reviewed' | 'applied' | 'rejected'; // ارسال شده / بررسی شده / اعمال شده / رد شده
+  status: 'sent' | 'reviewed' | 'applied' | 'rejected'; // ارسال شده / تایید شده / اعمال شده / رد شده
+  isApprovedByFinance?: boolean; // آیا توسط مسئول مالی در جریان کار تایید شده
   items: EducationFinancialItem[];
   notes?: string;
   createdAt: string;
+  approvedAt?: string;
+  approvedByName?: string;
   appliedAt?: string;
   appliedByName?: string;
 }
@@ -1724,6 +1730,14 @@ export interface TeacherCompensationCalculationItem {
   phone?: string;
   coursesStr?: string; // عناوین دروس تدریسی
   gradesStr?: string; // پایه‌ها
+  
+  // دسته‌بندی و گروه‌بندی آموزشی استاد در این دوره
+  teacherRoleType?: 'main' | 'counseling' | 'thursday' | 'substitute' | 'other';
+  hasMainCourses?: boolean;
+  hasCounselingCourses?: boolean;
+  hasThursdayCourses?: boolean;
+  hasSubstituteTeaching?: boolean;
+  hasOtherCourses?: boolean;
   
   // سربرگ ۱: آمار جلسات و میزان ساعت حضور
   calendarScheduledClassesCount?: number; // میزان جلسات درسی که می‌توانسته برگزار بشه بر اساس تقویم آموزشی مدرسه

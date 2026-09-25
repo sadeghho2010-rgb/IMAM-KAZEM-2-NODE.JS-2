@@ -91,7 +91,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
-  { id: 'education-financial-report', label: 'تنظیم گزارش مالی', icon: FileSpreadsheet },
+  { id: 'education-financial-report', label: 'تنظیم گزارش مالی طلاب', icon: FileSpreadsheet },
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
 ];
@@ -181,7 +181,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       return isEduStaff || isGradeSupervisor;
     }
 
-    // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
+    // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید + مدیریت کامل سایت
     if (isFinanceUser) {
       const allowedFinanceTabs = [
         'finance-tuition',
@@ -196,7 +196,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         'students',
         'teachers-bank',
         'staff-bank',
-        'teacher-transport'
+        'teacher-transport',
+        'backup',
+        'user-credentials',
+        'audit-logs',
+        'app-logs'
       ];
       return allowedFinanceTabs.includes(item.id);
     }
@@ -212,18 +216,19 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       );
     }
 
-    // فعالیت‌های سایت و پشتیبان‌گیری: تنها برای سوپر ادمین / کاربران سطح ۱ و مسئول آموزش
-    if (item.id === 'audit-logs' || item.id === 'backup') {
+    // فعالیت‌های سایت و پشتیبان‌گیری: برای سوپر ادمین، مسئول آموزش و مسئول مالی
+    if (item.id === 'audit-logs' || item.id === 'backup' || item.id === 'app-logs') {
       return (
         currentUser.level === 1 ||
         currentUser.role === 'super_admin' ||
         currentUser.role === 'education_manager' ||
         currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH'
+        currentUser.username.toUpperCase() === 'SHAH' ||
+        isFinanceUser
       );
     }
 
-    // مدیریت ورود کاربران: تنها برای سوپر ادمین و مدیران آموزش (مسئول پژوهش دسترسی ندارد)
+    // مدیریت ورود کاربران: برای سوپر ادمین، مدیران آموزش و مسئول مالی (مسئول پژوهش دسترسی ندارد)
     if (item.id === 'user-credentials') {
       if (isResearchUser) return false;
       return (
@@ -231,7 +236,8 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         currentUser.role === 'super_admin' ||
         currentUser.role === 'education_manager' ||
         currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH'
+        currentUser.username.toUpperCase() === 'SHAH' ||
+        isFinanceUser
       );
     }
 
