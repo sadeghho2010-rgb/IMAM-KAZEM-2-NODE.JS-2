@@ -152,12 +152,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     currentUser?.role === 'education_officer' || 
     currentUser?.username?.toUpperCase() === 'SHAH';
   const isGradeSupervisor = 
-    currentUser?.role === 'grade_mentor' || 
+    !isSuperAdmin &&
+    !isEducationManager &&
+    (currentUser?.role === 'grade_mentor' || 
     currentUser?.role === 'grade_supervisor' || 
     currentUser?.role?.startsWith('grade_supervisor_') ||
     currentUser?.roleTitle?.includes('استاد پایه') ||
     currentUser?.roleTitle?.includes('مسئول پایه') ||
-    ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || '');
+    ['ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || ''));
   const isRepresentative = currentUser?.role === 'class_representative';
   const isStudent = currentUser?.role === 'student';
 

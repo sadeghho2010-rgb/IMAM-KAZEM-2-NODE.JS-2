@@ -908,6 +908,73 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Quick Grade Filter Tabs for Education Manager and Supervisors */}
+      {currentMentorId === 'shahpoori' && (
+        <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/90 flex-wrap shadow-2xs">
+          <span className="text-xs font-black text-slate-500 px-2">فیلتر طلاب بر اساس پایه:</span>
+          <button
+            type="button"
+            onClick={() => setShahpooriFilter('all')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              shahpooriFilter === 'all'
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-700 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            کل پایه‌ها ({students.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setShahpooriFilter('hayati')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              shahpooriFilter === 'hayati'
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-700 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            پایه ۷ (استاد حیاتی)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShahpooriFilter('hosseini')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              shahpooriFilter === 'hosseini'
+                ? "bg-sky-600 text-white shadow-xs"
+                : "text-slate-700 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            پایه ۸ (استاد حسینی)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShahpooriFilter('soleimani')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              shahpooriFilter === 'soleimani'
+                ? "bg-purple-600 text-white shadow-xs"
+                : "text-slate-700 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            پایه ۹ (استاد سلیمانی)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShahpooriFilter('asadi')}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              shahpooriFilter === 'asadi'
+                ? "bg-rose-600 text-white shadow-xs"
+                : "text-slate-700 hover:bg-white hover:text-slate-900"
+            )}
+          >
+            پایه ۱۰ (استاد اسدی)
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">

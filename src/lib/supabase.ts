@@ -2,18 +2,14 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
 
-// مقادیر پیش‌فرض دائمی پروژه دیتابیس آنلاین سوپابیس (متصل به صورت خودکار برای همه کاربران)
-const DEFAULT_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const DEFAULT_ANON_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
-
 export const BUCKET_NAME = 'backups';
 
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
   const localUrl = typeof window !== 'undefined' ? (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL')) : '';
   const localKey = typeof window !== 'undefined' ? (localStorage.getItem('supabase_anon_key') || localStorage.getItem('VITE_SUPABASE_ANON_KEY')) : '';
 
-  const url = (localUrl || env.VITE_SUPABASE_URL || DEFAULT_URL || '').trim();
-  const anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY || '').trim();
+  const url = (localUrl || env.VITE_SUPABASE_URL || '').trim();
+  const anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
 
   return { url, anonKey };
 }
@@ -32,8 +28,8 @@ export function getSupabaseClient(): SupabaseClient {
   const { url, anonKey } = getSupabaseCredentials();
   if (!_cachedClient) {
     _cachedClient = createClient(
-      url || DEFAULT_URL,
-      anonKey || DEFAULT_ANON_KEY
+      url || 'https://placeholder.supabase.co',
+      anonKey || 'placeholder'
     );
   }
   return _cachedClient;
