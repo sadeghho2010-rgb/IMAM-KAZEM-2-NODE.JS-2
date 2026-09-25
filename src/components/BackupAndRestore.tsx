@@ -49,6 +49,7 @@ import {
 } from '../lib/cloudBackups';
 import { SUPABASE_SCHEMA_SQL } from '../lib/supabaseSqlScript';
 import { testSupabaseConnection, syncAllToSupabase, ConnectionStatus } from '../lib/supabaseSync';
+import { getSupabaseCredentials, saveSupabaseCredentials } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -197,6 +198,29 @@ export default function BackupAndRestore() {
   const [syncProgress, setSyncProgress] = useState<{ col: string; pct: number } | null>(null);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
   const [showSqlCodeModal, setShowSqlCodeModal] = useState<boolean>(false);
+  const [showCredentialsForm, setShowCredentialsForm] = useState<boolean>(false);
+  const [supabaseUrlInput, setSupabaseUrlInput] = useState<string>(() => getSupabaseCredentials().url);
+  const [supabaseKeyInput, setSupabaseKeyInput] = useState<string>(() => getSupabaseCredentials().anonKey);
+  const [credentialsSavedMsg, setCredentialsSavedMsg] = useState<string>('');
+
+  const handleSaveCredentials = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveSupabaseCredentials(supabaseUrlInput, supabaseKeyInput);
+    setCredentialsSavedMsg('تنظیمات اتصال با موفقیت ذخیره شد.');
+    setTimeout(() => setCredentialsSavedMsg(''), 4000);
+    handleTestDatabase();
+  };
+
+  const handleResetDefaultCredentials = () => {
+    const defaultUrl = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
+    const defaultKey = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
+    setSupabaseUrlInput(defaultUrl);
+    setSupabaseKeyInput(defaultKey);
+    saveSupabaseCredentials(defaultUrl, defaultKey);
+    setCredentialsSavedMsg('آدرس و کلید به پروژه پیش‌فرض بازنشانی گردید.');
+    setTimeout(() => setCredentialsSavedMsg(''), 4000);
+    handleTestDatabase();
+  };
 
   const handleTestDatabase = async () => {
     setIsTestingDb(true);
@@ -1022,15 +1046,97 @@ export default function BackupAndRestore() {
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={() => setShowCredentialsForm(!showCredentialsForm)}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+            >
+              <KeyRound size={15} className="text-amber-400" />
+              <span>{showCredentialsForm ? 'بستن تنظیمات اتصال' : 'تنظیمات آدرس و کلید دیتابیس'}</span>
+            </button>
+
+            <button
               onClick={handleTestDatabase}
               disabled={isTestingDb}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-50"
             >
-              {isTestingDb ? <RefreshCw size={15} className="animate-spin text-emerald-400" /> : <Server size={15} className="text-emerald-400" />}
+              {isTestingDb ? <RefreshCw size={15} className="animate-spin text-white" /> : <Server size={15} className="text-white" />}
               <span>تست اتصال و سلامت جدول‌ها</span>
             </button>
           </div>
         </div>
+
+        {/* Supabase Connection Credentials Form (Toggleable) */}
+        <AnimatePresence>
+          {showCredentialsForm && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden bg-slate-950/80 border border-slate-800 rounded-2xl p-5 space-y-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-200">تنظیمات مستقیم اتصال به دیتابیس Supabase در مرورگر</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    اگر از هاست کلادفلر یا دامنه اختصاصی استفاده می‌کنید، مقادیر پروژه خود را در این بخش بررسی یا وارد کنید.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetDefaultCredentials}
+                  className="text-xs text-amber-400 hover:text-amber-300 underline font-bold"
+                >
+                  بازنشانی به دیتابیس پیش‌فرض
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveCredentials} className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    آدرس پروژه سوپابیس (Supabase URL):
+                  </label>
+                  <input
+                    type="text"
+                    value={supabaseUrlInput}
+                    onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                    placeholder="https://xxxx.supabase.co"
+                    dir="ltr"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    کلید عمومی کلاینت (Supabase Publishable / Anon Key):
+                  </label>
+                  <input
+                    type="text"
+                    value={supabaseKeyInput}
+                    onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                    placeholder="sb_publishable_... یا eyJ..."
+                    dir="ltr"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono text-slate-300 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>ذخیره و تست اتصال</span>
+                  </button>
+
+                  {credentialsSavedMsg && (
+                    <span className="text-xs text-emerald-400 font-bold animate-pulse">
+                      {credentialsSavedMsg}
+                    </span>
+                  )}
+                </div>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Database Test Result Status Message */}
         {dbTestResult && (
