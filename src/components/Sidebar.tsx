@@ -92,6 +92,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی', icon: FileSpreadsheet },
+  { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
 ];
 
@@ -128,6 +129,15 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     )
   );
 
+  const isResearchUser = Boolean(
+    currentUser && (
+      currentUser.role === 'research_manager' ||
+      currentUser.role === 'research_officer' ||
+      currentUser.roleTitle?.includes('پژوهش') ||
+      currentUser.username?.toUpperCase() === 'YAZDANI'
+    )
+  );
+
   const canAccessSiteManagement = isEduOrSuperAdmin || isFinanceUser;
 
   const siteManagementSubItems = [
@@ -153,7 +163,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     if (!currentUser) return false;
 
     // When site management dropdown is active for managers, hide its sub-items from top level
-    if (isEduOrSuperAdmin && ['backup', 'user-credentials', 'audit-logs'].includes(item.id)) {
+    if ((isEduOrSuperAdmin || isFinanceUser) && ['backup', 'user-credentials', 'audit-logs'].includes(item.id)) {
       return false;
     }
 
@@ -172,7 +182,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     }
 
     // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
-    const isFinanceUser = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI';
     if (isFinanceUser) {
       const allowedFinanceTabs = [
         'finance-tuition',
@@ -214,8 +223,21 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       );
     }
 
-    // تنظیم گزارش مالی: ویژه مسئول آموزش، سوپرادمین و مدیران سطح ۱ و ۲
+    // مدیریت ورود کاربران: تنها برای سوپر ادمین و مدیران آموزش (مسئول پژوهش دسترسی ندارد)
+    if (item.id === 'user-credentials') {
+      if (isResearchUser) return false;
+      return (
+        currentUser.level === 1 ||
+        currentUser.role === 'super_admin' ||
+        currentUser.role === 'education_manager' ||
+        currentUser.role === 'education_officer' ||
+        currentUser.username.toUpperCase() === 'SHAH'
+      );
+    }
+
+    // تنظیم گزارش مالی: ویژه مسئول آموزش، سوپرادمین و مدیران سطح ۱ و ۲ (مسئول پژوهش دسترسی ندارد)
     if (item.id === 'education-financial-report') {
+      if (isResearchUser) return false;
       return (
         currentUser.level === 1 ||
         currentUser.role === 'super_admin' ||
@@ -296,6 +318,10 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
     if (item.id === 'presence-hours') {
       return true;
+    }
+    // تست اتصال به دیتابیس: ویژه مدیران سطح ۱ و ۲ و مسئول پژوهش
+    if (item.id === 'db-connection-test') {
+      return currentUser.level === 1 || currentUser.level === 2 || isResearchUser;
     }
     // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند در منوی خودشون این بخش رو ببینند؛ کاربران سطح 2 همه می توانند ببینند
     if (item.id === 'teachers-schedule') {
@@ -413,7 +439,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
             {/* Dropdown Sub-Items List */}
             {isSiteManagementOpen && (
               <div className="mr-3 pr-2.5 my-1 space-y-1 border-r-2 border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
-                {siteManagementSubItems.map((sub) => {
+                {siteManagementSubItems
+                  .filter((sub) => typeof hasModuleAccess === 'function' ? hasModuleAccess(sub.id) : true)
+                  .map((sub) => {
                   const SubIcon = sub.icon;
                   const isSubActive = activeTab === sub.id;
                   return (

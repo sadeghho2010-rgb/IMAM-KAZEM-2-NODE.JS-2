@@ -1173,6 +1173,7 @@ export type AppModuleId =
   | 'course-selection'
   | 'article-evaluations'
   | 'teacher-transport'
+  | 'db-connection-test'
   | 'staff-bank';
 
 export type CounselingScore = 'الف' | 'ب' | 'ج' | 'د' | 'غیبت';
@@ -1671,12 +1672,48 @@ export interface TeacherTransportSingleTrip {
   createdAt: string;
 }
 
+export type TeacherCourseType = 'main' | 'counseling' | 'thursday' | 'other';
+
+export interface TeacherCoursePresenceItem {
+  id: string; // شناسه آیتم درس
+  courseTitle: string; // عنوان درس (مثلاً مکاسب، رسائل، مشاوره پایه ۸، اخلاق پنج‌شنبه)
+  courseType: TeacherCourseType; // نوع درس: اصلی | مشاوره | پنج‌شنبه | سایر
+  calendarScheduledCount: number; // جلسات مقرر تقویم برای این درس
+  cancelledSessionsCount: number; // جلسات تعطیل شده این درس
+  substituteSessionsCount: number; // جلسات استاد جایگزین برای این درس
+  regularSessionsCount: number; // جلسات حضور عادی
+  teachingHours: number; // ساعت تدریس این درس
+  hourlyRate: number; // نرخ مصوب این ساعت
+  grossAmount: number; // ناخالص حق‌الزحمه این درس
+}
+
+export type TeacherDebtCategory = 'installment' | 'qard_loan' | 'advance' | 'cultural' | 'other';
+
 export interface TeacherCompensationSettings {
-  hourlyTeachingRate: number; // نرخ هر ساعت / جلسه تدریس
-  lunchCostPerDay: number; // هزینه هر وعده نهار
-  enableTransportCalculation: boolean; // آیا هزینه سرویس محاسبه شود؟
+  // ۱. نرخ ساعت حضور و کارکرد
+  hourlyTeachingRate: number; // نرخ پیش‌فرض/عمومی هر ساعت تدریس
+  useUniformCourseRate: boolean; // آیا هزینه کلاس‌های مشاوره و اصلی و دروس پنج‌شنبه به یک نرخ محاسبه شود؟
+  mainCoursesHourlyRate?: number; // نرخ هر ساعت کلاس‌های اصلی
+  counselingCoursesHourlyRate?: number; // نرخ هر ساعت کلاس‌های مشاوره
+  thursdayCoursesHourlyRate?: number; // نرخ هر ساعت دروس پنج‌شنبه
+
+  // ۲. هزینه سرویس
+  enableTransportCalculation: boolean; // آیا هزینه سرویس حساب شود؟
   transportCalculationMode: 'per_trip' | 'per_day'; // هر رفت و آمد جداگانه (۲ نوبت) یا کل روز ۱ نوبت
-  transportCostPerTrip: number; // نرخ مصوب هر نوبت سرویس
+  transportCostPerTrip: number; // هزینه سرویس چقدر کسر شود؟ (نرخ هر نوبت)
+
+  // ۳. هزینه نهار و شام
+  enableLunchCalculation: boolean; // آیا هزینه نهار حساب شود؟
+  lunchCostPerDay: number; // هزینه هر وعده نهار چقدر حساب شود؟
+  enableDinnerCalculation?: boolean; // آیا هزینه شام حساب شود؟
+  dinnerCostPerMeal?: number; // هزینه هر وعده شام
+
+  // ۴. بدهی‌ها و مطالبات
+  enableDebtsCalculation: boolean; // آیا بدهی‌ها حساب شود؟
+  includedDebtCategories: TeacherDebtCategory[]; // کدام بدهی‌ها در این دوره حساب شود؟
+
+  // ۵. کمک به صندوق
+  enableFundContributionCalculation: boolean; // آیا کمک به صندوق حساب شود؟
 }
 
 export interface TeacherCompensationCalculationItem {
@@ -1688,31 +1725,65 @@ export interface TeacherCompensationCalculationItem {
   coursesStr?: string; // عناوین دروس تدریسی
   gradesStr?: string; // پایه‌ها
   
-  // آمار حضور و غیاب
-  totalCalendarDays: number; // کل روزهای تقویم درسی در بازه
-  cancelledDaysCount: number; // جلسات تعطیل شده توسط نماینده
-  regularTeachingSessions: number; // جلسات حضور عادی استاد اصلی
-  regularTeachingHours: number; // مجموع ساعات تدریس عادی
-  substituteTeachingSessions: number; // جلسات حضور به عنوان استاد جایگزین
+  // سربرگ ۱: آمار جلسات و میزان ساعت حضور
+  calendarScheduledClassesCount?: number; // میزان جلسات درسی که می‌توانسته برگزار بشه بر اساس تقویم آموزشی مدرسه
+  cancelledDaysCount: number; // جلسات تعطیل شده توسط تقویم / نماینده
+  substituteTeachingSessions: number; // جلسات حضور به عنوان استاد جایگزین (یا جلساتی که استاد جایگزین آمده)
   substituteTeachingHours: number; // ساعت تدریس جایگزین
-  totalTeachingHours: number; // کل ساعات تدریس مؤثر (عادی + جایگزین)
-  
+  regularTeachingSessions: number; // جلسات حضور عادی
+  regularTeachingHours: number; // مجموع ساعات تدریس عادی
+  overtimeHours?: number; // ساعت اضافه کاری (پیش‌فرض ۰ و قابل ویرایش دستی)
+  totalCalendarDays: number; // کل روزهای تقویم درسی
+  totalTeachingHours: number; // مجموع نهایی ساعت حضور استاد (ساعت عادی + جایگزین + اضافه)
   hourlyRate: number; // نرخ ساعتی/جلسه‌ای مصوب
-  baseGrossAmount: number; // حق‌الزحمه ناخالص پایه
+  baseGrossAmount: number; // ناخالص حق‌الزحمه استحقاقی
+  courseBreakdown?: TeacherCoursePresenceItem[]; // تفکیک و وضعیت حضور تک تک دروس مختلف این استاد
   
-  // نهار
+  // سربرگ ۲: بدهی‌ها و مطالبات
+  debtTotalAmount?: number; // کل بدهی استاد
+  debtMonthlyDeduction?: number; // مبلغ کسر این ماه از حقوق
+  debtDestinationAccountId?: string; // حساب مقصد جهت واریز بدهی
+  debtDestinationTitle?: string;
+  debtDestinationBankInfo?: string;
+  remainingDebtAfterDeduction?: number; // مانده بدهی پس از کسر
+  debtNotes?: string;
+  
+  // سربرگ ۳: کمک به صندوق
+  fundContributionRequested?: number; // مبلغ درخواستی استاد برای کسر ماهانه کمک به صندوق خیریه
+  fundContributionDeduction?: number; // مبلغ کسر قطعی در این ماه
+  fundDestinationAccountId?: string; // حساب مقصد صندوق
+  fundDestinationTitle?: string;
+  fundContributionNotes?: string;
+
+  // سربرگ ۴: هزینه سرویس ایاب و ذهاب
+  transportTripsCount: number; // تعداد نوبت‌های تردد (رفت یا برگشت) در بازه
+  transportCostPerTrip?: number; // نرخ مصوب هر نوبت
+  transportManualDiscount?: number; // تخفیف یا یارانه سرویس
+  transportDeduction: number; // کل هزینه سرویس (کسر از حقوق)
+  transportNotes?: string;
+
+  // سربرگ ۵: نهار و شام
   lunchCount: number; // تعداد وعده نهار در بازه
+  dinnerCount?: number; // تعداد وعده شام در بازه
+  totalMealsCount?: number; // مجموع نهار و شام
+  mealPricePerUnit?: number; // نرخ هر وعده
   lunchDeduction: number; // مبلغ کسر نهار
+  dinnerDeduction?: number; // مبلغ کسر شام
+  mealsDeductionTotal?: number; // مجموع کسر نهار و شام
+  mealsDestinationAccountId?: string; // حساب مقصد تغذیه
   
-  // سرویس ایاب و ذهاب
-  transportTripsCount: number; // تعداد نوبت‌های سرویس (موردی یا هفتگی)
-  transportDeduction: number; // مبلغ کسر سرویس
+  // سربرگ ۶: اضافه / کاهش حقوق (تعدیلات دستی)
+  manualAdditionAmount?: number; // اضافه به حقوق دستی (پاداش / تشویقی)
+  manualAdditionReason?: string; // علت افزایش
+  manualReductionAmount?: number; // کاهش از حقوق دستی (جریمه / تعدیل منفی)
+  manualReductionReason?: string; // علت کاهش
+  manualAdjustmentAmount: number; // خالص تعدیل دستی (+/-)
+  manualAdjustmentReason: string; // شرح کلی تعدیل دستی
+  bonusAmount: number; // پاداش
   
-  // کسورات نوع ۱
-  type1Deductions: number; // کسورات آموزشی و غیبت
-  
-  // کسورات نوع ۲ (واریز به حساب‌های مقصد)
-  type2DeductionsTotal: number;
+  // کسورات نوع ۱ و نوع ۲
+  type1Deductions: number; // کسورات آموزشی
+  type2DeductionsTotal: number; // مجموع کسورات بدهی‌ها و حساب‌های مقصد
   claimsDeductions?: Array<{
     claimId: string;
     title: string;
@@ -1726,13 +1797,9 @@ export interface TeacherCompensationCalculationItem {
   culturalDebt?: number; // عتبات و امور فرهنگی
   otherType2Deductions?: number;
   
-  // پاداش و تعدیلات
-  bonusAmount: number; // پاداش / تشویقی
-  manualAdjustmentAmount: number; // افزایش (+) یا کاهش (-) دستی
-  manualAdjustmentReason: string; // علت تعدیل دستی
-  
-  // نهایی
-  netPayable: number; // خالص پرداختی نهایی
+  // سربرگ ۷: جمع‌بندی و نهایی
+  totalDeductionsAll?: number; // جمع کل تمام کسورات (بدهی + صندوق + سرویس + غذا + سایر)
+  netPayable: number; // خالص پرداختی نهایی به استاد
   bankName?: string;
   bankAccount?: string;
   bankSheba?: string;

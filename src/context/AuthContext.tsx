@@ -197,7 +197,7 @@ export const DEFAULT_USERS: AppUser[] = [
     canBackup: false,
     avatarBg: 'bg-teal-600',
     allowedTabs: [
-      'active-students', 'research', 'article-evaluations', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
+      'active-students', 'research', 'article-evaluations', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'db-connection-test'
     ],
   },
   {
@@ -935,6 +935,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (currentUser.level === 1 || currentUser.level === 2) return true;
     }
     if (tabId === 'user-credentials') {
+      const isResearch = currentUser.role === 'research_manager' || 
+                         currentUser.role === 'research_officer' || 
+                         currentUser.roleTitle?.includes('پژوهش') || 
+                         currentUser.username.toUpperCase() === 'YAZDANI';
+      if (isResearch) return false;
       if (
         currentUser.role === 'super_admin' || 
         currentUser.role === 'education_manager' || 
@@ -943,6 +948,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ) {
         return true;
       }
+    }
+    if (tabId === 'education-financial-report') {
+      const isResearch = currentUser.role === 'research_manager' || 
+                         currentUser.role === 'research_officer' || 
+                         currentUser.roleTitle?.includes('پژوهش') || 
+                         currentUser.username.toUpperCase() === 'YAZDANI';
+      if (isResearch) return false;
+    }
+    if (tabId === 'db-connection-test') {
+      return currentUser.level === 1 || currentUser.level === 2;
     }
     const tabs = currentUser.allowedTabs || currentUser.allowedModules || [];
     return Array.isArray(tabs) ? tabs.includes(tabId) : false;

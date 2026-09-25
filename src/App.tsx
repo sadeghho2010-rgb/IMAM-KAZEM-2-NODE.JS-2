@@ -44,6 +44,7 @@ import { ConsultationAdvisor } from './components/ConsultationAdvisor';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
 import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
+import DatabaseConnectionTest from './components/DatabaseConnectionTest';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -191,6 +192,8 @@ function AppContent() {
         );
       case 'user-credentials':
         return <UserCredentialsSettings />;
+      case 'db-connection-test':
+        return <DatabaseConnectionTest />;
       default:
         return <TodoList />;
     }
@@ -263,6 +266,7 @@ function AppContent() {
                      activeTab === 'stats' ? 'آمار و گزارشات مطالعه' :
                      activeTab === 'summary' ? 'جمع‌بندی نهایی و هوش مصنوعی' :
                      activeTab === 'teachers-bank' ? 'بانک جامع اساتید و مدرسین' :
+                      activeTab === 'db-connection-test' ? 'تست اتصال و عیب‌یابی دیتابیس' :
                      activeTab === 'user-management' ? 'مدیریت کاربران و سطوح دسترسی (ویژه سوپر ادمین)' : 'پشتیبان‌گیری'}
                   </h2>
 
