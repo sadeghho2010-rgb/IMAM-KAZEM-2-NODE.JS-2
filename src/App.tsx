@@ -14,6 +14,7 @@ import StudyStats from './components/StudyStats';
 import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
+import LogViewer from './components/LogViewer';
 import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
 import TeacherTransportManagement from './components/education/TeacherTransportManagement';
 import TodoList from './components/TodoList';
@@ -176,6 +177,8 @@ function AppContent() {
         return <BackupAndRestore />;
       case 'audit-logs':
         return <SiteAuditLogs />;
+      case 'app-logs':
+        return <LogViewer />;
       case 'education-financial-report':
         return <EducationFinancialReportSettings onNavigateTab={handleNavigate} />;
       case 'user-management':

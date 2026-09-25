@@ -33,7 +33,8 @@ import {
   HandCoins,
   Car,
   BookOpenCheck,
-  ChevronDown
+  ChevronDown,
+  Terminal
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -119,10 +120,21 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     )
   );
 
+  const isFinanceUser = Boolean(
+    currentUser && (
+      currentUser.role === 'finance_manager' || 
+      currentUser.role === 'financial_officer' || 
+      currentUser.username?.toUpperCase() === 'MALI'
+    )
+  );
+
+  const canAccessSiteManagement = isEduOrSuperAdmin || isFinanceUser;
+
   const siteManagementSubItems = [
     { id: 'backup' as AppModuleId, label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
     { id: 'user-credentials' as AppModuleId, label: 'مدیریت ورود کاربران', icon: ShieldCheck },
     { id: 'audit-logs' as AppModuleId, label: 'فعالیت‌های سایت', icon: Activity },
+    { id: 'app-logs' as AppModuleId, label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
   ];
 
   const handleMouseEnterSiteManagement = () => {
@@ -296,7 +308,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     return true;
   });
 
-  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs'].includes(activeTab);
+  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab);
 
   return (
     <div 
@@ -365,7 +377,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
         })}
 
         {/* ===================== منوی کشویی مدیریت سایت ===================== */}
-        {isEduOrSuperAdmin && (
+        {canAccessSiteManagement && (
           <div 
             className="pt-1"
             onMouseEnter={handleMouseEnterSiteManagement}

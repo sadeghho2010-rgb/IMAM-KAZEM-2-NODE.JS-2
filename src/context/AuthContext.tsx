@@ -27,6 +27,7 @@ export const ALL_SYSTEM_TABS = [
   { id: 'user-management', label: 'تنظیمات کاربران و سطوح دسترسی' },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران' },
   { id: 'audit-logs', label: 'فعالیت‌های سایت (سطح ۱ و مسئول آموزش)' },
+  { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم' },
 ];
 
 export const DEFAULT_USERS: AppUser[] = [
@@ -49,7 +50,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs', 'app-logs'
     ],
   },
   {
@@ -70,7 +71,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs', 'app-logs'
     ],
   },
 
@@ -93,7 +94,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
-      'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+      'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs', 'app-logs'
     ],
   },
   {
@@ -227,7 +228,9 @@ export const DEFAULT_USERS: AppUser[] = [
       'students',
       'teachers-bank',
       'finance',
-      'user-credentials'
+      'user-credentials',
+      'audit-logs',
+      'app-logs'
     ],
   },
 

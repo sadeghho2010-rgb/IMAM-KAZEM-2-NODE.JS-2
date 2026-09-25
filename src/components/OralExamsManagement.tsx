@@ -256,10 +256,14 @@ export default function OralExamsManagement() {
       return;
     }
 
-    const allExaminerNames: string[] = [
-      ...teachers.filter(t => formSelectedTeacherIds.includes(t.id)).map(t => t.name),
-      ...formCustomTeacherNames
-    ];
+    const allExaminerNames: string[] = teachers
+      .filter(t => formSelectedTeacherIds.includes(t.id))
+      .map(t => t.name);
+
+    if (allExaminerNames.length === 0) {
+      alert('لطفاً حداقل یک استاد ممتحن از لیست بانک اساتید انتخاب نمایید.');
+      return;
+    }
 
     const periodId = isEditingPeriod && currentPeriod ? currentPeriod.id : `oral_period_${Date.now()}`;
     const newPeriod: OralExamPeriod = {
@@ -1386,64 +1390,62 @@ export default function OralExamsManagement() {
                   </div>
                 </div>
 
-                {/* Participating Examiners (Teachers) */}
+                {/* Participating Examiners (Teachers from Bank) */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    اساتید ممتحن دوره (۱ یا چندین استاد):
-                  </label>
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200">
-                    {teachers.map(t => {
-                      const isSelected = formSelectedTeacherIds.includes(t.id);
-                      return (
-                        <button
-                          type="button"
-                          key={t.id}
-                          onClick={() => {
-                            if (isSelected) {
-                              setFormSelectedTeacherIds(prev => prev.filter(id => id !== t.id));
-                            } else {
-                              setFormSelectedTeacherIds(prev => [...prev, t.id]);
-                            }
-                          }}
-                          className={cn(
-                            "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5",
-                            isSelected
-                              ? "bg-indigo-600 text-white border-indigo-600 font-black shadow-2xs"
-                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                          )}
-                        >
-                          {isSelected && <Check size={13} />}
-                          <span>{t.name}</span>
-                        </button>
-                      );
-                    })}
-
-                    {formCustomTeacherNames.map(name => (
-                      <span key={name} className="px-3 py-1.5 bg-indigo-50 text-indigo-800 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-indigo-200">
-                        <span>{name} (دستی)</span>
-                        <button type="button" onClick={() => handleRemoveCustomTeacher(name)} className="text-indigo-600 hover:text-rose-600">
-                          <X size={13} />
-                        </button>
-                      </span>
-                    ))}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      اساتید ممتحن دوره (انتخاب از بانک اساتید): <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-indigo-600">
+                      {formSelectedTeacherIds.length} استاد انتخاب شده
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="text"
-                      value={formCustomTeacherInput}
-                      onChange={(e) => setFormCustomTeacherInput(e.target.value)}
-                      placeholder="درج نام استاد ممتحن متفرقه..."
-                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 w-56"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustomTeacher}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xs font-bold"
-                    >
-                      افزودن استاد
-                    </button>
-                  </div>
+                  
+                  {teachers.length === 0 ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-800 text-xs font-bold text-center">
+                      استادی در بانک اساتید ثبت نشده است. ابتدا در بخش «بانک اساتید» اساتید را تعریف نمایید.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 bg-slate-50 rounded-2xl border border-slate-200 custom-scrollbar">
+                      {teachers.map(t => {
+                        const isSelected = formSelectedTeacherIds.includes(t.id);
+                        return (
+                          <button
+                            type="button"
+                            key={t.id}
+                            onClick={() => {
+                              if (isSelected) {
+                                setFormSelectedTeacherIds(prev => prev.filter(id => id !== t.id));
+                              } else {
+                                setFormSelectedTeacherIds(prev => [...prev, t.id]);
+                              }
+                            }}
+                            className={cn(
+                              "p-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-between text-right",
+                              isSelected
+                                ? "bg-indigo-50 border-indigo-300 text-indigo-900 shadow-2xs font-black"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <div className={cn(
+                                "w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0",
+                                isSelected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                              )}>
+                                {isSelected ? <Check size={12} /> : (t.name || 'ا')[0]}
+                              </div>
+                              <span className="truncate">{t.name}</span>
+                            </div>
+                            {t.courses && (
+                              <span className="text-[10px] text-slate-400 font-normal truncate max-w-[90px]">
+                                {t.courses}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Custom Exam Scope Ranges (محدوده‌ها) */}
