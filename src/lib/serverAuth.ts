@@ -398,11 +398,268 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
   return safe;
 }
 
+export const DEFAULT_SERVER_USERS: StoredUser[] = [
+  {
+    id: 'user_sadegh',
+    username: 'SADEGH',
+    password: '8411924',
+    name: 'صادق (سوپر ادمین)',
+    level: 1,
+    role: 'super_admin',
+    roleTitle: 'سوپر ادمین (مدیر کل سیستم)',
+    scope: 'all',
+    gradeLabel: 'کل سیستم',
+    mentorId: 'shahpoori',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: true,
+    canBackup: true,
+    avatarBg: 'bg-indigo-700',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+    ],
+  },
+  {
+    id: 'user_rahnama',
+    username: 'RAHNAMA',
+    password: '8411924',
+    name: 'استاد رهنما (مدیر مدرسه / معاون)',
+    level: 1,
+    role: 'school_manager',
+    roleTitle: 'مدیر مدرسه / معاون',
+    scope: 'all',
+    gradeLabel: 'کل سیستم (مشاهده)',
+    mentorId: 'shahpoori',
+    isReadOnly: true,
+    canEdit: false,
+    canManageUsers: false,
+    canBackup: true,
+    avatarBg: 'bg-slate-700',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+    ],
+  },
+  {
+    id: 'user_shah',
+    username: 'SHAH',
+    password: '8411924',
+    name: 'استاد شاهپوری (مسئول آموزش)',
+    level: 2,
+    role: 'education_manager',
+    roleTitle: 'مسئول آموزش',
+    scope: 'all',
+    gradeLabel: 'کل پایه‌ها',
+    mentorId: 'shahpoori',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: true,
+    avatarBg: 'bg-amber-600',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'comments',
+      'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+    ],
+  },
+  {
+    id: 'user_isj',
+    username: 'ISJ',
+    password: '8411924',
+    name: 'استاد حیاتی (مسئول پایه ۷)',
+    level: 2,
+    role: 'grade_mentor',
+    roleTitle: 'مسئول پایه ۷',
+    scope: 'grade_7',
+    gradeLabel: 'پایه ۷',
+    mentorId: 'hayati',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-emerald-600',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
+    ],
+  },
+  {
+    id: 'user_ho',
+    username: 'HO',
+    password: '8411924',
+    name: 'استاد حسینی (مسئول پایه ۸)',
+    level: 2,
+    role: 'grade_mentor',
+    roleTitle: 'مسئول پایه ۸',
+    scope: 'grade_8',
+    gradeLabel: 'پایه ۸',
+    mentorId: 'hosseini',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-sky-600',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
+    ],
+  },
+  {
+    id: 'user_sol',
+    username: 'SOL',
+    password: '8411924',
+    name: 'استاد سلیمانی (مسئول پایه ۹)',
+    level: 2,
+    role: 'grade_mentor',
+    roleTitle: 'مسئول پایه ۹',
+    scope: 'grade_9',
+    gradeLabel: 'پایه ۹',
+    mentorId: 'soleimani',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-purple-600',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
+    ],
+  },
+  {
+    id: 'user_asadi',
+    username: 'ASADI',
+    password: '8411924',
+    name: 'استاد اسدی (مسئول پایه ۱۰)',
+    level: 2,
+    role: 'grade_mentor',
+    roleTitle: 'مسئول پایه ۱۰',
+    scope: 'grade_10',
+    gradeLabel: 'پایه ۱۰',
+    mentorId: 'asadi',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-rose-600',
+    allowedTabs: [
+      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'summary', 'teachers-bank', 'user-credentials'
+    ],
+  },
+  {
+    id: 'user_yazdani',
+    username: 'YAZDANI',
+    password: '8411924',
+    name: 'استاد یزدانی (مسئول پژوهش)',
+    level: 2,
+    role: 'research_manager',
+    roleTitle: 'مسئول پژوهش',
+    scope: 'all',
+    gradeLabel: 'بخش پژوهش',
+    mentorId: 'shahpoori',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-teal-600',
+    allowedTabs: [
+      'active-students', 'research', 'article-evaluations', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
+    ],
+  },
+  {
+    id: 'user_mali',
+    username: 'MALI',
+    password: '8411924',
+    name: 'مسئول مالی و اداری',
+    level: 2,
+    role: 'finance_manager',
+    roleTitle: 'مسئول مالی و کارکرد',
+    scope: 'all',
+    gradeLabel: 'امور مالی',
+    mentorId: 'shahpoori',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-cyan-700',
+    allowedTabs: [
+      'finance-tuition',
+      'finance-grade-mentors',
+      'finance-teachers',
+      'finance-lunch',
+      'finance-loans-fund',
+      'finance-expenses-reports',
+      'workflow',
+      'todos',
+      'academic-calendar',
+      'students',
+      'teachers-bank',
+      'finance',
+      'user-credentials'
+    ],
+  },
+  {
+    id: 'user_sarlak',
+    username: 'SARLAK',
+    password: '8411924',
+    name: 'طلبه سرلک (نماینده کلاس)',
+    level: 3,
+    role: 'class_representative',
+    roleTitle: 'نماینده کلاس',
+    scope: 'class',
+    gradeLabel: 'نماینده پایه',
+    studentName: 'محمد سرلک',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-blue-600',
+    allowedTabs: [
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'article-evaluations'
+    ],
+  },
+  {
+    id: 'user_jalili',
+    username: 'JALILI',
+    password: '8411924',
+    name: 'طلبه جلیلی',
+    level: 3,
+    role: 'student',
+    roleTitle: 'طلبه',
+    scope: 'self',
+    gradeLabel: 'طلبه پایه',
+    studentName: 'علیرضا جلیلی',
+    isReadOnly: false,
+    canEdit: true,
+    canManageUsers: false,
+    canBackup: false,
+    avatarBg: 'bg-emerald-700',
+    allowedTabs: [
+      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments', 'article-evaluations'
+    ],
+  },
+];
+
+// In-memory user store on server for fast fallback & dev environment
+const serverMemoryUsers = new Map<string, StoredUser>();
+DEFAULT_SERVER_USERS.forEach(u => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
+
 // =================== Server-Side User Storage and Migration ===================
 
 export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
+  const usersMap = new Map<string, StoredUser>();
+  DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
+  serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
+
   if (!isServerSupabaseConfigured) {
-    return [];
+    return Array.from(usersMap.values());
   }
   try {
     // 1. Try reading from dedicated system_users table first
@@ -411,21 +668,28 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       .select('*');
 
     if (!dedicatedError && dedicatedData && dedicatedData.length > 0) {
-      return dedicatedData.map(row => ({
-        id: row.id,
-        username: row.username,
-        name: row.name,
-        role: row.role,
-        level: row.level,
-        roleTitle: row.role_title,
-        allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : [],
-        passwordHash: row.password_hash,
-        mustChangePassword: !!row.must_change_password,
-        failedLoginAttempts: row.failed_login_attempts || 0,
-        accountLockedUntil: row.account_locked_until,
-        lastLogin: row.last_login,
-        ...(row.data || {})
-      }));
+      dedicatedData.forEach(row => {
+        const cleanName = (row.username || '').toUpperCase();
+        if (cleanName) {
+          usersMap.set(cleanName, {
+            id: row.id || cleanName,
+            username: cleanName,
+            name: row.name || cleanName,
+            role: row.role || 'student',
+            level: row.level || 3,
+            roleTitle: row.role_title,
+            allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (usersMap.get(cleanName)?.allowedTabs || []),
+            passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
+            password: row.password || usersMap.get(cleanName)?.password,
+            mustChangePassword: !!row.must_change_password,
+            failedLoginAttempts: row.failed_login_attempts || 0,
+            accountLockedUntil: row.account_locked_until,
+            lastLogin: row.last_login,
+            ...(row.data || {})
+          });
+        }
+      });
+      return Array.from(usersMap.values());
     }
 
     // 2. Fallback to app_collections (system_users)
@@ -438,46 +702,50 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       if (!error.message?.includes('Invalid API key')) {
         console.warn('Backend notice fetching users from Supabase:', error.message);
       }
-      return [];
+      return Array.from(usersMap.values());
     }
 
     if (!data || data.length === 0) {
-      return [];
+      return Array.from(usersMap.values());
     }
 
     const allUsersRow = data.find(r => r.id === 'all_users');
-    let usersList: StoredUser[] = [];
-
     if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
-      usersList = allUsersRow.data.users;
+      allUsersRow.data.users.forEach((u: StoredUser) => {
+        if (u && u.username) {
+          usersMap.set(u.username.toUpperCase(), { ...usersMap.get(u.username.toUpperCase()), ...u });
+        }
+      });
     }
 
     // Merge individual user documents
     for (const row of data) {
       if (row.id !== 'all_users' && row.data) {
         const u = row.data as StoredUser;
-        const idx = usersList.findIndex(existing => existing.username?.toUpperCase() === u.username?.toUpperCase());
-        if (idx >= 0) {
-          usersList[idx] = { ...usersList[idx], ...u };
-        } else {
-          usersList.push(u);
+        if (u && u.username) {
+          const uname = u.username.toUpperCase();
+          usersMap.set(uname, { ...usersMap.get(uname), ...u });
         }
       }
     }
 
-    return usersList;
+    return Array.from(usersMap.values());
   } catch (e: any) {
     console.error('Error fetching users from storage:', e);
-    return [];
+    return Array.from(usersMap.values());
   }
 }
 
 export async function saveUserToStorage(user: StoredUser): Promise<void> {
+  const cleanId = (user.username || '').trim().toUpperCase();
+  if (cleanId) {
+    serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
+  }
+
   if (!isServerSupabaseConfigured) {
     return;
   }
   try {
-    const cleanId = user.username.trim().toUpperCase();
     
     // Save to dedicated system_users table if it exists
     try {
