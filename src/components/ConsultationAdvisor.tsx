@@ -288,38 +288,83 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
     }
   }, [numberOfClasses, selectedProgram]);
 
+  // Time overlap utility (HH:MM format) with Persian/Arabic digit normalization
+  const parseTimeToMinutes = (timeStr?: string): number | null => {
+    if (!timeStr) return null;
+    let normalized = timeStr.toString().trim();
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    for (let i = 0; i < 10; i++) {
+      normalized = normalized.split(persianDigits[i]).join(i.toString());
+      normalized = normalized.split(arabicDigits[i]).join(i.toString());
+    }
+    const match = normalized.match(/(\d{1,2}):(\d{1,2})/);
+    if (!match) return null;
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    return h * 60 + m;
+  };
+
+  const timeOverlaps = (startA: string, endA: string, startB: string, endB: string): boolean => {
+    const sA = parseTimeToMinutes(startA);
+    const eA = parseTimeToMinutes(endA);
+    const sB = parseTimeToMinutes(startB);
+    const eB = parseTimeToMinutes(endB);
+    if (sA === null || eA === null || sB === null || eB === null) return false;
+    return Math.max(sA, sB) < Math.min(eA, eB);
+  };
+
   // Helper: check if student has a time conflict across any of the selected consultation days
   const checkStudentConflict = (
     studentId: string, 
     days: string[], 
     slotStart: string, 
     slotEnd: string
-  ): { hasConflict: boolean; conflictingProgramTitle?: string; conflictingDay?: string } => {
-    // Find all programs student is enrolled in (except the main course itself)
-    const studentEnrolledProgramIds = enrollments
-      .filter(e => e.studentId === studentId)
-      .map(e => e.programId);
+  ): { hasConflict: boolean; conflictingProgramTitle?: string; conflictingDay?: string; conflictingTime?: string } => {
+    // 1. Find all programs student is enrolled in (via enrollments or direct student lists)
+    const studentEnrolledProgramIds = new Set(
+      enrollments.filter(e => e.studentId === studentId).map(e => e.programId)
+    );
 
-    const studentPrograms = programs.filter(p => studentEnrolledProgramIds.includes(p.id) && p.id !== selectedMainProgramId);
+    const studentPrograms = programs.filter(p => {
+      if (p.id === selectedMainProgramId) return false;
+      if (studentEnrolledProgramIds.has(p.id)) return true;
+      if ((p as any).studentIds && Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(studentId)) return true;
+      if ((p as any).enrolledStudentIds && Array.isArray((p as any).enrolledStudentIds) && (p as any).enrolledStudentIds.includes(studentId)) return true;
+      if ((p as any).assignedStudentIds && Array.isArray((p as any).assignedStudentIds) && (p as any).assignedStudentIds.includes(studentId)) return true;
+      return false;
+    });
 
     for (const prog of studentPrograms) {
       const progDays = prog.days && prog.days.length > 0 ? prog.days : (prog.day ? [prog.day] : []);
       for (const d of days) {
         if (progDays.includes(d)) {
-          const progStart = prog.startTime || prog.time?.split('-')[0]?.trim() || '';
-          const progEnd = prog.endTime || prog.time?.split('-')[1]?.trim() || '';
+          let progStart = prog.startTime || '';
+          let progEnd = prog.endTime || '';
 
-          if (progStart && progEnd) {
-            // Check simple time overlap
-            if (timeOverlaps(slotStart, slotEnd, progStart, progEnd)) {
-              return { hasConflict: true, conflictingProgramTitle: prog.title, conflictingDay: d };
+          if (!progStart && prog.time) {
+            const parts = prog.time.split(/[-–تا]/);
+            if (parts.length >= 2) {
+              progStart = parts[0].trim();
+              progEnd = parts[1].trim();
+            } else {
+              progStart = prog.time.trim();
             }
+          }
+
+          if (progStart && progEnd && timeOverlaps(slotStart, slotEnd, progStart, progEnd)) {
+            return { 
+              hasConflict: true, 
+              conflictingProgramTitle: prog.title || 'برنامه درسی', 
+              conflictingDay: d,
+              conflictingTime: `${progStart} تا ${progEnd}`
+            };
           }
         }
       }
     }
 
-    // Check custom manual student schedules (e.g., external classes)
+    // 2. Check custom manual student schedules (e.g., external classes / private schedule)
     const studentCustoms = customSchedules.filter(cs => cs.studentId === studentId);
     for (const cs of studentCustoms) {
       for (const d of days) {
@@ -328,35 +373,51 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
           : (cs.day === d || cs.day?.includes(d));
 
         if (isDayMatch) {
-          const csStart = cs.startTime || cs.time?.split('-')[0]?.trim() || '';
-          const csEnd = cs.endTime || cs.time?.split('-')[1]?.trim() || '';
-          if (csStart && csEnd) {
-            if (timeOverlaps(slotStart, slotEnd, csStart, csEnd)) {
-              return { 
-                hasConflict: true, 
-                conflictingProgramTitle: `${cs.title} (برنامه دستی/خارج موسسه)`, 
-                conflictingDay: d 
-              };
+          let csStart = cs.startTime || '';
+          let csEnd = cs.endTime || '';
+          if (!csStart && cs.time) {
+            const parts = cs.time.split(/[-–تا]/);
+            if (parts.length >= 2) {
+              csStart = parts[0].trim();
+              csEnd = parts[1].trim();
             }
+          }
+
+          if (csStart && csEnd && timeOverlaps(slotStart, slotEnd, csStart, csEnd)) {
+            return { 
+              hasConflict: true, 
+              conflictingProgramTitle: `${cs.title} (برنامه شخصی/خارجی)`, 
+              conflictingDay: d,
+              conflictingTime: `${csStart} تا ${csEnd}`
+            };
+          }
+        }
+      }
+    }
+
+    // 3. Check discussion groups with scheduled day & time
+    const studentDiscussionGroups = discussionGroups.filter(dg => 
+      dg.memberStudentIds && Array.isArray(dg.memberStudentIds) && dg.memberStudentIds.includes(studentId)
+    );
+    for (const dg of studentDiscussionGroups) {
+      const dgDays = (dg as any).days || ((dg as any).day ? [(dg as any).day] : []);
+      for (const d of days) {
+        if (dgDays.includes(d)) {
+          const dgStart = (dg as any).startTime || '';
+          const dgEnd = (dg as any).endTime || '';
+          if (dgStart && dgEnd && timeOverlaps(slotStart, slotEnd, dgStart, dgEnd)) {
+            return {
+              hasConflict: true,
+              conflictingProgramTitle: `گروه مباحثه ${dg.title || dg.subject || ''}`,
+              conflictingDay: d,
+              conflictingTime: `${dgStart} تا ${dgEnd}`
+            };
           }
         }
       }
     }
 
     return { hasConflict: false };
-  };
-
-  // Time overlap utility (HH:MM format)
-  const timeOverlaps = (startA: string, endA: string, startB: string, endB: string): boolean => {
-    const toMinutes = (timeStr: string) => {
-      const [h, m] = timeStr.split(':').map(Number);
-      return (h || 0) * 60 + (m || 0);
-    };
-    const sA = toMinutes(startA);
-    const eA = toMinutes(endA);
-    const sB = toMinutes(startB);
-    const eB = toMinutes(endB);
-    return Math.max(sA, sB) < Math.min(eA, eB);
   };
 
   // Simulate arrangement for a specific time slot & priority
@@ -484,9 +545,9 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
         unassignedStudentIds.push(sId);
         const conflict = checkStudentConflict(sId, selectedDays, timeSlot.start, timeSlot.end);
         if (conflict.hasConflict) {
-          unassignedReasons[sId] = `تداخل زمانی در روز ${conflict.conflictingDay} با درس «${conflict.conflictingProgramTitle}».`;
+          unassignedReasons[sId] = `برای این طلبه کلاس نذاشتیم چون این کلاس پیشنهادی (${timeSlot.start} تا ${timeSlot.end}) با کلاس «${conflict.conflictingProgramTitle}» این طلبه که روز ${conflict.conflictingDay} و ساعت ${conflict.conflictingTime} هست تداخل داشت.`;
         } else {
-          unassignedReasons[sId] = `تکمیل سقف ظرفیت (${maxCapacity} نفر) در تمام کلاس‌های مشاوره این درس.`;
+          unassignedReasons[sId] = `برای این طلبه کلاس نذاشتیم چون سقف ظرفیت تمامی کلاس‌های مشاوره تعریف‌شده (${maxCapacity} نفر) تکمیل شده است.`;
         }
       }
     }
@@ -1627,17 +1688,31 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
                         به دلیل تداخل با سایر برنامه‌های درسی در روزهای ({currentActiveProposal.selectedDays?.join(' و ') || currentActiveProposal.classes[0]?.day}) ساعت ({currentActiveProposal.classes[0]?.startTime} تا {currentActiveProposal.classes[0]?.endTime}) یا تکمیل ظرفیت کلاس‌ها، امکان قرارگیری این افراد فراهم نشد:
                       </p>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                        {currentActiveProposal.unassignedStudentIds.map(sId => {
+                      <div className="grid grid-cols-1 gap-2.5 pt-2">
+                        {currentActiveProposal.unassignedStudentIds.map((sId, uIdx) => {
                           const s = students.find(item => item.id === sId);
                           const reason = currentActiveProposal.unassignedReasons[sId] || 'تداخل زمانی با برنامه هفتگی';
                           return (
-                            <div key={sId} className="bg-white border border-amber-200/90 rounded-2xl p-3 flex flex-col justify-between gap-1 shadow-2xs">
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-xs text-slate-900">{s?.name || 'طلبه'}</span>
-                                <span className="text-[10px] text-slate-400">{s?.grade || ''}</span>
+                            <div key={sId} className="bg-white border-2 border-rose-200/90 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                              <div className="flex items-center gap-3">
+                                <span className="w-6 h-6 rounded-full bg-rose-100 text-rose-700 font-black text-xs flex items-center justify-center shrink-0">
+                                  {uIdx + 1}
+                                </span>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-xs text-slate-900">{s?.name || 'طلبه'}</span>
+                                    {s?.grade && (
+                                      <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold">
+                                        {s.grade}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                              <p className="text-[10px] text-rose-700 font-medium">{reason}</p>
+                              <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-800 leading-relaxed max-w-xl font-medium">
+                                <span className="font-bold text-rose-900">علت عدم ثبت: </span>
+                                {reason}
+                              </div>
                             </div>
                           );
                         })}
