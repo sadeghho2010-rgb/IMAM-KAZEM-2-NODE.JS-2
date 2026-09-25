@@ -210,7 +210,7 @@ export default function TeachersSchedule() {
       ]);
 
       setPrograms(rawPrograms || []);
-      setTeachers(rawTeachers || []);
+      setTeachers((rawTeachers || []).filter(t => !t.isExternal));
       setManualSchedules(rawManual || []);
       setRooms(rawRooms || []);
     } catch (err) {

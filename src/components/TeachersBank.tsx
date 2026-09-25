@@ -55,6 +55,7 @@ export default function TeachersBank() {
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<'internal' | 'external'>('internal');
 
   // Multi-copy phone state (Level 2)
   const [isMultiCopyMode, setIsMultiCopyMode] = useState<boolean>(false);
@@ -106,7 +107,7 @@ export default function TeachersBank() {
   const [falsafaSpecialties, setFalsafaSpecialties] = useState<('بدایه' | 'نهایه' | 'آموزش فلسفه')[]>([]);
   const [thursdayNote, setThursdayNote] = useState<string>('');
 
-  // Fetch teachers from DB & cleanup any seed samples
+  // Fetch teachers from DB, seed default external institutes, & cleanup any seed samples
   const fetchTeachers = async () => {
     try {
       setLoading(true);
@@ -120,14 +121,40 @@ export default function TeachersBank() {
       ];
       const seedDocs = docs.filter(d => SEED_NAMES.includes(d.fullName));
       
+      let cleanDocs = docs;
       if (seedDocs.length > 0) {
         for (const sd of seedDocs) {
           await localDb.deleteDoc('teachers', sd.id);
         }
-        const cleanDocs = (await localDb.getDocs('teachers')) as Teacher[];
-        setTeachers(cleanDocs);
+        cleanDocs = (await localDb.getDocs('teachers')) as Teacher[];
+      }
+
+      // Automatically seed default external institutes if they don't exist
+      const defaultExternals = [
+        'مدرسه امام حسین علیه السلام',
+        'مدرسه امام باقر علیه السلام',
+        'موسسه ائمه اطهار علیهم السلام'
+      ];
+      const currentExternals = cleanDocs.filter(t => t.isExternal).map(t => t.fullName);
+      const missingExternals = defaultExternals.filter(name => !currentExternals.includes(name));
+
+      if (missingExternals.length > 0) {
+        for (const extName of missingExternals) {
+          await localDb.addDoc('teachers', {
+            fullName: extName,
+            phoneNumber: '',
+            priority: 2,
+            isActive: true,
+            categories: ['ویژه'],
+            isExternal: true,
+            notes: 'تعریف‌شده به عنوان محل برگزاری کلاس خارج از مؤسسه',
+            createdAt: new Date().toISOString()
+          });
+        }
+        const updatedDocs = (await localDb.getDocs('teachers')) as Teacher[];
+        setTeachers(updatedDocs);
       } else {
-        setTeachers(docs);
+        setTeachers(cleanDocs);
       }
     } catch (err) {
       console.error('Error fetching teachers:', err);
@@ -209,7 +236,8 @@ export default function TeachersBank() {
         falsafa: (selectedCategories.includes('فلسفه') || selectedCategories.includes('مشاوره فلسفه')) ? falsafaSpecialties : [],
         thursdayNote: selectedCategories.includes('دروس پنجشنبه') ? thursdayNote.trim() : ''
       },
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      isExternal: editingTeacher ? (editingTeacher.isExternal || false) : (activeTab === 'external')
     };
 
     try {
@@ -299,6 +327,9 @@ export default function TeachersBank() {
 
   // Filter logic
   const filteredTeachers = teachers.filter(t => {
+    if (activeTab === 'internal' && t.isExternal === true) return false;
+    if (activeTab === 'external' && t.isExternal !== true) return false;
+
     const searchLower = searchTerm.toLowerCase().trim();
     const matchesSearch = !searchLower || 
       t.fullName?.toLowerCase().includes(searchLower) ||
@@ -598,6 +629,8 @@ export default function TeachersBank() {
   const hasFalsafaOrCounseling = selectedCategories.includes('فلسفه') || selectedCategories.includes('مشاوره فلسفه');
   const hasThursday = selectedCategories.includes('دروس پنجشنبه');
 
+  const isExternalForm = editingTeacher ? editingTeacher.isExternal : (activeTab === 'external');
+
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6" dir="rtl">
       
@@ -678,10 +711,44 @@ export default function TeachersBank() {
               className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
             >
               <UserPlus size={16} />
-              <span>افزودن استاد جدید</span>
+              <span>{activeTab === 'external' ? 'افزودن مجموعه همکار' : 'افزودن استاد جدید'}</span>
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Tab Switcher for Internal Teachers vs External Institutes */}
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 max-w-md">
+        <button
+          onClick={() => {
+            setActiveTab('internal');
+            setSelectedMultiPhoneIds([]);
+          }}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+            activeTab === 'internal'
+              ? "bg-slate-900 text-white shadow-md font-black"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
+          )}
+        >
+          <GraduationCap size={15} />
+          <span>اساتید داخلی مؤسسه</span>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('external');
+            setSelectedMultiPhoneIds([]);
+          }}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+            activeTab === 'external'
+              ? "bg-amber-500 text-slate-950 shadow-md font-black"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
+          )}
+        >
+          <Building2 size={15} />
+          <span>مجموعه‌های همکار (خارج از مؤسسه)</span>
+        </button>
       </div>
 
       {/* Multi-copy Phone Banner */}
@@ -941,7 +1008,10 @@ export default function TeachersBank() {
                             </div>
                           )}
                           <div>
-                            <div className="font-bold text-slate-800 text-sm">{teacher.fullName}</div>
+                            <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                              {teacher.isExternal && <Building2 size={13} className="text-amber-500 shrink-0" />}
+                              <span>{teacher.fullName}</span>
+                            </div>
                             {!teacher.isActive && (
                               <span className="text-[10px] text-rose-500 font-bold">غیرفعال</span>
                             )}

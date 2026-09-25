@@ -1019,6 +1019,7 @@ export interface Teacher {
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
+  isExternal?: boolean;
 }
 
 // -------------------------------------------------------------

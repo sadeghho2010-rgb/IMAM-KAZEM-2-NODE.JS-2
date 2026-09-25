@@ -2066,11 +2066,20 @@ export default function Programs() {
                       }}
                     >
                       <option value="">-- انتخاب استاد از بانک اساتید --</option>
-                      {teachers.map(t => (
-                        <option key={t.id} value={t.fullName}>
-                          {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                        </option>
-                      ))}
+                      <optgroup label="اساتید داخلی مؤسسه">
+                        {teachers.filter(t => !t.isExternal).map(t => (
+                          <option key={t.id} value={t.fullName}>
+                            {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="مجموعه‌ها و مدارس همکار (محل برگزاری خارج از مؤسسه)">
+                        {teachers.filter(t => t.isExternal).map(t => (
+                          <option key={t.id} value={t.fullName}>
+                            {t.fullName} (خارج از مجموعه)
+                          </option>
+                        ))}
+                      </optgroup>
                       <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
                     </select>
                   ) : (
@@ -2435,11 +2444,20 @@ export default function Programs() {
                       }}
                     >
                       <option value="">-- انتخاب استاد از بانک اساتید --</option>
-                      {teachers.map(t => (
-                        <option key={t.id} value={t.fullName}>
-                          {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                        </option>
-                      ))}
+                      <optgroup label="اساتید داخلی مؤسسه">
+                        {teachers.filter(t => !t.isExternal).map(t => (
+                          <option key={t.id} value={t.fullName}>
+                            {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="مجموعه‌ها و مدارس همکار (خارج از مؤسسه)">
+                        {teachers.filter(t => t.isExternal).map(t => (
+                          <option key={t.id} value={t.fullName}>
+                            {t.fullName} (محل برگزاری خارجی)
+                          </option>
+                        ))}
+                      </optgroup>
                       <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
                     </select>
                   ) : (

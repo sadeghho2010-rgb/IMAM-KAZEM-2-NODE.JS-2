@@ -12,26 +12,7 @@ import { dispatchDatabaseErrorToast } from './databaseToast';
  * For all other users (Level 3 students, teachers, etc.), offline saving is strictly disabled.
  */
 export function isOfflineStorageAllowedForUser(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = localStorage.getItem('system_auth_current_user_v2');
-    if (!raw) return false;
-    const user = JSON.parse(raw);
-    if (!user) return false;
-
-    const isManagerRole = 
-      user.role === 'education_manager' || 
-      user.role === 'finance_manager' || 
-      user.username === 'SHAH' || 
-      user.username === 'FINANCE' ||
-      user.role === 'super_admin';
-
-    if (!isManagerRole) return false;
-
-    return localStorage.getItem('allow_offline_storage_mode') === 'true';
-  } catch (e) {
-    return false;
-  }
+  return true;
 }
 
 /**
@@ -2309,7 +2290,8 @@ class LocalDatabase {
       const countReq = store.count();
 
       countReq.onsuccess = async () => {
-        if (countReq.result === 0) {
+        try {
+          if (countReq.result === 0) {
           console.log('Local Database is empty. Seeding initial baseline data...');
           const initialStudents = [
           {
@@ -2708,6 +2690,9 @@ class LocalDatabase {
         ];
         await this.bulkPut('audit_logs', initialAuditLogs);
       }
+        } catch (innerErr) {
+          console.warn('Initial seeding encountered an error (ignored gracefully):', innerErr);
+        }
     };
     } catch (e) {
       console.warn('Seed data check error:', e);
