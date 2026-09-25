@@ -351,6 +351,8 @@ export const COLLECTIONS = [
   'attendance_settings',
   'course_selection_periods',
   'course_selection_requests',
+  'oral_exam_periods',
+  'oral_exam_records',
   'received_articles',
   'article_evaluations',
   'evaluation_requests'

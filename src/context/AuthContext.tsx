@@ -19,6 +19,7 @@ export const ALL_SYSTEM_TABS = [
   { id: 'research', label: 'بخش پژوهش و مقالات' },
   { id: 'attendance', label: 'حضور و غیاب طلاب' },
   { id: 'course-selection', label: 'سامانه انتخاب واحد / انتخاب درس' },
+  { id: 'oral-exams', label: 'امتحان شفاهی' },
   { id: 'comments', label: 'نظرات، صحبت‌ها و آزمون شفاهی' },
   { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی' },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین' },
@@ -48,7 +49,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
     ],
   },
   {
@@ -69,7 +70,7 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
+      'attendance', 'course-selection', 'oral-exams', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
 
@@ -91,7 +92,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-amber-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
     ],
   },
@@ -112,7 +113,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-emerald-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ],
   },
@@ -133,7 +134,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-sky-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ],
   },
@@ -154,7 +155,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-purple-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ],
   },
@@ -175,7 +176,7 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-rose-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
+      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ],
   },

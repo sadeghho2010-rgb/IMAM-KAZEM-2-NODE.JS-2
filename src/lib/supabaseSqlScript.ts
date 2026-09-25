@@ -360,7 +360,66 @@ CREATE TABLE IF NOT EXISTS public.user_todo_categories (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۳. جدول لاگ‌های ممیزی امنیتی (Audit Logs)
+-- ۱۳. جدول دوره‌ها و آزمون‌های شفاهی طلاب (Oral Exam Periods & Records)
+CREATE TABLE IF NOT EXISTS public.oral_exam_periods (
+  id TEXT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  grade VARCHAR(50),
+  has_usul BOOLEAN DEFAULT TRUE,
+  usul_books JSONB DEFAULT '[]'::jsonb,
+  custom_usul_book VARCHAR(150),
+  has_fiqh BOOLEAN DEFAULT TRUE,
+  fiqh_books JSONB DEFAULT '[]'::jsonb,
+  custom_fiqh_book VARCHAR(150),
+  exam_dates JSONB DEFAULT '[]'::jsonb,
+  exam_dates_str TEXT,
+  examiner_teacher_ids JSONB DEFAULT '[]'::jsonb,
+  examiner_teacher_names JSONB DEFAULT '[]'::jsonb,
+  has_custom_scopes BOOLEAN DEFAULT FALSE,
+  scopes JSONB DEFAULT '[]'::jsonb,
+  participating_student_ids JSONB DEFAULT '[]'::jsonb,
+  status VARCHAR(30) DEFAULT 'draft',
+  notes TEXT,
+  created_by_name VARCHAR(100),
+  finalized_at TIMESTAMPTZ,
+  finalized_by_name VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.oral_exam_records (
+  id TEXT PRIMARY KEY, -- period_id_student_id
+  period_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  student_name VARCHAR(200),
+  national_id VARCHAR(20),
+  grade VARCHAR(50),
+  fiqh_examiner_teacher_id TEXT,
+  fiqh_examiner_teacher_name VARCHAR(200),
+  fiqh_scope_id TEXT,
+  fiqh_scope_title TEXT,
+  fiqh_score NUMERIC(5, 2),
+  fiqh_is_retake BOOLEAN DEFAULT FALSE,
+  fiqh_examiner_notes TEXT,
+  usul_examiner_teacher_id TEXT,
+  usul_examiner_teacher_name VARCHAR(200),
+  usul_scope_id TEXT,
+  usul_scope_title TEXT,
+  usul_score NUMERIC(5, 2),
+  usul_is_retake BOOLEAN DEFAULT FALSE,
+  usul_examiner_notes TEXT,
+  examiner1_notes TEXT,
+  examiner2_notes TEXT,
+  general_notes TEXT,
+  status VARCHAR(30) DEFAULT 'draft',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_oral_exam_records_period ON public.oral_exam_records (period_id);
+CREATE INDEX IF NOT EXISTS idx_oral_exam_records_student ON public.oral_exam_records (student_id);
+
+-- ۱۴. جدول لاگ‌های ممیزی امنیتی (Audit Logs)
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -376,7 +435,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ۱۴. جدول کالکشن‌ها (App Collections)
+-- ۱۵. جدول کالکشن‌ها (App Collections)
 CREATE TABLE IF NOT EXISTS public.app_collections (
   collection_name VARCHAR(100) NOT NULL,
   id TEXT NOT NULL,
@@ -385,7 +444,7 @@ CREATE TABLE IF NOT EXISTS public.app_collections (
   PRIMARY KEY (collection_name, id)
 );
 
--- ۱۵. فعال‌سازی سیاست‌های امنیتی RLS
+-- ۱۶. فعال‌سازی سیاست‌های امنیتی RLS
 ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teachers ENABLE ROW LEVEL SECURITY;
@@ -405,6 +464,8 @@ ALTER TABLE public.finance_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.personal_todos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.assigned_todos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_todo_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.oral_exam_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.oral_exam_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_collections ENABLE ROW LEVEL SECURITY;
 
@@ -424,6 +485,10 @@ BEGIN
     ', tbl, tbl);
   END LOOP;
 END $$;
+
+-- سیاست‌های دسترسی به جداول آزمون شفاهی
+CREATE POLICY "anon_oral_exam_periods" ON public.oral_exam_periods FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "anon_oral_exam_records" ON public.oral_exam_records FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- سیاست‌های خواندن عمومی جداول اطلاعاتی برای کلاینت
 CREATE POLICY "anon_read_programs" ON public.programs FOR SELECT TO anon USING (true);

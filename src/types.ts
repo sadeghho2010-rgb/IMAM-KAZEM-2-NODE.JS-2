@@ -729,6 +729,74 @@ export type CommentPriority = 'high' | 'medium' | 'low' | 'info';
 
 export type OralExamSubjectType = 'فقه' | 'اصول' | 'امتحان ورودی' | 'سایر';
 
+export interface ExamScopeRange {
+  id: string;
+  courseType: 'fiqh' | 'usul';
+  title: string; // e.g. "محدوده ۱: از ابتدای بیع تا شرایط متعاقدین"
+  description?: string;
+}
+
+export interface OralExamPeriod {
+  id: string;
+  title: string; // e.g. "دوره آزمون شفاهی نیمسال اول پایه ۹ - آذر ۱۴۰۳"
+  grade: string; // 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰' | 'کل پایه‌ها' | 'سایر'
+  hasUsul: boolean; // آیا آزمون اصول دارد؟
+  usulBooks: string[]; // ['رسائل', 'کفایه', 'حلقه ثالثه', 'سایر']
+  customUsulBook?: string;
+  hasFiqh: boolean; // آیا آزمون فقه دارد؟
+  fiqhBooks: string[]; // ['مکاسب', 'شرح لمعه', 'سایر']
+  customFiqhBook?: string;
+  examDates: string[]; // روزهای برگزاری e.g. ['1403/09/15', '1403/09/16']
+  examDatesStr?: string;
+  examinerTeacherIds: string[];
+  examinerTeacherNames: string[];
+  hasCustomScopes: boolean;
+  scopes: ExamScopeRange[];
+  participatingStudentIds: string[]; // شناسه‌های طلاب شرکت‌کننده
+  status: 'draft' | 'finalized';
+  notes?: string;
+  createdAt: string;
+  createdByName?: string;
+  finalizedAt?: string;
+  finalizedByName?: string;
+}
+
+export interface OralExamStudentRecord {
+  id: string; // `${periodId}_${studentId}`
+  periodId: string;
+  studentId: string;
+  studentName: string;
+  nationalId?: string;
+  grade?: string;
+  
+  // بخش فقه
+  fiqhExaminerTeacherId?: string;
+  fiqhExaminerTeacherName?: string;
+  fiqhScopeId?: string;
+  fiqhScopeTitle?: string;
+  fiqhScore?: number | null;
+  fiqhIsRetake?: boolean; // امتحان مجدد فقه
+  fiqhExaminerNotes?: string;
+
+  // بخش اصول
+  usulExaminerTeacherId?: string;
+  usulExaminerTeacherName?: string;
+  usulScopeId?: string;
+  usulScopeTitle?: string;
+  usulScore?: number | null;
+  usulIsRetake?: boolean; // امتحان مجدد اصول
+  usulExaminerNotes?: string;
+
+  // توضیحات ممتحنین
+  examiner1Notes?: string;
+  examiner2Notes?: string;
+  generalNotes?: string;
+
+  // وضعیت ثبت
+  status: 'draft' | 'finalized';
+  updatedAt: string;
+}
+
 export interface OralExam {
   id: string;
   studentId: string;
@@ -739,6 +807,10 @@ export interface OralExam {
   date: string;
   isRetake: boolean;
   notes?: string;
+  periodId?: string;
+  periodTitle?: string;
+  scopeTitle?: string;
+  examinerNotes?: string;
   createdAt: string;
   updatedAt?: string;
 }

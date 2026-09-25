@@ -28,6 +28,7 @@ import MadrasRooms from './components/MadrasRooms';
 import WorkflowManager from './components/WorkflowManager';
 import CounselingClasses from './components/CounselingClasses';
 import CourseSelection from './components/CourseSelection';
+import OralExamsManagement from './components/OralExamsManagement';
 import ArticleEvaluations from './components/ArticleEvaluations';
 import FinanceManagerDashboard from './components/FinanceManagerDashboard';
 import StudentActivityAndTuition from './components/finance/StudentActivityAndTuition';
@@ -131,6 +132,8 @@ function AppContent() {
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
       case 'course-selection':
         return <CourseSelection />;
+      case 'oral-exams':
+        return <OralExamsManagement />;
       case 'counseling-classes':
         return <CounselingClasses />;
       case 'comments':

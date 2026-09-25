@@ -970,8 +970,8 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
                           </div>
                         </div>
 
-                        {/* Examiner & Date */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                        {/* Examiner & Date & Scope */}
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium flex-wrap gap-2">
                           <span className="flex items-center gap-1">
                             <User size={12} className="text-slate-400" />
                             <span>استاد ممتحن: <strong className="text-slate-700">{exam.examinerName || 'نامشخص'}</strong></span>
@@ -983,11 +983,18 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
                           </span>
                         </div>
 
+                        {exam.scopeTitle && (
+                          <div className="text-[11px] font-bold text-indigo-700 bg-indigo-50/80 px-2.5 py-1 rounded-xl border border-indigo-100 inline-flex items-center gap-1.5">
+                            <BookOpen size={12} />
+                            <span>محدوده امتحانی: {exam.scopeTitle}</span>
+                          </div>
+                        )}
+
                         {/* Notes if present */}
-                        {exam.notes && (
+                        {(exam.notes || exam.examinerNotes) && (
                           <div className="p-2.5 bg-white/80 border border-slate-100 rounded-xl text-xs text-slate-700 leading-relaxed space-y-0.5">
                             <span className="text-[10px] font-bold text-slate-400 block">نظر و ملاحظات استاد ممتحن:</span>
-                            <p className="whitespace-pre-wrap">{exam.notes}</p>
+                            <p className="whitespace-pre-wrap">{exam.examinerNotes || exam.notes}</p>
                           </div>
                         )}
 

@@ -32,7 +32,8 @@ import {
   FileSpreadsheet,
   HandCoins,
   Car,
-  BookOpenCheck
+  BookOpenCheck,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -96,10 +97,67 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
   const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly } = useAuth();
+  const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
+    return ['backup', 'user-credentials', 'audit-logs'].includes(activeTab);
+  });
+  const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    if (['backup', 'user-credentials', 'audit-logs'].includes(activeTab)) {
+      setIsSiteManagementOpen(true);
+    }
+  }, [activeTab]);
+
+  const isEduOrSuperAdmin = Boolean(
+    currentUser && (
+      currentUser.level === 1 ||
+      currentUser.role === 'super_admin' ||
+      currentUser.role === 'school_manager' ||
+      currentUser.role === 'education_manager' ||
+      currentUser.role === 'education_officer' ||
+      currentUser.username?.toUpperCase() === 'SHAH'
+    )
+  );
+
+  const siteManagementSubItems = [
+    { id: 'backup' as AppModuleId, label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
+    { id: 'user-credentials' as AppModuleId, label: 'مدیریت ورود کاربران', icon: ShieldCheck },
+    { id: 'audit-logs' as AppModuleId, label: 'فعالیت‌های سایت', icon: Activity },
+  ];
+
+  const handleMouseEnterSiteManagement = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setIsSiteManagementOpen(true);
+    }, 200);
+  };
+
+  const handleMouseLeaveSiteManagement = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+  };
 
   // Filter items based on user's authorized modules
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
     if (!currentUser) return false;
+
+    // When site management dropdown is active for managers, hide its sub-items from top level
+    if (isEduOrSuperAdmin && ['backup', 'user-credentials', 'audit-logs'].includes(item.id)) {
+      return false;
+    }
+
+    // امتحان شفاهی طلاب: برای مسئول آموزش، سوپرادمین، مدیر مدرسه و اساتید پایه
+    if (item.id === 'oral-exams') {
+      const isEduStaff = currentUser.level === 1 || 
+                         currentUser.role === 'super_admin' || 
+                         currentUser.role === 'education_manager' || 
+                         currentUser.role === 'education_officer' || 
+                         currentUser.username?.toUpperCase() === 'SHAH';
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.role?.startsWith('grade_supervisor_') ||
+                                ['ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username?.toUpperCase());
+      return isEduStaff || isGradeSupervisor;
+    }
 
     // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید
     const isFinanceUser = currentUser.role === 'finance_manager' || currentUser.role === 'financial_officer' || currentUser.username.toUpperCase() === 'MALI';
@@ -238,6 +296,8 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     return true;
   });
 
+  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs'].includes(activeTab);
+
   return (
     <div 
       className={cn(
@@ -303,6 +363,70 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
             </button>
           );
         })}
+
+        {/* ===================== منوی کشویی مدیریت سایت ===================== */}
+        {isEduOrSuperAdmin && (
+          <div 
+            className="pt-1"
+            onMouseEnter={handleMouseEnterSiteManagement}
+            onMouseLeave={handleMouseLeaveSiteManagement}
+          >
+            {/* Parent Dropdown Button */}
+            <button
+              type="button"
+              onClick={() => setIsSiteManagementOpen(!isSiteManagementOpen)}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
+                isSiteManagementActive
+                  ? "bg-slate-900 text-white font-black shadow-xs"
+                  : "text-slate-700 bg-slate-100/80 hover:bg-slate-200/90 font-bold"
+              )}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Settings size={16} className={cn(
+                  "shrink-0 transition-colors",
+                  isSiteManagementActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-700"
+                )} />
+                <span className="text-xs truncate">مدیریت سایت</span>
+              </div>
+              <ChevronDown 
+                size={14} 
+                className={cn(
+                  "transition-transform duration-200 shrink-0",
+                  isSiteManagementOpen ? "rotate-180 text-amber-400" : "text-slate-400"
+                )} 
+              />
+            </button>
+
+            {/* Dropdown Sub-Items List */}
+            {isSiteManagementOpen && (
+              <div className="mr-3 pr-2.5 my-1 space-y-1 border-r-2 border-slate-200 animate-in fade-in slide-in-from-top-1 duration-200">
+                {siteManagementSubItems.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const isSubActive = activeTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      onClick={() => setActiveTab(sub.id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-right transition-all text-xs cursor-pointer",
+                        isSubActive
+                          ? "bg-indigo-50 text-indigo-700 font-black border border-indigo-200 shadow-2xs"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold"
+                      )}
+                    >
+                      <SubIcon size={14} className={cn(
+                        "shrink-0",
+                        isSubActive ? "text-indigo-600" : "text-slate-400"
+                      )} />
+                      <span className="truncate">{sub.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Active Logged-in User Profile Card (Moved to bottom of menu) */}
