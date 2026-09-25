@@ -11,6 +11,8 @@ const SENSITIVE_KEYS = [
   'otp'
 ];
 
+const VALID_LEVELS = ['error', 'warn', 'info'];
+
 /**
  * Recursive sanitizer to mask sensitive fields in objects and arrays
  */
@@ -56,9 +58,11 @@ class LoggerService {
 
     // 1. Capture uncaught JavaScript errors
     window.onerror = (message, source, lineno, colno, error) => {
+      const traceId = this.createTraceId();
       this.log({
+        traceId,
         level: 'error',
-        message: typeof message === 'string' ? message : (error?.message || 'Uncaught Error'),
+        message: (typeof message === 'string' && message.trim()) ? message : (error?.message || 'Uncaught Error'),
         stackTrace: error?.stack || `at ${source}:${lineno}:${colno}`,
         context: { source, lineno, colno },
         path: window.location.pathname
@@ -67,10 +71,12 @@ class LoggerService {
 
     // 2. Capture unhandled Promise rejections
     window.addEventListener('unhandledrejection', (event) => {
+      const traceId = this.createTraceId();
       const reason = event.reason;
       this.log({
+        traceId,
         level: 'error',
-        message: reason?.message || String(reason) || 'Unhandled Promise Rejection',
+        message: reason?.message || (typeof reason === 'string' && reason.trim() ? reason : 'Unhandled Promise Rejection'),
         stackTrace: reason?.stack || null,
         context: { reason: typeof reason === 'object' ? reason : { value: reason } },
         path: window.location.pathname
@@ -82,7 +88,6 @@ class LoggerService {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
     }
-    // Fallback UUID generator
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
       const r = (Math.random() * 16) | 0;
       const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -91,17 +96,29 @@ class LoggerService {
   }
 
   /**
-   * Directly sends log to Supabase app_logs table
+   * Directly sends log to Supabase app_logs table (No queue)
    */
-  async log({ level = 'error', message, stackTrace = null, context = null, traceId = null, userId = null, path = null }) {
+  async log({ level = 'error', message, stackTrace = null, context = null, traceId = null, userId = null, path = null } = {}) {
+    // 1. Level validation
+    const normalizedLevel = typeof level === 'string' ? level.toLowerCase().trim() : '';
+    const safeLevel = VALID_LEVELS.includes(normalizedLevel) ? normalizedLevel : 'error';
+
+    // 2. Message validation
+    let safeMessage = 'Unknown error';
+    if (typeof message === 'string' && message.trim().length > 0) {
+      safeMessage = message.trim();
+    } else if (message !== null && message !== undefined) {
+      safeMessage = String(message);
+    }
+
     const activeTraceId = traceId || this.createTraceId();
     const activePath = path || (typeof window !== 'undefined' ? window.location.pathname : null);
     const sanitizedContext = context ? maskSensitiveData(context) : null;
 
     // Dev environment console output
     if (import.meta.env && import.meta.env.DEV) {
-      const color = level === 'error' ? 'color: #ef4444; font-weight: bold;' : level === 'warn' ? 'color: #f59e0b; font-weight: bold;' : 'color: #3b82f6; font-weight: bold;';
-      console.log(`%c[${level.toUpperCase()}] [${activeTraceId}] ${message}`, color, sanitizedContext || '');
+      const color = safeLevel === 'error' ? 'color: #ef4444; font-weight: bold;' : safeLevel === 'warn' ? 'color: #f59e0b; font-weight: bold;' : 'color: #3b82f6; font-weight: bold;';
+      console.log(`%c[${safeLevel.toUpperCase()}] [${activeTraceId}] ${safeMessage}`, color, sanitizedContext || '');
     }
 
     try {
@@ -109,8 +126,8 @@ class LoggerService {
         {
           trace_id: activeTraceId,
           user_id: userId,
-          level,
-          message: String(message || 'Unknown log message'),
+          level: safeLevel,
+          message: safeMessage,
           stack_trace: stackTrace ? String(stackTrace) : null,
           context: sanitizedContext,
           path: activePath
@@ -118,12 +135,11 @@ class LoggerService {
       ]);
 
       if (error) {
-        if (import.meta.env && import.meta.env.DEV) {
-          console.warn('[LoggerService] Notice writing to app_logs:', error.message);
-        }
+        console.error('[LoggerService] Failed to insert log to app_logs:', error.message);
       }
     } catch (err) {
-      // Fail silently to prevent logging recursion
+      // Golden Rule: Logging must never crash the main application
+      console.error('[LoggerService] Unexpected error while sending log:', err?.message || err);
     }
   }
 
@@ -140,6 +156,6 @@ class LoggerService {
   }
 }
 
-// Singleton instance
+// Singleton Instance
 export const logger = new LoggerService();
 export default logger;
