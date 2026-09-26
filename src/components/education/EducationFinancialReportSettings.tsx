@@ -15,7 +15,8 @@ import {
   HelpCircle,
   TrendingUp,
   TrendingDown,
-  Filter
+  Filter,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../../lib/localDb';
@@ -23,26 +24,27 @@ import { useAuth } from '../../context/AuthContext';
 import { getTodayShamsi } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
 import { Student, EducationFinancialReport, EducationFinancialItem } from '../../types';
+import { ShamsiDatePicker } from '../ShamsiDatePicker';
 
 interface EducationFinancialReportSettingsProps {
   onNavigateTab?: (tab: string, params?: any) => void;
 }
 
-const MONTH_NAMES = [
-  'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
-  'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'
-];
-
 export default function EducationFinancialReportSettings({ onNavigateTab }: EducationFinancialReportSettingsProps) {
   const { currentUser } = useAuth();
+  const today = getTodayShamsi();
+  const defaultStart = today.substring(0, 8) + '01';
+
   const [students, setStudents] = useState<Student[]>([]);
   const [reports, setReports] = useState<EducationFinancialReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Report Form State
-  const [reportTitle, setReportTitle] = useState('تنظیم گزارش افزایش/کاهش شهریه مهرماه ۱۴۰۳');
+  // Report Form State with Date Range
+  const [reportTitle, setReportTitle] = useState('تنظیم گزارش افزایش/کاهش شهریه طلاب');
   const [selectedMonth, setSelectedMonth] = useState('مهر ۱۴۰۳');
+  const [startDate, setStartDate] = useState(defaultStart);
+  const [endDate, setEndDate] = useState(today);
   const [reportNotes, setReportNotes] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [gradeFilter, setGradeFilter] = useState('all');
@@ -176,10 +178,14 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
     setIsSending(true);
     try {
       const reportId = `edufin-${Date.now()}`;
+      const dateRangeStr = `${startDate} تا ${endDate}`;
       const newReport: EducationFinancialReport = {
         id: reportId,
-        title: reportTitle.trim() || `گزارش تنظیم مالی آموزش - ${selectedMonth}`,
+        title: reportTitle.trim() || `گزارش تنظیم مالی طلاب (${dateRangeStr})`,
         month: selectedMonth,
+        startDate,
+        endDate,
+        dateRangeStr,
         senderUserId: currentUser?.id,
         senderUserName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش',
         senderRoleTitle: currentUser?.roleTitle || 'مسئول آموزش',
@@ -197,8 +203,8 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
           id: `wf-edufin-${Date.now()}`,
           type: 'approval',
           category: 'presence_finance_report',
-          title: `گزارش جدید افزایش/کاهش شهریه ارسالی از آموزش (${selectedMonth})`,
-          description: `مسئول آموزش (${newReport.senderUserName}) گزارشی با ${adjustedItems.length} مورد تعدیل شهریه (مجموع افزایش: ${totalIncreaseSum.toLocaleString('fa-IR')} تومان، کاهش: ${totalDecreaseSum.toLocaleString('fa-IR')} تومان) جهت بررسی و اعمال در محاسبه مکانیزه شهریه ارسال نمود.`,
+          title: `گزارش جدید مالی طلاب ارسالی از آموزش (${dateRangeStr})`,
+          description: `مسئول آموزش (${newReport.senderUserName}) گزارشی با ${adjustedItems.length} مورد تعدیل شهریه برای بازه زمانی ${dateRangeStr} (مجموع افزایش: ${totalIncreaseSum.toLocaleString('fa-IR')} تومان، کاهش: ${totalDecreaseSum.toLocaleString('fa-IR')} تومان) جهت بررسی، تایید و اعمال خودکار در محاسبه مکانیزه شهریه ارسال نمود.`,
           status: 'pending',
           requiresEducationApproval: false,
           createdByUserId: currentUser?.id,
@@ -274,13 +280,13 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-slate-900">تنظیم گزارش مالی آموزش (افزایش و کاهش شهریه طلاب)</h2>
+              <h2 className="text-lg font-black text-slate-900">تنظیم گزارش مالی طلاب (افزایش و کاهش شهریه)</h2>
               <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-black rounded-lg">
                 ویژه مسئول آموزش
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              تنظیم مبالغ پاداش تشویقی یا جریمه‌های انضباطی/آموزشی هر طلبه به همراه ذکر علت جهت ارسال به مسئول مالی و اعمال در شهریه
+              تنظیم مبالغ پاداش تشویقی یا جریمه‌های انضباطی/آموزشی هر طلبه در یک بازه زمانی مشخص به همراه ذکر علت جهت تایید و اعمال خودکار در محاسبه شهریه
             </p>
           </div>
         </div>
@@ -298,7 +304,7 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
             )}
           >
             <Edit3 size={14} />
-            <span>تنظیم و ارسال گزارش ماهانه</span>
+            <span>تنظیم و ارسال گزارش بازه‌ای</span>
           </button>
           <button
             type="button"
@@ -326,20 +332,20 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
         <div className="space-y-6">
           {/* Form Header Info Box */}
           <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-md">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs text-slate-300 font-bold mb-1.5">عنوان گزارش ارسالی:</label>
                 <input
                   type="text"
                   value={reportTitle}
                   onChange={e => setReportTitle(e.target.value)}
-                  placeholder="مثلاً: گزارش تشویقی‌ها و کسورات آموزشی مهرماه ۱۴۰۳"
+                  placeholder="مثلاً: گزارش تشویقی‌ها و کسورات مهرماه ۱۴۰۳"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-400 font-bold"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-slate-300 font-bold mb-1.5">ماه شهریه مربوطه:</label>
+                <label className="block text-xs text-slate-300 font-bold mb-1.5">ماه یا دوره مربوطه:</label>
                 <input
                   type="text"
                   value={selectedMonth}
@@ -350,15 +356,33 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
               </div>
 
               <div>
-                <label className="block text-xs text-slate-300 font-bold mb-1.5">یادداشت کلی مسئول آموزش برای مسئول مالی:</label>
-                <input
-                  type="text"
-                  value={reportNotes}
-                  onChange={e => setReportNotes(e.target.value)}
-                  placeholder="توضیحات تکمیلی یا پیام همراه..."
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-400"
+                <label className="block text-xs text-slate-300 font-bold mb-1.5">از تاریخ (شروع بازه):</label>
+                <ShamsiDatePicker
+                  value={startDate}
+                  onChange={setStartDate}
+                  placeholder="تاریخ شروع"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs text-slate-300 font-bold mb-1.5">تا تاریخ (پایان بازه):</label>
+                <ShamsiDatePicker
+                  value={endDate}
+                  onChange={setEndDate}
+                  placeholder="تاریخ پایان"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800">
+              <label className="block text-xs text-slate-300 font-bold mb-1.5">یادداشت کلی مسئول آموزش برای مسئول مالی:</label>
+              <input
+                type="text"
+                value={reportNotes}
+                onChange={e => setReportNotes(e.target.value)}
+                placeholder="توضیحات تکمیلی یا پیام همراه برای مسئول مالی جهت اعمال در محاسبه شهریه..."
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white outline-none focus:border-indigo-400"
+              />
             </div>
 
             {/* Quick Metrics of Current Report */}

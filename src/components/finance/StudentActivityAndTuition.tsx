@@ -253,6 +253,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [profActiveDepositAccount, setProfActiveDepositAccount] = useState<'account1' | 'account2' | 'both'>('account1');
   const [profManualAdjustment, setProfManualAdjustment] = useState<number>(0);
   const [profManualAdjustmentReason, setProfManualAdjustmentReason] = useState<string>('');
+  const [selectedEduReportForPreview, setSelectedEduReportForPreview] = useState<EducationFinancialReport | null>(null);
 
   // Primary Page View Mode: 'initial_home' (صفحه آغازین دو گزینه‌ای) | 'active_period' (محیط ایجاد دوره و محاسبه شهریه) | 'archived_periods' (مشاهده دوره‌های شهریه {بایگانی})
   const [pageMode, setPageMode] = useState<'initial_home' | 'active_period' | 'archived_periods'>('initial_home');
@@ -1133,6 +1134,45 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   }, [calculatedTuitions]);
 
   const isFinancialReconciled = totalGrossTuitionSum === (totalNetPayoutSum + totalKitchenTransferSum + totalCulturalTransferSum + totalQardFundTransferSum + totalOtherTransferSum);
+
+  // Pending Education Reports from Education Manager (sent or approved, not yet applied)
+  const pendingEduReports = useMemo(() => {
+    return (educationReports || []).filter(r => r.status === 'sent' || r.status === 'reviewed');
+  }, [educationReports]);
+
+  // Apply Education Financial Report to Student Manual Overrides
+  const handleApplyEduReport = async (report: EducationFinancialReport) => {
+    const newOverrides: Record<string, Partial<TuitionCalculationBreakdown>> = { ...studentOverrides };
+    let appliedCount = 0;
+
+    report.items.forEach(item => {
+      if (item.type === 'none' || item.amount === 0) return;
+      const signedAmount = item.type === 'increase' ? Math.abs(item.amount) : -Math.abs(item.amount);
+      const existing = newOverrides[item.studentId] || {};
+      newOverrides[item.studentId] = {
+        ...existing,
+        manualAdjustmentAmount: signedAmount,
+        manualAdjustmentReason: item.reason || (item.type === 'increase' ? 'تشویقی آموزش' : 'جریمه آموزشی')
+      };
+      appliedCount++;
+    });
+
+    setStudentOverrides(newOverrides);
+
+    // Update report status in DB to 'applied'
+    try {
+      await localDb.updateDoc('education_financial_reports', report.id, {
+        status: 'applied',
+        appliedAt: new Date().toISOString(),
+        appliedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول مالی'
+      });
+      setEducationReports(prev => prev.map(r => r.id === report.id ? { ...r, status: 'applied' } : r));
+      showToast(`تعداد ${appliedCount} مورد تعدیل مالی گزارش «${report.title}» با موفقیت در افزایش/کاهش دستی شهریه این دوره اعمال گردید.`);
+    } catch (err) {
+      console.error('Error applying report status:', err);
+      showToast(`تعدیلات با موفقیت در جدول اعمال شد.`);
+    }
+  };
 
   // -------------------------------------------------------------
   // Confirm Period Range & Enter Active Calculation Session
@@ -2078,6 +2118,53 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                     />
                   </div>
                 </div>
+
+                {/* Prompt for Education Financial Reports (گزارش‌های مالی ارسالی از آموزش) */}
+                {pendingEduReports.length > 0 && (
+                  <div className="space-y-3">
+                    {pendingEduReports.map(report => (
+                      <div key={report.id} className="bg-gradient-to-r from-amber-50 via-indigo-50 to-emerald-50 rounded-3xl p-4 sm:p-5 border-2 border-indigo-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                            <FileSpreadsheet size={20} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-sm text-slate-900">گزارش مالی ارسالی از مسئول آموزش: «{report.title}»</span>
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                                {report.dateRangeStr || report.month}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                {report.items.length} طلبه دارای تغییر
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1">
+                              مسئول آموزش ({report.senderUserName}) این گزارش را برای اعمال در شهریه ارسال نموده است. آیا مایلید این گزارش به صورت خودکار در بخش افزایش/کاهش دستی شهریه این دوره اعمال شود؟
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleApplyEduReport(report)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                          >
+                            <CheckCircle2 size={16} />
+                            <span>بله، اعمال خودکار در افزایش/کاهش دستی شهریه</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEduReportForPreview(report)}
+                            className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            مشاهده جزئیات
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Report View Mode Switcher Strip */}
@@ -5186,6 +5273,106 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: مشاهده جزئیات گزارش مالی آموزش                          */}
+      {/* ------------------------------------------------------------- */}
+      <AnimatePresence>
+        {selectedEduReportForPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8"
+              dir="rtl"
+            >
+              <div className="p-5 bg-indigo-900 text-white flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-black">جزئیات گزارش مالی آموزش: {selectedEduReportForPreview.title}</h3>
+                  <p className="text-xs text-indigo-200 mt-0.5">
+                    بازه زمانی: {selectedEduReportForPreview.dateRangeStr || selectedEduReportForPreview.month} | فرستنده: {selectedEduReportForPreview.senderUserName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEduReportForPreview(null)}
+                  className="p-1.5 text-indigo-200 hover:text-white rounded-xl hover:bg-indigo-800 transition-all cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto text-xs">
+                {selectedEduReportForPreview.notes && (
+                  <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-900">
+                    <span className="font-bold">یادداشت مسئول آموزش: </span>
+                    <span>{selectedEduReportForPreview.notes}</span>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <table className="w-full text-right text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+                        <th className="py-2.5 px-3">ردیف</th>
+                        <th className="py-2.5 px-3">نام طلبه</th>
+                        <th className="py-2.5 px-3">پایه</th>
+                        <th className="py-2.5 px-3">نوع تغییر</th>
+                        <th className="py-2.5 px-3">مبلغ (تومان)</th>
+                        <th className="py-2.5 px-3">علت و توضیحات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedEduReportForPreview.items.map((it, idx) => (
+                        <tr key={it.studentId || idx} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-3 font-mono text-slate-400">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{it.studentName}</td>
+                          <td className="py-2.5 px-3 text-slate-600">{it.grade}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full text-[10px] font-black",
+                              it.type === 'increase' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+                            )}>
+                              {it.type === 'increase' ? 'افزایش (پاداش)' : 'کاهش (کسورات)'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold">
+                            {it.amount.toLocaleString('fa-IR')}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700">{it.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEduReportForPreview(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold cursor-pointer"
+                >
+                  بستن
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = selectedEduReportForPreview;
+                    setSelectedEduReportForPreview(null);
+                    handleApplyEduReport(r);
+                  }}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 size={16} />
+                  <span>اعمال خودکار این گزارش در افزایش/کاهش دستی</span>
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

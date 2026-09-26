@@ -241,16 +241,21 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       );
     }
 
-    // تنظیم گزارش مالی: ویژه مسئول آموزش، سوپرادمین و مدیران سطح ۱ و ۲ (مسئول پژوهش دسترسی ندارد)
+    // تنظیم گزارش مالی طلاب: منحصراً ویژه مسئول آموزش و سوپرادمین (اساتید پایه و پژوهش دسترسی ندارند)
     if (item.id === 'education-financial-report') {
-      if (isResearchUser) return false;
+      if (isResearchUser || isFinanceUser) return false;
+      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
+                                currentUser.role === 'grade_mentor' || 
+                                currentUser.role?.startsWith('grade_supervisor_') ||
+                                currentUser.roleTitle?.includes('استاد پایه') || 
+                                currentUser.roleTitle?.includes('مسئول پایه');
+      if (isGradeSupervisor) return false;
       return (
         currentUser.level === 1 ||
         currentUser.role === 'super_admin' ||
         currentUser.role === 'education_manager' ||
         currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH' ||
-        currentUser.level === 2
+        currentUser.username.toUpperCase() === 'SHAH'
       );
     }
 

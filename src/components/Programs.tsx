@@ -599,11 +599,6 @@ export default function Programs() {
       const programGrade = newProgram.grade || 'پایه 7';
       const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
 
-      // Auto-register teacher in bank if assigned
-      if (newProgram.teacher) {
-        await syncTeacherWithBank(newProgram.teacher, title);
-      }
-
       await localDb.addDoc('programs', {
         ...newProgram,
         title,

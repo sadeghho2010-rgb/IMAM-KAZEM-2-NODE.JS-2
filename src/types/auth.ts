@@ -54,6 +54,7 @@ export interface AppUser {
   isActive?: boolean;
   allowedTabs: string[];
   allowedModules?: string[];
+  editableTabs?: string[];
   avatarBg?: string;
   phone?: string;
   nationalId?: string;

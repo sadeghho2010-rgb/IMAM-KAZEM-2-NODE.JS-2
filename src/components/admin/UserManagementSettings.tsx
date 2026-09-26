@@ -57,6 +57,7 @@ export default function UserManagementSettings() {
     isReadOnly: false,
     canEdit: true,
     allowedTabs: ['todos', 'students', 'active-students', 'programs'],
+    editableTabs: ['todos', 'students', 'active-students', 'programs'],
   });
 
   const handleOpenCreate = () => {
@@ -72,6 +73,7 @@ export default function UserManagementSettings() {
       isReadOnly: false,
       canEdit: true,
       allowedTabs: ['todos', 'students', 'active-students', 'programs'],
+      editableTabs: ['todos', 'students', 'active-students', 'programs'],
     });
     setIsCreateModalOpen(true);
   };
@@ -90,6 +92,7 @@ export default function UserManagementSettings() {
       isReadOnly: !!user.isReadOnly,
       canEdit: user.canEdit !== undefined ? user.canEdit : true,
       allowedTabs: [...(user.allowedTabs || [])],
+      editableTabs: [...(user.editableTabs || user.allowedTabs || [])],
     });
     setIsEditModalOpen(true);
   };
@@ -110,6 +113,7 @@ export default function UserManagementSettings() {
       isReadOnly: formData.isReadOnly,
       canEdit: formData.canEdit,
       allowedTabs: formData.allowedTabs,
+      editableTabs: formData.editableTabs,
       avatarBg: formData.level === 1 ? 'bg-indigo-700' : formData.level === 2 ? 'bg-amber-600' : 'bg-emerald-600',
     });
 
@@ -132,6 +136,7 @@ export default function UserManagementSettings() {
       isReadOnly: formData.isReadOnly,
       canEdit: formData.canEdit,
       allowedTabs: formData.allowedTabs,
+      editableTabs: formData.editableTabs,
     });
 
     setIsEditModalOpen(false);
@@ -142,19 +147,43 @@ export default function UserManagementSettings() {
     setFormData(prev => {
       const exists = prev.allowedTabs.includes(tabId);
       if (exists) {
-        return { ...prev, allowedTabs: prev.allowedTabs.filter(t => t !== tabId) };
+        return { 
+          ...prev, 
+          allowedTabs: prev.allowedTabs.filter(t => t !== tabId),
+          editableTabs: (prev.editableTabs || []).filter(t => t !== tabId)
+        };
       } else {
-        return { ...prev, allowedTabs: [...prev.allowedTabs, tabId] };
+        return { 
+          ...prev, 
+          allowedTabs: [...prev.allowedTabs, tabId],
+          editableTabs: [...(prev.editableTabs || []), tabId]
+        };
+      }
+    });
+  };
+
+  const toggleTabEditPermission = (tabId: string) => {
+    setFormData(prev => {
+      const currentEditable = prev.editableTabs || [];
+      const exists = currentEditable.includes(tabId);
+      if (exists) {
+        return { ...prev, editableTabs: currentEditable.filter(t => t !== tabId) };
+      } else {
+        return { ...prev, editableTabs: [...currentEditable, tabId] };
       }
     });
   };
 
   const selectAllTabs = () => {
-    setFormData(prev => ({ ...prev, allowedTabs: ALL_SYSTEM_TABS.map(t => t.id) }));
+    setFormData(prev => ({ 
+      ...prev, 
+      allowedTabs: ALL_SYSTEM_TABS.map(t => t.id),
+      editableTabs: ALL_SYSTEM_TABS.map(t => t.id)
+    }));
   };
 
   const clearAllTabs = () => {
-    setFormData(prev => ({ ...prev, allowedTabs: [] }));
+    setFormData(prev => ({ ...prev, allowedTabs: [], editableTabs: [] }));
   };
 
   const filteredUsers = users.filter(u => {
@@ -696,11 +725,11 @@ export default function UserManagementSettings() {
                   />
                 </div>
 
-                {/* Allowed Menu Tabs Selection */}
+                {/* Allowed Menu Tabs & Editable Permissions Selection */}
                 <div className="space-y-2 pt-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-black text-slate-800">
-                      بخش‌های مجاز منوی کاربری (Permissions):
+                      بخش‌های مجاز منوی کاربری و مجوزهای دسترسی:
                     </label>
                     <div className="flex gap-2 text-[10px] font-bold">
                       <button
@@ -721,25 +750,42 @@ export default function UserManagementSettings() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-200 custom-scrollbar">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto p-2.5 bg-slate-50 rounded-2xl border border-slate-200 custom-scrollbar">
                     {ALL_SYSTEM_TABS.map(tab => {
-                      const isChecked = formData.allowedTabs.includes(tab.id);
+                      const isVisible = formData.allowedTabs.includes(tab.id);
+                      const isEditable = (formData.editableTabs || []).includes(tab.id);
                       return (
-                        <label
+                        <div
                           key={tab.id}
                           className={cn(
-                            "flex items-center gap-2 p-2 rounded-xl text-xs font-bold cursor-pointer transition-all border",
-                            isChecked ? "bg-indigo-50 border-indigo-200 text-indigo-900" : "bg-white border-slate-200/80 text-slate-600 hover:bg-slate-100"
+                            "flex items-center justify-between p-2.5 rounded-xl text-xs font-bold transition-all border",
+                            isVisible ? "bg-indigo-50/70 border-indigo-200 text-indigo-950" : "bg-white border-slate-200/80 text-slate-500 hover:bg-slate-100"
                           )}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleTabPermission(tab.id)}
-                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
-                          />
-                          <span>{tab.label}</span>
-                        </label>
+                          <label className="flex items-center gap-2 cursor-pointer grow select-none">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleTabPermission(tab.id)}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                            />
+                            <span className={cn(isVisible ? "text-slate-900" : "text-slate-500")}>{tab.label}</span>
+                          </label>
+
+                          {isVisible && (
+                            <label className="flex items-center gap-1.5 text-[10px] bg-white px-2 py-1 rounded-lg border border-indigo-100 shadow-2xs cursor-pointer select-none shrink-0" title="اجازه ویرایش دیتای این بخش">
+                              <input
+                                type="checkbox"
+                                checked={isEditable}
+                                onChange={() => toggleTabEditPermission(tab.id)}
+                                className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                              />
+                              <span className={cn(isEditable ? "text-emerald-700 font-black" : "text-slate-400 font-normal")}>
+                                {isEditable ? 'امکان ویرایش' : 'فقط مشاهده'}
+                              </span>
+                            </label>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

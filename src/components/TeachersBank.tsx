@@ -52,6 +52,16 @@ const ALL_CATEGORIES: TeacherCategory[] = [
 export default function TeachersBank() {
   const { currentUser } = useAuth();
   const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
+  const canManageTeachers = Boolean(
+    currentUser && (
+      currentUser.level === 1 || 
+      currentUser.role === 'super_admin' || 
+      currentUser.role === 'education_manager' || 
+      currentUser.role === 'education_officer' || 
+      currentUser.role === 'school_manager' || 
+      currentUser.username?.toUpperCase() === 'SHAH'
+    ) && !currentUser.isReadOnly
+  );
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -695,24 +705,28 @@ export default function TeachersBank() {
               <span>خروجی JSON</span>
             </button>
 
-            <button
-              onClick={() => {
-                setImportMessage(null);
-                setShowImportModal(true);
-              }}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
-            >
-              <Upload size={15} />
-              <span>افزودن از فایل (اکسل/JSON)</span>
-            </button>
+            {canManageTeachers && (
+              <>
+                <button
+                  onClick={() => {
+                    setImportMessage(null);
+                    setShowImportModal(true);
+                  }}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+                >
+                  <Upload size={15} />
+                  <span>افزودن از فایل (اکسل/JSON)</span>
+                </button>
 
-            <button
-              onClick={openAddModal}
-              className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
-            >
-              <UserPlus size={16} />
-              <span>{activeTab === 'external' ? 'افزودن مجموعه همکار' : 'افزودن استاد جدید'}</span>
-            </button>
+                <button
+                  onClick={openAddModal}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
+                >
+                  <UserPlus size={16} />
+                  <span>{activeTab === 'external' ? 'افزودن مجموعه همکار' : 'افزودن استاد جدید'}</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1116,47 +1130,62 @@ export default function TeachersBank() {
 
                       {/* Status Toggle */}
                       <td className="py-3 px-4">
-                        <button
-                          onClick={() => handleToggleStatus(teacher)}
-                          className={cn(
-                            "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer",
+                        {canManageTeachers ? (
+                          <button
+                            onClick={() => handleToggleStatus(teacher)}
+                            className={cn(
+                              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer",
+                              teacher.isActive 
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" 
+                                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                            )}
+                          >
+                            {teacher.isActive ? (
+                              <>
+                                <CheckCircle2 size={12} />
+                                <span>فعال</span>
+                              </>
+                            ) : (
+                              <>
+                                <XCircle size={12} />
+                                <span>غیرفعال</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className={cn(
+                            "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border",
                             teacher.isActive 
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" 
-                              : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
-                          )}
-                        >
-                          {teacher.isActive ? (
-                            <>
-                              <CheckCircle2 size={12} />
-                              <span>فعال</span>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle size={12} />
-                              <span>غیرفعال</span>
-                            </>
-                          )}
-                        </button>
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-rose-50 text-rose-700 border-rose-200"
+                          )}>
+                            {teacher.isActive ? 'فعال' : 'غیرفعال'}
+                          </span>
+                        )}
                       </td>
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => openEditModal(teacher)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                            title="ویرایش استاد"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(teacher.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="حذف استاد"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {canManageTeachers ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => openEditModal(teacher)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                              title="ویرایش استاد"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(teacher.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="حذف استاد"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">فقط مشاهده</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -1265,34 +1294,49 @@ export default function TeachersBank() {
 
                 {/* Card Footer Actions */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <button
-                    onClick={() => handleToggleStatus(teacher)}
-                    className={cn(
-                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer",
+                  {canManageTeachers ? (
+                    <button
+                      onClick={() => handleToggleStatus(teacher)}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer",
+                        teacher.isActive 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                      )}
+                    >
+                      {teacher.isActive ? 'فعال' : 'غیرفعال'}
+                    </button>
+                  ) : (
+                    <span className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border",
                       teacher.isActive 
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
                         : "bg-rose-50 text-rose-700 border-rose-200"
-                    )}
-                  >
-                    {teacher.isActive ? 'فعال' : 'غیرفعال'}
-                  </button>
+                    )}>
+                      {teacher.isActive ? 'فعال' : 'غیرفعال'}
+                    </span>
+                  )}
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(teacher)}
-                      className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors font-bold text-xs flex items-center gap-1"
-                    >
-                      <Edit size={14} />
-                      <span>ویرایش</span>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(teacher.id)}
-                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
-                      title="حذف"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  {canManageTeachers ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEditModal(teacher)}
+                        className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit size={14} />
+                        <span>ویرایش</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(teacher.id)}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                        title="حذف"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">فقط مشاهده</span>
+                  )}
                 </div>
               </div>
             );
