@@ -362,6 +362,7 @@ export interface Student {
   nationalId?: string;
   isActive: boolean;
   phoneNumber?: string;
+  phone?: string;
   studentCode?: string;
   grade?: string;
 
@@ -791,7 +792,7 @@ export interface OralExamPeriod {
   hasFiqh: boolean; // آیا آزمون فقه دارد؟
   fiqhBooks: string[]; // ['مکاسب', 'شرح لمعه', 'سایر']
   customFiqhBook?: string;
-  examDates: string[]; // روزهای برگزاری e.g. ['1403/09/15', '1403/09/16']
+  examDates?: string[]; // روزهای برگزاری e.g. ['1403/09/15', '1403/09/16']
   examDatesStr?: string;
   examinerTeacherIds: string[];
   examinerTeacherNames: string[];
@@ -852,6 +853,7 @@ export interface OralExamStudentRecord {
   usulExaminerNotes?: string;
 
   // توضیحات ممتحنین
+  examinerNotes?: string;
   examiner1Notes?: string;
   examiner2Notes?: string;
   generalNotes?: string;
