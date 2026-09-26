@@ -705,13 +705,27 @@ class LocalDatabase {
       });
     }
 
-    // If collection hasn't been synced from cloud yet in this session, await cloud sync!
+    // If local items exist, return them immediately and sync in background
+    if (localItems && localItems.length > 0) {
+      if (!this.syncedCollections.has(resolvedCol) && isSupabaseConfigured) {
+        // Sync asynchronously without blocking local data rendering
+        this.syncCollectionFromCloud(resolvedCol).catch(() => {});
+      }
+      return localItems;
+    }
+
+    // If local items are empty, try cloud sync with a quick 800ms timeout race so UI never hangs
     if (!this.syncedCollections.has(resolvedCol) && isSupabaseConfigured) {
-      const cloudDocs = await this.syncCollectionFromCloud(resolvedCol);
-      if (cloudDocs && cloudDocs.length > 0) {
-        const cloudIdSet = new Set(cloudDocs.map(c => c.id));
-        const unSyncedLocal = localItems.filter(l => !cloudIdSet.has((l as any).id));
-        return [...cloudDocs, ...unSyncedLocal] as T[];
+      try {
+        const cloudDocs = await Promise.race([
+          this.syncCollectionFromCloud(resolvedCol),
+          new Promise<any[]>((res) => setTimeout(() => res([]), 800))
+        ]);
+        if (cloudDocs && cloudDocs.length > 0) {
+          return cloudDocs as T[];
+        }
+      } catch (e) {
+        // Ignore timeout / error and fallback to localItems
       }
     }
 

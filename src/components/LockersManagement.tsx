@@ -907,7 +907,7 @@ ON CONFLICT (locker_number) DO NOTHING;
       {/* Loading State */}
       {loading ? (
         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200 shadow-sm">
-          <div className="w-12 h-12 border-4 border-amber-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <h3 className="font-bold text-slate-700 text-base">در حال بارگذاری اطلاعات کمدها و طلاب...</h3>
           <p className="text-slate-400 text-xs mt-1">لطفاً شکیبا باشید</p>
         </div>
@@ -1417,24 +1417,24 @@ ON CONFLICT (locker_number) DO NOTHING;
       {/* ========================================================================= */}
       <AnimatePresence>
         {assignModalLocker && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Modal Header */}
-              <div className="p-5 bg-gradient-to-r from-amber-600 to-amber-700 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center font-bold">
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 backdrop-blur-md flex items-center justify-center font-bold">
                     <KeyRound size={20} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base">
+                    <h3 className="font-extrabold text-base text-slate-100">
                       اختصاص کمد شماره #{assignModalLocker.lockerNumber} به طلبه
                     </h3>
-                    <p className="text-xs text-amber-100">
+                    <p className="text-xs text-slate-300 mt-0.5">
                       {assignModalLocker.status === 'occupied' 
                         ? `امانت‌گیرنده فعلی: ${assignModalLocker.studentName} (برای تغییر، طلبه جدید را انتخاب کنید)`
                         : 'با تایپ بخشی از نام طلبه، نتیجه فیلتر شده و با کلیک کمد واگذار می‌شود.'}
@@ -1444,16 +1444,16 @@ ON CONFLICT (locker_number) DO NOTHING;
 
                 <button
                   onClick={() => setAssignModalLocker(null)}
-                  className="p-2 text-white/70 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
               {/* Search Bar Input */}
-              <div className="p-4 bg-amber-50/50 border-b border-amber-100 space-y-2">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-2">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Search size={14} className="text-amber-600" />
+                  <Search size={14} className="text-indigo-600" />
                   <span>نوار جستجوی سریع طلاب (نام یا کد طلبه را تایپ کنید):</span>
                 </label>
                 <div className="relative">
@@ -1464,7 +1464,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                     value={studentSearchTerm}
                     onChange={(e) => setStudentSearchTerm(e.target.value)}
                     placeholder="مثلاً: حسینی، علی، محمد..."
-                    className="w-full pl-4 pr-10 py-3 bg-white border border-amber-300 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-xs"
+                    className="w-full pl-4 pr-10 py-3 bg-white border border-slate-300 rounded-2xl text-sm font-bold text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 shadow-xs"
                   />
                   {studentSearchTerm && (
                     <button
@@ -1522,15 +1522,15 @@ ON CONFLICT (locker_number) DO NOTHING;
                       <div
                         key={s.id}
                         onClick={() => handleConfirmAssignment(s)}
-                        className="p-3 bg-white hover:bg-amber-50/70 border border-slate-200 hover:border-amber-400 rounded-2xl transition-all cursor-pointer flex items-center justify-between group shadow-2xs hover:shadow-sm"
+                        className="p-3 bg-white hover:bg-slate-50 border border-slate-200 hover:border-indigo-400 rounded-2xl transition-all cursor-pointer flex items-center justify-between group shadow-2xs hover:shadow-sm"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-black text-sm">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black text-sm border border-indigo-100">
                             {s.name.charAt(0)}
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-extrabold text-sm text-slate-800 group-hover:text-amber-900">
+                              <span className="font-extrabold text-sm text-slate-800 group-hover:text-indigo-950">
                                 {s.name}
                               </span>
                               {s.grade && (
@@ -1550,14 +1550,14 @@ ON CONFLICT (locker_number) DO NOTHING;
                         <div className="flex flex-col items-end gap-1">
                           <button
                             type="button"
-                            className="px-3 py-1.5 bg-amber-600 group-hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm transition-all"
+                            className="px-3 py-1.5 bg-emerald-600 group-hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-all"
                           >
                             <span>واگذاری</span>
                             <Check size={14} />
                           </button>
 
                           {alreadyHasLocker && (
-                            <span className="text-[10px] text-amber-700 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <span className="text-[10px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1">
                               <AlertTriangle size={10} />
                               <span>دارای کمد #{existingLockers.join(', #')}</span>
                             </span>
@@ -1591,24 +1591,24 @@ ON CONFLICT (locker_number) DO NOTHING;
       {/* ========================================================================= */}
       <AnimatePresence>
         {historyModalLocker && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]"
             >
               {/* Header */}
-              <div className="p-5 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex items-center justify-between">
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between border-b border-slate-800">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center font-bold text-amber-400">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold">
                     <Clock size={20} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base">
+                    <h3 className="font-extrabold text-base text-slate-100">
                       سابقه امانت کلید کمد شماره #{historyModalLocker.lockerNumber}
                     </h3>
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs text-slate-300 mt-0.5">
                       مشاهده سوابق و ۳ نفر قبلی که کلید این کمد را در اختیار داشته‌اند
                     </p>
                   </div>
@@ -1616,7 +1616,7 @@ ON CONFLICT (locker_number) DO NOTHING;
 
                 <button
                   onClick={() => setHistoryModalLocker(null)}
-                  className="p-2 text-white/70 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -1652,7 +1652,7 @@ ON CONFLICT (locker_number) DO NOTHING;
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                    <Clock size={14} className="text-amber-600" />
+                    <Clock size={14} className="text-indigo-600" />
                     <span>سوابق افراد قبلی (۳ نفر آخر):</span>
                   </h4>
                   <span className="text-xs text-slate-400">
@@ -1665,13 +1665,13 @@ ON CONFLICT (locker_number) DO NOTHING;
                     تاکنون هیچ سابقه‌ای برای این کمد ثبت نشده است. با تخلیه یا تغییر کمد، سوابق به صورت خودکار در این بخش بایگانی می‌شوند.
                   </div>
                 ) : (
-                  <div className="relative border-r-2 border-amber-200 mr-3 pr-4 space-y-4">
+                  <div className="relative border-r-2 border-indigo-200 mr-3 pr-4 space-y-4">
                     {historyModalLocker.history.map((item, idx) => (
                       <div key={item.id || idx} className="relative">
                         {/* Dot */}
                         <div className={cn(
                           "absolute -right-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white shadow-xs",
-                          idx < 3 ? "bg-amber-600 ring-2 ring-amber-200" : "bg-slate-400"
+                          idx < 3 ? "bg-indigo-600 ring-2 ring-indigo-200" : "bg-slate-400"
                         )}></div>
 
                         <div className="bg-slate-50 hover:bg-slate-100/70 p-3.5 rounded-2xl border border-slate-200 transition-all">
@@ -1688,7 +1688,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                             </div>
 
                             {idx < 3 && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
                                 نفر {idx === 0 ? 'اول' : idx === 1 ? 'دوم' : 'سوم'} قبلی
                               </span>
                             )}
@@ -1705,7 +1705,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                               </div>
                             )}
                             {item.notes && (
-                              <div className="text-[11px] text-amber-800 bg-amber-50/80 p-1.5 rounded-lg border border-amber-100">
+                              <div className="text-[11px] text-slate-700 bg-slate-100/80 p-1.5 rounded-lg border border-slate-200">
                                 یادداشت: {item.notes}
                               </div>
                             )}
@@ -1736,12 +1736,12 @@ ON CONFLICT (locker_number) DO NOTHING;
       {/* ========================================================================= */}
       <AnimatePresence>
         {inactiveModalLocker && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
             >
               <div className="p-5 bg-gradient-to-r from-rose-600 to-rose-700 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1790,7 +1790,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                 </div>
 
                 {inactiveModalLocker.studentId && (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+                  <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-800">
                     توجه: این کمد هم‌اکنون در دست طلبه «{inactiveModalLocker.studentName}» است. با غیرفعال کردن، اطلاعات او به بخش سوابق منتقل شده و کمد مسدود می‌شود.
                   </div>
                 )}
@@ -1820,35 +1820,41 @@ ON CONFLICT (locker_number) DO NOTHING;
       {/* ========================================================================= */}
       <AnimatePresence>
         {isAddModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
             >
-              <div className="p-5 bg-gradient-to-r from-amber-600 to-amber-700 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Plus size={20} />
-                  <h3 className="font-extrabold text-base">افزودن شماره کمد جدید</h3>
+              {/* Sleek Slate & Indigo Header */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold">
+                    <Plus size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-slate-100">افزودن شماره کمد جدید</h3>
+                    <p className="text-xs text-slate-300 mt-0.5">ثبت تکی یا گروهی کمدها در سامانه</p>
+                  </div>
                 </div>
                 <button
                   onClick={() => setIsAddModalOpen(false)}
-                  className="text-white/70 hover:text-white"
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleAddLockers} className="p-5 space-y-4">
+              <form onSubmit={handleAddLockers} className="p-6 space-y-5">
                 {/* Single vs Range Mode */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                <div className="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-2xl text-xs font-bold">
                   <button
                     type="button"
                     onClick={() => setAddMode('single')}
                     className={cn(
-                      "py-2 rounded-lg transition-all",
-                      addMode === 'single' ? "bg-white text-slate-800 shadow-xs" : "text-slate-600"
+                      "py-2.5 rounded-xl transition-all cursor-pointer",
+                      addMode === 'single' ? "bg-white text-slate-900 shadow-sm font-black" : "text-slate-600 hover:text-slate-900"
                     )}
                   >
                     یک شماره تکی
@@ -1857,8 +1863,8 @@ ON CONFLICT (locker_number) DO NOTHING;
                     type="button"
                     onClick={() => setAddMode('range')}
                     className={cn(
-                      "py-2 rounded-lg transition-all",
-                      addMode === 'range' ? "bg-white text-slate-800 shadow-xs" : "text-slate-600"
+                      "py-2.5 rounded-xl transition-all cursor-pointer",
+                      addMode === 'range' ? "bg-white text-slate-900 shadow-sm font-black" : "text-slate-600 hover:text-slate-900"
                     )}
                   >
                     بازه چند شماره (مثلاً 201 تا 210)
@@ -1866,8 +1872,8 @@ ON CONFLICT (locker_number) DO NOTHING;
                 </div>
 
                 {addMode === 'single' ? (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700 block">شماره کمد:</label>
+                  <div className="space-y-2">
+                    <label className="text-xs font-extrabold text-slate-700 block">شماره کمد جدید:</label>
                     <input
                       type="number"
                       required
@@ -1875,13 +1881,13 @@ ON CONFLICT (locker_number) DO NOTHING;
                       value={singleLockerNum}
                       onChange={(e) => setSingleLockerNum(e.target.value)}
                       placeholder="مثلاً: 201"
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-center"
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-base font-black text-center text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
                     />
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700 block">از شماره:</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-extrabold text-slate-700 block">از شماره:</label>
                       <input
                         type="number"
                         required
@@ -1889,11 +1895,11 @@ ON CONFLICT (locker_number) DO NOTHING;
                         value={rangeStartNum}
                         onChange={(e) => setRangeStartNum(e.target.value)}
                         placeholder="مثلاً: 201"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-center"
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-base font-black text-center text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700 block">تا شماره:</label>
+                    <div className="space-y-2">
+                      <label className="text-xs font-extrabold text-slate-700 block">تا شماره:</label>
                       <input
                         type="number"
                         required
@@ -1901,27 +1907,28 @@ ON CONFLICT (locker_number) DO NOTHING;
                         value={rangeEndNum}
                         onChange={(e) => setRangeEndNum(e.target.value)}
                         placeholder="مثلاً: 220"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-center"
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-base font-black text-center text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all"
                       />
                     </div>
                   </div>
                 )}
 
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
-                  کمد جدید با وضعیت «خالی و آماده تحویل» به فهرست کمدها اضافه خواهد شد.
+                <div className="p-3.5 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 text-xs text-emerald-900 flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>کمد جدید با وضعیت «خالی و آماده تحویل» به فهرست کمدها اضافه خواهد شد.</span>
                 </div>
 
-                <div className="pt-2 flex items-center justify-between">
+                <div className="pt-2 flex items-center justify-between gap-3">
                   <button
                     type="button"
                     onClick={() => setIsAddModalOpen(false)}
-                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs cursor-pointer"
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs cursor-pointer transition-all"
                   >
                     انصراف
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm"
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs cursor-pointer shadow-md shadow-emerald-600/20 transition-all"
                   >
                     افزودن کمد(ها)
                   </button>
