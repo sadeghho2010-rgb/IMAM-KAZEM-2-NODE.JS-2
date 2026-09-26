@@ -86,6 +86,9 @@ export default function LockersManagement({ onNavigateTab }: LockersManagementPr
   // 5. Delete Confirm Modal
   const [lockerToDelete, setLockerToDelete] = useState<StudentLocker | null>(null);
 
+  // 5.b Vacate / Release Confirm Modal
+  const [lockerToRelease, setLockerToRelease] = useState<StudentLocker | null>(null);
+
   // 6. SQL Database Script Modal
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
@@ -302,22 +305,24 @@ export default function LockersManagement({ onNavigateTab }: LockersManagementPr
   };
 
   // 3. Release / Vacate Locker (تخلیه کمد و دریافت کلید)
-  const handleReleaseLocker = async (locker: StudentLocker) => {
-    if (!window.confirm(`آیا از تخلیه کمد شماره ${locker.lockerNumber} و دریافت کلید از «${locker.studentName}» اطمینان دارید؟`)) {
-      return;
-    }
+  const handleReleaseLocker = (locker: StudentLocker) => {
+    setLockerToRelease(locker);
+  };
+
+  const confirmReleaseLocker = async () => {
+    if (!lockerToRelease) return;
 
     try {
       const now = new Date().toISOString();
-      const currentHistory = [...(locker.history || [])];
+      const currentHistory = [...(lockerToRelease.history || [])];
 
-      if (locker.studentId) {
+      if (lockerToRelease.studentId) {
         currentHistory.unshift({
           id: `hist_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          studentId: locker.studentId,
-          studentName: locker.studentName || 'نامشخص',
-          studentGrade: locker.studentGrade,
-          assignedAt: locker.assignedAt || getTodayShamsi(),
+          studentId: lockerToRelease.studentId,
+          studentName: lockerToRelease.studentName || 'نامشخص',
+          studentGrade: lockerToRelease.studentGrade,
+          assignedAt: lockerToRelease.assignedAt || getTodayShamsi(),
           releasedAt: getTodayShamsi(),
           assignedBy: currentUser?.name || currentUser?.username || 'مسئول آموزش',
           notes: 'تخلیه عادی و تحویل کلید به آموزش'
@@ -325,7 +330,7 @@ export default function LockersManagement({ onNavigateTab }: LockersManagementPr
       }
 
       const updatedLocker: StudentLocker = {
-        ...locker,
+        ...lockerToRelease,
         status: 'empty',
         studentId: undefined,
         studentName: undefined,
@@ -340,7 +345,8 @@ export default function LockersManagement({ onNavigateTab }: LockersManagementPr
       await localDb.saveDoc('student_lockers', updatedLocker);
 
       setLockers(prev => prev.map(l => l.id === updatedLocker.id ? updatedLocker : l));
-      showToast(`کمد شماره ${locker.lockerNumber} تخلیه شد و اکنون در وضعیت «خالی و آماده تحویل» قرار دارد.`, 'success');
+      showToast(`کمد شماره ${lockerToRelease.lockerNumber} تخلیه شد و اکنون در وضعیت «خالی و آماده تحویل» قرار دارد.`, 'success');
+      setLockerToRelease(null);
     } catch (err) {
       console.error('Error releasing locker:', err);
       showToast('خطا در تخلیه کمد', 'error');
@@ -1976,6 +1982,53 @@ ON CONFLICT (locker_number) DO NOTHING;
                   className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm"
                 >
                   بله، حذف شود
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL 5.b: VACATE / RELEASE CONFIRM (تخلیه کمد)                              */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {lockerToRelease && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden p-6 text-center space-y-4"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+                <UserX size={24} />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-base text-slate-800">
+                  تخلیه کمد شماره #{lockerToRelease.lockerNumber}
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  آیا از تخلیه کمد شماره <strong className="text-slate-900">#{lockerToRelease.lockerNumber}</strong> و تحویل کلید از طلبه <strong className="text-slate-900">«{lockerToRelease.studentName}»</strong> اطمینان دارید؟
+                </p>
+                <div className="text-[11px] text-slate-400 bg-slate-50 p-2 rounded-xl mt-2">
+                  اطلاعات واگذاری فعلی در بخش سوابق و تاریخچه کمد ذخیره شده و وضعیت کمد به «خالی» تغییر خواهد یافت.
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => setLockerToRelease(null)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-all"
+                >
+                  انصراف
+                </button>
+                <button
+                  onClick={confirmReleaseLocker}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-sm transition-all"
+                >
+                  تأیید و تخلیه کمد
                 </button>
               </div>
             </motion.div>

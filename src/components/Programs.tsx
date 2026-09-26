@@ -365,6 +365,212 @@ export default function Programs() {
   // Discussion groups data
   const [discussionGroups, setDiscussionGroups] = useState<DiscussionGroup[]>([]);
 
+  // ------------------------------------------------------------------
+  // TEACHER EVALUATION A5 FORM GENERATOR STATE
+  // ------------------------------------------------------------------
+  const [showTeacherEvalModal, setShowTeacherEvalModal] = useState<boolean>(false);
+  const [evalSelectedProgramId, setEvalSelectedProgramId] = useState<string>('');
+  const [evalHonorificPattern, setEvalHonorificPattern] = useState<string>('محضر مبارک {{استاد}}');
+  const [evalPeriodTitle, setEvalPeriodTitle] = useState<string>('ارزیابی و نظرخواهی از اساتید محترم - نیمسال تحصیلی');
+  const [evalSections, setEvalSections] = useState<Array<{ id: string; title: string; desc: string }>>([
+    { id: 'sec_1', title: 'پیشرفت علمی و استعداد', desc: 'میزان درک مطالب، استعداد علمی و تسلط بر مباحث درس' },
+    { id: 'sec_2', title: 'مشارکت و تکالیف کلاس', desc: 'حضور فعال در مباحثه، پاسخگویی و ارائه به موقع تکالیف' },
+    { id: 'sec_3', title: 'نظم، انضباط و حضور', desc: 'حضور به موقع در کلاس و رعایت قوانین و ضوابط آموزشی' },
+    { id: 'sec_4', title: 'اخلاق، متانت و رفتار', desc: 'رعایت زی طلبگی، ادب و احترام در برخورد با استاد و طلاب' },
+  ]);
+  const [newSectionTitleInput, setNewSectionTitleInput] = useState<string>('');
+  const [newSectionDescInput, setNewSectionDescInput] = useState<string>('');
+
+  // Selected program for evaluation
+  const targetEvalProgram = useMemo(() => {
+    if (!evalSelectedProgramId && programs.length > 0) {
+      return programs[0];
+    }
+    return programs.find(p => p.id === evalSelectedProgramId) || programs[0] || null;
+  }, [programs, evalSelectedProgramId]);
+
+  // Students belonging to selected program
+  const targetEvalStudents = useMemo(() => {
+    if (!targetEvalProgram) return [];
+    
+    // 1. Check explicit enrollments
+    const enrolledIds = new Set(
+      enrollments
+        .filter(e => e.programId === targetEvalProgram.id)
+        .map(e => e.studentId)
+    );
+    let result = students.filter(s => enrolledIds.has(s.id));
+
+    // 2. Fallback: match by grade if enrollments are empty
+    if (result.length === 0 && targetEvalProgram.grade) {
+      result = students.filter(s => isProgramMatchingGradeFilter(s as any, targetEvalProgram.grade || ''));
+    }
+
+    return result.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+  }, [targetEvalProgram, enrollments, students]);
+
+  // Export PDF Document for Teacher Evaluations
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
+
+  const handleExportPdfEvaluationForms = async () => {
+    if (!targetEvalProgram || targetEvalStudents.length === 0) {
+      alert('هیچ طلبه‌ای برای این کلاس یافت نشد.');
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    try {
+      const area = document.getElementById('teacher-eval-a5-print-area');
+      if (!area) return;
+
+      area.style.display = 'block';
+      area.classList.remove('hidden');
+
+      const opt = {
+        margin: [4, 4, 4, 4],
+        filename: `ارزیابی_استاد_${(targetEvalProgram.teacher || 'استاد').replace(/\s+/g, '_')}_${(targetEvalProgram.title || 'درس').replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdfFn = html2pdfModule.default || (window as any).html2pdf;
+
+      await html2pdfFn().set(opt).from(area).save();
+
+      area.style.display = '';
+      area.classList.add('hidden');
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('خطا در تولید فایل PDF. لطفاً از دکمه چاپ مستقیم استفاده کرده و گزینه Save as PDF را انتخاب کنید.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  // Export Word Document for Teacher Evaluations
+  const handleExportWordEvaluationForms = () => {
+    if (!targetEvalProgram || targetEvalStudents.length === 0) {
+      alert('هیچ طلبه‌ای برای این کلاس یافت نشد.');
+      return;
+    }
+
+    const teacherName = targetEvalProgram.teacher || 'استاد محترم';
+    const honorificText = evalHonorificPattern.replace('{{استاد}}', teacherName);
+
+    let htmlStr = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>ارزیابی از اساتید - ${targetEvalProgram.title}</title>
+        <style>
+          @page Section1 { size: 595.3pt 841.9pt; margin: 28pt; mso-page-orientation: portrait; }
+          div.Section1 { page: Section1; }
+          body { font-family: 'B Nazanin', 'Vazirmatn', 'Tahoma', sans-serif; direction: rtl; text-align: right; }
+          .page-student { 
+            page-break-after: always; 
+            break-after: page;
+            border: 2px solid #0f172a; 
+            border-radius: 10px;
+            padding: 16px; 
+            margin-bottom: 20px; 
+            background-color: #ffffff;
+            box-sizing: border-box;
+          }
+          .header-title { text-align: center; font-weight: bold; font-size: 15pt; color: #0f172a; margin-bottom: 2px; }
+          .header-subtitle { text-align: center; font-size: 10.5pt; color: #475569; margin-bottom: 10px; }
+          .info-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; background: #f8fafc; }
+          .info-table td { border: 1px solid #cbd5e1; padding: 6px 10px; font-size: 10.5pt; }
+          .eval-table { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 12px; }
+          .eval-table th { border: 1px solid #334155; padding: 6px; background-color: #f1f5f9; font-size: 10.5pt; text-align: center; font-weight: bold; }
+          .eval-table td { border: 1px solid #cbd5e1; padding: 6px; font-size: 10pt; text-align: center; }
+          .notes-box { border: 1px solid #94a3b8; min-height: 80px; padding: 8px; margin-top: 8px; border-radius: 6px; font-size: 10pt; }
+          .signature-area { margin-top: 15px; text-align: left; font-size: 10.5pt; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="Section1">
+    `;
+
+    targetEvalStudents.forEach((st, idx) => {
+      htmlStr += `
+        <div class="page-student">
+          <div class="header-title">بسمه‌تعالی - فرم ارزیابی تربیتی و علمی طلبه</div>
+          <div class="header-subtitle">${evalPeriodTitle}</div>
+
+          <table class="info-table">
+            <tr>
+              <td colspan="2" style="font-weight: bold; color: #1e3a8a; font-size: 11.5pt;">
+                ${honorificText}
+              </td>
+            </tr>
+            <tr>
+              <td>نام و نام خانوادگی طلبه: <strong style="font-size: 11.5pt;">${st.name}</strong></td>
+              <td>نام درس: <strong>${targetEvalProgram.title || '-'}</strong></td>
+            </tr>
+            <tr>
+              <td>پایه تحصیلی: <strong>${st.grade || targetEvalProgram.grade || '-'}</strong> &nbsp;|&nbsp; کد: ${st.studentCode || st.nationalId || '-'}</td>
+              <td>زمان و مکان: ${targetEvalProgram.time || '-'} - مَدرَس ${targetEvalProgram.madrasRoom || '-'}</td>
+            </tr>
+          </table>
+
+          <div style="font-size: 10pt; font-weight: bold; margin-bottom: 4px; color: #334155;">
+            استاد گرامی؛ لطفاً سطح عملکرد و ارزیابی خود را در هر یک از بخش‌های زیر مشخص فرمایید:
+          </div>
+
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th style="width: 6%;">ردیف</th>
+                <th style="width: 35%;">بخش ارزیابی</th>
+                <th style="width: 30%;">ارزیابی و درجه</th>
+                <th style="width: 29%;">توضیحات و ملاحظات استاد</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${evalSections.map((sec, sIdx) => `
+                <tr>
+                  <td style="font-weight: bold;">${sIdx + 1}</td>
+                  <td style="text-align: right; font-weight: bold;">
+                    ${sec.title}
+                    ${sec.desc ? `<br/><span style="font-size: 8pt; font-weight: normal; color: #64748b;">${sec.desc}</span>` : ''}
+                  </td>
+                  <td>
+                    [ &nbsp; ] عالی &nbsp;&nbsp; [ &nbsp; ] خوب <br/>
+                    [ &nbsp; ] متوسط &nbsp;&nbsp; [ &nbsp; ] نیازمند تلاش
+                  </td>
+                  <td></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="notes-box">
+            <strong style="color: #0f172a;">جمع‌بندی، نظر نهایی و توصیه استاد محترم:</strong>
+            <br/><br/>
+          </div>
+
+          <div class="signature-area">
+            تاریخ و امضاء استاد: ............................................
+          </div>
+        </div>
+        <br style="page-break-before: always; clear: both;" />
+      `;
+    });
+
+    htmlStr += `</div></body></html>`;
+
+    const blob = new Blob(['\ufeff' + htmlStr], { type: 'application/msword;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `برگه‌های_ارزیابی_استاد_${(targetEvalProgram.teacher || 'استاد').replace(/\s+/g, '_')}_${(targetEvalProgram.title || 'درس').replace(/\s+/g, '_')}.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Export states & refs
   const [isExportingImage, setIsExportingImage] = useState(false);
   const [isExportingClassPdf, setIsExportingClassPdf] = useState(false);
@@ -1176,11 +1382,26 @@ export default function Programs() {
         <div className="flex flex-wrap items-center gap-3">
           <button 
             onClick={exportAllProgramsToExcel}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm hover:shadow-md"
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm hover:shadow-md cursor-pointer"
             title="خروجی فایل اکسل از لیست تمام برنامه‌ها و طلاب"
           >
             <FileSpreadsheet size={16} />
             <span>خروجی اکسل همه کلاس‌ها</span>
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => {
+              if (programs.length > 0 && !evalSelectedProgramId) {
+                setEvalSelectedProgramId(programs[0].id);
+              }
+              setShowTeacherEvalModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl font-extrabold text-xs transition-all shadow-md hover:shadow-lg border border-slate-700 cursor-pointer"
+            title="تولید فرم‌های ارزیابی اختصاصی A5 اساتید از طلاب کلاس"
+          >
+            <GraduationCap size={18} className="text-amber-400" />
+            <span>ارزیابی از اساتید (چاپ A5 / Word)</span>
           </button>
 
           {isAuthorizedToEdit ? (
@@ -3232,6 +3453,453 @@ export default function Programs() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL: TEACHER STUDENT EVALUATION FORMS GENERATOR (ارزیابی از اساتید)        */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {showTeacherEvalModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold">
+                    <GraduationCap size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-100 flex items-center gap-2">
+                      <span>تولید فرم‌های ارزیابی اختصاصی اساتید از طلاب</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        برگه A5 / Word
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      تولید برگه اختصاصی برای هر یک از طلاب کلاس جهت ارزیابی توسط استاد در فرمت A5
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTeacherEvalModal(false)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                
+                {/* 1. Select Program & Teacher */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <BookOpen size={16} className="text-indigo-600" />
+                    <span>۱. انتخاب درس و استاد ارزیاب:</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">انتخاب کلاس / درس مدرسه:</label>
+                      <select
+                        value={evalSelectedProgramId}
+                        onChange={(e) => setEvalSelectedProgramId(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      >
+                        {programs.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} - استاد: {p.teacher || 'تعیین‌نشده'} ({p.grade || 'کل پایه‌ها'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">{"عنوان/عبارت احترامیه استاد (مانند: محضر مبارک {{استاد}}):"}</label>
+                      <input
+                        type="text"
+                        value={evalHonorificPattern}
+                        onChange={(e) => setEvalHonorificPattern(e.target.value)}
+                        placeholder="محضر مبارک {{استاد}}"
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-600 block mb-1">عنوان دوره/ارزیابی (سربرگ برگه):</label>
+                      <input
+                        type="text"
+                        value={evalPeriodTitle}
+                        onChange={(e) => setEvalPeriodTitle(e.target.value)}
+                        placeholder="ارزیابی و نظرخواهی از اساتید محترم - نیمسال تحصیلی"
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 text-xs">
+                      <div>
+                        <span className="text-indigo-950 font-black block">مشخصات کلاس انتخاب‌شده:</span>
+                        <span className="text-[11px] text-indigo-800">
+                          تعداد طلاب: <strong className="font-extrabold text-indigo-950">{targetEvalStudents.length} نفر</strong> (تولید {targetEvalStudents.length} برگه A5)
+                        </span>
+                      </div>
+                      <Users size={20} className="text-indigo-600" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Configure Evaluation Sections */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <Sparkles size={16} className="text-amber-500" />
+                      <span>۲. تنظیم بخش‌های ارزیابی (علمی، مشارکت، نظم، اخلاق و...):</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-500">
+                      تعداد بخش‌های فعال: {evalSections.length}
+                    </span>
+                  </div>
+
+                  {/* List of active evaluation sections */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {evalSections.map((sec, idx) => (
+                      <div
+                        key={sec.id}
+                        className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between group"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className="w-5 h-5 rounded-full bg-indigo-50 text-indigo-700 font-extrabold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <h5 className="font-extrabold text-xs text-slate-800">{sec.title}</h5>
+                            {sec.desc && <p className="text-[10px] text-slate-500 mt-0.5">{sec.desc}</p>}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setEvalSections(evalSections.filter(s => s.id !== sec.id))}
+                          className="p-1.5 text-slate-300 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="حذف این بخش ارزیابی"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add New Custom Evaluation Section */}
+                  <div className="pt-2 border-t border-slate-200/80">
+                    <div className="text-[11px] font-bold text-slate-700 mb-1.5">افزودن بخش جدید به ارزیابی:</div>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="عنوان بخش جدید (مثلاً: مهارت پژوهشی، پیش مطالعه...)"
+                        value={newSectionTitleInput}
+                        onChange={(e) => setNewSectionTitleInput(e.target.value)}
+                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500"
+                      />
+                      <input
+                        type="text"
+                        placeholder="توضیح کوتاه بخش (اختیاری)..."
+                        value={newSectionDescInput}
+                        onChange={(e) => setNewSectionDescInput(e.target.value)}
+                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newSectionTitleInput.trim()) return;
+                          setEvalSections([
+                            ...evalSections,
+                            {
+                              id: `sec_${Date.now()}`,
+                              title: newSectionTitleInput.trim(),
+                              desc: newSectionDescInput.trim()
+                            }
+                          ]);
+                          setNewSectionTitleInput('');
+                          setNewSectionDescInput('');
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <Plus size={14} />
+                        <span>افزودن بخش</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. A5 Live Preview Box */}
+                <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Eye size={18} className="text-amber-400" />
+                      <h4 className="font-extrabold text-xs text-white">پیش‌نمایش زنده چیدمان برگه A5 برای هر طلبه:</h4>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {targetEvalStudents.length} برگه A5 تولید می‌شود
+                    </span>
+                  </div>
+
+                  {/* Preview Container */}
+                  <div className="bg-white text-slate-900 p-4 rounded-2xl shadow-inner border border-slate-300 max-w-lg mx-auto text-xs space-y-3" dir="rtl">
+                    <div className="text-center pb-2 border-b border-slate-200">
+                      <div className="font-black text-sm text-slate-900">بسمه‌تعالی - فرم ارزیابی تربیتی و علمی طلبه</div>
+                      <div className="text-[10px] text-slate-500">{evalPeriodTitle}</div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px] space-y-1">
+                      <div className="font-black text-indigo-900">
+                        {evalHonorificPattern.replace('{{استاد}}', targetEvalProgram?.teacher || 'استاد غلامی')}
+                      </div>
+                      <div className="flex items-center justify-between text-slate-700">
+                        <span>نام طلبه: <strong>{targetEvalStudents[0]?.name || 'علی حسینی'}</strong></span>
+                        <span>درس: <strong>{targetEvalProgram?.title || 'رسائل'}</strong></span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-500 text-[10px]">
+                        <span>پایه: {targetEvalStudents[0]?.grade || targetEvalProgram?.grade || '۷'}</span>
+                        <span>زمان: {targetEvalProgram?.time || '۰۸:۰۰ الی ۰۹:۰۰'}</span>
+                      </div>
+                    </div>
+
+                    {/* Preview Table */}
+                    <div className="border border-slate-300 rounded-xl overflow-hidden text-[10px]">
+                      <div className="bg-slate-100 font-bold p-1.5 grid grid-cols-12 text-center border-b border-slate-300">
+                        <span className="col-span-1">#</span>
+                        <span className="col-span-4">بخش ارزیابی</span>
+                        <span className="col-span-4">درجه (عالی/خوب/متوسط/نیازمند)</span>
+                        <span className="col-span-3">توضیحات</span>
+                      </div>
+                      {evalSections.slice(0, 3).map((sec, i) => (
+                        <div key={sec.id} className="p-1.5 grid grid-cols-12 text-center border-b last:border-0 border-slate-200">
+                          <span className="col-span-1 font-bold">{i + 1}</span>
+                          <span className="col-span-4 text-right font-bold truncate">{sec.title}</span>
+                          <span className="col-span-4 text-slate-400">[ ] عالی [ ] خوب [ ] متوسط</span>
+                          <span className="col-span-3 text-slate-300">..................</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="p-2 border border-slate-300 rounded-xl text-[10px] text-slate-500 min-h-[40px]">
+                      <strong>نظر نهایی و جمع‌بندی استاد:</strong>
+                    </div>
+
+                    <div className="text-left text-[10px] font-bold text-slate-700 pt-1">
+                      امضاء و تاریخ استاد: .......................................
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="p-5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-500 font-medium">
+                  {targetEvalStudents.length > 0 ? (
+                    <span className="text-emerald-700 font-bold">✓ آماده تولید {targetEvalStudents.length} برگه A5 برای طلاب این کلاس</span>
+                  ) : (
+                    <span className="text-rose-600 font-bold">هیچ طلبه‌ای برای این کلاس یافت نشد</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherEvalModal(false)}
+                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-2xl text-xs cursor-pointer transition-all"
+                  >
+                    انصراف
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportWordEvaluationForms}
+                    disabled={targetEvalStudents.length === 0}
+                    className="px-4 py-2.5 bg-sky-700 hover:bg-sky-800 text-white font-extrabold rounded-2xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                  >
+                    <FileText size={16} />
+                    <span>دانلود فایل Word (.doc)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportPdfEvaluationForms}
+                    disabled={targetEvalStudents.length === 0 || isGeneratingPdf}
+                    className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold rounded-2xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {isGeneratingPdf ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>در حال ساخت PDF...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download size={16} />
+                        <span>دانلود فایل PDF (عمودی)</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTeacherEvalModal(false);
+                      setTimeout(() => window.print(), 250);
+                    }}
+                    disabled={targetEvalStudents.length === 0}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
+                  >
+                    <Printer size={16} />
+                    <span>چاپ مستقیم (پرینت عمودی 1 صفحه)</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* HIDDEN PRINT AREA FOR SINGLE-PAGE PORTRAIT TEACHER EVALUATION             */}
+      {/* ========================================================================= */}
+      <div id="teacher-eval-a5-print-area" className="hidden print:block font-vazir text-slate-900" dir="rtl">
+        <style>{`
+          @media print {
+            @page {
+              size: portrait;
+              margin: 6mm;
+            }
+            body {
+              background: #ffffff !important;
+              color: #000000 !important;
+            }
+            .eval-single-page {
+              width: 100% !important;
+              max-width: 100% !important;
+              height: 270mm !important;
+              max-height: 270mm !important;
+              box-sizing: border-box !important;
+              page-break-after: always !important;
+              break-after: page !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              overflow: hidden !important;
+              padding: 6mm !important;
+              margin: 0 auto !important;
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: space-between !important;
+              border: 2px solid #0f172a !important;
+              border-radius: 12px !important;
+            }
+          }
+        `}</style>
+
+        {targetEvalProgram && targetEvalStudents.map((student, idx) => {
+          const teacherName = targetEvalProgram.teacher || 'استاد محترم';
+          const honorificText = evalHonorificPattern.replace('{{استاد}}', teacherName);
+          const studentPhoto = (student as any).photo || (student as any).image || (student as any).avatar;
+
+          return (
+            <div
+              key={student.id || idx}
+              className="eval-single-page w-full h-[270mm] max-h-[270mm] p-5 bg-white text-slate-900 mx-auto box-border flex flex-col justify-between border-2 border-slate-900 rounded-2xl overflow-hidden mb-6"
+              style={{ pageBreakAfter: 'always', breakAfter: 'page', pageBreakInside: 'avoid', breakInside: 'avoid' }}
+            >
+              <div className="space-y-3 flex-1 flex flex-col justify-between">
+                {/* Header */}
+                <div className="text-center border-b-2 border-slate-900 pb-2 space-y-0.5">
+                  <div className="font-black text-base text-slate-950">بسمه‌تعالی</div>
+                  <div className="font-black text-sm text-slate-900">حوزه علمیه - فرم ارزیابی تربیتی و علمی طلبه</div>
+                  <div className="text-xs text-slate-700 font-bold">{evalPeriodTitle}</div>
+                </div>
+
+                {/* Info Card with Student Photo */}
+                <div className="bg-slate-50 border-2 border-slate-800 p-2.5 rounded-xl flex items-center gap-3">
+                  {studentPhoto ? (
+                    <img
+                      src={studentPhoto}
+                      alt={student.name}
+                      className="w-14 h-16 object-cover rounded-lg border border-slate-400 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-16 rounded-lg bg-indigo-100 border border-indigo-300 flex items-center justify-center font-black text-indigo-900 text-lg shrink-0">
+                      {student.name ? student.name.charAt(0) : '؟'}
+                    </div>
+                  )}
+
+                  <div className="flex-1 text-xs space-y-1">
+                    <div className="font-black text-indigo-950 text-sm border-b border-slate-300 pb-1">
+                      {honorificText}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-slate-900 text-[11px]">
+                      <div>نام طلبه: <strong className="text-xs font-black">{student.name}</strong></div>
+                      <div>نام درس: <strong className="font-extrabold">{targetEvalProgram.title || '-'}</strong></div>
+                      <div>پایه تحصیلی: <strong className="font-extrabold">{student.grade || targetEvalProgram.grade || '-'}</strong> &nbsp;(کد: {student.studentCode || student.nationalId || '-'})</div>
+                      <div>زمان و مکان: <strong className="font-extrabold">{targetEvalProgram.time || '-'}</strong> &nbsp;(مَدرَس {targetEvalProgram.madrasRoom || '-'})</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section Notice */}
+                <div className="text-[11px] font-extrabold text-slate-800 pt-0.5">
+                  استاد گرامی؛ لطفاً سطح عملکرد و ارزیابی خود را در هر یک از بخش‌های زیر با علامت‌گذاری مشخص فرمایید:
+                </div>
+
+                {/* Evaluation Criteria Table */}
+                <table className="w-full border-collapse border-2 border-slate-900 text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-950 font-black">
+                      <th className="border border-slate-800 p-1.5 w-[7%] text-center">ردیف</th>
+                      <th className="border border-slate-800 p-1.5 w-[35%] text-right">بخش ارزیابی</th>
+                      <th className="border border-slate-800 p-1.5 w-[33%] text-center">درجه عملکرد</th>
+                      <th className="border border-slate-800 p-1.5 w-[25%] text-center">توضیحات و ملاحظات</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evalSections.map((sec, sIdx) => (
+                      <tr key={sec.id || sIdx} className="border-b border-slate-800">
+                        <td className="border border-slate-800 p-1.5 text-center font-bold">{sIdx + 1}</td>
+                        <td className="border border-slate-800 p-1.5 text-right">
+                          <div className="font-black text-slate-900">{sec.title}</div>
+                          {sec.desc && <div className="text-[9.5px] text-slate-600 font-normal">{sec.desc}</div>}
+                        </td>
+                        <td className="border border-slate-800 p-1.5 text-center font-bold text-[10.5px] leading-relaxed">
+                          <div>[ &nbsp; ] عالی &nbsp;&nbsp;&nbsp; [ &nbsp; ] خوب</div>
+                          <div className="mt-0.5">[ &nbsp; ] متوسط &nbsp;&nbsp;&nbsp; [ &nbsp; ] نیازمند تلاش</div>
+                        </td>
+                        <td className="border border-slate-800 p-1.5"></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Teacher Summary Notes Box */}
+                <div className="border-2 border-slate-900 rounded-xl p-2.5 h-24 text-xs">
+                  <strong className="font-black text-slate-900 block mb-1">جمع‌بندی، نظر نهایی و توصیه استاد محترم:</strong>
+                </div>
+              </div>
+
+              {/* Signature Footer */}
+              <div className="pt-3 border-t-2 border-slate-900 flex items-center justify-between text-xs font-black text-slate-900 mt-2">
+                <div>تاریخ ارزیابی: .... / .... / ۱۴۰۳</div>
+                <div>محل امضاء و نام استاد: ............................................</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -128,7 +128,11 @@ export async function saveToCloudWithTimeout(
   try {
     await Promise.race([cloudPromise, timeoutPromise]);
   } catch (err: any) {
-    console.error(`[Cloud Write Error] ${collectionName}/${id}:`, err);
+    if (isOfflineStorageAllowedForUser()) {
+      console.warn(`[Cloud Write Offline Mode] ${collectionName}/${id}:`, err?.message || err);
+    } else {
+      console.error(`[Cloud Write Error] ${collectionName}/${id}:`, err);
+    }
     throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
   }
 }
@@ -812,6 +816,7 @@ class LocalDatabase {
       if (isOfflineStorageAllowedForUser()) {
         console.warn(`[Offline Mode Permitted] Record ${id} in ${resolvedCol} stored locally.`);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+        dispatchDatabaseErrorToast('اطلاعات در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
         return id;
       }
 
@@ -866,6 +871,7 @@ class LocalDatabase {
       if (isOfflineStorageAllowedForUser()) {
         console.warn(`[Offline Mode Permitted] Update ${id} in ${resolvedCol} stored locally.`);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+        dispatchDatabaseErrorToast('ویرایش در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
         return;
       }
 
@@ -921,6 +927,7 @@ class LocalDatabase {
       if (isOfflineStorageAllowedForUser()) {
         console.warn(`[Offline Mode Permitted] Deletion ${id} in ${resolvedCol} stored locally.`);
         this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+        dispatchDatabaseErrorToast('حذف در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
         return;
       }
 
