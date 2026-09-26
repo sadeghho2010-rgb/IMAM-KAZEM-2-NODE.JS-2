@@ -25,7 +25,10 @@ export interface SafeUser {
   canBackup?: boolean;
   avatarBg?: string;
   allowedTabs: string[];
+  editableTabs?: string[];
+  modulePermissions?: Record<string, 'none' | 'view' | 'edit'>;
   allowedModules?: string[];
+  isActive?: boolean;
   lastLogin?: string;
   mustChangePassword?: boolean;
   accountLockedUntil?: string;
@@ -671,6 +674,7 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       dedicatedData.forEach(row => {
         const cleanName = (row.username || '').toUpperCase();
         if (cleanName) {
+          const rowData = row.data || {};
           usersMap.set(cleanName, {
             id: row.id || cleanName,
             username: cleanName,
@@ -678,14 +682,18 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
             role: row.role || 'student',
             level: row.level || 3,
             roleTitle: row.role_title,
-            allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (usersMap.get(cleanName)?.allowedTabs || []),
+            allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || []),
+            editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : (rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || []),
+            modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
+            isReadOnly: row.is_read_only !== undefined ? row.is_read_only : (rowData.isReadOnly !== undefined ? row.data.isReadOnly : usersMap.get(cleanName)?.isReadOnly),
+            canEdit: row.can_edit !== undefined ? row.can_edit : (rowData.canEdit !== undefined ? row.data.canEdit : usersMap.get(cleanName)?.canEdit),
             passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
             password: row.password || usersMap.get(cleanName)?.password,
             mustChangePassword: !!row.must_change_password,
             failedLoginAttempts: row.failed_login_attempts || 0,
             accountLockedUntil: row.account_locked_until,
             lastLogin: row.last_login,
-            ...(row.data || {})
+            ...rowData
           });
         }
       });
@@ -758,6 +766,10 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
         level: user.level || 3,
         role_title: user.roleTitle || '',
         allowed_tabs: user.allowedTabs || [],
+        editable_tabs: user.editableTabs || [],
+        module_permissions: user.modulePermissions || {},
+        is_read_only: user.isReadOnly || false,
+        can_edit: user.canEdit !== undefined ? user.canEdit : true,
         must_change_password: !!user.mustChangePassword,
         failed_login_attempts: user.failedLoginAttempts || 0,
         account_locked_until: user.accountLockedUntil || null,

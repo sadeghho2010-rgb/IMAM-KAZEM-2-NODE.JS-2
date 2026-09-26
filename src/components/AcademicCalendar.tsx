@@ -44,7 +44,8 @@ import {
   ThursdayMode,
   ThursdayOverride,
   ThursdayRangeSetting,
-  WeekDayName
+  WeekDayName,
+  Student
 } from '../types';
 import { 
   getTodayShamsi, 
@@ -95,7 +96,10 @@ export default function AcademicCalendar() {
   // Auth Context & Role Detection
   const { currentUser } = useAuth();
 
-  // RBAC: Only Level 1 Super Admin or Level 2 Education Manager / Officer can edit calendar
+  // State
+  const [students, setStudents] = useState<Student[]>([]);
+
+  // RBAC: Exclusive Edit Permissions: Only Level 1 Super Admin or Level 2 Education Manager / Officer can edit calendar
   const isCalendarEditor = useMemo(() => {
     if (!currentUser) return false;
     if (currentUser.isReadOnly) return false;
@@ -122,23 +126,42 @@ export default function AcademicCalendar() {
     ) {
       return null;
     }
-    if (currentUser.scope === 'grade_7' || currentUser.mentorId === 'hayati' || currentUser.gradeLabel?.includes('پایه ۷') || currentUser.gradeLabel?.includes('پایه 7')) {
+
+    // Level 3 Students / Class Representatives: Match with database student profile
+    if (currentUser.level === 3) {
+      const matched = students.find(s => 
+        (currentUser.studentId && s.id === currentUser.studentId) ||
+        (currentUser.nationalId && s.nationalId === currentUser.nationalId) ||
+        (currentUser.studentName && s.name?.trim() === currentUser.studentName?.trim()) ||
+        (s.name && currentUser.name && s.name.includes(currentUser.name.replace('طلبه', '').replace('(نماینده کلاس)', '').trim()))
+      );
+      if (matched && matched.grade) {
+        const gStr = matched.grade.trim();
+        if (gStr.includes('۷') || gStr.includes('7')) return 'پایه ۷';
+        if (gStr.includes('۸') || gStr.includes('8')) return 'پایه ۸';
+        if (gStr.includes('۹') || gStr.includes('9')) return 'پایه ۹';
+        if (gStr.includes('۱۰') || gStr.includes('10')) return 'پایه ۱۰';
+        return gStr;
+      }
+    }
+
+    if (currentUser.scope === 'grade_7' || currentUser.mentorId === 'hayati' || currentUser.gradeLabel?.includes('پایه ۷') || currentUser.gradeLabel?.includes('پایه 7') || currentUser.gradeLabel?.includes('۷') || currentUser.gradeLabel?.includes('7')) {
       return 'پایه ۷';
     }
-    if (currentUser.scope === 'grade_8' || currentUser.mentorId === 'hosseini' || currentUser.gradeLabel?.includes('پایه ۸') || currentUser.gradeLabel?.includes('پایه 8')) {
+    if (currentUser.scope === 'grade_8' || currentUser.mentorId === 'hosseini' || currentUser.gradeLabel?.includes('پایه ۸') || currentUser.gradeLabel?.includes('پایه 8') || currentUser.gradeLabel?.includes('۸') || currentUser.gradeLabel?.includes('8')) {
       return 'پایه ۸';
     }
-    if (currentUser.scope === 'grade_9' || currentUser.mentorId === 'soleimani' || currentUser.gradeLabel?.includes('پایه ۹') || currentUser.gradeLabel?.includes('پایه 9')) {
+    if (currentUser.scope === 'grade_9' || currentUser.mentorId === 'soleimani' || currentUser.gradeLabel?.includes('پایه ۹') || currentUser.gradeLabel?.includes('پایه 9') || currentUser.gradeLabel?.includes('۹') || currentUser.gradeLabel?.includes('9')) {
       return 'پایه ۹';
     }
-    if (currentUser.scope === 'grade_10' || currentUser.mentorId === 'asadi' || currentUser.gradeLabel?.includes('پایه ۱۰') || currentUser.gradeLabel?.includes('پایه 10')) {
+    if (currentUser.scope === 'grade_10' || currentUser.mentorId === 'asadi' || currentUser.gradeLabel?.includes('پایه ۱۰') || currentUser.gradeLabel?.includes('پایه 10') || currentUser.gradeLabel?.includes('۱۰') || currentUser.gradeLabel?.includes('10')) {
       return 'پایه ۱۰';
     }
     if (currentUser.gradeLabel && currentUser.gradeLabel.includes('پایه')) {
       return currentUser.gradeLabel;
     }
     return null;
-  }, [currentUser]);
+  }, [currentUser, students]);
 
   // Interactive Grade View Filter for Admins / Education Officers
   const [gradeViewFilter, setGradeViewFilter] = useState<string>('all');
@@ -159,6 +182,21 @@ export default function AcademicCalendar() {
   const [showWeeklyProgramModal, setShowWeeklyProgramModal] = useState(false);
   const [editingWeeklyProgram, setEditingWeeklyProgram] = useState<AcademicWeeklyProgram | null>(null);
   const [selectedProgramForDetails, setSelectedProgramForDetails] = useState<AcademicWeeklyProgram | null>(null);
+
+  // Read-only day details modal for students / non-editors
+  const [readOnlyDayModal, setReadOnlyDayModal] = useState<{
+    dateStr: string;
+    dayName: string;
+    isHoliday: boolean;
+    isSubPeriod: boolean;
+    isStudyDay: boolean;
+    isSpecialAcademicDay: boolean;
+    isWeekend: boolean;
+    thursdayMode?: ThursdayMode;
+    thursdayTitle?: string;
+    holidayInfo?: { holiday: AcademicHolidayItem; type: AcademicHolidayType | undefined };
+    subPeriodInfo?: AcademicSubPeriod;
+  } | null>(null);
 
   const [weeklyProgramForm, setWeeklyProgramForm] = useState<{
     title: string;
@@ -337,6 +375,8 @@ export default function AcademicCalendar() {
       const storedTypes = await localDb.getDocs<AcademicHolidayType>('academic_holiday_types');
       const storedSubPeriods = await localDb.getDocs<AcademicSubPeriod>('academic_sub_periods');
       const storedWeeklyPrograms = await localDb.getDocs<AcademicWeeklyProgram>('academic_weekly_programs');
+      const storedStudents = await localDb.getDocs<Student>('students');
+      setStudents(storedStudents || []);
 
       let currentTypes = storedTypes;
       if (storedTypes.length === 0) {
@@ -711,6 +751,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSaveSubPeriod = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!selectedPeriodId) return;
 
@@ -895,6 +936,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSaveWeeklyProgram = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!selectedPeriodId || !weeklyProgramForm.title.trim()) return;
 
@@ -971,6 +1013,7 @@ export default function AcademicCalendar() {
   };
 
   const handleToggleSessionCancellation = async (programId: string, dateStr: string) => {
+    if (!isCalendarEditor) return;
     const wp = weeklyPrograms.find(p => p.id === programId);
     if (!wp) return;
 
@@ -1266,6 +1309,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSavePeriod = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!periodForm.title.trim() || !periodForm.startDate || !periodForm.endDate) {
       alert("لطفا عنوان، تاریخ شروع و پایان دوره را تکمیل کنید.");
@@ -1326,6 +1370,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSaveThursdayOverride = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!selectedPeriod || !selectedThursdayDate) return;
 
@@ -1353,6 +1398,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSetThursdayOverride = async (dateStr: string, mode: ThursdayMode, title?: string) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const existingOverrides = selectedPeriod.thursdayOverrides || {};
     const updatedOverrides = {
@@ -1377,6 +1423,7 @@ export default function AcademicCalendar() {
   };
 
   const handleBatchSetThursdays = async (mode: ThursdayMode) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const thuList = dateAnalysis.dayDetailsList.filter(d => d.isThu);
     const updatedOverrides: Record<string, ThursdayOverride> = { ...(selectedPeriod.thursdayOverrides || {}) };
@@ -1399,6 +1446,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSetDefaultThursdayMode = async (mode: ThursdayMode) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const updatedPeriod: AcademicCalendarPeriod = {
       ...selectedPeriod,
@@ -1435,6 +1483,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSaveThursdayRange = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!selectedPeriod) return;
 
@@ -1488,6 +1537,7 @@ export default function AcademicCalendar() {
   };
 
   const handleDeleteThursdayRange = async (rangeId: string) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const currentRanges = selectedPeriod.thursdayRanges || [];
     const updatedRanges = currentRanges.filter(r => r.id !== rangeId);
@@ -1504,6 +1554,7 @@ export default function AcademicCalendar() {
   };
 
   const handleDeletePeriod = async (periodId: string) => {
+    if (!isCalendarEditor) return;
     try {
       await localDb.deleteDoc('academic_calendar_periods', periodId);
       // delete associated holidays
@@ -1527,6 +1578,7 @@ export default function AcademicCalendar() {
 
   // --- Handlers for Toggle Settings on Period ---
   const handleToggleThursday = async (val: boolean) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const updated = { ...selectedPeriod, includeThursdayAsStudyDay: val };
     await localDb.updateDoc('academic_calendar_periods', selectedPeriod.id, updated);
@@ -1535,6 +1587,7 @@ export default function AcademicCalendar() {
   };
 
   const handleToggleFriday = async (val: boolean) => {
+    if (!isCalendarEditor) return;
     if (!selectedPeriod) return;
     const updated = { ...selectedPeriod, includeFridayAsStudyDay: val };
     await localDb.updateDoc('academic_calendar_periods', selectedPeriod.id, updated);
@@ -1574,6 +1627,7 @@ export default function AcademicCalendar() {
   };
 
   const handleSaveHoliday = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!holidayForm.title.trim() || !holidayForm.startDate) {
       alert("لطفا عنوان و تاریخ تعطیلی را وارد کنید.");
@@ -1622,6 +1676,7 @@ export default function AcademicCalendar() {
   };
 
   const handleDeleteHoliday = async (holidayId: string) => {
+    if (!isCalendarEditor) return;
     try {
       await localDb.deleteDoc('academic_holidays', holidayId);
       setHolidays(holidays.filter(h => h.id !== holidayId));
@@ -1633,6 +1688,7 @@ export default function AcademicCalendar() {
 
   // --- Handlers for Holiday Types ---
   const handleAddHolidayType = async (e: React.FormEvent) => {
+    if (!isCalendarEditor) return;
     e.preventDefault();
     if (!newTypeName.trim()) return;
 
@@ -1654,6 +1710,7 @@ export default function AcademicCalendar() {
   };
 
   const handleDeleteHolidayType = async (typeId: string, typeName: string) => {
+    if (!isCalendarEditor) return;
     try {
       await localDb.deleteDoc('academic_holiday_types', typeId);
       setHolidayTypes(holidayTypes.filter(t => t.id !== typeId));
@@ -1697,6 +1754,7 @@ export default function AcademicCalendar() {
   };
 
   const handleImportData = async (overwriteMode: 'replace' | 'merge') => {
+    if (!isCalendarEditor) return;
     if (!importJsonText.trim()) {
       alert("لطفا محتوای فایل JSON را وارد یا بارگذاری کنید.");
       return;
@@ -1762,12 +1820,17 @@ export default function AcademicCalendar() {
     reader.readAsText(file);
   };
 
-  // Export to Excel handler
+  // Export to Excel handler (Accessible to all users with tailored grade filtering)
   const handleExportToExcel = () => {
     if (!selectedPeriod) return;
 
+    const audienceLabel = userAssignedGrade
+      ? `${userAssignedGrade} (${currentUser?.studentName || currentUser?.name || 'کاربر'})`
+      : (gradeViewFilter !== 'all' ? `پایه ${gradeViewFilter}` : 'تمامی پایه‌ها (کل سیستم)');
+
     const summarySheetData = [
       { 'شاخص': 'عنوان دوره تحصیلی', 'مقدار': selectedPeriod.title },
+      { 'شاخص': 'مخاطب و پایه تقویم', 'مقدار': audienceLabel },
       { 'شاخص': 'تاریخ شروع دوره', 'مقدار': selectedPeriod.startDate },
       { 'شاخص': 'تاریخ پایان دوره', 'مقدار': selectedPeriod.endDate },
       { 'شاخص': 'مجموع کل روزهای دوره', 'مقدار': dateAnalysis.totalDays },
@@ -1777,11 +1840,13 @@ export default function AcademicCalendar() {
       { 'شاخص': 'روزهای تعطیل رسمی و مناسبتی', 'مقدار': dateAnalysis.holidayDaysCount },
       { 'شاخص': 'تعطیلات آخر هفته (پنج‌شنبه/جمعه)', 'مقدار': dateAnalysis.weekendDays },
       { 'شاخص': 'وضعیت درسی پنج‌شنبه‌ها', 'مقدار': selectedPeriod.includeThursdayAsStudyDay ? 'روز درسی' : 'تعطیل' },
+      { 'شاخص': 'تاریخ دریافت گزارش', 'مقدار': getTodayShamsi() },
     ];
 
     const subPeriodsSheetData = periodSubPeriods.map((sp, i) => ({
       'ردیف': i + 1,
       'عنوان دوره ویژه': sp.title,
+      'مخاطبان': sp.isPublic !== false ? 'عمومی (تمامی پایه‌ها)' : (sp.targetGrades?.join('، ') || sp.grade || 'پایه خاص'),
       'تاریخ شروع': sp.startDate,
       'تاریخ پایان': sp.endDate || sp.startDate,
       'مدت (روز)': generateShamsiDateRange(sp.startDate, sp.endDate || sp.startDate).length,
@@ -1790,6 +1855,24 @@ export default function AcademicCalendar() {
       'توضیحات': sp.description || ''
     }));
 
+    const weeklyProgramsSheetData = periodWeeklyPrograms.map((wp, i) => {
+      const stats = getWeeklyProgramStats(wp);
+      return {
+        'ردیف': i + 1,
+        'عنوان برنامه / کارگاه': wp.title,
+        'مخاطبان': wp.isPublic !== false ? 'عمومی (تمامی پایه‌ها)' : (wp.targetGrades?.join('، ') || wp.grade || 'پایه خاص'),
+        'روزهای برگزاری': wp.scheduleType === 'custom_dates' ? `${wp.specificDates?.length || 0} جلسه اختصاصی` : (wp.daysOfWeek?.join('، ') || wp.dayOfWeek || '---'),
+        'ساعت برگزاری': wp.time || '---',
+        'مدرس / مکان': wp.locationOrTeacher || '---',
+        'بازه اجرا': `${wp.startDate || selectedPeriod.startDate} تا ${wp.endDate || selectedPeriod.endDate}`,
+        'کل جلسات بالقوه': stats.totalPotentialSessions,
+        'جلسات برگزارشده': stats.heldSessionsCount,
+        'جلسات لغو/تعطیل‌شده': stats.cancelledSessionsCount,
+        'درصد برگزاری': `${stats.heldRate}%`,
+        'توضیحات': wp.description || ''
+      };
+    });
+
     const holidaysSheetData = periodHolidays.map((h, i) => ({
       'ردیف': i + 1,
       'عنوان تعطیلی': h.title,
@@ -1797,6 +1880,7 @@ export default function AcademicCalendar() {
       'تاریخ شروع': h.startDate,
       'تاریخ پایان': h.endDate || h.startDate,
       'روزهای هفته': `${getShamsiDayOfWeekName(h.startDate)} الی ${getShamsiDayOfWeekName(h.endDate || h.startDate)}`,
+      'مدت (روز)': generateShamsiDateRange(h.startDate, h.endDate || h.startDate).length,
       'توضیحات': h.description || ''
     }));
 
@@ -1812,16 +1896,19 @@ export default function AcademicCalendar() {
     const wb = XLSX.utils.book_new();
     const wsSummary = XLSX.utils.json_to_sheet(summarySheetData);
     const wsSubPeriods = XLSX.utils.json_to_sheet(subPeriodsSheetData);
+    const wsWeeklyPrograms = XLSX.utils.json_to_sheet(weeklyProgramsSheetData);
     const wsHolidays = XLSX.utils.json_to_sheet(holidaysSheetData);
     const wsStudyDays = XLSX.utils.json_to_sheet(studyDaysSheetData);
 
     XLSX.utils.book_append_sheet(wb, wsSummary, 'خلاصه آمار');
     XLSX.utils.book_append_sheet(wb, wsSubPeriods, 'دوره‌های ویژه');
+    XLSX.utils.book_append_sheet(wb, wsWeeklyPrograms, 'برنامه‌های هفتگی و کارگاه‌ها');
     XLSX.utils.book_append_sheet(wb, wsHolidays, 'جدول تعطیلات');
     XLSX.utils.book_append_sheet(wb, wsStudyDays, 'ایام حضور تحصیلی');
 
-    XLSX.writeFile(wb, `تقویم_آموزشی_${selectedPeriod.title.replace(/\s+/g, '_')}.xlsx`);
-    showToast("فایل اکسل تقویم آموزشی دانلود شد.");
+    const filePrefix = userAssignedGrade ? `${userAssignedGrade.replace(/\s+/g, '_')}_` : '';
+    XLSX.writeFile(wb, `تقویم_آموزشی_${filePrefix}${selectedPeriod.title.replace(/\s+/g, '_')}.xlsx`);
+    showToast("فایل اکسل تقویم آموزشی با موفقیت دانلود شد.");
   };
 
   // Loading state
@@ -2216,9 +2303,10 @@ export default function AcademicCalendar() {
             {/* Quick Thursday / Friday Toggles */}
             {selectedPeriod && (
               <div className="flex items-center gap-4 flex-wrap bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={cn("flex items-center gap-2", isCalendarEditor ? "cursor-pointer" : "cursor-not-allowed opacity-80")}>
                   <input
                     type="checkbox"
+                    disabled={!isCalendarEditor}
                     checked={selectedPeriod.includeThursdayAsStudyDay}
                     onChange={(e) => handleToggleThursday(e.target.checked)}
                     className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
@@ -2226,9 +2314,10 @@ export default function AcademicCalendar() {
                   <span className="font-bold text-slate-700">پنج‌شنبه‌ها روز درسی باشند</span>
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={cn("flex items-center gap-2", isCalendarEditor ? "cursor-pointer" : "cursor-not-allowed opacity-80")}>
                   <input
                     type="checkbox"
+                    disabled={!isCalendarEditor}
                     checked={selectedPeriod.includeFridayAsStudyDay}
                     onChange={(e) => handleToggleFriday(e.target.checked)}
                     className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
@@ -2238,13 +2327,15 @@ export default function AcademicCalendar() {
               </div>
             )}
 
-            <button
-              onClick={() => handleOpenAddHoliday()}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
-            >
-              <Plus size={15} />
-              <span>ثبت تعطیلی جدید</span>
-            </button>
+            {isCalendarEditor && (
+              <button
+                onClick={() => handleOpenAddHoliday()}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+              >
+                <Plus size={15} />
+                <span>ثبت تعطیلی جدید</span>
+              </button>
+            )}
           </div>
 
           {/* Month Calendar Grid */}
@@ -2311,14 +2402,18 @@ export default function AcademicCalendar() {
                     <div
                       key={dayItem.dateStr}
                       onClick={() => {
-                        if (dayItem.holidayInfo) {
-                          handleOpenEditHoliday(dayItem.holidayInfo.holiday);
-                        } else if (dayItem.subPeriodInfo) {
-                          handleOpenEditSubPeriod(dayItem.subPeriodInfo);
-                        } else if (dayItem.isThu) {
-                          handleOpenThursdayModal(dayItem.dateStr);
+                        if (isCalendarEditor) {
+                          if (dayItem.holidayInfo) {
+                            handleOpenEditHoliday(dayItem.holidayInfo.holiday);
+                          } else if (dayItem.subPeriodInfo) {
+                            handleOpenEditSubPeriod(dayItem.subPeriodInfo);
+                          } else if (dayItem.isThu) {
+                            handleOpenThursdayModal(dayItem.dateStr);
+                          } else {
+                            handleOpenAddHoliday(dayItem.dateStr);
+                          }
                         } else {
-                          handleOpenAddHoliday(dayItem.dateStr);
+                          setReadOnlyDayModal(dayItem);
                         }
                       }}
                       className={cn(

@@ -98,54 +98,26 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
   const { currentMentor } = useMentor();
-  const { currentUser, logout, hasModuleAccess, isReadOnly } = useAuth();
+  const { currentUser, logout, hasModuleAccess, isReadOnly, isTabAllowed } = useAuth();
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
-    return ['backup', 'user-credentials', 'audit-logs'].includes(activeTab);
+    return ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab);
   });
   const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   React.useEffect(() => {
-    if (['backup', 'user-credentials', 'audit-logs'].includes(activeTab)) {
+    if (['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab)) {
       setIsSiteManagementOpen(true);
     }
   }, [activeTab]);
-
-  const isEduOrSuperAdmin = Boolean(
-    currentUser && (
-      currentUser.level === 1 ||
-      currentUser.role === 'super_admin' ||
-      currentUser.role === 'school_manager' ||
-      currentUser.role === 'education_manager' ||
-      currentUser.role === 'education_officer' ||
-      currentUser.username?.toUpperCase() === 'SHAH'
-    )
-  );
-
-  const isFinanceUser = Boolean(
-    currentUser && (
-      currentUser.role === 'finance_manager' || 
-      currentUser.role === 'financial_officer' || 
-      currentUser.username?.toUpperCase() === 'MALI'
-    )
-  );
-
-  const isResearchUser = Boolean(
-    currentUser && (
-      currentUser.role === 'research_manager' ||
-      currentUser.role === 'research_officer' ||
-      currentUser.roleTitle?.includes('پژوهش') ||
-      currentUser.username?.toUpperCase() === 'YAZDANI'
-    )
-  );
-
-  const canAccessSiteManagement = isEduOrSuperAdmin || isFinanceUser;
 
   const siteManagementSubItems = [
     { id: 'backup' as AppModuleId, label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
     { id: 'user-credentials' as AppModuleId, label: 'مدیریت ورود کاربران', icon: ShieldCheck },
     { id: 'audit-logs' as AppModuleId, label: 'فعالیت‌های سایت', icon: Activity },
     { id: 'app-logs' as AppModuleId, label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
-  ];
+  ].filter(sub => isTabAllowed(sub.id));
+
+  const canAccessSiteManagement = siteManagementSubItems.length > 0;
 
   const handleMouseEnterSiteManagement = () => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -159,189 +131,20 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   };
 
   // Filter items based on user's authorized modules
+  // Granular permissions set by Super Admin in User Management take ABSOLUTE priority!
   const visibleMenuItems = ALL_MENU_DEFINITIONS.filter(item => {
     if (!currentUser) return false;
 
-    // When site management dropdown is active for managers, hide its sub-items from top level
-    if ((isEduOrSuperAdmin || isFinanceUser) && ['backup', 'user-credentials', 'audit-logs'].includes(item.id)) {
+    // Check if tab is allowed for current user
+    if (!isTabAllowed(item.id)) {
       return false;
     }
 
-    // امتحان شفاهی طلاب: برای مسئول آموزش، سوپرادمین، مدیر مدرسه و اساتید پایه
-    if (item.id === 'oral-exams') {
-      const isEduStaff = currentUser.level === 1 || 
-                         currentUser.role === 'super_admin' || 
-                         currentUser.role === 'education_manager' || 
-                         currentUser.role === 'education_officer' || 
-                         currentUser.username?.toUpperCase() === 'SHAH';
-      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
-                                currentUser.role === 'grade_mentor' || 
-                                currentUser.role?.startsWith('grade_supervisor_') ||
-                                ['ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username?.toUpperCase());
-      return isEduStaff || isGradeSupervisor;
+    // When site management dropdown is active and this item is inside it, hide its sub-items from top level
+    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(item.id)) {
+      return false;
     }
 
-    // اختصاصی مسئول مالی: بخش‌های منفک مالی طبق درخواست کاربر + جریان کار، پیگیری‌ها، تقویم آموزشی، مدیریت کل طلاب، بانک اساتید + مدیریت کامل سایت
-    if (isFinanceUser) {
-      const allowedFinanceTabs = [
-        'finance-tuition',
-        'finance-grade-mentors',
-        'finance-teachers',
-        'finance-lunch',
-        'finance-claims',
-        'finance-expenses-reports',
-        'workflow',
-        'todos',
-        'academic-calendar',
-        'students',
-        'teachers-bank',
-        'staff-bank',
-        'teacher-transport',
-        'backup',
-        'user-credentials',
-        'audit-logs',
-        'app-logs'
-      ];
-      return allowedFinanceTabs.includes(item.id);
-    }
-
-    // صندوق قرض‌الحسنه و وام‌ها: زیرمجموعه مسئول آموزش، سوپرادمین و مدیران آموزشی
-    if (item.id === 'finance-loans-fund') {
-      return (
-        currentUser.level === 1 ||
-        currentUser.role === 'super_admin' ||
-        currentUser.role === 'education_manager' ||
-        currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH'
-      );
-    }
-
-    // فعالیت‌های سایت و پشتیبان‌گیری: برای سوپر ادمین، مسئول آموزش و مسئول مالی
-    if (item.id === 'audit-logs' || item.id === 'backup' || (item.id as string) === 'app-logs') {
-      return (
-        currentUser.level === 1 ||
-        currentUser.role === 'super_admin' ||
-        currentUser.role === 'education_manager' ||
-        currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH' ||
-        isFinanceUser
-      );
-    }
-
-    // مدیریت ورود کاربران: برای سوپر ادمین، مدیران آموزش و مسئول مالی (مسئول پژوهش دسترسی ندارد)
-    if (item.id === 'user-credentials') {
-      if (isResearchUser) return false;
-      return (
-        currentUser.level === 1 ||
-        currentUser.role === 'super_admin' ||
-        currentUser.role === 'education_manager' ||
-        currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH' ||
-        isFinanceUser
-      );
-    }
-
-    // تنظیم گزارش مالی طلاب: منحصراً ویژه مسئول آموزش و سوپرادمین (اساتید پایه و پژوهش دسترسی ندارند)
-    if (item.id === 'education-financial-report') {
-      if (isResearchUser || isFinanceUser) return false;
-      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
-                                currentUser.role === 'grade_mentor' || 
-                                currentUser.role?.startsWith('grade_supervisor_') ||
-                                currentUser.roleTitle?.includes('استاد پایه') || 
-                                currentUser.roleTitle?.includes('مسئول پایه');
-      if (isGradeSupervisor) return false;
-      return (
-        currentUser.level === 1 ||
-        currentUser.role === 'super_admin' ||
-        currentUser.role === 'education_manager' ||
-        currentUser.role === 'education_officer' ||
-        currentUser.username.toUpperCase() === 'SHAH'
-      );
-    }
-
-    // ارزیابی مقالات: کلاً مربوط به مسئول پژوهش است؛ مسئول آموزش و مسئولین پایه نباید ببینند
-    if (item.id === 'article-evaluations') {
-      const isEducationStaff = currentUser.role === 'education_manager' || 
-                               currentUser.role === 'education_officer' || 
-                               currentUser.roleTitle?.includes('آموزش') || 
-                               currentUser.username.toUpperCase() === 'SHAH';
-      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
-                                currentUser.role === 'grade_mentor' || 
-                                currentUser.role?.startsWith('grade_supervisor_') ||
-                                currentUser.roleTitle?.includes('استاد پایه') || 
-                                currentUser.roleTitle?.includes('مسئول پایه') || 
-                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
-      const isFinanceStaff = currentUser.role === 'finance_manager' || 
-                             currentUser.username.toUpperCase() === 'MALI';
-
-      if (isEducationStaff || isGradeSupervisor || isFinanceStaff) {
-        return false;
-      }
-      return (
-        currentUser.level === 1 || 
-        currentUser.role === 'super_admin' || 
-        currentUser.role === 'research_manager' || 
-        currentUser.role === 'research_officer' || 
-        currentUser.roleTitle?.includes('پژوهش') || 
-        currentUser.username.toUpperCase() === 'YAZDANI' ||
-        currentUser.level === 3
-      );
-    }
-
-    // سامانه انتخاب واحد: کلاً مربوط به مسئول آموزش است و اساتید پایه و پژوهش نباید ببینند
-    if (item.id === 'course-selection') {
-      const isResearchStaff = currentUser.role === 'research_manager' ||
-                              currentUser.role === 'research_officer' ||
-                              currentUser.roleTitle?.includes('پژوهش') ||
-                              currentUser.username.toUpperCase() === 'YAZDANI';
-      const isGradeSupervisor = currentUser.role === 'grade_supervisor' || 
-                                currentUser.role === 'grade_mentor' || 
-                                currentUser.role?.startsWith('grade_supervisor_') ||
-                                currentUser.roleTitle?.includes('استاد پایه') || 
-                                currentUser.roleTitle?.includes('مسئول پایه') || 
-                                ['SADEGH', 'RAHNAMA', 'ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser.username.toUpperCase());
-      const isFinanceStaff = currentUser.role === 'finance_manager' || 
-                             currentUser.username.toUpperCase() === 'MALI';
-
-      if (isResearchStaff || isGradeSupervisor || isFinanceStaff) {
-        return false;
-      }
-      return (
-        currentUser.level === 1 ||
-        currentUser.role === 'super_admin' ||
-        currentUser.role === 'education_manager' ||
-        currentUser.role === 'education_officer' ||
-        currentUser.roleTitle?.includes('آموزش') ||
-        currentUser.username.toUpperCase() === 'SHAH' ||
-        currentUser.level === 3
-      );
-    }
-
-    // دسترسی صریح کاربر: بخش جریان کار، پیگیری‌ها و دستیار کلاس‌های مشاوره منحصراً برای کاربران سطح ۱ و سطح ۲ است
-    if (item.id === 'workflow' || item.id === 'consultation-advisor' || item.id === 'todos') {
-      return currentUser.level === 1 || currentUser.level === 2;
-    }
-    // رزرو نهار و شام طلاب: برای کاربران سطح ۳ و همچنین مدیران قابل مشاهده است
-    if (item.id === 'student-meals') {
-      if (currentUser.level === 3 || currentUser.role === 'student' || currentUser.role === 'class_representative') return true;
-      return currentUser.level === 1;
-    }
-    // ساعت حضور و کارکرد: برای اساتید پایه و سایرین نمایش داده می‌شود
-    if (item.id === 'presence-hours') {
-      return true;
-    }
-    // تست اتصال به دیتابیس: ویژه مدیران سطح ۱ و ۲ و مسئول پژوهش
-    if (item.id === 'db-connection-test') {
-      return currentUser.level === 1 || currentUser.level === 2 || isResearchUser;
-    }
-    // برنامه درسی اساتید: کاربران سطح 3 به صورت دیفالت نمی تونند در منوی خودشون این بخش رو ببینند؛ کاربران سطح 2 همه می توانند ببینند
-    if (item.id === 'teachers-schedule') {
-      if (currentUser.level === 3) return false;
-      if (currentUser.level === 1 || currentUser.level === 2) return true;
-    }
-    if (typeof hasModuleAccess === 'function') {
-      return hasModuleAccess(item.id);
-    }
     return true;
   });
 

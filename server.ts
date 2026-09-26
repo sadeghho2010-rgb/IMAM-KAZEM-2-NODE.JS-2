@@ -676,6 +676,89 @@ async function startServer() {
     return res.json({ success: true, message: "نقش کاربر در سمت سرور با موفقیت به‌روزرسانی شد.", user: sanitizeUser(target) });
   });
 
+  // POST /api/auth/update-user - Super Admin updates complete user permissions, menus, and profile
+  app.post("/api/auth/update-user", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const adminId = verification.decoded.userId;
+    // Role check: ONLY Super Admin (Level 1) can update users and permissions
+    if (verification.decoded.level !== 1 || verification.decoded.role !== 'super_admin') {
+      const ip = getClientIp(req);
+      trackSecurityIncident(ip, adminId, 'FORBIDDEN');
+      logServerAudit({
+        userId: adminId,
+        username: verification.decoded.username,
+        action: 'FORBIDDEN',
+        entityType: 'security',
+        entityId: 'update-user',
+        description: `تلاش غیرمجاز برای تغییر دسترسی کاربران توسط ${verification.decoded.username}`,
+        ipAddress: ip
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "تنظیم و تغییر دسترسی‌های کاربران منحصراً در اختیار سوپر ادمین (سطح ۱) است." });
+    }
+
+    const { targetUserId, updates } = req.body || {};
+    if (!targetUserId || !updates) {
+      return res.status(400).json({ success: false, message: "شناسه کاربر و اطلاعات تغییرات الزامی هستند." });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const target = users.find(u => u.id === targetUserId || u.username.toUpperCase() === targetUserId.toUpperCase());
+    if (!target) return res.status(404).json({ success: false, message: "کاربر مورد نظر یافت نشد." });
+
+    // Apply updates safely
+    if (updates.name) target.name = updates.name;
+    if (updates.fullName) target.fullName = updates.fullName;
+    if (updates.role) target.role = updates.role;
+    if (updates.roleTitle) target.roleTitle = updates.roleTitle;
+    if (updates.level !== undefined) target.level = Number(updates.level);
+    if (updates.scope) target.scope = updates.scope;
+    if (updates.gradeLabel !== undefined) target.gradeLabel = updates.gradeLabel;
+    if (updates.mentorId !== undefined) target.mentorId = updates.mentorId;
+    if (updates.studentId !== undefined) target.studentId = updates.studentId;
+    if (updates.linkedStudentId !== undefined) target.linkedStudentId = updates.linkedStudentId;
+    if (updates.isReadOnly !== undefined) target.isReadOnly = Boolean(updates.isReadOnly);
+    if (updates.canEdit !== undefined) target.canEdit = Boolean(updates.canEdit);
+    if (updates.canManageUsers !== undefined) target.canManageUsers = Boolean(updates.canManageUsers);
+    if (updates.canBackup !== undefined) target.canBackup = Boolean(updates.canBackup);
+    if (updates.isActive !== undefined) target.isActive = Boolean(updates.isActive);
+    if (Array.isArray(updates.allowedTabs)) target.allowedTabs = updates.allowedTabs;
+    if (Array.isArray(updates.editableTabs)) target.editableTabs = updates.editableTabs;
+    if (updates.modulePermissions && typeof updates.modulePermissions === 'object') {
+      target.modulePermissions = updates.modulePermissions;
+    }
+    if (updates.password && typeof updates.password === 'string' && updates.password.trim()) {
+      target.password = updates.password.trim();
+      target.passwordHash = await hashPassword(updates.password.trim());
+    }
+
+    await saveUserToStorage(target);
+
+    // Invalidate old sessions for this user so updated permissions are reloaded
+    revokeAllUserSessions(target.id);
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      action: 'UPDATE_USER_PERMISSIONS',
+      entityType: 'user',
+      entityId: target.id,
+      description: `به‌روزرسانی جامع دسترسی‌ها و مجوزهای کاربر «${target.name || target.username}» توسط سوپر ادمین`
+    });
+
+    return res.json({
+      success: true,
+      message: `دسترسی‌ها و اطلاعات کاربر «${target.name || target.username}» با موفقیت در سرور و پایگاه داده به‌روزرسانی شد.`,
+      user: sanitizeUser(target)
+    });
+  });
+
   // POST /api/auth/migrate-passwords - One-time migration to hash all legacy plain-text passwords
   app.post("/api/auth/migrate-passwords", async (req, res) => {
     try {

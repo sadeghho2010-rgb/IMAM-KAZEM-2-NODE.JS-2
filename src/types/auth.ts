@@ -55,6 +55,7 @@ export interface AppUser {
   allowedTabs: string[];
   allowedModules?: string[];
   editableTabs?: string[];
+  modulePermissions?: Record<string, 'none' | 'view' | 'edit'>;
   avatarBg?: string;
   phone?: string;
   nationalId?: string;
