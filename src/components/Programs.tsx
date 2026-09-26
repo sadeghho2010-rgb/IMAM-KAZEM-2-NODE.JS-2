@@ -205,8 +205,39 @@ export default function Programs() {
   const [rooms, setRooms] = useState<MadrasRoom[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Helper to match program grade with active filter
+  const isProgramMatchingGradeFilter = (p: Program, filter: string) => {
+    if (filter === 'all') return true;
+    if (!p.grade) return false;
+    const g = p.grade.trim();
+    const targetDigit = filter.replace(/[^0-9]/g, '');
+    const pDigits = g.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)] || d);
+    return g === filter || (targetDigit && pDigits.includes(targetDigit));
+  };
+
   // Grade filter state (All, پایه 7, پایه 8, پایه 9, پایه 10, پایه 11)
-  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
+  const getInitialProgramGradeFilter = (): string => {
+    if (currentMentorId === 'hayati') return 'پایه 7';
+    if (currentMentorId === 'hosseini') return 'پایه 8';
+    if (currentMentorId === 'soleimani') return 'پایه 9';
+    if (currentMentorId === 'asadi') return 'پایه 10';
+    if (currentUser?.role === 'grade_mentor' || currentUser?.role === 'grade_supervisor') {
+      if (currentUser.scope === 'grade_7' || currentUser.gradeLabel?.includes('۷') || currentUser.gradeLabel?.includes('7')) return 'پایه 7';
+      if (currentUser.scope === 'grade_8' || currentUser.gradeLabel?.includes('۸') || currentUser.gradeLabel?.includes('8')) return 'پایه 8';
+      if (currentUser.scope === 'grade_9' || currentUser.gradeLabel?.includes('۹') || currentUser.gradeLabel?.includes('9')) return 'پایه 9';
+      if (currentUser.scope === 'grade_10' || currentUser.gradeLabel?.includes('۱۰') || currentUser.gradeLabel?.includes('10')) return 'پایه 10';
+    }
+    return 'all';
+  };
+
+  const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>(getInitialProgramGradeFilter);
+
+  useEffect(() => {
+    const initG = getInitialProgramGradeFilter();
+    if (initG !== 'all') {
+      setSelectedGradeFilter(initG);
+    }
+  }, [currentMentorId, currentUser]);
   
   // Modals state
   const DEFAULT_MAIN_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
@@ -647,6 +678,10 @@ export default function Programs() {
 
   const mainPrograms = programs.filter(p => p.type === 'اصلی');
   const counselingPrograms = programs.filter(p => p.type === 'مشاوره');
+
+  const hierarchyMainPrograms = useMemo(() => {
+    return mainPrograms.filter(p => isProgramMatchingGradeFilter(p, selectedGradeFilter));
+  }, [mainPrograms, selectedGradeFilter]);
 
   // Excel Export for a single program
   const exportProgramToExcel = (program: Program) => {
@@ -1286,18 +1321,18 @@ export default function Programs() {
             <div className="text-center border-b-2 border-indigo-600 pb-4 space-y-1">
               <h4 className="text-lg font-black text-indigo-950">نمودار ساختاری دروس اصلی، کلاس‌های مشاوره و گروه‌های مباحثه مدرسه</h4>
               <p className="text-xs text-slate-500">
-                استاد/مسئول: <span className="font-bold text-slate-800">{currentMentor.name}</span> | تاریخ تنظیم: <span className="font-bold text-slate-800">{new Date().toLocaleDateString('fa-IR-u-nu-latn')}</span> | کل کلاس‌ها: <span className="font-bold text-slate-800">{programs.length}</span> | گروه‌های مباحثه: <span className="font-bold text-slate-800">{discussionGroups.length}</span>
+                استاد/مسئول: <span className="font-bold text-slate-800">{currentMentor.name}</span> | تاریخ تنظیم: <span className="font-bold text-slate-800">{new Date().toLocaleDateString('fa-IR-u-nu-latn')}</span> | دروس اصلی نمایش‌داده‌شده: <span className="font-bold text-slate-800">{hierarchyMainPrograms.length}</span> | گروه‌های مباحثه: <span className="font-bold text-slate-800">{discussionGroups.length}</span>
               </p>
             </div>
 
             {/* Tree Nodes: Main Classes and their attached Counseling Classes */}
-            {mainPrograms.length === 0 ? (
+            {hierarchyMainPrograms.length === 0 ? (
               <div className="text-center py-10 text-slate-400 text-xs italic">
-                هنوز درس اصلی ثبت نشده است. پس از افزودن درس اصلی، ساختار درختی نمایش داده خواهد شد.
+                {selectedGradeFilter === 'all' ? 'هنوز درس اصلی ثبت نشده است.' : `هیچ درس اصلی برای ${GRADE_FILTER_OPTIONS.find(g => g.id === selectedGradeFilter)?.label || selectedGradeFilter} ثبت نشده است.`}
               </div>
             ) : (
               <div className="space-y-12">
-                {mainPrograms.map((mainProg, idx) => {
+                {hierarchyMainPrograms.map((mainProg, idx) => {
                   const mainStudents = getProgramStudents(mainProg.id);
                   const linkedCounselings = counselingPrograms.filter(cp => cp.parentProgramId === mainProg.id);
                   const linkedDiscGroups = getProgramDiscussionGroups(mainProg);

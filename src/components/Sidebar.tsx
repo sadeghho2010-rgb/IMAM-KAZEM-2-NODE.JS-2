@@ -217,7 +217,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     }
 
     // فعالیت‌های سایت و پشتیبان‌گیری: برای سوپر ادمین، مسئول آموزش و مسئول مالی
-    if (item.id === 'audit-logs' || item.id === 'backup' || item.id === 'app-logs') {
+    if (item.id === 'audit-logs' || item.id === 'backup' || (item.id as string) === 'app-logs') {
       return (
         currentUser.level === 1 ||
         currentUser.role === 'super_admin' ||

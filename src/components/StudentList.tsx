@@ -48,7 +48,7 @@ import { Student, Program, Enrollment, StudentDeactivationReason } from '../type
 import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { AppUser } from '../types/auth';
-import { cn } from '../lib/utils';
+import { cn, matchesGradeFilter } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import DeactivationModal from './DeactivationModal';
 import StudentRecordHistoryModal from './StudentRecordHistoryModal';
@@ -840,7 +840,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         s.servicesCenterCode?.includes(searchTerm) ||
         s.tuitionCode?.includes(searchTerm);
 
-      const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
+      const matchesGrade = matchesGradeFilter(s.grade, gradeFilter);
 
       const matchesLiving = 
         livingFilter === 'all' ? true :

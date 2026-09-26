@@ -70,8 +70,41 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     isExternal: true
   });
 
-  // Initialize grade filter based on user role
+  // Helper to accurately match student grade regardless of Persian/English numbers or 'پایه' prefix
+  const isStudentGradeMatch = (studentGrade?: string | number, filterGrade?: string): boolean => {
+    if (!filterGrade || filterGrade === 'all') return true;
+    if (studentGrade === undefined || studentGrade === null || studentGrade === '') return false;
+
+    const sStr = String(studentGrade).trim();
+    const fStr = String(filterGrade).trim();
+
+    // Direct equality
+    if (sStr === fStr) return true;
+
+    // Mentor key match ('hayati', 'hosseini', 'soleimani', 'asadi')
+    const sKey = getStudentMentorKey(sStr);
+    const fKey = getStudentMentorKey(fStr);
+    if (sKey !== 'other' && fKey !== 'other' && sKey === fKey) {
+      return true;
+    }
+
+    // Extract digits and compare
+    const sDigits = sStr.replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
+    const fDigits = fStr.replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
+
+    if (sDigits && fDigits && sDigits === fDigits) {
+      return true;
+    }
+
+    return false;
+  };
+
+  // Initialize grade filter based on user role or active mentor
   const getInitialGradeFilter = (): string => {
+    if (currentMentorId === 'hayati') return '۷';
+    if (currentMentorId === 'hosseini') return '۸';
+    if (currentMentorId === 'soleimani') return '۹';
+    if (currentMentorId === 'asadi') return '۱۰';
     if (!currentUser) return 'all';
     if (currentUser.role === 'grade_mentor' || currentUser.role === 'grade_supervisor') {
       if (currentUser.scope === 'grade_7' || currentUser.gradeLabel?.includes('۷') || currentUser.gradeLabel?.includes('7')) return '۷';
@@ -85,6 +118,13 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId || null);
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>(getInitialGradeFilter);
+
+  useEffect(() => {
+    const initG = getInitialGradeFilter();
+    if (initG !== 'all') {
+      setGradeFilter(initG);
+    }
+  }, [currentMentorId, currentUser]);
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const studentSchedulePrintRef = useRef<HTMLDivElement>(null);
@@ -159,7 +199,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
     return filterStudents(students, true).filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             (s.nationalId && s.nationalId.includes(searchTerm));
-      const matchesGrade = gradeFilter === 'all' || s.grade === gradeFilter;
+      const matchesGrade = isStudentGradeMatch(s.grade, gradeFilter);
       return matchesSearch && matchesGrade;
     });
   }, [students, isLevel3Student, currentUser, filterStudents, searchTerm, gradeFilter]);
