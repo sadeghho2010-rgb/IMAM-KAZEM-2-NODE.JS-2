@@ -29,6 +29,8 @@ export const COLLECTION_TABLE_MAP: Record<string, string> = {
   user_todo_categories: 'user_todo_categories',
   course_selection_periods: 'course_selection_periods',
   course_selection_requests: 'course_selection_requests',
+  student_lockers: 'student_lockers',
+  lockers: 'student_lockers',
   audit_logs: 'audit_logs'
 };
 
@@ -221,6 +223,18 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.status = data.status || 'pending';
       break;
 
+    case 'student_lockers':
+      row.locker_number = Number(data.lockerNumber || data.locker_number) || 0;
+      row.status = data.status || 'empty';
+      row.student_id = data.studentId || data.student_id || null;
+      row.student_name = data.studentName || data.student_name || null;
+      row.student_grade = data.studentGrade || data.student_grade || null;
+      row.assigned_at = data.assignedAt || data.assigned_at || null;
+      row.inactive_reason = data.inactiveReason || data.inactive_reason || null;
+      row.notes = data.notes || null;
+      row.history = Array.isArray(data.history) ? data.history : [];
+      break;
+
     default:
       break;
   }
@@ -238,14 +252,21 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
 
-      // 1. Save to dedicated table if mapped
+      // 1. Save to dedicated table if mapped (safely handled if table does not exist yet)
       if (dedicatedTable) {
-        await serverSupabase
-          .from(dedicatedTable)
-          .upsert(row, { onConflict: 'id' });
+        try {
+          const { error: dedicatedError } = await serverSupabase
+            .from(dedicatedTable)
+            .upsert(row, { onConflict: 'id' });
+          if (dedicatedError) {
+            console.warn(`[Supabase Dedicated Table Notice] ${dedicatedTable}:`, dedicatedError.message);
+          }
+        } catch (dErr: any) {
+          console.warn(`[Supabase Dedicated Table Bypass] ${dedicatedTable}:`, dErr?.message || dErr);
+        }
       }
 
-      // 2. Also mirror to app_collections for backward compatibility
+      // 2. Also mirror to app_collections for full persistence and backward compatibility
       await serverSupabase
         .from('app_collections')
         .upsert({
@@ -273,10 +294,14 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
     try {
       const dedicatedTable = COLLECTION_TABLE_MAP[collection];
       if (dedicatedTable) {
-        await serverSupabase
-          .from(dedicatedTable)
-          .delete()
-          .eq('id', id);
+        try {
+          await serverSupabase
+            .from(dedicatedTable)
+            .delete()
+            .eq('id', id);
+        } catch (dErr) {
+          console.warn(`[Supabase Dedicated Table Delete Bypass] ${dedicatedTable}:`, dErr);
+        }
       }
 
       await serverSupabase

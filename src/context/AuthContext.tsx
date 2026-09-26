@@ -19,6 +19,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', group: 'آموزش و تدریس', description: 'مدیریت فضاهای فیزیکی و اتاق‌های تدریس' },
   { id: 'discussion', label: 'گروه‌های بحثی و مباحثات', group: 'آموزش و تدریس', description: 'تنظیم و مدیریت گروه‌های مباحثه دو و چند نفره' },
   { id: 'course-selection', label: 'سامانه انتخاب واحد', group: 'آموزش و تدریس', description: 'دوره‌های انتخاب درس و تایید تقاضای طلاب' },
+  { id: 'lockers', label: 'اختصاص کمد', group: 'آموزش و تدریس', description: 'مدیریت و واگذاری ۲۰۰ کمد، وضعیت فعال/خالی/پر/غیرفعال و سابقه امانت کلید' },
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', group: 'آموزش و تدریس', description: 'هوشمندسازی چینش و زمان‌بندی مشاوره‌ها' },
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', group: 'آموزش و تدریس', description: 'ثبت نمرات، کیفیت و مشارکت جلسات مشاوره' },
   { id: 'attendance', label: 'حضور و غیاب طلاب', group: 'آموزش و تدریس', description: 'ثبت غیبت، تاخیر، اخطارها و آمار حضور' },
@@ -132,12 +133,12 @@ export const DEFAULT_USERS: AppUser[] = [
     avatarBg: 'bg-amber-600',
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
+      'student-schedule', 'teachers-schedule', 'lockers', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
     ],
     editableTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
+      'student-schedule', 'teachers-schedule', 'lockers', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
     ],
     modulePermissions: {
@@ -148,6 +149,7 @@ export const DEFAULT_USERS: AppUser[] = [
       'classrooms': 'edit',
       'discussion': 'edit',
       'course-selection': 'edit',
+      'lockers': 'edit',
       'consultation-advisor': 'edit',
       'counseling-classes': 'edit',
       'attendance': 'edit',
@@ -696,6 +698,11 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH';
   }
 
+  // Lockers: ONLY education manager and super admin can edit
+  if (tabId === 'lockers') {
+    return role === 'education_manager' || role === 'education_officer' || username === 'SHAH' || role === 'super_admin';
+  }
+
   // Education financial report: ONLY education manager and super admin can edit
   if (tabId === 'education-financial-report') {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH';
@@ -727,14 +734,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (u && u.username) {
               const uname = u.username.toUpperCase();
               const existingDef = userMap.get(uname);
+              const isEduOrAdmin = u.role === 'education_manager' || u.role === 'education_officer' || uname === 'SHAH' || u.role === 'super_admin' || u.level === 1;
+              const allowedTabs = Array.isArray(u.allowedTabs) ? [...u.allowedTabs] : (existingDef?.allowedTabs ? [...existingDef.allowedTabs] : ['todos', 'students']);
+              const editableTabs = Array.isArray(u.editableTabs) ? [...u.editableTabs] : (existingDef?.editableTabs ? [...existingDef.editableTabs] : []);
+              const modulePermissions = { ...(existingDef?.modulePermissions || {}), ...(u.modulePermissions || {}) };
+
+              if (isEduOrAdmin) {
+                if (!allowedTabs.includes('lockers')) allowedTabs.push('lockers');
+                if (!editableTabs.includes('lockers')) editableTabs.push('lockers');
+                if (!modulePermissions['lockers'] || modulePermissions['lockers'] === 'none') {
+                  modulePermissions['lockers'] = 'edit';
+                }
+              }
+
               userMap.set(uname, {
                 ...existingDef,
                 ...u,
                 username: uname,
                 name: u.name || u.fullName || u.username,
-                allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : existingDef?.allowedTabs || ['todos', 'students'],
-                editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : existingDef?.editableTabs || [],
-                modulePermissions: u.modulePermissions || existingDef?.modulePermissions || {},
+                allowedTabs,
+                editableTabs,
+                modulePermissions,
               });
             }
           });
@@ -755,17 +775,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (parsed && typeof parsed === 'object' && parsed.username) {
           const uname = parsed.username.toUpperCase();
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === uname);
-          return {
+          const isEduOrAdmin = parsed.role === 'education_manager' || parsed.role === 'education_officer' || uname === 'SHAH' || parsed.role === 'super_admin' || parsed.level === 1;
+          const allowedTabs = Array.isArray(parsed.allowedTabs) 
+            ? [...parsed.allowedTabs] 
+            : (Array.isArray(parsed.allowedModules) ? [...parsed.allowedModules] : (found?.allowedTabs ? [...found.allowedTabs] : ['todos', 'students']));
+          const editableTabs = Array.isArray(parsed.editableTabs) ? [...parsed.editableTabs] : (found?.editableTabs ? [...found.editableTabs] : []);
+          const modulePermissions = { ...(found?.modulePermissions || {}), ...(parsed.modulePermissions || {}) };
+
+          if (isEduOrAdmin) {
+            if (!allowedTabs.includes('lockers')) allowedTabs.push('lockers');
+            if (!editableTabs.includes('lockers')) editableTabs.push('lockers');
+            if (!modulePermissions['lockers'] || modulePermissions['lockers'] === 'none') {
+              modulePermissions['lockers'] = 'edit';
+            }
+          }
+
+          const resolvedUser: AppUser = {
             ...found,
             ...parsed,
             username: uname,
             name: parsed.name || parsed.fullName || parsed.username || 'کاربر',
-            allowedTabs: Array.isArray(parsed.allowedTabs) 
-              ? parsed.allowedTabs 
-              : (Array.isArray(parsed.allowedModules) ? parsed.allowedModules : found?.allowedTabs || ['todos', 'students']),
-            editableTabs: Array.isArray(parsed.editableTabs) ? parsed.editableTabs : found?.editableTabs || [],
-            modulePermissions: parsed.modulePermissions || found?.modulePermissions || {},
+            allowedTabs,
+            editableTabs,
+            modulePermissions,
           };
+
+          // Save migrated user back to localStorage
+          try {
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(resolvedUser));
+          } catch (e) {}
+
+          return resolvedUser;
         }
       }
     } catch (e) {
@@ -1260,6 +1300,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return target.level === 1 && target.role === 'super_admin';
     }
 
+    // Lockers module: Always available to Education Manager and Super Admin unless explicitly set to 'none'
+    const isEduOrAdmin = target.role === 'education_manager' || target.role === 'education_officer' || (target.username || '').toUpperCase() === 'SHAH' || target.level === 1;
+    if (tabId === 'lockers' && isEduOrAdmin) {
+      if (target.modulePermissions && target.modulePermissions['lockers'] === 'none') {
+        return false;
+      }
+      return true;
+    }
+
     // 3. PRIORITY 1: Explicit modulePermissions map
     if (target.modulePermissions && typeof target.modulePermissions === 'object' && Object.keys(target.modulePermissions).length > 0) {
       if (tabId in target.modulePermissions) {
@@ -1267,17 +1316,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (perm === 'none') return false;
         if (perm === 'view' || perm === 'edit') return true;
       } else {
-        // If the user has a custom configured permissions map and this tab is omitted, it's not allowed
+        // If omitted from custom permissions, fall back to role default permission for new modules
+        if (getDefaultRoleTabAllowed(tabId, target)) {
+          return true;
+        }
         return false;
       }
     }
 
     // 4. PRIORITY 2: Explicit allowedTabs or allowedModules array
     if (Array.isArray(target.allowedTabs)) {
-      return target.allowedTabs.includes(tabId);
+      if (target.allowedTabs.includes(tabId)) return true;
+      if (getDefaultRoleTabAllowed(tabId, target)) return true;
+      return false;
     }
     if (Array.isArray(target.allowedModules)) {
-      return (target.allowedModules as string[]).includes(tabId);
+      if ((target.allowedModules as string[]).includes(tabId)) return true;
+      if (getDefaultRoleTabAllowed(tabId, target)) return true;
+      return false;
     }
 
     // 5. Fallback to standard role-based defaults
@@ -1305,17 +1361,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     }
 
+    // Lockers module: Always editable for Education Manager and Super Admin unless explicitly set to 'view'
+    const isEduOrAdmin = target.role === 'education_manager' || target.role === 'education_officer' || (target.username || '').toUpperCase() === 'SHAH' || target.level === 1;
+    if (tabId === 'lockers' && isEduOrAdmin) {
+      if (target.modulePermissions && target.modulePermissions['lockers'] === 'view') {
+        return false;
+      }
+      return true;
+    }
+
     // 3. PRIORITY 1: Explicit modulePermissions map
     if (target.modulePermissions && typeof target.modulePermissions === 'object' && Object.keys(target.modulePermissions).length > 0) {
       if (tabId in target.modulePermissions) {
         return target.modulePermissions[tabId] === 'edit';
       }
-      return false;
+      return getDefaultRoleTabEditable(tabId, target);
     }
 
     // 4. PRIORITY 2: Explicit editableTabs array
     if (Array.isArray(target.editableTabs)) {
-      return target.editableTabs.includes(tabId);
+      if (target.editableTabs.includes(tabId)) return true;
+      return getDefaultRoleTabEditable(tabId, target);
     }
 
     // 5. Fallback to standard role-based editing defaults

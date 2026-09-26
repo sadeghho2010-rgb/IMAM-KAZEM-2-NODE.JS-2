@@ -362,6 +362,7 @@ export interface Student {
   nationalId?: string;
   isActive: boolean;
   phoneNumber?: string;
+  studentCode?: string;
   grade?: string;
 
   // اطلاعات آموزشی
@@ -1179,8 +1180,34 @@ export type AppModuleId =
   | 'course-selection'
   | 'article-evaluations'
   | 'teacher-transport'
+  | 'lockers'
   | 'db-connection-test'
   | 'staff-bank';
+
+export interface LockerHistoryItem {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentGrade?: string;
+  assignedAt: string; // تاریخ شمسی واگذاری
+  releasedAt?: string; // تاریخ شمسی تحویل و ترخیص
+  assignedBy?: string; // ثبت‌کننده
+  notes?: string;
+}
+
+export interface StudentLocker {
+  id: string; // e.g. "locker_1"
+  lockerNumber: number; // 1 to 200 ...
+  status: 'empty' | 'occupied' | 'inactive'; // فعال: خالی / پر | غیرفعال
+  studentId?: string; // شناسه طلبه در صورت پر بودن
+  studentName?: string; // نام طلبه در صورت پر بودن
+  studentGrade?: string; // پایه طلبه
+  assignedAt?: string; // تاریخ شمسی واگذاری
+  inactiveReason?: string; // علت غیرفعال بودن (مثلاً خرابی قفل، گم شدن کلید، در دست تعمیر)
+  notes?: string;
+  history: LockerHistoryItem[]; // سوابق قبلی امانت کلید
+  updatedAt: string;
+}
 
 export type CounselingScore = 'الف' | 'ب' | 'ج' | 'د' | 'غیبت';
 

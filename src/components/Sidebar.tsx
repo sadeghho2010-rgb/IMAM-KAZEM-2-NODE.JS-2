@@ -34,7 +34,8 @@ import {
   Car,
   BookOpenCheck,
   ChevronDown,
-  Terminal
+  Terminal,
+  KeyRound
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -86,6 +87,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', icon: GraduationCap },
   { id: 'staff-bank', label: 'بانک کارکنان مجموعه', icon: Users },
   { id: 'teacher-transport', label: 'سرویس و ایاب و ذهاب اساتید', icon: Car },
+  { id: 'lockers', label: 'اختصاص کمد', icon: KeyRound },
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },

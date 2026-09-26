@@ -256,7 +256,7 @@ export interface StudentBackupPackage {
 }
 
 const DB_NAME = 'TOLAB_OFFLINE_LOCAL_DB';
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 
 export const COLLECTIONS = [
   'students',
@@ -336,7 +336,9 @@ export const COLLECTIONS = [
   'oral_exam_records',
   'received_articles',
   'article_evaluations',
-  'evaluation_requests'
+  'evaluation_requests',
+  'student_lockers',
+  'lockers'
 ] as const;
 
 export type CollectionName = typeof COLLECTIONS[number] | string;
@@ -440,6 +442,7 @@ class LocalDatabase {
     if (name === 'lunch_periods' || name === 'meal_reservation_periods') return 'finance_meal_periods';
     if (name === 'lunch_reservations' || name === 'meal_reservations') return 'finance_student_meal_reservations';
     if (name === 'operational_expenses' || name === 'expenses') return 'finance_operational_expenses';
+    if (name === 'lockers') return 'student_lockers';
     return name;
   }
 
@@ -755,6 +758,11 @@ class LocalDatabase {
       return this.addDoc(collectionName, { ...optionalData, id: idOrData });
     }
     return this.addDoc(collectionName, idOrData);
+  }
+
+  // Alias for saving document
+  async saveDoc(collectionName: CollectionName, data: any): Promise<string> {
+    return this.setDoc(collectionName, data);
   }
 
   // Add a new document (with optimistic UI, strict 4s online sync & automatic rollback)

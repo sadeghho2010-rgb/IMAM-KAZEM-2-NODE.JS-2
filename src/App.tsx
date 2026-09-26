@@ -41,6 +41,7 @@ import ClaimsManagement from './components/finance/ClaimsManagement';
 import FundAndActiveLoans from './components/finance/FundAndActiveLoans';
 import ExpensesAndReports from './components/finance/ExpensesAndReports';
 import { ConsultationAdvisor } from './components/ConsultationAdvisor';
+import LockersManagement from './components/LockersManagement';
 import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
 import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
@@ -118,6 +119,8 @@ function AppContent() {
         return <StudyDiscussion initialStudentId={selectedStudentIdForTab} />;
       case 'consultation-advisor':
         return <ConsultationAdvisor onNavigate={handleNavigate} />;
+      case 'lockers':
+        return <LockersManagement onNavigateTab={handleNavigate} />;
       case 'programs':
         return <Programs />;
       case 'classrooms':
@@ -262,6 +265,7 @@ function AppContent() {
                      activeTab === 'counseling-classes' ? 'کلاس‌های مشاوره (ارزیابی، نمرات مشارکت و پژوهش)' :
                      activeTab === 'comments' ? 'نظرات، صحبت‌ها و آزمون شفاهی' :
                      activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت و چینش گروه‌ها)' :
+                     activeTab === 'lockers' ? 'اختصاص کمد به طلاب (امانت کلید و مدیریت کمدها)' :
                      activeTab === 'consultation-advisor' ? 'دستیار هوشمند چینش کلاس‌های مشاوره' :
                      activeTab === 'stats' ? 'آمار و گزارشات مطالعه' :
                      activeTab === 'summary' ? 'جمع‌بندی نهایی و هوش مصنوعی' :
