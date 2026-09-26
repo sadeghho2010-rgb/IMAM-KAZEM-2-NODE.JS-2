@@ -736,6 +736,41 @@ export type CommentPriority = 'high' | 'medium' | 'low' | 'info';
 
 export type OralExamSubjectType = 'فقه' | 'اصول' | 'امتحان ورودی' | 'سایر';
 
+export interface ScopeSubRange {
+  id: string;
+  title: string; // e.g. "ادله حجیت خبر واحد"
+  pages?: string; // e.g. "از ص ۱۴ الی ص ۲۹"
+  description?: string;
+}
+
+export interface ScopeMainRange {
+  id: string;
+  title: string; // e.g. "قطع و ظن"
+  description?: string;
+  subRanges: ScopeSubRange[];
+}
+
+export interface ScopeBook {
+  id: string;
+  title: string; // e.g. "رسائل", "کفایه", "مکاسب محرمه", "اصول مرحوم مظفر", ...
+  category: 'usul' | 'fiqh' | 'entrance' | 'other';
+  stage: 'entrance' | 'annual' | 'both'; // ورودی یا طول سال
+  grade?: string; // پایه تحصیلی پیشنهادی
+  description?: string;
+  mainRanges: ScopeMainRange[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface OralExamExaminer {
+  id: string;
+  teacherId?: string;
+  teacherName: string;
+  phone?: string;
+  source: 'teachers_bank' | 'oral_exam_bank' | 'custom';
+  duty: 'fiqh' | 'usul' | 'both'; // ممتحن فقه، ممتحن اصول، یا هر دو
+}
+
 export interface ExamScopeRange {
   id: string;
   courseType: 'fiqh' | 'usul';
@@ -746,7 +781,10 @@ export interface ExamScopeRange {
 export interface OralExamPeriod {
   id: string;
   title: string; // e.g. "دوره آزمون شفاهی نیمسال اول پایه ۹ - آذر ۱۴۰۳"
-  grade: string; // 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰' | 'کل پایه‌ها' | 'سایر'
+  academicYear?: string; // e.g. "1403-1404"
+  examDate?: string; // تاریخ برگزاری اصلی شمسی
+  grade: string; // 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰' | 'کل پایه‌ها' | 'امتحان ورودی' | 'سایر'
+  examType?: 'usul' | 'fiqh' | 'both' | 'entrance';
   hasUsul: boolean; // آیا آزمون اصول دارد؟
   usulBooks: string[]; // ['رسائل', 'کفایه', 'حلقه ثالثه', 'سایر']
   customUsulBook?: string;
@@ -757,15 +795,18 @@ export interface OralExamPeriod {
   examDatesStr?: string;
   examinerTeacherIds: string[];
   examinerTeacherNames: string[];
+  examiners?: OralExamExaminer[]; // لیست تفصیلی ممتحنین با درس مشخص‌شده
   hasCustomScopes: boolean;
   scopes: ExamScopeRange[];
   participatingStudentIds: string[]; // شناسه‌های طلاب شرکت‌کننده
-  status: 'draft' | 'finalized';
+  status: 'draft' | 'scheduled' | 'conducting' | 'finalized' | 'archived';
   notes?: string;
   createdAt: string;
   createdByName?: string;
   finalizedAt?: string;
   finalizedByName?: string;
+  archivedAt?: string;
+  archivedByName?: string;
 }
 
 export interface OralExamStudentRecord {
@@ -775,22 +816,38 @@ export interface OralExamStudentRecord {
   studentName: string;
   nationalId?: string;
   grade?: string;
+  phone?: string;
+  examTime?: string; // ساعت برگزاری مثلاً 08:15
   
   // بخش فقه
   fiqhExaminerTeacherId?: string;
   fiqhExaminerTeacherName?: string;
+  fiqhBookTitle?: string;
+  fiqhMainScopeId?: string;
+  fiqhMainScopeTitle?: string;
+  fiqhSubScopeId?: string;
+  fiqhSubScopeTitle?: string;
+  fiqhPages?: string;
   fiqhScopeId?: string;
   fiqhScopeTitle?: string;
   fiqhScore?: number | null;
+  fiqhScoreLetter?: string;
   fiqhIsRetake?: boolean; // امتحان مجدد فقه
   fiqhExaminerNotes?: string;
 
   // بخش اصول
   usulExaminerTeacherId?: string;
   usulExaminerTeacherName?: string;
+  usulBookTitle?: string;
+  usulMainScopeId?: string;
+  usulMainScopeTitle?: string;
+  usulSubScopeId?: string;
+  usulSubScopeTitle?: string;
+  usulPages?: string;
   usulScopeId?: string;
   usulScopeTitle?: string;
   usulScore?: number | null;
+  usulScoreLetter?: string;
   usulIsRetake?: boolean; // امتحان مجدد اصول
   usulExaminerNotes?: string;
 
@@ -799,7 +856,14 @@ export interface OralExamStudentRecord {
   examiner2Notes?: string;
   generalNotes?: string;
 
+  // ارزیابی معیارهای تفصیلی (تسلّط بر متن، ترجمه، توضیح مطلب، پاسخ به اشکالات)
+  fiqhTextMastery?: number; // از ۵
+  fiqhExplanationMastery?: number; // از ۵
+  usulTextMastery?: number; // از ۵
+  usulExplanationMastery?: number; // از ۵
+
   // وضعیت ثبت
+  overallStatus?: 'passed' | 'failed' | 'retake' | 'absent' | 'pending';
   status: 'draft' | 'finalized';
   updatedAt: string;
 }
