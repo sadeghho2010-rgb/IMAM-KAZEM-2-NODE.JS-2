@@ -351,18 +351,22 @@ export default function ScopeBankView({ books, onUpdateBooks, canEdit }: ScopeBa
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-orange-950 border border-amber-900/40 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+        {/* Ambient background glows */}
+        <div className="absolute -top-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-              <Bookmark size={15} />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-extrabold backdrop-blur-md">
+              <BookOpen size={14} className="text-amber-300" />
               <span>بانک جامع سرفصل‌ها و محدوده‌های امتحانی حوزه</span>
             </div>
-            <h2 className="text-2xl font-black text-slate-100 tracking-tight">
-              بانک محدوده دروس امتحان شفاهی
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              بانک محدوده دروس امتحانات شفاهی
             </h2>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              بانک رسمی و از پیش آماده شامل کتب آزمون ورودی (اصول مظفر، حلقه ثانیه، لمعه) و امتحانات طول سال (رسائل، کفایه، حلقه ثالثه، و مکاسب). این محدوده‌ها معیار اصلی انتساب به طلاب در زمان برگزاری آزمون هستند.
+            <p className="text-amber-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
+              بانک رسمی و کامل شامل کتب آزمون ورودی (اصول مظفر، حلقه ثانیه، لمعه) و امتحانات طول سال (رسائل، کفایه، حلقه ثالثه، و مکاسب). این محدوده‌ها معیار انتساب به طلاب در زمان برگزاری آزمون است.
             </p>
           </div>
 
@@ -371,7 +375,7 @@ export default function ScopeBankView({ books, onUpdateBooks, canEdit }: ScopeBa
             {canEdit && (
               <button
                 onClick={handleOpenAddBook}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-xl font-extrabold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer scale-[1.01]"
               >
                 <Plus size={16} />
                 <span>تعریف کتاب / درس جدید</span>
@@ -380,32 +384,32 @@ export default function ScopeBankView({ books, onUpdateBooks, canEdit }: ScopeBa
 
             <button
               onClick={expandAll}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition-all"
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
             >
               باز کردن همه
             </button>
             <button
               onClick={collapseAll}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition-all"
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
             >
               بستن همه
             </button>
           </div>
         </div>
 
-        {/* Minimal Stats Row (Anti-Slop Zero-Pill) */}
-        <div className="grid grid-cols-3 gap-4 mt-6 pt-5 border-t border-slate-800 text-xs">
-          <div>
-            <span className="text-slate-400 block mb-0.5">تعداد کتب و دروس</span>
-            <span className="text-xl font-black text-white">{totalStats.bookCount} کتاب</span>
+        {/* Minimal Stats Row */}
+        <div className="grid grid-cols-3 gap-4 mt-6 pt-5 border-t border-amber-800/50 text-xs">
+          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+            <span className="text-amber-200/80 block mb-1 font-medium">تعداد کتب و دروس</span>
+            <span className="text-xl font-black text-white">{totalStats.bookCount} <span className="text-xs font-normal opacity-80">کتاب</span></span>
           </div>
-          <div>
-            <span className="text-slate-400 block mb-0.5">محدوده‌های اصلی</span>
-            <span className="text-xl font-black text-emerald-400">{totalStats.mainCount} سرفصل</span>
+          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+            <span className="text-amber-200/80 block mb-1 font-medium">محدوده‌های اصلی</span>
+            <span className="text-xl font-black text-amber-300">{totalStats.mainCount} <span className="text-xs font-normal opacity-80">سرفصل</span></span>
           </div>
-          <div>
-            <span className="text-slate-400 block mb-0.5">زیرمحدوده‌ها و صفحات</span>
-            <span className="text-xl font-black text-sky-400">{totalStats.subCount} محدوده دقیق</span>
+          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+            <span className="text-amber-200/80 block mb-1 font-medium">زیرمحدوده‌ها و صفحات</span>
+            <span className="text-xl font-black text-sky-300">{totalStats.subCount} <span className="text-xs font-normal opacity-80">محدوده دقیق</span></span>
           </div>
         </div>
       </div>

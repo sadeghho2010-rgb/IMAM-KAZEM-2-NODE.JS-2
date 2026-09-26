@@ -547,13 +547,8 @@ export default function Programs() {
             </tbody>
           </table>
 
-          <div class="notes-box">
-            <strong style="color: #0f172a;">جمع‌بندی، نظر نهایی و توصیه استاد محترم:</strong>
-            <br/><br/>
-          </div>
-
-          <div class="signature-area">
-            تاریخ و امضاء استاد: ............................................
+          <div style="margin-top: 14px; font-size: 11pt; font-weight: bold; color: #0f172a;">
+            توصیه استاد محترم:
           </div>
         </div>
         <br style="page-break-before: always; clear: both;" />
@@ -3690,12 +3685,8 @@ export default function Programs() {
                       ))}
                     </div>
 
-                    <div className="p-2 border border-slate-300 rounded-xl text-[10px] text-slate-500 min-h-[40px]">
-                      <strong>نظر نهایی و جمع‌بندی استاد:</strong>
-                    </div>
-
-                    <div className="text-left text-[10px] font-bold text-slate-700 pt-1">
-                      امضاء و تاریخ استاد: .......................................
+                    <div className="pt-2 text-[11px] font-black text-slate-900">
+                      توصیه استاد محترم:
                     </div>
                   </div>
                 </div>
@@ -3885,16 +3876,10 @@ export default function Programs() {
                   </tbody>
                 </table>
 
-                {/* Teacher Summary Notes Box */}
-                <div className="border-2 border-slate-900 rounded-xl p-2.5 h-24 text-xs">
-                  <strong className="font-black text-slate-900 block mb-1">جمع‌بندی، نظر نهایی و توصیه استاد محترم:</strong>
+                {/* Teacher Recommendation Line without box, signature, or date */}
+                <div className="pt-3 text-xs font-black text-slate-900">
+                  توصیه استاد محترم:
                 </div>
-              </div>
-
-              {/* Signature Footer */}
-              <div className="pt-3 border-t-2 border-slate-900 flex items-center justify-between text-xs font-black text-slate-900 mt-2">
-                <div>تاریخ ارزیابی: .... / .... / ۱۴۰۳</div>
-                <div>محل امضاء و نام استاد: ............................................</div>
               </div>
             </div>
           );
