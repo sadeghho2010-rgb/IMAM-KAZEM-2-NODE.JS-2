@@ -100,7 +100,6 @@ export default function TeacherPortal() {
   // Counseling Evaluation State
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedSessionDate, setSelectedSessionDate] = useState<string>('');
-  const [counselingGradeFilter, setCounselingGradeFilter] = useState<string>('all');
   const [teacherNotesMap, setTeacherNotesMap] = useState<Record<string, string>>({});
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -536,25 +535,11 @@ export default function TeacherPortal() {
 
   /**
    * STRICT FILTER: Enrolled students of THIS class ONLY.
-   * Matches by explicit enrollments, grade matching, course title indicators, and manual grade filter.
+   * Matches exclusively by explicit enrollments, course grade matching, or course title grade indicators.
+   * Never displays students from other grades or general school students.
    */
   const enrolledStudents = useMemo(() => {
-    if (!activeCounselingCourse && students.length === 0) return [];
-
-    // Option A: Explicit Grade Filter chosen by teacher in toolbar
-    if (counselingGradeFilter === 'all_school') {
-      return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-    }
-    if (counselingGradeFilter !== 'all') {
-      const filtered = students.filter(s => isGradeMatch(s.grade, counselingGradeFilter) && s.isActive !== false);
-      if (filtered.length > 0) {
-        return filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-      }
-    }
-
-    if (!activeCounselingCourse) {
-      return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-    }
+    if (!activeCounselingCourse) return [];
 
     // 1. Direct enrollments for this specific program ID or parentProgramId
     const courseEnrollments = enrollments.filter(e => 
@@ -595,18 +580,9 @@ export default function TeacherPortal() {
       }
     }
 
-    // 4. Fallback if course is general or managed grades are defined on teacher profile
-    const managedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades;
-    if (Array.isArray(managedGrades) && managedGrades.length > 0) {
-      const managed = students.filter(s => managedGrades.some(mg => isGradeMatch(s.grade, mg)) && s.isActive !== false);
-      if (managed.length > 0) {
-        return managed.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-      }
-    }
-
-    // 5. Default fallback: show active students
-    return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-  }, [activeCounselingCourse, enrollments, students, currentTeacherObj, currentUser, counselingGradeFilter]);
+    // If no matching students found for this class, strictly return empty list
+    return [];
+  }, [activeCounselingCourse, enrollments, students]);
 
   // Existing grades for the selected course and selected session date
   const sessionGradesMap = useMemo(() => {
@@ -1346,48 +1322,13 @@ export default function TeacherPortal() {
                   )}
                 </div>
 
-                {/* Students Evaluation List */}
+                {/* Students Evaluation List (فقط طلبه‌های کلاس مشاوره همین استاد) */}
                 <div className="space-y-3">
-                  {/* Grade Filter Pill Tabs */}
-                  <div className="bg-white rounded-2xl p-2.5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 flex-wrap">
-                    <div className="flex items-center gap-1 text-xs font-bold text-slate-700">
-                      <Layers size={14} className="text-emerald-600" />
-                      <span className="hidden sm:inline">فیلتر طلاب:</span>
-                    </div>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {[
-                        { key: 'all', label: 'کلاس انتخابی' },
-                        { key: 'پایه ۷', label: 'پایه ۷' },
-                        { key: 'پایه ۸', label: 'پایه ۸' },
-                        { key: 'پایه ۹', label: 'پایه ۹' },
-                        { key: 'پایه ۱۰', label: 'پایه ۱۰' },
-                        { key: 'all_school', label: 'همه طلاب مدرسه' }
-                      ].map(tab => {
-                        const isSelected = counselingGradeFilter === tab.key;
-                        return (
-                          <button
-                            key={tab.key}
-                            type="button"
-                            onClick={() => setCounselingGradeFilter(tab.key)}
-                            className={cn(
-                              "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
-                              isSelected
-                                ? "bg-emerald-600 text-white shadow-2xs"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                            )}
-                          >
-                            {tab.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   <div className="flex items-center justify-between px-1">
                     <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
                       <Users size={14} className="text-slate-400" />
                       <span>
-                        فهرست طلاب {counselingGradeFilter === 'all' ? `کلاس ${activeCounselingCourse?.title || ''}` : counselingGradeFilter === 'all_school' ? 'کل مدرسه' : counselingGradeFilter} ({toPersianDigits(enrolledStudents.length)} نفر):
+                        فهرست طلاب کلاس {activeCounselingCourse?.title || ''} ({toPersianDigits(enrolledStudents.length)} نفر):
                       </span>
                     </span>
                     <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
