@@ -263,14 +263,14 @@ export default function TeacherPortal() {
     const matched = findMatchingTeacher(currentUser, teachers);
     if (matched) return matched;
 
-    // Fallback: create mock teacher from currentUser
+    // Fallback: create teacher object from currentUser
     return {
       id: currentUser.id || 'teacher_current',
-      fullName: currentUser.fullName || currentUser.name || 'استاد محترم',
-      name: currentUser.name || currentUser.fullName,
-      teacherCode: currentUser.teacherCode || currentUser.username,
-      phoneNumber: currentUser.phone || currentUser.phoneNumber,
-      nationalId: currentUser.nationalId || currentUser.nationalCode,
+      fullName: (currentUser as any).fullName || currentUser.name || 'استاد محترم',
+      name: currentUser.name || (currentUser as any).fullName,
+      teacherCode: (currentUser as any).teacherCode || (currentUser as any).teacherId || currentUser.username,
+      phoneNumber: (currentUser as any).phone || (currentUser as any).phoneNumber,
+      nationalId: (currentUser as any).nationalId || (currentUser as any).nationalCode,
       categories: ['ویژه'],
       priority: 1,
       isActive: true,
@@ -613,7 +613,9 @@ export default function TeacherPortal() {
           (g.courseTitle === activeCounselingCourse?.title || !g.courseTitle)
         ) {
           if (enrolledStudents.some(s => s.id === g.studentId)) {
-            graded++;
+            if (g.participationScore || g.researchScore) {
+              graded++;
+            }
           }
         }
       });
@@ -637,9 +639,14 @@ export default function TeacherPortal() {
   };
 
   /**
-   * One-Tap Touch Grading Handler
+   * Separate factor grading handler for Participation and Research/Summary scores.
+   * Completely decoupled: setting participation does not force research, and vice versa.
    */
-  const handleSetStudentScore = async (student: Student, score: CounselingScore) => {
+  const handleSetStudentFactorScore = async (
+    student: Student,
+    factor: 'participation' | 'research',
+    score: CounselingScore
+  ) => {
     if (!activeCounselingCourse || !selectedSessionDate) return;
 
     try {
@@ -652,6 +659,14 @@ export default function TeacherPortal() {
 
       const docId = existing?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}`;
 
+      const updatedParticipation = factor === 'participation' 
+        ? score 
+        : existing?.participationScore;
+
+      const updatedResearch = factor === 'research' 
+        ? score 
+        : existing?.researchScore;
+
       const gradeDoc: CounselingSessionGrade = {
         id: docId,
         studentId: student.id,
@@ -661,8 +676,8 @@ export default function TeacherPortal() {
         courseTitle: activeCounselingCourse.title,
         sessionDate: selectedSessionDate,
         sessionNumber: `جلسه ${classSessionDates.find(s => s.date === selectedSessionDate)?.sessionNumber || 1}`,
-        participationScore: score,
-        researchScore: score,
+        participationScore: updatedParticipation as CounselingScore,
+        researchScore: updatedResearch as CounselingScore,
         counselorFeedback: feedback.trim() || undefined,
         createdAt: existing?.createdAt || new Date().toISOString(),
         createdByName: currentUser?.name || teacherName,
@@ -676,59 +691,8 @@ export default function TeacherPortal() {
       setFeedbackSavedStudentId(student.id);
       setTimeout(() => setFeedbackSavedStudentId(null), 1500);
     } catch (err) {
-      console.error('Error saving counseling score:', err);
+      console.error('Error saving counseling factor score:', err);
       showToast('خطا در ثبت نمره ارزیابی');
-    }
-  };
-
-  /**
-   * Fast Batch Action: Grade all unrecorded students as "الف"
-   */
-  const handleQuickGradeAllA = async () => {
-    if (!activeCounselingCourse || !selectedSessionDate || enrolledStudents.length === 0) return;
-
-    try {
-      const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
-      const sessionInfo = classSessionDates.find(s => s.date === selectedSessionDate);
-      const sessionLabel = `جلسه ${sessionInfo?.sessionNumber || 1}`;
-
-      const updates: CounselingSessionGrade[] = [];
-
-      for (const student of enrolledStudents) {
-        const existing = sessionGradesMap.get(student.id);
-        if (!existing) {
-          const docId = `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-          const gradeDoc: CounselingSessionGrade = {
-            id: docId,
-            studentId: student.id,
-            studentName: student.name,
-            grade: student.grade || activeCounselingCourse.grade || 'عمومی',
-            counselorTeacherName: teacherName,
-            courseTitle: activeCounselingCourse.title,
-            sessionDate: selectedSessionDate,
-            sessionNumber: sessionLabel,
-            participationScore: 'الف',
-            researchScore: 'الف',
-            counselorFeedback: undefined,
-            createdAt: new Date().toISOString(),
-            createdByName: currentUser?.name || teacherName,
-            createdByRole: 'استاد',
-            updatedAt: new Date().toISOString()
-          };
-          await localDb.setDoc('counseling_session_grades', gradeDoc);
-          updates.push(gradeDoc);
-        }
-      }
-
-      if (updates.length > 0) {
-        setGrades(prev => [...prev, ...updates]);
-        showToast(`${toPersianDigits(updates.length)} دانش‌پژوه با نمره «الف» ثبت شدند.`);
-      } else {
-        showToast('تمام دانش‌پژوهان این جلسه قبلاً ارزیابی شده‌اند.');
-      }
-    } catch (err) {
-      console.error('Error auto-grading students:', err);
-      showToast('خطا در ثبت گروهی نمرات');
     }
   };
 
@@ -758,9 +722,8 @@ export default function TeacherPortal() {
         const existing = sessionGradesMap.get(student.id);
         const pendingNote = teacherNotesMap[student.id];
         const feedback = pendingNote !== undefined ? pendingNote.trim() : (existing?.counselorFeedback || '');
-        const currentScore = existing?.participationScore;
 
-        if (currentScore || feedback || existing) {
+        if (existing || pendingNote !== undefined) {
           const docId = existing?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
           const gradeDoc: CounselingSessionGrade = {
             id: docId,
@@ -771,8 +734,8 @@ export default function TeacherPortal() {
             courseTitle: activeCounselingCourse.title,
             sessionDate: selectedSessionDate,
             sessionNumber: sessionLabel,
-            participationScore: currentScore || 'الف',
-            researchScore: currentScore || 'الف',
+            participationScore: existing?.participationScore as CounselingScore,
+            researchScore: existing?.researchScore as CounselingScore,
             counselorFeedback: feedback || undefined,
             createdAt: existing?.createdAt || new Date().toISOString(),
             createdByName: currentUser?.name || teacherName,
@@ -789,7 +752,6 @@ export default function TeacherPortal() {
           const idSet = new Set(updates.map(u => u.id));
           return [...prev.filter(g => !idSet.has(g.id)), ...updates];
         });
-        // Non-blocking trigger cloud synchronization
         localDb.syncCollectionFromCloud('counseling_session_grades').catch(() => {});
         showToast(`✓ ارزیابی ${toPersianDigits(updates.length)} طلبه برای جلسه ${selectedSessionDate} با موفقیت در دیتابیس ثبت شد.`);
       } else {
@@ -1089,9 +1051,6 @@ export default function TeacherPortal() {
                   <h2 className="text-base font-black">
                     ثبت نمرات و مشارکت جلسات مشاوره
                   </h2>
-                  <p className="text-xs text-emerald-100 leading-relaxed">
-                    فقط جلسات برگزارشده کلاس شما در این بخش فعال است (کلاس امروز و حداکثر ۳ جلسه قبل). نمرات را تعیین و دکمه ثبت را بزنید.
-                  </p>
                 </div>
 
                 {/* --- CLASS SHIFTER (جابجایی آسان بین کلاس‌های مشاوره استاد) --- */}
@@ -1149,41 +1108,40 @@ export default function TeacherPortal() {
                   </div>
                 )}
 
-                {/* PROMPT BANNER: Requested scoring for held class dates (Max 4 sessions: today + 3 prior sessions) */}
-                <div className="bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border-2 border-emerald-500/30 rounded-3xl p-4 sm:p-5 shadow-xs space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
-                      <Sparkles size={20} />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-black text-slate-900">
-                          درخواست ثبت نمرات جلسات مشاوره
-                        </h3>
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
-                          {activeCounselingCourse?.title}
+                {/* HELD SESSIONS SELECTOR WITH LIVE STATUS */}
+                <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/90 shadow-xs space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2 text-xs font-black text-slate-900">
+                        <CalendarCheck size={16} className="text-emerald-600" />
+                        <span>انتخاب جلسه کلاس:</span>
+                        <span className="font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                          {selectedSessionDate || 'جلسه‌ای انتخاب نشده'}
                         </span>
+                        {classSessionDates.find(s => s.date === selectedSessionDate)?.isToday && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                            کلاس امروز
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                        استاد محترم؛ لطفاً برای جلسات برگزارشده، نمرات را با دکمه‌ها مشخص کرده و سپس روی **«ثبت و ذخیره ارزیابی‌ها»** بزنید.
-                      </p>
                     </div>
+
+                    {/* TOP SAVE BUTTON (دکمه ثبت ارزیابی‌ها در بالای صفحه) */}
+                    <button
+                      type="button"
+                      onClick={handleSaveAllEvaluations}
+                      disabled={isSavingAll || !selectedSessionDate || enrolledStudents.length === 0}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50"
+                    >
+                      <Save size={15} />
+                      <span>{isSavingAll ? 'در حال ثبت...' : 'ثبت ارزیابی‌ها'}</span>
+                    </button>
                   </div>
 
-                  {/* 4 Held Sessions Selector with Live Evaluation Status */}
+                  {/* 4 Held Sessions Selector */}
                   <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
-                      <span className="flex items-center gap-1.5">
-                        <CalendarCheck size={15} className="text-emerald-600" />
-                        <span>جلسات برگزارشده اخیر ({toPersianDigits(classSessionDates.length)} جلسه):</span>
-                      </span>
-                      <span className="text-[11px] text-slate-500 font-normal">
-                        برای انتخاب جلسه ضربه بزنید
-                      </span>
-                    </div>
-
                     {classSessionDates.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-2 bg-white rounded-2xl p-4 text-center border border-slate-200">
+                      <p className="text-xs text-slate-400 py-4 text-center">
                         هیچ جلسه برگزارشده‌ای در تقویم آموزشی برای این کلاس یافت نشد.
                       </p>
                     ) : (
@@ -1253,75 +1211,6 @@ export default function TeacherPortal() {
                   </div>
                 </div>
 
-                {/* --- TOP ACTION BAR WITH PROMINENT SAVE BUTTON (دکمه ثبت در بالای صفحه) --- */}
-                <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
-                        <CalendarCheck size={16} className="text-emerald-600" />
-                        <span>جلسه انتخابی: {selectedSessionDate}</span>
-                        {classSessionDates.find(s => s.date === selectedSessionDate)?.isToday && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
-                            کلاس امروز
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        {classSessionDates.find(s => s.date === selectedSessionDate)?.weekday} - جلسه {toPersianDigits(classSessionDates.find(s => s.date === selectedSessionDate)?.sessionNumber || 1)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Quick All-A Button */}
-                      <button
-                        onClick={handleQuickGradeAllA}
-                        className="inline-flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                        title="ثبت خودکار نمره الف برای تمام طلاب ثبت‌نشده این جلسه"
-                      >
-                        <Sparkles size={14} />
-                        <span>الف برای همه</span>
-                      </button>
-
-                      {/* TOP SAVE BUTTON (دکمه ثبت بالای صفحه) */}
-                      <button
-                        onClick={handleSaveAllEvaluations}
-                        disabled={isSavingAll}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50"
-                      >
-                        <Save size={15} />
-                        <span>{isSavingAll ? 'در حال ثبت...' : 'ثبت ارزیابی‌ها'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Status alert for selected session */}
-                  {selectedSessionDate && (
-                    <div className={cn(
-                      "p-2.5 rounded-2xl text-xs font-medium flex items-center justify-between border",
-                      (sessionGradingStats[selectedSessionDate]?.isComplete)
-                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
-                        : "bg-amber-50/70 border-amber-200 text-amber-900"
-                    )}>
-                      <div className="flex items-center gap-1.5">
-                        {(sessionGradingStats[selectedSessionDate]?.isComplete) ? (
-                          <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
-                        ) : (
-                          <AlertCircle size={15} className="text-amber-600 shrink-0" />
-                        )}
-                        <span>
-                          {(sessionGradingStats[selectedSessionDate]?.isComplete)
-                            ? 'نمرات تمام دانش‌پژوهان این کلاس ثبت شده است.'
-                            : 'در این جلسه هنوز نمره برخی طلاب تعیین نشده است. نمرات را بزنید و دکمه ثبت را بفشارید.'
-                          }
-                        </span>
-                      </div>
-                      <span className="font-bold text-[11px] shrink-0">
-                        {toPersianDigits(sessionGradingStats[selectedSessionDate]?.gradedCount || 0)} از {toPersianDigits(enrolledStudents.length)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
                 {/* Students Evaluation List (فقط طلبه‌های کلاس مشاوره همین استاد) */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-1">
@@ -1349,21 +1238,22 @@ export default function TeacherPortal() {
                   ) : (
                     enrolledStudents.map(student => {
                       const existingGrade = sessionGradesMap.get(student.id);
-                      const currentScore = existingGrade?.participationScore;
+                      const partScore = existingGrade?.participationScore;
+                      const resScore = existingGrade?.researchScore;
                       const isFeedbackSaved = feedbackSavedStudentId === student.id;
 
                       return (
                         <div
                           key={student.id}
                           className={cn(
-                            "bg-white rounded-3xl p-4 border transition-all space-y-3 shadow-xs",
-                            currentScore 
+                            "bg-white rounded-3xl p-4 border transition-all space-y-3.5 shadow-xs",
+                            (partScore || resScore) 
                               ? "border-emerald-200 bg-white" 
                               : "border-slate-200/90"
                           )}
                         >
                           {/* Student Header */}
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center gap-2.5">
                               <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 font-black text-sm flex items-center justify-center border border-indigo-100 overflow-hidden">
                                 {(student.photoUrl || (student as any).photo) ? (
@@ -1386,91 +1276,105 @@ export default function TeacherPortal() {
                               </div>
                             </div>
 
-                            {/* Current Grade Badge if assigned */}
-                            {currentScore && (
-                              <div className="flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                <CheckCircle2 size={13} className="text-emerald-600" />
-                                <span>نمره: {currentScore}</span>
-                              </div>
-                            )}
+                            {/* Current Grade Badges for both factors */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {partScore && (
+                                <div className={cn(
+                                  "flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-lg border",
+                                  partScore === 'غیبت' 
+                                    ? "bg-rose-50 text-rose-800 border-rose-200" 
+                                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                )}>
+                                  <span>مشارکت: {partScore}</span>
+                                </div>
+                              )}
+                              {resScore && (
+                                <div className={cn(
+                                  "flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-lg border",
+                                  resScore === 'غیبت' 
+                                    ? "bg-rose-50 text-rose-800 border-rose-200" 
+                                    : "bg-blue-50 text-blue-800 border-blue-200"
+                                )}>
+                                  <span>پژوهش: {resScore}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Quick 5 Buttons: الف ، ب ، ج ، د ، غیبت */}
-                          <div className="grid grid-cols-5 gap-1.5 pt-1">
-                            {/* 1. الف (عالی) */}
-                            <button
-                              type="button"
-                              onClick={() => handleSetStudentScore(student, 'الف')}
-                              className={cn(
-                                "py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
-                                currentScore === 'الف'
-                                  ? "bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300"
-                                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200"
-                              )}
-                            >
-                              <span className="text-sm">الف</span>
-                              <span className="text-[9px] opacity-80">عالی</span>
-                            </button>
+                          {/* Factor 1: نمره مشارکت (حضور و فعالیت کلاسی) */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 px-0.5">
+                              <span className="flex items-center gap-1 text-emerald-800 font-black">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                                <span>نمره مشارکت و حضور کلاسی:</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400">
+                                {partScore ? `ثبت‌شده: ${partScore}` : 'تعیین نشده'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {[
+                                { key: 'الف', label: 'عالی', idle: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300' },
+                                { key: 'ب', label: 'خوب', idle: 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200', active: 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300' },
+                                { key: 'ج', label: 'متوسط', idle: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200', active: 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-300' },
+                                { key: 'د', label: 'ضعیف', idle: 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200', active: 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-300' },
+                                { key: 'غیبت', label: 'عدم‌حضور', idle: 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200', active: 'bg-slate-700 text-white border-slate-800 shadow-md ring-2 ring-slate-400' }
+                              ].map(item => {
+                                const isSelected = partScore === item.key;
+                                return (
+                                  <button
+                                    key={`part-${item.key}`}
+                                    type="button"
+                                    onClick={() => handleSetStudentFactorScore(student, 'participation', item.key as CounselingScore)}
+                                    className={cn(
+                                      "py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
+                                      isSelected ? item.active : item.idle
+                                    )}
+                                  >
+                                    <span className="text-xs">{item.key}</span>
+                                    <span className="text-[9px] opacity-80">{item.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
 
-                            {/* 2. ب (خوب) */}
-                            <button
-                              type="button"
-                              onClick={() => handleSetStudentScore(student, 'ب')}
-                              className={cn(
-                                "py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
-                                currentScore === 'ب'
-                                  ? "bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300"
-                                  : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200"
-                              )}
-                            >
-                              <span className="text-sm">ب</span>
-                              <span className="text-[9px] opacity-80">خوب</span>
-                            </button>
-
-                            {/* 3. ج (متوسط) */}
-                            <button
-                              type="button"
-                              onClick={() => handleSetStudentScore(student, 'ج')}
-                              className={cn(
-                                "py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
-                                currentScore === 'ج'
-                                  ? "bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-300"
-                                  : "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200"
-                              )}
-                            >
-                              <span className="text-sm">ج</span>
-                              <span className="text-[9px] opacity-80">متوسط</span>
-                            </button>
-
-                            {/* 4. د (ضعیف) */}
-                            <button
-                              type="button"
-                              onClick={() => handleSetStudentScore(student, 'د')}
-                              className={cn(
-                                "py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
-                                currentScore === 'د'
-                                  ? "bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-300"
-                                  : "bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200"
-                              )}
-                            >
-                              <span className="text-sm">د</span>
-                              <span className="text-[9px] opacity-80">ضعیف</span>
-                            </button>
-
-                            {/* 5. غیبت */}
-                            <button
-                              type="button"
-                              onClick={() => handleSetStudentScore(student, 'غیبت')}
-                              className={cn(
-                                "py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
-                                currentScore === 'غیبت'
-                                  ? "bg-slate-700 text-white border-slate-800 shadow-md ring-2 ring-slate-400"
-                                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
-                              )}
-                            >
-                              <span className="text-xs pt-0.5">غیبت</span>
-                              <span className="text-[9px] opacity-80">عدم‌حضور</span>
-                            </button>
+                          {/* Factor 2: نمره پژوهش و تقریر (تکلیف و خلاصه) */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 px-0.5">
+                              <span className="flex items-center gap-1 text-blue-800 font-black">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
+                                <span>نمره پژوهش و تقریر:</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400">
+                                {resScore ? `ثبت‌شده: ${resScore}` : 'تعیین نشده'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-1.5">
+                              {[
+                                { key: 'الف', label: 'عالی', idle: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300' },
+                                { key: 'ب', label: 'خوب', idle: 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200', active: 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300' },
+                                { key: 'ج', label: 'متوسط', idle: 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200', active: 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-300' },
+                                { key: 'د', label: 'ضعیف', idle: 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200', active: 'bg-rose-600 text-white border-rose-700 shadow-md ring-2 ring-rose-300' },
+                                { key: 'غیبت', label: 'عدم‌حضور', idle: 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200', active: 'bg-slate-700 text-white border-slate-800 shadow-md ring-2 ring-slate-400' }
+                              ].map(item => {
+                                const isSelected = resScore === item.key;
+                                return (
+                                  <button
+                                    key={`res-${item.key}`}
+                                    type="button"
+                                    onClick={() => handleSetStudentFactorScore(student, 'research', item.key as CounselingScore)}
+                                    className={cn(
+                                      "py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex flex-col items-center justify-center border active:scale-95",
+                                      isSelected ? item.active : item.idle
+                                    )}
+                                  >
+                                    <span className="text-xs">{item.key}</span>
+                                    <span className="text-[9px] opacity-80">{item.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
 
                           {/* Optional Quick Note field */}

@@ -665,10 +665,19 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
 
                   counselingGrades.forEach(g => {
                     if (g.studentId === st.id) {
-                      if (g.grade === 'الف') countA++;
-                      else if (g.grade === 'ب') countB++;
-                      else if (g.grade === 'ج') countC++;
-                      else if (g.grade === 'د') countD++;
+                      // Check Factor 1: participationScore
+                      const pScore = g.participationScore || (g as any).score;
+                      if (pScore === 'الف') countA++;
+                      else if (pScore === 'ب') countB++;
+                      else if (pScore === 'ج') countC++;
+                      else if (pScore === 'د') countD++;
+
+                      // Check Factor 2: researchScore
+                      const rScore = g.researchScore;
+                      if (rScore === 'الف') countA++;
+                      else if (rScore === 'ب') countB++;
+                      else if (rScore === 'ج') countC++;
+                      else if (rScore === 'د') countD++;
                     }
                   });
 

@@ -710,17 +710,22 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           map[cg.studentId] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
         }
         map[cg.studentId].total += 2; // participation + research
-        if (cg.participationScore === 'الف') map[cg.studentId].countA++;
-        else if (cg.participationScore === 'ب') map[cg.studentId].countB++;
-        else if (cg.participationScore === 'ج') map[cg.studentId].countC++;
-        else if (cg.participationScore === 'د') map[cg.studentId].countD++;
-        else if (cg.participationScore === 'غیبت') map[cg.studentId].countAbsence++;
 
-        if (cg.researchScore === 'الف') map[cg.studentId].countA++;
-        else if (cg.researchScore === 'ب') map[cg.studentId].countB++;
-        else if (cg.researchScore === 'ج') map[cg.studentId].countC++;
-        else if (cg.researchScore === 'د') map[cg.studentId].countD++;
-        else if (cg.researchScore === 'غیبت') map[cg.studentId].countAbsence++;
+        // Factor 1: Participation score (or legacy score)
+        const pScore = cg.participationScore || (cg as any).score;
+        if (pScore === 'الف') map[cg.studentId].countA++;
+        else if (pScore === 'ب') map[cg.studentId].countB++;
+        else if (pScore === 'ج') map[cg.studentId].countC++;
+        else if (pScore === 'د') map[cg.studentId].countD++;
+        else if (pScore === 'غیبت') map[cg.studentId].countAbsence++;
+
+        // Factor 2: Research score
+        const rScore = cg.researchScore;
+        if (rScore === 'الف') map[cg.studentId].countA++;
+        else if (rScore === 'ب') map[cg.studentId].countB++;
+        else if (rScore === 'ج') map[cg.studentId].countC++;
+        else if (rScore === 'د') map[cg.studentId].countD++;
+        else if (rScore === 'غیبت') map[cg.studentId].countAbsence++;
       }
     });
 
