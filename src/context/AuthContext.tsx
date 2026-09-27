@@ -925,8 +925,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Firestore initialization notice:', fsErr);
     }
 
+    // 3. Periodic polling every 4 seconds to guarantee multi-device state synchronization
+    const syncInterval = setInterval(() => {
+      syncWithServer();
+      getDocs(collection(db, 'system_users')).then(snap => {
+        const fsUsers: any[] = [];
+        snap.forEach(d => {
+          if (d.exists()) fsUsers.push({ ...d.data(), id: d.id });
+        });
+        if (fsUsers.length > 0) processIncomingUsers(fsUsers);
+      }).catch(() => {});
+    }, 4000);
+
     return () => { 
       isMounted = false; 
+      clearInterval(syncInterval);
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, []);

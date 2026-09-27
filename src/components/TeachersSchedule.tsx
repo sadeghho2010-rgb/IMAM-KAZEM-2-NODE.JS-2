@@ -240,8 +240,10 @@ export default function TeachersSchedule() {
         const uClean = u.username.trim().replace(/^0/, '');
         if (uClean === cleanP) return true;
       }
-      if (u.role === 'teacher' && u.name && tObj.fullName) {
-        if (u.name.trim() === tObj.fullName.trim()) return true;
+      if (u.name && tObj?.fullName) {
+        const cleanUName = u.name.trim().replace(/^استاد\s+/, '').trim();
+        const cleanTName = tObj.fullName.trim().replace(/^استاد\s+/, '').trim();
+        if (cleanUName && cleanTName && cleanUName === cleanTName) return true;
       }
       return false;
     });

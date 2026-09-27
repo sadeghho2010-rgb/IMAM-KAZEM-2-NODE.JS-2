@@ -695,6 +695,15 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
   DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
   serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
 
+  // Load latest users from persistent file
+  loadUsersFromFile().forEach(u => {
+    if (u && u.username) {
+      const uname = u.username.toUpperCase();
+      usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+      serverMemoryUsers.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+    }
+  });
+
   if (!isServerSupabaseConfigured) {
     return Array.from(usersMap.values());
   }
