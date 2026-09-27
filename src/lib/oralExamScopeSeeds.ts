@@ -481,3 +481,25 @@ export const TIME_SLOTS_15MIN = [
   '15:45', '16:00', '16:15', '16:30', '16:45', '17:00',
   '17:15', '17:30', '17:45', '18:00'
 ];
+
+/**
+ * Dynamically generate time slot arrays based on chosen interval (15, 20, or 30 min)
+ */
+export function generateTimeSlots(intervalMinutes: 15 | 20 | 30 = 15, startTimeStr = '08:00'): string[] {
+  const slots: string[] = [];
+  let [h, m] = (startTimeStr || '08:00').split(':').map(Number);
+  if (isNaN(h)) h = 8;
+  if (isNaN(m)) m = 0;
+
+  let currentMin = h * 60 + m;
+  const endMin = 18 * 60; // 18:00
+
+  while (currentMin <= endMin) {
+    const curH = Math.floor(currentMin / 60);
+    const curM = currentMin % 60;
+    const timeStr = `${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}`;
+    slots.push(timeStr);
+    currentMin += Number(intervalMinutes) || 15;
+  }
+  return slots;
+}

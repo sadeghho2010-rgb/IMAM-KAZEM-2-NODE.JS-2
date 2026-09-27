@@ -99,6 +99,7 @@ export default function TeachersBank() {
 
   // Form State
   const [fullName, setFullName] = useState<string>('');
+  const [nationalId, setNationalId] = useState<string>('');
   const [teacherCode, setTeacherCode] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [photoUrl, setPhotoUrl] = useState<string>('');
@@ -117,54 +118,61 @@ export default function TeachersBank() {
   const [falsafaSpecialties, setFalsafaSpecialties] = useState<('بدایه' | 'نهایه' | 'آموزش فلسفه')[]>([]);
   const [thursdayNote, setThursdayNote] = useState<string>('');
 
+  const isSeedingRef = useRef<boolean>(false);
+
   // Fetch teachers from DB, seed default external institutes, & cleanup any seed samples
   const fetchTeachers = async () => {
     try {
       setLoading(true);
       const docs = (await localDb.getDocs('teachers')) as Teacher[];
 
-      // Clean up previous seed sample data if exists
-      const SEED_NAMES = [
-        'استاد سید محمدحسین حسینی',
-        'استاد رضا سلیمانی',
-        'استاد علی‌اکبر اسدی'
-      ];
-      const seedDocs = docs.filter(d => SEED_NAMES.includes(d.fullName));
-      
-      let cleanDocs = docs;
-      if (seedDocs.length > 0) {
-        for (const sd of seedDocs) {
-          await localDb.deleteDoc('teachers', sd.id);
+      if (!isSeedingRef.current) {
+        isSeedingRef.current = true;
+        // Clean up previous seed sample data if exists
+        const SEED_NAMES = [
+          'استاد سید محمدحسین حسینی',
+          'استاد رضا سلیمانی',
+          'استاد علی‌اکبر اسدی'
+        ];
+        const seedDocs = docs.filter(d => SEED_NAMES.includes(d.fullName));
+        
+        let cleanDocs = docs;
+        if (seedDocs.length > 0) {
+          for (const sd of seedDocs) {
+            await localDb.deleteDoc('teachers', sd.id);
+          }
+          cleanDocs = (await localDb.getDocs('teachers')) as Teacher[];
         }
-        cleanDocs = (await localDb.getDocs('teachers')) as Teacher[];
-      }
 
-      // Automatically seed default external institutes if they don't exist
-      const defaultExternals = [
-        'مدرسه امام حسین علیه السلام',
-        'مدرسه امام باقر علیه السلام',
-        'موسسه ائمه اطهار علیهم السلام'
-      ];
-      const currentExternals = cleanDocs.filter(t => t.isExternal).map(t => t.fullName);
-      const missingExternals = defaultExternals.filter(name => !currentExternals.includes(name));
+        // Automatically seed default external institutes if they don't exist
+        const defaultExternals = [
+          'مدرسه امام حسین علیه السلام',
+          'مدرسه امام باقر علیه السلام',
+          'موسسه ائمه اطهار علیهم السلام'
+        ];
+        const currentExternals = cleanDocs.filter(t => t.isExternal).map(t => t.fullName);
+        const missingExternals = defaultExternals.filter(name => !currentExternals.includes(name));
 
-      if (missingExternals.length > 0) {
-        for (const extName of missingExternals) {
-          await localDb.addDoc('teachers', {
-            fullName: extName,
-            phoneNumber: '',
-            priority: 2,
-            isActive: true,
-            categories: ['ویژه'],
-            isExternal: true,
-            notes: 'تعریف‌شده به عنوان محل برگزاری کلاس خارج از مؤسسه',
-            createdAt: new Date().toISOString()
-          });
+        if (missingExternals.length > 0) {
+          for (const extName of missingExternals) {
+            await localDb.addDoc('teachers', {
+              fullName: extName,
+              phoneNumber: '',
+              priority: 2,
+              isActive: true,
+              categories: ['ویژه'],
+              isExternal: true,
+              notes: 'تعریف‌شده به عنوان محل برگزاری کلاس خارج از مؤسسه',
+              createdAt: new Date().toISOString()
+            });
+          }
+          const updatedDocs = (await localDb.getDocs('teachers')) as Teacher[];
+          setTeachers(updatedDocs);
+        } else {
+          setTeachers(cleanDocs);
         }
-        const updatedDocs = (await localDb.getDocs('teachers')) as Teacher[];
-        setTeachers(updatedDocs);
       } else {
-        setTeachers(cleanDocs);
+        setTeachers(docs);
       }
     } catch (err) {
       console.error('Error fetching teachers:', err);
@@ -181,10 +189,16 @@ export default function TeachersBank() {
     return () => unsub();
   }, []);
 
+  const generateUniqueTeacherCode = (): string => {
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    return `T-${randomNum}`;
+  };
+
   const openAddModal = () => {
     setEditingTeacher(null);
     setFullName('');
-    setTeacherCode('');
+    setNationalId('');
+    setTeacherCode(generateUniqueTeacherCode());
     setPhoneNumber('');
     setPhotoUrl('');
     setPriority(1);
@@ -205,7 +219,8 @@ export default function TeachersBank() {
   const openEditModal = (t: Teacher) => {
     setEditingTeacher(t);
     setFullName(t.fullName || '');
-    setTeacherCode(t.teacherCode || '');
+    setNationalId(t.nationalId || '');
+    setTeacherCode(t.teacherCode || generateUniqueTeacherCode());
     setPhoneNumber(t.phoneNumber || '');
     setPhotoUrl(t.photoUrl || '');
     setPriority((Number(t.priority) || 1) as 1 | 2 | 3);
@@ -227,9 +242,13 @@ export default function TeachersBank() {
     e.preventDefault();
     if (!fullName.trim()) return;
 
+    // Ensure teacherCode always exists even if left blank
+    const finalTeacherCode = teacherCode.trim() || generateUniqueTeacherCode();
+
     const teacherData: Partial<Teacher> = {
       fullName: fullName.trim(),
-      teacherCode: teacherCode.trim(),
+      nationalId: nationalId.trim(),
+      teacherCode: finalTeacherCode,
       phoneNumber: phoneNumber.trim(),
       photoUrl,
       priority,
@@ -344,6 +363,8 @@ export default function TeachersBank() {
     const matchesSearch = !searchLower || 
       t.fullName?.toLowerCase().includes(searchLower) ||
       t.phoneNumber?.includes(searchLower) ||
+      t.nationalId?.includes(searchLower) ||
+      t.teacherCode?.toLowerCase().includes(searchLower) ||
       t.notes?.toLowerCase().includes(searchLower) ||
       t.experienceHistory?.toLowerCase().includes(searchLower) ||
       t.categories?.some(c => c.toLowerCase().includes(searchLower)) ||
@@ -1026,9 +1047,21 @@ export default function TeachersBank() {
                               {teacher.isExternal && <Building2 size={13} className="text-amber-500 shrink-0" />}
                               <span>{teacher.fullName}</span>
                             </div>
-                            {!teacher.isActive && (
-                              <span className="text-[10px] text-rose-500 font-bold">غیرفعال</span>
-                            )}
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-mono">
+                              {teacher.teacherCode && (
+                                <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                                  کد: {teacher.teacherCode}
+                                </span>
+                              )}
+                              {teacher.nationalId && (
+                                <span className="text-slate-500">
+                                  کد ملی: {teacher.nationalId}
+                                </span>
+                              )}
+                              {!teacher.isActive && (
+                                <span className="text-rose-500 font-bold">غیرفعال</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1225,10 +1258,22 @@ export default function TeachersBank() {
                       )}
                       <div>
                         <h3 className="font-bold text-slate-800 text-base">{teacher.fullName}</h3>
-                        <p className="text-xs text-slate-500 font-mono flex items-center gap-1 mt-0.5">
-                          <Phone size={12} className="text-slate-400" />
-                          <span>{teacher.phoneNumber || 'بدون شماره'}</span>
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-500 font-mono">
+                          <span className="flex items-center gap-1">
+                            <Phone size={12} className="text-slate-400" />
+                            <span>{teacher.phoneNumber || 'بدون شماره'}</span>
+                          </span>
+                          {teacher.teacherCode && (
+                            <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                              کد: {teacher.teacherCode}
+                            </span>
+                          )}
+                          {teacher.nationalId && (
+                            <span className="text-slate-400 text-[10px]">
+                              کد ملی: {teacher.nationalId}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1496,9 +1541,34 @@ export default function TeachersBank() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">کد استادی</label>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          کد ملی استاد <span className="text-slate-400 font-normal">(جهت تطبیق دقیق پنل و ورود)</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          placeholder="مثلاً ۰۰۱۲۳۴۵۶۷۸"
+                          value={nationalId}
+                          onChange={(e) => setNationalId(e.target.value)}
+                          maxLength={10}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-bold text-slate-700">
+                            شناسه / کد استادی
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setTeacherCode(generateUniqueTeacherCode())}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
+                          >
+                            تولید خودکار کد
+                          </button>
+                        </div>
                         <input 
                           type="text" 
                           placeholder="مثلاً T-104"
@@ -1507,7 +1577,9 @@ export default function TeachersBank() {
                           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
+                    </div>
 
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">شماره تماس</label>
                         <input 

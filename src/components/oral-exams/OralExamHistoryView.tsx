@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { 
   Archive, 
   Search, 
@@ -74,8 +75,9 @@ export default function OralExamHistoryView({
   // -------------------------------------------------------------
   const [reportType, setReportType] = useState<'teachers' | 'books' | 'students'>('teachers');
   
-  // Teachers Report State
+  // Teachers Report State (اصلاح ۲)
   const [selectedTeacherName, setSelectedTeacherName] = useState<string>('all');
+  const [selectedTeacherBookFilter, setSelectedTeacherBookFilter] = useState<string>('all');
   
   // Books Report State
   const [selectedBookName, setSelectedBookName] = useState<string>('all');
@@ -244,7 +246,7 @@ export default function OralExamHistoryView({
   };
 
   // -------------------------------------------------------------
-  // REPORT 1: TEACHERS PARTICIPATION REPORT
+  // REPORT 1: TEACHERS PARTICIPATION REPORT (اصلاح ۲)
   // -------------------------------------------------------------
   const teachersReportData = useMemo(() => {
     const list: {
@@ -281,6 +283,16 @@ export default function OralExamHistoryView({
         const dateStr = period?.examDate || period?.examDates?.[0] || '-';
         const pTitle = period?.title || 'دوره آزمون';
 
+        // Check if matching book filter
+        const matchesBook = selectedTeacherBookFilter === 'all' ||
+          rec.fiqhBookTitle?.includes(selectedTeacherBookFilter) ||
+          rec.usulBookTitle?.includes(selectedTeacherBookFilter) ||
+          period?.fiqhBooks?.some(b => b.includes(selectedTeacherBookFilter)) ||
+          period?.usulBooks?.some(b => b.includes(selectedTeacherBookFilter)) ||
+          pTitle.includes(selectedTeacherBookFilter);
+
+        if (!matchesBook) return;
+
         if (rec.fiqhExaminerTeacherName === tName) {
           fiqhCount++;
           periodSet.add(rec.periodId);
@@ -316,7 +328,7 @@ export default function OralExamHistoryView({
         }
       });
 
-      if (fiqhCount > 0 || usulCount > 0 || selectedTeacherName !== 'all') {
+      if (studentList.length > 0) {
         list.push({
           teacherName: tName,
           periodsCount: periodSet.size,
@@ -330,7 +342,36 @@ export default function OralExamHistoryView({
     });
 
     return list;
-  }, [selectedTeacherName, examinerNamesList, records, periods]);
+  }, [selectedTeacherName, selectedTeacherBookFilter, examinerNamesList, records, periods]);
+
+  // Export Teacher Report to Excel (اصلاح ۲)
+  const handleExportTeacherReportExcel = () => {
+    if (teachersReportData.length === 0) {
+      alert('هیچ استادی در فیلتر انتخابی یافت نشد.');
+      return;
+    }
+
+    const rows: any[] = [];
+    teachersReportData.forEach((t, idx) => {
+      t.evaluatedStudents.forEach((st) => {
+        rows.push({
+          'ردیف': rows.length + 1,
+          'نام استاد ممتحن': t.teacherName,
+          'عنوان دوره آزمون': st.periodTitle,
+          'نام طلبه': st.studentName,
+          'پایه تحصیلی': st.grade,
+          'درس امتحانی': st.subject,
+          'نمره (از ۲۰)': st.score,
+          'تاریخ برگزاری': st.date
+        });
+      });
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'اساتید مشارکت‌کننده');
+    XLSX.writeFile(workbook, `گزارش_اساتید_مشارکت_کننده_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.xlsx`);
+  };
 
   // Export Teacher Report Word
   const handleExportTeacherReportWord = () => {
@@ -871,16 +912,26 @@ export default function OralExamHistoryView({
               </button>
             </div>
 
-            {/* Quick Export Word for Current Report */}
+            {/* Quick Export Word & Excel for Current Report */}
             <div>
               {reportType === 'teachers' && (
-                <button
-                  onClick={handleExportTeacherReportWord}
-                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download size={14} />
-                  <span>خروجی ورد رسمی (Word)</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportTeacherReportExcel}
+                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>خروجی اکسل اساتید</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportTeacherReportWord}
+                    className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>خروجی ورد (Word)</span>
+                  </button>
+                </div>
               )}
               {reportType === 'books' && (
                 <button
@@ -918,18 +969,42 @@ export default function OralExamHistoryView({
                   </p>
                 </div>
 
-                <div className="w-full sm:w-64">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">فیلتر استاد ممتحن:</label>
-                  <select
-                    value={selectedTeacherName}
-                    onChange={(e) => setSelectedTeacherName(e.target.value)}
-                    className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
-                  >
-                    <option value="all">نمایش کلیه اساتید ممتحن</option>
-                    {examinerNamesList.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
+                <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                  {/* Book Filter Dropdown (اصلاح ۲) */}
+                  <div className="w-full sm:w-56">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">فیلتر درس / کتاب امتحانی:</label>
+                    <select
+                      value={selectedTeacherBookFilter}
+                      onChange={(e) => setSelectedTeacherBookFilter(e.target.value)}
+                      className="w-full py-2 px-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-950 font-bold cursor-pointer"
+                    >
+                      <option value="all">همه درجات و کتب</option>
+                      <option value="کفایه">کفایة الأصول (کفایه)</option>
+                      <option value="رسائل">فرائد الأصول (رسائل)</option>
+                      <option value="حلقه ثالثه">حلقه ثالثه (شهید صدر)</option>
+                      <option value="مکاسب - محرمه">مکاسب - محرمه</option>
+                      <option value="مکاسب - بیع">مکاسب - بیع</option>
+                      <option value="مکاسب - شروط متعاقدین">مکاسب - شروط متعاقدین</option>
+                      <option value="مکاسب - شروط عوضین">مکاسب - شروط عوضین</option>
+                      <option value="اصول مرحوم مظفر">اصول الفقه (مظفر)</option>
+                      <option value="لمعه">شرح اللمعة (لمعه)</option>
+                    </select>
+                  </div>
+
+                  {/* Teacher Filter Dropdown */}
+                  <div className="w-full sm:w-56">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">فیلتر استاد ممتحن:</label>
+                    <select
+                      value={selectedTeacherName}
+                      onChange={(e) => setSelectedTeacherName(e.target.value)}
+                      className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
+                    >
+                      <option value="all">نمایش کلیه اساتید ممتحن</option>
+                      {examinerNamesList.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 

@@ -129,6 +129,25 @@ export default function CreateOralExamWizard({
   // Quick auto time step
   const [autoStartTime, setAutoStartTime] = useState<string>('08:00');
 
+  // Exam Category (امتحان طول سال vs امتحان ورودی)
+  const [examCategory, setExamCategory] = useState<'academic' | 'entrance'>(
+    existingPeriod?.grade === 'امتحان ورودی' || existingPeriod?.examType === 'entrance' ? 'entrance' : 'academic'
+  );
+
+  // Time Interval Step for Step 2 (۱۵ دقیقه، ۲۰ دقیقه، ۳۰ دقیقه)
+  const [timeIntervalStep, setTimeIntervalStep] = useState<15 | 20 | 30>(20);
+
+  // Show Scopes in Bulletin Board Print Toggle (اصلاح ۸)
+  const [showScopesInPrint, setShowScopesInPrint] = useState<boolean>(true);
+
+  // Quick Entrance Exam Applicants Form State (اصلاح ۴)
+  const [applicantRows, setApplicantRows] = useState<Array<{ id: string; fullName: string; nationalId: string; phone: string; notes: string }>>([
+    { id: 'app_1', fullName: '', nationalId: '', phone: '', notes: '' },
+    { id: 'app_2', fullName: '', nationalId: '', phone: '', notes: '' },
+    { id: 'app_3', fullName: '', nationalId: '', phone: '', notes: '' }
+  ]);
+  const [isSavingApplicants, setIsSavingApplicants] = useState<boolean>(false);
+
   // Print/A5 Preview Modal
   const [isA5PreviewOpen, setIsA5PreviewOpen] = useState<boolean>(false);
   const [isBulletinBoardPreviewOpen, setIsBulletinBoardPreviewOpen] = useState<boolean>(false);
@@ -151,26 +170,70 @@ export default function CreateOralExamWizard({
     }
   }, [targetGrade]);
 
-  // Auto-populate students on initial load if empty
+  // Auto-populate students when target grade changes (اصلاح ۳)
   useEffect(() => {
-    if (participatingStudentIds.length === 0 && !existingPeriod) {
-      if (targetGrade === 'امتحان ورودی') {
+    if (!existingPeriod) {
+      if (examCategory === 'entrance' || targetGrade === 'امتحان ورودی') {
         const entryStudents = students.filter(s => s.grade === 'ورودی' || s.grade === 'امتحان ورودی' || s.grade?.includes('ورودی'));
         if (entryStudents.length > 0) {
           setParticipatingStudentIds(entryStudents.map(s => s.id));
-        } else {
-          setParticipatingStudentIds(students.slice(0, 15).map(s => s.id));
         }
-      } else {
+      } else if (targetGrade && targetGrade !== 'کل پایه‌ها') {
         const gradeStudents = students.filter(s => s.grade === targetGrade);
         if (gradeStudents.length > 0) {
           setParticipatingStudentIds(gradeStudents.map(s => s.id));
-        } else {
-          setParticipatingStudentIds(students.slice(0, 15).map(s => s.id));
         }
       }
     }
-  }, [targetGrade, existingPeriod]);
+  }, [targetGrade, examCategory, existingPeriod, students]);
+
+  // Toggle student participation (اصلاح ۳)
+  const toggleStudentParticipation = (studentId: string) => {
+    setParticipatingStudentIds(prev => {
+      if (prev.includes(studentId)) {
+        return prev.filter(id => id !== studentId);
+      } else {
+        return [...prev, studentId];
+      }
+    });
+  };
+
+  // Confirm entrance applicants and create student records (اصلاح ۴)
+  const handleConfirmEntranceApplicants = async () => {
+    const validApplicants = applicantRows.filter(r => r.fullName.trim() !== '');
+    if (validApplicants.length === 0) {
+      alert('لطفاً حداقل نام و نام خانوادگی یک داوطلب ورودی را وارد نمایید.');
+      return;
+    }
+
+    setIsSavingApplicants(true);
+    try {
+      const newStudentIds: string[] = [];
+      for (const app of validApplicants) {
+        const stId = `st_entry_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const newStudent: Student = {
+          id: stId,
+          name: app.fullName.trim(),
+          nationalId: app.nationalId.trim() || undefined,
+          phone: app.phone.trim() || undefined,
+          grade: 'امتحان ورودی',
+          isActive: true,
+          createdAt: new Date().toISOString()
+        };
+        await localDb.addDoc('students', newStudent);
+        students.push(newStudent);
+        studentsMap.set(stId, newStudent);
+        newStudentIds.push(stId);
+      }
+
+      setParticipatingStudentIds(prev => Array.from(new Set([...prev, ...newStudentIds])));
+      alert(`${validApplicants.length.toLocaleString('fa-IR')} داوطلب آزمون ورودی با موفقیت ثبت و به لیست طلاب اضافه شدند.`);
+    } catch (err) {
+      console.error('Error adding entrance applicants:', err);
+    } finally {
+      setIsSavingApplicants(false);
+    }
+  };
 
   // Sync course switches
   const handleExamTypeChange = (type: 'both' | 'fiqh' | 'usul' | 'entrance') => {
@@ -352,16 +415,22 @@ export default function CreateOralExamWizard({
     }));
   };
 
-  // Auto-schedule times with 15 min gap for all students
+  // Auto-schedule times with configurable interval step (15, 20, or 30 mins) for all students
   const handleAutoScheduleTimes = () => {
-    const startIdx = TIME_SLOTS_15MIN.indexOf(autoStartTime);
-    const baseIdx = startIdx >= 0 ? startIdx : 0;
+    const [startHourStr, startMinStr] = (autoStartTime || '08:00').split(':');
+    const startHour = Number(startHourStr) || 8;
+    const startMin = Number(startMinStr) || 0;
+    const baseTotalMinutes = startHour * 60 + startMin;
 
     const newMap = { ...recordsMap };
     participatingStudentIds.forEach((stId, idx) => {
-      const slot = TIME_SLOTS_15MIN[(baseIdx + idx) % TIME_SLOTS_15MIN.length];
+      const slotMinutes = baseTotalMinutes + idx * timeIntervalStep;
+      const h = Math.floor(slotMinutes / 60) % 24;
+      const m = slotMinutes % 60;
+      const slotStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
       if (newMap[stId]) {
-        newMap[stId].examTime = slot;
+        newMap[stId].examTime = slotStr;
       }
     });
     setRecordsMap(newMap);
@@ -542,19 +611,33 @@ export default function CreateOralExamWizard({
     onFinishPeriod(periodData);
   };
 
-  // Filtered scopes for quick search in Step 2
+  // Filtered scopes for quick search in Step 2 (اصلاح ۷)
   const matchingScopeItems = useMemo(() => {
-    if (!activeScopeSearch || !scopeSearchQuery.trim()) return [];
+    if (!activeScopeSearch) return [];
     const term = scopeSearchQuery.trim().toLowerCase();
     return allFlattenedScopes.filter(s => {
-      if (activeScopeSearch.course === 'fiqh' && s.category === 'usul') return false;
-      if (activeScopeSearch.course === 'usul' && s.category === 'fiqh') return false;
+      if (activeScopeSearch.course === 'fiqh') {
+        if (s.category === 'usul') return false;
+        if (fiqhBooks.length > 0) {
+          const matchBook = fiqhBooks.some(fb => s.bookTitle.includes(fb) || fb.includes(s.bookTitle));
+          if (!matchBook && s.category !== 'entrance') return false;
+        }
+      }
+      if (activeScopeSearch.course === 'usul') {
+        if (s.category === 'fiqh') return false;
+        if (usulBooks.length > 0) {
+          const matchBook = usulBooks.some(ub => s.bookTitle.includes(ub) || ub.includes(s.bookTitle));
+          if (!matchBook && s.category !== 'entrance') return false;
+        }
+      }
+
+      if (!term) return true;
       return s.bookTitle.toLowerCase().includes(term) ||
              s.mainScopeTitle.toLowerCase().includes(term) ||
              s.subScopeTitle.toLowerCase().includes(term) ||
              (s.pages && s.pages.toLowerCase().includes(term));
-    }).slice(0, 15);
-  }, [activeScopeSearch, scopeSearchQuery, allFlattenedScopes]);
+    }).slice(0, 20);
+  }, [activeScopeSearch, scopeSearchQuery, allFlattenedScopes, fiqhBooks, usulBooks]);
 
   return (
     <div className="space-y-6">
@@ -653,6 +736,45 @@ export default function CreateOralExamWizard({
             </p>
           </div>
 
+          {/* Exam Category Switcher (امتحان ورودی vs طول سال) - اصلاح ۴ */}
+          <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-2 border border-slate-200">
+            <button
+              type="button"
+              onClick={() => {
+                setExamCategory('academic');
+                if (targetGrade === 'امتحان ورودی') setTargetGrade('پایه ۹');
+                if (examType === 'entrance') setExamType('both');
+              }}
+              className={cn(
+                "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2",
+                examCategory === 'academic'
+                  ? "bg-white text-indigo-900 shadow-sm border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <BookOpen size={16} className="text-indigo-600" />
+              <span>امتحان طول سال (دوره‌ای / پایه‌ای)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setExamCategory('entrance');
+                setTargetGrade('امتحان ورودی');
+                setExamType('entrance');
+              }}
+              className={cn(
+                "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2",
+                examCategory === 'entrance'
+                  ? "bg-amber-500 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Award size={16} />
+              <span>امتحان ورودی (داوطلبان جدید و خارج از موسسه)</span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Period Title */}
             <div className="md:col-span-2 space-y-1">
@@ -664,7 +786,7 @@ export default function CreateOralExamWizard({
                 required
                 value={periodTitle}
                 onChange={(e) => setPeriodTitle(e.target.value)}
-                placeholder="مثلاً: دوره آزمون شفاهی پایه ۹ - آذر ۱۴۰۳"
+                placeholder={examCategory === 'entrance' ? "مثلاً: آزمون شفاهی ورودی طلاب جدیدالورود - دوره پاییز" : "مثلاً: دوره آزمون شفاهی پایه ۹ - آذر ۱۴۰۳"}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
               />
             </div>
@@ -693,40 +815,73 @@ export default function CreateOralExamWizard({
               />
             </div>
 
-            {/* Grade Selection */}
+            {/* Grade Selection (Only shown for Academic Year, hidden for Entrance) */}
+            {examCategory === 'academic' && (
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">پایه تحصیلی هدف</label>
+                <select
+                  value={targetGrade}
+                  onChange={(e) => {
+                    setTargetGrade(e.target.value);
+                    if (e.target.value === 'امتحان ورودی') {
+                      handleExamTypeChange('entrance');
+                      setExamCategory('entrance');
+                    }
+                  }}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
+                >
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                  <option value="کل پایه‌ها">ترکیبی / کل پایه‌ها</option>
+                </select>
+              </div>
+            )}
+
+            {/* Book Selection for Usul (اصلاح ۵ و ۷) */}
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">پایه تحصیلی هدف</label>
+              <label className="block text-xs font-bold text-indigo-900">کتاب مورد آزمون در اصول</label>
               <select
-                value={targetGrade}
-                onChange={(e) => {
-                  setTargetGrade(e.target.value);
-                  if (e.target.value === 'امتحان ورودی') {
-                    handleExamTypeChange('entrance');
-                  }
-                }}
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
+                value={usulBooks[0] || ''}
+                onChange={(e) => setUsulBooks([e.target.value])}
+                className="w-full px-4 py-2.5 bg-indigo-50/60 border border-indigo-200 rounded-xl text-xs text-indigo-950 font-bold cursor-pointer"
               >
-                <option value="پایه ۷">پایه ۷</option>
-                <option value="پایه ۸">پایه ۸</option>
-                <option value="پایه ۹">پایه ۹</option>
-                <option value="پایه ۱۰">پایه ۱۰</option>
-                <option value="امتحان ورودی">امتحان ورودی</option>
-                <option value="کل پایه‌ها">ترکیبی / کل پایه‌ها</option>
+                {examCategory === 'entrance' ? (
+                  <>
+                    <option value="اصول مرحوم مظفر">اصول الفقه (مرحوم مظفر)</option>
+                    <option value="حلقه ثانیه">حلقه ثانیه (شهید صدر)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="رسائل">رسائل (فرائد الأصول شیخ انصاری)</option>
+                    <option value="کفایه">کفایة الأصول (آخوند خراسانی)</option>
+                    <option value="حلقه ثالثه">حلقه ثالثه (شهید صدر)</option>
+                  </>
+                )}
               </select>
             </div>
 
-            {/* Exam Subject Type */}
+            {/* Book Selection for Fiqh (اصلاح ۵ و ۷) */}
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">نوع دروس مورد آزمون</label>
+              <label className="block text-xs font-bold text-amber-900">کتاب مورد آزمون در فقه</label>
               <select
-                value={examType}
-                onChange={(e) => handleExamTypeChange(e.target.value as any)}
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
+                value={fiqhBooks[0] || ''}
+                onChange={(e) => setFiqhBooks([e.target.value])}
+                className="w-full px-4 py-2.5 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-950 font-bold cursor-pointer"
               >
-                <option value="both">هر دو درس (فقه و اصول)</option>
-                <option value="fiqh">فقط فقه</option>
-                <option value="usul">فقط اصول</option>
-                <option value="entrance">آزمون ورودی (مظفر، لمعه، حلقه ثانیه)</option>
+                {examCategory === 'entrance' ? (
+                  <>
+                    <option value="لمعه">شرح اللمعة الدمشقیة (لمعه)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="مکاسب - محرمه">مکاسب - مکاسب محرمه</option>
+                    <option value="مکاسب - بیع">مکاسب - کتاب البيع</option>
+                    <option value="مکاسب - شروط متعاقدین">مکاسب - شروط متعاقدین</option>
+                    <option value="مکاسب - شروط عوضین">مکاسب - شروط عوضین</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -779,20 +934,23 @@ export default function CreateOralExamWizard({
                     />
                     <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 text-xs">
                       {teachers
-                        .filter(t => t.name.toLowerCase().includes(teacherBankSearch.trim().toLowerCase()))
-                        .map(t => (
-                          <div
-                            key={t.id}
-                            onClick={() => {
-                              handleAddExaminer(t.name, 'teachers_bank', 'both');
-                              setIsTeacherBankOpen(false);
-                            }}
-                            className="p-2 hover:bg-slate-50 rounded cursor-pointer flex items-center justify-between"
-                          >
-                            <span className="font-bold text-slate-800">{t.name}</span>
-                            <span className="text-emerald-700 text-[11px]">+ افزودن ممتحن</span>
-                          </div>
-                        ))}
+                        .filter(t => (t.fullName || t.name || '').toLowerCase().includes(teacherBankSearch.trim().toLowerCase()))
+                        .map(t => {
+                          const tName = t.fullName || t.name || 'استاد';
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => {
+                                handleAddExaminer(tName, 'teachers_bank', 'both');
+                                setIsTeacherBankOpen(false);
+                              }}
+                              className="p-2 hover:bg-slate-50 rounded cursor-pointer flex items-center justify-between"
+                            >
+                              <span className="font-bold text-slate-800">{tName}</span>
+                              <span className="text-emerald-700 text-[11px]">+ افزودن ممتحن</span>
+                            </div>
+                          );
+                        })}
                     </div>
                   </div>
                 )}
@@ -832,20 +990,23 @@ export default function CreateOralExamWizard({
                     {/* Predefined oral examiners */}
                     <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 text-xs">
                       {teachers
-                        .filter(t => t.name.toLowerCase().includes(oralTeacherBankSearch.trim().toLowerCase()))
-                        .map(t => (
-                          <div
-                            key={t.id}
-                            onClick={() => {
-                              handleAddExaminer(t.name, 'oral_exam_bank', 'both');
-                              setIsOralTeacherBankOpen(false);
-                            }}
-                            className="p-2 hover:bg-slate-50 rounded cursor-pointer flex items-center justify-between"
-                          >
-                            <span className="font-bold text-slate-800">{t.name}</span>
-                            <span className="text-indigo-700 text-[11px]">+ انتخاب</span>
-                          </div>
-                        ))}
+                        .filter(t => (t.fullName || t.name || '').toLowerCase().includes(oralTeacherBankSearch.trim().toLowerCase()))
+                        .map(t => {
+                          const tName = t.fullName || t.name || 'استاد';
+                          return (
+                            <div
+                              key={t.id}
+                              onClick={() => {
+                                handleAddExaminer(tName, 'oral_exam_bank', 'both');
+                                setIsOralTeacherBankOpen(false);
+                              }}
+                              className="p-2 hover:bg-slate-50 rounded cursor-pointer flex items-center justify-between"
+                            >
+                              <span className="font-bold text-slate-800">{tName}</span>
+                              <span className="text-indigo-700 text-[11px]">+ انتخاب</span>
+                            </div>
+                          );
+                        })}
                     </div>
 
                     {/* Add Custom Name if not in list */}
@@ -948,107 +1109,264 @@ export default function CreateOralExamWizard({
           </div>
 
           {/* ------------------------------------------------------------- */}
-          {/* PARTICIPATING STUDENTS SECTION (با امکان کم/زیاد کردن دستی)   */}
+          {/* PARTICIPATING STUDENTS SECTION                                */}
           {/* ------------------------------------------------------------- */}
           <div className="pt-6 border-t border-slate-100 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                  <Users size={18} className="text-sky-600" />
-                  <span>طلاب شرکت‌کننده در آزمون ({participatingStudentIds.length} نفر)</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  امکان حذف طلاب یا افزودن دستی طلاب حتی از سایر پایه‌ها با دکمه زیر فراهم است.
-                </p>
-              </div>
+            {/* ENTRANCE EXAM FAST FORM (اصلاح ۴) */}
+            {examCategory === 'entrance' ? (
+              <div className="bg-amber-50/60 border border-amber-200/80 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-amber-950 flex items-center gap-2">
+                      <UserPlus size={18} className="text-amber-600" />
+                      <span>ورود سریع اطلاعات طلاب متقاضی آزمون ورودی</span>
+                    </h3>
+                    <p className="text-xs text-amber-800/80 mt-0.5">
+                      در آزمون ورودی، داوطلبان خارج از موسسه هستند. مشخصات ایشان را سریع تکمیل کرده و دکمه «تایید و ثبت» را بزنید.
+                    </p>
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => setIsStudentSearchOpen(!isStudentSearchOpen)}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-              >
-                <UserPlus size={14} />
-                <span>+ افزودن طلبه از سایر پایه‌ها</span>
-              </button>
-            </div>
-
-            {/* Manual Student Adder Dropdown */}
-            {isStudentSearchOpen && (
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-slate-800">جستجو در کل طلاب مدرسه جهت افزودن به آزمون:</span>
-                  <button onClick={() => setIsStudentSearchOpen(false)} className="text-slate-400 hover:text-slate-600">
-                    <X size={16} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApplicantRows(prev => [
+                        ...prev,
+                        { id: `app_${Date.now()}`, fullName: '', nationalId: '', phone: '', notes: '' }
+                      ]);
+                    }}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer self-start sm:self-auto shadow-xs"
+                  >
+                    <Plus size={14} />
+                    <span>+ افزودن سطر داوطلب جدید</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <input
-                    type="text"
-                    value={studentSearchQuery}
-                    onChange={(e) => setStudentSearchQuery(e.target.value)}
-                    placeholder="نام یا کد ملی طلبه..."
-                    className="sm:col-span-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
-                  />
-                  <select
-                    value={studentSearchGradeFilter}
-                    onChange={(e) => setStudentSearchGradeFilter(e.target.value)}
-                    className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium"
-                  >
-                    <option value="all">همه پایه‌ها</option>
-                    <option value="پایه ۷">پایه ۷</option>
-                    <option value="پایه ۸">پایه ۸</option>
-                    <option value="پایه ۹">پایه ۹</option>
-                    <option value="پایه ۱۰">پایه ۱۰</option>
-                    <option value="ورودی">پایه ورودی</option>
-                  </select>
+                <div className="border border-amber-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-amber-100/70 text-amber-950 font-bold border-b border-amber-200">
+                      <tr>
+                        <th className="p-2.5 w-10 text-center">#</th>
+                        <th className="p-2.5">نام و نام خانوادگی داوطلب <span className="text-rose-500">*</span></th>
+                        <th className="p-2.5 w-32">کد ملی</th>
+                        <th className="p-2.5 w-32">شماره تماس</th>
+                        <th className="p-2.5">سایر توضیحات / سوابق</th>
+                        <th className="p-2.5 w-10 text-center">حذف</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-100">
+                      {applicantRows.map((row, rIdx) => (
+                        <tr key={row.id} className="hover:bg-amber-50/50">
+                          <td className="p-2 text-center text-amber-800 font-bold">{rIdx + 1}</td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.fullName}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setApplicantRows(prev => prev.map(r => r.id === row.id ? { ...r, fullName: val } : r));
+                              }}
+                              placeholder="مثلاً: محمد حسینی..."
+                              className="w-full px-2.5 py-1.5 bg-amber-50/30 border border-amber-200 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.nationalId}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setApplicantRows(prev => prev.map(r => r.id === row.id ? { ...r, nationalId: val } : r));
+                              }}
+                              placeholder="۰۰۱۲۳۴۵۶۷۸"
+                              className="w-full px-2 py-1.5 bg-amber-50/30 border border-amber-200 rounded-lg text-xs font-mono text-slate-800 focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.phone}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setApplicantRows(prev => prev.map(r => r.id === row.id ? { ...r, phone: val } : r));
+                              }}
+                              placeholder="۰۹۱۲۳۴۵۶۷۸۹"
+                              className="w-full px-2 py-1.5 bg-amber-50/30 border border-amber-200 rounded-lg text-xs font-mono text-slate-800 focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.notes}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setApplicantRows(prev => prev.map(r => r.id === row.id ? { ...r, notes: val } : r));
+                              }}
+                              placeholder="توضیحات تکمیلی..."
+                              className="w-full px-2 py-1.5 bg-amber-50/30 border border-amber-200 rounded-lg text-xs text-slate-700 focus:bg-white focus:outline-none"
+                            />
+                          </td>
+                          <td className="p-1.5 text-center">
+                            {applicantRows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => setApplicantRows(prev => prev.filter(r => r.id !== row.id))}
+                                className="text-rose-400 hover:text-rose-600 p-1 rounded cursor-pointer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                <div className="max-h-48 overflow-y-auto divide-y divide-slate-200 bg-white rounded-xl border border-slate-200">
-                  {candidateStudentsToAdd.length === 0 ? (
-                    <div className="p-4 text-center text-slate-400 text-xs">هیچ طلبه‌ای یافت نشد.</div>
-                  ) : (
-                    candidateStudentsToAdd.map(st => (
-                      <div
-                        key={st.id}
-                        onClick={() => handleAddStudentManually(st)}
-                        className="p-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer text-xs"
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    type="button"
+                    disabled={isSavingApplicants}
+                    onClick={handleConfirmEntranceApplicants}
+                    className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>تایید و ثبت طلاب ورودی در آزمون</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ACADEMIC YEAR GRADE STUDENTS WITH TOGGLE CHECKBOXES (اصلاح ۳) */
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                      <Users size={18} className="text-sky-600" />
+                      <span>طلاب شرکت‌کننده در آزمون پایه {targetGrade} ({participatingStudentIds.length} نفر فعال)</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      تمامی طلاب این پایه به‌طور خودکار انتخاب شده‌اند. با کلیک روی تیک هر طلبه، او از شرکت در آزمون کنار می‌رود.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const gradeSts = students.filter(s => s.grade === targetGrade).map(s => s.id);
+                        setParticipatingStudentIds(Array.from(new Set([...participatingStudentIds, ...gradeSts])));
+                      }}
+                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-200 cursor-pointer"
+                    >
+                      تیک زدن همه طلاب این پایه
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const gradeStIds = new Set(students.filter(s => s.grade === targetGrade).map(s => s.id));
+                        setParticipatingStudentIds(prev => prev.filter(id => !gradeStIds.has(id)));
+                      }}
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-lg text-[11px] font-bold border border-rose-200 cursor-pointer"
+                    >
+                      از دست دادن همه
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsStudentSearchOpen(!isStudentSearchOpen)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <UserPlus size={13} />
+                      <span>+ افزودن طلبه از سایر پایه‌ها</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Manual Student Adder Dropdown */}
+                {isStudentSearchOpen && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-800">جستجو در کل طلاب مدرسه جهت افزودن به آزمون:</span>
+                      <button onClick={() => setIsStudentSearchOpen(false)} className="text-slate-400 hover:text-slate-600">
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <input
+                        type="text"
+                        value={studentSearchQuery}
+                        onChange={(e) => setStudentSearchQuery(e.target.value)}
+                        placeholder="نام یا کد ملی طلبه..."
+                        className="sm:col-span-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
+                      />
+                      <select
+                        value={studentSearchGradeFilter}
+                        onChange={(e) => setStudentSearchGradeFilter(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium"
                       >
-                        <div>
-                          <span className="font-bold text-slate-900">{st.name}</span>
-                          <span className="text-slate-400 text-[11px] mr-2">({st.grade || 'نامشخص'})</span>
+                        <option value="all">همه پایه‌ها</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                      </select>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-200 bg-white rounded-xl border border-slate-200">
+                      {candidateStudentsToAdd.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-xs">هیچ طلبه‌ای یافت نشد.</div>
+                      ) : (
+                        candidateStudentsToAdd.map(st => (
+                          <div
+                            key={st.id}
+                            onClick={() => handleAddStudentManually(st)}
+                            className="p-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer text-xs"
+                          >
+                            <div>
+                              <span className="font-bold text-slate-900">{st.name}</span>
+                              <span className="text-slate-400 text-[11px] mr-2">({st.grade || 'نامشخص'})</span>
+                            </div>
+                            <span className="text-sky-700 font-bold">+ افزودن به لیست</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Grid of Grade Students with Active Toggle Checkboxes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto p-1 border border-slate-200 rounded-2xl bg-slate-50/50">
+                  {students
+                    .filter(s => s.grade === targetGrade || participatingStudentIds.includes(s.id))
+                    .map(st => {
+                      const isSelected = participatingStudentIds.includes(st.id);
+                      return (
+                        <div
+                          key={st.id}
+                          onClick={() => toggleStudentParticipation(st.id)}
+                          className={cn(
+                            "p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 text-xs select-none",
+                            isSelected
+                              ? "bg-emerald-50/90 border-emerald-300 text-emerald-950 font-extrabold shadow-2xs"
+                              : "bg-white border-slate-200 text-slate-400 opacity-60 hover:opacity-100"
+                          )}
+                        >
+                          <div className="truncate">
+                            <div className="truncate">{st.name}</div>
+                            <div className="text-[10px] font-mono text-slate-400">{st.grade || targetGrade}</div>
+                          </div>
+
+                          <div className={cn(
+                            "w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors",
+                            isSelected ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-400"
+                          )}>
+                            <Check size={14} className={isSelected ? "stroke-[3]" : "opacity-40"} />
+                          </div>
                         </div>
-                        <span className="text-sky-700 font-bold">+ افزودن به لیست</span>
-                      </div>
-                    ))
-                  )}
+                      );
+                    })}
                 </div>
               </div>
             )}
-
-            {/* Students Badges / Micro-list */}
-            <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto p-1">
-              {participatingStudentIds.map(stId => {
-                const st = studentsMap.get(stId);
-                return (
-                  <div
-                    key={stId}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                  >
-                    <span className="font-bold text-slate-800">{st?.name || 'طلبه'}</span>
-                    <span className="text-[10px] text-slate-400">({st?.grade || targetGrade})</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveStudent(stId)}
-                      className="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer mr-1"
-                      title="حذف از آزمون"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
           </div>
 
           {/* Navigation to Step 2 */}
@@ -1103,28 +1421,66 @@ export default function CreateOralExamWizard({
               </p>
             </div>
 
-            {/* Quick Time Scheduler */}
-            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200 text-xs">
-              <span className="font-bold text-slate-700 flex items-center gap-1">
-                <Clock3 size={14} />
-                <span>زمان‌بندی ربع‌ساعته خودکار از:</span>
-              </span>
-              <select
-                value={autoStartTime}
-                onChange={(e) => setAutoStartTime(e.target.value)}
-                className="py-1 px-2 bg-white border border-slate-200 rounded-lg font-mono font-bold"
-              >
-                {TIME_SLOTS_15MIN.slice(0, 15).map(slot => (
-                  <option key={slot} value={slot}>{slot}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleAutoScheduleTimes}
-                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer transition-all"
-              >
-                اعمال به همه
-              </button>
+            {/* Quick Time Scheduler with 15/20/30 Min Interval Selection (اصلاح ۹) */}
+            <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200 text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                <Clock3 size={15} className="text-indigo-600" />
+                <span>گام زمان‌بندی:</span>
+              </div>
+
+              {/* Interval selector buttons (15, 20, 30 mins) */}
+              <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setTimeIntervalStep(15)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg font-bold transition-all text-[11px]",
+                    timeIntervalStep === 15 ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  ۱۵ دقیقه (یک ربع)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeIntervalStep(20)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg font-bold transition-all text-[11px]",
+                    timeIntervalStep === 20 ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  ۲۰ دقیقه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTimeIntervalStep(30)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg font-bold transition-all text-[11px]",
+                    timeIntervalStep === 30 ? "bg-indigo-600 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  ۳۰ دقیقه (نیم ساعت)
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 mr-auto">
+                <span className="text-slate-500 font-bold">شروع از:</span>
+                <select
+                  value={autoStartTime}
+                  onChange={(e) => setAutoStartTime(e.target.value)}
+                  className="py-1 px-2 bg-white border border-slate-200 rounded-lg font-mono font-bold text-xs"
+                >
+                  {TIME_SLOTS_15MIN.slice(0, 15).map(slot => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAutoScheduleTimes}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl font-bold cursor-pointer transition-all shadow-2xs"
+                >
+                  اعمال زمان‌بندی خودکار
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1881,15 +2237,27 @@ export default function CreateOralExamWizard({
       {isBulletinBoardPreviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="p-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Printer size={18} className="text-sky-400" />
                 <h3 className="font-bold text-sm">چاپ برنامه زمانی و تابلو اعلانات طلاب</h3>
               </div>
+
+              {/* Show Scopes Toggle Checkbox (اصلاح ۸) */}
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-200 cursor-pointer bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showScopesInPrint}
+                  onChange={(e) => setShowScopesInPrint(e.target.checked)}
+                  className="rounded text-sky-500 w-4 h-4 cursor-pointer"
+                />
+                <span>درج محدوده‌های امتحانی در چاپ تابلو</span>
+              </label>
+
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => window.print()}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs"
                 >
                   چاپ مستقیم تابلو (Print)
                 </button>
@@ -1938,14 +2306,22 @@ export default function CreateOralExamWizard({
                             <td className="p-2.5 text-slate-500">{rec.grade || targetGrade}</td>
                             {hasFiqh && (
                               <td className="p-2.5 text-slate-700">
-                                <div className="font-semibold text-amber-900">{rec.fiqhExaminerTeacherName}</div>
-                                <div className="text-[11px] text-slate-500">{[rec.fiqhMainScopeTitle, rec.fiqhSubScopeTitle, rec.fiqhPages].filter(Boolean).join(' - ') || '-'}</div>
+                                <div className="font-semibold text-amber-900">{rec.fiqhExaminerTeacherName || 'استاد ممتحن فقه'}</div>
+                                {showScopesInPrint && (
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {[rec.fiqhMainScopeTitle, rec.fiqhSubScopeTitle, rec.fiqhPages].filter(Boolean).join(' - ') || '-'}
+                                  </div>
+                                )}
                               </td>
                             )}
                             {hasUsul && (
                               <td className="p-2.5 text-slate-700">
-                                <div className="font-semibold text-indigo-900">{rec.usulExaminerTeacherName}</div>
-                                <div className="text-[11px] text-slate-500">{[rec.usulMainScopeTitle, rec.usulSubScopeTitle, rec.usulPages].filter(Boolean).join(' - ') || '-'}</div>
+                                <div className="font-semibold text-indigo-900">{rec.usulExaminerTeacherName || 'استاد ممتحن اصول'}</div>
+                                {showScopesInPrint && (
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {[rec.usulMainScopeTitle, rec.usulSubScopeTitle, rec.usulPages].filter(Boolean).join(' - ') || '-'}
+                                  </div>
+                                )}
                               </td>
                             )}
                           </tr>

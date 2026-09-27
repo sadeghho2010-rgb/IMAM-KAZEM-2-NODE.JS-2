@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth, DEFAULT_USERS } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,6 +26,8 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { AppUser } from '../../types/auth';
+import { Teacher } from '../../types';
+import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 
 interface LoginViewProps {
@@ -49,6 +51,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   // Quick preset helper modal/drawer for testing
   const [showQuickPresets, setShowQuickPresets] = useState(false);
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
+  const [bankTeachers, setBankTeachers] = useState<Teacher[]>([]);
+
+  // Load teachers from database whenever quick presets drawer is used
+  useEffect(() => {
+    localDb.getDocs<Teacher>('teachers').then(tList => {
+      if (Array.isArray(tList) && tList.length > 0) {
+        setBankTeachers(tList);
+      }
+    }).catch(() => {});
+  }, [showQuickPresets]);
 
   // Mobile preview mode for viewing background image without form
   const [hideFormForPreview, setHideFormForPreview] = useState(false);
@@ -256,7 +268,51 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   };
 
   const availableUsers = (users && users.length ? users : DEFAULT_USERS);
-  const filteredUsers = availableUsers.filter((u) => u.level === selectedLevelTab);
+  
+  const filteredUsers = useMemo(() => {
+    const directUsers = availableUsers.filter((u) => u.level === selectedLevelTab);
+
+    // If on Level 3 (Teachers), also include any teachers from TeacherBank not already present as users
+    if (selectedLevelTab === 3 && bankTeachers.length > 0) {
+      const existingUsernames = new Set(directUsers.map(u => u.username.toUpperCase()));
+      const existingNames = new Set(directUsers.map(u => (u.name || u.fullName || '').toLowerCase().trim()));
+
+      const additionalTeacherUsers: AppUser[] = [];
+      bankTeachers.forEach(t => {
+        const tName = (t.fullName || t.name || '').trim();
+        const tUsername = (t.teacherCode || t.nationalId || t.phoneNumber || tName).toUpperCase();
+
+        if (!existingUsernames.has(tUsername) && !existingNames.has(tName.toLowerCase())) {
+          additionalTeacherUsers.push({
+            id: t.id,
+            username: tUsername,
+            password: '8411924',
+            name: tName,
+            fullName: tName,
+            level: 3,
+            role: 'teacher',
+            roleTitle: 'استاد مدرسه',
+            scope: 'self',
+            teacherId: t.id,
+            linkedTeacherId: t.id,
+            nationalId: t.nationalId,
+            phone: t.phoneNumber,
+            allowedTabs: ['teacher-portal'],
+            editableTabs: ['teacher-portal'],
+            modulePermissions: { 'teacher-portal': 'edit' },
+            isReadOnly: false,
+            canEdit: true,
+            isActive: t.isActive !== false,
+            createdAt: t.createdAt
+          });
+        }
+      });
+
+      return [...directUsers, ...additionalTeacherUsers];
+    }
+
+    return directUsers;
+  }, [availableUsers, selectedLevelTab, bankTeachers]);
 
   return (
     <div

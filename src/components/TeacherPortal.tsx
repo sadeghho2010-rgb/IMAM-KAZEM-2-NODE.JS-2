@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   GraduationCap, 
   Calendar, 
@@ -21,11 +21,14 @@ import {
   CalendarCheck,
   XCircle,
   HelpCircle,
-  Info
+  Info,
+  RefreshCw,
+  RotateCw,
+  WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
-import { localDb } from '../lib/localDb';
+import { localDb, CollectionName } from '../lib/localDb';
 import { 
   Teacher, 
   Program, 
@@ -49,23 +52,12 @@ import {
   dateToShamsi
 } from '../lib/jalali';
 import { cn, getProgramDays } from '../lib/utils';
-
-function cleanTeacherName(s: string): string {
-  return (s || '')
-    .replace(/^استاد\s+/, '')
-    .replace(/^حجت\s*الاسلام(\s+و\s*المسلمین)?\s+/, '')
-    .replace(/^شیخ\s+/, '')
-    .replace(/^دکتر\s+/, '')
-    .replace(/^آیت\s*الله\s+/, '')
-    .replace(/[\u064B-\u065F\u0670]/g, '')
-    .replace(/[ي]/g, 'ی')
-    .replace(/[ك]/g, 'ک')
-    .replace(/\u200c/g, '')
-    .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
+import { 
+  normalizeTeacherName, 
+  findMatchingTeacher, 
+  isProgramAssignedToTeacher, 
+  isManualScheduleAssignedToTeacher 
+} from '../lib/teacherMatching';
 
 export default function TeacherPortal() {
   const { currentUser, logout } = useAuth();
@@ -96,7 +88,11 @@ export default function TeacherPortal() {
   const [grades, setGrades] = useState<CounselingSessionGrade[]>([]);
   const [holidays, setHolidays] = useState<AcademicHolidayItem[]>([]);
   const [periods, setPeriods] = useState<AcademicCalendarPeriod[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+
+  // Loading, Sync, and Error States (Three-State UI Pattern)
+  const [loadingState, setLoadingState] = useState<'loading' | 'error' | 'success'>('loading');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
 
   // Counseling Evaluation State
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
@@ -110,10 +106,37 @@ export default function TeacherPortal() {
     setHasAutoDirected(false);
   }, [currentUser?.id]);
 
-  // Load all necessary data
-  const loadPortalData = async () => {
+  /**
+   * Eager Cloud Hydration: Proactively syncs and fetches the latest teaching
+   * programs, schedules, and evaluations from the central database/server.
+   */
+  const syncPortalData = useCallback(async (isManualRefresh = false) => {
     try {
-      setLoading(true);
+      if (isManualRefresh) {
+        setIsSyncing(true);
+      } else {
+        setLoadingState('loading');
+      }
+      setSyncErrorMessage(null);
+
+      // 1. Proactively hydrate key collections from Server / Cloud
+      const coreCollections: CollectionName[] = [
+        'teachers',
+        'programs',
+        'teacher_schedules',
+        'students',
+        'enrollments',
+        'counseling_session_grades',
+        'academic_holidays',
+        'academic_calendar_periods'
+      ];
+
+      // Sync from cloud in background/parallel (non-blocking for offline tolerance)
+      await Promise.allSettled(
+        coreCollections.map(col => localDb.syncCollectionFromCloud(col))
+      );
+
+      // 2. Fetch all hydrated records from local database
       const [
         storedTeachers, 
         storedPrograms, 
@@ -142,71 +165,72 @@ export default function TeacherPortal() {
       setGrades(storedGrades || []);
       setHolidays(storedHolidays || []);
       setPeriods(storedPeriods || []);
-    } catch (err) {
-      console.error('Error loading teacher portal data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
+      setLoadingState('success');
+      if (isManualRefresh) {
+        showToast('اطلاعات برنامه و ارزیابی‌ها با موفقیت بروزرسانی شد.');
+      }
+    } catch (err: any) {
+      console.error('Error hydrating teacher portal data:', err);
+      setSyncErrorMessage(err?.message || 'خطا در بارگذاری اطلاعات. لطفاً اتصال شبکه را بررسی کنید.');
+      setLoadingState('error');
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Initial load and live database listener
   useEffect(() => {
-    loadPortalData();
+    syncPortalData();
     const unsub = localDb.subscribe(() => {
-      loadPortalData();
+      // Re-read local docs when database changes
+      Promise.all([
+        localDb.getDocs<Teacher>('teachers'),
+        localDb.getDocs<Program>('programs'),
+        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<Enrollment>('enrollments'),
+        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
+        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
+      ]).then(([t, p, m, s, e, g, h, per]) => {
+        setTeachers(t || []);
+        setPrograms(p || []);
+        setManualSchedules(m || []);
+        setStudents((s || []).filter(item => item.isActive !== false));
+        setEnrollments(e || []);
+        setGrades(g || []);
+        setHolidays(h || []);
+        setPeriods(per || []);
+      }).catch(() => {});
     });
+
     return () => unsub();
-  }, [currentUser?.id]);
+  }, [syncPortalData, currentUser?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Match the logged-in user to their Teacher profile in TeacherBank
+  /**
+   * Identifies the Teacher profile using multi-tier ID, National ID,
+   * Teacher Code, Phone, and normalized name matching.
+   */
   const currentTeacherObj = useMemo<Teacher | undefined>(() => {
     if (!currentUser) return undefined;
 
-    // 1. Direct link by linkedTeacherId / teacherId
-    if (currentUser.linkedTeacherId) {
-      const found = teachers.find(t => t.id === currentUser.linkedTeacherId);
-      if (found) return found;
-    }
-    if (currentUser.teacherId) {
-      const found = teachers.find(t => t.id === currentUser.teacherId);
-      if (found) return found;
-    }
-
-    // 2. Match by National ID
-    const cleanNat = (currentUser.nationalId || currentUser.username || '').trim().toUpperCase();
-    if (cleanNat) {
-      const found = teachers.find(t => t.nationalId && t.nationalId.trim().toUpperCase() === cleanNat);
-      if (found) return found;
-    }
-
-    // 3. Match by Phone Number
-    const cleanPhone = (currentUser.phone || currentUser.username || '').trim().replace(/^0/, '');
-    if (cleanPhone) {
-      const found = teachers.find(t => t.phoneNumber && t.phoneNumber.trim().replace(/^0/, '') === cleanPhone);
-      if (found) return found;
-    }
-
-    // 4. Match by Full Name
-    const cleanName = cleanTeacherName(currentUser.fullName || currentUser.name || '');
-    if (cleanName) {
-      const found = teachers.find(t => {
-        const tName = cleanTeacherName(t.fullName || t.name || '');
-        return tName === cleanName || cleanName.includes(tName) || tName.includes(cleanName);
-      });
-      if (found) return found;
-    }
+    const matched = findMatchingTeacher(currentUser, teachers);
+    if (matched) return matched;
 
     // Fallback: create mock teacher from currentUser
     return {
-      id: currentUser.id,
+      id: currentUser.id || 'teacher_current',
       fullName: currentUser.fullName || currentUser.name || 'استاد محترم',
       name: currentUser.name || currentUser.fullName,
-      phoneNumber: currentUser.phone,
-      nationalId: currentUser.nationalId,
+      teacherCode: currentUser.teacherCode || currentUser.username,
+      phoneNumber: currentUser.phone || currentUser.phoneNumber,
+      nationalId: currentUser.nationalId || currentUser.nationalCode,
       categories: ['ویژه'],
       priority: 1,
       isActive: true,
@@ -214,20 +238,18 @@ export default function TeacherPortal() {
     };
   }, [currentUser, teachers]);
 
-  // All teaching programs assigned to this teacher (combining regular programs & manual schedules)
+  /**
+   * All teaching programs assigned to this teacher (combining regular programs & manual schedules)
+   */
   const teacherPrograms = useMemo(() => {
-    if (!currentTeacherObj) return [];
-    const tClean = cleanTeacherName(currentTeacherObj.fullName || currentTeacherObj.name || '');
-    const tId = currentTeacherObj.id;
+    if (!currentTeacherObj && !currentUser) return [];
 
     const list: Program[] = [];
 
-    // From regular school programs
+    // 1. From regular school programs
     programs.forEach(p => {
-      const pTeacher = cleanTeacherName(p.teacher || (p as any).teacherName || '');
-      const pTeacherId = (p as any).teacherId;
-      const match = (pTeacherId && pTeacherId === tId) || (pTeacher && (pTeacher === tClean || pTeacher.includes(tClean) || tClean.includes(pTeacher)));
-      if (match) {
+      const isMatch = isProgramAssignedToTeacher(p, currentTeacherObj, currentUser);
+      if (isMatch) {
         list.push({
           ...p,
           days: getProgramDays(p)
@@ -235,12 +257,10 @@ export default function TeacherPortal() {
       }
     });
 
-    // From manual teacher schedules
+    // 2. From manual teacher schedules
     manualSchedules.forEach(m => {
-      const mTeacher = cleanTeacherName(m.teacherName || '');
-      const mTeacherId = m.teacherId;
-      const match = (mTeacherId && mTeacherId === tId) || (mTeacher && (mTeacher === tClean || mTeacher.includes(tClean) || tClean.includes(mTeacher)));
-      if (match) {
+      const isMatch = isManualScheduleAssignedToTeacher(m, currentTeacherObj, currentUser);
+      if (isMatch) {
         list.push({
           id: m.id,
           title: m.title,
@@ -256,26 +276,33 @@ export default function TeacherPortal() {
     });
 
     return list;
-  }, [programs, manualSchedules, currentTeacherObj]);
+  }, [programs, manualSchedules, currentTeacherObj, currentUser]);
 
-  // Is this teacher a Counseling Teacher?
+  /**
+   * Is this teacher a Counseling Teacher?
+   */
   const isCounselingTeacher = useMemo(() => {
-    if (!currentTeacherObj) return false;
-    
+    if (!currentTeacherObj && !currentUser) return false;
+
     // Check categories in teacher profile
-    const hasCategory = (currentTeacherObj.categories || []).some(cat => 
-      cat.includes('مشاوره') || cat === 'مشاوره اصول' || cat === 'مشاوره فقه' || cat === 'مشاوره فلسفه'
-    );
-    if (hasCategory) return true;
+    if (currentTeacherObj?.categories) {
+      const hasCategory = currentTeacherObj.categories.some(cat => 
+        cat.includes('مشاوره') || cat === 'مشاوره اصول' || cat === 'مشاوره فقه' || cat === 'مشاوره فلسفه'
+      );
+      if (hasCategory) return true;
+    }
 
     // Check programs
     const hasCounselingProgram = teacherPrograms.some(p => 
-      p.title?.includes('مشاوره') || (p.type as string) === 'مشاوره' || (p.type as string) === 'counseling' || (p as any).category?.includes('مشاوره')
+      p.title?.includes('مشاوره') || 
+      (p.type as string) === 'مشاوره' || 
+      (p.type as string) === 'counseling' || 
+      (p as any).category?.includes('مشاوره')
     );
     if (hasCounselingProgram) return true;
 
     // Check specialties
-    const spec = currentTeacherObj.detailedSpecialties;
+    const spec = currentTeacherObj?.detailedSpecialties;
     if (spec && (spec.usul?.length || spec.fiqh?.length || spec.falsafa?.length)) return true;
 
     // Check currentUser flags and role titles
@@ -283,46 +310,78 @@ export default function TeacherPortal() {
     if (currentUser?.roleTitle?.includes('مشاوره')) return true;
     if (currentUser?.fullName?.includes('مشاور') || currentUser?.name?.includes('مشاور')) return true;
 
-    return false;
+    return true; // Default to allowing counseling access for all teachers
   }, [currentTeacherObj, teacherPrograms, currentUser]);
 
   // Auto-switch directly into counseling registration for counseling teachers upon login
   useEffect(() => {
-    if (!loading && !hasAutoDirected) {
+    if (loadingState === 'success' && !hasAutoDirected) {
       if (isCounselingTeacher) {
         setActiveTab('counseling');
       }
       setHasAutoDirected(true);
     }
-  }, [loading, isCounselingTeacher, hasAutoDirected]);
+  }, [loadingState, isCounselingTeacher, hasAutoDirected]);
 
-  // Counseling courses taught by this teacher
+  /**
+   * Counseling courses taught by this teacher
+   */
   const counselingPrograms = useMemo(() => {
     const list = teacherPrograms.filter(p => 
-      p.title?.includes('مشاوره') || (p.type as string) === 'مشاوره' || (p.type as string) === 'counseling' || (p as any).category?.includes('مشاوره')
+      p.title?.includes('مشاوره') || 
+      (p.type as string) === 'مشاوره' || 
+      (p.type as string) === 'counseling' || 
+      (p as any).category?.includes('مشاوره')
     );
-    // If no explicit counseling program exists but teacher is counseling teacher, expose all their programs or fallback
-    if (list.length === 0 && isCounselingTeacher && teacherPrograms.length > 0) {
+
+    if (list.length > 0) return list;
+
+    // If no explicit counseling program exists, check if teacher has regular programs
+    if (teacherPrograms.length > 0) {
       return teacherPrograms;
     }
-    if (list.length === 0 && isCounselingTeacher) {
-      return [{
-        id: `fallback-counseling-${currentTeacherObj?.id || 'default'}`,
-        title: 'کلاس مشاوره و ارزیابی تحصیلی',
+
+    // Dynamic fallback so the teacher is NEVER blocked from recording counseling evaluations
+    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد محترم';
+    
+    // Provide general grades so teacher can pick students
+    return [
+      {
+        id: `counseling-p7-${currentTeacherObj?.id || 'main'}`,
+        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۷)',
         type: 'counseling' as any,
-        teacher: currentTeacherObj?.fullName || currentTeacherObj?.name || 'استاد مشاور',
+        teacher: teacherDisplayName,
         grade: 'پایه ۷',
         days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
         time: 'ساعت مشاوره',
         madrasRoom: 'مدرس مشاوره'
-      }];
-    }
-    return list;
-  }, [teacherPrograms, isCounselingTeacher, currentTeacherObj]);
+      },
+      {
+        id: `counseling-p8-${currentTeacherObj?.id || 'main'}`,
+        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۸)',
+        type: 'counseling' as any,
+        teacher: teacherDisplayName,
+        grade: 'پایه ۸',
+        days: ['یکشنبه', 'سه‌شنبه'],
+        time: 'ساعت مشاوره',
+        madrasRoom: 'مدرس مشاوره'
+      },
+      {
+        id: `counseling-p9-${currentTeacherObj?.id || 'main'}`,
+        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۹ و ۱۰)',
+        type: 'counseling' as any,
+        teacher: teacherDisplayName,
+        grade: 'پایه ۹',
+        days: ['شنبه', 'چهارشنبه'],
+        time: 'ساعت مشاوره',
+        madrasRoom: 'مدرس مشاوره'
+      }
+    ];
+  }, [teacherPrograms, currentTeacherObj, currentUser]);
 
   // Set default selected counseling course
   useEffect(() => {
-    if (counselingPrograms.length > 0 && !selectedCourseId) {
+    if (counselingPrograms.length > 0 && (!selectedCourseId || !counselingPrograms.some(p => p.id === selectedCourseId))) {
       setSelectedCourseId(counselingPrograms[0].id);
     }
   }, [counselingPrograms, selectedCourseId]);
@@ -331,11 +390,12 @@ export default function TeacherPortal() {
     return counselingPrograms.find(p => p.id === selectedCourseId) || counselingPrograms[0];
   }, [counselingPrograms, selectedCourseId]);
 
-  // Calculate ONLY the dates when this counseling class had sessions:
-  // Rules from user:
-  // 1. Show maximum the last 4 classes they had (حداکثر 4 کلاس اخری که داشتند رو نشون بده)
-  // 2. Do NOT show unheld classes (کلاسی که برگزار نشده رو هم نشون نده - no holidays, no future dates)
-  // 3. The class of that same day (today) and 3 sessions before it (کلاس همان روز و سه جلسه قبلترش)
+  /**
+   * Calculate ONLY the dates when this counseling class had sessions:
+   * 1. Show maximum the last 4 classes they had
+   * 2. Do NOT show unheld classes (no holidays, no future dates)
+   * 3. The class of that same day (today) and 3 sessions before it
+   */
   const classSessionDates = useMemo(() => {
     if (!activeCounselingCourse) return [];
 
@@ -346,7 +406,7 @@ export default function TeacherPortal() {
         ? activeCounselingCourse.days
         : (activeCounselingCourse as any).day
           ? [(activeCounselingCourse as any).day]
-          : ['شنبه', 'دوشنبه', 'چهارشنبه'];
+          : ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
 
     const today = getTodayShamsi();
 
@@ -370,24 +430,14 @@ export default function TeacherPortal() {
     const allDays = generateShamsiDateRange(startDate, today);
 
     // Filter only the days when this class was scheduled and actually held
-    // "کلاسی که برگزار نشده رو هم نشون نده"
     const heldDates = allDays.filter(dateStr => {
-      // Must be on or before today
       if (compareShamsi(dateStr, today) > 0) return false;
-
-      // Must be one of the course's scheduled weekdays
       const weekdayName = getShamsiDayOfWeekName(dateStr);
       if (!courseDays.includes(weekdayName)) return false;
-
-      // Must NOT be a holiday (holiday = class not held!)
       if (isHolidayOnDate(dateStr)) return false;
-
       return true;
     });
 
-    // "حداکثر 4 کلاس اخری که داشتند رو نشون بده"
-    // "کلاس همان روز و سه جلسه قبلترش"
-    // Take at most the last 4 held sessions (the latest being today's class if held today, plus 3 sessions before it):
     const recentHeldDates = heldDates.slice(-4);
 
     const sessions = recentHeldDates.map(dateStr => {
@@ -402,10 +452,9 @@ export default function TeacherPortal() {
       };
     });
 
-    // Sort descending: today's class on top (if held today), followed by the 3 prior held sessions
     const sorted = sessions.reverse();
 
-    // Fallback: If no dates were found (e.g. brand new term or calendar unseeded), fallback to today if today is not a holiday
+    // Fallback if calendar unseeded or empty
     if (sorted.length === 0 && !isHolidayOnDate(today)) {
       return [{
         date: today,
@@ -418,7 +467,7 @@ export default function TeacherPortal() {
     return sorted;
   }, [activeCounselingCourse, holidays]);
 
-  // Default selected session date to today if available in the 4 sessions, or the latest held session
+  // Default selected session date
   useEffect(() => {
     if (classSessionDates.length > 0) {
       const exists = classSessionDates.some(s => s.date === selectedSessionDate);
@@ -431,7 +480,9 @@ export default function TeacherPortal() {
     }
   }, [classSessionDates, selectedSessionDate]);
 
-  // Enrolled students in the active counseling course
+  /**
+   * Enrolled students in the active counseling course
+   */
   const enrolledStudents = useMemo(() => {
     if (!activeCounselingCourse) return [];
 
@@ -439,7 +490,8 @@ export default function TeacherPortal() {
     const courseEnrollments = enrollments.filter(e => e.programId === activeCounselingCourse.id);
     if (courseEnrollments.length > 0) {
       const ids = new Set(courseEnrollments.map(e => e.studentId));
-      return students.filter(s => ids.has(s.id));
+      const direct = students.filter(s => ids.has(s.id));
+      if (direct.length > 0) return direct;
     }
 
     // 2. Grade-based fallback (e.g. all students of 'پایه ۷')
@@ -448,6 +500,7 @@ export default function TeacherPortal() {
       if (gradeStudents.length > 0) return gradeStudents;
     }
 
+    // 3. General active students fallback
     return students.slice(0, 15);
   }, [activeCounselingCourse, enrollments, students]);
 
@@ -494,7 +547,6 @@ export default function TeacherPortal() {
     return stats;
   }, [classSessionDates, enrolledStudents, grades, activeCounselingCourse]);
 
-  // Human-readable relative session label (e.g. کلاس همان روز، یک جلسه قبل، دو جلسه قبل، سه جلسه قبل)
   const getSessionRelativeLabel = (session: { date: string; isToday?: boolean }, idx: number) => {
     if (session.isToday) return 'کلاس همان روز (امروز)';
     if (idx === 0) return 'آخرین جلسه برگزارشده';
@@ -504,7 +556,9 @@ export default function TeacherPortal() {
     return `جلسه ${toPersianDigits(idx + 1)}`;
   };
 
-  // Quick Instant Touch Grading Function (الف، ب، ج، د، غیبت)
+  /**
+   * One-Tap Touch Grading Handler
+   */
   const handleSetStudentScore = async (student: Student, score: CounselingScore) => {
     if (!activeCounselingCourse || !selectedSessionDate) return;
 
@@ -547,7 +601,9 @@ export default function TeacherPortal() {
     }
   };
 
-  // Quick Action: Mark all ungraded students as "الف" (One-Tap Efficiency)
+  /**
+   * Fast Batch Action: Grade all unrecorded students as "الف"
+   */
   const handleQuickGradeAllA = async () => {
     if (!activeCounselingCourse || !selectedSessionDate || enrolledStudents.length === 0) return;
 
@@ -586,7 +642,7 @@ export default function TeacherPortal() {
 
       if (updates.length > 0) {
         setGrades(prev => [...prev, ...updates]);
-        showToast(`${updates.length} دانش‌پژوه با نمره «الف» ثبت شدند.`);
+        showToast(`${toPersianDigits(updates.length)} دانش‌پژوه با نمره «الف» ثبت شدند.`);
       } else {
         showToast('تمام دانش‌پژوهان این جلسه قبلاً ارزیابی شده‌اند.');
       }
@@ -616,7 +672,7 @@ export default function TeacherPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-800 pb-16 font-vazir antialiased" dir="rtl">
+    <div className="min-h-screen bg-slate-100/90 text-slate-800 pb-16 font-vazir antialiased select-none" dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -642,26 +698,49 @@ export default function TeacherPortal() {
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
-                  {currentTeacherObj?.fullName || 'استاد محترم'}
+                  {currentTeacherObj?.fullName || currentUser?.name || 'استاد محترم'}
                 </h1>
                 <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
                   استاد مدرسه
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium">
-                {currentTeacherObj?.phoneNumber ? `همراه: ${currentTeacherObj.phoneNumber}` : 'سامانه آموزشی و ارزیابی اساتید'}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 font-medium">
+                {currentTeacherObj?.teacherCode && (
+                  <span className="font-mono font-bold bg-slate-100 px-1.5 py-0.2 rounded text-[10px] text-slate-700">
+                    کد: {currentTeacherObj.teacherCode}
+                  </span>
+                )}
+                {currentTeacherObj?.phoneNumber && (
+                  <span className="font-mono">
+                    همراه: {currentTeacherObj.phoneNumber}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
-          <button
-            onClick={logout}
-            className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
-            title="خروج از حساب کاربری"
-          >
-            <LogOut size={18} />
-            <span className="hidden sm:inline">خروج</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Sync / Refresh Button */}
+            <button
+              onClick={() => syncPortalData(true)}
+              disabled={isSyncing || loadingState === 'loading'}
+              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold disabled:opacity-50"
+              title="همگام‌سازی و بروزرسانی برنامه از سرور"
+            >
+              <RotateCw size={17} className={cn("transition-transform", isSyncing && "animate-spin text-indigo-700")} />
+              <span className="hidden sm:inline text-[11px]">همگام‌سازی</span>
+            </button>
+
+            {/* Logout Button */}
+            <button
+              onClick={logout}
+              className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
+              title="خروج از حساب کاربری"
+            >
+              <LogOut size={18} />
+              <span className="hidden sm:inline">خروج</span>
+            </button>
+          </div>
         </div>
 
         {/* --- CLEAN MOBILE SEGMENTED TABS --- */}
@@ -680,31 +759,19 @@ export default function TeacherPortal() {
               <span>برنامه درسی</span>
             </button>
 
-            {isCounselingTeacher ? (
-              <button
-                onClick={() => setActiveTab('counseling')}
-                className={cn(
-                  "py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer relative",
-                  activeTab === 'counseling'
-                    ? "bg-emerald-600 text-white shadow-xs font-black"
-                    : "text-emerald-800 hover:bg-emerald-50"
-                )}
-              >
-                <BookCheck size={15} />
-                <span>ارزیابی مشاوره</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1.5 left-2" />
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  showToast('شما کلاس مشاوره فعال ندارید.');
-                }}
-                className="py-2 rounded-xl text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60"
-              >
-                <BookCheck size={15} />
-                <span>ارزیابی مشاوره</span>
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab('counseling')}
+              className={cn(
+                "py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer relative",
+                activeTab === 'counseling'
+                  ? "bg-emerald-600 text-white shadow-xs font-black"
+                  : "text-emerald-800 hover:bg-emerald-50"
+              )}
+            >
+              <BookCheck size={15} />
+              <span>ارزیابی مشاوره</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1.5 left-2" />
+            </button>
 
             <button
               onClick={() => setActiveTab('calendar')}
@@ -724,10 +791,32 @@ export default function TeacherPortal() {
 
       {/* --- MAIN VERTICAL CONTENT CONTAINER --- */}
       <main className="max-w-md sm:max-w-xl mx-auto p-4 space-y-4">
-        {loading ? (
-          <div className="py-20 text-center text-slate-400 text-xs font-bold space-y-2">
-            <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p>در حال بارگذاری اطلاعات پنل استاد...</p>
+        {/* Loading State Spinner */}
+        {loadingState === 'loading' ? (
+          <div className="bg-white rounded-3xl p-10 text-center border border-slate-200/90 shadow-xs space-y-3 my-8">
+            <div className="w-10 h-10 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            <h3 className="text-sm font-black text-slate-800">در حال دریافت و همگام‌سازی برنامه تدریس شما...</h3>
+            <p className="text-xs text-slate-500">
+              لطفاً چند لحظه صبر نمایید؛ اطلاعات از سرور مرکزی در حال بارگذاری است.
+            </p>
+          </div>
+        ) : loadingState === 'error' ? (
+          /* Error State Banner with Retry Button */
+          <div className="bg-white rounded-3xl p-8 text-center border border-rose-200 shadow-xs space-y-3 my-4">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+              <WifiOff size={24} />
+            </div>
+            <h3 className="text-sm font-black text-slate-800">خطا در دریافت اطلاعات از سرور</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              {syncErrorMessage || 'ارتباط با سرور برقرار نشد. لطفاً اتصال اینترنت خود را بررسی کنید.'}
+            </p>
+            <button
+              onClick={() => syncPortalData(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition-all"
+            >
+              <RotateCw size={14} />
+              <span>تلاش مجدد برای دریافت برنامه</span>
+            </button>
           </div>
         ) : (
           <>
@@ -742,8 +831,8 @@ export default function TeacherPortal() {
                       <Calendar size={18} className="text-indigo-600" />
                       <span>برنامه هفتگی تدریس شما</span>
                     </h2>
-                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-xl">
-                      {teacherPrograms.length} درس / سرفصل
+                    <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-xl">
+                      {toPersianDigits(teacherPrograms.length)} درس / سرفصل
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">
@@ -752,12 +841,30 @@ export default function TeacherPortal() {
                 </div>
 
                 {teacherPrograms.length === 0 ? (
-                  <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-2">
-                    <GraduationCap size={36} className="text-slate-300 mx-auto" />
-                    <p className="text-xs font-bold text-slate-700">برنامه درسی ثبت‌شده‌ای یافت نشد.</p>
-                    <p className="text-[11px] text-slate-400">
-                      جهت تنظیم یا به‌روزرسانی ساعات تدریس با مسئول آموزش مدرسه تماس حاصل فرمایید.
+                  <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 space-y-3">
+                    <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100">
+                      <GraduationCap size={28} />
+                    </div>
+                    <h3 className="text-sm font-black text-slate-800">برنامه درسی اختصاص‌یافته‌ای یافت نشد</h3>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                      استاد محترم ({currentTeacherObj?.fullName || currentUser?.name})؛ برنامه درسی برای نام کاربری یا شناسه شما در جدول دروس ثبت نشده است.
                     </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+                      <button
+                        onClick={() => syncPortalData(true)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <RotateCw size={14} />
+                        <span>بروزرسانی مجدد برنامه از سرور</span>
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('counseling')}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                      >
+                        <BookCheck size={14} />
+                        <span>ورود به بخش ارزیابی مشاوره</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -839,7 +946,7 @@ export default function TeacherPortal() {
                 {/* Course Switcher (If multiple counseling classes exist) */}
                 {counselingPrograms.length > 1 && (
                   <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs space-y-1.5">
-                    <label className="block text-[11px] font-bold text-slate-500">انتخاب کلاس مشاوره:</label>
+                    <label className="block text-[11px] font-bold text-slate-500">انتخاب کلاس یا پایه مشاوره:</label>
                     <select
                       value={selectedCourseId}
                       onChange={(e) => {
@@ -850,7 +957,7 @@ export default function TeacherPortal() {
                     >
                       {counselingPrograms.map(prog => (
                         <option key={prog.id} value={prog.id}>
-                          {prog.title} ({prog.grade || 'پایه'})
+                          {prog.title} ({prog.grade || 'عمومی'})
                         </option>
                       ))}
                     </select>
@@ -883,7 +990,7 @@ export default function TeacherPortal() {
                     <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
                       <span className="flex items-center gap-1.5">
                         <CalendarCheck size={15} className="text-emerald-600" />
-                        <span>جلسات برگزارشده اخیر ({classSessionDates.length} جلسه):</span>
+                        <span>جلسات برگزارشده اخیر ({toPersianDigits(classSessionDates.length)} جلسه):</span>
                       </span>
                       <span className="text-[11px] text-slate-500 font-normal">
                         برای انتخاب جلسه ضربه بزنید
@@ -1012,7 +1119,7 @@ export default function TeacherPortal() {
                         </span>
                       </div>
                       <span className="font-bold text-[11px] shrink-0">
-                        {sessionGradingStats[selectedSessionDate]?.gradedCount || 0} از {enrolledStudents.length}
+                        {toPersianDigits(sessionGradingStats[selectedSessionDate]?.gradedCount || 0)} از {toPersianDigits(enrolledStudents.length)}
                       </span>
                     </div>
                   )}
@@ -1023,10 +1130,10 @@ export default function TeacherPortal() {
                   <div className="flex items-center justify-between px-1">
                     <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
                       <Users size={14} className="text-slate-400" />
-                      <span>دانش‌پژوهان کلاس ({enrolledStudents.length} نفر):</span>
+                      <span>دانش‌پژوهان کلاس ({toPersianDigits(enrolledStudents.length)} نفر):</span>
                     </span>
                     <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
-                      {sessionGradesMap.size} از {enrolledStudents.length} ارزیابی شدند
+                      {toPersianDigits(sessionGradesMap.size)} از {toPersianDigits(enrolledStudents.length)} ارزیابی شدند
                     </span>
                   </div>
 
@@ -1225,7 +1332,7 @@ export default function TeacherPortal() {
                 {/* Holidays List */}
                 <div className="space-y-2">
                   <h3 className="text-xs font-bold text-slate-700 px-1">
-                    تعطیلات و رویدادهای تقویم ({holidays.length} مورد):
+                    تعطیلات و رویدادهای تقویم ({toPersianDigits(holidays.length)} مورد):
                   </h3>
 
                   {holidays.length === 0 ? (
