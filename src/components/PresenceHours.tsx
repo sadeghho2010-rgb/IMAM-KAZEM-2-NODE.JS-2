@@ -28,7 +28,8 @@ import {
   getShamsiDayOfWeekName, 
   compareShamsi, 
   getDaysInShamsiMonth, 
-  SHAMSI_MONTH_NAMES 
+  SHAMSI_MONTH_NAMES,
+  getShamsi21To20Cycle
 } from '../lib/jalali';
 import { cn } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
@@ -38,16 +39,13 @@ export default function PresenceHours() {
   const { currentMentor } = useMentor();
   const { currentUser } = useAuth();
 
-  // Cycle Range State (Defaults to 1st to 30th/31st of current Shamsi month)
+  // Cycle Range State (Defaults to 21st of previous/current month to 20th of current/next month)
   const today = getTodayShamsi();
-  const todayParts = parseShamsiDate(today);
-  const defaultStart = formatShamsiDate(todayParts.year, todayParts.month, 1);
-  const defaultDaysInMonth = getDaysInShamsiMonth(todayParts.year, todayParts.month);
-  const defaultEnd = formatShamsiDate(todayParts.year, todayParts.month, defaultDaysInMonth);
+  const initialCycle = getShamsi21To20Cycle(today, 0);
 
-  const [cycleStart, setCycleStart] = useState<string>(defaultStart);
-  const [cycleEnd, setCycleEnd] = useState<string>(defaultEnd);
-  const [cycleTitle, setCycleTitle] = useState<string>(`کارکرد ${SHAMSI_MONTH_NAMES[todayParts.month - 1]} ${todayParts.year}`);
+  const [cycleStart, setCycleStart] = useState<string>(initialCycle.start);
+  const [cycleEnd, setCycleEnd] = useState<string>(initialCycle.end);
+  const [cycleTitle, setCycleTitle] = useState<string>(initialCycle.title);
 
   // Form State - Single Duration Input Only
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -74,6 +72,16 @@ export default function PresenceHours() {
   const pdfPrintableRef = useRef<HTMLDivElement | null>(null);
   const printIframeRef = useRef<HTMLIFrameElement | null>(null);
 
+  // Helper to remove any potential duplicate records by ID
+  const deduplicateById = <T extends { id: string }>(items: T[]): T[] => {
+    const seen = new Set<string>();
+    return items.filter(item => {
+      if (!item?.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  };
+
   // Load logs from localDb
   useEffect(() => {
     loadData();
@@ -88,8 +96,8 @@ export default function PresenceHours() {
         localDb.getDocs<PresenceHoursLog>('presence_hours_logs'),
         localDb.getDocs<PresenceReport>('presence_reports')
       ]);
-      setLogs(storedLogs || []);
-      setReports(storedReports || []);
+      setLogs(deduplicateById(storedLogs || []));
+      setReports(deduplicateById(storedReports || []));
     } catch (err) {
       console.error("Error loading presence hours data:", err);
     } finally {
@@ -220,7 +228,7 @@ export default function PresenceHours() {
           updatedAt: new Date().toISOString()
         };
         await localDb.setDoc('presence_hours_logs', updated);
-        setLogs(prev => prev.map(l => l.id === editingId ? updated : l));
+        await loadData();
         showToast("رکورد حضور با موفقیت به‌روزرسانی شد.");
       } else {
         const newLog: PresenceHoursLog = {
@@ -233,7 +241,7 @@ export default function PresenceHours() {
           createdAt: new Date().toISOString()
         };
         await localDb.setDoc('presence_hours_logs', newLog);
-        setLogs(prev => [...prev, newLog]);
+        await loadData();
         showToast("ساعت حضور جدید با موفقیت ثبت شد.");
       }
 
@@ -262,7 +270,7 @@ export default function PresenceHours() {
     if (!window.confirm("آیا از حذف این رکورد ساعت حضور اطمینان دارید؟")) return;
     try {
       await localDb.deleteDoc('presence_hours_logs', id);
-      setLogs(prev => prev.filter(l => l.id !== id));
+      await loadData();
       showToast("رکورد مورد نظر حذف شد.");
     } catch (err) {
       console.error("Error deleting log:", err);
@@ -270,7 +278,15 @@ export default function PresenceHours() {
   };
 
   // Preset Cycle Selectors
-  const setMonthPreset = (monthOffset: number = 0) => {
+  const set21To20Preset = (monthOffset: number = 0) => {
+    const cycle = getShamsi21To20Cycle(today, monthOffset);
+    setCycleStart(cycle.start);
+    setCycleEnd(cycle.end);
+    setCycleTitle(cycle.title);
+  };
+
+  const setCalendarMonthPreset = (monthOffset: number = 0) => {
+    const todayParts = parseShamsiDate(today);
     let y = todayParts.year;
     let m = todayParts.month + monthOffset;
     if (m > 12) {
@@ -287,24 +303,7 @@ export default function PresenceHours() {
 
     setCycleStart(start);
     setCycleEnd(end);
-    setCycleTitle(`کارکرد ${SHAMSI_MONTH_NAMES[m - 1]} ${y}`);
-  };
-
-  const setCustomShiftPreset = () => {
-    // Standard custom cycle: 25th of last month to 24th of current month
-    let prevM = todayParts.month - 1;
-    let prevY = todayParts.year;
-    if (prevM < 1) {
-      prevM = 12;
-      prevY -= 1;
-    }
-
-    const start = formatShamsiDate(prevY, prevM, 25);
-    const end = formatShamsiDate(todayParts.year, todayParts.month, 24);
-
-    setCycleStart(start);
-    setCycleEnd(end);
-    setCycleTitle(`بازه ۲۵ ${SHAMSI_MONTH_NAMES[prevM - 1]} تا ۲۴ ${SHAMSI_MONTH_NAMES[todayParts.month - 1]}`);
+    setCycleTitle(`کارکرد ۱ تا ${daysInM} ${SHAMSI_MONTH_NAMES[m - 1]} ${y}`);
   };
 
   // Filter logs for the selected cycle
@@ -516,25 +515,31 @@ export default function PresenceHours() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-            <span className="hidden sm:inline text-slate-400">میانبرها:</span>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 flex-wrap">
+            <span className="hidden sm:inline text-slate-400">میانبرهای دوره:</span>
             <button
-              onClick={() => setMonthPreset(0)}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
+              onClick={() => set21To20Preset(0)}
+              className="px-3 py-1.5 bg-indigo-100 text-indigo-900 hover:bg-indigo-200 rounded-xl transition-colors cursor-pointer font-black"
             >
-              ماه جاری
+              دوره جاری (۲۱ام تا ۲۰ام)
             </button>
             <button
-              onClick={() => setMonthPreset(-1)}
+              onClick={() => set21To20Preset(-1)}
               className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
             >
-              ماه قبل
+              دوره قبل (۲۱ام تا ۲۰ام)
             </button>
             <button
-              onClick={setCustomShiftPreset}
+              onClick={() => set21To20Preset(1)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
+            >
+              دوره بعد
+            </button>
+            <button
+              onClick={() => setCalendarMonthPreset(0)}
               className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl transition-colors cursor-pointer"
             >
-              ۲۵ام تا ۲۴ام
+              ماه تقویمی (۱ام تا پایان)
             </button>
           </div>
         </div>

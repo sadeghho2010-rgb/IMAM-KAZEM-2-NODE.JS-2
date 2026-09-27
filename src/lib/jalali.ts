@@ -177,3 +177,58 @@ export function calculateDaysBetween(startShamsi: string, endShamsi: string): nu
   const dates = generateShamsiDateRange(startShamsi, endShamsi);
   return dates.length;
 }
+
+/**
+ * Calculate the standard Iranian payroll/attendance cycle from the 21st of one month to the 20th of the next month.
+ * @param todayShamsi Current Shamsi date string e.g. "1403/07/25"
+ * @param monthOffset Shift cycle by N months (0 = current cycle, -1 = previous cycle, +1 = next cycle)
+ */
+export function getShamsi21To20Cycle(todayShamsi: string, monthOffset: number = 0): {
+  start: string;
+  end: string;
+  title: string;
+} {
+  const parts = parseShamsiDate(todayShamsi);
+  let startYear = parts.year;
+  let startMonth = parts.month;
+
+  // If day is before 21st, the current cycle started on 21st of previous month
+  if (parts.day < 21) {
+    if (startMonth === 1) {
+      startMonth = 12;
+      startYear -= 1;
+    } else {
+      startMonth -= 1;
+    }
+  }
+
+  // Apply monthOffset
+  startMonth += monthOffset;
+  while (startMonth > 12) {
+    startMonth -= 12;
+    startYear += 1;
+  }
+  while (startMonth < 1) {
+    startMonth += 12;
+    startYear -= 1;
+  }
+
+  // End month calculation (always 1 month after startMonth)
+  let endYear = startYear;
+  let endMonth = startMonth + 1;
+  if (endMonth > 12) {
+    endMonth = 1;
+    endYear += 1;
+  }
+
+  const start = formatShamsiDate(startYear, startMonth, 21);
+  const end = formatShamsiDate(endYear, endMonth, 20);
+
+  const startMonthName = SHAMSI_MONTH_NAMES[startMonth - 1];
+  const endMonthName = SHAMSI_MONTH_NAMES[endMonth - 1];
+  const yearTitle = startYear === endYear ? `${startYear}` : `${startYear}/${endYear}`;
+
+  const title = `کارکرد ۲۱ ${startMonthName} الی ۲۰ ${endMonthName} ${yearTitle}`;
+
+  return { start, end, title };
+}
