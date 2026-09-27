@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export interface SystemTabDef {
   id: string;
@@ -829,63 +831,104 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
 
-  // Fetch users from Supabase Cloud on mount (synchronizes across hosts & devices)
+  // Fetch and real-time synchronize users from Firestore & Server API across all hosts and devices
   useEffect(() => {
     let isMounted = true;
-    const syncWithCloud = async () => {
+
+    const processIncomingUsers = (incomingList: any[]) => {
+      if (!isMounted || !Array.isArray(incomingList) || incomingList.length === 0) return;
+      setUsers(prev => {
+        const map = new Map<string, AppUser>();
+        DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
+        prev.forEach(u => map.set(u.username.toUpperCase(), u));
+
+        incomingList.forEach((u: any) => {
+          if (u && (u.username || u.id)) {
+            const uname = (u.username || u.id).toUpperCase();
+            const currentObj = map.get(uname);
+            const mergedUser: AppUser = {
+              ...currentObj,
+              ...u,
+              username: uname,
+              name: u.name || u.fullName || uname,
+              level: Number(u.level) || (u.role === 'teacher' ? 3 : (currentObj?.level || 2)),
+              role: u.role || currentObj?.role || 'custom',
+              roleTitle: u.roleTitle || currentObj?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+              allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : currentObj?.allowedTabs || ['todos', 'students'],
+              editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : currentObj?.editableTabs || [],
+              modulePermissions: u.modulePermissions || currentObj?.modulePermissions || {},
+              isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (currentObj?.isReadOnly || false),
+              canEdit: u.canEdit !== undefined ? u.canEdit : (currentObj?.canEdit !== undefined ? currentObj.canEdit : true),
+            };
+            map.set(uname, mergedUser);
+
+            if (currentUser && uname === currentUser.username.toUpperCase()) {
+              setCurrentUser(mergedUser);
+              try {
+                localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));
+              } catch (e) {}
+            }
+          }
+        });
+
+        const merged = Array.from(map.values());
+        try {
+          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+        } catch (e) {}
+        return merged;
+      });
+    };
+
+    // 1. Direct Server API fetch
+    const syncWithServer = async () => {
       try {
-        const res = await fetch('/api/auth/users', {
+        const res = await fetch('/api/auth/public-users', {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include'
         });
-
         if (res.ok) {
           const result = await res.json();
-          if (result.success && Array.isArray(result.users) && result.users.length > 0 && isMounted) {
-            setUsers(prev => {
-              const map = new Map<string, AppUser>();
-              DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
-              prev.forEach(u => map.set(u.username.toUpperCase(), u));
-              result.users.forEach((u: any) => {
-                if (u && u.username) {
-                  const uname = u.username.toUpperCase();
-                  const currentObj = map.get(uname);
-                  const mergedUser: AppUser = {
-                    ...currentObj,
-                    ...u,
-                    username: uname,
-                    name: u.name || u.fullName || u.username,
-                    allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : currentObj?.allowedTabs || ['todos', 'students'],
-                    editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : currentObj?.editableTabs || [],
-                    modulePermissions: u.modulePermissions || currentObj?.modulePermissions || {},
-                    isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : currentObj?.isReadOnly || false,
-                    canEdit: u.canEdit !== undefined ? u.canEdit : (currentObj?.canEdit !== undefined ? currentObj.canEdit : true),
-                  };
-                  map.set(uname, mergedUser);
-
-                  // If this is currently active user, keep in sync immediately
-                  if (currentUser && uname === currentUser.username.toUpperCase()) {
-                    setCurrentUser(mergedUser);
-                    try {
-                      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));
-                    } catch (e) {}
-                  }
-                }
-              });
-              const merged = Array.from(map.values());
-              try {
-                localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
-              } catch (e) {}
-              return merged;
-            });
+          if (result.success && Array.isArray(result.users)) {
+            processIncomingUsers(result.users);
           }
         }
       } catch (e) {}
     };
 
-    syncWithCloud();
-    return () => { isMounted = false; };
+    syncWithServer();
+
+    // 2. Direct Firestore Real-time Snapshot Listener
+    let unsubscribeFirestore: (() => void) | null = null;
+    try {
+      unsubscribeFirestore = onSnapshot(collection(db, 'system_users'), (snapshot) => {
+        const fsUsers: any[] = [];
+        snapshot.forEach(docSnap => {
+          if (docSnap.exists()) {
+            fsUsers.push({ ...docSnap.data(), id: docSnap.id });
+          }
+        });
+        if (fsUsers.length > 0) {
+          processIncomingUsers(fsUsers);
+        }
+      }, (err) => {
+        console.warn('Firestore system_users listener notice:', err);
+      });
+
+      // Quick initial fetch from Firestore
+      getDocs(collection(db, 'system_users')).then(snap => {
+        const fsUsers: any[] = [];
+        snap.forEach(d => fsUsers.push({ ...d.data(), id: d.id }));
+        if (fsUsers.length > 0) processIncomingUsers(fsUsers);
+      }).catch(() => {});
+    } catch (fsErr) {
+      console.warn('Firestore initialization notice:', fsErr);
+    }
+
+    return () => { 
+      isMounted = false; 
+      if (unsubscribeFirestore) unsubscribeFirestore();
+    };
   }, []);
 
   // Save to local storage
@@ -1134,6 +1177,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return updated;
     });
 
+    // 1. Direct Firestore write (synchronizes across all devices in real-time)
+    try {
+      setDoc(doc(db, 'system_users', username), {
+        ...user,
+        username,
+        updatedAt: new Date().toISOString()
+      }, { merge: true }).catch(err => {
+        console.warn('Firestore user write notice:', err);
+      });
+    } catch (e) {}
+
+    // 2. Direct Server API call
+    fetch('/api/auth/add-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ user })
+    }).catch(() => {});
+
     if (isSupabaseConfigured && typeof window !== 'undefined') {
       supabase.from('app_collections').upsert({
         collection_name: 'system_users',
@@ -1221,6 +1283,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
       } catch (e) {}
 
+      // Persist to Firestore
+      if (targetUser) {
+        try {
+          setDoc(doc(db, 'system_users', targetUser.username.toUpperCase()), targetUser, { merge: true }).catch(() => {});
+        } catch (e) {}
+      }
+
       // Persist to backend server API
       if (targetUser) {
         fetch('/api/auth/update-user', {
@@ -1261,6 +1330,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
       logout();
     }
+
+    try {
+      deleteDoc(doc(db, 'system_users', usernameToDelete)).catch(() => {});
+    } catch (e) {}
+
+    fetch('/api/auth/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ targetUserId: id })
+    }).catch(() => {});
 
     if (isSupabaseConfigured && typeof window !== 'undefined') {
       supabase.from('app_collections').delete().match({

@@ -5,6 +5,8 @@
  */
 import { supabase, isSupabaseConfigured } from './supabase';
 import { dispatchDatabaseErrorToast } from './databaseToast';
+import { doc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore';
+import { db } from './firebase';
 
 /**
  * Check if the current logged-in user is authorized to use optional offline storage mode.
@@ -108,6 +110,18 @@ export async function saveToCloudWithTimeout(
         }
         isSaved = true;
       } catch (e) {}
+
+      // 3. Direct Cloud Firestore write
+      try {
+        if (action === 'delete') {
+          await deleteDoc(doc(db, collectionName, id));
+        } else {
+          await setDoc(doc(db, collectionName, id), sanitizeForCloud(data), { merge: true });
+        }
+        isSaved = true;
+      } catch (fsErr) {
+        console.warn('Firestore write notice:', fsErr);
+      }
 
       if (isSaved || !isSupabaseConfigured) {
         resolve();
@@ -568,17 +582,19 @@ class LocalDatabase {
         // Fall back to direct Supabase if server API is unavailable
       }
 
-      // 2. Direct Supabase fallback if API yielded no results but Supabase client is configured
-      if (cloudDocs.length === 0 && isSupabaseConfigured) {
-        const { data, error } = await supabase
-          .from('app_collections')
-          .select('id, data')
-          .eq('collection_name', resolvedCol);
-
-        if (!error && data && Array.isArray(data)) {
-          cloudDocs = data
-            .map(row => ({ ...row.data, id: row.id || row.data?.id }))
-            .filter(d => d && d.id);
+      // 3. Direct Firestore cloud sync
+      if (cloudDocs.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, resolvedCol));
+          if (!snap.empty) {
+            snap.forEach(dSnap => {
+              if (dSnap.exists()) {
+                cloudDocs.push({ ...dSnap.data(), id: dSnap.id });
+              }
+            });
+          }
+        } catch (fsErr) {
+          console.warn('Firestore sync notice:', fsErr);
         }
       }
 

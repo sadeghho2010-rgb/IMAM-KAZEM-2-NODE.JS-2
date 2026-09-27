@@ -256,7 +256,18 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   };
 
   const availableUsers = (users && users.length ? users : DEFAULT_USERS);
-  const filteredUsers = availableUsers.filter((u) => u.level === selectedLevelTab);
+  const filteredUsers = availableUsers.filter((u) => {
+    if (selectedLevelTab === 1) {
+      return u.level === 1;
+    }
+    if (selectedLevelTab === 2) {
+      return u.level === 2 && u.role !== 'teacher';
+    }
+    if (selectedLevelTab === 3) {
+      return u.level === 3 || u.role === 'teacher' || (u.roleTitle && u.roleTitle.includes('استاد')) || (u.name && u.name.includes('استاد'));
+    }
+    return u.level === selectedLevelTab;
+  });
 
   return (
     <div
@@ -616,9 +627,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                         </span>
                         <span className="font-medium group-hover:text-white">{u.name}</span>
                       </div>
-                      <span className="text-[10px] text-white/50 group-hover:text-white/80 font-mono">
-                        {u.username}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {u.roleTitle && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/10 text-white/70">
+                            {u.roleTitle}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-white/50 group-hover:text-white/80 font-mono">
+                          {u.username}
+                        </span>
+                      </div>
                     </button>
                   ))}
                 </div>

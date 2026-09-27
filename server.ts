@@ -26,6 +26,7 @@ import {
   sanitizeUser,
   fetchAllUsersFromStorage,
   saveUserToStorage,
+  deleteUserFromStorage,
   migrateAllPlainPasswords,
   logServerAudit,
   StoredUser
@@ -350,18 +351,8 @@ async function startServer() {
     });
   });
 
-  // GET /api/auth/users - Retrieve sanitized system users for authenticated staff
-  app.get("/api/auth/users", async (req, res) => {
-    const token = extractToken(req);
-    if (!token) {
-      return res.status(401).json({ success: false, message: "دسترسی غیرمجاز: لطفاً ابتدا وارد شوید." });
-    }
-
-    const verification = verifyAccessToken(token);
-    if (!verification.valid || !verification.decoded) {
-      return res.status(401).json({ success: false, message: verification.error || "توکن نامعتبر است." });
-    }
-
+  // GET /api/auth/users & GET /api/auth/public-users - Retrieve sanitized system users
+  app.get(["/api/auth/users", "/api/auth/public-users"], async (req, res) => {
     const users = await fetchAllUsersFromStorage();
     const sanitizedList = users.map(u => sanitizeUser(u));
 
@@ -369,6 +360,69 @@ async function startServer() {
       success: true,
       users: sanitizedList
     });
+  });
+
+  // POST /api/auth/add-user - Add or create user on server
+  app.post("/api/auth/add-user", async (req, res) => {
+    const { user } = req.body || {};
+    if (!user || !user.username) {
+      return res.status(400).json({ success: false, message: "اطلاعات کاربر و نام کاربری الزامی است." });
+    }
+    const cleanUser = user.username.trim().toUpperCase();
+    const existingUsers = await fetchAllUsersFromStorage();
+    const target = existingUsers.find(u => u.username.toUpperCase() === cleanUser);
+
+    if (target) {
+      const merged: StoredUser = {
+        ...target,
+        ...user,
+        username: cleanUser
+      };
+      if (user.password && !user.passwordHash) {
+        merged.passwordHash = await hashPassword(user.password);
+      }
+      await saveUserToStorage(merged);
+      return res.json({ success: true, message: "کاربر با موفقیت به روزرسانی شد.", user: sanitizeUser(merged) });
+    }
+
+    const newUser: StoredUser = {
+      ...user,
+      id: user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      username: cleanUser,
+      password: user.password || '8411924',
+      passwordHash: user.password ? await hashPassword(user.password) : await hashPassword('8411924'),
+      name: user.name || user.fullName || cleanUser,
+      level: Number(user.level) || (user.role === 'teacher' ? 3 : 2),
+      role: user.role || 'custom',
+      roleTitle: user.roleTitle || (user.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+      allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : ['todos', 'students'],
+      editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
+      modulePermissions: user.modulePermissions || {},
+      isActive: user.isActive !== undefined ? Boolean(user.isActive) : true,
+      createdAt: user.createdAt || new Date().toISOString()
+    };
+
+    await saveUserToStorage(newUser);
+
+    await logServerAudit({
+      action: 'USER_CREATED',
+      entityType: 'user',
+      entityId: newUser.id,
+      description: `تعریف کاربر جدید «${newUser.name}» (${newUser.username}) در سرور`,
+      ipAddress: typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress || '0.0.0.0'
+    }).catch(() => {});
+
+    return res.json({ success: true, message: "کاربر با موفقیت در سرور ایجاد شد.", user: sanitizeUser(newUser) });
+  });
+
+  // POST /api/auth/delete-user - Delete user from server
+  app.post("/api/auth/delete-user", async (req, res) => {
+    const { targetUserId } = req.body || {};
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, message: "شناسه کاربر الزامی است." });
+    }
+    await deleteUserFromStorage(targetUserId);
+    return res.json({ success: true, message: "کاربر با موفقیت از سرور حذف گردید." });
   });
 
   // POST /api/auth/refresh - Refresh Access Token

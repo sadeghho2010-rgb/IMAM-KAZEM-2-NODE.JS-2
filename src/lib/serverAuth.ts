@@ -682,6 +682,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = [
 // In-memory user store on server for fast fallback & dev environment
 const serverMemoryUsers = new Map<string, StoredUser>();
 DEFAULT_SERVER_USERS.forEach(u => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
+loadUsersFromFile().forEach(u => {
+  if (u && u.username) {
+    serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
+  }
+});
 
 // =================== Server-Side User Storage and Migration ===================
 
@@ -777,6 +782,7 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
   const cleanId = (user.username || '').trim().toUpperCase();
   if (cleanId) {
     serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
+    saveUsersToFile(Array.from(serverMemoryUsers.values()));
   }
 
   if (!isServerSupabaseConfigured) {
@@ -837,6 +843,23 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
   } catch (e: any) {
     console.error('Error saving user to storage:', e);
   }
+}
+
+export async function deleteUserFromStorage(userIdOrUsername: string): Promise<void> {
+  const clean = userIdOrUsername.trim().toUpperCase();
+  serverMemoryUsers.delete(clean);
+  for (const [uname, u] of serverMemoryUsers.entries()) {
+    if (u.id === userIdOrUsername) {
+      serverMemoryUsers.delete(uname);
+    }
+  }
+  saveUsersToFile(Array.from(serverMemoryUsers.values()));
+
+  if (!isServerSupabaseConfigured) return;
+  try {
+    await serverSupabase.from('system_users').delete().match({ username: clean });
+    await serverSupabase.from('app_collections').delete().match({ collection_name: 'system_users', id: clean });
+  } catch (e) {}
 }
 
 export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; migratedCount: number }> {
