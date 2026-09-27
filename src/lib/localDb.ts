@@ -559,22 +559,28 @@ class LocalDatabase {
     if (typeof window === 'undefined') return [];
     const resolvedCol = this.resolveCollection(collectionName as string);
     try {
-      // 1. First try secure Server-Side Dedicated Data API
       let cloudDocs: any[] = [];
+
+      // 1. First try secure Server-Side Dedicated Data API (with 1.8s timeout)
       try {
         const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1800);
+
         const apiRes = await fetch(`/api/data/${resolvedCol}`, {
           method: 'GET',
           headers,
-          credentials: 'include'
+          credentials: 'include',
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         if (apiRes.ok) {
           const json = await apiRes.json();
-          if (json.success && Array.isArray(json.items)) {
+          if (json.success && Array.isArray(json.items) && json.items.length > 0) {
             cloudDocs = json.items.filter((d: any) => d && d.id);
           }
         }
@@ -582,19 +588,86 @@ class LocalDatabase {
         // Fall back to direct Supabase if server API is unavailable
       }
 
-      // 3. Direct Firestore cloud sync
+      // 2. Direct Supabase Cloud sync (with 2.5s strict timeout)
+      if (cloudDocs.length === 0 && isSupabaseConfigured) {
+        try {
+          const sbPromise = (async () => {
+            // A. Query app_collections (where all client collections are upserted)
+            const { data: appData, error: appErr } = await supabase
+              .from('app_collections')
+              .select('id, data')
+              .eq('collection_name', resolvedCol);
+
+            if (!appErr && Array.isArray(appData) && appData.length > 0) {
+              return appData
+                .filter(row => row && row.id)
+                .map(row => {
+                  if (row.data && typeof row.data === 'object') {
+                    return { ...row.data, id: row.id };
+                  }
+                  return { id: row.id };
+                });
+            }
+
+            // B. If still empty, check dedicated table directly (e.g. students, teachers, programs, enrollments)
+            const { data: tableData, error: tableErr } = await supabase
+              .from(resolvedCol)
+              .select('*');
+
+            if (!tableErr && Array.isArray(tableData) && tableData.length > 0) {
+              return tableData
+                .filter(row => row && row.id)
+                .map(row => {
+                  if (row.data && typeof row.data === 'object') {
+                    return { ...row.data, id: row.id };
+                  }
+                  const mapped: any = { ...row };
+                  if (row.national_id) mapped.nationalId = row.national_id;
+                  if (row.student_code) mapped.studentCode = row.student_code;
+                  if (row.father_name) mapped.fatherName = row.father_name;
+                  if (row.is_active !== undefined) mapped.isActive = row.is_active;
+                  if (row.program_id) mapped.programId = row.program_id;
+                  if (row.student_id) mapped.studentId = row.student_id;
+                  if (row.teacher_name) mapped.teacherName = row.teacher_name;
+                  return mapped;
+                });
+            }
+            return [];
+          })();
+
+          const timeoutSb = new Promise<any[]>((res) => setTimeout(() => res([]), 2500));
+          const sbRes = await Promise.race([sbPromise, timeoutSb]);
+          if (Array.isArray(sbRes) && sbRes.length > 0) {
+            cloudDocs = sbRes;
+          }
+        } catch (sbErr) {
+          console.warn(`Supabase sync exception for ${resolvedCol}:`, sbErr);
+        }
+      }
+
+      // 3. Direct Firestore cloud sync (fast 1.2s timeout)
       if (cloudDocs.length === 0) {
         try {
-          const snap = await getDocs(collection(db, resolvedCol));
-          if (!snap.empty) {
-            snap.forEach(dSnap => {
-              if (dSnap.exists()) {
-                cloudDocs.push({ ...dSnap.data(), id: dSnap.id });
-              }
-            });
+          const fsPromise = (async () => {
+            const snap = await getDocs(collection(db, resolvedCol));
+            const list: any[] = [];
+            if (!snap.empty) {
+              snap.forEach(dSnap => {
+                if (dSnap.exists()) {
+                  list.push({ ...dSnap.data(), id: dSnap.id });
+                }
+              });
+            }
+            return list;
+          })();
+
+          const timeoutFs = new Promise<any[]>((res) => setTimeout(() => res([]), 1200));
+          const fsRes = await Promise.race([fsPromise, timeoutFs]);
+          if (Array.isArray(fsRes) && fsRes.length > 0) {
+            cloudDocs = fsRes;
           }
         } catch (fsErr) {
-          console.warn('Firestore sync notice:', fsErr);
+          // Firestore offline fallback
         }
       }
 
@@ -603,6 +676,21 @@ class LocalDatabase {
         if (db.objectStoreNames.contains(resolvedCol)) {
           const tx = db.transaction(resolvedCol, 'readwrite');
           const store = tx.objectStore(resolvedCol);
+          
+          // If cloud has genuine data, clear seeded dummy placeholders (like stu_1, stu_2, stu_3)
+          const hasRealData = cloudDocs.some(d => !String(d.id).startsWith('stu_') && !String(d.id).startsWith('prog_'));
+          if (hasRealData && (resolvedCol === 'students' || resolvedCol === 'programs')) {
+            const allKeysReq = store.getAllKeys();
+            allKeysReq.onsuccess = () => {
+              const keys = allKeysReq.result || [];
+              keys.forEach(k => {
+                if (typeof k === 'string' && (k.startsWith('stu_') || k.startsWith('prog_'))) {
+                  store.delete(k);
+                }
+              });
+            };
+          }
+
           for (const doc of cloudDocs) {
             store.put(doc);
           }
@@ -612,7 +700,11 @@ class LocalDatabase {
         const key = `fallback_idb_${resolvedCol}`;
         const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
         const map = new Map<string, any>();
-        currentLS.forEach(item => map.set(item.id, item));
+        currentLS.forEach(item => {
+          if (!item.id?.startsWith('stu_') && !item.id?.startsWith('prog_')) {
+            map.set(item.id, item);
+          }
+        });
         cloudDocs.forEach(item => map.set(item.id, item));
         try {
           localStorage.setItem(key, JSON.stringify(Array.from(map.values())));

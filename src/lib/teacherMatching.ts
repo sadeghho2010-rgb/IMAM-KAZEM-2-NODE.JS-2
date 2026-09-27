@@ -250,3 +250,65 @@ export function isManualScheduleAssignedToTeacher(
 
   return false;
 }
+
+/**
+ * Normalizes grade strings for reliable cross-digit and ordinal Persian matching.
+ * Examples: "پایه 7", "پایه ۷", "پایه هفتم", "7", "۷" -> standardized representation
+ */
+export function normalizeGrade(rawGrade?: string | null): string {
+  if (!rawGrade) return '';
+  let g = String(rawGrade).trim();
+  
+  // Convert Persian/Arabic digits to English digits
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  for (let i = 0; i < 10; i++) {
+    g = g.split(persianDigits[i]).join(String(i));
+    g = g.split(arabicDigits[i]).join(String(i));
+  }
+
+  // Normalize ordinals
+  g = g
+    .replace(/هفتم/g, '7')
+    .replace(/هشتم/g, '8')
+    .replace(/نهم/g, '9')
+    .replace(/دهم/g, '10')
+    .replace(/یازدهم/g, '11')
+    .replace(/دوازدهم/g, '12')
+    .replace(/اول/g, '1')
+    .replace(/دوم/g, '2')
+    .replace(/سوم/g, '3')
+    .replace(/چهارم/g, '4')
+    .replace(/پنجم/g, '5')
+    .replace(/ششم/g, '6')
+    .replace(/[\u200c\u200f\u200e\s]+/g, ' ')
+    .trim();
+
+  return g;
+}
+
+/**
+ * Checks if two grade representations match.
+ */
+export function isGradeMatch(studentGrade?: string | null, targetGrade?: string | null): boolean {
+  if (!studentGrade || !targetGrade) return false;
+  if (targetGrade === 'all' || targetGrade === 'همه' || targetGrade === 'عمومی') return true;
+
+  const normA = normalizeGrade(studentGrade);
+  const normB = normalizeGrade(targetGrade);
+
+  if (normA === normB || normA.includes(normB) || normB.includes(normA)) {
+    return true;
+  }
+
+  // Extract pure digits
+  const digitsA = normA.replace(/[^0-9]/g, '');
+  const digitsB = normB.replace(/[^0-9]/g, '');
+
+  if (digitsA && digitsB && digitsA === digitsB) {
+    return true;
+  }
+
+  return false;
+}
+

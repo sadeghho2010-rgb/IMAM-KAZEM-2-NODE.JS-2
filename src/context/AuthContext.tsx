@@ -1017,6 +1017,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           modulePermissions: localMatched?.modulePermissions || user.modulePermissions || {},
         };
 
+        if (result.token) {
+          try {
+            localStorage.setItem('auth_token', result.token);
+            sessionStorage.setItem('auth_token', result.token);
+          } catch (e) {}
+        }
+
         setCurrentUser(mergedUser);
         try {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));
@@ -1085,6 +1092,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUser(null);
     try {
       localStorage.removeItem(CURRENT_USER_KEY);
+      localStorage.removeItem('auth_token');
+      sessionStorage.removeItem('auth_token');
     } catch (e) {}
 
     fetch('/api/auth/logout', {

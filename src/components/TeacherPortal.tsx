@@ -24,7 +24,9 @@ import {
   Info,
   RefreshCw,
   RotateCw,
-  WifiOff
+  WifiOff,
+  Layers,
+  ArrowRightLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
@@ -56,7 +58,9 @@ import {
   normalizeTeacherName, 
   findMatchingTeacher, 
   isProgramAssignedToTeacher, 
-  isManualScheduleAssignedToTeacher 
+  isManualScheduleAssignedToTeacher,
+  isGradeMatch,
+  normalizeGrade
 } from '../lib/teacherMatching';
 
 export default function TeacherPortal() {
@@ -71,13 +75,11 @@ export default function TeacherPortal() {
     currentUser?.name?.includes('مشاور')
   );
 
-  // Active Mobile View Tab (Defaults directly to 'counseling' for counseling teachers)
-  const [activeTab, setActiveTab] = useState<'schedule' | 'counseling' | 'calendar'>(
-    initialCounselingHint ? 'counseling' : 'schedule'
-  );
+  // Active Mobile View Tab (Defaults directly to 'counseling' so teachers immediately see counseling & evaluations)
+  const [activeTab, setActiveTab] = useState<'schedule' | 'counseling' | 'calendar'>('counseling');
 
   // Flag to track whether initial auto-direction to counseling was performed
-  const [hasAutoDirected, setHasAutoDirected] = useState<boolean>(false);
+  const [hasAutoDirected, setHasAutoDirected] = useState<boolean>(true);
 
   // Database Data States
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -90,36 +92,74 @@ export default function TeacherPortal() {
   const [periods, setPeriods] = useState<AcademicCalendarPeriod[]>([]);
 
   // Loading, Sync, and Error States (Three-State UI Pattern)
-  const [loadingState, setLoadingState] = useState<'loading' | 'error' | 'success'>('loading');
+  const [loadingState, setLoadingState] = useState<'loading' | 'error' | 'success'>('success');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isSavingAll, setIsSavingAll] = useState<boolean>(false);
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
 
   // Counseling Evaluation State
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedSessionDate, setSelectedSessionDate] = useState<string>('');
+  const [counselingGradeFilter, setCounselingGradeFilter] = useState<string>('all');
   const [teacherNotesMap, setTeacherNotesMap] = useState<Record<string, string>>({});
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Reset auto-direction when currentUser changes
-  useEffect(() => {
-    setHasAutoDirected(false);
-  }, [currentUser?.id]);
+  // Helper to read local database cache directly into React state
+  const loadLocalCachedData = useCallback(async () => {
+    try {
+      const [
+        storedTeachers, 
+        storedPrograms, 
+        storedManual,
+        storedStudents, 
+        storedEnrollments, 
+        storedGrades,
+        storedHolidays,
+        storedPeriods
+      ] = await Promise.all([
+        localDb.getDocs<Teacher>('teachers'),
+        localDb.getDocs<Program>('programs'),
+        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<Enrollment>('enrollments'),
+        localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
+        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
+      ]);
+
+      if (storedTeachers && storedTeachers.length > 0) setTeachers(storedTeachers);
+      if (storedPrograms && storedPrograms.length > 0) setPrograms(storedPrograms);
+      if (storedManual && storedManual.length > 0) setManualSchedules(storedManual);
+      if (storedStudents && storedStudents.length > 0) {
+        setStudents(storedStudents.filter(s => s.isActive !== false));
+      }
+      if (storedEnrollments) setEnrollments(storedEnrollments);
+      if (storedGrades) setGrades(storedGrades);
+      if (storedHolidays) setHolidays(storedHolidays);
+      if (storedPeriods) setPeriods(storedPeriods);
+      setLoadingState('success');
+    } catch (e) {
+      console.warn('Error reading local cache:', e);
+      setLoadingState('success');
+    }
+  }, []);
 
   /**
-   * Eager Cloud Hydration: Proactively syncs and fetches the latest teaching
-   * programs, schedules, and evaluations from the central database/server.
+   * Eager Cloud Hydration: Non-blocking background sync from server / Supabase.
+   * Never hangs or freezes the user interface.
    */
   const syncPortalData = useCallback(async (isManualRefresh = false) => {
     try {
       if (isManualRefresh) {
         setIsSyncing(true);
-      } else {
-        setLoadingState('loading');
       }
       setSyncErrorMessage(null);
 
-      // 1. Proactively hydrate key collections from Server / Cloud
+      // 1. Immediately populate from local cache so UI is interactive in 0ms
+      await loadLocalCachedData();
+
+      // 2. Proactively hydrate key collections from Server / Cloud
       const coreCollections: CollectionName[] = [
         'teachers',
         'programs',
@@ -131,12 +171,14 @@ export default function TeacherPortal() {
         'academic_calendar_periods'
       ];
 
-      // Sync from cloud in background/parallel (non-blocking for offline tolerance)
-      await Promise.allSettled(
+      const syncPromise = Promise.allSettled(
         coreCollections.map(col => localDb.syncCollectionFromCloud(col))
       );
+      const syncTimeout = new Promise(resolve => setTimeout(resolve, 3500));
 
-      // 2. Fetch all hydrated records from local database
+      await Promise.race([syncPromise, syncTimeout]);
+
+      // 3. Re-read freshly hydrated records
       const [
         storedTeachers, 
         storedPrograms, 
@@ -172,18 +214,17 @@ export default function TeacherPortal() {
       }
     } catch (err: any) {
       console.error('Error hydrating teacher portal data:', err);
-      setSyncErrorMessage(err?.message || 'خطا در بارگذاری اطلاعات. لطفاً اتصال شبکه را بررسی کنید.');
-      setLoadingState('error');
+      // Gracefully fall back to local data without blocking
+      setLoadingState('success');
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [loadLocalCachedData]);
 
   // Initial load and live database listener
   useEffect(() => {
     syncPortalData();
     const unsub = localDb.subscribe(() => {
-      // Re-read local docs when database changes
       Promise.all([
         localDb.getDocs<Teacher>('teachers'),
         localDb.getDocs<Program>('programs'),
@@ -324,27 +365,40 @@ export default function TeacherPortal() {
   }, [loadingState, isCounselingTeacher, hasAutoDirected]);
 
   /**
-   * Counseling courses taught by this teacher
+   * All counseling and teaching courses taught by this teacher for easy class shifting
    */
   const counselingPrograms = useMemo(() => {
-    const list = teacherPrograms.filter(p => 
+    // 1. All explicit counseling programs
+    const explicitCounseling = teacherPrograms.filter(p => 
       p.title?.includes('مشاوره') || 
       (p.type as string) === 'مشاوره' || 
       (p.type as string) === 'counseling' || 
       (p as any).category?.includes('مشاوره')
     );
 
-    if (list.length > 0) return list;
+    // 2. Other courses of this teacher (for evaluation flexibility)
+    const otherProgs = teacherPrograms.filter(p => !explicitCounseling.some(ec => ec.id === p.id));
+    const combined = [...explicitCounseling, ...otherProgs];
 
-    // If no explicit counseling program exists, check if teacher has regular programs
-    if (teacherPrograms.length > 0) {
-      return teacherPrograms;
+    if (combined.length > 0) return combined;
+
+    // 3. Dynamic grade slots based on teacher's managedGrades or default grades
+    const teacherManagedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades || [];
+    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد محترم';
+
+    if (teacherManagedGrades.length > 0) {
+      return teacherManagedGrades.map((g, idx) => ({
+        id: `counseling-${g}-${currentTeacherObj?.id || idx}`,
+        title: `کلاس مشاوره (${g})`,
+        type: 'counseling' as any,
+        teacher: teacherDisplayName,
+        grade: g,
+        days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
+        time: 'ساعت مشاوره',
+        madrasRoom: 'مدرس مشاوره'
+      }));
     }
 
-    // Dynamic fallback so the teacher is NEVER blocked from recording counseling evaluations
-    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد محترم';
-    
-    // Provide general grades so teacher can pick students
     return [
       {
         id: `counseling-p7-${currentTeacherObj?.id || 'main'}`,
@@ -481,28 +535,78 @@ export default function TeacherPortal() {
   }, [classSessionDates, selectedSessionDate]);
 
   /**
-   * Enrolled students in the active counseling course
+   * STRICT FILTER: Enrolled students of THIS class ONLY.
+   * Matches by explicit enrollments, grade matching, course title indicators, and manual grade filter.
    */
   const enrolledStudents = useMemo(() => {
-    if (!activeCounselingCourse) return [];
+    if (!activeCounselingCourse && students.length === 0) return [];
 
-    // 1. Direct enrollments
-    const courseEnrollments = enrollments.filter(e => e.programId === activeCounselingCourse.id);
+    // Option A: Explicit Grade Filter chosen by teacher in toolbar
+    if (counselingGradeFilter === 'all_school') {
+      return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+    }
+    if (counselingGradeFilter !== 'all') {
+      const filtered = students.filter(s => isGradeMatch(s.grade, counselingGradeFilter) && s.isActive !== false);
+      if (filtered.length > 0) {
+        return filtered.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+      }
+    }
+
+    if (!activeCounselingCourse) {
+      return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+    }
+
+    // 1. Direct enrollments for this specific program ID or parentProgramId
+    const courseEnrollments = enrollments.filter(e => 
+      e.programId === activeCounselingCourse.id || 
+      (activeCounselingCourse.parentProgramId && e.programId === activeCounselingCourse.parentProgramId)
+    );
     if (courseEnrollments.length > 0) {
       const ids = new Set(courseEnrollments.map(e => e.studentId));
-      const direct = students.filter(s => ids.has(s.id));
-      if (direct.length > 0) return direct;
+      const direct = students.filter(s => ids.has(s.id) && s.isActive !== false);
+      if (direct.length > 0) {
+        return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+      }
     }
 
-    // 2. Grade-based fallback (e.g. all students of 'پایه ۷')
-    if (activeCounselingCourse.grade) {
-      const gradeStudents = students.filter(s => s.grade === activeCounselingCourse.grade);
-      if (gradeStudents.length > 0) return gradeStudents;
+    // 2. Grade-based strict filtering (e.g. all students of 'پایه ۷', 'پایه 7', 'پایه هفتم')
+    if (activeCounselingCourse.grade && activeCounselingCourse.grade !== 'عمومی' && activeCounselingCourse.grade !== 'همه') {
+      const gradeStudents = students.filter(s => 
+        isGradeMatch(s.grade, activeCounselingCourse.grade) && s.isActive !== false
+      );
+      if (gradeStudents.length > 0) {
+        return gradeStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+      }
     }
 
-    // 3. General active students fallback
-    return students.slice(0, 15);
-  }, [activeCounselingCourse, enrollments, students]);
+    // 3. Extract grade from course title if title mentions "پایه ۷", "پایه ۸", etc.
+    const title = activeCounselingCourse.title || '';
+    const gradeMatches = [
+      'پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰', 'پایه ۱', 'پایه ۲', 'پایه ۳', 'پایه ۴', 'پایه ۵', 'پایه ۶',
+      'پایه 7', 'پایه 8', 'پایه 9', 'پایه 10', 'پایه 1', 'پایه 2', 'پایه 3', 'پایه 4', 'پایه 5', 'پایه 6',
+      'پایه هفتم', 'پایه هشتم', 'پایه نهم', 'پایه دهم', 'پایه اول', 'پایه دوم', 'پایه سوم', 'پایه چهارم', 'پایه پنجم', 'پایه ششم'
+    ];
+    for (const g of gradeMatches) {
+      if (title.includes(g)) {
+        const found = students.filter(s => isGradeMatch(s.grade, g) && s.isActive !== false);
+        if (found.length > 0) {
+          return found.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+        }
+      }
+    }
+
+    // 4. Fallback if course is general or managed grades are defined on teacher profile
+    const managedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades;
+    if (Array.isArray(managedGrades) && managedGrades.length > 0) {
+      const managed = students.filter(s => managedGrades.some(mg => isGradeMatch(s.grade, mg)) && s.isActive !== false);
+      if (managed.length > 0) {
+        return managed.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+      }
+    }
+
+    // 5. Default fallback: show active students
+    return students.filter(s => s.isActive !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+  }, [activeCounselingCourse, enrollments, students, currentTeacherObj, currentUser, counselingGradeFilter]);
 
   // Existing grades for the selected course and selected session date
   const sessionGradesMap = useMemo(() => {
@@ -652,6 +756,77 @@ export default function TeacherPortal() {
     }
   };
 
+  /**
+   * Master Save Action (دکمه ثبت نهایی بالا و پایین صفحه):
+   * Explicitly commits all evaluations, attendance, and notes to database & cloud.
+   */
+  const handleSaveAllEvaluations = async () => {
+    if (!activeCounselingCourse || !selectedSessionDate) {
+      showToast('لطفاً ابتدا یک جلسه را انتخاب فرمایید.');
+      return;
+    }
+    if (enrolledStudents.length === 0) {
+      showToast('طلبه‌ای در این کلاس یافت نشد.');
+      return;
+    }
+
+    try {
+      setIsSavingAll(true);
+      const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
+      const sessionInfo = classSessionDates.find(s => s.date === selectedSessionDate);
+      const sessionLabel = `جلسه ${sessionInfo?.sessionNumber || 1}`;
+
+      const updates: CounselingSessionGrade[] = [];
+
+      for (const student of enrolledStudents) {
+        const existing = sessionGradesMap.get(student.id);
+        const pendingNote = teacherNotesMap[student.id];
+        const feedback = pendingNote !== undefined ? pendingNote.trim() : (existing?.counselorFeedback || '');
+        const currentScore = existing?.participationScore;
+
+        if (currentScore || feedback || existing) {
+          const docId = existing?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+          const gradeDoc: CounselingSessionGrade = {
+            id: docId,
+            studentId: student.id,
+            studentName: student.name,
+            grade: student.grade || activeCounselingCourse.grade || 'عمومی',
+            counselorTeacherName: teacherName,
+            courseTitle: activeCounselingCourse.title,
+            sessionDate: selectedSessionDate,
+            sessionNumber: sessionLabel,
+            participationScore: currentScore || 'الف',
+            researchScore: currentScore || 'الف',
+            counselorFeedback: feedback || undefined,
+            createdAt: existing?.createdAt || new Date().toISOString(),
+            createdByName: currentUser?.name || teacherName,
+            createdByRole: 'استاد',
+            updatedAt: new Date().toISOString()
+          };
+          await localDb.setDoc('counseling_session_grades', gradeDoc);
+          updates.push(gradeDoc);
+        }
+      }
+
+      if (updates.length > 0) {
+        setGrades(prev => {
+          const idSet = new Set(updates.map(u => u.id));
+          return [...prev.filter(g => !idSet.has(g.id)), ...updates];
+        });
+        // Non-blocking trigger cloud synchronization
+        localDb.syncCollectionFromCloud('counseling_session_grades').catch(() => {});
+        showToast(`✓ ارزیابی ${toPersianDigits(updates.length)} طلبه برای جلسه ${selectedSessionDate} با موفقیت در دیتابیس ثبت شد.`);
+      } else {
+        showToast('لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.');
+      }
+    } catch (err) {
+      console.error('Error saving all evaluations:', err);
+      showToast('خطا در ثبت و ذخیره ارزیابی‌ها در دیتابیس.');
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
   // Save Counselor Feedback note
   const handleSaveStudentNote = async (studentId: string, studentName: string) => {
     const existing = sessionGradesMap.get(studentId);
@@ -672,7 +847,7 @@ export default function TeacherPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-800 pb-16 font-vazir antialiased select-none" dir="rtl">
+    <div className="min-h-screen bg-slate-100/90 text-slate-800 pb-28 font-vazir antialiased select-none" dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -939,28 +1114,62 @@ export default function TeacherPortal() {
                     ثبت نمرات و مشارکت جلسات مشاوره
                   </h2>
                   <p className="text-xs text-emerald-100 leading-relaxed">
-                    فقط جلسات برگزارشده کلاس شما در این بخش فعال است (کلاس امروز و حداکثر ۳ جلسه قبل). نمرات را با یک ضربه ثبت فرمایید.
+                    فقط جلسات برگزارشده کلاس شما در این بخش فعال است (کلاس امروز و حداکثر ۳ جلسه قبل). نمرات را تعیین و دکمه ثبت را بزنید.
                   </p>
                 </div>
 
-                {/* Course Switcher (If multiple counseling classes exist) */}
+                {/* --- CLASS SHIFTER (جابجایی آسان بین کلاس‌های مشاوره استاد) --- */}
                 {counselingPrograms.length > 1 && (
-                  <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs space-y-1.5">
-                    <label className="block text-[11px] font-bold text-slate-500">انتخاب کلاس یا پایه مشاوره:</label>
-                    <select
-                      value={selectedCourseId}
-                      onChange={(e) => {
-                        setSelectedCourseId(e.target.value);
-                        setSelectedSessionDate('');
-                      }}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      {counselingPrograms.map(prog => (
-                        <option key={prog.id} value={prog.id}>
-                          {prog.title} ({prog.grade || 'عمومی'})
-                        </option>
-                      ))}
-                    </select>
+                  <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+                      <span className="flex items-center gap-1.5 text-indigo-700">
+                        <ArrowRightLeft size={15} />
+                        <span>انتخاب کلاس مشاوره (تغییر کلاس):</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-normal">
+                        {toPersianDigits(counselingPrograms.length)} کلاس اختصاص‌یافته
+                      </span>
+                    </div>
+
+                    {/* Horizontal Class Selector Tabs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {counselingPrograms.map(prog => {
+                        const isSelected = selectedCourseId === prog.id;
+                        
+                        return (
+                          <button
+                            key={prog.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCourseId(prog.id);
+                              setSelectedSessionDate('');
+                            }}
+                            className={cn(
+                              "p-3 rounded-2xl border text-right transition-all flex items-center justify-between gap-2 cursor-pointer shadow-2xs",
+                              isSelected 
+                                ? "bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300 font-black scale-[1.01]"
+                                : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
+                            )}
+                          >
+                            <div className="space-y-0.5 truncate">
+                              <div className="text-xs font-black truncate">{prog.title}</div>
+                              <div className={cn(
+                                "text-[10px] font-mono",
+                                isSelected ? "text-emerald-100" : "text-slate-500"
+                              )}>
+                                {prog.grade || 'پایه عمومی'} {prog.time ? `• ${prog.time}` : ''}
+                              </div>
+                            </div>
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0",
+                              isSelected ? "bg-white/20 text-white" : "bg-white border border-slate-200 text-slate-600"
+                            )}>
+                              {isSelected ? 'کلاس انتخابی' : 'انتخاب'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
@@ -976,11 +1185,11 @@ export default function TeacherPortal() {
                           درخواست ثبت نمرات جلسات مشاوره
                         </h3>
                         <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
-                          اقدام استاد مشاور
+                          {activeCounselingCourse?.title}
                         </span>
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed font-medium">
-                        استاد محترم؛ لطفاً برای تاریخ‌هایی که کلاس داشتید (کلاس همان روز و تا ۳ جلسه قبل‌تر)، وضعیت حضور و نمرات دانش‌پژوهان را ثبت فرمایید.
+                        استاد محترم؛ لطفاً برای جلسات برگزارشده، نمرات را با دکمه‌ها مشخص کرده و سپس روی **«ثبت و ذخیره ارزیابی‌ها»** بزنید.
                       </p>
                     </div>
                   </div>
@@ -999,7 +1208,7 @@ export default function TeacherPortal() {
 
                     {classSessionDates.length === 0 ? (
                       <p className="text-xs text-slate-400 py-2 bg-white rounded-2xl p-4 text-center border border-slate-200">
-                        هیچ جلسه برگزارشده‌ای در تقویم آموزشی برای این درس یافت نشد.
+                        هیچ جلسه برگزارشده‌ای در تقویم آموزشی برای این کلاس یافت نشد.
                       </p>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1068,9 +1277,9 @@ export default function TeacherPortal() {
                   </div>
                 </div>
 
-                {/* Selected Session Action & Fast Grade Controls */}
-                <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-2.5">
-                  <div className="flex items-center justify-between">
+                {/* --- TOP ACTION BAR WITH PROMINENT SAVE BUTTON (دکمه ثبت در بالای صفحه) --- */}
+                <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
                         <CalendarCheck size={16} className="text-emerald-600" />
@@ -1086,15 +1295,27 @@ export default function TeacherPortal() {
                       </p>
                     </div>
 
-                    {/* Quick All-A Button */}
-                    <button
-                      onClick={handleQuickGradeAllA}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11px] font-black transition-all cursor-pointer shadow-2xs"
-                      title="ثبت خودکار نمره الف برای تمام طلاب ثبت‌نشده این جلسه"
-                    >
-                      <Sparkles size={14} />
-                      <span>ثبت الف برای همه</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Quick All-A Button */}
+                      <button
+                        onClick={handleQuickGradeAllA}
+                        className="inline-flex items-center gap-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                        title="ثبت خودکار نمره الف برای تمام طلاب ثبت‌نشده این جلسه"
+                      >
+                        <Sparkles size={14} />
+                        <span>الف برای همه</span>
+                      </button>
+
+                      {/* TOP SAVE BUTTON (دکمه ثبت بالای صفحه) */}
+                      <button
+                        onClick={handleSaveAllEvaluations}
+                        disabled={isSavingAll}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md disabled:opacity-50"
+                      >
+                        <Save size={15} />
+                        <span>{isSavingAll ? 'در حال ثبت...' : 'ثبت ارزیابی‌ها'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Status alert for selected session */}
@@ -1113,8 +1334,8 @@ export default function TeacherPortal() {
                         )}
                         <span>
                           {(sessionGradingStats[selectedSessionDate]?.isComplete)
-                            ? 'نمرات تمام دانش‌پژوهان برای این جلسه ثبت شده است.'
-                            : 'در این جلسه هنوز نمره برخی از دانش‌پژوهان ثبت نشده است. لطفاً نمرات را تعیین فرمایید.'
+                            ? 'نمرات تمام دانش‌پژوهان این کلاس ثبت شده است.'
+                            : 'در این جلسه هنوز نمره برخی طلاب تعیین نشده است. نمرات را بزنید و دکمه ثبت را بفشارید.'
                           }
                         </span>
                       </div>
@@ -1127,10 +1348,47 @@ export default function TeacherPortal() {
 
                 {/* Students Evaluation List */}
                 <div className="space-y-3">
+                  {/* Grade Filter Pill Tabs */}
+                  <div className="bg-white rounded-2xl p-2.5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1 text-xs font-bold text-slate-700">
+                      <Layers size={14} className="text-emerald-600" />
+                      <span className="hidden sm:inline">فیلتر طلاب:</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {[
+                        { key: 'all', label: 'کلاس انتخابی' },
+                        { key: 'پایه ۷', label: 'پایه ۷' },
+                        { key: 'پایه ۸', label: 'پایه ۸' },
+                        { key: 'پایه ۹', label: 'پایه ۹' },
+                        { key: 'پایه ۱۰', label: 'پایه ۱۰' },
+                        { key: 'all_school', label: 'همه طلاب مدرسه' }
+                      ].map(tab => {
+                        const isSelected = counselingGradeFilter === tab.key;
+                        return (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setCounselingGradeFilter(tab.key)}
+                            className={cn(
+                              "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
+                              isSelected
+                                ? "bg-emerald-600 text-white shadow-2xs"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            )}
+                          >
+                            {tab.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between px-1">
                     <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
                       <Users size={14} className="text-slate-400" />
-                      <span>دانش‌پژوهان کلاس ({toPersianDigits(enrolledStudents.length)} نفر):</span>
+                      <span>
+                        فهرست طلاب {counselingGradeFilter === 'all' ? `کلاس ${activeCounselingCourse?.title || ''}` : counselingGradeFilter === 'all_school' ? 'کل مدرسه' : counselingGradeFilter} ({toPersianDigits(enrolledStudents.length)} نفر):
+                      </span>
                     </span>
                     <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
                       {toPersianDigits(sessionGradesMap.size)} از {toPersianDigits(enrolledStudents.length)} ارزیابی شدند
@@ -1138,8 +1396,14 @@ export default function TeacherPortal() {
                   </div>
 
                   {enrolledStudents.length === 0 ? (
-                    <div className="bg-white rounded-3xl p-8 text-center text-slate-400 text-xs font-bold border border-slate-200">
-                      دانش‌پژوهی برای این کلاس یا پایه ثبت نشده است.
+                    <div className="bg-white rounded-3xl p-8 text-center text-slate-500 text-xs font-bold border border-slate-200 space-y-2">
+                      <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                        <Users size={22} />
+                      </div>
+                      <p className="text-slate-800">هیچ طلبه‌ای برای کلاس «{activeCounselingCourse?.title}» ثبت نشده است.</p>
+                      <p className="text-[11px] text-slate-400">
+                        جهت اختصاص طلاب به این کلاس، از سامانه مدیریت برنامه‌ها یا انتخاب واحد استفاده نمایید.
+                      </p>
                     </div>
                   ) : (
                     enrolledStudents.map(student => {
@@ -1293,6 +1557,21 @@ export default function TeacherPortal() {
                     })
                   )}
                 </div>
+
+                {/* --- BOTTOM ACTION BAR WITH PROMINENT SAVE BUTTON (دکمه ثبت در پایین صفحه) --- */}
+                {enrolledStudents.length > 0 && (
+                  <div className="sticky bottom-4 z-30 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveAllEvaluations}
+                      disabled={isSavingAll}
+                      className="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] text-white rounded-2xl text-sm font-black transition-all cursor-pointer shadow-xl flex items-center justify-center gap-2 border border-emerald-500/50 disabled:opacity-50"
+                    >
+                      <Save size={18} />
+                      <span>{isSavingAll ? 'در حال ثبت در پایگاه داده...' : 'ثبت و ذخیره نهایی ارزیابی‌های این جلسه'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

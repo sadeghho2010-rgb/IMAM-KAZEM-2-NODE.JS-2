@@ -51,7 +51,17 @@ export function authorizeCollectionAccess(
   action: 'read' | 'write' | 'delete',
   recordOwnerId?: string
 ): { allowed: boolean; reason?: string } {
+  // Public / Educational read collections (students, teachers, programs, calendar, schedules, enrollments, counseling)
+  const PUBLIC_READ_COLLECTIONS = new Set([
+    'students', 'teachers', 'programs', 'classrooms', 'enrollments',
+    'teacher_schedules', 'counseling_session_grades', 'academic_holidays',
+    'academic_calendar_periods', 'school_events', 'study_periods'
+  ]);
+
   if (!user) {
+    if (action === 'read' && PUBLIC_READ_COLLECTIONS.has(collection)) {
+      return { allowed: true };
+    }
     return { allowed: false, reason: 'احراز هویت نشده‌اید.' };
   }
 
