@@ -19,6 +19,7 @@ export type UserRole =
   | 'financial_officer'   // مسئول مالی
   | 'class_representative'// نماینده کلاس (سطح ۳)
   | 'student'             // طلبه (سطح ۳)
+  | 'teacher'             // استاد مدرسه (سطح ۳)
   | 'custom';             // نقش سفارشی
 
 export type UserScope = 
@@ -47,6 +48,8 @@ export interface AppUser {
   studentId?: string;
   studentName?: string;
   linkedStudentId?: string;
+  teacherId?: string;
+  linkedTeacherId?: string;
   isReadOnly?: boolean;
   canEdit?: boolean;
   canManageUsers?: boolean;

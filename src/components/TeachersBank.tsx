@@ -89,8 +89,8 @@ export default function TeachersBank() {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  // Layout View Mode
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  // Layout View Mode ('list' is default as requested by user)
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [copiedPhoneId, setCopiedPhoneId] = useState<string | null>(null);
 
   // Modal State
@@ -895,24 +895,24 @@ export default function TeachersBank() {
           {/* Layout View Mode Buttons */}
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0">
             <button
-              onClick={() => setViewMode('table')}
+              onClick={() => setViewMode('list')}
               className={cn(
-                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
-                viewMode === 'table' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                viewMode === 'list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
               )}
             >
               <List size={15} />
-              <span>جدول کامل</span>
+              <span>نمایش لیستی (پیش‌فرض)</span>
             </button>
             <button
               onClick={() => setViewMode('cards')}
               className={cn(
-                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
                 viewMode === 'cards' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
               )}
             >
               <Grid size={15} />
-              <span>کارت‌ها</span>
+              <span>نمایش کارتی</span>
             </button>
           </div>
 
@@ -941,8 +941,8 @@ export default function TeachersBank() {
             <span>ثبت اولین استاد</span>
           </button>
         </div>
-      ) : viewMode === 'table' ? (
-        /* TABLE VIEW */
+      ) : viewMode === 'list' ? (
+        /* LIST / TABLE VIEW (DEFAULT) */
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">

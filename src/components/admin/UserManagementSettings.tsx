@@ -119,6 +119,9 @@ export default function UserManagementSettings() {
         perms[tab.id] = 'edit';
       } else if (role === 'school_manager' || role === 'vice_principal') {
         perms[tab.id] = tab.id === 'user-management' ? 'none' : 'view';
+      } else if (role === 'teacher') {
+        const teacherTabs = ['teacher-portal', 'teachers-schedule', 'academic-calendar', 'counseling-classes'];
+        perms[tab.id] = teacherTabs.includes(tab.id) ? (tab.id === 'counseling-classes' ? 'edit' : 'view') : 'none';
       } else if (role === 'student' || role === 'class_representative') {
         const studentTabs = ['student-portal', 'student-meals', 'student-schedule', 'academic-calendar', 'discussion', 'attendance', 'stats', 'course-selection'];
         if (studentTabs.includes(tab.id)) {
@@ -795,6 +798,12 @@ export default function UserManagementSettings() {
                             newScope = 'self';
                             newReadOnly = false;
                             break;
+                          case 'teacher':
+                            newLevel = 3;
+                            newRoleTitle = 'استاد مدرسه';
+                            newScope = 'self';
+                            newReadOnly = false;
+                            break;
                           default:
                             newRoleTitle = formData.roleTitle || 'کاربر سیستم';
                             break;
@@ -827,7 +836,8 @@ export default function UserManagementSettings() {
                         <option value="research_manager">مسئول پژوهش</option>
                         <option value="finance_manager">مسئول مالی</option>
                       </optgroup>
-                      <optgroup label="سطح ۳ - طلاب و نمایندگان">
+                      <optgroup label="سطح ۳ - طلاب، نمایندگان و اساتید">
+                        <option value="teacher">استاد مدرسه</option>
                         <option value="class_representative">نماینده کلاس</option>
                         <option value="student">طلبه / دانشجو</option>
                       </optgroup>

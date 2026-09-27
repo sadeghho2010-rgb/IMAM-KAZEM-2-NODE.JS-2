@@ -89,7 +89,7 @@ export function validateRole(role: string, level: number): { valid: boolean; mes
   const allowedRoles = [
     'super_admin', 'school_manager', 'education_manager', 'education_officer',
     'grade_mentor', 'research_manager', 'finance_manager', 'financial_officer',
-    'class_representative', 'student'
+    'class_representative', 'student', 'teacher', 'custom'
   ];
   if (!allowedRoles.includes(role)) {
     return { valid: false, message: 'نقش کاربری انتخاب‌شده معتبر نیست.' };

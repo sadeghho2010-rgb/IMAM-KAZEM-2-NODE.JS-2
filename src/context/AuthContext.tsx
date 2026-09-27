@@ -16,6 +16,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'programs', label: 'برنامه‌های مدرسه و سرفصل‌ها', group: 'آموزش و تدریس', description: 'ثبت و مدیریت برنامه‌ها، ساعات و اساتید دروس' },
   { id: 'student-schedule', label: 'برنامه درسی طلاب', group: 'آموزش و تدریس', description: 'مشاهده و چاپ برنامه هفتگی و زمان‌بندی طلاب' },
   { id: 'teachers-schedule', label: 'برنامه درسی اساتید', group: 'آموزش و تدریس', description: 'جدول زمان‌بندی و برنامه هفتگی تدریس اساتید' },
+  { id: 'teacher-portal', label: 'پنل اختصاصی اساتید', group: 'آموزش و تدریس', description: 'مشاهده برنامه درسی، تقویم آموزشی و ثبت سریع ارزیابی مشاوره‌ها' },
   { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', group: 'آموزش و تدریس', description: 'مدیریت فضاهای فیزیکی و اتاق‌های تدریس' },
   { id: 'discussion', label: 'گروه‌های بحثی و مباحثات', group: 'آموزش و تدریس', description: 'تنظیم و مدیریت گروه‌های مباحثه دو و چند نفره' },
   { id: 'course-selection', label: 'سامانه انتخاب واحد', group: 'آموزش و تدریس', description: 'دوره‌های انتخاب درس و تایید تقاضای طلاب' },
@@ -667,6 +668,14 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
     return allowed.includes(tabId);
   }
 
+  // Level 3 (Teachers)
+  if (role === 'teacher') {
+    const allowed = [
+      'teacher-portal', 'teachers-schedule', 'academic-calendar', 'counseling-classes'
+    ];
+    return allowed.includes(tabId);
+  }
+
   // Level 3 (Students & class rep)
   if (user.level === 3 || role === 'student' || role === 'class_representative') {
     const allowed = [
@@ -683,6 +692,12 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
   if (user.isReadOnly === true || user.canEdit === false) return false;
   if (user.level === 1 && user.role === 'super_admin') return true;
   if (user.level === 1) return false; // school_manager / vice_principal are read-only
+  
+  // Teachers (Level 3): only allowed to edit their counseling classes evaluations
+  if (user.role === 'teacher') {
+    return tabId === 'counseling-classes' || tabId === 'teacher-portal';
+  }
+
   if (user.level === 3) return false; // students cannot edit administrative items
 
   const role = user.role;
@@ -1087,9 +1102,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       password: newUser.password || '8411924',
       name: newUser.name || newUser.fullName || username,
       fullName: newUser.fullName || newUser.name || username,
-      level: newUser.level || 2,
+      level: newUser.level || (newUser.role === 'teacher' ? 3 : 2),
       role: newUser.role || 'custom',
-      roleTitle: newUser.roleTitle || (newUser.level === 3 ? 'طلبه' : 'کاربر سیستم'),
+      roleTitle: newUser.roleTitle || (newUser.role === 'teacher' ? 'استاد مدرسه' : newUser.level === 3 ? 'طلبه' : 'کاربر سیستم'),
       scope: newUser.scope || (newUser.level === 3 ? 'self' : 'all'),
       gradeLabel: newUser.gradeLabel || '',
       managedGrades: newUser.managedGrades || [],
@@ -1097,6 +1112,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       linkedStudentId: newUser.linkedStudentId || newUser.studentId,
       studentId: newUser.studentId || newUser.linkedStudentId,
       studentName: newUser.studentName || newUser.name,
+      teacherId: newUser.teacherId || newUser.linkedTeacherId,
+      linkedTeacherId: newUser.linkedTeacherId || newUser.teacherId,
       isReadOnly: newUser.isReadOnly || false,
       canEdit: newUser.canEdit !== undefined ? newUser.canEdit : true,
       canManageUsers: newUser.canManageUsers || false,

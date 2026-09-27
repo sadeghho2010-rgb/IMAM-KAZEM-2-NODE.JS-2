@@ -57,6 +57,10 @@ ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS grade_label VARCHAR(100
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS mentor_id VARCHAR(100);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS student_id VARCHAR(100);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS linked_student_id VARCHAR(100);
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS teacher_id VARCHAR(100);
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS linked_teacher_id VARCHAR(100);
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS national_id VARCHAR(20);
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS avatar_bg VARCHAR(50);
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS allowed_tabs JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
@@ -444,7 +448,30 @@ CREATE TABLE IF NOT EXISTS public.app_collections (
   PRIMARY KEY (collection_name, id)
 );
 
--- ۱۶. فعال‌سازی سیاست‌های امنیتی RLS
+-- ۱۶. جدول ارزیابی و نمرات جلسات مشاوره اساتید (Counseling Session Grades)
+CREATE TABLE IF NOT EXISTS public.counseling_session_grades (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  student_name VARCHAR(200),
+  grade VARCHAR(50),
+  counselor_teacher_name VARCHAR(200),
+  course_title VARCHAR(255),
+  session_date VARCHAR(30) NOT NULL,
+  session_number VARCHAR(50),
+  participation_score VARCHAR(20),
+  research_score VARCHAR(20),
+  counselor_feedback TEXT,
+  created_by_name VARCHAR(100),
+  created_by_role VARCHAR(50),
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_counseling_grades_date ON public.counseling_session_grades (session_date);
+CREATE INDEX IF NOT EXISTS idx_counseling_grades_student ON public.counseling_session_grades (student_id);
+
+-- ۱۷. فعال‌سازی سیاست‌های امنیتی RLS
 ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teachers ENABLE ROW LEVEL SECURITY;
@@ -467,6 +494,7 @@ ALTER TABLE public.user_todo_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.oral_exam_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.oral_exam_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.counseling_session_grades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_collections ENABLE ROW LEVEL SECURITY;
 
 -- پاکسازی و تعریف مجدد پالیسی‌های امنیتی

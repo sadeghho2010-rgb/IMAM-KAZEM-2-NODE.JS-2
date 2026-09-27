@@ -26,7 +26,10 @@ import {
   ExternalLink,
   Layers,
   Copy,
-  Check
+  Check,
+  UserPlus,
+  ShieldCheck,
+  KeyRound
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -128,7 +131,7 @@ function matchTeacherWithBank(teacherName: string, bankTeachers: Teacher[]): Tea
 }
 
 export default function TeachersSchedule() {
-  const { currentUser } = useAuth();
+  const { currentUser, users, addUser } = useAuth();
 
   const [programs, setPrograms] = useState<Program[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -138,6 +141,28 @@ export default function TeachersSchedule() {
 
   // Selected teacher for master-detail view: null = showing teacher list; string = teacher ID
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+
+  // Teacher User Account Creation States (for Education Manager)
+  const canManageUserCreation = Boolean(
+    currentUser && (
+      currentUser.role === 'super_admin' || 
+      currentUser.role === 'education_manager' || 
+      currentUser.role === 'education_officer' || 
+      currentUser.username?.toUpperCase() === 'SHAH' || 
+      currentUser.level === 1
+    )
+  );
+
+  const [accountTargetTeacher, setAccountTargetTeacher] = useState<Teacher | null>(null);
+  const [proposedUsernameMode, setProposedUsernameMode] = useState<'nationalId' | 'phone' | 'custom'>('nationalId');
+  const [formUsername, setFormUsername] = useState<string>('');
+  const [formPassword, setFormPassword] = useState<string>('');
+  const [createdSuccessInfo, setCreatedSuccessInfo] = useState<{
+    teacherName: string;
+    username: string;
+    password?: string;
+  } | null>(null);
+  const [copiedAccountSms, setCopiedAccountSms] = useState<boolean>(false);
 
   // Filters for teachers list view
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -190,14 +215,119 @@ export default function TeachersSchedule() {
     return false;
   }, [currentUser]);
 
-  // View authorization: Level 1 and 2 can view; Level 3 cannot by default
+  // View authorization: Level 1 and 2 can view; Teachers can view; Level 3 students cannot by default
   const isAuthorizedToView = useMemo(() => {
     if (!currentUser) return false;
     if (currentUser.level === 1) return true;
     if (currentUser.level === 2) return true;
+    if (currentUser.role === 'teacher') return true;
     if (currentUser.level === 3) return false;
     return false;
   }, [currentUser]);
+
+  // Helper to find if teacher already has an active user account
+  const getTeacherUserAccount = (teacherId: string, tObj: Teacher) => {
+    return users.find(u => {
+      if (u.linkedTeacherId && String(u.linkedTeacherId) === String(teacherId)) return true;
+      if (u.teacherId && String(u.teacherId) === String(teacherId)) return true;
+      if (tObj?.nationalId && tObj.nationalId.trim()) {
+        const cleanNat = tObj.nationalId.trim().toUpperCase();
+        if (u.username.toUpperCase() === cleanNat) return true;
+      }
+      if (tObj?.phoneNumber && tObj.phoneNumber.trim()) {
+        const cleanP = tObj.phoneNumber.trim().replace(/^0/, '');
+        const uClean = u.username.trim().replace(/^0/, '');
+        if (uClean === cleanP) return true;
+      }
+      if (u.role === 'teacher' && u.name && tObj.fullName) {
+        if (u.name.trim() === tObj.fullName.trim()) return true;
+      }
+      return false;
+    });
+  };
+
+  // Open Create Account Modal with intelligent proposal
+  const handleOpenCreateAccount = (teacher: Teacher) => {
+    const existing = getTeacherUserAccount(teacher.id, teacher);
+    if (existing) {
+      alert(`برای این استاد قبلاً حساب کاربری با نام کاربری «${existing.username}» ایجاد شده است.`);
+      return;
+    }
+
+    setAccountTargetTeacher(teacher);
+    setCreatedSuccessInfo(null);
+    setCopiedAccountSms(false);
+
+    const nat = (teacher.nationalId || '').trim();
+    const phone = (teacher.phoneNumber || '').trim();
+
+    if (nat) {
+      setProposedUsernameMode('nationalId');
+      setFormUsername(nat);
+    } else if (phone) {
+      setProposedUsernameMode('phone');
+      setFormUsername(phone);
+    } else {
+      setProposedUsernameMode('custom');
+      setFormUsername(teacher.fullName.trim().replace(/\s+/g, '_'));
+    }
+
+    setFormPassword(phone || nat || '8411924');
+  };
+
+  // Confirm Account Creation
+  const handleConfirmCreateAccount = () => {
+    if (!accountTargetTeacher) return;
+    const cleanUser = formUsername.trim().toUpperCase();
+    const cleanPass = formPassword.trim() || '8411924';
+
+    if (!cleanUser) {
+      alert('لطفاً نام کاربری را وارد نمایید.');
+      return;
+    }
+
+    const conflict = users.find(u => u.username.toUpperCase() === cleanUser);
+    if (conflict) {
+      alert(`نام کاربری «${cleanUser}» قبلاً برای کاربر دیگری در سیستم ثبت شده است. لطفاً نام کاربری متفاوتی انتخاب فرمایید.`);
+      return;
+    }
+
+    const teacherName = accountTargetTeacher.fullName || accountTargetTeacher.name || cleanUser;
+
+    const res = addUser({
+      username: cleanUser,
+      password: cleanPass,
+      name: teacherName,
+      fullName: teacherName,
+      role: 'teacher',
+      roleTitle: 'استاد مدرسه',
+      level: 3,
+      scope: 'self',
+      linkedTeacherId: accountTargetTeacher.id,
+      teacherId: accountTargetTeacher.id,
+      nationalId: accountTargetTeacher.nationalId,
+      phone: accountTargetTeacher.phoneNumber,
+      allowedTabs: ['teacher-portal', 'teachers-schedule', 'academic-calendar', 'counseling-classes'],
+      editableTabs: ['counseling-classes', 'teacher-portal'],
+      modulePermissions: {
+        'teacher-portal': 'edit',
+        'teachers-schedule': 'view',
+        'academic-calendar': 'view',
+        'counseling-classes': 'edit',
+      },
+      isActive: true,
+    });
+
+    if (res.success) {
+      setCreatedSuccessInfo({
+        teacherName,
+        username: cleanUser,
+        password: cleanPass
+      });
+    } else {
+      alert(res.error || 'خطا در ایجاد حساب کاربری استاد.');
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -992,8 +1122,41 @@ export default function TeachersSchedule() {
                       </div>
                     </div>
 
-                    {/* Action Button: View schedule */}
-                    <div className="pt-2 border-t border-slate-100">
+                    {/* Action Button: View schedule & Create User Account */}
+                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                      {/* Teacher Account Status or Red "ایجاد کاربری" Button for Education Manager */}
+                      {canManageUserCreation && (() => {
+                        const existingUser = getTeacherUserAccount(teacherGroup.id, tObj);
+                        if (existingUser) {
+                          return (
+                            <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 font-bold">
+                              <span className="flex items-center gap-1.5">
+                                <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+                                <span>حساب کاربری:</span>
+                                <span className="font-mono text-emerald-950 font-black">{existingUser.username}</span>
+                              </span>
+                              <span className="text-[10px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                                نقش استاد
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenCreateAccount(tObj);
+                            }}
+                            className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shadow-rose-200"
+                            title="ایجاد حساب کاربری برای این استاد"
+                          >
+                            <UserPlus size={15} />
+                            <span>ایجاد کاربری</span>
+                          </button>
+                        );
+                      })()}
+
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1056,8 +1219,30 @@ export default function TeachersSchedule() {
                 </div>
               </div>
 
-              {/* Single Teacher Specific Export Buttons */}
+              {/* Single Teacher Specific Export Buttons & Account Creation */}
               <div className="flex items-center flex-wrap gap-2">
+                {canManageUserCreation && (() => {
+                  const existingUser = getTeacherUserAccount(currentSelectedTeacher.id, currentSelectedTeacher.teacherObj);
+                  if (existingUser) {
+                    return (
+                      <span className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs">
+                        <ShieldCheck size={15} className="text-emerald-600" />
+                        <span>حساب کاربری: <b className="font-mono text-emerald-950">{existingUser.username}</b></span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateAccount(currentSelectedTeacher.teacherObj)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs shadow-rose-200"
+                    >
+                      <UserPlus size={15} />
+                      <span>ایجاد کاربری</span>
+                    </button>
+                  );
+                })()}
+
                 <button
                   type="button"
                   onClick={() => handleExportSingleTeacherExcel(currentSelectedTeacher)}
@@ -1632,6 +1817,237 @@ export default function TeachersSchedule() {
                   انصراف
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Create User Account for Teacher (مخصوص مسئول آموزش) */}
+      <AnimatePresence>
+        {accountTargetTeacher && (
+          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4 backdrop-blur-xs font-vazir" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto border border-slate-200"
+            >
+              {createdSuccessInfo ? (
+                /* Success State */
+                <div className="space-y-4 text-center">
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-black text-slate-900">
+                      حساب کاربری استاد با موفقیت ایجاد شد!
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      مشخصات ورود برای استاد «{createdSuccessInfo.teacherName}» با نقش «استاد مدرسه (سطح ۳)»:
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-500">نام کاربری:</span>
+                      <span className="font-mono font-black text-indigo-700 text-sm">{createdSuccessInfo.username}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-500">رمز عبور:</span>
+                      <span className="font-mono font-black text-slate-800 text-sm">{createdSuccessInfo.password}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                      <span className="font-bold text-slate-500">نقش کاربری:</span>
+                      <span className="font-bold text-emerald-700">استاد مدرسه (سطح ۳)</span>
+                    </div>
+                  </div>
+
+                  {/* SMS Text Box */}
+                  <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 text-right space-y-2 text-xs">
+                    <span className="font-bold text-amber-900 block text-[11px]">متن پیامک آماده جهت ارسال به استاد:</span>
+                    <p className="text-[11px] text-slate-700 leading-relaxed font-sans select-all bg-white p-2.5 rounded-xl border border-amber-100">
+                      استاد گرامی جناب آقای {createdSuccessInfo.teacherName}، سلام علیکم. حساب کاربری شما در سامانه آموزشی مدرسه علمیه ایجاد گردید.
+                      {'\n'}نام کاربری: {createdSuccessInfo.username}
+                      {'\n'}رمز عبور: {createdSuccessInfo.password}
+                      {'\n'}آدرس سامانه: {typeof window !== 'undefined' ? window.location.origin : ''}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const smsText = `استاد گرامی جناب آقای ${createdSuccessInfo.teacherName}، سلام علیکم. حساب کاربری شما در سامانه آموزشی مدرسه علمیه ایجاد گردید.\nنام کاربری: ${createdSuccessInfo.username}\nرمز عبور: ${createdSuccessInfo.password}\nآدرس سامانه: ${window.location.origin}`;
+                        navigator.clipboard.writeText(smsText);
+                        setCopiedAccountSms(true);
+                        setTimeout(() => setCopiedAccountSms(false), 2500);
+                      }}
+                      className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedAccountSms ? <Check size={14} /> : <Copy size={14} />}
+                      <span>{copiedAccountSms ? 'متن پیامک کپی شد!' : 'کپی متن پیامک'}</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountTargetTeacher(null);
+                      setCreatedSuccessInfo(null);
+                    }}
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black cursor-pointer transition-colors"
+                  >
+                    بستن پنجره
+                  </button>
+                </div>
+              ) : (
+                /* Proposal and Confirmation State */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-black">
+                        <UserPlus size={18} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900">
+                          ایجاد حساب کاربری برای استاد
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          تعریف دسترسی سطح ۳ (نقش استاد) در سامانه
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAccountTargetTeacher(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {/* Teacher Info Card */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-bold">نام استاد:</span>
+                      <span className="font-black text-slate-900">{accountTargetTeacher.fullName}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-bold">کد ملی:</span>
+                      <span className="font-mono font-bold text-slate-800">{accountTargetTeacher.nationalId || 'فاقد کد ملی'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-bold">تلفن همراه:</span>
+                      <span className="font-mono font-bold text-slate-800">{accountTargetTeacher.phoneNumber || 'فاقد شماره همراه'}</span>
+                    </div>
+                  </div>
+
+                  {/* Proposal Option Selectors */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-slate-800">
+                      پیشنهاد سیستم برای نام کاربری:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {accountTargetTeacher.nationalId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProposedUsernameMode('nationalId');
+                            setFormUsername(accountTargetTeacher.nationalId!.trim());
+                          }}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-right transition-all cursor-pointer space-y-0.5",
+                            proposedUsernameMode === 'nationalId'
+                              ? "bg-indigo-50 border-indigo-500 text-indigo-900 ring-2 ring-indigo-200"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          )}
+                        >
+                          <span className="block font-black text-[11px]">استفاده از کد ملی</span>
+                          <span className="block font-mono text-[11px] text-slate-500">{accountTargetTeacher.nationalId}</span>
+                        </button>
+                      )}
+
+                      {accountTargetTeacher.phoneNumber && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProposedUsernameMode('phone');
+                            setFormUsername(accountTargetTeacher.phoneNumber!.trim());
+                          }}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-right transition-all cursor-pointer space-y-0.5",
+                            proposedUsernameMode === 'phone'
+                              ? "bg-indigo-50 border-indigo-500 text-indigo-900 ring-2 ring-indigo-200"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          )}
+                        >
+                          <span className="block font-black text-[11px]">استفاده از شماره موبایل</span>
+                          <span className="block font-mono text-[11px] text-slate-500">{accountTargetTeacher.phoneNumber}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inputs */}
+                  <div className="space-y-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        نام کاربری (جهت ورود به نرم‌افزار) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formUsername}
+                        onChange={(e) => setFormUsername(e.target.value)}
+                        placeholder="مثلاً کد ملی یا شماره همراه"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        dir="ltr"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        رمز عبور اولیه <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formPassword}
+                        onChange={(e) => setFormPassword(e.target.value)}
+                        placeholder="8411924"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        dir="ltr"
+                        required
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">پیشنهاد پیش‌فرض: شماره همراه یا کد ملی استاد یا ۸۴۱۱۹۲۴</span>
+                    </div>
+
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-xs text-emerald-900 space-y-1">
+                      <span className="font-black block">مجوزها و دسترسی‌های این کاربر:</span>
+                      <ul className="list-disc list-inside text-[11px] text-emerald-800 space-y-0.5">
+                        <li>مشاهده برنامه درسی هفتگی خود</li>
+                        <li>مشاهده تقویم آموزشی مدرسه (فقط‌خواندنی بدون امکان ویرایش)</li>
+                        <li>ثبت ارزیابی کلاس‌های مشاوره (نمرات الف، ب، ج، د یا غیبت) در صورت تدریس مشاوره</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Modal Actions */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={handleConfirmCreateAccount}
+                      className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md shadow-rose-200 flex items-center justify-center gap-1.5"
+                    >
+                      <Check size={16} />
+                      <span>تأیید و ایجاد حساب کاربری استاد</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAccountTargetTeacher(null)}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      انصراف
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}

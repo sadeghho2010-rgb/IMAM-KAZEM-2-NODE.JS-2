@@ -1205,6 +1205,7 @@ export type UserRole =
   // Level 3
   | 'class_representative'    // نماینده کلاس (ثبت حضور و غیاب، مشاهده برنامه و مباحثات)
   | 'student'                 // طلبه / دانشجو (مشاهده پرونده، حضور، مطالعه و برنامه شخصی)
+  | 'teacher'                 // استاد مدرسه (سطح ۳ - برنامه درسی، تقویم و ارزیابی مشاوره)
   | 'custom';                 // سفارشی
 
 export type AppModuleId =
@@ -1239,6 +1240,7 @@ export type AppModuleId =
   | 'user-management'
   | 'user-credentials'
   | 'student-portal'
+  | 'teacher-portal'
   | 'student-meals'
   | 'audit-logs'
   | 'education-financial-report'

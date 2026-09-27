@@ -46,6 +46,7 @@ import LoginPage from './components/auth/LoginPage';
 import UserManagementSettings from './components/admin/UserManagementSettings';
 import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
 import DatabaseConnectionTest from './components/DatabaseConnectionTest';
+import TeacherPortal from './components/TeacherPortal';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -100,6 +101,11 @@ function AppContent() {
   // If not logged in, render Glassmorphic Login Page
   if (!currentUser) {
     return <LoginPage />;
+  }
+
+  // Dedicated Mobile-First Teacher Portal for Teachers
+  if (currentUser.role === 'teacher') {
+    return <TeacherPortal />;
   }
 
   const handleNavigate = (tab: string, studentId?: string) => {
@@ -195,6 +201,8 @@ function AppContent() {
         );
       case 'user-credentials':
         return <UserCredentialsSettings />;
+      case 'teacher-portal':
+        return <TeacherPortal />;
       case 'db-connection-test':
         return <DatabaseConnectionTest />;
       default:

@@ -58,6 +58,7 @@ interface MenuItemDef {
 const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
+  { id: 'teacher-portal', label: 'پنل اساتید و ارزیابی', icon: GraduationCap },
   { id: 'todos', label: 'پیگیری‌ها', icon: GraduationCap },
   { id: 'workflow', label: 'جریان کار', icon: GitBranch },
   { id: 'academic-calendar', label: 'تقویم آموزشی', icon: CalendarDays },
