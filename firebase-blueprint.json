@@ -172,6 +172,40 @@
         "notifyOnStudyPeriodClosed": { "type": "boolean" }
       },
       "required": ["id"]
+    },
+    "SystemUser": {
+      "title": "SystemUser",
+      "description": "System user accounts for authentication and permissions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "number" },
+        "role": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "password": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "name"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Teachers and instructors in the school bank.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string" },
+        "teacherCode": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "priority": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "isExternal": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fullName"]
     }
   },
   "firestore": {
@@ -186,6 +220,8 @@
     "/study_stats/{statId}": { "schema": "StudyStat", "description": "Study statistics." },
     "/todos/{todoId}": { "schema": "Todo", "description": "To-do items." },
     "/workflow_items/{itemId}": { "schema": "WorkflowItem", "description": "Workflow items and approvals." },
-    "/workflow_settings/{settingId}": { "schema": "WorkflowSettings", "description": "Workflow configuration." }
+    "/workflow_settings/{settingId}": { "schema": "WorkflowSettings", "description": "Workflow configuration." },
+    "/system_users/{userId}": { "schema": "SystemUser", "description": "Collection of system user credentials and accounts." },
+    "/teachers/{teacherId}": { "schema": "Teacher", "description": "Collection of teachers in the school bank." }
   }
 }

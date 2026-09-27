@@ -2,8 +2,37 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
+
+const USERS_FILE_PATH = path.join(process.cwd(), 'data', 'system_users.json');
+
+function loadUsersFromFile(): StoredUser[] {
+  try {
+    if (fs.existsSync(USERS_FILE_PATH)) {
+      const content = fs.readFileSync(USERS_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Could not read users from file:', e);
+  }
+  return [];
+}
+
+function saveUsersToFile(users: StoredUser[]) {
+  try {
+    const dir = path.dirname(USERS_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(users, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Could not write users to file:', e);
+  }
+}
 
 export interface SafeUser {
   id: string;

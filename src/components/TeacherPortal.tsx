@@ -44,7 +44,9 @@ import {
   parseShamsiDate, 
   formatShamsiDate, 
   generateShamsiDateRange,
-  toPersianDigits
+  toPersianDigits,
+  shamsiToDate,
+  dateToShamsi
 } from '../lib/jalali';
 import { cn, getProgramDays } from '../lib/utils';
 
@@ -68,8 +70,22 @@ function cleanTeacherName(s: string): string {
 export default function TeacherPortal() {
   const { currentUser, logout } = useAuth();
 
-  // Active Mobile View Tab
-  const [activeTab, setActiveTab] = useState<'schedule' | 'counseling' | 'calendar'>('schedule');
+  // Initial detection if user is related to counseling to default immediately to counseling tab
+  const initialCounselingHint = Boolean(
+    (currentUser as any)?.canEditCounseling ||
+    (currentUser as any)?.canViewCounseling ||
+    currentUser?.roleTitle?.includes('مشاوره') ||
+    currentUser?.fullName?.includes('مشاور') ||
+    currentUser?.name?.includes('مشاور')
+  );
+
+  // Active Mobile View Tab (Defaults directly to 'counseling' for counseling teachers)
+  const [activeTab, setActiveTab] = useState<'schedule' | 'counseling' | 'calendar'>(
+    initialCounselingHint ? 'counseling' : 'schedule'
+  );
+
+  // Flag to track whether initial auto-direction to counseling was performed
+  const [hasAutoDirected, setHasAutoDirected] = useState<boolean>(false);
 
   // Database Data States
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -88,6 +104,11 @@ export default function TeacherPortal() {
   const [teacherNotesMap, setTeacherNotesMap] = useState<Record<string, string>>({});
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Reset auto-direction when currentUser changes
+  useEffect(() => {
+    setHasAutoDirected(false);
+  }, [currentUser?.id]);
 
   // Load all necessary data
   const loadPortalData = async () => {
@@ -257,8 +278,23 @@ export default function TeacherPortal() {
     const spec = currentTeacherObj.detailedSpecialties;
     if (spec && (spec.usul?.length || spec.fiqh?.length || spec.falsafa?.length)) return true;
 
+    // Check currentUser flags and role titles
+    if ((currentUser as any)?.canEditCounseling || (currentUser as any)?.canViewCounseling) return true;
+    if (currentUser?.roleTitle?.includes('مشاوره')) return true;
+    if (currentUser?.fullName?.includes('مشاور') || currentUser?.name?.includes('مشاور')) return true;
+
     return false;
-  }, [currentTeacherObj, teacherPrograms]);
+  }, [currentTeacherObj, teacherPrograms, currentUser]);
+
+  // Auto-switch directly into counseling registration for counseling teachers upon login
+  useEffect(() => {
+    if (!loading && !hasAutoDirected) {
+      if (isCounselingTeacher) {
+        setActiveTab('counseling');
+      }
+      setHasAutoDirected(true);
+    }
+  }, [loading, isCounselingTeacher, hasAutoDirected]);
 
   // Counseling courses taught by this teacher
   const counselingPrograms = useMemo(() => {
@@ -269,8 +305,20 @@ export default function TeacherPortal() {
     if (list.length === 0 && isCounselingTeacher && teacherPrograms.length > 0) {
       return teacherPrograms;
     }
+    if (list.length === 0 && isCounselingTeacher) {
+      return [{
+        id: `fallback-counseling-${currentTeacherObj?.id || 'default'}`,
+        title: 'کلاس مشاوره و ارزیابی تحصیلی',
+        type: 'counseling' as any,
+        teacher: currentTeacherObj?.fullName || currentTeacherObj?.name || 'استاد مشاور',
+        grade: 'پایه ۷',
+        days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
+        time: 'ساعت مشاوره',
+        madrasRoom: 'مدرس مشاوره'
+      }];
+    }
     return list;
-  }, [teacherPrograms, isCounselingTeacher]);
+  }, [teacherPrograms, isCounselingTeacher, currentTeacherObj]);
 
   // Set default selected counseling course
   useEffect(() => {
@@ -283,32 +331,26 @@ export default function TeacherPortal() {
     return counselingPrograms.find(p => p.id === selectedCourseId) || counselingPrograms[0];
   }, [counselingPrograms, selectedCourseId]);
 
-  // Calculate ONLY the dates when this counseling class had sessions
+  // Calculate ONLY the dates when this counseling class had sessions:
+  // Rules from user:
+  // 1. Show maximum the last 4 classes they had (حداکثر 4 کلاس اخری که داشتند رو نشون بده)
+  // 2. Do NOT show unheld classes (کلاسی که برگزار نشده رو هم نشون نده - no holidays, no future dates)
+  // 3. The class of that same day (today) and 3 sessions before it (کلاس همان روز و سه جلسه قبلترش)
   const classSessionDates = useMemo(() => {
     if (!activeCounselingCourse) return [];
 
-    const courseDays = activeCounselingCourse.days || [];
-    if (courseDays.length === 0) return [];
+    const rawCourseDays = getProgramDays(activeCounselingCourse);
+    const courseDays = (rawCourseDays && rawCourseDays.length > 0)
+      ? rawCourseDays
+      : (Array.isArray(activeCounselingCourse.days) && activeCounselingCourse.days.length > 0)
+        ? activeCounselingCourse.days
+        : (activeCounselingCourse as any).day
+          ? [(activeCounselingCourse as any).day]
+          : ['شنبه', 'دوشنبه', 'چهارشنبه'];
 
     const today = getTodayShamsi();
-    const todayParts = parseShamsiDate(today);
 
-    // Calculate academic range (e.g. current semester: Farvardin to Shahrivar or Mehr to Esfand)
-    let startYear = todayParts.year;
-    let startMonth = todayParts.month >= 7 ? 7 : 1; // Term 1 (Mehr) or Term 2 (Farvardin)
-    // If beginning of year, look at last 90 days
-    const startDate = formatShamsiDate(startYear, startMonth, 1);
-
-    // Generate dates from term start to today
-    const allDays = generateShamsiDateRange(startDate, today);
-
-    // Filter only the days when this class was scheduled
-    const matchedDates = allDays.filter(dateStr => {
-      const weekdayName = getShamsiDayOfWeekName(dateStr);
-      return courseDays.includes(weekdayName);
-    });
-
-    // Check if a date falls in holidays
+    // Check if a date falls in holidays (official or school holidays)
     const isHolidayOnDate = (dateStr: string) => {
       return holidays.some(h => {
         if (h.startDate && h.endDate) {
@@ -318,24 +360,74 @@ export default function TeacherPortal() {
       });
     };
 
-    const sessions = matchedDates.map((dateStr, idx) => {
-      const isHoliday = isHolidayOnDate(dateStr);
+    // Look back up to 150 days from today (covers whole academic semester up to today)
+    const todayDate = shamsiToDate(today);
+    const pastDate = new Date(todayDate.getTime());
+    pastDate.setDate(pastDate.getDate() - 150);
+    const startDate = dateToShamsi(pastDate);
+
+    // Generate dates strictly up to today (strictly <= today, NO FUTURE DATES)
+    const allDays = generateShamsiDateRange(startDate, today);
+
+    // Filter only the days when this class was scheduled and actually held
+    // "کلاسی که برگزار نشده رو هم نشون نده"
+    const heldDates = allDays.filter(dateStr => {
+      // Must be on or before today
+      if (compareShamsi(dateStr, today) > 0) return false;
+
+      // Must be one of the course's scheduled weekdays
+      const weekdayName = getShamsiDayOfWeekName(dateStr);
+      if (!courseDays.includes(weekdayName)) return false;
+
+      // Must NOT be a holiday (holiday = class not held!)
+      if (isHolidayOnDate(dateStr)) return false;
+
+      return true;
+    });
+
+    // "حداکثر 4 کلاس اخری که داشتند رو نشون بده"
+    // "کلاس همان روز و سه جلسه قبلترش"
+    // Take at most the last 4 held sessions (the latest being today's class if held today, plus 3 sessions before it):
+    const recentHeldDates = heldDates.slice(-4);
+
+    const sessions = recentHeldDates.map(dateStr => {
+      const semesterSessionIndex = heldDates.indexOf(dateStr);
+      const sessionNumber = semesterSessionIndex >= 0 ? semesterSessionIndex + 1 : 1;
+      const isToday = dateStr === today;
       return {
         date: dateStr,
         weekday: getShamsiDayOfWeekName(dateStr),
-        sessionNumber: idx + 1,
-        isHoliday
+        sessionNumber,
+        isToday
       };
     });
 
-    // Sort descending (latest session first for quick mobile access!)
-    return sessions.reverse();
+    // Sort descending: today's class on top (if held today), followed by the 3 prior held sessions
+    const sorted = sessions.reverse();
+
+    // Fallback: If no dates were found (e.g. brand new term or calendar unseeded), fallback to today if today is not a holiday
+    if (sorted.length === 0 && !isHolidayOnDate(today)) {
+      return [{
+        date: today,
+        weekday: getShamsiDayOfWeekName(today),
+        sessionNumber: 1,
+        isToday: true
+      }];
+    }
+
+    return sorted;
   }, [activeCounselingCourse, holidays]);
 
-  // Default selected session date to the most recent one
+  // Default selected session date to today if available in the 4 sessions, or the latest held session
   useEffect(() => {
-    if (classSessionDates.length > 0 && !selectedSessionDate) {
-      setSelectedSessionDate(classSessionDates[0].date);
+    if (classSessionDates.length > 0) {
+      const exists = classSessionDates.some(s => s.date === selectedSessionDate);
+      if (!exists) {
+        const todaySession = classSessionDates.find(s => s.isToday);
+        setSelectedSessionDate(todaySession ? todaySession.date : classSessionDates[0].date);
+      }
+    } else {
+      setSelectedSessionDate('');
     }
   }, [classSessionDates, selectedSessionDate]);
 
@@ -374,6 +466,43 @@ export default function TeacherPortal() {
     });
     return map;
   }, [grades, activeCounselingCourse, selectedSessionDate]);
+
+  // Grade completion status for each held session date
+  const sessionGradingStats = useMemo(() => {
+    const stats: Record<string, { gradedCount: number; totalCount: number; isComplete: boolean }> = {};
+    const totalCount = enrolledStudents.length;
+
+    classSessionDates.forEach(session => {
+      let graded = 0;
+      grades.forEach(g => {
+        if (
+          g.sessionDate === session.date &&
+          (g.courseTitle === activeCounselingCourse?.title || !g.courseTitle)
+        ) {
+          if (enrolledStudents.some(s => s.id === g.studentId)) {
+            graded++;
+          }
+        }
+      });
+      stats[session.date] = {
+        gradedCount: graded,
+        totalCount,
+        isComplete: totalCount > 0 && graded >= totalCount
+      };
+    });
+
+    return stats;
+  }, [classSessionDates, enrolledStudents, grades, activeCounselingCourse]);
+
+  // Human-readable relative session label (e.g. کلاس همان روز، یک جلسه قبل، دو جلسه قبل، سه جلسه قبل)
+  const getSessionRelativeLabel = (session: { date: string; isToday?: boolean }, idx: number) => {
+    if (session.isToday) return 'کلاس همان روز (امروز)';
+    if (idx === 0) return 'آخرین جلسه برگزارشده';
+    if (idx === 1) return 'یک جلسه قبل';
+    if (idx === 2) return 'دو جلسه قبل';
+    if (idx === 3) return 'سه جلسه قبل';
+    return `جلسه ${toPersianDigits(idx + 1)}`;
+  };
 
   // Quick Instant Touch Grading Function (الف، ب، ج، د، غیبت)
   const handleSetStudentScore = async (student: Student, score: CounselingScore) => {
@@ -695,15 +824,15 @@ export default function TeacherPortal() {
                 <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-5 text-white shadow-md space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold bg-white/20 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
-                      ثبت سریع ارزیابی مشاوره
+                      سامانه ثبت ارزیابی و مشاوره
                     </span>
                     <Award size={18} className="text-emerald-200" />
                   </div>
                   <h2 className="text-base font-black">
-                    ارزیابی و مشارکت جلسات مشاوره
+                    ثبت نمرات و مشارکت جلسات مشاوره
                   </h2>
                   <p className="text-xs text-emerald-100 leading-relaxed">
-                    فقط روزهای تشکیل کلاس شما در این بخش فعال است. برای هر دانش‌پژوه با یک ضربه نمره الف، ب، ج، د یا غیبت را ثبت فرمایید.
+                    فقط جلسات برگزارشده کلاس شما در این بخش فعال است (کلاس امروز و حداکثر ۳ جلسه قبل). نمرات را با یک ضربه ثبت فرمایید.
                   </p>
                 </div>
 
@@ -728,50 +857,163 @@ export default function TeacherPortal() {
                   </div>
                 )}
 
-                {/* Session Date Selector (Only Days When Class Was Held!) */}
-                <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs space-y-2.5">
+                {/* PROMPT BANNER: Requested scoring for held class dates (Max 4 sessions: today + 3 prior sessions) */}
+                <div className="bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border-2 border-emerald-500/30 rounded-3xl p-4 sm:p-5 shadow-xs space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                      <Sparkles size={20} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-black text-slate-900">
+                          درخواست ثبت نمرات جلسات مشاوره
+                        </h3>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                          اقدام استاد مشاور
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                        استاد محترم؛ لطفاً برای تاریخ‌هایی که کلاس داشتید (کلاس همان روز و تا ۳ جلسه قبل‌تر)، وضعیت حضور و نمرات دانش‌پژوهان را ثبت فرمایید.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 4 Held Sessions Selector with Live Evaluation Status */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 px-1">
+                      <span className="flex items-center gap-1.5">
+                        <CalendarCheck size={15} className="text-emerald-600" />
+                        <span>جلسات برگزارشده اخیر ({classSessionDates.length} جلسه):</span>
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-normal">
+                        برای انتخاب جلسه ضربه بزنید
+                      </span>
+                    </div>
+
+                    {classSessionDates.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-2 bg-white rounded-2xl p-4 text-center border border-slate-200">
+                        هیچ جلسه برگزارشده‌ای در تقویم آموزشی برای این درس یافت نشد.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {classSessionDates.map((session, idx) => {
+                          const stats = sessionGradingStats[session.date] || { 
+                            gradedCount: 0, 
+                            totalCount: enrolledStudents.length, 
+                            isComplete: false 
+                          };
+                          const isSelected = selectedSessionDate === session.date;
+                          const relLabel = getSessionRelativeLabel(session, idx);
+
+                          return (
+                            <button
+                              key={session.date}
+                              type="button"
+                              onClick={() => setSelectedSessionDate(session.date)}
+                              className={cn(
+                                "p-3 rounded-2xl border text-right transition-all flex flex-col justify-between cursor-pointer shadow-2xs",
+                                isSelected 
+                                  ? "bg-emerald-600 text-white border-emerald-700 shadow-md scale-102 ring-2 ring-emerald-300 font-black"
+                                  : stats.isComplete
+                                    ? "bg-white border-emerald-300 text-slate-800 hover:bg-emerald-50/70"
+                                    : "bg-white border-amber-300 text-slate-800 hover:bg-amber-50/70 ring-1 ring-amber-200/80"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1.5">
+                                <span className={cn(
+                                  "text-[10px] font-black px-2 py-0.5 rounded-lg",
+                                  isSelected 
+                                    ? "bg-white/20 text-white" 
+                                    : session.isToday
+                                      ? "bg-emerald-600 text-white shadow-2xs"
+                                      : "bg-slate-100 text-slate-700"
+                                )}>
+                                  {relLabel}
+                                </span>
+                                {stats.isComplete ? (
+                                  <CheckCircle2 size={15} className={isSelected ? "text-emerald-200" : "text-emerald-600"} />
+                                ) : (
+                                  <AlertCircle size={15} className={isSelected ? "text-amber-200" : "text-amber-600 animate-pulse"} />
+                                )}
+                              </div>
+                              <div className="font-mono text-xs font-black">{session.date}</div>
+                              <div className="text-[10px] opacity-80 mt-0.5">
+                                {session.weekday} (جلسه {toPersianDigits(session.sessionNumber)})
+                              </div>
+                              <div className={cn(
+                                "text-[10px] mt-2 font-black pt-1 border-t",
+                                isSelected 
+                                  ? "border-white/20 text-emerald-100" 
+                                  : stats.isComplete 
+                                    ? "border-emerald-100 text-emerald-700" 
+                                    : "border-amber-100 text-amber-700"
+                              )}>
+                                {stats.isComplete 
+                                  ? `✓ ثبت شده (${toPersianDigits(stats.gradedCount)} طلبه)`
+                                  : `⚠️ نیاز به نمره (${toPersianDigits(stats.totalCount - stats.gradedCount)} مانده)`
+                                }
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Selected Session Action & Fast Grade Controls */}
+                <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                      <CalendarCheck size={16} className="text-emerald-600" />
-                      <span>روزهای تشکیل کلاس ({classSessionDates.length} جلسه):</span>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                        <CalendarCheck size={16} className="text-emerald-600" />
+                        <span>جلسه انتخابی: {selectedSessionDate}</span>
+                        {classSessionDates.find(s => s.date === selectedSessionDate)?.isToday && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                            کلاس امروز
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {classSessionDates.find(s => s.date === selectedSessionDate)?.weekday} - جلسه {toPersianDigits(classSessionDates.find(s => s.date === selectedSessionDate)?.sessionNumber || 1)}
+                      </p>
                     </div>
 
                     {/* Quick All-A Button */}
                     <button
                       onClick={handleQuickGradeAllA}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11px] font-black transition-all cursor-pointer shadow-2xs"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-[11px] font-black transition-all cursor-pointer shadow-2xs"
                       title="ثبت خودکار نمره الف برای تمام طلاب ثبت‌نشده این جلسه"
                     >
-                      <Sparkles size={13} />
+                      <Sparkles size={14} />
                       <span>ثبت الف برای همه</span>
                     </button>
                   </div>
 
-                  {classSessionDates.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-2">
-                      هیچ روز کلاسی در تقویم آموزشی برای این درس یافت نشد.
-                    </p>
-                  ) : (
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar">
-                      {classSessionDates.map(session => {
-                        const isSelected = selectedSessionDate === session.date;
-                        return (
-                          <button
-                            key={session.date}
-                            onClick={() => setSelectedSessionDate(session.date)}
-                            className={cn(
-                              "px-3.5 py-2 rounded-2xl text-xs font-bold shrink-0 transition-all cursor-pointer flex flex-col items-center border",
-                              isSelected
-                                ? "bg-emerald-600 text-white border-emerald-700 shadow-md scale-102 font-black"
-                                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                            )}
-                          >
-                            <span className="text-[10px] opacity-80">جلسه {toPersianDigits(session.sessionNumber)}</span>
-                            <span className="font-mono text-xs">{session.date}</span>
-                            <span className="text-[10px]">{session.weekday}</span>
-                          </button>
-                        );
-                      })}
+                  {/* Status alert for selected session */}
+                  {selectedSessionDate && (
+                    <div className={cn(
+                      "p-2.5 rounded-2xl text-xs font-medium flex items-center justify-between border",
+                      (sessionGradingStats[selectedSessionDate]?.isComplete)
+                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                        : "bg-amber-50/70 border-amber-200 text-amber-900"
+                    )}>
+                      <div className="flex items-center gap-1.5">
+                        {(sessionGradingStats[selectedSessionDate]?.isComplete) ? (
+                          <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                        )}
+                        <span>
+                          {(sessionGradingStats[selectedSessionDate]?.isComplete)
+                            ? 'نمرات تمام دانش‌پژوهان برای این جلسه ثبت شده است.'
+                            : 'در این جلسه هنوز نمره برخی از دانش‌پژوهان ثبت نشده است. لطفاً نمرات را تعیین فرمایید.'
+                          }
+                        </span>
+                      </div>
+                      <span className="font-bold text-[11px] shrink-0">
+                        {sessionGradingStats[selectedSessionDate]?.gradedCount || 0} از {enrolledStudents.length}
+                      </span>
                     </div>
                   )}
                 </div>
