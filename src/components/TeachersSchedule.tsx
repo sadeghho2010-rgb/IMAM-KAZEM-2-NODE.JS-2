@@ -169,6 +169,7 @@ export default function TeachersSchedule() {
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
   const [selectedPriorityFilter, setSelectedPriorityFilter] = useState<string>('all');
+  const [directoryViewMode, setDirectoryViewMode] = useState<'list' | 'cards'>('list');
 
   // Single Teacher View sub-mode
   const [singleViewMode, setSingleViewMode] = useState<'all' | 'timetable' | 'courses'>('all');
@@ -932,8 +933,41 @@ export default function TeachersSchedule() {
               )}
             </div>
 
-            <div className="text-xs font-bold text-slate-500 shrink-0 self-end md:self-auto">
-              نمایش {displayedTeachers.length} از {registeredTeachersWithClasses.length} استاد
+            <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setDirectoryViewMode('list')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                    directoryViewMode === 'list'
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                  title="نمایش لیستی پیش‌فرض اساتید"
+                >
+                  <Table size={14} />
+                  <span>لیستی (پیش‌فرض)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectoryViewMode('cards')}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                    directoryViewMode === 'cards'
+                      ? "bg-white text-indigo-700 shadow-2xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                  title="نمایش کارتی اساتید"
+                >
+                  <LayoutGrid size={14} />
+                  <span>کارت‌ها</span>
+                </button>
+              </div>
+
+              <div className="text-xs font-bold text-slate-500">
+                نمایش {displayedTeachers.length} از {registeredTeachersWithClasses.length} استاد
+              </div>
             </div>
           </div>
 
@@ -981,7 +1015,192 @@ export default function TeachersSchedule() {
                 تنها اساتید ثبت‌شده در بانک اساتید که دارای برنامه درسی فعال هستند در این بخش نمایش داده می‌شوند.
               </p>
             </div>
+          ) : directoryViewMode === 'list' ? (
+            /* ==================== DEFAULT TABLE / LIST VIEW ==================== */
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/90 text-slate-500 font-bold border-b border-slate-200">
+                      {isLevel2User && isMultiCopyMode && <th className="py-3.5 px-4 w-10 text-center">انتخاب</th>}
+                      <th className="py-3.5 px-4">استاد / کادر آموزشی</th>
+                      <th className="py-3.5 px-4">شماره تماس</th>
+                      <th className="py-3.5 px-4 text-center">کلاس‌ها و ساعات</th>
+                      <th className="py-3.5 px-4">روزهای حضور</th>
+                      <th className="py-3.5 px-4">پایه‌ها</th>
+                      <th className="py-3.5 px-4 text-center">حساب کاربری سامانه</th>
+                      <th className="py-3.5 px-4 text-center">برنامه درسی</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {displayedTeachers.map((teacherGroup) => {
+                      const tObj = teacherGroup.teacherObj;
+                      const priorityNum = Number(tObj.priority) || 3;
+                      const isSelectedForMulti = selectedMultiPhoneIds.includes(teacherGroup.id);
+                      const existingUser = getTeacherUserAccount(teacherGroup.id, tObj);
+
+                      return (
+                        <tr
+                          key={teacherGroup.id}
+                          className={cn(
+                            "hover:bg-indigo-50/40 transition-colors cursor-pointer group",
+                            isMultiCopyMode && isSelectedForMulti && "bg-amber-50/60"
+                          )}
+                          onClick={() => {
+                            if (isMultiCopyMode) {
+                              setSelectedMultiPhoneIds(prev => 
+                                prev.includes(teacherGroup.id)
+                                  ? prev.filter(i => i !== teacherGroup.id)
+                                  : [...prev, teacherGroup.id]
+                              );
+                            } else {
+                              setSelectedTeacherId(teacherGroup.id);
+                            }
+                          }}
+                        >
+                          {/* Multi-copy Checkbox */}
+                          {isLevel2User && isMultiCopyMode && (
+                            <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelectedForMulti}
+                                onChange={() => {
+                                  setSelectedMultiPhoneIds(prev => 
+                                    prev.includes(teacherGroup.id)
+                                      ? prev.filter(i => i !== teacherGroup.id)
+                                      : [...prev, teacherGroup.id]
+                                  );
+                                }}
+                                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                              />
+                            </td>
+                          )}
+
+                          {/* Name & Specialty */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-2xs group-hover:bg-indigo-700 transition-colors">
+                                {teacherGroup.name[0] || 'ا'}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-slate-900 group-hover:text-indigo-700 transition-colors text-sm">
+                                    استاد {teacherGroup.name}
+                                  </span>
+                                  {priorityNum === 1 && (
+                                    <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full font-bold">
+                                      اولویت ۱
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-medium">
+                                  {tObj.categories && tObj.categories.length > 0
+                                    ? tObj.categories.join(' • ')
+                                    : 'هیئت علمی اساتید'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Phone */}
+                          <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                            {tObj.phoneNumber ? (
+                              <div className="flex items-center gap-1.5 font-mono text-slate-700 font-bold">
+                                <Phone size={13} className="text-slate-400 shrink-0" />
+                                <span>{tObj.phoneNumber}</span>
+                                {isLevel2User && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(tObj.phoneNumber!.trim());
+                                      setCopiedPhoneId(tObj.id);
+                                      setTimeout(() => setCopiedPhoneId(null), 2000);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
+                                    title="کپی شماره"
+                                  >
+                                    {copiedPhoneId === tObj.id ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">بدون شماره</span>
+                            )}
+                          </td>
+
+                          {/* Classes & Hours */}
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex flex-col items-center">
+                              <span className="font-bold text-slate-900 text-xs">
+                                {teacherGroup.classesCount} عنوان درس
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {teacherGroup.totalHoursApprox} ساعت/هفته
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Days of presence */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center flex-wrap gap-1 max-w-[200px]">
+                              {teacherGroup.activeDays.map(day => (
+                                <span key={day} className="text-[10px] font-bold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
+                                  {day}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* Grades */}
+                          <td className="py-3.5 px-4">
+                            <span className="font-bold text-slate-700 text-xs">
+                              {teacherGroup.grades.length > 0 ? teacherGroup.grades.join(' ، ') : '-'}
+                            </span>
+                          </td>
+
+                          {/* User Account Status & Create Username Action */}
+                          <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            {existingUser ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 font-bold">
+                                <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+                                <span>کاربری:</span>
+                                <span className="font-mono text-emerald-950 font-black">{existingUser.username}</span>
+                              </div>
+                            ) : canManageUserCreation ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreateAccount(tObj)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs shadow-rose-200"
+                                title="ایجاد نام کاربری برای این استاد"
+                              >
+                                <UserPlus size={14} />
+                                <span>ایجاد کاربری</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">بدون حساب</span>
+                            )}
+                          </td>
+
+                          {/* Action: Open Schedule */}
+                          <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTeacherId(teacherGroup.id)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              <span>برنامه درسی</span>
+                              <ChevronLeft size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
+            /* ==================== CARDS GRID VIEW ==================== */
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {displayedTeachers.map(teacherGroup => {
                 const tObj = teacherGroup.teacherObj;

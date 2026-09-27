@@ -256,18 +256,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   };
 
   const availableUsers = (users && users.length ? users : DEFAULT_USERS);
-  const filteredUsers = availableUsers.filter((u) => {
-    if (selectedLevelTab === 1) {
-      return u.level === 1;
-    }
-    if (selectedLevelTab === 2) {
-      return u.level === 2 && u.role !== 'teacher';
-    }
-    if (selectedLevelTab === 3) {
-      return u.level === 3 || u.role === 'teacher' || (u.roleTitle && u.roleTitle.includes('استاد')) || (u.name && u.name.includes('استاد'));
-    }
-    return u.level === selectedLevelTab;
-  });
+  const filteredUsers = availableUsers.filter((u) => u.level === selectedLevelTab);
 
   return (
     <div
