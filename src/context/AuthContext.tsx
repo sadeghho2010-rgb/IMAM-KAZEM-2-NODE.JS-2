@@ -1157,15 +1157,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       body: JSON.stringify({ user })
     }).catch(() => {});
 
-    if (isSupabaseConfigured && typeof window !== 'undefined') {
-      supabase.from('app_collections').upsert({
-        collection_name: 'system_users',
-        id: username,
-        data: user,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'collection_name,id' }).then();
-    }
-
     return { success: true };
   };
 
@@ -1263,15 +1254,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
 
-      if (targetUser && isSupabaseConfigured && typeof window !== 'undefined') {
-        supabase.from('app_collections').upsert({
-          collection_name: 'system_users',
-          id: targetUser.username.toUpperCase(),
-          data: targetUser,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }).then();
-      }
-
       return updatedList;
     });
   };
@@ -1302,13 +1284,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       credentials: 'include',
       body: JSON.stringify({ targetUserId: id })
     }).catch(() => {});
-
-    if (isSupabaseConfigured && typeof window !== 'undefined') {
-      supabase.from('app_collections').delete().match({
-        collection_name: 'system_users',
-        id: usernameToDelete
-      }).then();
-    }
   };
 
   const resetDefaultUsers = () => {

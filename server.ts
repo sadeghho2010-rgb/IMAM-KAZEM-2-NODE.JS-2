@@ -38,8 +38,20 @@ import {
   authorizeCollectionAccess,
   registerRealtimeListener
 } from "./src/lib/serverDataApi";
+import {
+  LoginInputSchema,
+  UserManagementSchema,
+  StudentInputSchema,
+  DocumentMutationSchema
+} from "./src/lib/validationSchemas";
 
 dotenv.config();
+
+// Enforce fatal crash if JWT_SECRET or JWT_REFRESH_SECRET is missing from .env
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  console.error('[CRITICAL SECURITY ERROR] JWT_SECRET or JWT_REFRESH_SECRET missing in .env/environment!');
+  throw new Error('FATAL SECURITY ERROR: Server cannot start without configured JWT_SECRET and JWT_REFRESH_SECRET in environment or .env file.');
+}
 
 function getGenAIClient(customApiKey?: string) {
   const apiKey = customApiKey?.trim() || process.env.GEMINI_API_KEY;
@@ -186,14 +198,16 @@ async function startServer() {
   // POST /api/auth/login
   app.post("/api/auth/login", async (req, res) => {
     const ip = getClientIp(req);
-    const { username, password } = req.body || {};
 
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: "نام کاربری و رمز عبور الزامی است." });
+    // 1. Strict Zod Schema Validation
+    const parsedLogin = LoginInputSchema.safeParse(req.body);
+    if (!parsedLogin.success) {
+      const errorMsg = parsedLogin.error.issues[0]?.message || 'اطلاعات ورودی نامعتبر است.';
+      return res.status(400).json({ success: false, message: errorMsg });
     }
 
-    const cleanUser = String(username).trim().toUpperCase();
-    const cleanPass = String(password).trim();
+    const cleanUser = parsedLogin.data.username.trim().toUpperCase();
+    const cleanPass = parsedLogin.data.password.trim();
 
     const userVal = validateUsername(cleanUser);
     if (!userVal.valid) {
@@ -366,10 +380,19 @@ async function startServer() {
   // POST /api/auth/add-user - Add or create user on server
   app.post("/api/auth/add-user", async (req, res) => {
     const { user } = req.body || {};
-    if (!user || !user.username) {
-      return res.status(400).json({ success: false, message: "اطلاعات کاربر و نام کاربری الزامی است." });
+    if (!user) {
+      return res.status(400).json({ success: false, message: "اطلاعات کاربر الزامی است." });
     }
-    const cleanUser = user.username.trim().toUpperCase();
+
+    // 1. Validate user schema strictly with Zod
+    const parsedUser = UserManagementSchema.safeParse(user);
+    if (!parsedUser.success) {
+      const errorMsg = parsedUser.error.issues[0]?.message || 'اطلاعات کاربر با اعتبارسنجی همخوانی ندارد.';
+      return res.status(400).json({ success: false, message: errorMsg });
+    }
+
+    const validatedUser = parsedUser.data;
+    const cleanUser = validatedUser.username.trim().toUpperCase();
     const existingUsers = await fetchAllUsersFromStorage();
     const target = existingUsers.find(u => u.username.toUpperCase() === cleanUser);
 
@@ -386,16 +409,20 @@ async function startServer() {
       return res.json({ success: true, message: "کاربر با موفقیت به روزرسانی شد.", user: sanitizeUser(merged) });
     }
 
+    if (!user.password || String(user.password).trim().length < 4) {
+      return res.status(400).json({ success: false, message: "تعیین رمز عبور با حداقل ۴ کاراکتر برای کاربر جدید الزامی است." });
+    }
+
     const newUser: StoredUser = {
       ...user,
       id: user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       username: cleanUser,
-      password: user.password || '8411924',
-      passwordHash: user.password ? await hashPassword(user.password) : await hashPassword('8411924'),
+      password: user.password,
+      passwordHash: await hashPassword(user.password),
       name: user.name || user.fullName || cleanUser,
-      level: Number(user.level) || (user.role === 'teacher' ? 3 : 2),
-      role: user.role || 'custom',
-      roleTitle: user.roleTitle || (user.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+      level: Number(validatedUser.level) || (validatedUser.role === 'teacher' ? 3 : 2),
+      role: validatedUser.role || 'custom',
+      roleTitle: user.roleTitle || (validatedUser.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
       allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : ['todos', 'students'],
       editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
       modulePermissions: user.modulePermissions || {},
@@ -876,6 +903,15 @@ async function startServer() {
       return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
     }
 
+    // Validate Student profile schema with Zod if writing to students
+    if (collection === 'students') {
+      const parsedStudent = StudentInputSchema.safeParse(data);
+      if (!parsedStudent.success) {
+        const errorMsg = parsedStudent.error.issues[0]?.message || 'اطلاعات پرونده طلبه نامعتبر است.';
+        return res.status(400).json({ success: false, message: errorMsg });
+      }
+    }
+
     try {
       const saveRes = await serverSaveDoc(collection, data, callerUser);
       if (!saveRes.success) {
@@ -918,9 +954,17 @@ async function startServer() {
 
     const data = { ...req.body, id };
     const recordOwnerId = data?.userId || data?.studentId;
-    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
+    const authCheck =  authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
     if (!authCheck.allowed) {
       return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    if (collection === 'students') {
+      const parsedStudent = StudentInputSchema.safeParse(data);
+      if (!parsedStudent.success) {
+        const errorMsg = parsedStudent.error.issues[0]?.message || 'اطلاعات ویرایش طلبه نامعتبر است.';
+        return res.status(400).json({ success: false, message: errorMsg });
+      }
     }
 
     try {
@@ -1134,6 +1178,30 @@ async function startServer() {
       return res.json({ success: true, items });
     } catch (err) {
       return res.status(500).json({ success: false, message: 'خطا در دریافت لیست فایل‌های پشتیبان.' });
+    }
+  });
+
+  // DELETE /api/backups/:id - Delete backup with admin authorization
+  app.delete("/api/backups/:id", async (req, res) => {
+    const { id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    if (!callerUser || callerUser.level > 1) {
+      return res.status(403).json({ success: false, message: 'حذف فایل‌های پشتیبان منحصراً در اختیار مدیر ارشد است.' });
+    }
+
+    try {
+      await serverDeleteDoc('cloud_backups', id, callerUser);
+      return res.json({ success: true, message: 'فایل پشتیبان با موفقیت حذف شد.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'خطا در حذف فایل پشتیبان.' });
     }
   });
 

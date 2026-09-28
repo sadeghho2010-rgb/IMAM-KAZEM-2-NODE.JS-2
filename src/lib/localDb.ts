@@ -1087,33 +1087,8 @@ class LocalDatabase {
           body: JSON.stringify({ ...data, id })
         }).catch(() => {});
       }
-
-      // 2. Direct Supabase Fallback if Supabase client is configured
-      if (isSupabaseConfigured) {
-        if (action === 'delete') {
-          supabase
-            .from('app_collections')
-            .delete()
-            .match({ collection_name: collectionName, id })
-            .then(({ error }) => {
-              if (error) console.error(`Error deleting ${collectionName}/${id} in Supabase:`, error);
-            });
-        } else {
-          const sanitized = sanitizeForCloud(data);
-          supabase.from('app_collections').upsert({
-            collection_name: collectionName,
-            id,
-            data: sanitized,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'collection_name,id' }).then(({ error }) => {
-            if (error) {
-              console.error(`Error upserting ${collectionName}/${id} into Supabase app_collections:`, error);
-            }
-          });
-        }
-      }
     } catch (e) {
-      console.warn(`Exception during mirrorToSupabase for ${collectionName}:`, e);
+      console.warn(`Exception during server sync for ${collectionName}:`, e);
     }
   }
 

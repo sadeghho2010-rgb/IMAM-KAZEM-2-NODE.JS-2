@@ -201,26 +201,22 @@ export async function uploadBackupToCloud(
     supabaseUrl: supabasePublicUrl
   };
 
-  // 2. Try saving metadata to Supabase table
-  try {
-    await supabase.from('cloud_backups').upsert({
-      id: record.id,
-      mentor_id: record.mentorId,
-      mentor_name: record.mentorName,
-      mentor_role: record.mentorRole,
-      file_name: record.fileName,
-      folder_path: record.folderPath,
-      file_size_bytes: record.fileSizeBytes,
-      file_size_formatted: record.fileSizeFormatted,
-      total_records: record.totalRecords,
-      student_count: record.studentCount,
-      persian_date: record.persianDate,
-      supabase_url: record.supabaseUrl,
-      data: record,
-      created_at: record.createdAt
-    });
-  } catch (e) {
-    console.warn('Supabase cloud_backups table write fallback:', e);
+  // 2. Sync metadata via Server Data API if not already persisted
+  if (!savedOnServer) {
+    try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')) : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      await fetch('/api/data/cloud_backups', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(record)
+      });
+    } catch (e) {
+      console.warn('Server cloud_backups sync notice:', e);
+    }
   }
 
   // 3. Try saving metadata to Firestore database
@@ -433,9 +429,24 @@ export async function downloadBackupPackage(record: CloudBackupRecord): Promise<
 }
 
 /**
- * Deletes a backup record from Database & Supabase Storage
+ * Deletes a backup record from Dedicated Server, Database & Supabase Storage
  */
 export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promise<void> {
+  // 1. Delete from Server Storage API
+  try {
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')) : '';
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    await fetch(`/api/backups/${encodeURIComponent(backupRecord.id)}`, {
+      method: 'DELETE',
+      headers,
+      credentials: 'include'
+    });
+  } catch (e) {
+    console.warn('Server backup deletion notice:', e);
+  }
+
   // Delete from Supabase Storage
   if (backupRecord.folderPath) {
     try {
@@ -443,13 +454,6 @@ export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promis
     } catch (e) {
       console.warn('Supabase storage delete error:', e);
     }
-  }
-
-  // Delete from Supabase Table
-  try {
-    await supabase.from('cloud_backups').delete().eq('id', backupRecord.id);
-  } catch (e) {
-    console.warn('Supabase table delete error:', e);
   }
 
   // Delete from Firestore

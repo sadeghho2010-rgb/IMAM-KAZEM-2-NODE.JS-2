@@ -72,8 +72,19 @@ export interface StoredUser extends SafeUser {
   accountLockedUntil?: string;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'x9Kf8Nm2Qr7Lp4Wz1Tb6Vy0Cj3Hs5Ga8De1Ux4Zq7Pw0Mt3Jv6Ys9Br2El5Oi8';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'm2Qp7Ls4Wv1Tz6Yc0Bj3Hw5Gr8Dx1Ua4Ze7Pn0Mt3Jy6Vs9Bg2Ek5Or8Xf1Uq4';
+// Enforce strict security: JWT_SECRET and JWT_REFRESH_SECRET must be supplied via .env or environment
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+  console.error('[CRITICAL SECURITY ERROR] JWT_SECRET is not configured in .env or environment variables!');
+  throw new Error('FATAL SECURITY ERROR: JWT_SECRET is missing. Server refuses to start without a configured secret.');
+}
+
+if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.trim().length === 0) {
+  console.error('[CRITICAL SECURITY ERROR] JWT_REFRESH_SECRET is not configured in .env or environment variables!');
+  throw new Error('FATAL SECURITY ERROR: JWT_REFRESH_SECRET is missing. Server refuses to start without a configured refresh secret.');
+}
+
+const JWT_SECRET = process.env.JWT_SECRET.trim();
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET.trim();
 
 const DEFAULT_SUPABASE_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';

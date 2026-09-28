@@ -61,6 +61,29 @@ const USER_SPECIFIC_COLLECTIONS = new Set([
   'personal_todos', 'user_todo_categories'
 ]);
 
+// Helper to normalize teacher names for robust matching
+function cleanTeacherName(raw: string | undefined | null): string {
+  if (!raw) return '';
+  let str = String(raw).replace(/\([^)]*\)/g, ' ');
+  str = str.replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/[ة]/g, 'ه').replace(/[آأإ]/g, 'ا').replace(/[ؤ]/g, 'و').replace(/[ئ]/g, 'ی');
+  str = str.replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, ' ');
+  str = str.replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '');
+  const prefixRegex = /^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|ایت\s*الله|شیخ|دکتر|جناب\s*اقای|جناب\s*آقای|اقای|آقای|سید|میر)\s+/g;
+  let prev = '';
+  while (prev !== str) {
+    prev = str;
+    str = str.replace(prefixRegex, '').trim();
+  }
+  return str.replace(/\s+/g, ' ').toLowerCase().trim();
+}
+
+// Public collections strictly limited to public calendars and holidays
+const PUBLIC_READ_COLLECTIONS = new Set([
+  'academic_holidays',
+  'academic_calendar_periods',
+  'school_events'
+]);
+
 // Helper to check caller permission
 export function authorizeCollectionAccess(
   user: any,
@@ -68,18 +91,11 @@ export function authorizeCollectionAccess(
   action: 'read' | 'write' | 'delete',
   recordOwnerId?: string
 ): { allowed: boolean; reason?: string } {
-  // Public / Educational read collections (students, teachers, programs, calendar, schedules, enrollments, counseling)
-  const PUBLIC_READ_COLLECTIONS = new Set([
-    'students', 'teachers', 'programs', 'classrooms', 'enrollments',
-    'teacher_schedules', 'counseling_session_grades', 'academic_holidays',
-    'academic_calendar_periods', 'school_events', 'study_periods'
-  ]);
-
   if (!user) {
     if (action === 'read' && PUBLIC_READ_COLLECTIONS.has(collection)) {
       return { allowed: true };
     }
-    return { allowed: false, reason: 'احراز هویت نشده‌اید.' };
+    return { allowed: false, reason: 'احراز هویت الزامی است. مشاهده یا ویرایش این داده‌ها نیازمند ورود به سامانه است.' };
   }
 
   // Level 1: Super Admin has full unrestricted access
@@ -87,12 +103,21 @@ export function authorizeCollectionAccess(
     return { allowed: true };
   }
 
+  // Student Profiles Access Policy:
+  // Only Level 1 Admin or Education Managers can create, update, or delete student profiles
+  if (collection === 'students' && (action === 'write' || action === 'delete')) {
+    const isEduManager = user.role === 'education_manager' || user.role === 'education_officer';
+    if (!isEduManager && user.level > 1) {
+      return { allowed: false, reason: 'مدیریت و ایجاد/حذف مشخصات طلاب منحصراً در اختیار واحد آموزش و مدیریت است.' };
+    }
+  }
+
   // Financial Collections Check
   if (FINANCIAL_COLLECTIONS.has(collection)) {
     const isFinanceStaff = user.role === 'finance_manager' || user.role === 'financial_officer' || user.username?.toUpperCase() === 'MALI';
     if (!isFinanceStaff) {
       // Students can only read their own tuition records
-      if (collection === 'tuition_records' && action === 'read' && user.level === 3) {
+      if (collection === 'tuition_records' && action === 'read' && (user.level === 3 || user.role === 'student')) {
         return { allowed: true };
       }
       return { allowed: false, reason: 'دسترسی به بخش امور مالی برای شما مجاز نیست.' };
@@ -113,7 +138,6 @@ export function authorizeCollectionAccess(
   // Research and Article Evaluation
   if (collection === 'received_articles' || collection === 'evaluation_requests') {
     if (user.level === 3 && action === 'write') {
-      // Students can create their own article submissions and requests
       return { allowed: true };
     }
   }
@@ -141,7 +165,7 @@ export function authorizeCollectionAccess(
     return { allowed: true };
   }
 
-  // Default allowed for authenticated users on standard collections
+  // Default allowed for authenticated users on educational collections (read only unless specified)
   return { allowed: true };
 }
 
@@ -375,8 +399,8 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
   return { success: true };
 }
 
-// Server CRUD Handler: Query Collection
-export async function serverQueryCollection(collection: string, user?: any): Promise<any[]> {
+// Internal helper to retrieve raw collection data without filtering
+async function fetchRawCollectionData(collection: string): Promise<any[]> {
   // 1. If MySQL is configured, fetch from MySQL
   if (isMysqlConfigured) {
     try {
@@ -385,7 +409,7 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
         return mysqlItems;
       }
     } catch (mErr: any) {
-      console.warn(`[MySQL Query Error for ${collection}]:`, mErr?.message || mErr);
+      console.warn(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
     }
   }
 
@@ -417,13 +441,182 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
       .eq('collection_name', collection);
 
     if (error) {
-      console.warn(`Query collection ${collection} error:`, error);
       return [];
     }
 
     return (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
   } catch (err) {
-    console.error(`Query collection exception ${collection}:`, err);
+    console.error(`Query raw collection exception ${collection}:`, err);
     return [];
   }
+}
+
+// Server CRUD Handler: Query Collection with Strict Role-Based Filtering
+export async function serverQueryCollection(collection: string, user?: any): Promise<any[]> {
+  // 1. Security Check: Unauthenticated callers cannot query non-public collections
+  if (!user) {
+    if (PUBLIC_READ_COLLECTIONS.has(collection)) {
+      return fetchRawCollectionData(collection);
+    }
+    return [];
+  }
+
+  // 2. Fetch raw items
+  const rawItems = await fetchRawCollectionData(collection);
+  if (!rawItems || rawItems.length === 0) return [];
+
+  // 3. Super Admins & School Managers have full access across all collections
+  if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager') {
+    return rawItems;
+  }
+
+  // 4. Role-based filtering for STUDENTS collection (Solves Student Data Leak)
+  if (collection === 'students') {
+    // Education managers have full read access to student list
+    if (user.role === 'education_manager' || user.role === 'education_officer') {
+      return rawItems;
+    }
+
+    // Grade Mentors: Only students in their designated grade
+    if (user.role === 'grade_mentor') {
+      const mentorGrade = user.gradeLabel || user.grade;
+      if (mentorGrade) {
+        return rawItems.filter((s: any) => String(s.grade || '').trim() === String(mentorGrade).trim());
+      }
+      return [];
+    }
+
+    // Teachers: ONLY students enrolled in this teacher's courses / classes
+    if (user.role === 'teacher') {
+      const teacherId = user.teacherId || user.id || user.linkedTeacherId;
+      const teacherName = (user.name || user.fullName || '').trim();
+      const cleanTeacher = cleanTeacherName(teacherName);
+
+      // Fetch programs (courses) to find which classes/programs this teacher teaches
+      const programs = await fetchRawCollectionData('programs');
+      const teacherPrograms = programs.filter((p: any) => {
+        const pTeacherId = p.teacherId || p.teacher_id;
+        const pTeacherName = p.teacher || p.teacherName || p.teacher_name || '';
+        if (teacherId && pTeacherId && (pTeacherId === teacherId || pTeacherId === user.id)) return true;
+        if (cleanTeacher && pTeacherName && cleanTeacherName(pTeacherName) === cleanTeacher) return true;
+        return false;
+      });
+
+      const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
+      const teacherGrades = new Set<string>();
+      teacherPrograms.forEach((p: any) => {
+        if (p.grade) teacherGrades.add(String(p.grade).trim());
+      });
+
+      // Also check teacher_schedules
+      const schedules = await fetchRawCollectionData('teacher_schedules');
+      schedules.forEach((sch: any) => {
+        const schTeacherId = sch.teacherId || sch.teacher_id;
+        const schTeacherName = sch.teacherName || sch.teacher_name || '';
+        if (
+          (teacherId && schTeacherId === teacherId) ||
+          (cleanTeacher && schTeacherName && cleanTeacherName(schTeacherName) === cleanTeacher)
+        ) {
+          if (sch.grade) teacherGrades.add(String(sch.grade).trim());
+        }
+      });
+
+      // Check enrollments for those programs
+      const enrollments = await fetchRawCollectionData('enrollments');
+      const enrolledStudentIds = new Set<string>();
+      enrollments.forEach((enr: any) => {
+        if (teacherProgramIds.has(String(enr.programId || enr.program_id))) {
+          enrolledStudentIds.add(String(enr.studentId || enr.student_id));
+        }
+      });
+
+      // Filter students: Must be either enrolled in the teacher's course OR in their assigned class grade
+      return rawItems.filter((student: any) => {
+        const sId = String(student.id || '');
+        const sGrade = String(student.grade || '').trim();
+        if (enrolledStudentIds.has(sId)) return true;
+        if (teacherGrades.size > 0 && teacherGrades.has(sGrade)) return true;
+        return false;
+      });
+    }
+
+    // Students (Level 3): ONLY their own personal student record!
+    if (user.role === 'student' || user.level === 3) {
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uStudentId = String(user.studentId || user.id || '').trim();
+
+      return rawItems.filter((student: any) => {
+        const sId = String(student.id || '').trim();
+        const sCode = String(student.studentCode || '').trim().toUpperCase();
+        const sNat = String(student.nationalId || student.nationalCode || '').trim();
+
+        return (
+          (uStudentId && sId === uStudentId) ||
+          (uUsername && (sCode === uUsername || sNat === uUsername))
+        );
+      });
+    }
+
+    // Class Representatives: Only students of their grade/class
+    if (user.role === 'class_representative') {
+      const repGrade = user.gradeLabel || user.grade;
+      if (repGrade) {
+        return rawItems.filter((s: any) => String(s.grade || '').trim() === String(repGrade).trim());
+      }
+    }
+
+    // For any unclassified non-admin role, block student records
+    return [];
+  }
+
+  // 5. Role-based filtering for FINANCIAL collections (Tuition Records, etc.)
+  if (FINANCIAL_COLLECTIONS.has(collection)) {
+    const isFinanceStaff = user.role === 'finance_manager' || user.role === 'financial_officer' || user.username?.toUpperCase() === 'MALI';
+    if (isFinanceStaff) {
+      return rawItems;
+    }
+    // Students can only see their own tuition record
+    if (collection === 'tuition_records' && (user.role === 'student' || user.level === 3)) {
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uStudentId = String(user.studentId || user.id || '').trim();
+      return rawItems.filter((r: any) => {
+        const rStudentId = String(r.studentId || r.student_id || '').trim();
+        const rStudentCode = String(r.studentCode || r.student_code || '').trim().toUpperCase();
+        return (uStudentId && rStudentId === uStudentId) || (uUsername && rStudentCode === uUsername);
+      });
+    }
+    return [];
+  }
+
+  // 6. Role-based filtering for System Users collection
+  if (collection === 'system_users') {
+    if (user.level > 1 && user.role !== 'education_manager') {
+      return [];
+    }
+    return rawItems;
+  }
+
+  // 7. Role-based filtering for Personal Todos
+  if (collection === 'personal_todos') {
+    return rawItems.filter((todo: any) => todo.userId === user.id || todo.user_id === user.id);
+  }
+
+  // 8. Counseling Session Grades: Filter between Teacher / Counselor and Student
+  if (collection === 'counseling_session_grades') {
+    if (user.role === 'teacher') {
+      const teacherName = (user.name || user.fullName || '').trim();
+      const cleanTeacher = cleanTeacherName(teacherName);
+      return rawItems.filter((cs: any) => {
+        const csTeacher = cs.teacherName || cs.counselorName || cs.teacher || '';
+        return cleanTeacher && cleanTeacherName(csTeacher) === cleanTeacher;
+      });
+    }
+    if (user.role === 'student' || user.level === 3) {
+      const uId = user.studentId || user.id;
+      return rawItems.filter((cs: any) => cs.studentId === uId || cs.student_id === uId);
+    }
+  }
+
+  // Return raw items for authorized general collections (e.g. programs, classrooms, calendar)
+  return rawItems;
 }
