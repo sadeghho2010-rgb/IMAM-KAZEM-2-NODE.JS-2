@@ -1040,19 +1040,6 @@ export default function TeacherPortal() {
             {/* ========================================================= */}
             {activeTab === 'counseling' && (
               <div className="space-y-4">
-                {/* Header Card */}
-                <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-5 text-white shadow-md space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold bg-white/20 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
-                      سامانه ثبت ارزیابی و مشاوره
-                    </span>
-                    <Award size={18} className="text-emerald-200" />
-                  </div>
-                  <h2 className="text-base font-black">
-                    ثبت نمرات و مشارکت جلسات مشاوره
-                  </h2>
-                </div>
-
                 {/* --- CLASS SHIFTER (جابجایی آسان بین کلاس‌های مشاوره استاد) --- */}
                 {counselingPrograms.length > 1 && (
                   <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-xs space-y-2.5">
@@ -1275,30 +1262,6 @@ export default function TeacherPortal() {
                                 </div>
                               </div>
                             </div>
-
-                            {/* Current Grade Badges for both factors */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {partScore && (
-                                <div className={cn(
-                                  "flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-lg border",
-                                  partScore === 'غیبت' 
-                                    ? "bg-rose-50 text-rose-800 border-rose-200" 
-                                    : "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                )}>
-                                  <span>مشارکت: {partScore}</span>
-                                </div>
-                              )}
-                              {resScore && (
-                                <div className={cn(
-                                  "flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-lg border",
-                                  resScore === 'غیبت' 
-                                    ? "bg-rose-50 text-rose-800 border-rose-200" 
-                                    : "bg-blue-50 text-blue-800 border-blue-200"
-                                )}>
-                                  <span>پژوهش: {resScore}</span>
-                                </div>
-                              )}
-                            </div>
                           </div>
 
                           {/* Factor 1: نمره مشارکت (حضور و فعالیت کلاسی) */}
@@ -1307,9 +1270,6 @@ export default function TeacherPortal() {
                               <span className="flex items-center gap-1 text-emerald-800 font-black">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
                                 <span>نمره مشارکت و حضور کلاسی:</span>
-                              </span>
-                              <span className="font-mono text-[10px] text-slate-400">
-                                {partScore ? `ثبت‌شده: ${partScore}` : 'تعیین نشده'}
                               </span>
                             </div>
                             <div className="grid grid-cols-5 gap-1.5">
@@ -1345,9 +1305,6 @@ export default function TeacherPortal() {
                               <span className="flex items-center gap-1 text-blue-800 font-black">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
                                 <span>نمره پژوهش و تقریر:</span>
-                              </span>
-                              <span className="font-mono text-[10px] text-slate-400">
-                                {resScore ? `ثبت‌شده: ${resScore}` : 'تعیین نشده'}
                               </span>
                             </div>
                             <div className="grid grid-cols-5 gap-1.5">
@@ -1410,10 +1367,11 @@ export default function TeacherPortal() {
                       type="button"
                       onClick={handleSaveAllEvaluations}
                       disabled={isSavingAll}
-                      className="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] text-white rounded-2xl text-sm font-black transition-all cursor-pointer shadow-xl flex items-center justify-center gap-2 border border-emerald-500/50 disabled:opacity-50"
+                      className="w-full py-3.5 px-5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-2xl text-sm font-black transition-all cursor-pointer shadow-xl flex items-center justify-center gap-2 border border-emerald-700 disabled:opacity-50"
+                      style={{ backgroundColor: '#059669', color: '#ffffff' }}
                     >
-                      <Save size={18} />
-                      <span>{isSavingAll ? 'در حال ثبت در پایگاه داده...' : 'ثبت و ذخیره نهایی ارزیابی‌های این جلسه'}</span>
+                      <Save size={18} className="text-white shrink-0" />
+                      <span className="text-white font-black">{isSavingAll ? 'در حال ثبت در پایگاه داده...' : 'ثبت و ذخیره نهایی ارزیابی‌های این جلسه'}</span>
                     </button>
                   </div>
                 )}
