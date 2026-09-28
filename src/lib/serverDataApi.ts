@@ -1,7 +1,24 @@
 import { Request, Response } from 'express';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
+import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 
-// Mapping between logical collection names and dedicated PostgreSQL tables
+// Real-time synchronization event bus
+type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
+const realtimeListeners = new Set<RealtimeListener>();
+
+export function registerRealtimeListener(listener: RealtimeListener): () => void {
+  realtimeListeners.add(listener);
+  return () => realtimeListeners.delete(listener);
+}
+
+export function notifyRealtimeChange(collection: string, id: string, action: 'upsert' | 'delete') {
+  const evt = { collection, id, action, timestamp: Date.now() };
+  realtimeListeners.forEach(fn => {
+    try { fn(evt); } catch (e) {}
+  });
+}
+
+// Mapping between logical collection names and dedicated PostgreSQL/MySQL tables
 export const COLLECTION_TABLE_MAP: Record<string, string> = {
   system_users: 'system_users',
   students: 'students',
@@ -258,11 +275,23 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
   const id = data.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const record = { ...data, id };
 
+  // 1. If MySQL is configured, execute via MySQL Repository
+  if (isMysqlConfigured) {
+    try {
+      await MysqlRepository.saveDocument(collection, id, record);
+      notifyRealtimeChange(collection, id, 'upsert');
+      return { success: true, id };
+    } catch (mErr: any) {
+      console.warn(`[MySQL Save Doc Error for ${collection}]:`, mErr?.message || mErr);
+    }
+  }
+
+  // 2. If Supabase is configured, execute via Supabase
   if (isServerSupabaseConfigured) {
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
 
-      // 1. Save to dedicated table if mapped (safely handled if table does not exist yet)
+      // Save to dedicated table if mapped
       if (dedicatedTable) {
         try {
           const { error: dedicatedError } = await serverSupabase
@@ -276,7 +305,7 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
         }
       }
 
-      // 2. Also mirror to app_collections for full persistence and backward compatibility
+      // Also mirror to app_collections for full persistence and backward compatibility
       await serverSupabase
         .from('app_collections')
         .upsert({
@@ -286,6 +315,7 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
           updated_at: new Date().toISOString()
         }, { onConflict: 'collection_name,id' });
 
+      notifyRealtimeChange(collection, id, 'upsert');
       return { success: true, id };
     } catch (err: any) {
       console.error(`Server save error for ${collection}:`, err?.message || err);
@@ -293,6 +323,7 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
     }
   }
 
+  notifyRealtimeChange(collection, id, 'upsert');
   return { success: true, id };
 }
 
@@ -300,6 +331,18 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
 export async function serverDeleteDoc(collection: string, id: string, callerUser?: any): Promise<{ success: boolean; error?: string }> {
   if (!id) return { success: false, error: 'شناسه الزامی است.' };
 
+  // 1. If MySQL is configured, execute via MySQL Repository
+  if (isMysqlConfigured) {
+    try {
+      await MysqlRepository.deleteDocument(collection, id);
+      notifyRealtimeChange(collection, id, 'delete');
+      return { success: true };
+    } catch (mErr: any) {
+      console.warn(`[MySQL Delete Doc Error for ${collection}]:`, mErr?.message || mErr);
+    }
+  }
+
+  // 2. If Supabase is configured
   if (isServerSupabaseConfigured) {
     try {
       const dedicatedTable = COLLECTION_TABLE_MAP[collection];
@@ -320,6 +363,7 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
         .eq('collection_name', collection)
         .eq('id', id);
 
+      notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
     } catch (err: any) {
       console.error(`Server delete error for ${collection}:`, err?.message || err);
@@ -327,11 +371,24 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
     }
   }
 
+  notifyRealtimeChange(collection, id, 'delete');
   return { success: true };
 }
 
 // Server CRUD Handler: Query Collection
 export async function serverQueryCollection(collection: string, user?: any): Promise<any[]> {
+  // 1. If MySQL is configured, fetch from MySQL
+  if (isMysqlConfigured) {
+    try {
+      const mysqlItems = await MysqlRepository.queryCollection(collection);
+      if (mysqlItems && mysqlItems.length > 0) {
+        return mysqlItems;
+      }
+    } catch (mErr: any) {
+      console.warn(`[MySQL Query Error for ${collection}]:`, mErr?.message || mErr);
+    }
+  }
+
   if (!isServerSupabaseConfigured) return [];
 
   try {

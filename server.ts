@@ -35,7 +35,8 @@ import {
   serverSaveDoc,
   serverDeleteDoc,
   serverQueryCollection,
-  authorizeCollectionAccess
+  authorizeCollectionAccess,
+  registerRealtimeListener
 } from "./src/lib/serverDataApi";
 
 dotenv.config();
@@ -1010,6 +1011,129 @@ async function startServer() {
     } catch (err: any) {
       console.error(`Error batch saving ${collection}:`, err);
       return res.status(500).json({ success: false, message: 'خطا در ذخیره دسته‌ای اطلاعات.' });
+    }
+  });
+
+  // ===================== REALTIME SSE & DATABASE SYNC (PROBLEM 6) =====================
+
+  // Active SSE clients set for real-time synchronization
+  const sseClients = new Set<express.Response>();
+  const recentChangesBuffer: Array<{ collection: string; id: string; action: string; timestamp: number }> = [];
+
+  // Register with data layer to broadcast changes to all connected clients
+  registerRealtimeListener((evt) => {
+    recentChangesBuffer.push(evt);
+    if (recentChangesBuffer.length > 200) recentChangesBuffer.shift();
+
+    const dataPayload = JSON.stringify(evt);
+    for (const client of sseClients) {
+      try {
+        client.write(`event: data_change\ndata: ${dataPayload}\n\n`);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    }
+  });
+
+  // Keep-alive heartbeat interval every 25 seconds for SSE connections
+  setInterval(() => {
+    for (const client of sseClients) {
+      try {
+        client.write(`: heartbeat\n\n`);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    }
+  }, 25000);
+
+  // GET /api/sync/events - Real-time Server-Sent Events (SSE) Stream
+  app.get("/api/sync/events", (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // Disable buffering in Nginx/Apache proxies
+    res.flushHeaders?.();
+
+    // Initial ACK event
+    res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: Date.now() })}\n\n`);
+    sseClients.add(res);
+
+    req.on("close", () => {
+      sseClients.delete(res);
+    });
+  });
+
+  // GET /api/sync/changes - Polling fallback for recent changes
+  app.get("/api/sync/changes", (req, res) => {
+    const since = Number(req.query.since) || 0;
+    const filtered = recentChangesBuffer.filter(c => c.timestamp > since);
+    return res.json({
+      success: true,
+      changes: filtered,
+      serverTime: Date.now()
+    });
+  });
+
+  // ===================== SERVER BACKUPS STORAGE (PROBLEM 2) =====================
+
+  const BACKUPS_DIR = path.join(process.cwd(), 'data', 'backups');
+  try {
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    }
+  } catch (e) {}
+
+  // POST /api/backups - Store backup package directly on server
+  app.post("/api/backups", async (req, res) => {
+    const token = extractToken(req);
+    let callerUser: any = null;
+    if (token) {
+      const v = verifyAccessToken(token);
+      if (v.valid && v.decoded) callerUser = v.decoded;
+    }
+
+    if (!callerUser || (callerUser.level > 2 && callerUser.role !== 'finance_manager')) {
+      return res.status(403).json({ success: false, message: 'دسترسی غیرمجاز به بخش پشتیبان‌گیری' });
+    }
+
+    const { fileName, backupPackage, record } = req.body || {};
+    if (!backupPackage) {
+      return res.status(400).json({ success: false, message: 'بسته داده‌های پشتیبان ارسال نشده است.' });
+    }
+
+    try {
+      const safeName = (fileName || `backup_${Date.now()}.json`).replace(/[^a-zA-Z0-9_\.\-\u0600-\u06FF]/g, '_');
+      const targetPath = path.join(BACKUPS_DIR, safeName);
+      fs.writeFileSync(targetPath, JSON.stringify(backupPackage, null, 2), 'utf-8');
+
+      const backupRecord = {
+        id: record?.id || `backup_${Date.now()}`,
+        fileName: safeName,
+        fileSizeBytes: fs.statSync(targetPath).size,
+        persianDate: record?.persianDate || new Date().toLocaleString('fa-IR'),
+        totalRecords: record?.totalRecords || 0,
+        studentCount: record?.studentCount || 0,
+        mentorName: callerUser.name || callerUser.username,
+        mentorRole: callerUser.role,
+        createdAt: new Date().toISOString()
+      };
+
+      await serverSaveDoc('cloud_backups', backupRecord, callerUser);
+
+      return res.json({ success: true, record: backupRecord, path: safeName });
+    } catch (err: any) {
+      console.error('Backup save error:', err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره فایل پشتیبان روی سرور.' });
+    }
+  });
+
+  // GET /api/backups - List backups
+  app.get("/api/backups", async (req, res) => {
+    try {
+      const items = await serverQueryCollection('cloud_backups');
+      return res.json({ success: true, items });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'خطا در دریافت لیست فایل‌های پشتیبان.' });
     }
   });
 

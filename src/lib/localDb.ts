@@ -35,7 +35,38 @@ export async function saveToCloudWithTimeout(
     try {
       let isSaved = false;
 
-      // 1. Direct Supabase write
+      // 1. Primary: Server-Side Data API (Authoritative backend connected to MySQL / Host Database)
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        let apiRes: Response;
+        if (action === 'delete') {
+          apiRes = await fetch(`/api/data/${collectionName}/${id}`, {
+            method: 'DELETE',
+            headers,
+            credentials: 'include'
+          });
+        } else {
+          apiRes = await fetch(`/api/data/${collectionName}`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify({ ...data, id })
+          });
+        }
+
+        if (apiRes.ok) {
+          isSaved = true;
+          resolve();
+          return;
+        }
+      } catch (e) {
+        // Fallback to legacy BaaS if server route is temporarily unreachable
+      }
+
+      // 2. Legacy Fallback: Direct Supabase write (for local/serverless development)
       if (isSupabaseConfigured) {
         if (action === 'delete') {
           const { error } = await supabase
@@ -88,30 +119,7 @@ export async function saveToCloudWithTimeout(
         }
       }
 
-      // 2. Also notify Dedicated Server API if running
-      try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        if (action === 'delete') {
-          await fetch(`/api/data/${collectionName}/${id}`, {
-            method: 'DELETE',
-            headers,
-            credentials: 'include'
-          });
-        } else {
-          await fetch(`/api/data/${collectionName}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-            body: JSON.stringify({ ...data, id })
-          });
-        }
-        isSaved = true;
-      } catch (e) {}
-
-      // 3. Direct Cloud Firestore write
+      // 3. Optional fallback: Direct Cloud Firestore write
       try {
         if (action === 'delete') {
           await deleteDoc(doc(db, collectionName, id));
@@ -120,7 +128,7 @@ export async function saveToCloudWithTimeout(
         }
         isSaved = true;
       } catch (fsErr) {
-        console.warn('Firestore write notice:', fsErr);
+        // Ignore fallback notice
       }
 
       if (isSaved || !isSupabaseConfigured) {

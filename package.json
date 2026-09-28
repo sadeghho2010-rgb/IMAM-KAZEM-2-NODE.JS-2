@@ -33,6 +33,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "mysql2": "^3.24.4",
     "postcss": "^8.5.26",
     "postcss-color-converter": "^1.2.1",
     "react": "^19.0.1",
@@ -41,7 +42,8 @@
     "react-multi-date-picker": "^4.5.2",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.6.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

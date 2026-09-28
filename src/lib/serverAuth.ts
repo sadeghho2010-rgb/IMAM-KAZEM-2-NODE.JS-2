@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 
 dotenv.config();
 
@@ -707,6 +708,26 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
   });
 
+  // 1. If MySQL is configured, fetch authoritative users from MySQL database
+  if (isMysqlConfigured) {
+    try {
+      const mysqlUsers = await MysqlRepository.getAllUsers();
+      if (mysqlUsers && mysqlUsers.length > 0) {
+        mysqlUsers.forEach(u => {
+          const cleanName = u.username.toUpperCase();
+          usersMap.set(cleanName, {
+            ...usersMap.get(cleanName),
+            ...u,
+            username: cleanName
+          } as StoredUser);
+        });
+        return Array.from(usersMap.values());
+      }
+    } catch (mErr) {
+      console.warn('[MySQL fetchAllUsers notice]:', mErr);
+    }
+  }
+
   if (!isServerSupabaseConfigured) {
     return Array.from(usersMap.values());
   }
@@ -797,6 +818,15 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
     saveUsersToFile(Array.from(serverMemoryUsers.values()));
   }
 
+  // 1. If MySQL is configured, execute prepared upsert via MySQL Repository
+  if (isMysqlConfigured) {
+    try {
+      await MysqlRepository.saveUser(user as any);
+    } catch (mErr) {
+      console.warn('[MySQL saveUser notice]:', mErr);
+    }
+  }
+
   if (!isServerSupabaseConfigured) {
     return;
   }
@@ -866,6 +896,12 @@ export async function deleteUserFromStorage(userIdOrUsername: string): Promise<v
     }
   }
   saveUsersToFile(Array.from(serverMemoryUsers.values()));
+
+  if (isMysqlConfigured) {
+    try {
+      await MysqlRepository.deleteDocument('system_users', clean);
+    } catch (e) {}
+  }
 
   if (!isServerSupabaseConfigured) return;
   try {
@@ -938,7 +974,24 @@ export async function logServerAudit(params: {
       created_at: new Date().toISOString()
     };
 
-    // Store in app_collections audit_logs if configured
+    // 1. If MySQL is configured, write to MySQL audit_logs table
+    if (isMysqlConfigured) {
+      try {
+        await MysqlRepository.recordAuditLog({
+          id: logEntry.id,
+          userId: params.userId,
+          username: params.username,
+          userRole: params.userRole,
+          action: params.action,
+          entityType: params.entityType,
+          entityId: params.entityId,
+          description: params.description,
+          ipAddress: params.ipAddress
+        });
+      } catch (mErr) {}
+    }
+
+    // 2. Store in app_collections audit_logs if configured
     if (isServerSupabaseConfigured) {
       await serverSupabase.from('app_collections').upsert({
         collection_name: 'audit_logs',

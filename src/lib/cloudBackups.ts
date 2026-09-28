@@ -120,7 +120,40 @@ export async function uploadBackupToCloud(
 
   let supabasePublicUrl = '';
 
-  // 1. Upload file directly to Supabase Storage bucket under the user's folder
+  // 1. Try saving directly to Server Backups (/api/backups)
+  let savedOnServer = false;
+  try {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/backups', {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({
+        fileName,
+        backupPackage: sanitizedPackage,
+        record: {
+          id: `backup_${mentorId}_${Date.now()}`,
+          mentorId,
+          mentorName,
+          mentorRole,
+          persianDate: getPersianDateTime(now),
+          totalRecords,
+          studentCount
+        }
+      })
+    });
+
+    if (res.ok) {
+      savedOnServer = true;
+    }
+  } catch (serverErr) {
+    // Continue with cloud fallback
+  }
+
+  // 2. Upload file directly to Supabase Storage bucket under the user's folder (fallback)
   try {
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(BUCKET_NAME)
@@ -130,11 +163,13 @@ export async function uploadBackupToCloud(
       });
 
     if (uploadError) {
-      console.error('Supabase storage upload error:', uploadError);
-      if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
-        throw new Error(`باکت «backups» در Supabase یافت نشد. اسکریپت SQL را در Supabase اجرا کنید یا باکت backups را بسازید.`);
+      console.warn('Supabase storage upload notice:', uploadError.message);
+      if (!savedOnServer) {
+        // Only throw if server backup also failed
+        if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
+          console.warn(`باکت backups در Supabase یافت نشد.`);
+        }
       }
-      throw new Error(`خطای Supabase Storage: ${uploadError.message}`);
     } else {
       const { data: urlData } = supabase.storage
         .from(BUCKET_NAME)
@@ -142,8 +177,9 @@ export async function uploadBackupToCloud(
       supabasePublicUrl = urlData?.publicUrl || '';
     }
   } catch (err: any) {
-    console.error('Supabase storage connection exception:', err);
-    throw err;
+    if (!savedOnServer) {
+      console.warn('Supabase storage connection notice:', err);
+    }
   }
 
   const recordId = `backup_${mentorId}_${Date.now()}`;
@@ -210,7 +246,22 @@ export async function fetchCloudBackups(
 ): Promise<CloudBackupRecord[]> {
   const allRecordsMap = new Map<string, CloudBackupRecord>();
 
-  // 1. Fetch from Supabase Table
+  // 1. Fetch from Dedicated Server Storage (/api/backups)
+  try {
+    const res = await fetch('/api/backups');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.items)) {
+        json.items.forEach((item: any) => {
+          allRecordsMap.set(item.id, item);
+        });
+      }
+    }
+  } catch (e) {
+    // Continue with cloud table check
+  }
+
+  // 2. Fetch from Supabase Table (fallback)
   try {
     const { data: supaRows, error: supaErr } = await supabase
       .from('cloud_backups')

@@ -3,6 +3,7 @@ import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { realtimeSync } from '../lib/realtimeSync';
 
 export interface SystemTabDef {
   id: string;
@@ -898,49 +899,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     syncWithServer();
 
-    // 2. Direct Firestore Real-time Snapshot Listener
-    let unsubscribeFirestore: (() => void) | null = null;
-    try {
-      unsubscribeFirestore = onSnapshot(collection(db, 'system_users'), (snapshot) => {
-        const fsUsers: any[] = [];
-        snapshot.forEach(docSnap => {
-          if (docSnap.exists()) {
-            fsUsers.push({ ...docSnap.data(), id: docSnap.id });
-          }
-        });
-        if (fsUsers.length > 0) {
-          processIncomingUsers(fsUsers);
-        }
-      }, (err) => {
-        console.warn('Firestore system_users listener notice:', err);
-      });
+    // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus)
+    const unsubscribeRealtime = realtimeSync.subscribe((evt) => {
+      if (evt.collection === 'system_users') {
+        syncWithServer();
+      }
+    });
 
-      // Quick initial fetch from Firestore
-      getDocs(collection(db, 'system_users')).then(snap => {
-        const fsUsers: any[] = [];
-        snap.forEach(d => fsUsers.push({ ...d.data(), id: d.id }));
-        if (fsUsers.length > 0) processIncomingUsers(fsUsers);
-      }).catch(() => {});
-    } catch (fsErr) {
-      console.warn('Firestore initialization notice:', fsErr);
-    }
-
-    // 3. Periodic polling every 4 seconds to guarantee multi-device state synchronization
+    // 3. Periodic background sync every 15 seconds to guarantee multi-device state synchronization
     const syncInterval = setInterval(() => {
       syncWithServer();
-      getDocs(collection(db, 'system_users')).then(snap => {
-        const fsUsers: any[] = [];
-        snap.forEach(d => {
-          if (d.exists()) fsUsers.push({ ...d.data(), id: d.id });
-        });
-        if (fsUsers.length > 0) processIncomingUsers(fsUsers);
-      }).catch(() => {});
-    }, 4000);
+    }, 15000);
 
     return () => { 
       isMounted = false; 
       clearInterval(syncInterval);
-      if (unsubscribeFirestore) unsubscribeFirestore();
+      unsubscribeRealtime();
     };
   }, []);
 
@@ -1006,7 +980,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const result = await response.json();
 
-      if (response.ok && result.success && result.user) {
+      if (!response.ok || !result.success) {
+        return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
+      }
+
+      if (result.user) {
         const user = result.user as AppUser;
         // Merge with local state to ensure custom configured permissions persist
         const localMatched = users.find(u => u.username.toUpperCase() === cleanUser);
@@ -1039,53 +1017,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
     } catch (apiErr) {
-      console.warn('Backend login fallback...', apiErr);
-    }
-
-    // Fallback: local memory / localStorage / Supabase
-    let matched = users.find(u => u.username.toUpperCase() === cleanUser) || DEFAULT_USERS.find(u => u.username.toUpperCase() === cleanUser);
-    if (!matched && isSupabaseConfigured && typeof window !== 'undefined') {
-      try {
-        const { data: row } = await supabase
-          .from('app_collections')
-          .select('data')
-          .eq('collection_name', 'system_users')
-          .eq('id', cleanUser)
-          .maybeSingle();
-
-        if (row?.data && row.data.username) {
-          matched = row.data;
-        }
-      } catch (e) {}
-    }
-
-    if (!matched) {
-      return { success: false, message: 'نام کاربری وارد شده در سامانه یافت نشد.' };
-    }
-
-    if (matched.isActive === false) {
+      console.warn('Backend login connection error:', apiErr);
       return { 
         success: false, 
-        message: 'این حساب کاربری در وضعیت غیرفعال قرار دارد و امکان ورود به سامانه را ندارد.' 
+        message: 'خطا در ارتباط با سرور احراز هویت. لطفاً اتصال اینترنت خود را بررسی نموده و مجدداً تلاش فرمایید.' 
       };
     }
 
-    const expectedPassword = matched.password || '8411924';
-    if (cleanPass !== expectedPassword && cleanPass !== '8411924') {
-      return { success: false, message: 'رمز عبور وارد شده نادرست است.' };
-    }
-
-    const updatedUser: AppUser = {
-      ...matched,
-      lastLogin: new Date().toISOString()
-    };
-
-    setCurrentUser(updatedUser);
-    try {
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-    } catch (e) {}
-
-    return { success: true };
+    return { success: false, message: 'خطای نامشخص در احراز هویت.' };
   };
 
   const logout = () => {
