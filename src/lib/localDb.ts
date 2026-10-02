@@ -894,9 +894,9 @@ class LocalDatabase {
     return this.addDoc(collectionName, idOrData);
   }
 
-  // Alias for saving document
-  async saveDoc(collectionName: CollectionName, data: any): Promise<string> {
-    return this.setDoc(collectionName, data);
+  // Alias for saving document (supports both saveDoc(col, doc) and saveDoc(col, id, doc))
+  async saveDoc(collectionName: CollectionName, idOrData: any, optionalData?: any): Promise<string> {
+    return this.setDoc(collectionName, idOrData, optionalData);
   }
 
   // Add a new document (with optimistic UI, strict 4s online sync & automatic rollback)

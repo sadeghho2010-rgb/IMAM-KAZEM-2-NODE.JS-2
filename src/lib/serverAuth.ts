@@ -63,6 +63,10 @@ export interface SafeUser {
   mustChangePassword?: boolean;
   accountLockedUntil?: string;
   failedLoginAttempts?: number;
+  securityPinEnabled?: boolean;
+  pinChallengeInterval?: number;
+  specialSecurityPinHash?: string;
+  securityConfigSignature?: string;
 }
 
 export interface StoredUser extends SafeUser {
@@ -70,6 +74,10 @@ export interface StoredUser extends SafeUser {
   passwordHash?: string;
   failedLoginAttempts?: number;
   accountLockedUntil?: string;
+  securityPinEnabled?: boolean;
+  pinChallengeInterval?: number;
+  specialSecurityPinHash?: string;
+  securityConfigSignature?: string;
 }
 
 // Enforce strict security: JWT_SECRET and JWT_REFRESH_SECRET must be supplied via .env or environment
@@ -958,7 +966,9 @@ export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; 
   return { totalUsers: users.length, migratedCount };
 }
 
-// Server-side audit logging
+// Server-side audit logging with cryptographic hash chaining
+let lastKnownAuditHash = '0000000000000000000000000000000000000000000000000000000000000000';
+
 export async function logServerAudit(params: {
   userId?: string;
   username?: string;
@@ -972,20 +982,48 @@ export async function logServerAudit(params: {
   newState?: any;
 }) {
   try {
-    const logEntry = {
-      id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      timestamp: new Date().toISOString(),
+    const { computeRecordHash } = await import('./serverAuditChain');
+    const nowStr = new Date().toISOString();
+    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const prevHash = lastKnownAuditHash;
+
+    const currentHash = computeRecordHash({
+      id: logId,
+      previous_hash: prevHash,
       user_id: params.userId || 'system',
-      username: params.username || 'system',
-      user_role: params.userRole || 'system',
+      user_name: params.username || 'system',
+      role: params.userRole || 'system',
       action: params.action,
+      module: params.entityType,
+      target_id: params.entityId,
+      target_type: params.entityType,
+      old_values: params.previousState || null,
+      new_values: params.newState || null,
+      ip_address: params.ipAddress || '',
+      created_at: nowStr
+    });
+
+    lastKnownAuditHash = currentHash;
+
+    const logEntry = {
+      id: logId,
+      timestamp: nowStr,
+      user_id: params.userId || 'system',
+      user_name: params.username || 'system',
+      role: params.userRole || 'system',
+      action: params.action,
+      module: params.entityType,
+      target_id: params.entityId,
+      target_type: params.entityType,
       entity_type: params.entityType,
       entity_id: params.entityId,
       description: params.description,
       ip_address: params.ipAddress || '',
-      previous_state: params.previousState || null,
-      new_state: params.newState || null,
-      created_at: new Date().toISOString()
+      previous_hash: prevHash,
+      current_hash: currentHash,
+      old_values: params.previousState || null,
+      new_values: params.newState || null,
+      created_at: nowStr
     };
 
     // 1. If MySQL is configured, write to MySQL audit_logs table
@@ -1005,13 +1043,17 @@ export async function logServerAudit(params: {
       } catch (mErr) {}
     }
 
-    // 2. Store in app_collections audit_logs if configured
+    // 2. Save to app_collections or internal storage
+    const { serverSaveDoc } = await import('./serverDataApi');
+    await serverSaveDoc('audit_logs', logId, logEntry);
+
+    // 3. Store in Supabase if configured
     if (isServerSupabaseConfigured) {
       await serverSupabase.from('app_collections').upsert({
         collection_name: 'audit_logs',
         id: logEntry.id,
         data: logEntry,
-        updated_at: new Date().toISOString()
+        updated_at: nowStr
       });
     }
   } catch (e: any) {

@@ -244,6 +244,34 @@ export default function SiteAuditLogs() {
     downloadAnchor.remove();
   };
 
+  // Hash Chain Verification State & Handler
+  const [isVerifyingChain, setIsVerifyingChain] = useState(false);
+  const [chainVerificationResult, setChainVerificationResult] = useState<{
+    isValid: boolean;
+    totalVerified: number;
+    brokenAtIndex?: number;
+    brokenRecordId?: string;
+    reason?: string;
+  } | null>(null);
+  const [showChainModal, setShowChainModal] = useState(false);
+
+  const handleVerifyHashChain = async () => {
+    setIsVerifyingChain(true);
+    try {
+      const res = await fetch('/api/audit-logs/verify-chain', {
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+      const data = await res.json();
+      setChainVerificationResult(data);
+      setShowChainModal(true);
+    } catch (e: any) {
+      alert('خطا در بررسی زنجیره لاگ‌ها: ' + e?.message);
+    } finally {
+      setIsVerifyingChain(false);
+    }
+  };
+
   // Helper Badge Renderers
   const getActionBadge = (action: AuditActionType) => {
     switch (action) {
@@ -375,6 +403,15 @@ export default function SiteAuditLogs() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleVerifyHashChain}
+              disabled={isVerifyingChain}
+              className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-95 cursor-pointer"
+              title="اعتبارسنجی ریاضی و رمزی زنجیره هش کلیه لاگ‌ها"
+            >
+              {isVerifyingChain ? <RefreshCw size={14} className="animate-spin text-white" /> : <ShieldAlert size={14} />}
+              <span>بررسی صحت و یکپارچگی لاگ‌ها (زنجیره هش)</span>
+            </button>
             <button
               onClick={handleExportJSON}
               className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
@@ -969,6 +1006,67 @@ export default function SiteAuditLogs() {
                   className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
                 >
                   بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Hash Chain Integrity Verification Result */}
+      <AnimatePresence>
+        {showChainModal && chainVerificationResult && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={20} className={chainVerificationResult.isValid ? "text-emerald-600" : "text-rose-600"} />
+                  <h3 className="text-sm font-black text-slate-900">نتیجه اعتبارسنجی زنجیره هش لاگ‌ها</h3>
+                </div>
+                <button onClick={() => setShowChainModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {chainVerificationResult.isValid ? (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                    <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+                    <span>زنجیره لاگ‌ها ۱۰۰٪ صحیح، پیوسته و بدون دستکاری است.</span>
+                  </div>
+                  <p className="text-emerald-700 leading-relaxed">
+                    تمام <strong>{chainVerificationResult.totalVerified} رکورد لاگ</strong> از مبدأ تا آخرین عملیات با استفاده از الگوریتم رمزی SHA-256 بازخوانی و تطبیق داده شدند. هیچ‌گونه ناهماهنگی یا تغییر دستی در دیتابیس یافت نشد.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-rose-800 font-bold">
+                    <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+                    <span>هشدار دستکاری داده‌ها در زنجیره هش لاگ‌ها!</span>
+                  </div>
+                  <p className="text-rose-700 leading-relaxed">
+                    {chainVerificationResult.reason || 'مغایرت در هش رکوردها شناسایی گردید.'}
+                  </p>
+                  {chainVerificationResult.brokenRecordId && (
+                    <div className="p-2 bg-rose-100 text-rose-900 rounded-xl font-mono text-[11px]">
+                      شناسه رکورد مشکوک: {chainVerificationResult.brokenRecordId}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowChainModal(false)}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+                >
+                  بستن گزارش
                 </button>
               </div>
             </motion.div>

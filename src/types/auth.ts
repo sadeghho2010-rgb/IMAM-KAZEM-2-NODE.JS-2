@@ -7,6 +7,8 @@ export type UserRole =
   | 'vice_principal'      // معاون مدرسه
   | 'education_manager'   // مسئول آموزش (سطح ۲)
   | 'education_officer'   // مسئول آموزش
+  | 'cultural_manager'    // مسئول امور فرهنگی و رفاهی (سطح ۲)
+  | 'cultural_officer'    // مسئول فرهنگی و رفاهی
   | 'grade_supervisor_7'  // مسئول پایه ۷ (سطح ۲)
   | 'grade_supervisor_8'  // مسئول پایه ۸ (سطح ۲)
   | 'grade_supervisor_9'  // مسئول پایه ۹ (سطح ۲)
@@ -38,6 +40,7 @@ export interface AppUser {
   password?: string;
   name: string;
   fullName?: string;
+  nationalCode?: string;
   level: UserLevel;
   role: UserRole;
   roleTitle: string;
@@ -72,6 +75,10 @@ export interface AppUser {
   mustChangePassword?: boolean;
   failedLoginAttempts?: number;
   accountLockedUntil?: string;
+  securityPinEnabled?: boolean;
+  pinChallengeInterval?: number; // 15, 30, 45, 60 minutes
+  specialSecurityPinHash?: string;
+  securityConfigSignature?: string;
 }
 
 export interface MenuItemConfig {

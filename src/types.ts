@@ -1947,7 +1947,6 @@ export interface DestinationAccountSummaryReport {
 }
 
 export interface ExpenseRecord {
-
   id: string;
   title: string; // عنوان هزینه
   date: string; // تاریخ هزینه (شمسی)
@@ -1964,6 +1963,153 @@ export interface ExpenseRecord {
   status?: 'approved' | 'pending' | 'rejected';
   createdAt: string;
   createdByName?: string;
+}
+
+// =================== 1. Anomaly Detection & Rollback ===================
+export type AnomalySeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface AnomalyLog {
+  id: string;
+  action_type: string;
+  user_id: string;
+  user_name: string;
+  severity: AnomalySeverity;
+  description: string;
+  detection_reason: string;
+  original_state?: any; // JSON snapshot of records before change
+  affected_records_count?: number;
+  is_resolved?: boolean;
+  resolved_by?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+// =================== 2. Tamper-Evident Hash Chain Audit Logs ===================
+export interface HashChainedAuditLog {
+  id: string;
+  user_id?: string;
+  user_name?: string;
+  role?: string;
+  action: string;
+  module: string;
+  target_id?: string;
+  target_type?: string;
+  old_values?: any;
+  new_values?: any;
+  ip_address?: string;
+  user_agent?: string;
+  previous_hash?: string;
+  current_hash: string;
+  created_at: string;
+}
+
+// =================== 3. Student Requests Portal ===================
+export type RequestTargetUnit = 'education' | 'finance' | 'cultural_welfare';
+export type StudentRequestStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected';
+
+export interface StudentRequest {
+  id: string;
+  studentId: string;
+  studentName: string;
+  nationalCode?: string;
+  grade?: string;
+  unit: RequestTargetUnit;
+  category: string; // e.g., 'گواهی اشتغال به تحصیل', 'وام قرض‌الحسنه', 'تخصیص کمد', etc.
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: StudentRequestStatus;
+  statusTitle?: string;
+  officialReply?: string;
+  repliedBy?: string;
+  repliedByName?: string;
+  repliedAt?: string;
+  rejectionReason?: string;
+  isReadByOfficer?: boolean;
+  isReadByStudent?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface UnitRequestSettings {
+  id: string;
+  unit: RequestTargetUnit;
+  unitName: string;
+  isAcceptingRequests: boolean;
+  disabledNoticeMessage?: string;
+  allowedCategories: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface GlobalRequestsConfig {
+  id: 'global_requests_config';
+  isGlobalVisibleForStudents: boolean; // سوپرادمین: نمایش یا عدم نمایش پنل در منوی طلاب سطح ۳
+  isGlobalEnabled: boolean; // سوپرادمین: فعال یا غیرفعال بودن کلی سامانه ثبت درخواست
+  officersStatus: {
+    education: {
+      isAccepting: boolean; // مسئول آموزش: وضعیت پاسخگویی (فعال/خاموش)
+      statusNote?: string; // پیام یا دلیل عدم پاسخگویی موقت
+      officerTitle: string;
+      officerName?: string;
+      lastToggledAt?: string;
+    };
+    finance: {
+      isAccepting: boolean; // مسئول مالی: وضعیت پاسخگویی (فعال/خاموش)
+      statusNote?: string;
+      officerTitle: string;
+      officerName?: string;
+      lastToggledAt?: string;
+    };
+    cultural_welfare: {
+      isAccepting: boolean; // مسئول فرهنگی و رفاهی: وضعیت پاسخگویی (فعال/خاموش)
+      statusNote?: string;
+      officerTitle: string;
+      officerName?: string;
+      lastToggledAt?: string;
+    };
+  };
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+// =================== 4. Advanced Locker Management ===================
+export type LockerStatus = 'vacant' | 'occupied' | 'defective';
+export type LockerDefectType = 'lost_key' | 'broken' | 'other';
+
+export interface LockerItem {
+  id: string;
+  lockerNumber: number;
+  status: LockerStatus;
+  // Occupant details (when occupied)
+  studentId?: string;
+  studentName?: string;
+  studentCode?: string;
+  grade?: string;
+  assignedDate?: string; // Shamsi date
+  phoneNumber?: string;
+  // Defect details (when defective)
+  defectType?: LockerDefectType;
+  defectDescription?: string;
+  reportedAt?: string;
+  repairNotes?: string;
+  // Key state
+  hasSpareKey?: boolean;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface LockerHistoryLog {
+  id: string;
+  lockerNumber: number;
+  action: 'assign' | 'vacate' | 'swap' | 'report_defect' | 'resolve_defect' | 'key_handover';
+  studentId?: string;
+  studentName?: string;
+  previousStudentName?: string;
+  details?: string;
+  actorId?: string;
+  actorName?: string;
+  createdAt: string;
 }
 
 

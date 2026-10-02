@@ -35,12 +35,15 @@ import {
   BookOpenCheck,
   ChevronDown,
   Terminal,
-  KeyRound
+  KeyRound,
+  Inbox,
+  ShieldAlert
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
-import { AppModuleId } from '../types';
+import { localDb } from '../lib/localDb';
+import { StudentRequest, AnomalyLog, GlobalRequestsConfig } from '../types';
 
 interface SidebarProps {
   activeTab: string;
@@ -50,12 +53,13 @@ interface SidebarProps {
 }
 
 interface MenuItemDef {
-  id: AppModuleId;
+  id: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
 }
 
 const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
+  { id: 'student-requests', label: 'درخواست‌های طلاب', icon: Inbox },
   { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
   { id: 'teacher-portal', label: 'پنل اساتید و ارزیابی', icon: GraduationCap },
@@ -94,6 +98,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
+  { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها', icon: ShieldAlert },
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی طلاب', icon: FileSpreadsheet },
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
@@ -103,21 +108,97 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly, isTabAllowed } = useAuth();
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
-    return ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab);
+    return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab);
   });
   const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
+  // Real-time Badge Counts State
+  const [unreadRequestsCount, setUnreadRequestsCount] = React.useState<number>(0);
+  const [unresolvedAnomaliesCount, setUnresolvedAnomaliesCount] = React.useState<number>(0);
+  const [globalRequestsConfig, setGlobalRequestsConfig] = React.useState<GlobalRequestsConfig | null>(null);
+
+  const fetchBadgeCounts = async () => {
+    try {
+      // 1. Fetch Global Requests Config
+      const gConfig = await localDb.getDoc<GlobalRequestsConfig>('global_requests_config', 'global_requests_config');
+      if (gConfig) {
+        setGlobalRequestsConfig(gConfig);
+      }
+
+      // 2. Fetch Requests & Calculate Target Badge Count
+      const allRequests = await localDb.getDocs<StudentRequest>('student_requests');
+      if (Array.isArray(allRequests)) {
+        if (currentUser?.level === 3) {
+          // For student: count requests with unread response from officers
+          const count = allRequests.filter(r => 
+            (r.studentId === (currentUser.studentId || currentUser.id) || r.studentName === currentUser.name) && 
+            r.isReadByStudent === false &&
+            (r.officialReply || r.status !== 'pending')
+          ).length;
+          setUnreadRequestsCount(count);
+        } else {
+          // For staff/officers: count pending / unread requests addressed to THEIR unit
+          const isEdu = currentUser?.role === 'education_manager' || currentUser?.username === 'SHAH' || (currentUser?.name && currentUser.name.includes('آموزش'));
+          const isFin = currentUser?.role === 'finance_manager' || currentUser?.username === 'MALI' || (currentUser?.name && currentUser.name.includes('مالی'));
+          const isCult = currentUser?.role === 'cultural_manager' || currentUser?.role === 'research_manager' || currentUser?.username === 'YAZDANI';
+          const isSuper = currentUser?.level === 1 || currentUser?.role === 'super_admin';
+
+          let count = 0;
+          if (isSuper) {
+            count = allRequests.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
+          } else if (isEdu) {
+            count = allRequests.filter(r => r.unit === 'education' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+          } else if (isFin) {
+            count = allRequests.filter(r => r.unit === 'finance' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+          } else if (isCult) {
+            count = allRequests.filter(r => r.unit === 'cultural_welfare' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+          } else {
+            count = allRequests.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
+          }
+
+          setUnreadRequestsCount(count);
+        }
+      }
+
+      // Anomalies count
+      if (currentUser?.level === 1 || currentUser?.role === 'super_admin') {
+        const res = await fetch('/api/anomalies').catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.anomalies)) {
+            const count = data.anomalies.filter((a: AnomalyLog) => !a.is_resolved).length;
+            setUnresolvedAnomaliesCount(count);
+          }
+        }
+      }
+    } catch (e) {}
+  };
+
   React.useEffect(() => {
-    if (['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab)) {
+    fetchBadgeCounts();
+
+    const handleReqUpdate = () => fetchBadgeCounts();
+    window.addEventListener('student_requests_updated', handleReqUpdate);
+    const interval = setInterval(fetchBadgeCounts, 15000);
+
+    return () => {
+      window.removeEventListener('student_requests_updated', handleReqUpdate);
+      clearInterval(interval);
+    };
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab)) {
       setIsSiteManagementOpen(true);
     }
   }, [activeTab]);
 
   const siteManagementSubItems = [
-    { id: 'backup' as AppModuleId, label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
-    { id: 'user-credentials' as AppModuleId, label: 'مدیریت ورود کاربران', icon: ShieldCheck },
-    { id: 'audit-logs' as AppModuleId, label: 'فعالیت‌های سایت', icon: Activity },
-    { id: 'app-logs' as AppModuleId, label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
+    { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', icon: ShieldAlert, badge: unresolvedAnomaliesCount },
+    { id: 'backup', label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
+    { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
+    { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
+    { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
   ].filter(sub => isTabAllowed(sub.id));
 
   const canAccessSiteManagement = siteManagementSubItems.length > 0;
@@ -141,6 +222,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     // Check if tab is allowed for current user
     if (!isTabAllowed(item.id)) {
       return false;
+    }
+
+    // Super Admin Level 3 Visibility Gate for Student Requests:
+    // If user is Level 3 (student), and Super Admin has set isGlobalVisibleForStudents=false or isGlobalEnabled=false, hide it completely!
+    if (item.id === 'student-requests' && currentUser.level === 3) {
+      if (globalRequestsConfig && (globalRequestsConfig.isGlobalVisibleForStudents === false || globalRequestsConfig.isGlobalEnabled === false)) {
+        return false;
+      }
     }
 
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
@@ -193,28 +282,66 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
           // Contextual label adjustments
           if (currentUser?.level === 3) {
+            if (item.id === 'student-requests') label = 'ثبت و پیگیری درخواست‌ها';
             if (item.id === 'student-schedule') label = 'برنامه درسی من';
             if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
             if (item.id === 'stats') label = 'ساعات مطالعه من';
             if (item.id === 'research') label = 'پژوهش و مقالات من';
+          } else {
+            if (item.id === 'student-requests') {
+              const isEdu = currentUser?.role === 'education_manager' || currentUser?.username === 'SHAH' || (currentUser?.name && currentUser.name.includes('آموزش'));
+              const isFin = currentUser?.role === 'finance_manager' || currentUser?.username === 'MALI' || (currentUser?.name && currentUser.name.includes('مالی'));
+              const isCult = currentUser?.role === 'cultural_manager' || currentUser?.role === 'research_manager' || currentUser?.username === 'YAZDANI';
+              const isSuper = currentUser?.level === 1 || currentUser?.role === 'super_admin';
+
+              if (isSuper) label = 'کارتابل کل درخواست‌های طلاب';
+              else if (isEdu) label = 'کارتابل درخواست‌های آموزش';
+              else if (isFin) label = 'کارتابل درخواست‌های مالی';
+              else if (isCult) label = 'کارتابل درخواست‌های فرهنگی';
+              else label = 'کارتابل درخواست‌های مراجعین';
+            }
           }
+
+          const isReqItem = item.id === 'student-requests';
+          const badgeCount = isReqItem ? unreadRequestsCount : 
+                             item.id === 'anomaly-detection' ? unresolvedAnomaliesCount : 0;
 
           return (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
+                "w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
                 activeTab === item.id 
                   ? "bg-indigo-50 text-indigo-700 font-bold shadow-xs border border-indigo-100" 
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               )}
             >
-              <Icon size={16} className={cn(
-                "shrink-0 transition-colors",
-                activeTab === item.id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
-              )} />
-              <span className="text-xs font-semibold truncate">{label}</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Icon size={16} className={cn(
+                  "shrink-0 transition-colors",
+                  activeTab === item.id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
+                )} />
+                <span className="text-xs font-semibold truncate">{label}</span>
+              </div>
+
+              {badgeCount > 0 && (
+                isReqItem ? (
+                  currentUser?.level === 3 ? (
+                    <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] font-black shadow-xs animate-bounce flex items-center gap-0.5">
+                      📩 {badgeCount} پاسخ
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-600 text-white rounded-full text-[10px] font-black shadow-md animate-pulse flex items-center gap-0.5 ring-2 ring-rose-400/50">
+                      🔥 {badgeCount} جدید
+                    </span>
+                  )
+                ) : (
+                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black animate-pulse">
+                    {badgeCount}
+                  </span>
+                )
+              )}
             </button>
           );
         })}

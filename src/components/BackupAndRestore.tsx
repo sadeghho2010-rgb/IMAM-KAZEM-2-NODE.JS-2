@@ -150,6 +150,139 @@ export default function BackupAndRestore() {
   const [isUploadingToCloud, setIsUploadingToCloud] = useState<boolean>(false);
   const [selectedMentorFilter, setSelectedMentorFilter] = useState<string>('all');
 
+  // Automated On-Disk Backups & Snapshot State
+  const [onDiskBackups, setOnDiskBackups] = useState<Array<{ name: string; sizeBytes: number; createdAt: string; isAutomated: boolean }>>([]);
+  const [isLoadingDiskBackups, setIsLoadingDiskBackups] = useState<boolean>(false);
+  const [isTakingSnapshot, setIsTakingSnapshot] = useState<boolean>(false);
+  const snapshotFileInputRef = useRef<HTMLInputElement>(null);
+  const [snapshotPreviewData, setSnapshotPreviewData] = useState<{
+    metadata: any;
+    data: any;
+    isValidChecksum: boolean;
+    computedChecksum: string;
+  } | null>(null);
+
+  const loadScheduledBackups = async () => {
+    setIsLoadingDiskBackups(true);
+    try {
+      const res = await fetch('/api/database/scheduled-backups');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.backups)) {
+        setOnDiskBackups(data.backups);
+      }
+    } catch (e) {
+      console.warn('Error loading scheduled backups:', e);
+    } finally {
+      setIsLoadingDiskBackups(false);
+    }
+  };
+
+  const handleDownloadFullSnapshot = async () => {
+    setIsTakingSnapshot(true);
+    try {
+      const res = await fetch('/api/database/snapshot');
+      if (!res.ok) throw new Error('خطا در دریافت خروجی اسنپ‌شات از سرور.');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `madrasah_full_snapshot_${new Date().toISOString().substring(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatusMessage({
+        type: 'success',
+        text: 'اسنپ‌شات کامل پایگاه داده همراه با امضای هش SHA-256 با موفقیت دانلود شد.'
+      });
+      loadScheduledBackups();
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err?.message || 'خطا در تهیه اسنپ‌شات کامل دیتابیس.' });
+    } finally {
+      setIsTakingSnapshot(false);
+    }
+  };
+
+  const handleTriggerScheduledNow = async () => {
+    setIsTakingSnapshot(true);
+    try {
+      const res = await fetch('/api/database/scheduled-backups/run-now', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStatusMessage({ type: 'success', text: data.message });
+        loadScheduledBackups();
+      } else {
+        setStatusMessage({ type: 'error', text: data.message || 'خطا در اجرای پشتیبان‌گیری خودکار.' });
+      }
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err?.message || 'خطا در ارتباط با سرور.' });
+    } finally {
+      setIsTakingSnapshot(false);
+    }
+  };
+
+  const handleSnapshotFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+
+      if (!payload.metadata || !payload.data) {
+        alert('فایل انتخاب‌شده ساختار معتبر اسنپ‌شات دیتابیس را ندارد.');
+        return;
+      }
+
+      // Compute SHA-256 checksum
+      const crypto = window.crypto?.subtle;
+      let computedHex = '';
+      if (crypto) {
+        const jsonStr = JSON.stringify(payload.data);
+        const encoded = new TextEncoder().encode(jsonStr);
+        const hashBuf = await crypto.digest('SHA-256', encoded);
+        computedHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+
+      const isValidChecksum = !payload.metadata.checksum || !computedHex || payload.metadata.checksum === computedHex;
+
+      setSnapshotPreviewData({
+        metadata: payload.metadata,
+        data: payload.data,
+        isValidChecksum,
+        computedChecksum: computedHex
+      });
+    } catch (err: any) {
+      alert('خطا در خواندن فایل اسنپ‌شات: ' + err?.message);
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleConfirmSnapshotRestore = async () => {
+    if (!snapshotPreviewData) return;
+    setIsImporting(true);
+    try {
+      const res = await fetch('/api/database/restore-snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshotPayload: { metadata: snapshotPreviewData.metadata, data: snapshotPreviewData.data } })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStatusMessage({ type: 'success', text: data.message });
+        setSnapshotPreviewData(null);
+        await loadData();
+      } else {
+        setStatusMessage({ type: 'error', text: data.message || 'خطا در بازگردانی اسنپ‌شات.' });
+      }
+    } catch (err: any) {
+      setStatusMessage({ type: 'error', text: err?.message || 'خطا در ارتباط با سرور بازگردانی.' });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Password Verification State
   const [isPasswordVerified, setIsPasswordVerified] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');

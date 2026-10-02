@@ -47,6 +47,9 @@ import UserManagementSettings from './components/admin/UserManagementSettings';
 import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
 import DatabaseConnectionTest from './components/DatabaseConnectionTest';
 import TeacherPortal from './components/TeacherPortal';
+import StudentRequestsPortal from './components/StudentRequestsPortal';
+import AnomalyDetectionView from './components/admin/AnomalyDetectionView';
+import SecurityPinModal from './components/auth/SecurityPinModal';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -183,6 +186,10 @@ function AppContent() {
         return <StaffBank />;
       case 'teacher-transport':
         return <TeacherTransportManagement />;
+      case 'student-requests':
+        return <StudentRequestsPortal />;
+      case 'anomaly-detection':
+        return <AnomalyDetectionView />;
       case 'backup':
         return <BackupAndRestore />;
       case 'audit-logs':
@@ -359,6 +366,9 @@ function AppContent() {
         </header>
 
         <main className="p-4 lg:p-8">
+          {/* Global Security PIN Challenge Modal */}
+          <SecurityPinModal />
+
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

@@ -29,6 +29,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'attendance', label: 'حضور و غیاب طلاب', group: 'آموزش و تدریس', description: 'ثبت غیبت، تاخیر، اخطارها و آمار حضور' },
 
   // مدیریت طلاب و کاربران
+  { id: 'student-requests', label: 'سامانه درخواست‌های طلاب', group: 'مدیریت طلاب و کاربران', description: 'ثبت، پیگیری و گردش آنلاین درخواست‌های آموزشی، مالی و رفاهی طلاب' },
   { id: 'students', label: 'مدیریت کل طلاب', group: 'مدیریت طلاب و کاربران', description: 'پرونده جامع، مشخصات، ویرایش و ثبت طلاب' },
   { id: 'active-students', label: 'طلاب فعال', group: 'مدیریت طلاب و کاربران', description: 'لیست سریع طلاب فعال دوره جاری' },
   { id: 'student-portal', label: 'پرتال اختصاصی طلبه', group: 'مدیریت طلاب و کاربران', description: 'صفحه کاربری طلبه جهت ثبت فعالیت و مشاهده پرونده' },
@@ -66,6 +67,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   // مدیریت سیستم و امنیت
   { id: 'user-management', label: 'تنظیمات کاربران و سطوح دسترسی', group: 'مدیریت سیستم و امنیت', description: 'تعریف کاربران، تعیین منوها و مجوزهای ویرایش' },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', group: 'مدیریت سیستم و امنیت', description: 'تولید شناسه ورود، بازنشانی رمز و چاپ کارت' },
+  { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', group: 'مدیریت سیستم و امنیت', description: 'سامانه هوشمند مانیتورینگ تغییرات مشکوک و بازگردانی سریع' },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', group: 'مدیریت سیستم و امنیت', description: 'دریافت نسخه پشتیبان JSON و بازیابی داده‌ها' },
   { id: 'audit-logs', label: 'فعالیت‌های سایت و وقایع', group: 'مدیریت سیستم و امنیت', description: 'لاگ تمامی تغییرات، ورودها و اقدامات کاربران' },
   { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', group: 'مدیریت سیستم و امنیت', description: 'مانیتورینگ رخدادهای سیستمی و هشدارهای سرور' },
@@ -634,7 +636,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Finance manager
   if (role === 'finance_manager' || role === 'financial_officer' || username === 'MALI') {
     const allowed = [
-      'finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch',
+      'student-requests', 'finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch',
       'finance-claims', 'finance-loans-fund', 'finance-expenses-reports', 'finance',
       'workflow', 'todos', 'academic-calendar', 'students', 'teachers-bank', 'staff-bank',
       'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs'
@@ -645,7 +647,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Research manager
   if (role === 'research_manager' || role === 'research_officer' || username === 'YAZDANI') {
     const allowed = [
-      'active-students', 'research', 'article-evaluations', 'counseling-classes',
+      'student-requests', 'active-students', 'research', 'article-evaluations', 'counseling-classes',
       'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'db-connection-test'
     ];
     return allowed.includes(tabId);
@@ -663,7 +665,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Grade supervisors / mentors (ISJ, HO, SOL, ASADI)
   if (role.startsWith('grade_supervisor') || role === 'grade_mentor' || ['ISJ', 'HO', 'SOL', 'ASADI'].includes(username)) {
     const allowed = [
-      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'students', 'active-students',
+      'student-requests', 'todos', 'workflow', 'academic-calendar', 'presence-hours', 'students', 'active-students',
       'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'consultation-advisor',
       'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
@@ -682,7 +684,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Level 3 (Students & class rep)
   if (user.level === 3 || role === 'student' || role === 'class_representative') {
     const allowed = [
-      'student-portal', 'student-meals', 'student-schedule', 'academic-calendar',
+      'student-requests', 'student-portal', 'student-meals', 'student-schedule', 'academic-calendar',
       'discussion', 'research', 'attendance', 'stats', 'course-selection', 'programs', 'classrooms'
     ];
     return allowed.includes(tabId);
@@ -696,6 +698,11 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
   if (user.level === 1 && user.role === 'super_admin') return true;
   if (user.level === 1) return false; // school_manager / vice_principal are read-only
   
+  // Student Requests Portal: All authorized users (students & officers) can submit or review requests
+  if (tabId === 'student-requests') {
+    return true;
+  }
+
   // Teachers (Level 3): only allowed to edit their counseling classes evaluations
   if (user.role === 'teacher') {
     return tabId === 'counseling-classes' || tabId === 'teacher-portal';
