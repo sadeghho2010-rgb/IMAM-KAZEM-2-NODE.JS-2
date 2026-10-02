@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -89,7 +90,18 @@ async function generateContentWithFallback(client: GoogleGenAI, options: any) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+
+  // Trust proxy for Runflare, Heroku, Railway, Vercel, Nginx reverse proxies
+  app.set('trust proxy', 1);
+
+  // Universal CORS Middleware
+  app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'X-CSRF-TOKEN'],
+  }));
 
   // JSON body parser with generous limit
   app.use(express.json({ limit: '20mb' }));
@@ -103,29 +115,8 @@ async function startServer() {
     res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=()");
 
-    // Content Security Policy: allows AI studio frame embed while locking down scripts & styles
-    res.setHeader(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data: https:; connect-src 'self' https://*.supabase.co https://generativelanguage.googleapis.com; frame-ancestors 'self' https://ai.studio https://*.google.com https://*.run.app; base-uri 'self'; form-action 'self';"
-    );
-
     if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
       res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-    }
-    next();
-  });
-
-  // CORS and pre-flight handling with restricted origins
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin) {
-      res.header("Access-Control-Allow-Origin", origin);
-      res.header("Access-Control-Allow-Credentials", "true");
-    }
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
     }
     next();
   });
