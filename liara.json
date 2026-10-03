@@ -1,5 +1,11 @@
 {
   "platform": "node",
+  "app": "madrasah-app",
   "port": 3000,
-  "app": "madrasah-app"
+  "node": {
+    "version": "20"
+  },
+  "build": {
+    "command": "npm run build"
+  }
 }

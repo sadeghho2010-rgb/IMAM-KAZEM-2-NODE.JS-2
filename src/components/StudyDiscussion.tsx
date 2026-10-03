@@ -101,6 +101,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const [customProgramTitle, setCustomProgramTitle] = useState<string>('');
   const [showOtherStudentsInModal, setShowOtherStudentsInModal] = useState<boolean>(false);
   const [formSubject, setFormSubject] = useState<string>('فقه و اصول');
+  const [formSubjects, setFormSubjects] = useState<string[]>(['فقه', 'اصول']);
   const [formGrade, setFormGrade] = useState<string>(userGrade || 'پایه ۷');
   const [formRoom, setFormRoom] = useState<string>('');
   const [formMemberStudentIds, setFormMemberStudentIds] = useState<string[]>([]);
@@ -218,19 +219,21 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   }, [currentMentorId]);
 
   // Open Create Modal
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = (prefillStudentId?: string, prefillSubject?: string) => {
     setEditingGroup(null);
     setFormTitle('');
     setFormProgramId('');
     setCustomProgramTitle('');
     setShowOtherStudentsInModal(false);
-    setFormSubject('فقه و اصول');
+    setFormSubject(prefillSubject || 'فقه و اصول');
+    setFormSubjects(prefillSubject ? [prefillSubject] : ['فقه', 'اصول']);
     const defaultGrade = loggedStudent?.grade || (userGrade || 'پایه ۷');
     setFormGrade(defaultGrade);
     setFormRoom('');
     setModalGradeFilter('all');
     setModalSearchQuery('');
-    setFormMemberStudentIds(loggedStudent ? [loggedStudent.id] : []);
+    const targetStudentId = prefillStudentId || (loggedStudent ? loggedStudent.id : '');
+    setFormMemberStudentIds(targetStudentId ? [targetStudentId] : []);
     setFormExternalMembers([]);
     setExternalInput('');
     setFormDescription('');
@@ -242,6 +245,9 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setEditingGroup(group);
     setFormTitle(group.title);
     setFormSubject(group.subject || 'فقه و اصول');
+    setFormSubjects(Array.isArray(group.subjects) && group.subjects.length > 0 
+      ? group.subjects 
+      : (group.subject ? [group.subject] : ['فقه', 'اصول']));
     setFormGrade(group.grade || userGrade || 'پایه ۷');
     setFormRoom(group.room || '');
     
@@ -353,6 +359,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           ...editingGroup,
           title: formTitle.trim(),
           subject: formSubject || effectiveProgramTitle || 'فقه و اصول',
+          subjects: formSubjects.length > 0 ? formSubjects : [formSubject || 'فقه و اصول'],
           grade: formGrade,
           room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
@@ -370,6 +377,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           id: `group_${Date.now()}`,
           title: formTitle.trim(),
           subject: formSubject || effectiveProgramTitle || 'فقه و اصول',
+          subjects: formSubjects.length > 0 ? formSubjects : [formSubject || 'فقه و اصول'],
           grade: formGrade,
           room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
@@ -510,6 +518,58 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
 
     return list;
   }, [groups, isStudentUser, loggedStudent, selectedGradeFilter, searchQuery, allStudentsList]);
+
+  // Compliance Analysis: Check Fiqh and Usul discussion groups for active students
+  const missingDiscussionCompliance = useMemo(() => {
+    // If grade supervisor, only audit their own grade; otherwise audit selectedGradeFilter or all
+    const targetStudents = (isGradeSupervisor && userGrade)
+      ? allStudentsList.filter(s => s.grade === userGrade && isStudentActive(s))
+      : (selectedGradeFilter !== 'all'
+          ? allStudentsList.filter(s => s.grade === selectedGradeFilter && isStudentActive(s))
+          : allStudentsList.filter(s => isStudentActive(s)));
+
+    const missingFiqh: { student: Student; programs: string[] }[] = [];
+    const missingUsul: { student: Student; programs: string[] }[] = [];
+
+    for (const student of targetStudents) {
+      const enrolledIds = enrollments.filter(e => e.studentId === student.id).map(e => e.programId);
+      const studentProgs = programs.filter(p => enrolledIds.includes(p.id) || (p.grade === student.grade && (!p.type || (p.type as string) === 'عمومی' || (p.type as string) === 'GENERAL')));
+
+      const fiqhProgs = studentProgs.filter(p => {
+        const t = (p.title || '').toLowerCase();
+        return t.includes('فقه') || t.includes('مکاسب') || t.includes('لمعه') || t.includes('عروه') || t.includes('صلاة') || t.includes('طهارت') || t.includes('بیع') || t.includes('خیارات');
+      });
+
+      const usulProgs = studentProgs.filter(p => {
+        const t = (p.title || '').toLowerCase();
+        return t.includes('اصول') || t.includes('رسائل') || t.includes('کفایه') || t.includes('حلقات') || t.includes('موجز') || t.includes('فرائد');
+      });
+
+      const studentGroups = groups.filter(g => (g.memberStudentIds || []).includes(student.id));
+
+      const hasFiqhGroup = studentGroups.some(g => {
+        if (Array.isArray(g.subjects) && g.subjects.some(s => s.includes('فقه'))) return true;
+        const sub = (g.subject || g.title || g.programTitle || '').toLowerCase();
+        return sub.includes('فقه') || sub.includes('مکاسب') || sub.includes('لمعه');
+      });
+
+      const hasUsulGroup = studentGroups.some(g => {
+        if (Array.isArray(g.subjects) && g.subjects.some(s => s.includes('اصول'))) return true;
+        const sub = (g.subject || g.title || g.programTitle || '').toLowerCase();
+        return sub.includes('اصول') || sub.includes('رسائل') || sub.includes('کفایه');
+      });
+
+      if (fiqhProgs.length > 0 && !hasFiqhGroup) {
+        missingFiqh.push({ student, programs: fiqhProgs.map(p => p.title) });
+      }
+
+      if (usulProgs.length > 0 && !hasUsulGroup) {
+        missingUsul.push({ student, programs: usulProgs.map(p => p.title) });
+      }
+    }
+
+    return { missingFiqh, missingUsul };
+  }, [allStudentsList, enrollments, programs, groups, isGradeSupervisor, userGrade, selectedGradeFilter]);
 
   // Calculate Student Discussion Partners Analysis
   const getStudentDiscussionAnalysis = (studentId: string) => {
@@ -1023,7 +1083,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                 </p>
               </div>
               <button
-                onClick={handleOpenCreateModal}
+                onClick={() => handleOpenCreateModal()}
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs inline-flex items-center gap-2 transition-all shadow-sm"
               >
                 <Plus size={16} />
@@ -1158,6 +1218,124 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* ===================== تذکر و پایش دروس اصلی (فقه و اصول) برای مسئولین ===================== */}
+          {!isStudentUser && (
+            <div className="mt-8 space-y-4 pt-4 border-t-2 border-dashed border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black shrink-0">
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800">
+                      پایش و تذکر دروس اصلی فقه و اصول {isGradeSupervisor && userGrade ? `(${userGrade})` : (selectedGradeFilter !== 'all' ? `(${selectedGradeFilter})` : '')}
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      هر طلبه‌ای که در درس فقه یا اصول ثبت‌نام است، موظف به معرفی گروه مباحثه برای آن درس می‌باشد.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={cn(
+                    "px-2.5 py-1 rounded-full text-xs font-bold border",
+                    missingDiscussionCompliance.missingFiqh.length > 0 ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  )}>
+                    فقه: {missingDiscussionCompliance.missingFiqh.length} نفر فاقد گروه
+                  </span>
+                  <span className={cn(
+                    "px-2.5 py-1 rounded-full text-xs font-bold border",
+                    missingDiscussionCompliance.missingUsul.length > 0 ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  )}>
+                    اصول: {missingDiscussionCompliance.missingUsul.length} نفر فاقد گروه
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Fiqh Missing Group Box */}
+                <div className="bg-white rounded-2xl p-4 border border-rose-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-rose-100 pb-2">
+                    <span className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-rose-600" />
+                      <span>طلاب بدون گروه مباحثه فقه ({missingDiscussionCompliance.missingFiqh.length} نفر)</span>
+                    </span>
+                    {missingDiscussionCompliance.missingFiqh.length === 0 && (
+                      <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                        <CheckCircle2 size={12} />
+                        همه طلاب گروه فقه دارند
+                      </span>
+                    )}
+                  </div>
+
+                  {missingDiscussionCompliance.missingFiqh.length > 0 ? (
+                    <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                      {missingDiscussionCompliance.missingFiqh.map(({ student, programs: progs }) => (
+                        <div key={student.id} className="p-2.5 bg-rose-50/60 rounded-xl border border-rose-100 flex items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <span>{student.name}</span>
+                              <span className="text-[9px] px-1.5 py-0.2 bg-white text-slate-600 rounded border border-rose-200">{student.grade}</span>
+                            </div>
+                            <span className="text-[10px] text-rose-700 font-medium truncate block mt-0.5">دروس: {progs.join('، ')}</span>
+                          </div>
+                          <button
+                            onClick={() => handleOpenCreateModal(student.id, 'فقه')}
+                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-black shrink-0 transition-all cursor-pointer"
+                          >
+                            + ثبت گروه
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-3 text-center">کلیه طلاب کلاس‌های فقه، دارای گروه مباحثه ثبت‌شده هستند.</p>
+                  )}
+                </div>
+
+                {/* Usul Missing Group Box */}
+                <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                    <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                      <GraduationCap size={14} className="text-amber-700" />
+                      <span>طلاب بدون گروه مباحثه اصول ({missingDiscussionCompliance.missingUsul.length} نفر)</span>
+                    </span>
+                    {missingDiscussionCompliance.missingUsul.length === 0 && (
+                      <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                        <CheckCircle2 size={12} />
+                        همه طلاب گروه اصول دارند
+                      </span>
+                    )}
+                  </div>
+
+                  {missingDiscussionCompliance.missingUsul.length > 0 ? (
+                    <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                      {missingDiscussionCompliance.missingUsul.map(({ student, programs: progs }) => (
+                        <div key={student.id} className="p-2.5 bg-amber-50/60 rounded-xl border border-amber-100 flex items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <span>{student.name}</span>
+                              <span className="text-[9px] px-1.5 py-0.2 bg-white text-slate-600 rounded border border-amber-200">{student.grade}</span>
+                            </div>
+                            <span className="text-[10px] text-amber-800 font-medium truncate block mt-0.5">دروس: {progs.join('، ')}</span>
+                          </div>
+                          <button
+                            onClick={() => handleOpenCreateModal(student.id, 'اصول')}
+                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-black shrink-0 transition-all cursor-pointer"
+                          >
+                            + ثبت گروه
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-3 text-center">کلیه طلاب کلاس‌های اصول، دارای گروه مباحثه ثبت‌شده هستند.</p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1770,15 +1948,46 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                     </select>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label>موضوع / سرفصل مباحثه</label>
-                    <input
-                      type="text"
-                      value={formSubject}
-                      onChange={(e) => setFormSubject(e.target.value)}
-                      placeholder="مثال: فقه، اصول، منطق..."
-                      className="w-full px-3.5 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50 font-bold text-xs"
-                    />
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                      <span>پوشش دروس و موضوعات مباحثه (انتخاب یک یا چند مورد) *</span>
+                      <span className="text-[10px] text-indigo-600 font-normal">مشخص‌کننده تطبیق دروس اصلی</span>
+                    </label>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {['فقه', 'اصول', 'فلسفه', 'ادبیات', 'سایر'].map((subj) => {
+                        const isChecked = formSubjects.includes(subj);
+                        return (
+                          <button
+                            key={subj}
+                            type="button"
+                            onClick={() => {
+                              if (isChecked) {
+                                if (formSubjects.length > 1) {
+                                  const updated = formSubjects.filter(s => s !== subj);
+                                  setFormSubjects(updated);
+                                  setFormSubject(updated.join(' و '));
+                                }
+                              } else {
+                                const updated = [...formSubjects, subj];
+                                setFormSubjects(updated);
+                                setFormSubject(updated.join(' و '));
+                              }
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                              isChecked
+                                ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            )}
+                          >
+                            <span className={cn("w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] border", isChecked ? "bg-white text-indigo-700 border-white" : "border-slate-300")}>
+                              {isChecked ? '✓' : ''}
+                            </span>
+                            <span>{subj}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -1790,7 +1999,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                       type="text"
                       value={formRoom}
                       onChange={(e) => setFormRoom(e.target.value)}
-                      placeholder="مثال: مدرس ۱، حجره ۱۲، حیاط..."
+                      placeholder="مثال: مدرس ۱، حجره ۱۲..."
                       className="w-full px-3.5 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50 font-bold text-xs"
                     />
                   </div>

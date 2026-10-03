@@ -459,7 +459,7 @@ export default function StudentRequestsPortal() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-black text-slate-900">
-                {isStudentUser ? 'پرتال ثبت و پیگیری درخواست‌های طلاب' : 'کارتابل جامع درخواست‌های مراجعین'}
+                {isStudentUser ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب'}
               </h1>
               {isSuperAdmin && (
                 <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
@@ -476,18 +476,20 @@ export default function StudentRequestsPortal() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Action: New Request (Student or Admin) */}
-          <button
-            onClick={() => {
-              setNewUnit(activeUnitTab !== 'all' ? activeUnitTab : 'education');
-              setNewCategory(unitSettings[activeUnitTab !== 'all' ? activeUnitTab : 'education']?.allowedCategories[0] || '');
-              setShowNewRequestModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
-          >
-            <PlusCircle size={16} />
-            <span>ثبت درخواست جدید</span>
-          </button>
+          {/* Action: New Request (Available ONLY for Level 3 Students) */}
+          {isStudentUser && (
+            <button
+              onClick={() => {
+                setNewUnit(activeUnitTab !== 'all' ? activeUnitTab : 'education');
+                setNewCategory(unitSettings[activeUnitTab !== 'all' ? activeUnitTab : 'education']?.allowedCategories[0] || '');
+                setShowNewRequestModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+            >
+              <PlusCircle size={16} />
+              <span>ثبت درخواست جدید</span>
+            </button>
+          )}
 
           {/* Super Admin Control Modal Button */}
           {isSuperAdmin && (

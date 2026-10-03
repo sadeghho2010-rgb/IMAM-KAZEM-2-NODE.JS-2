@@ -50,21 +50,26 @@ import TeacherPortal from './components/TeacherPortal';
 import StudentRequestsPortal from './components/StudentRequestsPortal';
 import AnomalyDetectionView from './components/admin/AnomalyDetectionView';
 import SecurityPinModal from './components/auth/SecurityPinModal';
+import MainDashboard from './components/MainDashboard';
+import SettingsModal from './components/SettingsModal';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import DatabaseToastBanner from './components/DatabaseToastBanner';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette, Bug } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
   const { currentUser, logout, isTabAllowed, isSuperAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>('todos');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    return (currentUser && currentUser.level < 3) ? 'dashboard' : 'todos';
+  });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const [theme, setTheme] = useState<'default' | 'emerald'>(() => {
     return (localStorage.getItem('app_theme') as 'default' | 'emerald') || 'default';
@@ -86,19 +91,18 @@ function AppContent() {
     currentMentorId 
   } = useMentor();
 
-  useEffect(() => {
-    // Open sidebar by default on large screens
-    if (window.innerWidth >= 1024) {
-      setIsSidebarOpen(true);
-    }
-  }, []);
-
-  // When user logs in or role changes, default to an authorized tab
+  // When user logs in or role changes, default to dashboard for level 1 and 2
   useEffect(() => {
     if (currentUser) {
-      if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
-        const fallback = currentUser.allowedTabs?.[0] || (currentUser as any).allowedModules?.[0] || 'todos';
-        setActiveTab(fallback);
+      if (currentUser.level < 3) {
+        if (!activeTab || activeTab === 'todos') {
+          setActiveTab('dashboard');
+        }
+      } else {
+        if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
+          const fallback = currentUser.allowedTabs?.[0] || (currentUser as any).allowedModules?.[0] || 'todos';
+          setActiveTab(fallback);
+        }
       }
     }
   }, [currentUser]);
@@ -122,6 +126,8 @@ function AppContent() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'dashboard':
+        return <MainDashboard onNavigateTab={handleNavigate} onOpenSettings={() => setIsSettingsModalOpen(true)} />;
       case 'students':
         return <StudentList initialStudentId={selectedStudentIdForTab} />;
       case 'active-students':
@@ -215,7 +221,11 @@ function AppContent() {
       case 'db-connection-test':
         return <DatabaseConnectionTest />;
       default:
-        return <TodoList />;
+        return currentUser?.level < 3 ? (
+          <MainDashboard onNavigateTab={handleNavigate} onOpenSettings={() => setIsSettingsModalOpen(true)} />
+        ) : (
+          <TodoList />
+        );
     }
   };
 
@@ -259,7 +269,9 @@ function AppContent() {
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-bold text-slate-800">
-                    {activeTab === 'todos' ? 'پیگیری‌ها' :
+                    {activeTab === 'dashboard' ? 'داشبورد اصلی و مدیریت سریع' :
+                     activeTab === 'student-requests' ? (currentUser.level === 3 ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب') :
+                     activeTab === 'todos' ? 'پیگیری‌ها' :
                      activeTab === 'workflow' ? 'جریان کار و کارتابل تاییدات' :
                      activeTab === 'academic-calendar' ? 'تقویم آموزشی و سالنامه تحصیلی' :
                      activeTab === 'presence-hours' ? 'بخش ثبت ساعت حضور و کارکرد' :
@@ -267,6 +279,7 @@ function AppContent() {
                      activeTab === 'finance-grade-mentors' ? 'محاسبه حق‌الزحمه اساتید پایه (حق سرپرستی و پیگیری)' :
                      activeTab === 'finance-teachers' ? 'محاسبه حق‌الزحمه اساتید (ساعات تدریس و حق‌التدریس مصوب)' :
                      activeTab === 'finance-lunch' ? 'اطلاعات نهار و شام (رزرو غذا، لغو آشپزخانه و کسر شهریه)' :
+                     activeTab === 'student-meals' ? 'سامانه رزرو وعده‌های غذایی طلاب' :
                      activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌ها (طلاب، اساتید، کارکنان و سایر)' :
                      activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌ها' :
                      activeTab === 'finance-expenses-reports' ? 'هزینه‌ها (ردیف بودجه‌ها، ثبت هزینه‌ها و آمارها)' :
@@ -278,17 +291,26 @@ function AppContent() {
                      activeTab === 'student-schedule' ? 'برنامه هفتگی و درسی طلاب' :
                      activeTab === 'teachers-schedule' ? 'برنامه درسی و ساعات حضور اساتید' :
                      activeTab === 'research' ? 'بخش پژوهش و مقالات' :
+                     activeTab === 'article-evaluations' ? 'ارزیابی مقالات و کرسی‌های پژوهشی' :
                      activeTab === 'attendance' ? 'حضور و غیاب طلاب' :
+                     activeTab === 'course-selection' ? 'سامانه انتخاب واحد و دروس' :
+                     activeTab === 'oral-exams' ? 'سامانه آزمون شفاهی فقه و اصول' :
                      activeTab === 'counseling-classes' ? 'کلاس‌های مشاوره (ارزیابی، نمرات مشارکت و پژوهش)' :
                      activeTab === 'comments' ? 'نظرات، صحبت‌ها و آزمون شفاهی' :
-                     activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت و چینش گروه‌ها)' :
+                     activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت، چینش و پایش دروس فقه و اصول)' :
                      activeTab === 'lockers' ? 'اختصاص کمد به طلاب (امانت کلید و مدیریت کمدها)' :
                      activeTab === 'consultation-advisor' ? 'دستیار هوشمند چینش کلاس‌های مشاوره' :
                      activeTab === 'stats' ? 'آمار و گزارشات مطالعه' :
-                     activeTab === 'summary' ? 'جمع‌بندی نهایی و هوش مصنوعی' :
+                     activeTab === 'summary' ? 'پرونده علمی طلاب (تحلیل و جمع‌بندی)' :
                      activeTab === 'teachers-bank' ? 'بانک جامع اساتید و مدرسین' :
-                      activeTab === 'db-connection-test' ? 'تست اتصال و عیب‌یابی دیتابیس' :
-                     activeTab === 'user-management' ? 'مدیریت کاربران و سطوح دسترسی (ویژه سوپر ادمین)' : 'پشتیبان‌گیری'}
+                     activeTab === 'staff-bank' ? 'بانک کارکنان و پرسنل' :
+                     activeTab === 'teacher-transport' ? 'سرویس و ایاب و ذهاب اساتید' :
+                     activeTab === 'education-financial-report' ? 'تنظیم گزارش مالی طلاب' :
+                     activeTab === 'db-connection-test' ? 'تست اتصال و عیب‌یابی دیتابیس' :
+                     activeTab === 'user-credentials' ? 'مدیریت ورود و مشخصات کاربری' :
+                     activeTab === 'anomaly-detection' ? 'تشخیص ناهنجاری‌ها و بازرسی امنیت' :
+                     activeTab === 'backup' ? 'پشتیبان‌گیری از دیتابیس' :
+                     activeTab === 'user-management' ? 'مدیریت کاربران و سطوح دسترسی (ویژه سوپر ادمین)' : 'سامانه مدیریت حوزه علمیه'}
                   </h2>
 
                   {currentUser.isReadOnly && (
@@ -313,6 +335,19 @@ function AppContent() {
 
             {/* Top Right Header Space - User Badge, Settings & Logout */}
             <div className="flex items-center gap-2 sm:gap-3">
+              {/* Preferences / Settings Modal Button for Level 1 & Level 2 */}
+              {currentUser.level < 3 && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer shadow-xs"
+                  title="تنظیمات، تم و شخصی‌سازی سامانه"
+                >
+                  <Sliders size={14} className="text-indigo-600" />
+                  <span className="hidden md:inline">تنظیمات و تم</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => setTheme(prev => prev === 'emerald' ? 'default' : 'emerald')}
@@ -339,7 +374,7 @@ function AppContent() {
                   )}
                 >
                   <Settings size={14} />
-                  <span>مدیریت کاربران و دسترسی‌ها</span>
+                  <span>مدیریت کاربران</span>
                 </button>
               )}
 
@@ -377,6 +412,9 @@ function AppContent() {
             </div>
           </div>
         </header>
+
+        {/* Global Settings & Preferences Modal */}
+        <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
 
         {/* Global Bug Report Modal */}
         <BugReportModal isOpen={isBugModalOpen} onClose={() => setIsBugModalOpen(false)} />

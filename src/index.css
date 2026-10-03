@@ -17,6 +17,49 @@
   --color-indigo-950: #022c22;
 }
 
+/* Warm Amber Theme */
+[data-theme="amber"], .theme-amber {
+  --color-indigo-50: #fffbeb;
+  --color-indigo-100: #fef3c7;
+  --color-indigo-200: #fde68a;
+  --color-indigo-300: #fcd34d;
+  --color-indigo-400: #fbbf24;
+  --color-indigo-500: #f59e0b;
+  --color-indigo-600: #d97706;
+  --color-indigo-700: #b45309;
+  --color-indigo-800: #92400e;
+  --color-indigo-900: #78350f;
+  --color-indigo-950: #451a03;
+}
+
+/* Royal Violet Theme */
+[data-theme="violet"], .theme-violet {
+  --color-indigo-50: #f5f3ff;
+  --color-indigo-100: #ede9fe;
+  --color-indigo-200: #ddd6fe;
+  --color-indigo-300: #c4b5fd;
+  --color-indigo-400: #a78bfa;
+  --color-indigo-500: #8b5cf6;
+  --color-indigo-600: #7c3aed;
+  --color-indigo-700: #6d28d9;
+  --color-indigo-800: #5b21b6;
+  --color-indigo-900: #4c1d95;
+  --color-indigo-950: #2e1065;
+}
+
+/* Dark Mode Theme */
+[data-theme="dark"], .dark {
+  color-scheme: dark;
+}
+
+/* Performance Mode: Disable Animations & Transitions */
+.disable-animations, .disable-animations *, .reduce-motion, .reduce-motion * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0s !important;
+}
+
 @theme {
   --font-vazir: "Vazirmatn", "Vazirmatn FD", "Vazir", "Tahoma", sans-serif;
   --font-sans: "Vazirmatn", "Vazirmatn FD", "Vazir", "Tahoma", system-ui, sans-serif;

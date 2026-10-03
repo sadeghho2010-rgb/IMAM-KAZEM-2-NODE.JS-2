@@ -942,6 +942,7 @@ export interface DiscussionGroup {
   id: string;
   title: string;
   subject?: string;
+  subjects?: string[]; // e.g. ['فقه', 'اصول', 'فلسفه', 'سایر']
   grade?: string; // 'پایه ۷' | 'پایه ۸' | 'پایه ۹' | 'پایه ۱۰'
   mentorId?: string; // 'hayati' | 'hosseini' | 'soleimani' | 'asadi' | 'shahpoori'
   programId?: string; // شناسه درس اصلی یا برنامه آموزشی مرتبط

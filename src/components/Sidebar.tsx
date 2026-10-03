@@ -58,8 +58,91 @@ interface MenuItemDef {
   icon: React.ComponentType<{ size?: number; className?: string }>;
 }
 
+export interface MenuCategoryDef {
+  id: string;
+  title: string;
+  itemIds: string[];
+}
+
+export const MENU_CATEGORIES: MenuCategoryDef[] = [
+  {
+    id: 'requests_group',
+    title: 'کارتابل و رسیدگی به امور',
+    itemIds: ['student-requests', 'workflow', 'todos']
+  },
+  {
+    id: 'education_group',
+    title: 'امور آموزش و کلاس‌های درس',
+    itemIds: [
+      'programs',
+      'classrooms',
+      'student-schedule',
+      'teachers-schedule',
+      'course-selection',
+      'oral-exams',
+      'academic-calendar',
+      'teachers-bank'
+    ]
+  },
+  {
+    id: 'students_group',
+    title: 'امور طلاب و پایش',
+    itemIds: [
+      'students',
+      'active-students',
+      'attendance',
+      'discussion',
+      'stats',
+      'comments',
+      'summary'
+    ]
+  },
+  {
+    id: 'research_group',
+    title: 'پژوهش و کلاس‌های مشاوره',
+    itemIds: [
+      'research',
+      'article-evaluations',
+      'counseling-classes',
+      'consultation-advisor'
+    ]
+  },
+  {
+    id: 'finance_group',
+    title: 'امور مالی، رفاهی و خدمات',
+    itemIds: [
+      'finance-tuition',
+      'finance-grade-mentors',
+      'finance-teachers',
+      'finance-lunch',
+      'student-meals',
+      'finance-loans-fund',
+      'finance-claims',
+      'finance-expenses-reports',
+      'presence-hours',
+      'staff-bank',
+      'education-financial-report',
+      'lockers',
+      'teacher-transport'
+    ]
+  },
+  {
+    id: 'system_group',
+    title: 'مدیریت و امنیت سامانه',
+    itemIds: [
+      'user-management',
+      'user-credentials',
+      'backup',
+      'audit-logs',
+      'anomaly-detection',
+      'db-connection-test'
+    ]
+  }
+];
+
 const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
-  { id: 'student-requests', label: 'درخواست‌های طلاب', icon: Inbox },
+  { id: 'dashboard', label: 'داشبورد اصلی', icon: Sparkles },
+  { id: 'student-requests', label: 'پنل رسیدگی به درخواست', icon: Inbox },
   { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
   { id: 'teacher-portal', label: 'پنل اساتید و ارزیابی', icon: GraduationCap },
@@ -88,11 +171,11 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', icon: BookCheck },
   { id: 'comments', label: 'نظرات و ارزیابی‌ها', icon: MessageSquare },
-  { id: 'summary', label: 'جمع‌بندی و هوش مصنوعی', icon: BrainCircuit },
+  { id: 'summary', label: 'پرونده علمی طلاب', icon: BrainCircuit },
   { id: 'teachers-bank', label: 'بانک اساتید و مدرسین', icon: GraduationCap },
   { id: 'staff-bank', label: 'بانک کارکنان مجموعه', icon: Users },
-  { id: 'teacher-transport', label: 'سرویس و ایاب و ذهاب اساتید', icon: Car },
   { id: 'lockers', label: 'اختصاص کمد', icon: KeyRound },
+  { id: 'teacher-transport', label: 'سرویس و ایاب و ذهاب اساتید', icon: Car },
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', icon: Sparkles },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', icon: HardDrive },
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
@@ -110,6 +193,15 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
     return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab);
   });
+  const [collapsedCategories, setCollapsedCategories] = React.useState<Record<string, boolean>>({});
+
+  const toggleCategory = (catId: string) => {
+    setCollapsedCategories(prev => ({
+      ...prev,
+      [catId]: !prev[catId]
+    }));
+  };
+
   const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Real-time Badge Counts State
@@ -199,6 +291,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
     { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
     { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
+    { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   ].filter(sub => isTabAllowed(sub.id));
 
   const canAccessSiteManagement = siteManagementSubItems.length > 0;
@@ -232,8 +325,26 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       }
     }
 
+    // Level 2 access restriction: ONLY education, finance, cultural, and research managers have student-requests
+    // Base professors / mentors (استاد پایه) must NOT have this item!
+    if (item.id === 'student-requests' && currentUser.level === 2) {
+      const isEdu = currentUser?.role === 'education_manager' || currentUser?.username === 'SHAH' || (currentUser?.name && currentUser.name.includes('آموزش'));
+      const isFin = currentUser?.role === 'finance_manager' || currentUser?.username === 'MALI' || (currentUser?.name && currentUser.name.includes('مالی'));
+      const isCult = currentUser?.role === 'cultural_manager' || (currentUser?.name && currentUser.name.includes('فرهنگی'));
+      const isResearch = currentUser?.role === 'research_manager' || currentUser?.username === 'YAZDANI' || (currentUser?.name && currentUser.name.includes('پژوهش'));
+      if (!isEdu && !isFin && !isCult && !isResearch) {
+        return false;
+      }
+    }
+
+    // Rule 6: Education Manager must NOT have research and articles modules
+    const isEduUser = currentUser?.role === 'education_manager' || currentUser?.username === 'SHAH' || (currentUser?.name && currentUser.name.includes('آموزش'));
+    if (isEduUser && ['research', 'article-evaluations', 'counseling-classes', 'consultation-advisor'].includes(item.id)) {
+      return false;
+    }
+
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
-    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(item.id)) {
+    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
       return false;
     }
 
@@ -241,6 +352,68 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   });
 
   const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab);
+
+  const renderMenuItem = (item: MenuItemDef) => {
+    const Icon = item.icon;
+    let label = item.label;
+
+    // Contextual label adjustments
+    if (currentUser?.level === 3) {
+      if (item.id === 'student-requests') label = 'پنل ثبت درخواست';
+      if (item.id === 'student-schedule') label = 'برنامه درسی من';
+      if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
+      if (item.id === 'stats') label = 'ساعات مطالعه من';
+      if (item.id === 'research') label = 'پژوهش و مقالات من';
+    } else {
+      if (item.id === 'student-requests') {
+        label = 'پنل رسیدگی به درخواست';
+      }
+    }
+
+    const isReqItem = item.id === 'student-requests';
+    const badgeCount = isReqItem ? unreadRequestsCount : 
+                       item.id === 'anomaly-detection' ? unresolvedAnomaliesCount : 0;
+    const isActive = activeTab === item.id;
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => setActiveTab(item.id)}
+        className={cn(
+          "w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
+          isActive 
+            ? "bg-indigo-50 text-indigo-700 font-bold shadow-xs border border-indigo-100" 
+            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+        )}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Icon size={16} className={cn(
+            "shrink-0 transition-colors",
+            isActive ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
+          )} />
+          <span className="text-xs font-semibold truncate">{label}</span>
+        </div>
+
+        {badgeCount > 0 && (
+          isReqItem ? (
+            currentUser?.level === 3 ? (
+              <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] font-black shadow-xs animate-bounce flex items-center gap-0.5">
+                📩 {badgeCount} پاسخ
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-600 text-white rounded-full text-[10px] font-black shadow-md animate-pulse flex items-center gap-0.5 ring-2 ring-rose-400/50">
+                🔥 {badgeCount} جدید
+              </span>
+            )
+          ) : (
+            <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black animate-pulse">
+              {badgeCount}
+            </span>
+          )
+        )}
+      </button>
+    );
+  };
 
   return (
     <div 
@@ -275,76 +448,82 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
       </div>
 
       {/* Navigation Menu Items */}
-      <nav className="flex-1 p-2.5 overflow-y-auto space-y-1 custom-scrollbar">
-        {visibleMenuItems.map((item) => {
-          const Icon = item.icon;
-          let label = item.label;
+      <nav className="flex-1 p-2.5 overflow-y-auto space-y-2.5 custom-scrollbar">
+        {/* Main Dashboard Shortcut for Level 1 & Level 2 Users */}
+        {currentUser && currentUser.level < 3 && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('dashboard')}
+            className={cn(
+              "w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all duration-200 text-right group cursor-pointer mb-2",
+              activeTab === 'dashboard'
+                ? "bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-black shadow-md shadow-indigo-600/20"
+                : "bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 font-bold border border-indigo-100"
+            )}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Sparkles size={17} className={cn(
+                "shrink-0",
+                activeTab === 'dashboard' ? "text-amber-300 animate-spin" : "text-indigo-600"
+              )} />
+              <span className="text-xs font-black truncate">داشبورد اصلی</span>
+            </div>
+            <span className={cn(
+              "text-[9px] px-2 py-0.5 rounded-full font-black",
+              activeTab === 'dashboard' ? "bg-white/20 text-white" : "bg-white text-indigo-700 shadow-2xs"
+            )}>
+              صفحه اصلی
+            </span>
+          </button>
+        )}
 
-          // Contextual label adjustments
-          if (currentUser?.level === 3) {
-            if (item.id === 'student-requests') label = 'ثبت و پیگیری درخواست‌ها';
-            if (item.id === 'student-schedule') label = 'برنامه درسی من';
-            if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
-            if (item.id === 'stats') label = 'ساعات مطالعه من';
-            if (item.id === 'research') label = 'پژوهش و مقالات من';
-          } else {
-            if (item.id === 'student-requests') {
-              const isEdu = currentUser?.role === 'education_manager' || currentUser?.username === 'SHAH' || (currentUser?.name && currentUser.name.includes('آموزش'));
-              const isFin = currentUser?.role === 'finance_manager' || currentUser?.username === 'MALI' || (currentUser?.name && currentUser.name.includes('مالی'));
-              const isCult = currentUser?.role === 'cultural_manager' || currentUser?.role === 'research_manager' || currentUser?.username === 'YAZDANI';
-              const isSuper = currentUser?.level === 1 || currentUser?.role === 'super_admin';
+        {currentUser && currentUser.level < 3 ? (
+          MENU_CATEGORIES.map((cat) => {
+            const catItems = visibleMenuItems.filter(item => cat.itemIds.includes(item.id));
+            if (catItems.length === 0) return null;
 
-              if (isSuper) label = 'کارتابل کل درخواست‌های طلاب';
-              else if (isEdu) label = 'کارتابل درخواست‌های آموزش';
-              else if (isFin) label = 'کارتابل درخواست‌های مالی';
-              else if (isCult) label = 'کارتابل درخواست‌های فرهنگی';
-              else label = 'کارتابل درخواست‌های مراجعین';
-            }
-          }
+            const isCollapsed = !!collapsedCategories[cat.id];
+            const hasActiveItem = catItems.some(item => item.id === activeTab);
 
-          const isReqItem = item.id === 'student-requests';
-          const badgeCount = isReqItem ? unreadRequestsCount : 
-                             item.id === 'anomaly-detection' ? unresolvedAnomaliesCount : 0;
-
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={cn(
-                "w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
-                activeTab === item.id 
-                  ? "bg-indigo-50 text-indigo-700 font-bold shadow-xs border border-indigo-100" 
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Icon size={16} className={cn(
-                  "shrink-0 transition-colors",
-                  activeTab === item.id ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
-                )} />
-                <span className="text-xs font-semibold truncate">{label}</span>
+            return (
+              <div key={cat.id} className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(cat.id)}
+                  className={cn(
+                    "w-full px-2 py-1 flex items-center justify-between text-[11px] font-black rounded-lg transition-colors cursor-pointer select-none",
+                    hasActiveItem ? "text-indigo-900 bg-indigo-50/60" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  )}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full shrink-0",
+                      cat.id === 'requests_group' ? "bg-rose-500" :
+                      cat.id === 'education_group' ? "bg-indigo-500" :
+                      cat.id === 'students_group' ? "bg-sky-500" :
+                      cat.id === 'research_group' ? "bg-amber-500" :
+                      cat.id === 'finance_group' ? "bg-emerald-500" : "bg-slate-400"
+                    )} />
+                    <span className="tracking-tight truncate">{cat.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white border border-slate-200 text-slate-500 font-bold">{catItems.length}</span>
+                    <ChevronDown size={12} className={cn("text-slate-400 transition-transform duration-200", isCollapsed ? "-rotate-90" : "rotate-0")} />
+                  </div>
+                </button>
+                {!isCollapsed && (
+                  <div className="space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 pr-1">
+                    {catItems.map(renderMenuItem)}
+                  </div>
+                )}
               </div>
-
-              {badgeCount > 0 && (
-                isReqItem ? (
-                  currentUser?.level === 3 ? (
-                    <span className="px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] font-black shadow-xs animate-bounce flex items-center gap-0.5">
-                      📩 {badgeCount} پاسخ
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-600 text-white rounded-full text-[10px] font-black shadow-md animate-pulse flex items-center gap-0.5 ring-2 ring-rose-400/50">
-                      🔥 {badgeCount} جدید
-                    </span>
-                  )
-                ) : (
-                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black animate-pulse">
-                    {badgeCount}
-                  </span>
-                )
-              )}
-            </button>
-          );
-        })}
+            );
+          })
+        ) : (
+          <div className="space-y-1">
+            {visibleMenuItems.map(renderMenuItem)}
+          </div>
+        )}
 
         {/* ===================== منوی کشویی مدیریت سایت ===================== */}
         {canAccessSiteManagement && (

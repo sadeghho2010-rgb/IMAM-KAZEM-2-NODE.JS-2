@@ -361,7 +361,9 @@ CREATE TABLE IF NOT EXISTS `counseling_grades` (
     `created_by_role` VARCHAR(100) NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_counseling_student_course` (`student_id`, `course_title`),
+    INDEX `idx_counseling_teacher` (`counselor_teacher_name`),
     INDEX `idx_counseling_date` (`session_date`),
+    INDEX `idx_counseling_grade` (`grade`),
     CONSTRAINT `fk_counseling_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
