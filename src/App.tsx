@@ -58,7 +58,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import DatabaseToastBanner from './components/DatabaseToastBanner';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -66,10 +66,84 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<string>(() => {
     return (currentUser && currentUser.level < 3) ? 'dashboard' : 'todos';
   });
+  const [navigationHistory, setNavigationHistory] = useState<string[]>(['dashboard']);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  const navigateToTab = (tab: string, studentId?: string) => {
+    if (studentId) {
+      setSelectedStudentIdForTab(studentId);
+    }
+    setNavigationHistory(prev => {
+      if (prev[prev.length - 1] === tab) return prev;
+      return [...prev, tab];
+    });
+    setActiveTab(tab);
+  };
+
+  const handleBack = () => {
+    setNavigationHistory(prev => {
+      if (prev.length > 1) {
+        const nextHistory = prev.slice(0, prev.length - 1);
+        const targetTab = nextHistory[nextHistory.length - 1] || 'dashboard';
+        setActiveTab(targetTab);
+        return nextHistory;
+      } else {
+        setActiveTab('dashboard');
+        return ['dashboard'];
+      }
+    });
+  };
+
+  const getActiveTabTitle = (tab: string) => {
+    switch (tab) {
+      case 'dashboard': return 'داشبورد اصلی و مدیریت سریع';
+      case 'student-requests': return currentUser?.level === 3 ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب';
+      case 'todos': return 'پیگیری‌ها و تسک‌های جاری';
+      case 'workflow': return 'جریان کار و کارتابل تاییدات';
+      case 'academic-calendar': return 'تقویم آموزشی و سالنامه تحصیلی';
+      case 'presence-hours': return 'ثبت ساعت حضور و کارکرد';
+      case 'finance-tuition': return 'محاسبه شهریه طلاب';
+      case 'finance-grade-mentors': return 'حق‌الزحمه اساتید پایه';
+      case 'finance-teachers': return 'حق‌الزحمه اساتید';
+      case 'finance-lunch': return 'اطلاعات نهار و شام';
+      case 'student-meals': return 'سامانه رزرو وعده‌های غذایی طلاب';
+      case 'finance-claims': return 'مطالبات و بدهی‌ها';
+      case 'finance-loans-fund': return 'صندوق قرض‌الحسنه و وام‌ها';
+      case 'finance-expenses-reports': return 'هزینه‌ها و بودجه';
+      case 'students': return 'مدیریت کل کاربران';
+      case 'active-students': return 'لیست کاربران فعال';
+      case 'audit-logs': return 'فعالیت‌های سایت (Audit Logs)';
+      case 'programs': return 'برنامه‌های آموزشی و سرفصل‌ها';
+      case 'classrooms': return 'مَدرَس‌ها و کلاس‌های درس';
+      case 'student-schedule': return 'برنامه هفتگی و درسی طلاب';
+      case 'teachers-schedule': return 'برنامه درسی اساتید';
+      case 'research': return 'پژوهش و مقالات علمی';
+      case 'article-evaluations': return 'ارزیابی مقالات علمی';
+      case 'attendance': return 'حضور و غیاب طلاب';
+      case 'course-selection': return 'سامانه انتخاب واحد';
+      case 'oral-exams': return 'سامانه آزمون شفاهی فقه و اصول';
+      case 'counseling-classes': return 'کلاس‌های مشاوره';
+      case 'comments': return 'نظرات و ارزیابی‌های تربیتی';
+      case 'discussion': return 'گروه‌های بحثی و پایش دروس';
+      case 'lockers': return 'اختصاص کمد به طلاب';
+      case 'consultation-advisor': return 'دستیار چینش کلاس‌های مشاوره';
+      case 'stats': return 'آمار مطالعه طلاب';
+      case 'summary': return 'پرونده علمی طلاب';
+      case 'teachers-bank': return 'بانک اساتید و مدرسین';
+      case 'staff-bank': return 'بانک کارکنان و پرسنل';
+      case 'teacher-transport': return 'سرویس و ایاب و ذهاب اساتید';
+      case 'education-financial-report': return 'تنظیم گزارش مالی طلاب';
+      case 'db-connection-test': return 'تست اتصال دیتابیس';
+      case 'user-credentials': return 'مدیریت ورود و مشخصات کاربری';
+      case 'anomaly-detection': return 'تشخیص ناهنجاری‌ها و بازرسی';
+      case 'backup': return 'پشتیبان‌گیری از دیتابیس';
+      case 'user-management': return 'مدیریت کاربران و دسترسی‌ها';
+      default: return 'بخش مدیریت حوزه علمیه';
+    }
+  };
 
   const [theme, setTheme] = useState<'default' | 'emerald'>(() => {
     return (localStorage.getItem('app_theme') as 'default' | 'emerald') || 'default';
@@ -247,7 +321,7 @@ function AppContent() {
       <Sidebar 
         activeTab={activeTab} 
         setActiveTab={(tab) => {
-          setActiveTab(tab);
+          navigateToTab(tab);
           if (window.innerWidth < 1024) {
             setIsSidebarOpen(false);
           }
@@ -258,63 +332,35 @@ function AppContent() {
       
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
         <header className="bg-white border-b border-slate-200/80 sticky top-0 z-20 shadow-sm">
-          <div className="h-16 px-4 sm:px-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="h-16 px-4 sm:px-6 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                className="p-2 text-slate-500 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer shrink-0"
               >
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
-              <div className="flex flex-col">
+
+              {/* Prominent High-Visibility Return Button */}
+              {activeTab !== 'dashboard' && (
+                <button
+                  onClick={handleBack}
+                  className="group flex items-center gap-2 px-3.5 py-1.5 sm:px-5 sm:py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:via-teal-500 hover:to-indigo-500 text-white rounded-2xl shadow-md hover:shadow-xl hover:shadow-teal-500/25 font-black text-xs sm:text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer border border-white/30 shrink-0 ring-2 ring-teal-500/30"
+                  title="بازگشت به صفحه قبلی / کارت‌های اصلی داشبورد"
+                >
+                  <ArrowRight size={18} className="stroke-[3] transform group-hover:translate-x-1 transition-transform" />
+                  <span>برگشت</span>
+                </button>
+              )}
+
+              <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-bold text-slate-800">
-                    {activeTab === 'dashboard' ? 'داشبورد اصلی و مدیریت سریع' :
-                     activeTab === 'student-requests' ? (currentUser.level === 3 ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب') :
-                     activeTab === 'todos' ? 'پیگیری‌ها' :
-                     activeTab === 'workflow' ? 'جریان کار و کارتابل تاییدات' :
-                     activeTab === 'academic-calendar' ? 'تقویم آموزشی و سالنامه تحصیلی' :
-                     activeTab === 'presence-hours' ? 'بخش ثبت ساعت حضور و کارکرد' :
-                     activeTab === 'finance-tuition' ? 'محاسبه شهریه طلاب (اطلاعات حضور، فعالیت و محاسبه مکانیزه)' :
-                     activeTab === 'finance-grade-mentors' ? 'محاسبه حق‌الزحمه اساتید پایه (حق سرپرستی و پیگیری)' :
-                     activeTab === 'finance-teachers' ? 'محاسبه حق‌الزحمه اساتید (ساعات تدریس و حق‌التدریس مصوب)' :
-                     activeTab === 'finance-lunch' ? 'اطلاعات نهار و شام (رزرو غذا، لغو آشپزخانه و کسر شهریه)' :
-                     activeTab === 'student-meals' ? 'سامانه رزرو وعده‌های غذایی طلاب' :
-                     activeTab === 'finance-claims' ? 'مدیریت مطالبات و بدهی‌ها (طلاب، اساتید، کارکنان و سایر)' :
-                     activeTab === 'finance-loans-fund' ? 'گزارشات صندوق قرض‌الحسنه و وام‌ها' :
-                     activeTab === 'finance-expenses-reports' ? 'هزینه‌ها (ردیف بودجه‌ها، ثبت هزینه‌ها و آمارها)' :
-                     activeTab === 'students' ? 'مدیریت کل کاربران (مشترک)' :
-                     activeTab === 'active-students' ? 'لیست کاربران فعال' :
-                     activeTab === 'audit-logs' ? 'فعالیت‌های سایت و مانیتورینگ تغییرات' :
-                     activeTab === 'programs' ? 'برنامه‌های آموزشی و سرفصل‌ها' :
-                     activeTab === 'classrooms' ? 'مَدرَس‌ها (کلاس‌های درس و مدیریت فضاها)' :
-                     activeTab === 'student-schedule' ? 'برنامه هفتگی و درسی طلاب' :
-                     activeTab === 'teachers-schedule' ? 'برنامه درسی و ساعات حضور اساتید' :
-                     activeTab === 'research' ? 'بخش پژوهش و مقالات' :
-                     activeTab === 'article-evaluations' ? 'ارزیابی مقالات و کرسی‌های پژوهشی' :
-                     activeTab === 'attendance' ? 'حضور و غیاب طلاب' :
-                     activeTab === 'course-selection' ? 'سامانه انتخاب واحد و دروس' :
-                     activeTab === 'oral-exams' ? 'سامانه آزمون شفاهی فقه و اصول' :
-                     activeTab === 'counseling-classes' ? 'کلاس‌های مشاوره (ارزیابی، نمرات مشارکت و پژوهش)' :
-                     activeTab === 'comments' ? 'نظرات، صحبت‌ها و آزمون شفاهی' :
-                     activeTab === 'discussion' ? 'گروه‌های بحثی (مدیریت، چینش و پایش دروس فقه و اصول)' :
-                     activeTab === 'lockers' ? 'اختصاص کمد به طلاب (امانت کلید و مدیریت کمدها)' :
-                     activeTab === 'consultation-advisor' ? 'دستیار هوشمند چینش کلاس‌های مشاوره' :
-                     activeTab === 'stats' ? 'آمار و گزارشات مطالعه' :
-                     activeTab === 'summary' ? 'پرونده علمی طلاب (تحلیل و جمع‌بندی)' :
-                     activeTab === 'teachers-bank' ? 'بانک جامع اساتید و مدرسین' :
-                     activeTab === 'staff-bank' ? 'بانک کارکنان و پرسنل' :
-                     activeTab === 'teacher-transport' ? 'سرویس و ایاب و ذهاب اساتید' :
-                     activeTab === 'education-financial-report' ? 'تنظیم گزارش مالی طلاب' :
-                     activeTab === 'db-connection-test' ? 'تست اتصال و عیب‌یابی دیتابیس' :
-                     activeTab === 'user-credentials' ? 'مدیریت ورود و مشخصات کاربری' :
-                     activeTab === 'anomaly-detection' ? 'تشخیص ناهنجاری‌ها و بازرسی امنیت' :
-                     activeTab === 'backup' ? 'پشتیبان‌گیری از دیتابیس' :
-                     activeTab === 'user-management' ? 'مدیریت کاربران و سطوح دسترسی (ویژه سوپر ادمین)' : 'سامانه مدیریت حوزه علمیه'}
+                  <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate">
+                    {getActiveTabTitle(activeTab)}
                   </h2>
 
                   {currentUser.isReadOnly && (
-                    <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold rounded-full flex items-center gap-1">
+                    <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold rounded-full flex items-center gap-1 shrink-0">
                       <Eye size={11} />
                       فقط مشاهده (نظارتی)
                     </span>
@@ -334,10 +380,10 @@ function AppContent() {
             </div>
 
             {/* Top Right Header Space - User Badge & Logout */}
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               {currentUser.role === 'super_admin' && (
                 <button
-                  onClick={() => setActiveTab('user-management')}
+                  onClick={() => navigateToTab('user-management')}
                   className={cn(
                     "hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer",
                     activeTab === 'user-management'
@@ -391,8 +437,32 @@ function AppContent() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="max-w-7xl mx-auto"
+              className="max-w-7xl mx-auto space-y-4"
             >
+              {/* Prominent High-Visibility Return Banner for All Sections */}
+              {activeTab !== 'dashboard' && (
+                <div className="flex items-center justify-between gap-3 p-3.5 sm:p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-lg border border-indigo-500/30 mb-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
+                      <ArrowRight size={22} className="stroke-[2.5]" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[11px] font-medium text-emerald-300">موقعیت فعلی شما:</span>
+                      <span className="text-xs sm:text-sm font-black text-white truncate">{getActiveTabTitle(activeTab)}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleBack}
+                    className="group flex items-center gap-2 sm:gap-2.5 px-5 py-2.5 sm:px-6 sm:py-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 text-slate-950 rounded-2xl shadow-lg hover:shadow-emerald-500/30 font-black text-xs sm:text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer border border-white/40 ring-2 ring-emerald-400/40 shrink-0"
+                    title="بازگشت به کارت‌ها و صفحه قبل"
+                  >
+                    <ArrowRight size={20} className="stroke-[3] transform group-hover:translate-x-1 transition-transform" />
+                    <span>برگشت به داشبورد</span>
+                  </button>
+                </div>
+              )}
+
               {renderContent()}
             </motion.div>
           </AnimatePresence>
