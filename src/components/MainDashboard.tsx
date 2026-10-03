@@ -440,14 +440,6 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       return false;
     }
 
-    // Search filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const match = card.title.toLowerCase().includes(q) ||
-                    card.subtitle.toLowerCase().includes(q);
-      if (!match) return false;
-    }
-
     return true;
   });
 
@@ -531,8 +523,6 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           );
         })}
       </div>
-    </div>
-  );
     </div>
   );
 }

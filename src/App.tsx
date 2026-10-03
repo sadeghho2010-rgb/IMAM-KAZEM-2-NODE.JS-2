@@ -333,36 +333,8 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Top Right Header Space - User Badge, Settings & Logout */}
+            {/* Top Right Header Space - User Badge & Logout */}
             <div className="flex items-center gap-2 sm:gap-3">
-              {/* Preferences / Settings Modal Button for Level 1 & Level 2 */}
-              {currentUser.level < 3 && (
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer shadow-xs"
-                  title="تنظیمات، تم و شخصی‌سازی سامانه"
-                >
-                  <Sliders size={14} className="text-indigo-600" />
-                  <span className="hidden md:inline">تنظیمات و تم</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setTheme(prev => prev === 'emerald' ? 'default' : 'emerald')}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-bold transition-all border cursor-pointer shadow-xs",
-                  theme === 'emerald'
-                    ? "bg-emerald-800 text-white border-emerald-900"
-                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                )}
-                title="تغییر پوسته اصلی نرم‌افزار (تم سبز پررنگ و سفید)"
-              >
-                <Palette size={14} className={theme === 'emerald' ? "text-emerald-300" : "text-emerald-600"} />
-                <span className="hidden sm:inline">{theme === 'emerald' ? 'تم سبز پررنگ (زمردی)' : 'تم لاجوردی'}</span>
-              </button>
-
               {currentUser.role === 'super_admin' && (
                 <button
                   onClick={() => setActiveTab('user-management')}
@@ -388,17 +360,6 @@ function AppContent() {
                   <span className="text-[9px] text-slate-400 font-mono font-bold">@{currentUser.username}</span>
                 </div>
               </div>
-
-              {/* Bug Report Button */}
-              <button
-                type="button"
-                onClick={() => setIsBugModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs font-bold transition-all border border-rose-200 bg-rose-50/80 text-rose-700 hover:bg-rose-100 cursor-pointer shadow-xs"
-                title="گزارش باگ یا خطا در سامانه"
-              >
-                <Bug size={14} className="text-rose-600" />
-                <span className="hidden sm:inline">گزارش باگ</span>
-              </button>
 
               {/* Logout Button */}
               <button
