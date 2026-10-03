@@ -44,7 +44,8 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Terminal
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -651,6 +652,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-slate-700'
     },
     {
+      id: 'app-logs',
+      title: 'لاگ‌ها و خطاهای سیستم (System Logs)',
+      subtitle: 'مشاهده لحظه‌ای خطاهای فرانتاند، استک تریس و وضعیت درخواست‌ها',
+      category: 'system',
+      icon: Terminal,
+      iconBg: 'bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-800 text-white shadow-lg shadow-emerald-600/30',
+      cardGradient: 'from-emerald-600/10 via-teal-500/5 to-transparent',
+      borderGlow: 'hover:border-emerald-500 hover:shadow-2xl hover:shadow-emerald-600/20',
+      accentText: 'text-emerald-600'
+    },
+    {
       id: 'anomaly-detection',
       title: 'تشخیص ناهنجاری‌ها و بازرسی امنیت',
       subtitle: 'پایش رویدادهای مشکوک، هشدارها و رولبک خودکار',
@@ -749,7 +761,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-slate-700/15 via-indigo-500/5 to-transparent',
       borderGlow: 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/25',
       accentText: 'text-slate-700',
-      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'anomaly-detection', 'db-connection-test']
+      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'anomaly-detection', 'db-connection-test']
     }
   ];
 

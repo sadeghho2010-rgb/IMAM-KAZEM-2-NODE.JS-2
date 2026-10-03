@@ -134,6 +134,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'user-credentials',
       'backup',
       'audit-logs',
+      'app-logs',
       'anomaly-detection',
       'db-connection-test'
     ]
@@ -181,6 +182,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-management', label: 'مدیریت کاربران و دسترسی‌ها', icon: Settings },
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
+  { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
   { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها', icon: ShieldAlert },
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی طلاب', icon: FileSpreadsheet },
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
