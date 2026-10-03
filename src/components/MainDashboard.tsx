@@ -39,7 +39,12 @@ import {
   FolderKanban,
   ChevronLeft,
   Layers,
-  Grid
+  Grid,
+  UserCheck,
+  FileSpreadsheet,
+  ShieldCheck,
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -275,6 +280,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-sky-600'
     },
     {
+      id: 'teachers-schedule',
+      title: 'برنامه درسی اساتید',
+      subtitle: 'مشاهده و مدیریت برنامه زمان‌بندی تدریس اساتید حوزه',
+      category: 'education',
+      icon: GraduationCap,
+      iconBg: 'bg-gradient-to-br from-indigo-500 via-blue-600 to-violet-700 text-white shadow-lg shadow-indigo-500/30',
+      cardGradient: 'from-indigo-500/10 via-blue-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/20',
+      accentText: 'text-indigo-600'
+    },
+    {
       id: 'course-selection',
       title: 'سامانه انتخاب واحد',
       subtitle: 'مدیریت بازه‌های انتخاب واحد و درخواست‌های دروس آموزشی',
@@ -295,6 +311,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-cyan-500/10 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-cyan-400 hover:shadow-2xl hover:shadow-cyan-500/20',
       accentText: 'text-cyan-600'
+    },
+    {
+      id: 'academic-calendar',
+      title: 'تقویم آموزشی',
+      subtitle: 'برنامه‌ریزی، زمان‌بندی ترم‌ها، امتحانات و رویدادهای علمی',
+      category: 'education',
+      icon: CalendarDays,
+      iconBg: 'bg-gradient-to-br from-purple-500 via-indigo-600 to-blue-600 text-white shadow-lg shadow-purple-500/30',
+      cardGradient: 'from-purple-500/10 via-indigo-500/5 to-transparent',
+      borderGlow: 'hover:border-purple-400 hover:shadow-2xl hover:shadow-purple-500/20',
+      accentText: 'text-purple-600'
     },
     {
       id: 'teachers-bank',
@@ -319,6 +346,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-sky-500/10 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/20',
       accentText: 'text-sky-600'
+    },
+    {
+      id: 'active-students',
+      title: 'طلاب فعال',
+      subtitle: 'لیست و وضعیت طلاب شاغل به تحصیل و در حال آموزش',
+      category: 'students',
+      icon: UserCheck,
+      iconBg: 'bg-gradient-to-br from-teal-500 via-emerald-600 to-cyan-600 text-white shadow-lg shadow-teal-500/30',
+      cardGradient: 'from-teal-500/10 via-emerald-500/5 to-transparent',
+      borderGlow: 'hover:border-teal-400 hover:shadow-2xl hover:shadow-teal-500/20',
+      accentText: 'text-teal-600'
     },
     {
       id: 'attendance',
@@ -468,6 +506,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-teal-600'
     },
     {
+      id: 'student-meals',
+      title: 'رزرو نهار و شام',
+      subtitle: 'سامانه رزرو آنلاین غذا و وعده‌های سلف طلاب',
+      category: 'finance',
+      icon: UtensilsCrossed,
+      iconBg: 'bg-gradient-to-br from-amber-500 via-orange-600 to-rose-600 text-white shadow-lg shadow-amber-500/30',
+      cardGradient: 'from-amber-500/10 via-orange-500/5 to-transparent',
+      borderGlow: 'hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/20',
+      accentText: 'text-amber-600'
+    },
+    {
       id: 'finance-loans-fund',
       title: 'صندوق قرض‌الحسنه و وام‌ها',
       subtitle: 'تقاضا، اقساط، مانده وام و گردش حساب صندوق',
@@ -499,6 +548,39 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-green-500/10 via-emerald-500/5 to-transparent',
       borderGlow: 'hover:border-green-400 hover:shadow-2xl hover:shadow-green-500/20',
       accentText: 'text-green-600'
+    },
+    {
+      id: 'presence-hours',
+      title: 'ساعت حضور و کارکرد',
+      subtitle: 'ثبت و محاسبه ساعات حضور، غیاب و کارکرد کادر و اساتید',
+      category: 'finance',
+      icon: Clock,
+      iconBg: 'bg-gradient-to-br from-blue-500 via-cyan-600 to-teal-600 text-white shadow-lg shadow-blue-500/30',
+      cardGradient: 'from-blue-500/10 via-cyan-500/5 to-transparent',
+      borderGlow: 'hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/20',
+      accentText: 'text-blue-600'
+    },
+    {
+      id: 'staff-bank',
+      title: 'بانک کارکنان مجموعه',
+      subtitle: 'اطلاعات پرسنلی، حقوقی و وظایف کادر اجرایی حوزه',
+      category: 'finance',
+      icon: Users,
+      iconBg: 'bg-gradient-to-br from-indigo-500 via-purple-600 to-slate-700 text-white shadow-lg shadow-indigo-500/30',
+      cardGradient: 'from-indigo-500/10 via-purple-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/20',
+      accentText: 'text-indigo-600'
+    },
+    {
+      id: 'education-financial-report',
+      title: 'تنظیم گزارش مالی طلاب',
+      subtitle: 'گزارش‌گیری جامع مالی، پرداختی‌ها و تسویه‌حساب‌های آموزش',
+      category: 'finance',
+      icon: FileSpreadsheet,
+      iconBg: 'bg-gradient-to-br from-emerald-600 via-teal-700 to-green-800 text-white shadow-lg shadow-emerald-600/30',
+      cardGradient: 'from-emerald-600/10 via-teal-500/5 to-transparent',
+      borderGlow: 'hover:border-emerald-500 hover:shadow-2xl hover:shadow-emerald-600/20',
+      accentText: 'text-emerald-600'
     },
     {
       id: 'lockers',
@@ -536,6 +618,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-slate-700'
     },
     {
+      id: 'user-credentials',
+      title: 'مدیریت ورود کاربران',
+      subtitle: 'تنظیم کلمه‌های عبور، نشست‌های فعال و بازنشانی گذرواژه',
+      category: 'system',
+      icon: ShieldCheck,
+      iconBg: 'bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-800 text-white shadow-lg shadow-blue-600/30',
+      cardGradient: 'from-blue-600/10 via-indigo-500/5 to-transparent',
+      borderGlow: 'hover:border-blue-500 hover:shadow-2xl hover:shadow-blue-600/20',
+      accentText: 'text-blue-600'
+    },
+    {
       id: 'backup',
       title: 'پشتیبان‌گیری از دیتابیس',
       subtitle: 'تهیه فایل پشتیبان و بازیابی ایمن داده‌های سامانه',
@@ -545,6 +638,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-slate-800/10 via-purple-500/5 to-transparent',
       borderGlow: 'hover:border-slate-600 hover:shadow-2xl hover:shadow-purple-500/20',
       accentText: 'text-slate-800'
+    },
+    {
+      id: 'audit-logs',
+      title: 'فعالیت‌های سایت (Audit Logs)',
+      subtitle: 'مشاهده ریز لاگ‌های تغییرات، دسترسی‌ها و تراکنش‌های سامانه',
+      category: 'system',
+      icon: Activity,
+      iconBg: 'bg-gradient-to-br from-slate-700 via-indigo-800 to-purple-900 text-white shadow-lg shadow-slate-700/30',
+      cardGradient: 'from-slate-700/10 via-indigo-500/5 to-transparent',
+      borderGlow: 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/20',
+      accentText: 'text-slate-700'
     },
     {
       id: 'anomaly-detection',
@@ -559,6 +663,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       badgeCount: unresolvedAnomaliesCount,
       badgeText: unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined,
       highlight: unresolvedAnomaliesCount > 0
+    },
+    {
+      id: 'db-connection-test',
+      title: 'تست اتصال به دیتابیس',
+      subtitle: 'بررسی وضعیت سلامت دیتابیس، نرخ پاسخگویی و همگام‌سازی',
+      category: 'system',
+      icon: RefreshCw,
+      iconBg: 'bg-gradient-to-br from-cyan-600 via-blue-700 to-indigo-800 text-white shadow-lg shadow-cyan-600/30',
+      cardGradient: 'from-cyan-600/10 via-blue-500/5 to-transparent',
+      borderGlow: 'hover:border-cyan-500 hover:shadow-2xl hover:shadow-cyan-600/20',
+      accentText: 'text-cyan-600'
     }
   ];
 
@@ -586,7 +701,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'student-schedule', 'course-selection', 'oral-exams', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'oral-exams', 'academic-calendar', 'teachers-bank']
     },
     {
       id: 'students_group',
@@ -598,7 +713,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'attendance', 'discussion', 'stats', 'summary', 'comments']
+      itemIds: ['students', 'active-students', 'attendance', 'discussion', 'stats', 'comments', 'summary']
     },
     {
       id: 'research_group',
@@ -622,7 +737,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-emerald-500/15 via-teal-500/5 to-transparent',
       borderGlow: 'hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/25',
       accentText: 'text-emerald-600',
-      itemIds: ['finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch', 'finance-loans-fund', 'finance-claims', 'finance-expenses-reports', 'lockers', 'teacher-transport']
+      itemIds: ['finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch', 'student-meals', 'finance-loans-fund', 'finance-claims', 'finance-expenses-reports', 'presence-hours', 'staff-bank', 'education-financial-report', 'lockers', 'teacher-transport']
     },
     {
       id: 'system_group',
@@ -634,7 +749,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-slate-700/15 via-indigo-500/5 to-transparent',
       borderGlow: 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/25',
       accentText: 'text-slate-700',
-      itemIds: ['user-management', 'backup', 'anomaly-detection']
+      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'anomaly-detection', 'db-connection-test']
     }
   ];
 
