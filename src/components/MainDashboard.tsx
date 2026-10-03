@@ -63,15 +63,11 @@ interface MainDashboardProps {
   onOpenSettings?: () => void;
 }
 
-export default function MainDashboard({ onNavigateTab, onOpenSettings }: MainDashboardProps) {
-  const { currentUser, isSuperAdmin, isReadOnly, isTabAllowed } = useAuth();
-  const { currentMentor } = useMentor();
+export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
+  const { currentUser, isSuperAdmin, isTabAllowed } = useAuth();
 
-  const [searchQuery, setSearchQuery] = useState('');
   const [unreadRequestsCount, setUnreadRequestsCount] = useState(0);
   const [unresolvedAnomaliesCount, setUnresolvedAnomaliesCount] = useState(0);
-  const [activeStudentsCount, setActiveStudentsCount] = useState(0);
-  const [totalProgramsCount, setTotalProgramsCount] = useState(0);
 
   // Ripple Coordinates
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
@@ -96,23 +92,11 @@ export default function MainDashboard({ onNavigateTab, onOpenSettings }: MainDas
   useEffect(() => {
     const loadStats = async () => {
       try {
-        const [reqs, stus, progs] = await Promise.all([
-          localDb.getDocs<StudentRequest>('student_requests').catch(() => []),
-          localDb.getDocs<any>('students').catch(() => []),
-          localDb.getDocs<any>('programs').catch(() => [])
-        ]);
+        const reqs = await localDb.getDocs<StudentRequest>('student_requests').catch(() => []);
 
         if (Array.isArray(reqs)) {
           const pendingCount = reqs.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
           setUnreadRequestsCount(pendingCount);
-        }
-
-        if (Array.isArray(stus)) {
-          setActiveStudentsCount(stus.filter(s => s.isActive !== false).length);
-        }
-
-        if (Array.isArray(progs)) {
-          setTotalProgramsCount(progs.length);
         }
 
         if (currentUser?.level === 1 || isSuperAdmin) {
@@ -467,223 +451,88 @@ export default function MainDashboard({ onNavigateTab, onOpenSettings }: MainDas
     return true;
   });
 
-  // Role title & Persian greeting
-  const todayShamsi = new Date().toLocaleDateString('fa-IR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8 font-vazir relative min-h-[calc(100vh-5rem)]" dir="rtl">
-      
-      {/* 1. HERO GREETING BANNER */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl sm:rounded-4xl p-6 sm:p-8 shadow-xl border border-indigo-700/50">
-        
-        {/* Decorative Background Mesh */}
-        <div className="absolute top-0 left-0 -translate-x-12 -translate-y-12 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-0 translate-x-12 translate-y-12 w-72 h-72 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="flex items-center gap-2.5">
-              <span className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-[11px] font-black text-indigo-200 border border-white/10 flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-300" />
-                <span>داشبورد اختصاصی سطح {currentUser?.level || 2}</span>
-              </span>
-              <span className="text-xs text-indigo-200/80 font-medium">📅 {todayShamsi}</span>
-            </div>
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 font-vazir relative min-h-[calc(100vh-5rem)]" dir="rtl">
+      {/* Dynamic Quick Action Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+        {userAllowedCards.map((card) => {
+          const Icon = card.icon;
 
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-white tracking-tight">
-              سلام و احترام، {currentUser?.name || currentUser?.fullName || currentUser?.username}
-            </h1>
-            
-            <p className="text-xs sm:text-sm text-indigo-100/80 font-medium leading-relaxed">
-              به سامانه جامع مدیریت خوش آمدید. تمامی ابزارها و ماژول‌های مورد نیاز حوزه کاری شما آماده دسترسی سریع و مدیریت یکپارچه هستند.
-            </p>
-          </div>
+          return (
+            <button
+              key={card.id}
+              onClick={(e) => handleCardClick(e, card.id)}
+              type="button"
+              className={cn(
+                "relative group overflow-hidden bg-white rounded-3xl p-5 sm:p-6 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-xl hover:-translate-y-1 select-none",
+                card.highlight ? "border-rose-300 ring-2 ring-rose-500/20" : "border-slate-200/90",
+                card.hoverBorder
+              )}
+            >
+              {/* Background Morphing Gradient On Hover */}
+              <div className={cn(
+                "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
+                card.gradient
+              )} />
 
-          {/* Quick Metrics & Settings Shortcut */}
-          <div className="flex flex-wrap items-center gap-3">
-            {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
-              <button
-                onClick={() => onNavigateTab('student-requests')}
-                className="px-4 py-2.5 bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-2xl text-xs font-black shadow-lg shadow-rose-500/25 flex items-center gap-2 hover:scale-105 transition-all cursor-pointer ring-2 ring-white/20 animate-pulse"
-              >
-                <Inbox size={16} />
-                <span>{unreadRequestsCount} درخواست جدید در انتظار</span>
-              </button>
-            )}
+              {/* Circular Ripple Wave */}
+              {ripples.map(r => (
+                <span
+                  key={r.id}
+                  className="absolute bg-indigo-500/30 rounded-full pointer-events-none animate-ping"
+                  style={{
+                    left: r.x - 20,
+                    top: r.y - 20,
+                    width: 40,
+                    height: 40
+                  }}
+                />
+              ))}
 
-            {onOpenSettings && (
-              <button
-                onClick={onOpenSettings}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-2xl text-xs font-black border border-white/15 transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
-              >
-                <Sliders size={16} className="text-amber-300" />
-                <span>تنظیمات و شخصی‌سازی</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Quick Mini Stats Strip */}
-        <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-bold">
-          <div className="flex items-center gap-2.5 text-indigo-100">
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <Users size={16} className="text-indigo-300" />
-            </div>
-            <div>
-              <span className="text-[10px] text-indigo-300 block font-normal">طلاب فعال</span>
-              <span className="text-sm font-black text-white">{activeStudentsCount} طلبه</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 text-indigo-100">
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <Calendar size={16} className="text-emerald-300" />
-            </div>
-            <div>
-              <span className="text-[10px] text-indigo-300 block font-normal">کلاس‌ها و دروس</span>
-              <span className="text-sm font-black text-white">{totalProgramsCount} برنامه فعال</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 text-indigo-100">
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <ShieldCheck size={16} className="text-amber-300" />
-            </div>
-            <div>
-              <span className="text-[10px] text-indigo-300 block font-normal">سطح دسترسی</span>
-              <span className="text-sm font-black text-white">{currentUser?.roleTitle || 'مسئول سازمانی'}</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 text-indigo-100">
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <Zap size={16} className="text-cyan-300" />
-            </div>
-            <div>
-              <span className="text-[10px] text-indigo-300 block font-normal">وضعیت پایگاه داده</span>
-              <span className="text-sm font-black text-emerald-300 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                متصل و آنلاین
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. SEARCH & QUICK FILTER TOOLBAR */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search size={18} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجوی سریع ماژول، بخش یا امکانات..."
-            className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-          <span>تعداد بخش‌های در دسترس:</span>
-          <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-xl font-black border border-indigo-100">
-            {userAllowedCards.length} ماژول
-          </span>
-        </div>
-      </div>
-
-      {/* 3. DYNAMIC QUICK ACTION CARDS GRID */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
-            <span>بخش‌ها و امکانات سریع کاری شما</span>
-          </h2>
-          <span className="text-xs text-slate-400 font-medium">جهت ورود سریع، روی کارت مورد نظر کلیک کنید</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-          {userAllowedCards.map((card) => {
-            const Icon = card.icon;
-
-            return (
-              <button
-                key={card.id}
-                onClick={(e) => handleCardClick(e, card.id)}
-                type="button"
-                className={cn(
-                  "relative group overflow-hidden bg-white rounded-3xl p-5 sm:p-6 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-xl hover:-translate-y-1 select-none",
-                  card.highlight ? "border-rose-300 ring-2 ring-rose-500/20" : "border-slate-200/90",
-                  card.hoverBorder
-                )}
-              >
-                {/* Background Morphing Gradient On Hover */}
-                <div className={cn(
-                  "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
-                  card.gradient
-                )} />
-
-                {/* Circular Ripple Wave */}
-                {ripples.map(r => (
-                  <span
-                    key={r.id}
-                    className="absolute bg-indigo-500/30 rounded-full pointer-events-none animate-ping"
-                    style={{
-                      left: r.x - 20,
-                      top: r.y - 20,
-                      width: 40,
-                      height: 40
-                    }}
-                  />
-                ))}
-
-                <div className="relative z-10 space-y-3.5">
-                  {/* Card Icon & Badge */}
-                  <div className="flex items-center justify-between">
-                    <div className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-xs group-hover:scale-110",
-                      card.category === 'requests' ? "bg-rose-50 text-rose-700 group-hover:bg-rose-600 group-hover:text-white" :
-                      card.category === 'education' ? "bg-indigo-50 text-indigo-700 group-hover:bg-indigo-600 group-hover:text-white" :
-                      card.category === 'students' ? "bg-sky-50 text-sky-700 group-hover:bg-sky-600 group-hover:text-white" :
-                      card.category === 'research' ? "bg-amber-50 text-amber-700 group-hover:bg-amber-600 group-hover:text-white" :
-                      card.category === 'finance' ? "bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white" :
-                      "bg-slate-100 text-slate-700 group-hover:bg-slate-800 group-hover:text-white"
-                    )}>
-                      <Icon size={24} />
-                    </div>
-
-                    {card.badgeText && (
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs animate-bounce">
-                        {card.badgeText}
-                      </span>
-                    )}
+              <div className="relative z-10 space-y-3.5">
+                {/* Card Icon & Badge */}
+                <div className="flex items-center justify-between">
+                  <div className={cn(
+                    "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-xs group-hover:scale-110",
+                    card.category === 'requests' ? "bg-rose-50 text-rose-700 group-hover:bg-rose-600 group-hover:text-white" :
+                    card.category === 'education' ? "bg-indigo-50 text-indigo-700 group-hover:bg-indigo-600 group-hover:text-white" :
+                    card.category === 'students' ? "bg-sky-50 text-sky-700 group-hover:bg-sky-600 group-hover:text-white" :
+                    card.category === 'research' ? "bg-amber-50 text-amber-700 group-hover:bg-amber-600 group-hover:text-white" :
+                    card.category === 'finance' ? "bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white" :
+                    "bg-slate-100 text-slate-700 group-hover:bg-slate-800 group-hover:text-white"
+                  )}>
+                    <Icon size={24} />
                   </div>
 
-                  {/* Card Titles */}
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-950 transition-colors">
-                      {card.title}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
-                      {card.subtitle}
-                    </p>
-                  </div>
+                  {card.badgeText && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs animate-bounce">
+                      {card.badgeText}
+                    </span>
+                  )}
                 </div>
 
-                {/* Footer Action Link */}
-                <div className="relative z-10 pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                  <span className="text-[11px] font-black">ورود به بخش</span>
-                  <ArrowLeft size={14} className="transform group-hover:-translate-x-1 transition-transform" />
+                {/* Card Titles */}
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-slate-900 group-hover:text-indigo-950 transition-colors">
+                    {card.title}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                    {card.subtitle}
+                  </p>
                 </div>
-              </button>
-            );
-          })}
-        </div>
+              </div>
+
+              {/* Footer Action Link */}
+              <div className="relative z-10 pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                <span className="text-[11px] font-black">ورود به بخش</span>
+                <ArrowLeft size={14} className="transform group-hover:-translate-x-1 transition-transform" />
+              </div>
+            </button>
+          );
+        })}
       </div>
+    </div>
+  );
     </div>
   );
 }
