@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import AnimatedCounter from './AnimatedCounter';
 import { 
   Users, 
   Calendar, 
@@ -892,7 +893,15 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   const transitionConfig = isAnimationsDisabled ? { duration: 0 } : { duration: 0.25 };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 font-vazir relative min-h-[calc(100vh-5rem)]" dir="rtl">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 font-vazir relative min-h-[calc(100vh-5rem)] overflow-hidden" dir="rtl">
+      {/* Ambient Floating Background Mesh Orbs */}
+      {!isAnimationsDisabled && (
+        <>
+          <div className="absolute -top-10 -right-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+          <div className="absolute top-1/3 -left-10 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+          <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        </>
+      )}
       
       {/* 1. COMPACT ELEGANT GREETING TITLE BANNER (30% Smaller with 2-Minute Glowing Shift) */}
       <div className={cn(
@@ -925,15 +934,19 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             </p>
           </div>
 
-          {/* Unread Alert Shortcut if any */}
+          {/* Unread Alert Shortcut with Live Pulse Dot & Animated Counter */}
           {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
             <button
               type="button"
               onClick={() => onNavigateTab('student-requests')}
               className="px-3.5 py-2 bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-2xl text-xs font-black shadow-md shadow-rose-500/25 flex items-center gap-2 hover:scale-105 transition-all cursor-pointer ring-2 ring-white/20 shrink-0 self-start sm:self-center"
             >
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+              </span>
               <Inbox size={15} />
-              <span>{unreadRequestsCount} درخواست در انتظار</span>
+              <span><AnimatedCounter value={unreadRequestsCount} /> درخواست در انتظار</span>
             </button>
           )}
         </div>
@@ -1130,12 +1143,16 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
 
                       <div className="flex items-center gap-1.5">
                         {badgeText && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
-                            {badgeText}
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50 flex items-center gap-1">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                            </span>
+                            <span>{badgeText}</span>
                           </span>
                         )}
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-200">
-                          {subItemsCount} بخش
+                          <AnimatedCounter value={subItemsCount} /> بخش
                         </span>
                       </div>
                     </div>

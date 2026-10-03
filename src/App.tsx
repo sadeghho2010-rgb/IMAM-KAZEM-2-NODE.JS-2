@@ -341,18 +341,6 @@ function AppContent() {
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
 
-              {/* Prominent High-Visibility Return Button */}
-              {activeTab !== 'dashboard' && (
-                <button
-                  onClick={handleBack}
-                  className="group flex items-center gap-2 px-3.5 py-1.5 sm:px-5 sm:py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:via-teal-500 hover:to-indigo-500 text-white rounded-2xl shadow-md hover:shadow-xl hover:shadow-teal-500/25 font-black text-xs sm:text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer border border-white/30 shrink-0 ring-2 ring-teal-500/30"
-                  title="بازگشت به صفحه قبلی / کارت‌های اصلی داشبورد"
-                >
-                  <ArrowRight size={18} className="stroke-[3] transform group-hover:translate-x-1 transition-transform" />
-                  <span>برگشت</span>
-                </button>
-              )}
-
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate">
