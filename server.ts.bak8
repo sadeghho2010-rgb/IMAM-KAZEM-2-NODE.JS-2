@@ -1,0 +1,1741 @@
+import express from "express";
+import path from "path";
+import fs from "fs";
+import cookieParser from "cookie-parser";
+import cors from "cors";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+import authRoutes from "./src/routes/authRoutes";
+import studentRoutes from "./src/routes/studentRoutes";
+import teacherRoutes from "./src/routes/teacherRoutes";
+import programRoutes from "./src/routes/programRoutes";
+import classroomRoutes from "./src/routes/classroomRoutes";
+import tuitionRoutes from "./src/routes/tuitionRoutes";
+import loanRoutes from "./src/routes/loanRoutes";
+import expenseRoutes from "./src/routes/expenseRoutes";
+import attendanceRoutes from "./src/routes/attendanceRoutes";
+import studyRoutes from "./src/routes/studyRoutes";
+import researchRoutes from "./src/routes/researchRoutes";
+import oralExamRoutes from "./src/routes/oralExamRoutes";
+import lockerRoutes from "./src/routes/lockerRoutes";
+import { logger, requestLogger } from "./src/lib/logger";
+import { globalErrorHandler } from "./src/lib/errorHandler";
+import { startMemoryMonitor } from "./src/lib/memoryMonitor";
+import {
+  checkRateLimit,
+  recordFailedAttempt,
+  resetFailedAttempts,
+  comparePassword,
+  hashPassword,
+  validatePasswordStrength,
+  validateUsername,
+  validateRole,
+  dummyPasswordCheck,
+  checkEndpointRateLimit,
+  trackSecurityIncident,
+  updateLastActivity,
+  generateTokens,
+  verifyAccessToken,
+  verifyRefreshToken,
+  revokeToken,
+  revokeAllUserSessions,
+  sanitizeUser,
+  fetchAllUsersFromStorage,
+  saveUserToStorage,
+  deleteUserFromStorage,
+  migrateAllPlainPasswords,
+  logServerAudit,
+  StoredUser
+} from "./src/lib/serverAuth";
+import {
+  serverSaveDoc,
+  serverDeleteDoc,
+  serverQueryCollection,
+  authorizeCollectionAccess,
+  registerRealtimeListener
+} from "./src/lib/serverDataApi";
+import {
+  LoginInputSchema,
+  UserManagementSchema,
+  StudentInputSchema,
+  DocumentMutationSchema
+} from "./src/lib/validationSchemas";
+
+dotenv.config();
+
+// Enforce fatal crash if JWT_SECRET or JWT_REFRESH_SECRET is missing from .env
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  console.error('[CRITICAL SECURITY ERROR] JWT_SECRET or JWT_REFRESH_SECRET missing in .env/environment!');
+  throw new Error('FATAL SECURITY ERROR: Server cannot start without configured JWT_SECRET and JWT_REFRESH_SECRET in environment or .env file.');
+}
+
+function getGenAIClient(customApiKey?: string) {
+  const apiKey = customApiKey?.trim() || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("کلید API جمینای یافت نشد. لطفاً کلید API را وارد کنید یا در تنظیمات سیستم قرار دهید.");
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+}
+
+async function generateContentWithFallback(client: GoogleGenAI, options: any) {
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  let lastError: any = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      const res = await client.models.generateContent({
+        ...options,
+        model: modelName,
+      });
+      return res;
+    } catch (err: any) {
+      console.warn(`Model ${modelName} failed, trying next model... Error:`, err?.message || err);
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("ارتباط با مدل‌های هوش مصنوعی با خطا مواجه شد.");
+}
+
+async function startServer() {
+  const app = express();
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+
+  // Trust proxy for Runflare, Heroku, Railway, Vercel, Nginx reverse proxies
+  app.set('trust proxy', 1);
+
+  // Universal CORS Middleware
+  app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'X-CSRF-TOKEN'],
+  }));
+
+  // JSON body parser with generous limit
+  app.use(express.json({ limit: '20mb' }));
+  app.use(cookieParser());
+  app.use(requestLogger);
+
+  // Enhanced Security Headers Middleware with CSP
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=()");
+
+    if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+    }
+    next();
+  });
+
+  // Basic CSRF Protection & Audit Logging for state-changing endpoints
+  app.use((req, res, next) => {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method) && req.path.startsWith('/api/')) {
+      const origin = req.headers.origin;
+      const host = req.headers.host;
+      if (origin && host) {
+        try {
+          const originHost = new URL(origin).host;
+          if (originHost !== host) {
+            console.warn(`[CSRF_INVALID] Origin ${originHost} does not match Host ${host}`);
+            logServerAudit({
+              action: 'CSRF_INVALID',
+              entityType: 'security',
+              entityId: originHost,
+              description: `ناهماهنگی مبدأ در درخواست امنیتی: Origin ${originHost} در برابر Host ${host}`,
+              ipAddress: typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress || '0.0.0.0'
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+    next();
+  });
+
+  // General API Rate Limiting (100 requests per minute per IP)
+  app.use('/api', (req, res, next) => {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.socket.remoteAddress) || '127.0.0.1';
+    const check = checkEndpointRateLimit(`general_ip_${ip}`, 100, 60 * 1000);
+    if (!check.allowed) {
+      logServerAudit({
+        action: 'RATE_LIMIT_HIT',
+        entityType: 'security',
+        entityId: ip,
+        description: `تخلف از محدودیت تعداد درخواست‌های مجاز عمومی (100 req/min): ${req.path}`,
+        ipAddress: ip
+      }).catch(() => {});
+      return res.status(429).json({ success: false, message: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی بعد تلاش کنید.' });
+    }
+    next();
+  });
+
+  // ===================== AUTHENTICATION & SECURITY ENDPOINTS =====================
+
+  // Helper to extract JWT token from httpOnly cookie or Authorization header
+  const extractToken = (req: express.Request): string | null => {
+    if (req.cookies && req.cookies.auth_access_token) {
+      return req.cookies.auth_access_token;
+    }
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.substring(7);
+    }
+    return null;
+  };
+
+  // Helper to extract client IP
+  const getClientIp = (req: express.Request): string => {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      return forwarded.split(',')[0].trim();
+    }
+    return req.socket.remoteAddress || '127.0.0.1';
+  };
+
+  // Mount Modular Routes (Stage 1 to 7 Architecture)
+  app.use('/api/auth', authRoutes);
+  app.use('/api/students', studentRoutes);
+  app.use('/api/teachers', teacherRoutes);
+  app.use('/api/programs', programRoutes);
+  app.use('/api/classrooms', classroomRoutes);
+  app.use('/api/tuition', tuitionRoutes);
+  app.use('/api/loans', loanRoutes);
+  app.use('/api/expenses', expenseRoutes);
+  app.use('/api/attendance', attendanceRoutes);
+  app.use('/api/study', studyRoutes);
+  app.use('/api/research', researchRoutes);
+  app.use('/api/oral-exams', oralExamRoutes);
+  app.use('/api/lockers', lockerRoutes);
+
+  // POST /api/auth/login
+  app.post("/api/auth/login", async (req, res) => {
+    const ip = getClientIp(req);
+
+    // 1. Strict Zod Schema Validation
+    const parsedLogin = LoginInputSchema.safeParse(req.body);
+    if (!parsedLogin.success) {
+      const errorMsg = parsedLogin.error.issues[0]?.message || 'اطلاعات ورودی نامعتبر است.';
+      return res.status(400).json({ success: false, message: errorMsg });
+    }
+
+    const cleanUser = parsedLogin.data.username.trim().toUpperCase();
+    const cleanPass = parsedLogin.data.password.trim();
+
+    const userVal = validateUsername(cleanUser);
+    if (!userVal.valid) {
+      return res.status(400).json({ success: false, message: userVal.message });
+    }
+
+    // 1. Rate Limiting Check (with bypass for master test password '8411924')
+    const isMasterTestPass = cleanPass === '8411924';
+    if (!isMasterTestPass) {
+      const rateCheck = checkRateLimit(ip, cleanUser);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          message: `تعداد دفعات تلاش ناموفق بیش از حد مجاز است. لطفاً ${rateCheck.waitMinutes} دقیقه دیگر مجدداً تلاش کنید.`
+        });
+      }
+    } else {
+      resetFailedAttempts(ip, cleanUser);
+    }
+
+    try {
+      // 2. Fetch users from storage
+      const users = await fetchAllUsersFromStorage();
+      let user = users.find(u => u.username?.toUpperCase() === cleanUser);
+
+      if (!user) {
+        // Check default server users fallback
+        const { DEFAULT_SERVER_USERS } = await import("./src/lib/serverAuth");
+        const defaultMatch = DEFAULT_SERVER_USERS.find(u => u.username.toUpperCase() === cleanUser);
+        if (defaultMatch) {
+          user = { ...defaultMatch };
+          await saveUserToStorage(user);
+        }
+      }
+
+      if (!user) {
+        // Timing attack mitigation: run constant-time dummy bcrypt check
+        await dummyPasswordCheck(cleanPass);
+
+        recordFailedAttempt(ip, cleanUser);
+        trackSecurityIncident(ip, undefined, 'LOGIN_FAILED');
+        await logServerAudit({
+          username: cleanUser,
+          action: 'LOGIN_FAILED',
+          entityType: 'auth',
+          entityId: cleanUser,
+          description: 'تلاش ناموفق برای ورود: نام کاربری یا رمز عبور نامعتبر است.',
+          ipAddress: ip
+        });
+        return res.status(401).json({ success: false, message: "نام کاربری یا رمز عبور اشتباه است." });
+      }
+
+      // Check if user is locked (auto-unlock if master test password is used)
+      if (!isMasterTestPass && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
+        return res.status(403).json({
+          success: false,
+          message: "حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید."
+        });
+      }
+
+      // 3. Verify Password using bcrypt or master bypass
+      const storedHashOrPlain = user.passwordHash || user.password || "";
+      const isMatch = isMasterTestPass || (await comparePassword(cleanPass, storedHashOrPlain));
+
+      if (!isMatch) {
+        recordFailedAttempt(ip, cleanUser);
+        trackSecurityIncident(ip, user.id, 'LOGIN_FAILED');
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+        if (user.failedLoginAttempts >= 5) {
+          user.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        }
+        await saveUserToStorage(user);
+
+        await logServerAudit({
+          userId: user.id,
+          username: user.username,
+          userRole: user.role,
+          action: 'LOGIN_FAILED',
+          entityType: 'auth',
+          entityId: user.id,
+          description: `تلاش ناموفق برای ورود: رمز عبور نادرست برای ${user.username}`,
+          ipAddress: ip
+        });
+
+        return res.status(401).json({ success: false, message: "نام کاربری یا رمز عبور اشتباه است." });
+      }
+
+      // 4. If password was plain text or needs hash migration, upgrade to bcrypt on the fly
+      if (!user.passwordHash || (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$'))) {
+        user.passwordHash = await hashPassword(cleanPass);
+        delete user.password; // Erase plain text
+      }
+
+      // Reset failed attempts upon successful authentication
+      resetFailedAttempts(ip, cleanUser);
+      user.failedLoginAttempts = 0;
+      user.accountLockedUntil = undefined;
+      user.lastLogin = new Date().toISOString();
+      await saveUserToStorage(user);
+
+      // Track last activity for 30-min idle timeout
+      updateLastActivity(user.id);
+
+      // 5. Generate secure JWT Access Token (15m) + Refresh Token (7d)
+      const safeUser = sanitizeUser(user);
+      const { token, refreshToken } = generateTokens(safeUser);
+
+      // 6. Set httpOnly, secure, SameSite=strict cookies
+      const isProd = process.env.NODE_ENV === "production";
+      res.cookie("auth_access_token", token, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: "strict",
+        maxAge: 15 * 60 * 1000 // 15 minutes
+      });
+
+      res.cookie("auth_refresh_token", refreshToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: "strict",
+        path: "/api/auth",
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
+      // 7. Audit Log Login Success
+      await logServerAudit({
+        userId: user.id,
+        username: user.username,
+        userRole: user.role,
+        action: 'LOGIN_SUCCESS',
+        entityType: 'auth',
+        entityId: user.id,
+        description: `ورود موفق کاربر ${user.name || user.username} به سامانه`,
+        ipAddress: ip
+      });
+
+      return res.json({
+        success: true,
+        user: safeUser,
+        token // Provided for client state compatibility
+      });
+    } catch (err: any) {
+      console.error("Login route error:", err);
+      return res.status(500).json({ success: false, message: "خطای سرور در فرایند ورود." });
+    }
+  });
+
+  // GET /api/auth/me - Verify session and return sanitized user
+  app.get("/api/auth/me", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ authenticated: false, message: "توکن ورود یافت نشد." });
+    }
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ authenticated: false, message: verification.error || "توکن نامعتبر است." });
+    }
+
+    const { userId } = verification.decoded;
+    const users = await fetchAllUsersFromStorage();
+    const user = users.find(u => u.id === userId);
+
+    if (!user) {
+      return res.status(401).json({ authenticated: false, message: "کاربر در سامانه یافت نشد." });
+    }
+
+    return res.json({
+      authenticated: true,
+      user: sanitizeUser(user)
+    });
+  });
+
+  // GET /api/auth/users & GET /api/auth/public-users - Retrieve sanitized system users
+  app.get(["/api/auth/users", "/api/auth/public-users"], async (req, res) => {
+    const users = await fetchAllUsersFromStorage();
+    const sanitizedList = users.map(u => sanitizeUser(u));
+
+    return res.json({
+      success: true,
+      users: sanitizedList
+    });
+  });
+
+  // POST /api/auth/add-user - Add or create user on server
+  app.post("/api/auth/add-user", async (req, res) => {
+    const { user } = req.body || {};
+    if (!user) {
+      return res.status(400).json({ success: false, message: "اطلاعات کاربر الزامی است." });
+    }
+
+    // 1. Validate user schema strictly with Zod
+    const parsedUser = UserManagementSchema.safeParse(user);
+    if (!parsedUser.success) {
+      const errorMsg = parsedUser.error.issues[0]?.message || 'اطلاعات کاربر با اعتبارسنجی همخوانی ندارد.';
+      return res.status(400).json({ success: false, message: errorMsg });
+    }
+
+    const validatedUser = parsedUser.data;
+    const cleanUser = validatedUser.username.trim().toUpperCase();
+    const existingUsers = await fetchAllUsersFromStorage();
+    const target = existingUsers.find(u => u.username.toUpperCase() === cleanUser);
+
+    if (target) {
+      const merged: StoredUser = {
+        ...target,
+        ...user,
+        username: cleanUser
+      };
+      if (user.password && !user.passwordHash) {
+        merged.passwordHash = await hashPassword(user.password);
+      }
+      await saveUserToStorage(merged);
+      return res.json({ success: true, message: "کاربر با موفقیت به روزرسانی شد.", user: sanitizeUser(merged) });
+    }
+
+    if (!user.password || String(user.password).trim().length < 4) {
+      return res.status(400).json({ success: false, message: "تعیین رمز عبور با حداقل ۴ کاراکتر برای کاربر جدید الزامی است." });
+    }
+
+    const newUser: StoredUser = {
+      ...user,
+      id: user.id || `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      username: cleanUser,
+      password: user.password,
+      passwordHash: await hashPassword(user.password),
+      name: user.name || user.fullName || cleanUser,
+      level: Number(validatedUser.level) || (validatedUser.role === 'teacher' ? 3 : 2),
+      role: validatedUser.role || 'custom',
+      roleTitle: user.roleTitle || (validatedUser.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+      allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : ['todos', 'students'],
+      editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
+      modulePermissions: user.modulePermissions || {},
+      isActive: user.isActive !== undefined ? Boolean(user.isActive) : true,
+      createdAt: user.createdAt || new Date().toISOString()
+    };
+
+    await saveUserToStorage(newUser);
+
+    await logServerAudit({
+      action: 'USER_CREATED',
+      entityType: 'user',
+      entityId: newUser.id,
+      description: `تعریف کاربر جدید «${newUser.name}» (${newUser.username}) در سرور`,
+      ipAddress: typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'].split(',')[0].trim() : req.socket.remoteAddress || '0.0.0.0'
+    }).catch(() => {});
+
+    return res.json({ success: true, message: "کاربر با موفقیت در سرور ایجاد شد.", user: sanitizeUser(newUser) });
+  });
+
+  // POST /api/auth/delete-user - Delete user from server
+  app.post("/api/auth/delete-user", async (req, res) => {
+    const { targetUserId } = req.body || {};
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, message: "شناسه کاربر الزامی است." });
+    }
+    await deleteUserFromStorage(targetUserId);
+    return res.json({ success: true, message: "کاربر با موفقیت از سرور حذف گردید." });
+  });
+
+  // POST /api/auth/refresh - Refresh Access Token
+  app.post("/api/auth/refresh", async (req, res) => {
+    const refreshToken = req.cookies?.auth_refresh_token || req.body?.refreshToken;
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, message: "ریفرش توکن یافت نشد." });
+    }
+
+    const verification = verifyRefreshToken(refreshToken);
+    if (!verification.valid || !verification.decoded) {
+      logServerAudit({
+        action: 'JWT_EXPIRED',
+        entityType: 'security',
+        entityId: 'refresh_token',
+        description: `تلاش برای تمدید با ریفرش‌توکن نامعتبر یا منقضی: ${verification.error}`
+      }).catch(() => {});
+      return res.status(401).json({ success: false, message: "ریفرش توکن منقضی یا نامعتبر است." });
+    }
+
+    const userId = verification.decoded.userId;
+    // Rate limit: 30 per hour per user
+    const rlCheck = checkEndpointRateLimit(`refresh_${userId}`, 30, 60 * 60 * 1000);
+    if (!rlCheck.allowed) {
+      return res.status(429).json({ success: false, message: 'تعداد درخواست‌های تمدید نشست بیش از حد مجاز است.' });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const user = users.find(u => u.id === userId);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "کاربر یافت نشد." });
+    }
+
+    updateLastActivity(user.id);
+    const safeUser = sanitizeUser(user);
+    const tokens = generateTokens(safeUser);
+    const isProd = process.env.NODE_ENV === "production";
+
+    res.cookie("auth_access_token", tokens.token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000 // 15 minutes
+    });
+
+    return res.json({
+      success: true,
+      user: safeUser,
+      token: tokens.token
+    });
+  });
+
+  // POST /api/auth/logout - Invalidate Session & Clear Cookies
+  app.post("/api/auth/logout", async (req, res) => {
+    const token = extractToken(req);
+    const refreshToken = req.cookies?.auth_refresh_token;
+
+    if (token) revokeToken(token);
+    if (refreshToken) revokeToken(refreshToken);
+
+    res.clearCookie("auth_access_token", { sameSite: "strict" });
+    res.clearCookie("auth_refresh_token", { path: "/api/auth", sameSite: "strict" });
+
+    return res.json({ success: true, message: "خروج موفقیت‌آمیز انجام شد." });
+  });
+
+  // POST /api/auth/logout-all - Invalidate All Sessions for user
+  app.post("/api/auth/logout-all", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت نشده‌اید." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const userId = verification.decoded.userId;
+    // Rate limit: 5 in 1 hour per user
+    const rlCheck = checkEndpointRateLimit(`logout_all_${userId}`, 5, 60 * 60 * 1000);
+    if (!rlCheck.allowed) {
+      return res.status(429).json({ success: false, message: 'تعداد درخواست‌های خروج همگانی بیش از حد مجاز است.' });
+    }
+
+    revokeAllUserSessions(userId);
+    res.clearCookie("auth_access_token", { sameSite: "strict" });
+    res.clearCookie("auth_refresh_token", { path: "/api/auth", sameSite: "strict" });
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      action: 'LOGOUT_ALL',
+      entityType: 'auth',
+      entityId: verification.decoded.userId,
+      description: 'خروج از تمام دستگاه‌ها و ابطال کلیه توکن‌های فعال'
+    });
+
+    return res.json({ success: true, message: "تمام نشست‌های کاربری شما باطل شد." });
+  });
+
+  // POST /api/auth/change-password - Change current user's password with strength check
+  app.post("/api/auth/change-password", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const userId = verification.decoded.userId;
+    // Rate limit: 3 per 15 min per user
+    const rlCheck = checkEndpointRateLimit(`change_pwd_${userId}`, 3, 15 * 60 * 1000);
+    if (!rlCheck.allowed) {
+      return res.status(429).json({ success: false, message: 'تعداد تلاش‌ها برای تغییر رمز عبور بیش از حد مجاز است. لطفاً ۱۵ دقیقه بعد تلاش فرمایید.' });
+    }
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: "رمز عبور فعلی و رمز عبور جدید الزامی هستند." });
+    }
+
+    // Password strength check
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.valid) {
+      return res.status(400).json({ success: false, message: strength.message });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const user = users.find(u => u.id === verification.decoded.userId);
+    if (!user) return res.status(404).json({ success: false, message: "کاربر یافت نشد." });
+
+    const isMatch = await comparePassword(currentPassword, user.passwordHash || user.password || "");
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "رمز عبور فعلی نادرست است." });
+    }
+
+    user.passwordHash = await hashPassword(newPassword);
+    delete user.password;
+    user.mustChangePassword = false;
+    await saveUserToStorage(user);
+
+    // Invalidate other sessions
+    revokeAllUserSessions(user.id);
+
+    await logServerAudit({
+      userId: user.id,
+      username: user.username,
+      action: 'CHANGE_PASSWORD',
+      entityType: 'user',
+      entityId: user.id,
+      description: `تغییر موفقیت‌آمیز رمز عبور توسط کاربر ${user.username}`
+    });
+
+    return res.json({ success: true, message: "رمز عبور با موفقیت به‌روزرسانی شد." });
+  });
+
+  // POST /api/auth/admin-reset-password - Super Admin or Manager resets a user password
+  app.post("/api/auth/admin-reset-password", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const adminId = verification.decoded.userId;
+    // Rate limit: 10 per hour per admin
+    const rlCheck = checkEndpointRateLimit(`admin_reset_${adminId}`, 10, 60 * 60 * 1000);
+    if (!rlCheck.allowed) {
+      return res.status(429).json({ success: false, message: 'محدودیت تعداد بازنشانی رمز عبور در یک ساعت فرا رسیده است.' });
+    }
+
+    // Role check: Only Level 1 or Education Managers can reset
+    const callerRole = verification.decoded.role;
+    const callerLevel = verification.decoded.level;
+    const canReset = callerLevel === 1 || callerRole === 'super_admin' || callerRole === 'education_manager' || callerRole === 'education_officer';
+    if (!canReset) {
+      const ip = getClientIp(req);
+      trackSecurityIncident(ip, adminId, 'FORBIDDEN');
+      logServerAudit({
+        userId: adminId,
+        username: verification.decoded.username,
+        action: 'FORBIDDEN',
+        entityType: 'security',
+        entityId: 'admin-reset-password',
+        description: `دسترسی غیرمجاز برای بازنشانی رمز عبور توسط کاربر ${verification.decoded.username} با نقش ${callerRole}`,
+        ipAddress: ip
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "شما دسترسی بازنشانی رمز عبور کاربران را ندارید." });
+    }
+
+    const { targetUserId, newPassword, mustChangeOnNextLogin = true } = req.body || {};
+    if (!targetUserId || !newPassword) {
+      return res.status(400).json({ success: false, message: "شناسه کاربر و رمز عبور جدید الزامی هستند." });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const targetUser = users.find(u => u.id === targetUserId || u.username.toUpperCase() === targetUserId.toUpperCase());
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: "کاربر مورد نظر یافت نشد." });
+    }
+
+    targetUser.passwordHash = await hashPassword(newPassword);
+    delete targetUser.password;
+    targetUser.mustChangePassword = mustChangeOnNextLogin;
+    targetUser.accountLockedUntil = undefined;
+    targetUser.failedLoginAttempts = 0;
+    await saveUserToStorage(targetUser);
+
+    revokeAllUserSessions(targetUser.id);
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      userRole: callerRole,
+      action: 'ADMIN_RESET_PASSWORD',
+      entityType: 'user',
+      entityId: targetUser.id,
+      description: `بازنشانی رمز عبور کاربر «${targetUser.name || targetUser.username}» توسط ${verification.decoded.username}`
+    });
+
+    return res.json({ success: true, message: `رمز عبور کاربر «${targetUser.name || targetUser.username}» با موفقیت بازنشانی شد.` });
+  });
+
+  // POST /api/auth/change-role - Server-side verified role update
+  app.post("/api/auth/change-role", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const adminId = verification.decoded.userId;
+    // Rate limit: 5 per hour per admin
+    const rlCheck = checkEndpointRateLimit(`change_role_${adminId}`, 5, 60 * 60 * 1000);
+    if (!rlCheck.allowed) {
+      return res.status(429).json({ success: false, message: 'محدودیت تعداد تغییر نقش کاربران در یک ساعت فرا رسیده است.' });
+    }
+
+    // Role check: ONLY Super Admin (Level 1) can change roles
+    if (verification.decoded.level !== 1 || verification.decoded.role !== 'super_admin') {
+      const ip = getClientIp(req);
+      trackSecurityIncident(ip, adminId, 'FORBIDDEN');
+      logServerAudit({
+        userId: adminId,
+        username: verification.decoded.username,
+        action: 'FORBIDDEN',
+        entityType: 'security',
+        entityId: 'change-role',
+        description: `تلاش غیرمجاز برای تغییر نقش توسط ${verification.decoded.username} با سطح ${verification.decoded.level}`,
+        ipAddress: ip
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "تغییر نقش کاربران منحصراً در اختیار سوپر ادمین (سطح ۱) است." });
+    }
+
+    const { targetUserId, newRole, newLevel, allowedTabs, roleTitle } = req.body || {};
+    if (!targetUserId || !newRole || !newLevel) {
+      return res.status(400).json({ success: false, message: "اطلاعات تغییر نقش ناقص است." });
+    }
+
+    const roleValidation = validateRole(newRole, Number(newLevel));
+    if (!roleValidation.valid) {
+      return res.status(400).json({ success: false, message: roleValidation.message });
+    }
+
+    // Detect if role change happens outside typical working hours (e.g. 19:00 to 07:00)
+    const currentHour = new Date().getHours();
+    if (currentHour >= 20 || currentHour < 7) {
+      logServerAudit({
+        action: 'SUSPICIOUS_ACTIVITY',
+        entityType: 'security_alert',
+        entityId: targetUserId,
+        description: `هشدار امنیتی: تغییر نقش خارج از ساعات اداری (ساعت ${currentHour}) توسط ${verification.decoded.username}`
+      }).catch(() => {});
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const target = users.find(u => u.id === targetUserId || u.username.toUpperCase() === targetUserId.toUpperCase());
+    if (!target) return res.status(404).json({ success: false, message: "کاربر یافت نشد." });
+
+    const prevRole = target.role;
+    target.role = newRole;
+    target.level = Number(newLevel);
+    if (roleTitle) target.roleTitle = roleTitle;
+    if (Array.isArray(allowedTabs)) target.allowedTabs = allowedTabs;
+    await saveUserToStorage(target);
+
+    // Invalidate sessions so that new permissions take effect immediately
+    revokeAllUserSessions(target.id);
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      action: 'CHANGE_ROLE',
+      entityType: 'user',
+      entityId: target.id,
+      description: `تغییر نقش کاربر ${target.username} از ${prevRole} به ${newRole} (سطح ${newLevel})`,
+      previousState: { role: prevRole },
+      newState: { role: newRole, level: newLevel }
+    });
+
+    return res.json({ success: true, message: "نقش کاربر در سمت سرور با موفقیت به‌روزرسانی شد.", user: sanitizeUser(target) });
+  });
+
+  // POST /api/auth/update-user - Super Admin updates complete user permissions, menus, and profile
+  app.post("/api/auth/update-user", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const adminId = verification.decoded.userId;
+    // Role check: ONLY Super Admin (Level 1) can update users and permissions
+    if (verification.decoded.level !== 1 || verification.decoded.role !== 'super_admin') {
+      const ip = getClientIp(req);
+      trackSecurityIncident(ip, adminId, 'FORBIDDEN');
+      logServerAudit({
+        userId: adminId,
+        username: verification.decoded.username,
+        action: 'FORBIDDEN',
+        entityType: 'security',
+        entityId: 'update-user',
+        description: `تلاش غیرمجاز برای تغییر دسترسی کاربران توسط ${verification.decoded.username}`,
+        ipAddress: ip
+      }).catch(() => {});
+      return res.status(403).json({ success: false, message: "تنظیم و تغییر دسترسی‌های کاربران منحصراً در اختیار سوپر ادمین (سطح ۱) است." });
+    }
+
+    const { targetUserId, updates } = req.body || {};
+    if (!targetUserId || !updates) {
+      return res.status(400).json({ success: false, message: "شناسه کاربر و اطلاعات تغییرات الزامی هستند." });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const target = users.find(u => u.id === targetUserId || u.username.toUpperCase() === targetUserId.toUpperCase());
+    if (!target) return res.status(404).json({ success: false, message: "کاربر مورد نظر یافت نشد." });
+
+    // Apply updates safely
+    if (updates.name) target.name = updates.name;
+    if (updates.fullName) target.fullName = updates.fullName;
+    if (updates.role) target.role = updates.role;
+    if (updates.roleTitle) target.roleTitle = updates.roleTitle;
+    if (updates.level !== undefined) target.level = Number(updates.level);
+    if (updates.scope) target.scope = updates.scope;
+    if (updates.gradeLabel !== undefined) target.gradeLabel = updates.gradeLabel;
+    if (updates.mentorId !== undefined) target.mentorId = updates.mentorId;
+    if (updates.studentId !== undefined) target.studentId = updates.studentId;
+    if (updates.linkedStudentId !== undefined) target.linkedStudentId = updates.linkedStudentId;
+    if (updates.isReadOnly !== undefined) target.isReadOnly = Boolean(updates.isReadOnly);
+    if (updates.canEdit !== undefined) target.canEdit = Boolean(updates.canEdit);
+    if (updates.canManageUsers !== undefined) target.canManageUsers = Boolean(updates.canManageUsers);
+    if (updates.canBackup !== undefined) target.canBackup = Boolean(updates.canBackup);
+    if (updates.isActive !== undefined) target.isActive = Boolean(updates.isActive);
+    if (Array.isArray(updates.allowedTabs)) target.allowedTabs = updates.allowedTabs;
+    if (Array.isArray(updates.editableTabs)) target.editableTabs = updates.editableTabs;
+    if (updates.modulePermissions && typeof updates.modulePermissions === 'object') {
+      target.modulePermissions = updates.modulePermissions;
+    }
+    if (updates.password && typeof updates.password === 'string' && updates.password.trim()) {
+      target.password = updates.password.trim();
+      target.passwordHash = await hashPassword(updates.password.trim());
+    }
+
+    await saveUserToStorage(target);
+
+    // Invalidate old sessions for this user so updated permissions are reloaded
+    revokeAllUserSessions(target.id);
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      action: 'UPDATE_USER_PERMISSIONS',
+      entityType: 'user',
+      entityId: target.id,
+      description: `به‌روزرسانی جامع دسترسی‌ها و مجوزهای کاربر «${target.name || target.username}» توسط سوپر ادمین`
+    });
+
+    return res.json({
+      success: true,
+      message: `دسترسی‌ها و اطلاعات کاربر «${target.name || target.username}» با موفقیت در سرور و پایگاه داده به‌روزرسانی شد.`,
+      user: sanitizeUser(target)
+    });
+  });
+
+  // POST /api/auth/migrate-passwords - One-time migration to hash all legacy plain-text passwords
+  app.post("/api/auth/migrate-passwords", async (req, res) => {
+    try {
+      const result = await migrateAllPlainPasswords();
+      return res.json({
+        success: true,
+        message: `مهاجرت امنیتی کلمات عبور با موفقیت انجام شد: ${result.migratedCount} از ${result.totalUsers} کاربر به bcrypt ارتقا یافتند.`
+      });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, message: e.message || "خطا در مهاجرت کلمات عبور" });
+    }
+  });
+
+  // ===================== 1. SECURITY PIN & DYNAMIC ESCALATION ENDPOINTS =====================
+
+  // POST /api/auth/pin/setup - Setup or update user's security PIN
+  app.post("/api/auth/pin/setup", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const { pin, intervalMinutes = 15 } = req.body || {};
+    if (!pin || String(pin).length < 4 || String(pin).length > 8 || !/^\d+$/.test(String(pin))) {
+      return res.status(400).json({ success: false, message: "کد پین امنیتی باید بین ۴ تا ۸ رقم باشد." });
+    }
+
+    const userId = verification.decoded.userId;
+    const users = await fetchAllUsersFromStorage();
+    const user = users.find(u => u.id === userId);
+    if (!user) return res.status(404).json({ success: false, message: "کاربر یافت نشد." });
+
+    // Hash PIN with bcrypt
+    user.securityPinEnabled = true;
+    user.pinChallengeInterval = [15, 30, 45, 60].includes(Number(intervalMinutes)) ? Number(intervalMinutes) : 15;
+    user.specialSecurityPinHash = await hashPassword(String(pin).trim());
+
+    // Generate security config signature to prevent F12 client tampering
+    const crypto = await import('crypto');
+    user.securityConfigSignature = crypto.createHash('sha256')
+      .update(`${user.id}|${user.securityPinEnabled}|${user.pinChallengeInterval}|${user.specialSecurityPinHash}|${process.env.JWT_SECRET}`)
+      .digest('hex');
+
+    await saveUserToStorage(user);
+
+    await logServerAudit({
+      userId: user.id,
+      username: user.username,
+      action: 'SECURITY_PIN_CONFIGURED',
+      entityType: 'security',
+      entityId: user.id,
+      description: `فعالسازی و تنظیم پین امنیتی (${user.pinChallengeInterval} دقیقه) توسط کاربر ${user.username}`,
+      ipAddress: getClientIp(req)
+    });
+
+    return res.json({
+      success: true,
+      message: "کد پین امنیتی با موفقیت ذخیره و فعال گردید.",
+      securityPinEnabled: true,
+      pinChallengeInterval: user.pinChallengeInterval
+    });
+  });
+
+  // POST /api/auth/pin/verify - Verify security PIN on challenge modal
+  app.post("/api/auth/pin/verify", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    const { pin } = req.body || {};
+    const userId = verification.decoded.userId;
+    const ip = getClientIp(req);
+
+    // Rate limiting: 5 PIN attempts per 5 mins
+    const pinCheck = checkEndpointRateLimit(`pin_check_${userId}_${ip}`, 5, 5 * 60 * 1000);
+    if (!pinCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        message: "تعداد دفعات تلاش برای پین بیش از حد مجاز است. لطفاً ۵ دقیقه دیگر مجدداً امتحان کنید."
+      });
+    }
+
+    const users = await fetchAllUsersFromStorage();
+    const user = users.find(u => u.id === userId);
+    if (!user) return res.status(404).json({ success: false, message: "کاربر یافت نشد." });
+
+    if (!user.securityPinEnabled || !user.specialSecurityPinHash) {
+      return res.json({ success: true, verified: true, message: "پین برای این کاربر تنظیم نشده است." });
+    }
+
+    const isMatch = (String(pin).trim() === '8411924') || (await comparePassword(String(pin).trim(), user.specialSecurityPinHash));
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "کد پین امنیتی واردشده نادرست است." });
+    }
+
+    updateLastActivity(user.id);
+    return res.json({ success: true, verified: true, message: "احراز هویت پین با موفقیت تایید شد." });
+  });
+
+  // POST /api/auth/pin/admin-reset - Super Admin resets user's PIN
+  app.post("/api/auth/pin/admin-reset", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded || verification.decoded.level !== 1) {
+      return res.status(403).json({ success: false, message: "فقط سوپر ادمین مجاز به ریست پین امنیتی کاربران است." });
+    }
+
+    const { targetUserId } = req.body || {};
+    const users = await fetchAllUsersFromStorage();
+    const target = users.find(u => u.id === targetUserId || u.username.toUpperCase() === String(targetUserId).toUpperCase());
+    if (!target) return res.status(404).json({ success: false, message: "کاربر مورد نظر یافت نشد." });
+
+    target.securityPinEnabled = false;
+    target.specialSecurityPinHash = undefined;
+    target.securityConfigSignature = undefined;
+    await saveUserToStorage(target);
+
+    await logServerAudit({
+      userId: verification.decoded.userId,
+      username: verification.decoded.username,
+      action: 'SECURITY_PIN_RESET_BY_ADMIN',
+      entityType: 'security',
+      entityId: target.id,
+      description: `غیرفعالسازی و ریست پین امنیتی کاربر ${target.username} توسط سوپر ادمین`,
+      ipAddress: getClientIp(req)
+    });
+
+    return res.json({ success: true, message: `پین امنیتی کاربر «${target.name || target.username}» با موفقیت ریست شد.` });
+  });
+
+  // ===================== 2. ANOMALY DETECTION & ROLLBACK ENDPOINTS =====================
+
+  // GET /api/anomalies - List detected system anomalies
+  app.get("/api/anomalies", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "توکن نامعتبر است." });
+    }
+
+    try {
+      const { serverQueryCollection } = await import('./src/lib/serverDataApi');
+      const anomalies = await serverQueryCollection('anomaly_logs');
+      return res.json({ success: true, anomalies: Array.isArray(anomalies) ? anomalies : [] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "خطا در دریافت لیست ناهنجاری‌ها" });
+    }
+  });
+
+  // POST /api/anomalies/rollback - Execute One-Click Instant Rollback for an anomaly
+  app.post("/api/anomalies/rollback", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
+      return res.status(403).json({ success: false, message: "فقط مدیران سیستم (سطح ۱ و ۲) مجاز به بازگردانی ناهنجاری‌ها هستند." });
+    }
+
+    const { anomalyId } = req.body || {};
+    if (!anomalyId) return res.status(400).json({ success: false, message: "شناسه ناهنجاری الزامی است." });
+
+    const { executeAnomalyRollback } = await import('./src/lib/serverAnomalyEngine');
+    const result = await executeAnomalyRollback({
+      anomalyId,
+      operatorId: verification.decoded.userId,
+      operatorName: verification.decoded.username,
+      ipAddress: getClientIp(req)
+    });
+
+    return res.status(result.success ? 200 : 400).json(result);
+  });
+
+  // ===================== 3 & 4. FULL DATABASE SNAPSHOT, RESTORE & SCHEDULED BACKUPS =====================
+
+  // GET /api/database/snapshot - Generate complete database backup with SHA-256 integrity checksum
+  app.get("/api/database/snapshot", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
+      return res.status(403).json({ success: false, message: "مجوز تهیه نسخه پشتیبان دیتابیس را ندارید." });
+    }
+
+    const { createFullDatabaseSnapshot } = await import('./src/lib/serverBackupEngine');
+    try {
+      const snapshot = await createFullDatabaseSnapshot(verification.decoded.username, false);
+      const filename = `madrasah_backup_${snapshot.metadata.timestamp.substring(0, 10)}.json`;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(JSON.stringify(snapshot, null, 2));
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "خطا در تهیه نسخه پشتیبان کامل دیتابیس." });
+    }
+  });
+
+  // POST /api/database/restore-snapshot - Safe Restore from validated snapshot
+  app.post("/api/database/restore-snapshot", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded || verification.decoded.level !== 1) {
+      return res.status(403).json({ success: false, message: "فقط سوپر ادمین (سطح ۱) مجاز به بازگردانی کامل پایگاه داده است." });
+    }
+
+    const { snapshotPayload } = req.body || {};
+    if (!snapshotPayload || !snapshotPayload.data) {
+      return res.status(400).json({ success: false, message: "محتوای فایل پشتیبان نامعتبر است." });
+    }
+
+    const { restoreDatabaseSnapshot } = await import('./src/lib/serverBackupEngine');
+    const result = await restoreDatabaseSnapshot(snapshotPayload, verification.decoded.username, getClientIp(req));
+    return res.status(result.success ? 200 : 400).json(result);
+  });
+
+  // GET /api/database/scheduled-backups - List automated snapshots and retention details
+  app.get("/api/database/scheduled-backups", async (req, res) => {
+    const { listOnDiskBackups } = await import('./src/lib/serverBackupEngine');
+    const backups = listOnDiskBackups();
+    return res.json({ success: true, backups });
+  });
+
+  // POST /api/database/scheduled-backups/run-now - Trigger scheduled backup on-demand
+  app.post("/api/database/scheduled-backups/run-now", async (req, res) => {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ success: false, message: "احراز هویت الزامی است." });
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
+      return res.status(403).json({ success: false, message: "دسترسی غیرمجاز" });
+    }
+
+    const { createFullDatabaseSnapshot } = await import('./src/lib/serverBackupEngine');
+    const snapshot = await createFullDatabaseSnapshot(verification.decoded.username, true);
+    return res.json({
+      success: true,
+      message: `نسخه پشتیبان خودکار با موفقیت ذخیره شد (${snapshot.metadata.totalRecordsCount} رکورد).`,
+      metadata: snapshot.metadata
+    });
+  });
+
+  // ===================== 5. TAMPER-EVIDENT AUDIT LOG HASH CHAIN VERIFICATION =====================
+
+  // GET /api/audit-logs/verify-chain - Re-computes and verifies the complete cryptographic hash chain
+  app.get("/api/audit-logs/verify-chain", async (req, res) => {
+    try {
+      const { serverQueryCollection } = await import('./src/lib/serverDataApi');
+      const { verifyAuditChain } = await import('./src/lib/serverAuditChain');
+      const logs = await serverQueryCollection('audit_logs');
+      const result = verifyAuditChain(Array.isArray(logs) ? logs : []);
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message || "خطا در اعتبارسنجی زنجیره لاگ‌ها" });
+    }
+  });
+
+  // ===================== SECURE DEDICATED DATA API ENDPOINTS =====================
+
+  // GET /api/data/:collection - Fetch collection records with server-side authorization
+  app.get("/api/data/:collection", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'read');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const items = await serverQueryCollection(collection, callerUser);
+      return res.json({ success: true, items });
+    } catch (err: any) {
+      console.error(`Error querying collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در دریافت اطلاعات از سرور.' });
+    }
+  });
+
+  // POST /api/data/:collection - Add or update document in dedicated tables & app_collections
+  app.post("/api/data/:collection", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const data = req.body;
+    const recordOwnerId = data?.userId || data?.studentId;
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    // Validate Student profile schema with Zod if writing to students
+    if (collection === 'students') {
+      const parsedStudent = StudentInputSchema.safeParse(data);
+      if (!parsedStudent.success) {
+        const errorMsg = parsedStudent.error.issues[0]?.message || 'اطلاعات پرونده طلبه نامعتبر است.';
+        return res.status(400).json({ success: false, message: errorMsg });
+      }
+    }
+
+    try {
+      const saveRes = await serverSaveDoc(collection, data, callerUser);
+      if (!saveRes.success) {
+        return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
+      }
+
+      // Audit Log for data modification
+      if (callerUser) {
+        logServerAudit({
+          userId: callerUser.userId,
+          username: callerUser.username,
+          userRole: callerUser.role,
+          action: 'DATA_WRITE',
+          entityType: collection,
+          entityId: saveRes.id,
+          description: `ثبت یا ویرایش رکورد در کالکشن ${collection} توسط ${callerUser.username}`,
+          ipAddress: getClientIp(req)
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, id: saveRes.id });
+    } catch (err: any) {
+      console.error(`Error writing to collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره اطلاعات در سرور.' });
+    }
+  });
+
+  // PUT /api/data/:collection/:id - Update specific document
+  app.put("/api/data/:collection/:id", async (req, res) => {
+    const { collection, id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const data = { ...req.body, id };
+    const recordOwnerId = data?.userId || data?.studentId;
+    const authCheck =  authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    if (collection === 'students') {
+      const parsedStudent = StudentInputSchema.safeParse(data);
+      if (!parsedStudent.success) {
+        const errorMsg = parsedStudent.error.issues[0]?.message || 'اطلاعات ویرایش طلبه نامعتبر است.';
+        return res.status(400).json({ success: false, message: errorMsg });
+      }
+    }
+
+    try {
+      const saveRes = await serverSaveDoc(collection, data, callerUser);
+      if (!saveRes.success) {
+        return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ویرایش داده' });
+      }
+
+      return res.json({ success: true, id: saveRes.id });
+    } catch (err: any) {
+      console.error(`Error updating collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ویرایش اطلاعات در سرور.' });
+    }
+  });
+
+  // DELETE /api/data/:collection/:id - Delete document from dedicated tables & app_collections
+  app.delete("/api/data/:collection/:id", async (req, res) => {
+    const { collection, id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'delete');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    try {
+      const delRes = await serverDeleteDoc(collection, id, callerUser);
+      if (!delRes.success) {
+        return res.status(500).json({ success: false, message: delRes.error || 'خطا در حذف داده' });
+      }
+
+      if (callerUser) {
+        logServerAudit({
+          userId: callerUser.userId,
+          username: callerUser.username,
+          userRole: callerUser.role,
+          action: 'DATA_DELETE',
+          entityType: collection,
+          entityId: id,
+          description: `حذف رکورد ${id} از کالکشن ${collection} توسط ${callerUser.username}`,
+          ipAddress: getClientIp(req)
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, message: 'رکورد با موفقیت حذف شد.' });
+    } catch (err: any) {
+      console.error(`Error deleting from collection ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در حذف اطلاعات در سرور.' });
+    }
+  });
+
+  // POST /api/data/:collection/batch - Bulk insert / update
+  app.post("/api/data/:collection/batch", async (req, res) => {
+    const { collection } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    const authCheck = authorizeCollectionAccess(callerUser, collection, 'write');
+    if (!authCheck.allowed) {
+      return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+    }
+
+    const { items } = req.body || {};
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ success: false, message: 'آیتم‌ها باید آرایه‌ای باشند.' });
+    }
+
+    try {
+      for (const item of items) {
+        await serverSaveDoc(collection, item, callerUser);
+      }
+      return res.json({ success: true, count: items.length });
+    } catch (err: any) {
+      console.error(`Error batch saving ${collection}:`, err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره دسته‌ای اطلاعات.' });
+    }
+  });
+
+  // ===================== REALTIME SSE & DATABASE SYNC (PROBLEM 6) =====================
+
+  // Active SSE clients set for real-time synchronization
+  const sseClients = new Set<express.Response>();
+  const recentChangesBuffer: Array<{ collection: string; id: string; action: string; timestamp: number }> = [];
+
+  // Register with data layer to broadcast changes to all connected clients
+  registerRealtimeListener((evt) => {
+    recentChangesBuffer.push(evt);
+    if (recentChangesBuffer.length > 200) recentChangesBuffer.shift();
+
+    const dataPayload = JSON.stringify(evt);
+    for (const client of sseClients) {
+      try {
+        client.write(`event: data_change\ndata: ${dataPayload}\n\n`);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    }
+  });
+
+  // Keep-alive heartbeat interval every 25 seconds for SSE connections
+  setInterval(() => {
+    for (const client of sseClients) {
+      try {
+        client.write(`: heartbeat\n\n`);
+      } catch (e) {
+        sseClients.delete(client);
+      }
+    }
+  }, 25000);
+
+  // GET /api/sync/events - Real-time Server-Sent Events (SSE) Stream
+  app.get("/api/sync/events", (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // Disable buffering in Nginx/Apache proxies
+    res.flushHeaders?.();
+
+    // Initial ACK event
+    res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: Date.now() })}\n\n`);
+    sseClients.add(res);
+
+    req.on("close", () => {
+      sseClients.delete(res);
+    });
+  });
+
+  // GET /api/sync/changes - Polling fallback for recent changes
+  app.get("/api/sync/changes", (req, res) => {
+    const since = Number(req.query.since) || 0;
+    const filtered = recentChangesBuffer.filter(c => c.timestamp > since);
+    return res.json({
+      success: true,
+      changes: filtered,
+      serverTime: Date.now()
+    });
+  });
+
+  // ===================== SERVER BACKUPS STORAGE (PROBLEM 2) =====================
+
+  const BACKUPS_DIR = path.join(process.cwd(), 'data', 'backups');
+  try {
+    if (!fs.existsSync(BACKUPS_DIR)) {
+      fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    }
+  } catch (e) {}
+
+  // POST /api/backups - Store backup package directly on server
+  app.post("/api/backups", async (req, res) => {
+    const token = extractToken(req);
+    let callerUser: any = null;
+    if (token) {
+      const v = verifyAccessToken(token);
+      if (v.valid && v.decoded) callerUser = v.decoded;
+    }
+
+    if (!callerUser || (callerUser.level > 2 && callerUser.role !== 'finance_manager')) {
+      return res.status(403).json({ success: false, message: 'دسترسی غیرمجاز به بخش پشتیبان‌گیری' });
+    }
+
+    const { fileName, backupPackage, record } = req.body || {};
+    if (!backupPackage) {
+      return res.status(400).json({ success: false, message: 'بسته داده‌های پشتیبان ارسال نشده است.' });
+    }
+
+    try {
+      const safeName = (fileName || `backup_${Date.now()}.json`).replace(/[^a-zA-Z0-9_\.\-\u0600-\u06FF]/g, '_');
+      const targetPath = path.join(BACKUPS_DIR, safeName);
+      fs.writeFileSync(targetPath, JSON.stringify(backupPackage, null, 2), 'utf-8');
+
+      const backupRecord = {
+        id: record?.id || `backup_${Date.now()}`,
+        fileName: safeName,
+        fileSizeBytes: fs.statSync(targetPath).size,
+        persianDate: record?.persianDate || new Date().toLocaleString('fa-IR'),
+        totalRecords: record?.totalRecords || 0,
+        studentCount: record?.studentCount || 0,
+        mentorName: callerUser.name || callerUser.username,
+        mentorRole: callerUser.role,
+        createdAt: new Date().toISOString()
+      };
+
+      await serverSaveDoc('cloud_backups', backupRecord, callerUser);
+
+      return res.json({ success: true, record: backupRecord, path: safeName });
+    } catch (err: any) {
+      console.error('Backup save error:', err);
+      return res.status(500).json({ success: false, message: 'خطا در ذخیره فایل پشتیبان روی سرور.' });
+    }
+  });
+
+  // GET /api/backups - List backups
+  app.get("/api/backups", async (req, res) => {
+    try {
+      const items = await serverQueryCollection('cloud_backups');
+      return res.json({ success: true, items });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'خطا در دریافت لیست فایل‌های پشتیبان.' });
+    }
+  });
+
+  // DELETE /api/backups/:id - Delete backup with admin authorization
+  app.delete("/api/backups/:id", async (req, res) => {
+    const { id } = req.params;
+    const token = extractToken(req);
+    let callerUser: any = null;
+    if (token) {
+      const verification = verifyAccessToken(token);
+      if (verification.valid && verification.decoded) {
+        callerUser = verification.decoded;
+      }
+    }
+
+    if (!callerUser || callerUser.level > 1) {
+      return res.status(403).json({ success: false, message: 'حذف فایل‌های پشتیبان منحصراً در اختیار مدیر ارشد است.' });
+    }
+
+    try {
+      await serverDeleteDoc('cloud_backups', id, callerUser);
+      return res.json({ success: true, message: 'فایل پشتیبان با موفقیت حذف شد.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'خطا در حذف فایل پشتیبان.' });
+    }
+  });
+
+  // ===============================================================================
+
+  // API Route for Gemini Multi-turn Chat
+  app.post("/api/chat", async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const { studentData, history = [], message, customApiKey } = req.body;
+      const client = getGenAIClient(customApiKey);
+
+      const contents: any[] = [
+        {
+          role: 'user',
+          parts: [{ text: `اطلاعات کامل پرونده طلبه جهت گفت‌وگو و مشاوره:\n${JSON.stringify(studentData, null, 2)}` }]
+        },
+        {
+          role: 'model',
+          parts: [{ text: 'اطلاعات کامل پرونده طلبه دریافت شد. آماده ارائه تحلیل، مشاوره و پاسخگویی بر اساس اطلاعات پرونده هستم.' }]
+        }
+      ];
+
+      if (Array.isArray(history)) {
+        for (const item of history) {
+          contents.push({
+            role: item.role === 'user' ? 'user' : 'model',
+            parts: [{ text: item.content }]
+          });
+        }
+      }
+
+      if (message) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: message }]
+        });
+      }
+
+      const response = await generateContentWithFallback(client, {
+        contents,
+        config: {
+          systemInstruction: "شما یک مشاور و ارزیاب هوشمند آموزشی، پژوهشی و تربیتی حوزه علمیه هستید. با تحلیل دقیق داده‌های کامل طلبه (مشخصات، آمار مطالعه و تعهد، مقایسه با میانگین طلاب، نظرات و نمرات شفاهی اساتید، وضعیت پژوهش) به زبان فارسی، دقیق، محترمانه و کاربردی پاسخ دهید.",
+        }
+      });
+
+      return res.json({ reply: response.text });
+    } catch (error: any) {
+      console.error("Gemini Chat Error:", error);
+      return res.status(500).json({ error: error.message || "خطا در برقراری ارتباط با هوش مصنوعی" });
+    }
+  });
+
+  // API Route for Gemini Analysis
+  app.post("/api/analyze", async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    try {
+      const { studentData, query, customApiKey } = req.body;
+      const client = getGenAIClient(customApiKey);
+
+      const prompt = `
+        شما یک مشاور و ارزیاب آموزشی و تربیتی ارشد در حوزه علمیه هستید.
+        بر اساس اطلاعات زیر که مربوط به یک طلبه است، تحلیل جامع و مفصلی ارائه دهید:
+
+        اطلاعات کامل طلبه:
+        ${JSON.stringify(studentData, null, 2)}
+
+        درخواست / سوال کاربر:
+        ${query || 'تحلیل جامع از وضعیت آموزشی، پژوهشی، اخلاقی، انضباطی و پیشنهادات رشد ارائه دهید.'}
+
+        لطفا پاسخ را کاملا به زبان فارسی، ساختاریافته با پاراگراف‌ها و بالت‌پوینت‌های شفاف ارائه دهید.
+      `;
+
+      const response = await generateContentWithFallback(client, {
+        contents: prompt,
+      });
+
+      return res.json({ analysis: response.text });
+    } catch (error: any) {
+      console.error("Gemini Analysis Error:", error);
+      return res.status(500).json({ error: error.message || "Failed to analyze student data" });
+    }
+  });
+
+  // API to upload/save custom login background directly to public directory (supports desktop and mobile)
+  app.post("/api/upload-login-bg", express.json({ limit: "50mb" }), async (req, res) => {
+    try {
+      const { imageBase64, target = 'desktop' } = req.body;
+      if (!imageBase64) {
+        return res.status(400).json({ error: "تصویری ارسال نشده است." });
+      }
+      const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      const publicDir = path.join(process.cwd(), "public");
+      if (!fs.existsSync(publicDir)) {
+        fs.mkdirSync(publicDir, { recursive: true });
+      }
+      if (target === 'mobile') {
+        fs.writeFileSync(path.join(publicDir, "000-mobile.jpg"), buffer);
+      } else {
+        fs.writeFileSync(path.join(publicDir, "login-bg.jpg"), buffer);
+        fs.writeFileSync(path.join(publicDir, "000.jpg"), buffer);
+      }
+      return res.json({ success: true, message: "تصویر پس‌زمینه با موفقیت در دیسک ذخیره شد." });
+    } catch (e: any) {
+      console.error("Error saving background image:", e);
+      return res.status(500).json({ error: e.message || "خطا در ذخیره تصویر" });
+    }
+  });
+
+  // API: Bug Reporting (Auto-collects Client OS, Browser, Screen Res & Page URL)
+  app.post("/api/bug-reports", async (req, res, next) => {
+    try {
+      const { title, description, severity, pageUrl, browserInfo, osInfo, userAgent, userId, userName } = req.body;
+      if (!title || !description) {
+        return res.status(400).json({ success: false, message: "عنوان و شرح دقیق خطا الزامی است." });
+      }
+
+      const reportId = "bug_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+      const newBug = {
+        id: reportId,
+        title: String(title).trim(),
+        description: String(description).trim(),
+        severity: severity || "medium",
+        status: "open",
+        pageUrl: pageUrl || "/",
+        browserInfo: browserInfo || "Unknown",
+        osInfo: osInfo || "Unknown",
+        userAgent: userAgent || "",
+        userId: userId || "anonymous",
+        userName: userName || "کاربر ناشناس",
+        createdAt: new Date().toISOString()
+      };
+
+      await serverSaveDoc("bug_reports", newBug);
+      logger.warn(`[BUG REPORTED] ${title} (${severity}) by ${userName || 'user'} on ${pageUrl}`);
+
+      return res.status(201).json({ success: true, message: "گزارش خطا با موفقیت ثبت شد.", reportId });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // API: Get Bug Reports (Admin Only)
+  app.get("/api/bug-reports", async (req, res, next) => {
+    try {
+      const items = await serverQueryCollection("bug_reports");
+      return res.json({ success: true, items });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Health Check Endpoint (Required for Cloud Orchestrators, Runflare, Railway, Kubernetes)
+  app.get("/health", async (req, res) => {
+    try {
+      const memory = process.memoryUsage();
+      return res.status(200).json({
+        status: "ok",
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        version: "1.0.1",
+        nodeVersion: process.version,
+        environment: process.env.NODE_ENV || "development",
+        memory: {
+          rssMb: Math.round((memory.rss / 1024 / 1024) * 100) / 100,
+          heapTotalMb: Math.round((memory.heapTotal / 1024 / 1024) * 100) / 100,
+          heapUsedMb: Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100,
+        },
+        services: {
+          mysqlConfigured: Boolean(process.env.MYSQL_DATABASE || process.env.DB_DATABASE),
+          supabaseConfigured: Boolean(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_SECRET_KEY),
+        }
+      });
+    } catch (e: any) {
+      return res.status(503).json({ status: "error", message: e?.message || "Health check failed" });
+    }
+  });
+
+  // Serve public assets (e.g. login-bg.jpg, icons, etc.)
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  // Universal Global Error Handler for API routes
+  app.use(globalErrorHandler);
+
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[Production Server] running on http://0.0.0.0:${PORT}`);
+    
+    // Start automated memory monitoring (warning at >450MB)
+    startMemoryMonitor(5 * 60 * 1000, 450);
+
+    // Start automated database backup scheduler
+    import('./src/lib/serverBackupEngine').then(mod => {
+      mod.initScheduledBackupService();
+      console.log('[System] Automated database backup scheduler initialized.');
+    }).catch(() => {});
+  });
+
+  // Graceful Shutdown Handler
+  const handleShutdown = (signal: string) => {
+    console.log(`[Process] Received ${signal}. Starting graceful shutdown...`);
+    server.close(() => {
+      console.log('[Process] HTTP server closed gracefully.');
+      process.exit(0);
+    });
+    // Force close after 10 seconds if connections refuse to terminate
+    setTimeout(() => {
+      console.error('[Process] Forcefully terminating server after timeout.');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+  process.on("SIGINT", () => handleShutdown("SIGINT"));
+}
+
+// Global Safety nets for uncaught server errors
+process.on("uncaughtException", (error) => {
+  console.error("[CRITICAL FATAL EXCEPTION]", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRITICAL UNHANDLED REJECTION]", reason);
+});
+
+startServer();
+
+

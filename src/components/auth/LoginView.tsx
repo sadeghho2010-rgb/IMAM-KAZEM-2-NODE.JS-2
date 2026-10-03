@@ -246,16 +246,17 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           setErrorMessage(result.message || 'نام کاربری یا رمز عبور اشتباه است.');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsLoading(false);
       const nextFailed = failedAttempts + 1;
       setFailedAttempts(nextFailed);
 
+      const errMsg = err instanceof Error ? err.message : 'خطا در برقراری ارتباط با سامانه ورود.';
       if (nextFailed >= 3) {
         setCooldownSeconds(5);
         setErrorMessage('۳ بار تلاش ناموفق انجام شد. ۵ ثانیه درنگ الزامی است.');
       } else {
-        setErrorMessage(err?.message || 'خطا در برقراری ارتباط با سامانه ورود.');
+        setErrorMessage(errMsg);
       }
     }
   };
@@ -283,9 +284,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       } else {
         setErrorMessage(res.message || 'خطا در ورود.');
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setIsLoading(false);
-      setErrorMessage(e?.message || 'خطا در ورود مستقیم.');
+      setErrorMessage(e instanceof Error ? e.message : 'خطا در ورود مستقیم.');
     }
   };
 
@@ -459,7 +460,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           opacity: hideFormForPreview ? 0 : 1, 
           scale: hideFormForPreview ? 0.90 : 1, 
           y: hideFormForPreview ? 30 : 0,
-          pointerEvents: hideFormForPreview ? 'none' : 'auto' as any
+          pointerEvents: hideFormForPreview ? 'none' : 'auto'
         }}
         transition={{ duration: 0.4, ease: 'easeInOut' }}
         className={cn(

@@ -1,0 +1,54 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: madrasah_app
+    restart: always
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-madrasah_db}
+      - DB_USERNAME=${DB_USERNAME:-madrasah_user}
+      - DB_PASSWORD=${DB_PASSWORD:-madrasah_pass123}
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${DB_USERNAME:-madrasah_user}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-madrasah_pass123}
+      - MYSQL_DATABASE=${DB_DATABASE:-madrasah_db}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-jwt-key-change-this-in-production-64chars-minimum}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-super-secret-jwt-refresh-key-change-this-in-production-64chars}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/data
+
+  db:
+    image: mysql:8.0
+    container_name: madrasah_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_secret_pass_123}
+      MYSQL_DATABASE: ${DB_DATABASE:-madrasah_db}
+      MYSQL_USER: ${DB_USERNAME:-madrasah_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-madrasah_pass123}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database_complete.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root_secret_pass_123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  app_data:
+  mysql_data:

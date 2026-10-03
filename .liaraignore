@@ -1,0 +1,7 @@
+node_modules
+.git
+.env
+*.bak
+*.bak2
+logs/*.log
+dist/client

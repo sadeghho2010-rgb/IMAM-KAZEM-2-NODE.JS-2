@@ -80,6 +80,11 @@ export interface StoredUser extends SafeUser {
   securityConfigSignature?: string;
 }
 
+export type CallerUser = SafeUser & {
+  userId?: string;
+  isSpecialAdmin?: boolean;
+};
+
 // Enforce strict security: JWT_SECRET and JWT_REFRESH_SECRET must be supplied via .env or environment
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
   console.error('[CRITICAL SECURITY ERROR] JWT_SECRET is not configured in .env or environment variables!');
@@ -393,12 +398,22 @@ export function generateTokens(user: SafeUser): { token: string; refreshToken: s
   return { token, refreshToken };
 }
 
-export function verifyAccessToken(token: string): { valid: boolean; decoded?: any; error?: string } {
+export interface JwtPayloadDecoded {
+  userId: string;
+  username: string;
+  role?: string;
+  level?: number;
+  iat?: number;
+  exp?: number;
+  [key: string]: unknown;
+}
+
+export function verifyAccessToken(token: string): { valid: boolean; decoded?: JwtPayloadDecoded; error?: string } {
   try {
     if (revokedTokens.has(token)) {
       return { valid: false, error: 'این نشست باطل شده است.' };
     }
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayloadDecoded;
 
     // Check idle timeout (30 mins without activity)
     if (!checkIdleTimeout(decoded.userId)) {
@@ -412,17 +427,18 @@ export function verifyAccessToken(token: string): { valid: boolean; decoded?: an
     }
 
     return { valid: true, decoded };
-  } catch (err: any) {
-    return { valid: false, error: err?.message || 'توکن نامعتبر است.' };
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : 'توکن نامعتبر است.';
+    return { valid: false, error: errMsg };
   }
 }
 
-export function verifyRefreshToken(refreshToken: string): { valid: boolean; decoded?: any; error?: string } {
+export function verifyRefreshToken(refreshToken: string): { valid: boolean; decoded?: JwtPayloadDecoded; error?: string } {
   try {
     if (revokedTokens.has(refreshToken)) {
       return { valid: false, error: 'این ریفرش‌توکن باطل شده است.' };
     }
-    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as any;
+    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JwtPayloadDecoded;
     
     const revokedAt = userRevocationTimestamp.get(decoded.userId);
     if (revokedAt && decoded.iat && (decoded.iat * 1000 < revokedAt)) {
@@ -430,8 +446,9 @@ export function verifyRefreshToken(refreshToken: string): { valid: boolean; deco
     }
 
     return { valid: true, decoded };
-  } catch (err: any) {
-    return { valid: false, error: err?.message || 'ریفرش‌توکن نامعتبر است.' };
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : 'ریفرش‌توکن نامعتبر است.';
+    return { valid: false, error: errMsg };
   }
 }
 
@@ -827,7 +844,7 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
 
     return Array.from(usersMap.values());
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Error fetching users from storage:', e);
     return Array.from(usersMap.values());
   }
@@ -843,7 +860,7 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
   // 1. If MySQL is configured, execute prepared upsert via MySQL Repository
   if (isMysqlConfigured) {
     try {
-      await MysqlRepository.saveUser(user as any);
+      await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
     } catch (mErr) {
       console.warn('[MySQL saveUser notice]:', mErr);
     }
@@ -904,7 +921,7 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
       updated_at: new Date().toISOString()
     }, { onConflict: 'collection_name,id' });
 
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Error saving user to storage:', e);
   }
 }
@@ -978,8 +995,8 @@ export async function logServerAudit(params: {
   entityId: string;
   description: string;
   ipAddress?: string;
-  previousState?: any;
-  newState?: any;
+  previousState?: unknown;
+  newState?: unknown;
 }) {
   try {
     const { computeRecordHash } = await import('./serverAuditChain');
@@ -1056,7 +1073,7 @@ export async function logServerAudit(params: {
         updated_at: nowStr
       });
     }
-  } catch (e: any) {
-    console.error('Server audit log error:', e?.message || e);
+  } catch (e: unknown) {
+    console.error('Server audit log error:', e instanceof Error ? e.message : e);
   }
 }

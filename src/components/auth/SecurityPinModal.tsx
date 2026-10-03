@@ -113,9 +113,10 @@ export default function SecurityPinModal({ onSuccess }: SecurityPinModalProps) {
           setErrorMessage(data.message || 'کد پین امنیتی نادرست است.');
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsLoading(false);
-      setErrorMessage('خطا در ارتباط با سرور تایید پین.');
+      const errMsg = err instanceof Error ? err.message : 'خطا در ارتباط با سرور تایید پین.';
+      setErrorMessage(errMsg);
     }
   };
 

@@ -843,14 +843,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
 
-    const processIncomingUsers = (incomingList: any[]) => {
+    const processIncomingUsers = (incomingList: Partial<AppUser>[]) => {
       if (!isMounted || !Array.isArray(incomingList) || incomingList.length === 0) return;
       setUsers(prev => {
         const map = new Map<string, AppUser>();
         DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
         prev.forEach(u => map.set(u.username.toUpperCase(), u));
 
-        incomingList.forEach((u: any) => {
+        incomingList.forEach((u: Partial<AppUser>) => {
           if (u && (u.username || u.id)) {
             const uname = (u.username || u.id).toUpperCase();
             const currentObj = map.get(uname);
@@ -859,7 +859,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...u,
               username: uname,
               name: u.name || u.fullName || uname,
-              level: Number(u.level) || (u.role === 'teacher' ? 3 : (currentObj?.level || 2)),
+              level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (currentObj?.level || 2))) as UserLevel),
               role: u.role || currentObj?.role || 'custom',
               roleTitle: u.roleTitle || currentObj?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
               allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : currentObj?.allowedTabs || ['todos', 'students'],
@@ -1084,8 +1084,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(null);
       try { localStorage.removeItem(CURRENT_USER_KEY); } catch (e) {}
       return { success: res.ok && data.success, message: data.message };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'خطا در ابطال نشست‌ها.' };
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'خطا در ابطال نشست‌ها.';
+      return { success: false, message: errMsg };
     }
   };
 
@@ -1099,8 +1100,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await res.json();
       return { success: res.ok && data.success, message: data.message };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'خطا در ارتباط با سرور تغییر رمز عبور.' };
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'خطا در ارتباط با سرور تغییر رمز عبور.';
+      return { success: false, message: errMsg };
     }
   };
 
@@ -1114,8 +1116,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await res.json();
       return { success: res.ok && data.success, message: data.message };
-    } catch (e: any) {
-      return { success: false, message: e.message || 'خطا در بازنشانی رمز عبور.' };
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'خطا در بازنشانی رمز عبور.';
+      return { success: false, message: errMsg };
     }
   };
 

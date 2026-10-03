@@ -1,0 +1,2006 @@
+================================================================================
+گزارش جامع آنالیز و ردیابی تایپ‌های any در پروژه (any_report.txt)
+تعداد کل موارد کشف‌شده: 497
+اولویت ۱ (امنیتی و احراز هویت - P1): 0 مورد
+اولویت ۲ (منطق محاسباتی و بیزنس - P2): 92 مورد
+اولویت ۳ (لایه ذخیره‌سازی محلی و کش - P3): 405 مورد
+تاریخ گزارش: 2026-10-03T17:00:40.228Z
+================================================================================
+
+--------------------------------------------------------------------------------
+🔴 اولویت ۱ (P1) - بخش‌های امنیتی، نشست و توکن‌ها (نیازمند حذف فوری)
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+🟡 اولویت ۲ (P2) - ماژول‌های بیزنس لاجیک، مالی و درخواست‌ها (فاز دوم)
+--------------------------------------------------------------------------------
+[P2] src/components/finance/ClaimsManagement.tsx:50
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ClaimsManagement.tsx:1169
+  کد: onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ClaimsManagement.tsx:1965
+  کد: onChange={(e) => setSettlementMethod(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ClaimsManagement.tsx:2109
+  کد: onChange={(e) => setEditingClaim({ ...editingClaim, status: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ClaimsManagement.tsx:2192
+  کد: onChange={(e) => setCatTargetType(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ExpensesAndReports.tsx:54
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ExpensesAndReports.tsx:873
+  کد: formatter={(val: any) => [`${Number(val).toLocaleString('fa-IR')} تومان`, 'مصرف شده']}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/ExpensesAndReports.tsx:1253
+  کد: formatter={(val: any) => [`${Number(val).toLocaleString('fa-IR')} میلیون تومان`]}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/FundAndActiveLoans.tsx:63
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/FundAndActiveLoans.tsx:596
+  کد: onChange={(e: any) => setSelectedStatusFilter(e.target.value)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:38
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:525
+  کد: const handleItemFieldChange = (itemId: string, field: keyof GradeMentorCalculationItem, value: any) => {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:534
+  کد: const handleArchivedItemFieldChange = (itemId: string, field: keyof GradeMentorCalculationItem, value: any) => {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:724
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:730
+  کد: 'نرخ ساعتی (تومان)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:780
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/GradeProfessorsCompensation.tsx:822
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/LunchManagement.tsx:68
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/LunchManagement.tsx:197
+  کد: localDb.getDocs<any>('finance_grade_mentors'),
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/LunchManagement.tsx:209
+  کد: (storedGradeMentors || []).forEach((gm: any) => {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/LunchManagement.tsx:1657
+  کد: onChange={(e) => setSelectedDormFilter(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/LunchManagement.tsx:2479
+  کد: setManualRoleType(role.id as any);
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:87
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:293
+  کد: const newClaim: any = {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:318
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:332
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:421
+  کد: let debounceTimer: any = null;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:715
+  کد: const pScore = cg.participationScore || (cg as any).score;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1229
+  کد: const fundDocsToSave: any[] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1315
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1356
+  کد: 'ردیف': 'جمع کل' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1476
+  کد: 'ردیف': 'جمع کل' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1481
+  کد: 'وضعیت تاهل': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1482
+  کد: 'تعداد فرزند': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1485
+  کد: 'شهریه پایه': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1486
+  کد: 'پاداش تاهل': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1487
+  کد: 'حق اولاد': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1488
+  کد: 'پاداش تلبس': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1489
+  کد: 'کمک مسکن': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1490
+  کد: 'ساعات مطالعه (دقیقه)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1491
+  کد: 'پاداش مطالعه': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1492
+  کد: 'جریمه مطالعه (نوع ۱)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1493
+  کد: 'غیبت غیرموجه': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1494
+  کد: 'جریمه غیبت (نوع ۱)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1498
+  کد: 'کسر عتبات/اردو (نوع ۲)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1500
+  کد: 'سایر کسورات نوع ۲': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1501
+  کد: 'افزایش/کاهش دستی': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1544
+  کد: 'ردیف': 'جمع کل' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1550
+  کد: 'کسر واریز به حساب آشپزخانه (نهار)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1551
+  کد: 'کسر واریز به امور فرهنگی': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1552
+  کد: 'کسر واریز به صندوق قرض‌الحسنه': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1553
+  کد: 'کسر واریز به سایر حساب‌ها': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:1554
+  کد: 'افزایش/کاهش دستی': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:3608
+  کد: onChange={e => setSettings({ ...settings, marriageBonusType: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:3754
+  کد: onChange={e => setSettings({ ...settings, studyBonusBase: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:3860
+  کد: onChange={e => setSettings({ ...settings, studyBonusCalculationType: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:3909
+  کد: onChange={e => setSettings({ ...settings, studyPenaltyBase: e.target.value as any, studyPenaltyThreshold: e.target.value === 'average' ? 'below_average' : 'below_mandatory' })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:4004
+  کد: onChange={e => setSettings({ ...settings, studyPenaltyCalculationType: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:4060
+  کد: onChange={e => setSettings({ ...settings, absenceDeductionMode: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:4072
+  کد: onChange={e => setSettings({ ...settings, absencePenaltyUnexcusedType: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/StudentActivityAndTuition.tsx:5196
+  کد: onChange={e => setProfLivingStatus(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:58
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:165
+  کد: localDb.getDocs<any>('fund_donation_configs')
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:184
+  کد: categories: ['grade_mentor' as any],
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:454
+  کد: const donationCfg = (fundDonationConfigs || []).find((c: any) => c.personId === teacherId || (c.personName && c.personName.includes(teacherName)));
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:666
+  کد: const handleUpdateItemValue = (id: string, field: keyof TeacherCompensationCalculationItem, value: any) => {
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:764
+  کد: value: any
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1217
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1227
+  کد: 'نرخ ساعتی (تومان)': '-' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1288
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1316
+  کد: 'ردیف': 'مجموع' as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1747
+  کد: onChange={(e) => setModalTransportMode(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/TeachersCompensation.tsx:1849
+  کد: {teacher.categories?.includes('grade_mentor' as any) && (
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/teachers/TeacherCompensationSettingsModal.tsx:293
+  کد: onChange={(e) => setFormData({ ...formData, transportCalculationMode: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/teachers/TeacherCompensationTabbedView.tsx:50
+  کد: onUpdateItemValue: (id: string, field: keyof TeacherCompensationCalculationItem, value: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/teachers/TeacherCompensationTabbedView.tsx:65
+  کد: onUpdateTeacherCourse?: (teacherId: string, courseId: string, field: keyof TeacherCoursePresenceItem, value: any) => void;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/teachers/TeacherCompensationTabbedView.tsx:615
+  کد: onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'courseType', e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:60
+  کد: loans: any[];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:669
+  کد: const pScore = g.participationScore || (g as any).score;
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:859
+  کد: const studentLoans = loans.filter((l: any) => l.studentId === st.id && (l.remainingBalance || 0) > 0);
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:860
+  کد: const totalLoanInstallment = studentLoans.reduce((a: number, b: any) => a + (b.monthlyInstallment || 0), 0);
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:861
+  کد: const totalLoanBalance = studentLoans.reduce((a: number, b: any) => a + (b.remainingBalance || 0), 0);
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/finance/tuition/ActivityInfoTabbedView.tsx:871
+  کد: {studentLoans.map((l: any) => (
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/CreateOralExamWizard.tsx:1926
+  کد: onChange={(e) => handleUpdateRecord(stId, { overallStatus: e.target.value as any })}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:232
+  کد: overallStatus: editOverallStatus as any,
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:279
+  کد: const studentList: any[] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:354
+  کد: const rows: any[] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:388
+  کد: const rows: any[][] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:437
+  کد: const recs: any[] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/OralExamHistoryView.tsx:503
+  کد: const rows: any[][] = [];
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/ScopeBankView.tsx:781
+  کد: onChange={(e) => setBookCategory(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+[P2] src/components/oral-exams/ScopeBankView.tsx:795
+  کد: onChange={(e) => setBookStage(e.target.value as any)}
+  پیشنهاد جایگزین: Concrete Type (e.g. Student, RequestItem, FinanceRecord)
+
+--------------------------------------------------------------------------------
+🟢 اولویت ۳ (P3) - لایه ذخیره‌سازی آزاد و کش IndexedDB (قابل نگه‌داری به شکل جنریک T)
+--------------------------------------------------------------------------------
+[P3] src/App.tsx:100
+  کد: const fallback = currentUser.allowedTabs?.[0] || (currentUser as any).allowedModules?.[0] || 'todos';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ArticleEvaluations.tsx:735
+  کد: onChange={e => setAllowedRoleRegistration(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ArticleEvaluations.tsx:1169
+  کد: onChange={e => setManualAllowedRole(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:133
+  کد: student: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:353
+  کد: return currentProgram.daysOfWeek.includes(dayOfWeekName as any);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:380
+  کد: ? currentProgram.daysOfWeek.includes(dayName as any)
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:714
+  کد: student: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:2072
+  کد: onChange={(e) => setSettings({ ...settings, unspecifiedCountAs: e.target.value as any })}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/AttendanceAndStats.tsx:2249
+  کد: selectedStudentDrilldown.history.map((h: any, i: number) => (
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:159
+  کد: metadata: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:160
+  کد: data: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:199
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:217
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:255
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:279
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:297
+  کد: const [pendingFileToRestore, setPendingFileToRestore] = useState<{ data: any; name: string } | null>(null);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:364
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:406
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:451
+  کد: const downloadJsonFile = (data: any, filename: string) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:508
+  کد: let backupPackage: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:522
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:546
+  کد: let backupPackage: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:566
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:578
+  کد: const executeRestore = async (backupData: any, filename: string, overrideMode?: 'overwrite' | 'merge') => {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:589
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:618
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:636
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:655
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:673
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:704
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:777
+  کد: } catch (zipErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:830
+  کد: } catch (jsonErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/BackupAndRestore.tsx:843
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BackupAndRestore.tsx:904
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BugReportModal.tsx:95
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/BugReportModal.tsx:166
+  کد: onClick={() => setSeverity(s.id as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:332
+  کد: if ((p as any).studentIds && Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(studentId)) return true;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:333
+  کد: if ((p as any).enrolledStudentIds && Array.isArray((p as any).enrolledStudentIds) && (p as any).enrolledStudentIds.includes(studentId)) return true;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:334
+  کد: if ((p as any).assignedStudentIds && Array.isArray((p as any).assignedStudentIds) && (p as any).assignedStudentIds.includes(studentId)) return true;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:403
+  کد: const dgDays = (dg as any).days || ((dg as any).day ? [(dg as any).day] : []);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:406
+  کد: const dgStart = (dg as any).startTime || '';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ConsultationAdvisor.tsx:407
+  کد: const dgEnd = (dg as any).endTime || '';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/CounselingClasses.tsx:62
+  کد: const uAny = currentUser as any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/CounselingClasses.tsx:70
+  کد: const uAny = currentUser as any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/CounselingClasses.tsx:472
+  کد: const sysUsers = await localDb.getDocs<any>('system_users');
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/DatabaseConnectionTest.tsx:60
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/DatabaseConnectionTest.tsx:75
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/DatabaseConnectionTest.tsx:117
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/DatabaseConnectionTest.tsx:148
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/FinanceManagerDashboard.tsx:57
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/LockersManagement.tsx:138
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/MadrasRooms.tsx:316
+  کد: const rows: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/MadrasRooms.tsx:866
+  کد: onChange={(e) => setClassFormType(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/PresenceHours.tsx:152
+  کد: category: 'presence_finance_report' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/PresenceHours.tsx:176
+  کد: const assignedTodo: any = {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Programs.tsx:406
+  کد: result = students.filter(s => isProgramMatchingGradeFilter(s as any, targetEvalProgram.grade || ''));
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Programs.tsx:439
+  کد: const html2pdfFn = html2pdfModule.default || (window as any).html2pdf;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Programs.tsx:2377
+  کد: const selType = e.target.value as any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Programs.tsx:2749
+  کد: const selType = e.target.value as any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Programs.tsx:3802
+  کد: const studentPhoto = (student as any).photo || (student as any).image || (student as any).avatar;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ResearchAndFeedback.tsx:529
+  کد: const handleResearchUpdate = (field: keyof ResearchRecord, value: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/ResearchAndFeedback.tsx:2960
+  کد: onChange={(e) => setReceivedArticleForm(prev => ({ ...prev, type: e.target.value as any }))}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/SiteAuditLogs.tsx:225
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/SiteAuditLogs.tsx:268
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:289
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:410
+  کد: const studentPayload: any = {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:436
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/StudentList.tsx:549
+  کد: const toggleActive = async (id: string, currentStatus: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:602
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/StudentList.tsx:614
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/StudentList.tsx:681
+  کد: const data = XLSX.utils.sheet_to_json(ws) as any[];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:689
+  کد: const getString = (val: any) => (val !== undefined && val !== null) ? String(val).trim() : '';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:706
+  کد: let livingStatus: any = 'پدری';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:723
+  کد: let tammomStatus: any = 'غیر معمم';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:1855
+  کد: onChange={(e) => setNewStudent({...newStudent, maritalStatus: e.target.value as any})}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:1876
+  کد: onChange={(e) => setNewStudent({...newStudent, livingStatus: e.target.value as any})}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:1945
+  کد: onChange={(e) => setNewStudent({...newStudent, tammomStatus: e.target.value as any})}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentList.tsx:1965
+  کد: onChange={(e) => setNewStudent({ ...newStudent, deactivationReason: e.target.value as any })}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentRequestsPortal.tsx:235
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentRequestsPortal.tsx:256
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudentRequestsPortal.tsx:308
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/StudentRequestsPortal.tsx:349
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/StudentRequestsPortal.tsx:1055
+  کد: onChange={(e) => setNewPriority(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudyDiscussion.tsx:631
+  کد: const courses = (s as any).currentCourses as string[] | undefined;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudyDiscussion.tsx:673
+  کد: const phoneMatch = s.phoneNumber?.includes(q) || (s as any).phone?.includes(q);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/StudyDiscussion.tsx:696
+  کد: const phoneMatch = s.phoneNumber?.includes(q) || (s as any).phone?.includes(q);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:241
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/Summary.tsx:693
+  کد: کد_طلابی: (studentDetails.info as any).code || studentDetails.info.nationalId || 'نامشخص',
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:694
+  کد: پایه_تحصیلی: studentDetails.info.grade || (studentDetails.info as any).level || 'نامشخص',
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:695
+  کد: استاد_راهنما: (studentDetails.info as any).mentorName || 'تعیین نشده',
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:702
+  کد: تلفن: studentDetails.info.phoneNumber || (studentDetails.info as any).phone || 'نامشخص',
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:792
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/Summary.tsx:809
+  کد: ((s as any).code && (s as any).code.includes(searchFilter))
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:911
+  کد: {studentDetails.info.photoUrl || (studentDetails.info as any).avatar ? (
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:912
+  کد: <img src={studentDetails.info.photoUrl || (studentDetails.info as any).avatar} alt={studentDetails.info.name} className="w-full h-full rounded-2xl object-cover" />
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:938
+  کد: {studentDetails.info.grade || (studentDetails.info as any).level || 'نامشخص'}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:984
+  کد: <span className="text-xs font-bold text-slate-700">{(studentDetails.info as any).code || studentDetails.info.nationalId || '---'}</span>
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:989
+  کد: <span className="text-xs font-bold text-slate-700">{(studentDetails.info as any).mentorName || 'تعیین‌نشده'}</span>
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:994
+  کد: <span className="text-xs font-bold text-slate-700 dir-ltr text-right">{studentDetails.info.phoneNumber || (studentDetails.info as any).phone || '---'}</span>
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:2070
+  کد: <div><b>کد طلابی / کد ملی:</b> {(studentDetails.info as any).code || studentDetails.info.nationalId || '---'}</div>
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/Summary.tsx:2077
+  کد: <div><b>استاد راهنما:</b> {(studentDetails.info as any).mentorName || '---'}</div>
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:71
+  کد: (currentUser as any)?.canEditCounseling ||
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:72
+  کد: (currentUser as any)?.canViewCounseling ||
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:214
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/TeacherPortal.tsx:269
+  کد: fullName: (currentUser as any).fullName || currentUser.name || 'استاد محترم',
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:270
+  کد: name: currentUser.name || (currentUser as any).fullName,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:271
+  کد: teacherCode: (currentUser as any).teacherCode || (currentUser as any).teacherId || currentUser.username,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:272
+  کد: phoneNumber: (currentUser as any).phone || (currentUser as any).phoneNumber,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:273
+  کد: nationalId: (currentUser as any).nationalId || (currentUser as any).nationalCode,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:307
+  کد: type: 'counseling' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:340
+  کد: (p as any).category?.includes('مشاوره')
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:349
+  کد: if ((currentUser as any)?.canEditCounseling || (currentUser as any)?.canViewCounseling) return true;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:375
+  کد: (p as any).category?.includes('مشاوره')
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:385
+  کد: const teacherManagedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades || [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:392
+  کد: type: 'counseling' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:405
+  کد: type: 'counseling' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:415
+  کد: type: 'counseling' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:425
+  کد: type: 'counseling' as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:460
+  کد: : (activeCounselingCourse as any).day
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:461
+  کد: ? [(activeCounselingCourse as any).day]
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:472
+  کد: return (h as any).date === dateStr || h.startDate === dateStr;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:1246
+  کد: {(student.photoUrl || (student as any).photo) ? (
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:1248
+  کد: src={student.photoUrl || (student as any).photo}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:1428
+  کد: ? (h.startDate || (h as any).date || 'نامشخص')
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeacherPortal.tsx:1430
+  کد: const typeLabel = h.typeName || (h as any).type || 'تعطیلی / رویداد';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeachersBank.tsx:485
+  کد: let importedItems: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeachersBank.tsx:572
+  کد: ? t.categories.filter((c: any) => ALL_CATEGORIES.includes(c))
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TeachersBank.tsx:598
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/TeachersSchedule.tsx:634
+  کد: const rows: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/TodoList.tsx:1301
+  کد: onChange={(e) => setFormPriority(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/WorkflowManager.tsx:60
+  کد: icon: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/WorkflowManager.tsx:487
+  کد: const rep = await localDb.getDoc<any>('presence_reports', reportId);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/WorkflowManager.tsx:653
+  کد: scope: (newRole === 'class_representative' ? 'class' : 'self') as any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/WorkflowManager.tsx:1639
+  کد: onChange={(e) => setNewRole(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/admin/AnomalyDetectionView.tsx:85
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/components/admin/AnomalyDetectionView.tsx:190
+  کد: onChange={(e) => setSelectedStatus(e.target.value as any)}
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/education/EducationFinancialReportSettings.tsx:30
+  کد: onNavigateTab?: (tab: string, params?: any) => void;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/education/EducationFinancialReportSettings.tsx:126
+  کد: const handleItemChange = (studentId: string, field: keyof EducationFinancialItem, value: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/education/LockerManagement.tsx:516
+  کد: let exportData: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/madras/MadrasWeeklyScheduleModal.tsx:87
+  کد: const rows: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/madras/madrasUtils.ts:31
+  کد: export function canManageAndSearchMadras(user: any): boolean {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudentStudyPortal.tsx:876
+  کد: formatter={(val: any, name: string) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudentStudyPortal.tsx:945
+  کد: formatter={(val: any, name: string) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:131
+  کد: const normalizePhone = (val: any): string => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:146
+  کد: const normalizePersian = (val: any): string => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:158
+  کد: const getPhoneLast9 = (val: any): string => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:226
+  کد: const isGradeMatchFilter = (excelGradeVal: any, studentGradeVal: string, filter: string): boolean => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:245
+  کد: const parseHoursOrMinutes = (val: any): number => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:262
+  کد: const autoDetectColumns = (rows: any[][]) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:356
+  کد: let allCombinedRows: any[][] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:454
+  کد: const sp = getPhoneLast9(s.phoneNumber || (s as any).phone || (s as any).mobile || '');
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:480
+  کد: const sp = getPhoneLast9(s.phoneNumber || (s as any).phone || (s as any).mobile || '');
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/components/study/StudyEntryModal.tsx:590
+  کد: const matchesPhone = (s.phoneNumber || (s as any).phone || (s as any).mobile || '').includes(q);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/context/MentorContext.tsx:85
+  کد: export function resolveMentorIdForUser(user: any): MentorId {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/auditLogger.ts:18
+  کد: previousState?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/auditLogger.ts:19
+  کد: newState?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/auditLogger.ts:151
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/circuitBreaker.ts:48
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/circuitBreaker.ts:63
+  کد: private onFailure(error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/cloudBackups.ts:19
+  کد: backupData: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:67
+  کد: export function stripPhotosFromBackupPackage(backupPackage: any): any {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:76
+  کد: cloned.students = cloned.students.map((s: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:98
+  کد: backupPackage: any
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:179
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/cloudBackups.ts:251
+  کد: json.items.forEach((item: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:268
+  کد: supaRows.forEach((row: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/cloudBackups.ts:408
+  کد: export async function downloadBackupPackage(record: CloudBackupRecord): Promise<any> {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:38
+  کد: data?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:98
+  کد: export async function executeMysqlQuery<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:107
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/databaseAbstraction.ts:123
+  کد: const [rows]: any = await pool.execute(
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:160
+  کد: const [rows]: any = await pool.execute(
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:171
+  کد: return (rows || []).map((u: any) => ({
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:275
+  کد: async saveDocument(collectionName: string, id: string, data: any): Promise<void> {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:305
+  کد: const [rows]: any = await pool.execute(
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseAbstraction.ts:310
+  کد: return (rows || []).map((r: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/databaseToast.ts:17
+  کد: let toastTimeout: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/errorHandler.ts:8
+  کد: details?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/errorHandler.ts:14
+  کد: public readonly details?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/errorHandler.ts:30
+  کد: err: any,
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/errorHandler.ts:48
+  کد: const user = (req as any).user;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:13
+  کد: studentData: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:21
+  کد: contents: any[],
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:48
+  کد: let data: any = {};
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:71
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/geminiService.ts:92
+  کد: const contentsPayload: any[] = [
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:133
+  کد: let data: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/geminiService.ts:155
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/localDb.ts:27
+  کد: data?: any,
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:152
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:162
+  کد: function sanitizeForCloud(data: any): any {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:165
+  کد: const copy: any = {};
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:197
+  کد: students: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:198
+  کد: programs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:199
+  کد: enrollments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:200
+  کد: research: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:201
+  کد: research_records?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:202
+  کد: research_history?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:203
+  کد: research_skills_def?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:204
+  کد: student_research_skills?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:205
+  کد: conversation_archives: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:206
+  کد: attendance: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:207
+  کد: study_stats: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:208
+  کد: study_periods: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:209
+  کد: periodic_study_logs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:210
+  کد: todos: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:211
+  کد: student_comments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:212
+  کد: oral_exams: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:213
+  کد: discussion_groups?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:214
+  کد: academic_calendar_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:215
+  کد: academic_holidays?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:216
+  کد: academic_holiday_types?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:217
+  کد: academic_sub_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:218
+  کد: academic_weekly_programs?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:219
+  کد: manager_files?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:220
+  کد: settings?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:221
+  کد: teachers?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:222
+  کد: [key: string]: any;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:233
+  کد: students: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:234
+  کد: programs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:235
+  کد: enrollments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:236
+  کد: research: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:237
+  کد: research_records?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:238
+  کد: research_history?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:239
+  کد: research_skills_def?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:240
+  کد: student_research_skills?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:241
+  کد: conversation_archives: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:242
+  کد: attendance: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:243
+  کد: study_stats: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:244
+  کد: study_periods: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:245
+  کد: periodic_study_logs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:246
+  کد: todos: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:247
+  کد: student_comments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:248
+  کد: oral_exams: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:249
+  کد: discussion_groups?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:250
+  کد: academic_calendar_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:251
+  کد: academic_holidays?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:252
+  کد: academic_holiday_types?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:253
+  کد: academic_sub_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:254
+  کد: academic_weekly_programs?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:255
+  کد: manager_files?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:256
+  کد: settings?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:257
+  کد: teachers?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:262
+  کد: student: any;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:263
+  کد: research: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:264
+  کد: research_records?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:265
+  کد: research_history?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:266
+  کد: student_research_skills?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:267
+  کد: conversation_archives: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:268
+  کد: attendance: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:269
+  کد: study_stats: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:270
+  کد: periodic_study_logs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:271
+  کد: study_periods: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:272
+  کد: student_comments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:273
+  کد: oral_exams: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:274
+  کد: enrollments: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:275
+  کد: programs: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:276
+  کد: todos: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:277
+  کد: discussion_groups?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:278
+  کد: academic_calendar_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:279
+  کد: academic_holidays?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:280
+  کد: academic_holiday_types?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:281
+  کد: academic_sub_periods?: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:372
+  کد: export function normalizeNationalId(id?: any): string {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:384
+  کد: students: any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:403
+  کد: export function isStudentActive(val: any): boolean {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:422
+  کد: export function normalizeStudent(item: any): any {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:540
+  کد: private setLocalStorageDoc(resolvedCol: string, doc: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:543
+  کد: const idx = docs.findIndex((d: any) => d.id === doc.id);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:555
+  کد: const filtered = docs.filter((d: any) => d.id !== id);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:570
+  کد: let cloudDocs: any[] = [];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:592
+  کد: cloudDocs = json.items.filter((d: any) => d && d.id);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:632
+  کد: const mapped: any = { ...row };
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:661
+  کد: const list: any[] = [];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:709
+  کد: const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:734
+  کد: private realtimeChannel: any = null;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:745
+  کد: async (payload: any) => {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:762
+  کد: const filtered = currentLS.filter((x: any) => x.id !== id);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:776
+  کد: currentLS.forEach((x: any) => map.set(x.id, x));
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:810
+  کد: const idSet = new Set((idbResult as any[]).map(x => x.id));
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:812
+  کد: for (const item of lsResult as any[]) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:861
+  کد: return (lsDocs as any[]).find(x => x.id === id) || null;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:875
+  کد: resolve((lsDocs as any[]).find(x => x.id === id) || null);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:884
+  کد: resolve((lsDocs as any[]).find(x => x.id === id) || null);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:890
+  کد: async setDoc(collectionName: CollectionName, idOrData: any, optionalData?: any): Promise<string> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:898
+  کد: async saveDoc(collectionName: CollectionName, idOrData: any, optionalData?: any): Promise<string> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:903
+  کد: async addDoc(collectionName: CollectionName, data: any): Promise<string> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:931
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:955
+  کد: async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:959
+  کد: let existingDoc: any = null;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:986
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1022
+  کد: let existingDoc: any = undefined;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1042
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1068
+  کد: private mirrorToSupabase(action: 'upsert' | 'delete', collectionName: string, id: string, data?: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1101
+  کد: previousState?: any,
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1102
+  کد: newState?: any
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1217
+  کد: let userRole: any = 'super_admin';
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1219
+  کد: let userLevel: any = 1;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1341
+  کد: async bulkPut(collectionName: CollectionName, items: any[]): Promise<void> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1346
+  کد: const processedItems: any[] = [];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1371
+  کد: const rows = processedItems.map((item: any) => ({
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1388
+  کد: const fallbackChunk = chunk.map((r: any) => ({ ...r, collection_name: 'student_claims' }));
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1407
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1431
+  کد: const backupPackage: any = {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1457
+  کد: backupPackage._meta.hasPhotos = Array.isArray(backupPackage.students) && backupPackage.students.some((s: any) => !!s.photoUrl);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1794
+  کد: const items = (backupData as any)[col];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1810
+  کد: backupData: any,
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1812
+  کد: ): Promise<any> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1866
+  کد: const toDelete = records.filter((r: any) => removeIds.has(r.studentId));
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1907
+  کد: const items = backupData[key] as any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1928
+  کد: backupData: any,
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1930
+  کد: ): Promise<{ success: boolean; message: string; type: string; details?: any }> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:1998
+  کد: const toDelete = records.filter((r: any) => r.studentId === studentId);
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2034
+  کد: const items = backupData[mapping.key] as any[];
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2051
+  کد: const allStudents = await this.getDocs<any>('students');
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2102
+  کد: enrollments.filter((e: any) => e.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2103
+  کد: research.filter((r: any) => r.studentId === s.id || (r.teamMemberIds && r.teamMemberIds.includes(s.id))).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2104
+  کد: conversations.filter((c: any) => c.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2105
+  کد: attendance.filter((a: any) => a.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2106
+  کد: studyStats.filter((st: any) => st.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2107
+  کد: studyLogs.filter((sl: any) => sl.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2108
+  کد: todos.filter((t: any) => t.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2109
+  کد: comments.filter((cm: any) => cm.studentId === s.id).length +
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2110
+  کد: oralExams.filter((ox: any) => ox.studentId === s.id).length;
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2179
+  کد: const mergedStudent: any = { ...primary };
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2222
+  کد: enrollments.filter((e: any) => e.studentId === primary.id).map((e: any) => e.programId)
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2240
+  کد: const updates: any = {};
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2268
+  کد: attendance.filter((a: any) => a.studentId === primary.id).map((a: any) => a.date)
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2285
+  کد: studyStats.filter((st: any) => st.studentId === primary.id).map((st: any) => st.date)
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2301
+  کد: studyLogs.filter((sl: any) => sl.studentId === primary.id).map((sl: any) => sl.periodId)
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/localDb.ts:2907
+  کد: export async function saveCollection(collectionName: CollectionName, items: any[]): Promise<void> {
+  پیشنهاد جایگزین: T (generic) / Record<string, unknown>
+
+[P3] src/lib/logger.ts:47
+  کد: export function requestLogger(req: any, res: any, next: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/logger.ts:95
+  کد: let existing: any[] = [];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/realtimeSync.ts:21
+  کد: private reconnectTimer: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/realtimeSync.ts:22
+  کد: private pollingTimer: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverAnomalyEngine.ts:15
+  کد: newData?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverAnomalyEngine.ts:16
+  کد: oldData?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverAnomalyEngine.ts:149
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverAuditChain.ts:20
+  کد: old_values?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverAuditChain.ts:21
+  کد: new_values?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverBackupEngine.ts:172
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverDataApi.ts:89
+  کد: user: any,
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:173
+  کد: export function prepareRecordForDedicatedTable(collection: string, data: any): { row: any; dedicatedTable: string | null } {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:180
+  کد: let row: any = {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:297
+  کد: export async function serverSaveDoc(collection: string, data: any, callerUser?: any): Promise<{ success: boolean; id: string; error?: string }> {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverDataApi.ts:308
+  کد: } catch (mErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:327
+  کد: } catch (dErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:344
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverDataApi.ts:355
+  کد: export async function serverDeleteDoc(collection: string, id: string, callerUser?: any): Promise<{ success: boolean; error?: string }> {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverDataApi.ts:364
+  کد: } catch (mErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:392
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/serverDataApi.ts:411
+  کد: } catch (mErr: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:428
+  کد: return data.map((item: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:455
+  کد: export async function serverQueryCollection(collection: string, user?: any): Promise<any[]> {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:484
+  کد: return rawItems.filter((s: any) => String(s.grade || '').trim() === String(mentorGrade).trim());
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:497
+  کد: const teacherPrograms = programs.filter((p: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:505
+  کد: const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:507
+  کد: teacherPrograms.forEach((p: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:513
+  کد: schedules.forEach((sch: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:527
+  کد: enrollments.forEach((enr: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:534
+  کد: return rawItems.filter((student: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:548
+  کد: return rawItems.filter((student: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:564
+  کد: return rawItems.filter((s: any) => String(s.grade || '').trim() === String(repGrade).trim());
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:582
+  کد: return rawItems.filter((r: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:601
+  کد: return rawItems.filter((todo: any) => todo.userId === user.id || todo.user_id === user.id);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:609
+  کد: return rawItems.filter((cs: any) => {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/serverDataApi.ts:616
+  کد: return rawItems.filter((cs: any) => cs.studentId === uId || cs.student_id === uId);
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/supabase.ts:3
+  کد: const env = (import.meta as any).env || {};
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/supabase.ts:46
+  کد: const value = (client as any)[prop];
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/supabaseSync.ts:69
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/supabaseSync.ts:88
+  کد: const rows = docs.map((doc: any) => ({
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/supabaseSync.ts:111
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] src/lib/teacherMatching.ts:163
+  کد: const progTeacherId = (program as any).teacherId;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/lib/teacherMatching.ts:164
+  کد: const progTeacherName = program.teacher || (program as any).teacherName || '';
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/types.ts:1370
+  کد: previousState?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/types.ts:1371
+  کد: newState?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/types.ts:1979
+  کد: original_state?: any; // JSON snapshot of records before change
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/types.ts:1997
+  کد: old_values?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] src/types.ts:1998
+  کد: new_values?: any;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:76
+  کد: async function generateContentWithFallback(client: GoogleGenAI, options: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:78
+  کد: let lastError: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:87
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:351
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:866
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1013
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1061
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1122
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1133
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1150
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1160
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1206
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1216
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1247
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1257
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1291
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1301
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1325
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1403
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1438
+  کد: } catch (err: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1458
+  کد: let callerUser: any = null;
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1487
+  کد: const contents: any[] = [
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1522
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1553
+  کد: } catch (error: any) {
+  پیشنهاد جایگزین: Error | unknown
+
+[P3] server.ts:1579
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+
+[P3] server.ts:1649
+  کد: } catch (e: any) {
+  پیشنهاد جایگزین: Record<string, unknown>
+

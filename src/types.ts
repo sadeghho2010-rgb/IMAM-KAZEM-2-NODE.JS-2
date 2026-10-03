@@ -1,3 +1,39 @@
+export interface SafeUser {
+  id: string;
+  username: string;
+  name: string;
+  fullName?: string;
+  role: string;
+  roleTitle?: string;
+  level: number;
+  scope?: string;
+  gradeLabel?: string;
+  mentorId?: string;
+  studentId?: string;
+  linkedStudentId?: string;
+  teacherId?: string;
+  linkedTeacherId?: string;
+  avatarBg?: string;
+  nationalId?: string;
+  phone?: string;
+  allowedTabs?: string[];
+  editableTabs?: string[];
+  modulePermissions?: Record<string, unknown>;
+  isActive?: boolean;
+  mustChangePassword?: boolean;
+  lastLogin?: string;
+  [key: string]: unknown;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message?: string;
+  user?: SafeUser;
+  token?: string;
+  refreshToken?: string;
+  authenticated?: boolean;
+}
+
 export interface CustomStudentSchedule {
   id: string;
   studentId: string;

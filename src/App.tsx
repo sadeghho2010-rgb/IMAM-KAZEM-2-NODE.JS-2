@@ -54,8 +54,9 @@ import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import DatabaseToastBanner from './components/DatabaseToastBanner';
+import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -63,6 +64,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<string>('todos');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
+  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
 
   const [theme, setTheme] = useState<'default' | 'emerald'>(() => {
     return (localStorage.getItem('app_theme') as 'default' | 'emerald') || 'default';
@@ -352,6 +354,17 @@ function AppContent() {
                 </div>
               </div>
 
+              {/* Bug Report Button */}
+              <button
+                type="button"
+                onClick={() => setIsBugModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs font-bold transition-all border border-rose-200 bg-rose-50/80 text-rose-700 hover:bg-rose-100 cursor-pointer shadow-xs"
+                title="گزارش باگ یا خطا در سامانه"
+              >
+                <Bug size={14} className="text-rose-600" />
+                <span className="hidden sm:inline">گزارش باگ</span>
+              </button>
+
               {/* Logout Button */}
               <button
                 onClick={logout}
@@ -364,6 +377,9 @@ function AppContent() {
             </div>
           </div>
         </header>
+
+        {/* Global Bug Report Modal */}
+        <BugReportModal isOpen={isBugModalOpen} onClose={() => setIsBugModalOpen(false)} />
 
         <main className="p-4 lg:p-8">
           {/* Global Security PIN Challenge Modal */}
