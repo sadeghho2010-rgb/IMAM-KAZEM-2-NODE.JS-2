@@ -1044,10 +1044,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             if (rec.isCancelled) {
               return {
                 statusKey: 'cancelled' as const,
-                badgeText: 'کلاس تعطیل شده',
-                badgeClass: 'bg-rose-500 text-white border-rose-600 font-black shadow-xs',
-                cardBorder: 'border-rose-300/90 bg-gradient-to-br from-rose-50/90 via-red-50/40 to-white shadow-xs hover:shadow-md hover:border-rose-400',
-                statusIcon: <XCircle className="w-4 h-4 text-rose-600" />,
+                badgeText: 'کلاس تعطیل شده (کرمی)',
+                badgeClass: 'bg-amber-800 text-amber-50 border-amber-900 font-black shadow-xs',
+                cardBorder: 'border-amber-300/90 bg-gradient-to-br from-amber-100/80 via-yellow-50/50 to-orange-50/20 shadow-xs hover:shadow-md hover:border-amber-400',
+                statusIcon: <XCircle className="w-4 h-4 text-amber-800" />,
                 description: rec.cancellationReason || 'عدم تشکیل جلسه به علت اعلام استاد/نماینده'
               };
             }
@@ -1055,10 +1055,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             if (rec.hasSubstituteTeacher) {
               return {
                 statusKey: 'substitute' as const,
-                badgeText: `استاد جایگزین: ${rec.substituteTeacherName || 'مشخص شده'}`,
-                badgeClass: 'bg-purple-600 text-white border-purple-700 font-black shadow-xs',
-                cardBorder: 'border-purple-300/90 bg-gradient-to-br from-purple-50/90 via-indigo-50/40 to-white shadow-xs hover:shadow-md hover:border-purple-400',
-                statusIcon: <UserCheck2 className="w-4 h-4 text-purple-600" />,
+                badgeText: `استاد جایگزین (آبی): ${rec.substituteTeacherName || 'مشخص شده'}`,
+                badgeClass: 'bg-blue-600 text-white border-blue-700 font-black shadow-xs',
+                cardBorder: 'border-blue-300/90 bg-gradient-to-br from-blue-50/90 via-sky-50/40 to-white shadow-xs hover:shadow-md hover:border-blue-400',
+                statusIcon: <UserCheck2 className="w-4 h-4 text-blue-600" />,
                 substituteName: rec.substituteTeacherName,
                 notes: rec.substituteTeacherNotes
               };
@@ -1072,7 +1072,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
             return {
               statusKey: 'recorded' as const,
-              badgeText: 'حضور و غیاب ثبت‌شده (سبز)',
+              badgeText: 'حضور و غیاب انجام‌شده (سبز)',
               badgeClass: 'bg-emerald-600 text-white border-emerald-700 font-black shadow-xs',
               cardBorder: 'border-emerald-300/90 bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-white shadow-xs hover:shadow-md hover:border-emerald-400',
               statusIcon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
@@ -1086,21 +1086,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           if (hol) {
             return {
               statusKey: 'holiday' as const,
-              badgeText: `تعطیلی تقویم: ${hol.title}`,
-              badgeClass: 'bg-orange-500 text-white border-orange-600 font-black shadow-xs',
-              cardBorder: 'border-orange-300/90 bg-gradient-to-br from-orange-50/90 via-amber-50/40 to-white shadow-xs hover:shadow-md hover:border-orange-400',
-              statusIcon: <AlertOctagon className="w-4 h-4 text-orange-600" />,
+              badgeText: `تعطیلی تقویم (کرمی): ${hol.title}`,
+              badgeClass: 'bg-amber-800 text-amber-50 border-amber-900 font-black shadow-xs',
+              cardBorder: 'border-amber-300/90 bg-gradient-to-br from-amber-100/80 via-yellow-50/50 to-orange-50/20 shadow-xs hover:shadow-md hover:border-amber-400',
+              statusIcon: <AlertOctagon className="w-4 h-4 text-amber-800" />,
               description: hol.title
             };
           }
 
-          // Pending
+          // Pending (Not recorded yet) = RED as requested!
           return {
             statusKey: 'pending' as const,
-            badgeText: 'در انتظار ثبت حضور و غیاب',
-            badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-bold',
-            cardBorder: 'border-amber-200/90 bg-gradient-to-br from-amber-50/40 via-slate-50/30 to-white shadow-xs hover:shadow-md hover:border-amber-300',
-            statusIcon: <Clock3 className="w-4 h-4 text-amber-600 animate-pulse" />
+            badgeText: 'حضور و غیاب انجام‌نشده (قرمز)',
+            badgeClass: 'bg-rose-600 text-white border-rose-700 font-black shadow-xs',
+            cardBorder: 'border-rose-300/90 bg-gradient-to-br from-rose-50/90 via-red-50/30 to-white shadow-xs hover:shadow-md hover:border-rose-400',
+            statusIcon: <AlertCircle className="w-4 h-4 text-rose-600 animate-pulse" />
           };
         };
 
@@ -1198,14 +1198,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-lg border border-emerald-500/30">
                     ثبت‌شده (سبز): {totalRec}
                   </span>
-                  <span className="px-2.5 py-1 bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/30">
-                    استاد جایگزین: {totalSub}
-                  </span>
-                  <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded-lg border border-rose-500/30">
-                    تعطیل‌شده: {totalCanc}
+                  <span className="px-2.5 py-1 bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
+                    استاد جایگزین (آبی): {totalSub}
                   </span>
                   <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30">
-                    در انتظار: {totalPend}
+                    تعطیل‌شده (کرمی): {totalCanc}
+                  </span>
+                  <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded-lg border border-rose-500/30">
+                    انجام‌نشده (قرمز): {totalPend}
                   </span>
                 </div>
               </div>
@@ -1371,24 +1371,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className="p-2.5 bg-purple-100/80 rounded-2xl border border-purple-200 text-xs font-bold text-purple-900 space-y-1">
+                          <div className="p-2.5 bg-blue-100/90 rounded-2xl border border-blue-200 text-xs font-bold text-blue-900 space-y-1">
                             <div className="flex items-center gap-1 text-[11px]">
-                              <UserCheck2 size={13} className="text-purple-700" />
+                              <UserCheck2 size={13} className="text-blue-700" />
                               <span>استاد جایگزین: {st.substituteName}</span>
                             </div>
-                            {st.notes && <p className="text-[10px] text-purple-700 font-medium">{st.notes}</p>}
+                            {st.notes && <p className="text-[10px] text-blue-700 font-medium">{st.notes}</p>}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className="p-2.5 bg-rose-100/80 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900">
+                          <div className="p-2.5 bg-amber-100/90 rounded-2xl border border-amber-300 text-xs font-bold text-amber-950">
                             <span>علت تعطیلی: {st.description}</span>
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className="p-2.5 bg-amber-100/50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 text-center">
-                            <span>هنوز حضور و غیاب ثبت نگردیده است.</span>
+                          <div className="p-2.5 bg-rose-100/90 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900 text-center">
+                            <span>حضور و غیاب انجام‌نشده است (نیازمند ثبت).</span>
                           </div>
                         )}
 
@@ -1488,24 +1488,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className="p-2.5 bg-purple-100/80 rounded-2xl border border-purple-200 text-xs font-bold text-purple-900 space-y-1">
+                          <div className="p-2.5 bg-blue-100/90 rounded-2xl border border-blue-200 text-xs font-bold text-blue-900 space-y-1">
                             <div className="flex items-center gap-1 text-[11px]">
-                              <UserCheck2 size={13} className="text-purple-700" />
+                              <UserCheck2 size={13} className="text-blue-700" />
                               <span>استاد جایگزین: {st.substituteName}</span>
                             </div>
-                            {st.notes && <p className="text-[10px] text-purple-700 font-medium">{st.notes}</p>}
+                            {st.notes && <p className="text-[10px] text-blue-700 font-medium">{st.notes}</p>}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className="p-2.5 bg-rose-100/80 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900">
+                          <div className="p-2.5 bg-amber-100/90 rounded-2xl border border-amber-300 text-xs font-bold text-amber-950">
                             <span>علت تعطیلی: {st.description}</span>
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className="p-2.5 bg-amber-100/50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 text-center">
-                            <span>ارزیابی و حضور مشاوره انجام نشده است.</span>
+                          <div className="p-2.5 bg-rose-100/90 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900 text-center">
+                            <span>حضور و غیاب مشاوره انجام‌نشده است (نیازمند ثبت).</span>
                           </div>
                         )}
 
