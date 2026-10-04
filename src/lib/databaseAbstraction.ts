@@ -77,8 +77,8 @@ export function getMysqlPool(): mysql.Pool | null {
         password,
         database,
         waitForConnections: true,
-        connectionLimit: 15,
-        queueLimit: 0,
+        connectionLimit: 5,
+        queueLimit: 50,
         charset: 'utf8mb4_unicode_ci',
         timezone: '+03:30' // Iran Standard Time
       });

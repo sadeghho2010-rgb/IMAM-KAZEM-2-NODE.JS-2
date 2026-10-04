@@ -22,13 +22,15 @@ export const logger = winston.createLogger({
     new winston.transports.File({
       filename: path.join(logDir, 'error.log'),
       level: 'error',
-      maxsize: 5 * 1024 * 1024, // 5MB
-      maxFiles: 5,
+      maxsize: 10 * 1024 * 1024, // 10MB max size per log file
+      maxFiles: 5, // Keep up to 5 rotated files, automatic deletion of oldest
+      tailable: true,
     }),
     new winston.transports.File({
       filename: path.join(logDir, 'combined.log'),
-      maxsize: 10 * 1024 * 1024, // 10MB
-      maxFiles: 5,
+      maxsize: 10 * 1024 * 1024, // 10MB max size per log file
+      maxFiles: 5, // Keep up to 5 rotated files, automatic deletion of oldest
+      tailable: true,
     }),
     new winston.transports.Console({
       format: winston.format.combine(

@@ -3,13 +3,15 @@ module.exports = {
     {
       name: "madrasah-app",
       script: "dist/server.cjs",
-      instances: "max",
-      exec_mode: "cluster",
+      instances: 1,
+      exec_mode: "fork",
       autorestart: true,
       watch: false,
-      max_memory_restart: "800M",
+      max_memory_restart: "400M",
+      kill_timeout: 5000,
       env: {
         NODE_ENV: "production",
+        NODE_OPTIONS: "--max-old-space-size=384",
         PORT: 3000,
       },
     },
