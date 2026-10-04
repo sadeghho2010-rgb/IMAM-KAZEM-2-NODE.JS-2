@@ -80,11 +80,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## 🚢 Production Deployment
 
 ### Option A: Runflare
-1. Create a Node.js or Docker app in Runflare.
-2. Link your Git repository.
-3. Configure environment variables (`NODE_ENV=production`, `PORT=3000`, `JWT_SECRET`, `JWT_REFRESH_SECRET`).
-4. Set Build Command: `npm run build`
-5. Set Start Command: `npm run start`
+Refer to the comprehensive [Runflare Deployment Guide](DEPLOYMENT.md) for full, step-by-step instructions.
 
 ### Option B: Docker Compose
 ```bash
@@ -98,6 +94,18 @@ npm run build
 pm2 start ecosystem.config.cjs
 ```
 Refer to [DEPLOYMENT.md](DEPLOYMENT.md) for full Nginx and SSL setup.
+
+---
+
+## 🚀 Deploy on Runflare (استقرار روی ران‌فلر)
+
+برای استقرار راحت، سریع و کاملاً بهینه‌سازی شده سیستم روی پلتفرم ابری ران‌فلر، به صورت زیر عمل کنید:
+
+* **راهنمای گام‌به‌گام**: [راهنمای جامع استقرار در Runflare (DEPLOYMENT.md)](DEPLOYMENT.md)
+* **اطلاعات ورود پیش‌فرض (Default Login Credentials)**:
+  * **نام کاربری**: `admin`
+  * **کلمه عبور**: `Admin@123456`
+* **صفحه سلامت سیستم**: پس از ورود با نقش مدیریت ارشد (`super_admin`) می‌توانید وضعیت مصرف منابع سرور و پایش زنده دیتابیس را در سربرگ **سلامت سیستم** مشاهده کنید.
 
 ---
 

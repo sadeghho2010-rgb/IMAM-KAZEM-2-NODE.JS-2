@@ -451,75 +451,111 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
   }
 }
 
-// Internal helper to retrieve a single raw document by collection and ID
-async function fetchRawDocument(collection: string, id: string): Promise<any | null> {
-  if (!id) return null;
-
-  // 1. If MySQL is configured, fetch directly from MySQL
-  if (isMysqlConfigured) {
-    try {
-      const mysqlDoc = await MysqlRepository.getDocument(collection, id);
-      if (mysqlDoc) return mysqlDoc;
-    } catch (mErr: any) {
-      console.warn(`[MySQL Get Doc Error for ${collection}:${id}]:`, mErr?.message || mErr);
-    }
-  }
-
-  // 2. If Supabase is configured, fetch single record
-  if (isServerSupabaseConfigured) {
-    try {
-      const { data, error } = await serverSupabase
-        .from('app_collections')
-        .select('data')
-        .eq('collection_name', collection)
-        .eq('id', id)
-        .maybeSingle();
-
-      if (!error && data?.data) {
-        return { ...data.data, id };
-      }
-    } catch (err) {
-      console.error(`Get raw document exception ${collection}:${id}:`, err);
-    }
-  }
-
-  return null;
-}
-
-// Server CRUD Handler: Get Single Document with Role-Based Access Control
-export async function serverGetDoc(collection: string, id: string, user?: any): Promise<any | null> {
-  if (!id) return null;
-
-  // 1. Security Check: Unauthenticated callers cannot query non-public collections
+// Get Single Document from Candidate IDs with Strict Role-Based Filtering
+export function canUserReadDoc(user: any, collection: string, doc: any, context?: any): boolean {
   if (!user) {
-    if (PUBLIC_READ_COLLECTIONS.has(collection)) {
-      return fetchRawDocument(collection, id);
+    return PUBLIC_READ_COLLECTIONS.has(collection);
+  }
+
+  // Super Admins & School Managers have full access across all collections
+  if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager') {
+    return true;
+  }
+
+  // 1. Students collection
+  if (collection === 'students') {
+    if (user.role === 'education_manager' || user.role === 'education_officer') {
+      return true;
     }
-    return null;
-  }
 
-  // 2. Authorization check
-  const authCheck = authorizeCollectionAccess(user, collection, 'read');
-  if (!authCheck.allowed) {
-    return null;
-  }
+    if (user.role === 'grade_mentor') {
+      const mentorGrade = user.gradeLabel || user.grade;
+      return mentorGrade ? String(doc.grade || '').trim() === String(mentorGrade).trim() : false;
+    }
 
-  // 3. Fetch single document
-  const doc = await fetchRawDocument(collection, id);
-  if (!doc) return null;
-
-  // 4. Strict Row-Level Security verification: If caller is a student, ensure document belongs to them
-  if (user.role === 'student' || user.level === 3) {
-    const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
-    if (uStudentId) {
-      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
-      if (docStudentId && docStudentId !== uStudentId) {
-        return null;
+    if (user.role === 'teacher') {
+      if (context?.enrolledStudentIds && context?.teacherGrades) {
+        const sId = String(doc.id || '');
+        const sGrade = String(doc.grade || '').trim();
+        return context.enrolledStudentIds.has(sId) || (context.teacherGrades.size > 0 && context.teacherGrades.has(sGrade));
       }
+      return false; // Fail-closed if teacher context is missing
+    }
+
+    if (user.role === 'student' || user.level === 3) {
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uStudentId = String(user.studentId || user.id || '').trim();
+      const sId = String(doc.id || '').trim();
+      const sCode = String(doc.studentCode || '').trim().toUpperCase();
+      const sNat = String(doc.nationalId || doc.nationalCode || '').trim();
+      return (uStudentId && sId === uStudentId) || (uUsername && (sCode === uUsername || sNat === uUsername));
+    }
+
+    if (user.role === 'class_representative') {
+      const repGrade = user.gradeLabel || user.grade;
+      return repGrade ? String(doc.grade || '').trim() === String(repGrade).trim() : false;
+    }
+
+    return false;
+  }
+
+  // 2. periodic_study_logs
+  if (collection === 'periodic_study_logs') {
+    if (user.role === 'student' || user.level === 3) {
+      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
+      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
+      
+      // Requirement 3: Fail-closed check
+      if (!uStudentId || !docStudentId) {
+        return false;
+      }
+      return uStudentId === docStudentId;
+    }
+    // Teachers, mentors, class representatives, and other managers can view study logs
+    return true;
+  }
+
+  // 3. FINANCIAL collections (Tuition Records, etc.)
+  if (FINANCIAL_COLLECTIONS.has(collection)) {
+    const isFinanceStaff = user.role === 'finance_manager' || user.role === 'financial_officer' || user.username?.toUpperCase() === 'MALI';
+    if (isFinanceStaff) {
+      return true;
+    }
+    if (collection === 'tuition_records' && (user.role === 'student' || user.level === 3)) {
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uStudentId = String(user.studentId || user.id || '').trim();
+      const rStudentId = String(doc.studentId || doc.student_id || '').trim();
+      const rStudentCode = String(doc.studentCode || doc.student_code || '').trim().toUpperCase();
+      return (uStudentId && rStudentId === uStudentId) || (uUsername && rStudentCode === uUsername);
+    }
+    return false;
+  }
+
+  // 4. System Users collection
+  if (collection === 'system_users') {
+    return user.level === 1 || user.role === 'education_manager';
+  }
+
+  // 5. Personal Todos
+  if (collection === 'personal_todos') {
+    return doc.userId === user.id || doc.user_id === user.id;
+  }
+
+  // 6. Counseling Session Grades
+  if (collection === 'counseling_session_grades') {
+    if (user.role === 'teacher') {
+      const teacherName = (user.name || user.fullName || '').trim();
+      const cleanTeacher = cleanTeacherName(teacherName);
+      const csTeacher = doc.teacherName || doc.counselorName || doc.teacher || '';
+      return cleanTeacher && cleanTeacherName(csTeacher) === cleanTeacher;
+    }
+    if (user.role === 'student' || user.level === 3) {
+      const uId = user.studentId || user.id;
+      return doc.studentId === uId || doc.student_id === uId;
     }
   }
 
-  return doc;
+  return true;
 }
 
 // Internal helper to retrieve multiple raw documents by collection and candidate IDs
@@ -579,20 +615,17 @@ export async function serverGetDocByCandidateIds(collection: string, candidateId
   const docs = await fetchRawDocumentsByIds(collection, candidateIds);
   if (!docs || docs.length === 0) return null;
 
-  const doc = docs[0];
+  // 4. Unified Security check: filter candidates using canUserReadDoc
+  const allowedDocs = docs.filter(doc => canUserReadDoc(user, collection, doc));
+  if (allowedDocs.length === 0) return null;
 
-  // 4. Strict Row-Level Security verification: If caller is a student, ensure document belongs to them
-  if (user.role === 'student' || user.level === 3) {
-    const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
-    if (uStudentId) {
-      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
-      if (docStudentId && docStudentId !== uStudentId) {
-        return null;
-      }
-    }
+  // Requirement 4: "۴. اگر هر دو کلید log_ و studylog_ وجود داشتند، log_ را برگردان."
+  if (allowedDocs.length > 1) {
+    const logDoc = allowedDocs.find(d => String(d.id).startsWith('log_'));
+    if (logDoc) return logDoc;
   }
 
-  return doc;
+  return allowedDocs[0];
 }
 
 // Server CRUD Handler: Query Collection with Strict Role-Based Filtering
@@ -614,153 +647,51 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
     return rawItems;
   }
 
-  // 4. Role-based filtering for STUDENTS collection (Solves Student Data Leak)
-  if (collection === 'students') {
-    // Education managers have full read access to student list
-    if (user.role === 'education_manager' || user.role === 'education_officer') {
-      return rawItems;
-    }
+  // 4. Precompute Context for Teacher / Students collection if needed to avoid N+1 queries
+  let context: any = {};
+  if (collection === 'students' && user.role === 'teacher') {
+    const teacherId = user.teacherId || user.id || user.linkedTeacherId;
+    const teacherName = (user.name || user.fullName || '').trim();
+    const cleanTeacher = cleanTeacherName(teacherName);
 
-    // Grade Mentors: Only students in their designated grade
-    if (user.role === 'grade_mentor') {
-      const mentorGrade = user.gradeLabel || user.grade;
-      if (mentorGrade) {
-        return rawItems.filter((s: any) => String(s.grade || '').trim() === String(mentorGrade).trim());
+    const programs = await fetchRawCollectionData('programs');
+    const teacherPrograms = programs.filter((p: any) => {
+      const pTeacherId = p.teacherId || p.teacher_id;
+      const pTeacherName = p.teacher || p.teacherName || p.teacher_name || '';
+      if (teacherId && pTeacherId && (pTeacherId === teacherId || pTeacherId === user.id)) return true;
+      if (cleanTeacher && pTeacherName && cleanTeacherName(pTeacherName) === cleanTeacher) return true;
+      return false;
+    });
+
+    const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
+    const teacherGrades = new Set<string>();
+    teacherPrograms.forEach((p: any) => {
+      if (p.grade) teacherGrades.add(String(p.grade).trim());
+    });
+
+    const schedules = await fetchRawCollectionData('teacher_schedules');
+    schedules.forEach((sch: any) => {
+      const schTeacherId = sch.teacherId || sch.teacher_id;
+      const schTeacherName = sch.teacher_name || sch.teacherName || '';
+      if (
+        (teacherId && schTeacherId === teacherId) ||
+        (cleanTeacher && schTeacherName && cleanTeacherName(schTeacherName) === cleanTeacher)
+      ) {
+        if (sch.grade) teacherGrades.add(String(sch.grade).trim());
       }
-      return [];
-    }
+    });
 
-    // Teachers: ONLY students enrolled in this teacher's courses / classes
-    if (user.role === 'teacher') {
-      const teacherId = user.teacherId || user.id || user.linkedTeacherId;
-      const teacherName = (user.name || user.fullName || '').trim();
-      const cleanTeacher = cleanTeacherName(teacherName);
-
-      // Fetch programs (courses) to find which classes/programs this teacher teaches
-      const programs = await fetchRawCollectionData('programs');
-      const teacherPrograms = programs.filter((p: any) => {
-        const pTeacherId = p.teacherId || p.teacher_id;
-        const pTeacherName = p.teacher || p.teacherName || p.teacher_name || '';
-        if (teacherId && pTeacherId && (pTeacherId === teacherId || pTeacherId === user.id)) return true;
-        if (cleanTeacher && pTeacherName && cleanTeacherName(pTeacherName) === cleanTeacher) return true;
-        return false;
-      });
-
-      const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
-      const teacherGrades = new Set<string>();
-      teacherPrograms.forEach((p: any) => {
-        if (p.grade) teacherGrades.add(String(p.grade).trim());
-      });
-
-      // Also check teacher_schedules
-      const schedules = await fetchRawCollectionData('teacher_schedules');
-      schedules.forEach((sch: any) => {
-        const schTeacherId = sch.teacherId || sch.teacher_id;
-        const schTeacherName = sch.teacherName || sch.teacher_name || '';
-        if (
-          (teacherId && schTeacherId === teacherId) ||
-          (cleanTeacher && schTeacherName && cleanTeacherName(schTeacherName) === cleanTeacher)
-        ) {
-          if (sch.grade) teacherGrades.add(String(sch.grade).trim());
-        }
-      });
-
-      // Check enrollments for those programs
-      const enrollments = await fetchRawCollectionData('enrollments');
-      const enrolledStudentIds = new Set<string>();
-      enrollments.forEach((enr: any) => {
-        if (teacherProgramIds.has(String(enr.programId || enr.program_id))) {
-          enrolledStudentIds.add(String(enr.studentId || enr.student_id));
-        }
-      });
-
-      // Filter students: Must be either enrolled in the teacher's course OR in their assigned class grade
-      return rawItems.filter((student: any) => {
-        const sId = String(student.id || '');
-        const sGrade = String(student.grade || '').trim();
-        if (enrolledStudentIds.has(sId)) return true;
-        if (teacherGrades.size > 0 && teacherGrades.has(sGrade)) return true;
-        return false;
-      });
-    }
-
-    // Students (Level 3): ONLY their own personal student record!
-    if (user.role === 'student' || user.level === 3) {
-      const uUsername = String(user.username || '').trim().toUpperCase();
-      const uStudentId = String(user.studentId || user.id || '').trim();
-
-      return rawItems.filter((student: any) => {
-        const sId = String(student.id || '').trim();
-        const sCode = String(student.studentCode || '').trim().toUpperCase();
-        const sNat = String(student.nationalId || student.nationalCode || '').trim();
-
-        return (
-          (uStudentId && sId === uStudentId) ||
-          (uUsername && (sCode === uUsername || sNat === uUsername))
-        );
-      });
-    }
-
-    // Class Representatives: Only students of their grade/class
-    if (user.role === 'class_representative') {
-      const repGrade = user.gradeLabel || user.grade;
-      if (repGrade) {
-        return rawItems.filter((s: any) => String(s.grade || '').trim() === String(repGrade).trim());
+    const enrollments = await fetchRawCollectionData('enrollments');
+    const enrolledStudentIds = new Set<string>();
+    enrollments.forEach((enr: any) => {
+      if (teacherProgramIds.has(String(enr.programId || enr.program_id))) {
+        enrolledStudentIds.add(String(enr.studentId || enr.student_id));
       }
-    }
+    });
 
-    // For any unclassified non-admin role, block student records
-    return [];
+    context = { enrolledStudentIds, teacherGrades };
   }
 
-  // 5. Role-based filtering for FINANCIAL collections (Tuition Records, etc.)
-  if (FINANCIAL_COLLECTIONS.has(collection)) {
-    const isFinanceStaff = user.role === 'finance_manager' || user.role === 'financial_officer' || user.username?.toUpperCase() === 'MALI';
-    if (isFinanceStaff) {
-      return rawItems;
-    }
-    // Students can only see their own tuition record
-    if (collection === 'tuition_records' && (user.role === 'student' || user.level === 3)) {
-      const uUsername = String(user.username || '').trim().toUpperCase();
-      const uStudentId = String(user.studentId || user.id || '').trim();
-      return rawItems.filter((r: any) => {
-        const rStudentId = String(r.studentId || r.student_id || '').trim();
-        const rStudentCode = String(r.studentCode || r.student_code || '').trim().toUpperCase();
-        return (uStudentId && rStudentId === uStudentId) || (uUsername && rStudentCode === uUsername);
-      });
-    }
-    return [];
-  }
-
-  // 6. Role-based filtering for System Users collection
-  if (collection === 'system_users') {
-    if (user.level > 1 && user.role !== 'education_manager') {
-      return [];
-    }
-    return rawItems;
-  }
-
-  // 7. Role-based filtering for Personal Todos
-  if (collection === 'personal_todos') {
-    return rawItems.filter((todo: any) => todo.userId === user.id || todo.user_id === user.id);
-  }
-
-  // 8. Counseling Session Grades: Filter between Teacher / Counselor and Student
-  if (collection === 'counseling_session_grades') {
-    if (user.role === 'teacher') {
-      const teacherName = (user.name || user.fullName || '').trim();
-      const cleanTeacher = cleanTeacherName(teacherName);
-      return rawItems.filter((cs: any) => {
-        const csTeacher = cs.teacherName || cs.counselorName || cs.teacher || '';
-        return cleanTeacher && cleanTeacherName(csTeacher) === cleanTeacher;
-      });
-    }
-    if (user.role === 'student' || user.level === 3) {
-      const uId = user.studentId || user.id;
-      return rawItems.filter((cs: any) => cs.studentId === uId || cs.student_id === uId);
-    }
-  }
-
-  // Return raw items for authorized general collections (e.g. programs, classrooms, calendar)
-  return rawItems;
+  // 5. Use the shared canUserReadDoc logic for absolute, bulletproof row-level filtering consistency
+  return rawItems.filter(item => canUserReadDoc(user, collection, item, context));
 }

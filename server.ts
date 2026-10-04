@@ -45,31 +45,12 @@ async function startServer() {
   app.set("trust proxy", 1);
 
   // Cross-Origin Resource Sharing (CORS) Configuration
-  const allowedOrigins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173"
-  ];
-
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-        // Allow dynamic deployment URLs on Liara / Runflare / European Google Cloud
-        if (origin.endsWith('.liara.run') || origin.endsWith('.run.app')) {
-          return callback(null, true);
-        }
-        return callback(null, true);
-      },
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-      exposedHeaders: ["Set-Cookie"]
-    })
-  );
+  app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-TOKEN'],
+  }));
 
   // Standard Body Parsing & Cookie Parser
   app.use(express.json({ limit: "50mb" }));

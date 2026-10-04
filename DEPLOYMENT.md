@@ -1,139 +1,102 @@
-# 🚀 راهنمای جامع استقرار در لیارا (Liara Deployment Guide)
+# 🚀 راهنمای استقرار (Deploy) سامانه روی پلتفرم ابری Runflare
 
-این پروژه برای استقرار بی‌دردسر، پرسرعت و پایدار بر روی **سکوی ابری لیارا (Liara)** بهینه‌سازی شده است. تمام تنظیمات پورت، روت‌ها، فایل‌های استاتیک و لاگر با پلتفرم Node.js لیارا هماهنگ هستند.
-
----
-
-## 📌 ۱. استقرار مستقیم روی سکوی ابری لیارا (پیشنهاد اصلی)
-
-### پیکربندی خودکار با `liara.json`:
-فایل پیکربندی `liara.json` در ریشه پروژه قرار دارد:
-```json
-{
-  "platform": "node",
-  "port": 3000,
-  "app": "madrasah-app"
-}
-```
-
-### روش الف: استقرار سریع با Liara CLI (خط فرمان)
-۱. نصب ابزار Liara CLI در سیستم خود:
-```bash
-npm install -g @liara/cli
-```
-۲. ورود به حساب کاربری لیارا:
-```bash
-liara login
-```
-۳. ایجاد برنامه در کنسول لیارا (از نوع Node.js) با نام `madrasah-app` (یا نام دلخواه شما).
-
-۴. استقرار پروژه با یک دستور ساده:
-```bash
-liara deploy
-```
+این سند راهنمای گام‌به‌گام برای راه‌اندازی و استقرار بدون خطای سامانه جامع مدیریت حوزه علمیه روی پلتفرم ابری **Runflare** است.
 
 ---
 
-### روش ب: استقرار از طریق پنل کاربری لیارا (Git / GitHub)
-۱. در پنل کاربری لیارا به آدرس [console.liara.ir](https://console.liara.ir) بروید.
-۲. یک برنامه جدید با پلتفرم **NodeJS** بسازید.
-۳. در بخش **استقرار از گیت‌هاب**، مخزن گیت‌هاب پروژه را متصل کرده و برنچ اصلی (`main`) را انتخاب نمایید.
-۴. دستور بیلد (Build Command):
-   ```bash
-   npm run build
-   ```
-۵. دستور اجرا (Start Command):
-   ```bash
-   npm start
-   ```
-۶. پورت برنامه: **3000**
+## 📌 الف) پیش‌نیازها
+
+پیش از شروع استقرار، مطمئن شوید که موارد زیر را آماده کرده‌اید:
+1. **حساب کاربری فعال** در پلتفرم [Runflare](https://runflare.com)
+2. **مخزن گیت‌هاب (GitHub Repository)** متصل شده به پروژه
+3. **پایگاه داده MySQL** (ساخته شده در پنل دیتابیس‌های ابری Runflare)
+4. **Node.js** نسخه ۲۲ یا بالاتر
 
 ---
 
-## ⚙️ ۲. تنظیم متغیرهای محیطی در لیارا (Environment Variables)
+## 📌 ب) مراحل گام‌به‌گام استقرار
 
-در داشبورد برنامه لیارا، به بخش **تنظیمات برنامه ⬅️ متغیرهای محیطی** رفته و مقادیر زیر را وارد کنید:
+### ۱. ساخت پروژه جدید در پنل Runflare
+1. وارد پنل کاربری خود در Runflare شوید.
+2. روی دکمه **ساخت برنامه جدید (Create New App)** کلیک کنید.
+3. نام مناسبی برای پروژه انتخاب کرده و پلتفرم را **Node.js** انتخاب کنید.
 
-| نام متغیر | مقدار پیشنهادی | توضیحات |
-|---|---|---|
-| `NODE_ENV` | `production` | فعال‌سازی بهینه‌سازی‌های پروداکشن |
-| `PORT` | `3000` | پورت داخلی سرور اکسپرس |
-| `JWT_SECRET` | رشته ۶۴ کاراکتری امن | کلید رمزنگاری توکن‌های دسترسی |
-| `JWT_REFRESH_SECRET` | رشته ۶۴ کاراکتری امن مجزا | کلید امضای ریفرش‌توکن |
-| `ALLOWED_ORIGIN` | `https://madrasah-app.liara.run` | دامنه برنامه در لیارا برای CORS |
+### ۲. اتصال مخزن گیت‌هاب (GitHub Connection)
+1. در بخش ساخت برنامه، گزینه **GitHub** را انتخاب کنید.
+2. دسترسی مخزن پروژه حوزه علمیه را به Runflare بدهید.
+3. شاخه استقرار (Branch) اصلی را روی `main` یا `master` تنظیم کنید تا با هر Commit استقرار خودکار انجام شود.
+
+### ۳. پیکربندی متغیرهای محیطی و Secrets
+در پنل مدیریت برنامه در Runflare، متغیرهای زیر را تنظیم نمایید:
+
+#### متغیرهای محیطی معمولی (Environment Variables):
+* `NODE_ENV` = `production`
+* `PORT` = `3000`
+* `APP_URL` = `https://your-app-domain.runflare.run` (دامنه اختصاصی شما)
+* `DB_HOST` = `mysql-service-address` (آدرس سرور دیتابیس در Runflare)
+* `DB_PORT` = `3306`
+* `DB_DATABASE` = `madrasah_db`
+* `DB_USERNAME` = `root`
+
+#### متغیرهای حساس (Secrets):
+برای مقادیر حساس، از بخش **Secrets** در پنل Runflare استفاده کنید و مقادیر زیر را در آنجا ثبت کنید:
+* `DB_PASSWORD` = `رمز عبور دیتابیس MySQL شما`
+* `JWT_SECRET` = `یک کلید تصادفی بلند و رمزگذاری شده حداقل ۶۴ کاراکتری`
+* `JWT_REFRESH_SECRET` = `یک کلید تصادفی بلند دوم حداقل ۶۴ کاراکتری`
+
+> **نکته**: متغیرهای بخش Secrets در پنل با فرمت `{{secret.name}}` قابل استفاده و ارجاع در متغیرهای محیطی هستند.
+
+### ۴. راه‌اندازی دیتابیس MySQL
+1. در پنل Runflare یک سرویس **MySQL** بسازید.
+2. با ابزاری مانند **phpMyAdmin** یا **DBeaver** به دیتابیس متصل شوید.
+3. فایل ساختار کامل دیتابیس (`mysql_complete_schema.sql` یا `database_complete.sql`) موجود در ریشه پروژه را در دیتابیس جدید خود **Import** کنید.
 
 ---
 
-## 🗄️ ۳. اتصال به دیتابیس MySQL در لیارا (اختیاری و پیشنهادی)
+## 📌 ج) تنظیمات شبکه (Network & Domain)
 
-اگر مایلید از دیتابیس رابطه‌ای مدیریت‌شده لیارا استفاده کنید:
-۱. در کنسول لیارا، یک **دیتابیس ابری MySQL** ایجاد کنید.
-۲. اطلاعات اتصال داده‌شده توسط لیارا را در بخش متغیرهای محیطی برنامه اضافه کنید:
-   ```env
-   MYSQL_HOST=iran-mysql-host.liara.run
-   MYSQL_PORT=3306
-   MYSQL_USER=root
-   MYSQL_PASSWORD=your_db_password
-   MYSQL_DATABASE=madrasah_db
-   ```
-۳. سپس اسکریپت `database_complete.sql` را در دیتابیس MySQL لیارا (با phpMyAdmin یا DBeaver) ایمپورت نمایید. سامانه به‌طور هوشمند متصل شده و تمامی داده‌ها را با کلیدهای خارجی و ایندکس‌ها مدیریت می‌کند.
+* **ClusterIP**: در تنظیمات شبکه پروژه در Runflare، پورت ورودی خارجی (Port) را روی `80` و پورت داخلی برنامه (TargetPort) را روی `3000` تنظیم کنید.
+* **دامنه اختصاصی (Custom Domain)**:
+  * یک رکورد از نوع **A Record** از مدیریت DNS دامنه خود به آدرس IP سرور LoadBalancer اعلامی توسط Runflare ایجاد کنید.
+  * یک رکورد **TXT Record** با مقدار ارائه‌شده توسط Runflare جهت تایید مالکیت دامنه اضافه کنید.
 
 ---
 
-## 💾 ۴. دیسک دائمی لیara (Persistent Disks)
+## 📌 د) گواهینامه SSL
 
-برای اینکه لاگ‌های سرور (`logs/`) و بکاپ‌های محلی دیتابیس در هنگام استقرار مجدد پاک نشوند:
-۱. در پنل لیارا به تب **دیسک‌ها (Disks)** بروید.
-۲. یک دیسک به نام `data-storage` بسازید و مسیر مانت (Mount Path) را روی `/app/logs` یا `/app/backups` قرار دهید.
+* **SSL رایگان**: Runflare گواهینامه رایگان و خودکار Let's Encrypt را برای دامنه اختصاصی متصل شده صادر و تمدید می‌کند.
+* **استفاده از Cloudflare**: در صورت استفاده از کلودفلر، حالت SSL را روی **Flexible** یا **Full** تنظیم نمایید.
 
 ---
 
-## 🛡️ ۵. استقرار روی سرور مجازی (Ubuntu VPS) با PM2 و Nginx (روش جایگزین)
+## 📌 ه) دستورات خط فرمان (Runflare CLI)
 
-اگر قصد راه‌اندازی روی سرور لینوکس اختصاصی دارید:
+در صورت تمایل به استقرار دستی با استفاده از ابزار خط فرمان Runflare، دستورات زیر را استفاده کنید:
 
 ```bash
-# نصب Node.js 22 و ابزارها
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs nginx git
-sudo npm install -g pm2
+# نصب ابزار خط فرمان در صورت نیاز
+npm install -g runflare-cli
 
-# کلون و بیلد
-cd /var/www
-git clone https://github.com/your-username/your-repo.git madrasah-app
-cd madrasah-app
-npm install
-npm run build
+# ورود به حساب کاربری Runflare
+runflare login
 
-# اجرای پروسه در بک‌گراند با مانیتورینگ
-pm2 start dist/server.cjs --name "madrasah-app"
-pm2 save
-pm2 startup
-```
+# استقرار و ارسال فایل‌های پروژه
+runflare deploy
 
-کانفیگ Nginx جهت پروکسی به پورت 3000:
-```nginx
-server {
-    listen 80;
-    server_name your-domain.ir;
+# مشاهده لاگ‌های زنده سرور (جهت دیباگ زنده)
+runflare logs -f
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+# ری‌استارت مجدد برنامه
+runflare restart
 ```
 
 ---
 
-## ✅ چک‌لیست نهایی پس از استقرار در لیارا:
-- [x] تست صحت پاسخ‌دهی مسیر سلامت سرور: `https://madrasah-app.liara.run/health`
-- [x] ورود با کاربر مدیر کل (`admin` و رمز `Admin@123456`)
-- [x] ثبت یک رکورد آزمایشی در پرونده طلاب و بررسی ذخیره‌سازی
-- [x] تست دکمه گزارش باگ در هدر و ثبت گزارش در سرور
+## 📌 و) عیب‌یابی مشکلات رایج (Troubleshooting)
+
+1. **خطای اتصال پورت (Port Error)**:
+   مطمئن شوید برنامه در فایل `server.ts` پورت را از `process.env.PORT` دریافت می‌کند و به آدرس `0.0.0.0` متصل است.
+2. **خطای میزبان نامعتبر (Blocked Host / Blocked request)**:
+   پلتفرم Vite در فایل `vite.config.ts` به ویژگی `allowedHosts: true` مجهز شده است تا هر دامنه‌ای که Runflare به شما می‌دهد بدون خطا بارگذاری شود.
+3. **عدم اتصال به دیتابیس**:
+   اطمینان حاصل کنید که اطلاعات دیتابیس در بخش Secrets ثبت شده و آدرس `DB_HOST` دقیقاً برابر با آدرس سرویس MySQL در شبکه داخلی Runflare است.
