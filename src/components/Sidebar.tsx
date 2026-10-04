@@ -47,7 +47,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
-import { StudentRequest, AnomalyLog, GlobalRequestsConfig } from '../types';
+import { StudentRequest, AnomalyLog, GlobalRequestsConfig, WorkflowItem } from '../types';
 
 interface SidebarProps {
   activeTab: string;
@@ -263,6 +263,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
 
   // Real-time Badge Counts State
   const [unreadRequestsCount, setUnreadRequestsCount] = React.useState<number>(0);
+  const [pendingWorkflowCount, setPendingWorkflowCount] = React.useState<number>(0);
   const [unresolvedAnomaliesCount, setUnresolvedAnomaliesCount] = React.useState<number>(0);
   const [globalRequestsConfig, setGlobalRequestsConfig] = React.useState<GlobalRequestsConfig | null>(null);
 
@@ -309,7 +310,24 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
         }
       }
 
-      // Anomalies count
+      // 3. Fetch Workflow items & Calculate Pending Approvals for destination role
+      const allWorkflow = await localDb.getDocs<WorkflowItem>('workflow_items');
+      if (Array.isArray(allWorkflow)) {
+        const isSuper = currentUser?.level === 1 || currentUser?.role === 'super_admin';
+        const isEdu = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
+        const isSupervisor = currentUser?.role === 'grade_supervisor' || currentUser?.role === 'grade_mentor';
+        const userGrade = currentUser?.gradeLabel || '';
+
+        let wfCount = 0;
+        if (isSuper || isEdu) {
+          wfCount = allWorkflow.filter(w => w.status === 'pending' && (w.requiresEducationApproval || isSuper)).length;
+        } else if (isSupervisor) {
+          wfCount = allWorkflow.filter(w => w.status === 'pending' && (!w.grade || w.grade === userGrade || w.grade === 'همه پایه‌ها')).length;
+        }
+        setPendingWorkflowCount(wfCount);
+      }
+
+      // 4. Anomalies count
       if (currentUser?.level === 1 || currentUser?.role === 'super_admin') {
         const res = await fetch('/api/anomalies').catch(() => null);
         if (res && res.ok) {
@@ -392,6 +410,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
       return false;
     }
 
+    // Rule 7: Hide classrooms (مدرس‌ها) and comments (نظرات تربیتی) from students by default
+    if ((currentUser.level === 3 || currentUser.role === 'student') && (item.id === 'classrooms' || item.id === 'comments')) {
+      return false;
+    }
+
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
     if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health'].includes(item.id)) {
       return false;
@@ -420,7 +443,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     }
 
     const isReqItem = item.id === 'student-requests';
+    const isWfItem = item.id === 'workflow';
     const badgeCount = isReqItem ? unreadRequestsCount : 
+                       isWfItem ? pendingWorkflowCount :
                        item.id === 'anomaly-detection' ? unresolvedAnomaliesCount : 0;
     const isActive = activeTab === item.id;
 
@@ -454,6 +479,10 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
                 🔥 {badgeCount} جدید
               </span>
             )
+          ) : isWfItem ? (
+            <span className="px-2 py-0.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-slate-950 rounded-full text-[10px] font-black shadow-md animate-pulse flex items-center gap-0.5 ring-2 ring-amber-400/50">
+              ⚠️ {badgeCount} کارتابل
+            </span>
           ) : (
             <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black animate-pulse">
               {badgeCount}

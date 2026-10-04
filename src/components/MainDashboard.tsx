@@ -1003,6 +1003,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       if (!isTabAllowed(card.id)) return;
       if (isEducationManager && ['research', 'article-evaluations', 'counseling-classes', 'consultation-advisor'].includes(card.id)) return;
       if (isGradeMentor && card.id === 'student-requests') return;
+      // Rule: Hide classrooms (مدرس‌ها) and comments (نظرات تربیتی) from students by default
+      if ((currentUser.level === 3 || currentUser.role === 'student') && (card.id === 'classrooms' || card.id === 'comments')) return;
       map.set(card.id, card);
     });
     return map;
@@ -1355,7 +1357,24 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             <span className="text-[10px] text-slate-400 font-bold">لمس سریع ویژه موبایل</span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {/* 1. ثبت ساعت مطالعه و مباحثه (اولین دسترسی سریع طلاب) */}
+            {isTabAllowed('stats') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('stats')}
+                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200/80 text-purple-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <BookOpen size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">ثبت ساعت مطالعه</div>
+                  <div className="text-[10px] text-purple-700/80 truncate">مطالعه و مباحثه</div>
+                </div>
+              </button>
+            )}
+
             {isTabAllowed('student-requests') && (
               <button
                 type="button"
@@ -1398,8 +1417,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                   <CheckSquare size={18} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">ثبت حضور و غیاب</div>
-                  <div className="text-[10px] text-emerald-700/80 truncate">کلاس‌ها و جلسات</div>
+                  <div className="text-xs font-black truncate">کارنامه حضور و غیاب</div>
+                  <div className="text-[10px] text-emerald-700/80 truncate">آمار و غیبت‌ها</div>
                 </div>
               </button>
             )}

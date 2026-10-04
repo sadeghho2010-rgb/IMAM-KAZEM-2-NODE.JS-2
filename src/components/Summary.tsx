@@ -58,6 +58,7 @@ import {
   DiscussionGroup
 } from '../types';
 import { useMentor } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
 import { sendChatMessage } from '../lib/geminiService';
 import { getLogMetrics, calculatePeriodAverages } from './study/studyUtils';
 import { exportElementToPdf } from '../lib/pdfExport';
@@ -78,6 +79,10 @@ interface SummaryProps {
 
 export default function Summary({ onNavigate, initialStudentId }: SummaryProps = {}) {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
+  const { currentUser } = useAuth();
+
+  const isStudentUser = currentUser?.role === 'student' || currentUser?.level === 3;
+
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [searchFilter, setSearchFilter] = useState('');
@@ -137,7 +142,25 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
       try {
         const rawList = await localDb.getDocs<Student>('students');
         const activeList = rawList.filter(s => s.isActive);
-        const list = filterStudents(activeList, true);
+        let list = filterStudents(activeList, true);
+
+        if (isStudentUser && currentUser) {
+          const uStudentId = currentUser.studentId || currentUser.linkedStudentId || '';
+          const uName = (currentUser.name || currentUser.studentName || currentUser.fullName || '').trim().toLowerCase();
+          const matched = activeList.find(s => 
+            (uStudentId && String(s.id) === String(uStudentId)) ||
+            (s.nationalId && currentUser.username && s.nationalId.trim() === currentUser.username.trim()) ||
+            (s.name && (s.name.trim().toLowerCase() === uName || uName.includes(s.name.trim().toLowerCase())))
+          );
+          if (matched) {
+            list = [matched];
+            setSelectedStudentId(matched.id);
+            fetchStudentFullDataWithStudents(matched.id, [matched]);
+            setStudents(list);
+            return;
+          }
+        }
+
         list.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
         setStudents(list);
 
@@ -157,7 +180,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
       fetchStudents();
     });
     return () => unsub();
-  }, [currentMentorId, currentMentor.id, shahpooriFilter, selectedStudentId]);
+  }, [currentMentorId, currentMentor.id, shahpooriFilter, selectedStudentId, isStudentUser, currentUser]);
 
   // Full App Export Function
   const handleExportFullData = async () => {
@@ -755,9 +778,9 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
           وضعیت_میانگین: r.statusAvg
         })),
         نظرات_و_امتحانات_شفاهی: {
-          تعداد_کل_نظرات: commMetrics.allCommentsCount,
-          نکات_خودم_مدیریت: commMetrics.myComments.map(c => c.content),
-          ارزیابی_های_مهم_اساتید: commMetrics.importantComments.map(c => `${c.authorName}: ${c.content}`),
+          تعداد_کل_نظرات: isStudentUser ? 0 : commMetrics.allCommentsCount,
+          نکات_خودم_مدیریت: isStudentUser ? [] : commMetrics.myComments.map(c => c.content),
+          ارزیابی_های_مهم_اساتید: isStudentUser ? [] : commMetrics.importantComments.map(c => `${c.authorName}: ${c.content}`),
           امتحانات_شفاهی: {
             تعداد_امتحانات_شرکت_کرده: commMetrics.examCount,
             میانگین_نمرات_فقه: commMetrics.fiqhAvg,
@@ -770,7 +793,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
           مرحله_فعلی: studentDetails.research?.stage || 'ثبت‌نشده',
           عنوان_مقاله: studentDetails.research?.topic || 'ثبت‌نشده',
           ارزیابی: studentDetails.research?.score || 'ثبت‌نشده',
-          استاد_راهنما_پژوهش: studentDetails.research?.supervisorNotes || 'ثبت‌نشده'
+          استاد_راهنما_پژوهش: isStudentUser ? 'محرمانه' : (studentDetails.research?.supervisorNotes || 'ثبت‌نشده')
         }
       };
 
@@ -833,25 +856,32 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
 
         {/* Student Selector, Export/Import & API Key Settings */}
         <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
-          <div className="relative flex-1 md:w-64">
-            <select
-              className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none transition-all shadow-sm"
-              value={selectedStudentId}
-              onChange={(e) => {
-                setSelectedStudentId(e.target.value);
-                fetchStudentFullData(e.target.value);
-              }}
-            >
-              <option value="">انتخاب طلبه جهت بررسی (فقط فعال)...</option>
-              {filteredStudents.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} {s.grade ? `(پایه ${s.grade})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+          {isStudentUser ? (
+            <div className="px-3.5 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-black text-indigo-900 flex items-center gap-1.5">
+              <User size={14} className="text-indigo-600" />
+              <span>طلبه: {studentDetails?.info.name || currentUser?.fullName || currentUser?.name}</span>
+            </div>
+          ) : (
+            <div className="relative flex-1 md:w-64">
+              <select
+                className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:outline-none transition-all shadow-sm"
+                value={selectedStudentId}
+                onChange={(e) => {
+                  setSelectedStudentId(e.target.value);
+                  fetchStudentFullData(e.target.value);
+                }}
+              >
+                <option value="">انتخاب طلبه جهت بررسی (فقط فعال)...</option>
+                {filteredStudents.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.grade ? `(پایه ${s.grade})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {selectedStudentId && studentDetails && (
+          {selectedStudentId && studentDetails && !isStudentUser && (
             <button
               onClick={handleExportPDFReport}
               disabled={isExportingPDF}
@@ -863,17 +893,19 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
             </button>
           )}
 
-          <button
-            onClick={() => {
-              setApiKeyInput(customApiKey);
-              setShowApiKeyModal(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 shrink-0"
-            title="تنظیم کلید API"
-          >
-            <Key size={15} className={customApiKey ? "text-amber-600" : "text-slate-400"} />
-            <span className="hidden sm:inline">{customApiKey ? 'کلید API' : 'کلید API'}</span>
-          </button>
+          {!isStudentUser && (
+            <button
+              onClick={() => {
+                setApiKeyInput(customApiKey);
+                setShowApiKeyModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 shrink-0"
+              title="تنظیم کلید API"
+            >
+              <Key size={15} className={customApiKey ? "text-amber-600" : "text-slate-400"} />
+              <span className="hidden sm:inline">{customApiKey ? 'کلید API' : 'کلید API'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1176,57 +1208,63 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
 
             {/* Column 2: خلاصه بخش نظرات و صحبت‌ها و امتحانات */}
             <div 
-              onClick={() => onNavigate?.('comments', selectedStudentId)}
+              onClick={() => onNavigate?.(isStudentUser ? 'oral-exams' : 'comments', selectedStudentId)}
               className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between cursor-pointer hover:border-indigo-400 transition-all group h-full"
             >
               <div>
                 <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
-                    <MessageSquare size={18} className="text-indigo-600" />
-                    <h3 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">نظرات و امتحانات</h3>
+                    <Award size={18} className="text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                      {isStudentUser ? 'نمرات امتحانات شفاهی' : 'نظرات و امتحانات'}
+                    </h3>
                   </div>
-                  <div className="flex items-center gap-1 text-xs font-bold text-indigo-600">
-                    <span>{commMetrics.allCommentsCount} نظر</span>
-                    <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-                  </div>
+                  {!isStudentUser && (
+                    <div className="flex items-center gap-1 text-xs font-bold text-indigo-600">
+                      <span>{commMetrics.allCommentsCount} نظر</span>
+                      <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+                    </div>
+                  )}
                 </div>
 
-                {/* My Comments & Important Comments Split */}
-                <div className="space-y-3 mb-3">
-                  {/* Manager / My Comments */}
-                  <div className="bg-indigo-50/40 p-3 rounded-xl border border-indigo-100/80">
-                    <span className="text-[10px] font-black text-indigo-800 block mb-1 flex items-center gap-1">
-                      <User size={12} className="text-indigo-600" /> صحبت‌های خودم (مدیریت)
-                    </span>
-                    {commMetrics.myComments.length > 0 ? (
-                      <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-medium">
-                        «{commMetrics.myComments[0].content}»
-                      </p>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic">هنوز نکته‌ای از جانب شما ثبت نشده است.</p>
-                    )}
-                  </div>
-
-                  {/* Important Comments from Other Teachers */}
-                  <div className="bg-amber-50/40 p-3 rounded-xl border border-amber-100/80">
-                    <span className="text-[10px] font-black text-amber-800 block mb-1 flex items-center gap-1">
-                      <AlertCircle size={12} className="text-amber-600" /> ارزیابی‌های مهم سایر اساتید
-                    </span>
-                    {commMetrics.importantComments.length > 0 ? (
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mb-0.5">
-                          <span>{commMetrics.importantComments[0].authorName}</span>
-                          <span className="text-amber-700">{formatShamsi(commMetrics.importantComments[0].date)}</span>
-                        </div>
+                {/* My Comments & Important Comments Split - Hidden for students */}
+                {!isStudentUser && (
+                  <div className="space-y-3 mb-3">
+                    {/* Manager / My Comments */}
+                    <div className="bg-indigo-50/40 p-3 rounded-xl border border-indigo-100/80">
+                      <span className="text-[10px] font-black text-indigo-800 block mb-1 flex items-center gap-1">
+                        <User size={12} className="text-indigo-600" /> صحبت‌های خودم (مدیریت)
+                      </span>
+                      {commMetrics.myComments.length > 0 ? (
                         <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-medium">
-                          «{commMetrics.importantComments[0].content}»
+                          «{commMetrics.myComments[0].content}»
                         </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic">نظر مهم یا اولویت‌داری وجود ندارد.</p>
-                    )}
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">هنوز نکته‌ای از جانب شما ثبت نشده است.</p>
+                      )}
+                    </div>
+
+                    {/* Important Comments from Other Teachers */}
+                    <div className="bg-amber-50/40 p-3 rounded-xl border border-amber-100/80">
+                      <span className="text-[10px] font-black text-amber-800 block mb-1 flex items-center gap-1">
+                        <AlertCircle size={12} className="text-amber-600" /> ارزیابی‌های مهم سایر اساتید
+                      </span>
+                      {commMetrics.importantComments.length > 0 ? (
+                        <div>
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                            <span>{commMetrics.importantComments[0].authorName}</span>
+                            <span className="text-amber-700">{formatShamsi(commMetrics.importantComments[0].date)}</span>
+                          </div>
+                          <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed font-medium">
+                            «{commMetrics.importantComments[0].content}»
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">نظر مهم یا اولویت‌داری وجود ندارد.</p>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Oral Exam Metrics */}
@@ -2279,7 +2317,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
                         <td className="border border-slate-300 px-2 py-1 text-center font-bold">{index + 1}</td>
                         <td className="border border-slate-300 px-2 py-1 font-bold">
                           {exam.title}
-                          {exam.notes && <div className="text-[10px] text-slate-500 font-normal mt-0.5">ملاحظات: {exam.notes}</div>}
+                          {!isStudentUser && exam.notes && <div className="text-[10px] text-slate-500 font-normal mt-0.5">ملاحظات: {exam.notes}</div>}
                         </td>
                         <td className="border border-slate-300 px-2 py-1 text-center">{exam.subjectType}</td>
                         <td className="border border-slate-300 px-2 py-1 text-center font-black text-indigo-900 dir-ltr">
@@ -2305,47 +2343,49 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
               )}
             </div>
 
-            {/* 4. Complete Teacher & Manager Comments */}
-            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200" style={{ pageBreakInside: 'avoid' }}>
-              <h2 className="text-sm font-bold text-indigo-900 mb-2 border-b border-slate-200 pb-1 flex justify-between items-center">
-                <span>تمامی نظرات و ارزیابی‌های اساتید {includeManagerComments ? 'و مدیریت' : ''}</span>
-                <span className="text-[11px] text-slate-500 font-normal">
-                  ({includeManagerComments ? 'شامل نظرات مدیریت' : 'بدون نظرات مدیریت'})
-                </span>
-              </h2>
+            {/* 4. Complete Teacher & Manager Comments - Only for staff */}
+            {!isStudentUser && (
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200" style={{ pageBreakInside: 'avoid' }}>
+                <h2 className="text-sm font-bold text-indigo-900 mb-2 border-b border-slate-200 pb-1 flex justify-between items-center">
+                  <span>تمامی نظرات و ارزیابی‌های اساتید {includeManagerComments ? 'و مدیریت' : ''}</span>
+                  <span className="text-[11px] text-slate-500 font-normal">
+                    ({includeManagerComments ? 'شامل نظرات مدیریت' : 'بدون نظرات مدیریت'})
+                  </span>
+                </h2>
 
-              {(() => {
-                const commentsToDisplay = includeManagerComments 
-                  ? studentDetails.comments 
-                  : studentDetails.comments.filter(c => c.authorName !== 'خودم (مدیر)' && !c.authorName.includes('مدیر'));
+                {(() => {
+                  const commentsToDisplay = includeManagerComments 
+                    ? studentDetails.comments 
+                    : studentDetails.comments.filter(c => c.authorName !== 'خودم (مدیر)' && !c.authorName.includes('مدیر'));
 
-                if (commentsToDisplay.length === 0) {
+                  if (commentsToDisplay.length === 0) {
+                    return (
+                      <p className="text-xs text-slate-500 italic bg-white p-2 rounded border border-slate-200">
+                        نظری ثبت نشده است.
+                      </p>
+                    );
+                  }
+
                   return (
-                    <p className="text-xs text-slate-500 italic bg-white p-2 rounded border border-slate-200">
-                      نظری ثبت نشده است.
-                    </p>
-                  );
-                }
-
-                return (
-                  <div className="space-y-2.5 mt-3">
-                    {commentsToDisplay.map((comment, index) => (
-                      <div key={comment.id || index} className="bg-white p-3 rounded-lg border border-slate-200 text-xs">
-                        <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-slate-100 font-bold text-slate-800">
-                          <span className="text-indigo-900">
-                            {comment.authorName} {comment.category ? `(${comment.category})` : ''}
-                          </span>
-                          <span className="text-[10px] text-slate-500 dir-ltr">{formatShamsi(comment.date)}</span>
+                    <div className="space-y-2.5 mt-3">
+                      {commentsToDisplay.map((comment, index) => (
+                        <div key={comment.id || index} className="bg-white p-3 rounded-lg border border-slate-200 text-xs">
+                          <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-slate-100 font-bold text-slate-800">
+                            <span className="text-indigo-900">
+                              {comment.authorName} {comment.category ? `(${comment.category})` : ''}
+                            </span>
+                            <span className="text-[10px] text-slate-500 dir-ltr">{formatShamsi(comment.date)}</span>
+                          </div>
+                          <p className="text-slate-800 leading-relaxed font-medium">
+                            «{comment.content}»
+                          </p>
                         </div>
-                        <p className="text-slate-800 leading-relaxed font-medium">
-                          «{comment.content}»
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* 5. Research Section */}
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200" style={{ pageBreakInside: 'avoid' }}>

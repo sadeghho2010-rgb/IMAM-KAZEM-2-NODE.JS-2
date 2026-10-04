@@ -984,89 +984,91 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         </div>
       </div>
 
-      {/* SUB-TABS NAVIGATION */}
-      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => setActiveSubTab('groups')}
-            className={cn(
-              "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
-              activeSubTab === 'groups'
-                ? "bg-indigo-600 text-white shadow-md"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-            )}
-          >
-            <Layers size={16} />
-            <span>گروه‌های مباحثه ({filteredGroups.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('student_partners')}
-            className={cn(
-              "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
-              activeSubTab === 'student_partners'
-                ? "bg-indigo-600 text-white shadow-md"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-            )}
-          >
-            <Sparkles size={16} />
-            <span>هم‌مباحثه‌ای‌های یک فرد</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('summary_report')}
-            className={cn(
-              "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
-              activeSubTab === 'summary_report'
-                ? "bg-indigo-600 text-white shadow-md"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-            )}
-          >
-            <FileText size={16} />
-            <span>گزارش و جمع‌بندی جامع (مطالعه + مباحثه)</span>
-          </button>
-        </div>
-
-        {/* Filters */}
-        {activeSubTab === 'groups' && (
+      {/* SUB-TABS NAVIGATION - Only show for staff; students only see their own group */}
+      {!isStudentUser && (
+        <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            {/* Grade Filter */}
-            <select
-              value={selectedGradeFilter}
-              onChange={(e) => setSelectedGradeFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            <button
+              onClick={() => setActiveSubTab('groups')}
+              className={cn(
+                "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
+                activeSubTab === 'groups'
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
             >
-              <option value="all">همه پایه‌ها</option>
-              <option value="پایه ۷">پایه ۷</option>
-              <option value="پایه ۸">پایه ۸</option>
-              <option value="پایه ۹">پایه ۹</option>
-              <option value="پایه ۱۰">پایه ۱۰</option>
-            </select>
-
-            {/* Search Input */}
-            <div className="relative flex-1 sm:w-56">
-              <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجوی گروه، نام طلبه..."
-                className="w-full pr-8 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
+              <Layers size={16} />
+              <span>گروه‌های مباحثه ({filteredGroups.length})</span>
+            </button>
 
             <button
-              onClick={handleExportCompositionPdf}
-              disabled={isExportingCompositionPdf || groups.length === 0}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
-              title="خروجی PDF ترکیب اعضا و هم‌بحث‌ها به تفکیک عنوان گروه‌ها"
+              onClick={() => setActiveSubTab('student_partners')}
+              className={cn(
+                "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
+                activeSubTab === 'student_partners'
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
             >
-              {isExportingCompositionPdf ? <Activity size={14} className="animate-spin" /> : <Printer size={14} />}
-              <span>PDF ترکیب اعضا</span>
+              <Sparkles size={16} />
+              <span>هم‌مباحثه‌ای‌های یک فرد</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubTab('summary_report')}
+              className={cn(
+                "flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2",
+                activeSubTab === 'summary_report'
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              <FileText size={16} />
+              <span>گزارش و جمع‌بندی جامع (مطالعه + مباحثه)</span>
             </button>
           </div>
-        )}
-      </div>
+
+          {/* Filters */}
+          {activeSubTab === 'groups' && (
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Grade Filter */}
+              <select
+                value={selectedGradeFilter}
+                onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">همه پایه‌ها</option>
+                <option value="پایه ۷">پایه ۷</option>
+                <option value="پایه ۸">پایه ۸</option>
+                <option value="پایه ۹">پایه ۹</option>
+                <option value="پایه ۱۰">پایه ۱۰</option>
+              </select>
+
+              {/* Search Input */}
+              <div className="relative flex-1 sm:w-56">
+                <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="جستجوی گروه، نام طلبه..."
+                  className="w-full pr-8 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <button
+                onClick={handleExportCompositionPdf}
+                disabled={isExportingCompositionPdf || groups.length === 0}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                title="خروجی PDF ترکیب اعضا و هم‌بحث‌ها به تفکیک عنوان گروه‌ها"
+              >
+                {isExportingCompositionPdf ? <Activity size={14} className="animate-spin" /> : <Printer size={14} />}
+                <span>PDF ترکیب اعضا</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* VIEW 1: GROUPS LIST VIEW */}
       {activeSubTab === 'groups' && (

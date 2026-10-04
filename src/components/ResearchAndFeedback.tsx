@@ -40,6 +40,7 @@ import {
   ReceivedArticle
 } from '../types';
 import { useMentor } from '../context/MentorContext';
+import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
@@ -50,6 +51,12 @@ interface ResearchAndFeedbackProps {
 
 export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFeedbackProps = {}) {
   const { filterStudents, currentMentorId, shahpooriFilter } = useMentor();
+  const { currentUser } = useAuth();
+  
+  const isStudentUser = currentUser?.level === 3 || 
+                        currentUser?.role === 'student' || 
+                        currentUser?.role === 'class_representative';
+
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [loading, setLoading] = useState(false);
@@ -163,7 +170,27 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
     const fetchStudentsAndMap = async () => {
       const all = await localDb.getDocs<Student>('students');
       const active = all.filter(s => s.isActive);
-      const filtered = filterStudents(active, true);
+      let filtered = filterStudents(active, true);
+
+      if (isStudentUser) {
+        const uId = currentUser?.studentId || currentUser?.id;
+        const uName = (currentUser?.studentName || currentUser?.fullName || currentUser?.name || '').trim().toLowerCase();
+        const matched = active.find(s => 
+          (uId && String(s.id) === String(uId)) ||
+          (s.nationalId && currentUser?.username && s.nationalId.trim() === currentUser.username.trim()) ||
+          (s.name && (s.name.trim().toLowerCase() === uName || uName.includes(s.name.trim().toLowerCase())))
+        );
+        if (matched) {
+          filtered = [matched];
+          setSelectedStudentId(matched.id);
+          fetchStudentDetails(matched.id);
+        } else if (filtered.length > 0) {
+          filtered = [filtered[0]];
+          setSelectedStudentId(filtered[0].id);
+          fetchStudentDetails(filtered[0].id);
+        }
+      }
+
       setStudents(filtered);
 
       const allRecords = await localDb.getDocs<ResearchRecord>('research_records');
@@ -940,9 +967,13 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
         <div className="space-y-1">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <BookOpen className="text-indigo-600" size={24} />
-            مدیریت پژوهش، سوابق و مهارت‌های علمی
+            {isStudentUser ? 'پرونده و سوابق پژوهشی من' : 'مدیریت پژوهش، سوابق و مهارت‌های علمی'}
           </h2>
-          <p className="text-[11px] text-slate-500">ارزیابی پژوهشی سالانه، سوابق مقالات و پایش مهارت‌های تخصصی طلاب</p>
+          <p className="text-[11px] text-slate-500">
+            {isStudentUser 
+              ? 'مشاهده وضعیت پژوهش سال جاری، سوابق مقالات و مهارت‌های علمی احراز شده' 
+              : 'ارزیابی پژوهشی سالانه، سوابق مقالات و پایش مهارت‌های تخصصی طلاب'}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
@@ -952,43 +983,47 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
               className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white text-[11px] font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
             >
               <Printer size={15} />
-              <span>گزارش PDF طلبه</span>
+              <span>{isStudentUser ? 'دانلود کارنامه پژوهشی PDF' : 'گزارش PDF طلبه'}</span>
             </button>
           )}
 
-          <button 
-            onClick={handleOpenManagerReport}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 text-indigo-700 text-[11px] font-bold rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
-          >
-            <Printer size={15} />
-            <span>گزارش کل طلاب</span>
-          </button>
+          {!isStudentUser && (
+            <>
+              <button 
+                onClick={handleOpenManagerReport}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 text-indigo-700 text-[11px] font-bold rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
+              >
+                <Printer size={15} />
+                <span>گزارش کل طلاب</span>
+              </button>
 
-          <button 
-            onClick={handleBulkExportJSON}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
-          >
-            <FileJson size={15} />
-            <span>خروجی JSON</span>
-          </button>
+              <button 
+                onClick={handleBulkExportJSON}
+                disabled={isExporting}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
+              >
+                <FileJson size={15} />
+                <span>خروجی JSON</span>
+              </button>
 
-          <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block"></div>
+              <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block"></div>
 
-          <div className="w-full md:w-60">
-            <select 
-              className="w-full px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:ring-2 focus:ring-indigo-500 text-xs shadow-sm font-bold text-slate-700"
-              value={selectedStudentId}
-              onChange={(e) => {
-                setSelectedStudentId(e.target.value);
-                if (e.target.value) fetchStudentDetails(e.target.value);
-              }}
-            >
-              <option value="">انتخاب طلبه فعال...</option>
-              {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade || 'نامشخص'})</option>)}
-            </select>
-          </div>
+              <div className="w-full md:w-60">
+                <select 
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:ring-2 focus:ring-indigo-500 text-xs shadow-sm font-bold text-slate-700"
+                  value={selectedStudentId}
+                  onChange={(e) => {
+                    setSelectedStudentId(e.target.value);
+                    if (e.target.value) fetchStudentDetails(e.target.value);
+                  }}
+                >
+                  <option value="">انتخاب طلبه فعال...</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade || 'نامشخص'})</option>)}
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1016,17 +1051,19 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
 
               {/* Status Pills & Return Button */}
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedStudentId('');
-                    setResearch(null);
-                  }}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
-                >
-                  <X size={15} />
-                  <span>بازگشت به لیست پایه‌ها</span>
-                </button>
+                {!isStudentUser && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStudentId('');
+                      setResearch(null);
+                    }}
+                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
+                  >
+                    <X size={15} />
+                    <span>بازگشت به لیست پایه‌ها</span>
+                  </button>
+                )}
 
                 <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black border border-indigo-100 flex items-center gap-1">
                   <BookOpen size={12} />
@@ -1117,54 +1154,58 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
           {/* TAB 1: ACTIVE RESEARCH */}
           {activeTab === 'active_research' && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-8">
-              {/* Archive Action Bar */}
-              <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0 mt-0.5">
-                    <Archive size={20} />
+              {/* Archive Action Bar - Only for staff */}
+              {!isStudentUser && (
+                <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0 mt-0.5">
+                      <Archive size={20} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-amber-950">انتقال مقاله/فعالیت پژوهشی جاری به بخش سوابق پژوهشی</h4>
+                      <p className="text-[11px] text-amber-800/80 mt-0.5 leading-relaxed">
+                        با پایان یا تکمیل پرونده پژوهشی امسال، می‌توانید اطلاعات فعلی مقاله را همراه با خلاصه کلی به بخش «سابقه پژوهش» منتقل کنید.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-black text-amber-950">انتقال مقاله/فعالیت پژوهشی جاری به بخش سوابق پژوهشی</h4>
-                    <p className="text-[11px] text-amber-800/80 mt-0.5 leading-relaxed">
-                      با پایان یا تکمیل پرونده پژوهشی امسال، می‌توانید اطلاعات فعلی مقاله را همراه با خلاصه کلی به بخش «سابقه پژوهش» منتقل کنید.
-                    </p>
-                  </div>
-                </div>
 
-                <button
-                  onClick={() => setShowArchiveConfirmModal(true)}
-                  disabled={!research?.topic}
-                  className="shrink-0 px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md shadow-amber-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Archive size={16} />
-                  <span>انتقال به سوابق و آرشیو</span>
-                </button>
-              </div>
+                  <button
+                    onClick={() => setShowArchiveConfirmModal(true)}
+                    disabled={!research?.topic}
+                    className="shrink-0 px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md shadow-amber-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Archive size={16} />
+                    <span>انتقال به سوابق و آرشیو</span>
+                  </button>
+                </div>
+              )}
 
               {/* Research Details Form */}
               <div className="space-y-6">
-                {/* Needs Follow Up Toggle */}
-                <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-2xl flex items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <input 
-                      type="checkbox"
-                      id="needsFollowUpToggle"
-                      checked={!!research?.needsFollowUp}
-                      onChange={(e) => handleResearchUpdate('needsFollowUp', e.target.checked)}
-                      className="w-5 h-5 mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
-                    />
-                    <label htmlFor="needsFollowUpToggle" className="cursor-pointer">
-                      <span className="text-xs font-black text-purple-950 block">نیازمند پیگیری در بخش «امور پیگیری»</span>
-                      <span className="text-[10px] font-medium text-purple-700/80 block mt-0.5">با فعال‌سازی این گزینه، یک پیگیری مرتبط با این پژوهش به بخش امور پیگیری اضافه شده و متمایز نمایش داده می‌شود.</span>
-                    </label>
+                {/* Needs Follow Up Toggle - Only for staff */}
+                {!isStudentUser && (
+                  <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-2xl flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <input 
+                        type="checkbox"
+                        id="needsFollowUpToggle"
+                        checked={!!research?.needsFollowUp}
+                        onChange={(e) => handleResearchUpdate('needsFollowUp', e.target.checked)}
+                        className="w-5 h-5 mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                      />
+                      <label htmlFor="needsFollowUpToggle" className="cursor-pointer">
+                        <span className="text-xs font-black text-purple-950 block">نیازمند پیگیری در بخش «امور پیگیری»</span>
+                        <span className="text-[10px] font-medium text-purple-700/80 block mt-0.5">با فعال‌سازی این گزینه، یک پیگیری مرتبط با این پژوهش به بخش امور پیگیری اضافه شده و متمایز نمایش داده می‌شود.</span>
+                      </label>
+                    </div>
+                    {research?.needsFollowUp && (
+                      <span className="shrink-0 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-black rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-200">
+                        <Bookmark size={13} />
+                        <span>در لیست امور پیگیری</span>
+                      </span>
+                    )}
                   </div>
-                  {research?.needsFollowUp && (
-                    <span className="shrink-0 px-3 py-1.5 bg-purple-600 text-white text-[10px] font-black rounded-xl flex items-center gap-1.5 shadow-md shadow-purple-200">
-                      <Bookmark size={13} />
-                      <span>در لیست امور پیگیری</span>
-                    </span>
-                  )}
-                </div>
+                )}
 
                 {/* Stages */}
                 <div>
@@ -1174,12 +1215,14 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                       <button 
                         key={s}
                         type="button"
-                        onClick={() => updateResearchStage(s)}
+                        disabled={isStudentUser}
+                        onClick={() => !isStudentUser && updateResearchStage(s)}
                         className={cn(
                           "px-3.5 py-1.5 rounded-xl text-[11px] font-bold transition-all border",
                           research?.stage === s 
                             ? (s === 'تاخیر دارد' ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-100" : "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100")
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
+                          isStudentUser ? "cursor-default" : "cursor-pointer"
                         )}
                       >
                         {s}
@@ -1193,10 +1236,14 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   <label className="block text-[11px] font-bold text-slate-500 mb-2">موضوع پژوهش</label>
                   <input 
                     type="text"
+                    readOnly={isStudentUser}
                     placeholder="عنوان مقاله یا پژوهش..."
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
+                    className={cn(
+                      "w-full px-4 py-2.5 border rounded-xl outline-none text-sm font-medium",
+                      isStudentUser ? "bg-slate-50 border-slate-200 text-slate-800" : "border-slate-200 focus:ring-2 focus:ring-indigo-500"
+                    )}
                     value={research?.topic || ''}
-                    onChange={(e) => handleResearchUpdate('topic', e.target.value)}
+                    onChange={(e) => !isStudentUser && handleResearchUpdate('topic', e.target.value)}
                   />
                 </div>
 
@@ -1205,9 +1252,13 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-2">نوع پژوهش</label>
                     <select 
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium bg-white"
+                      disabled={isStudentUser}
+                      className={cn(
+                        "w-full px-4 py-2.5 border rounded-xl outline-none text-sm font-medium",
+                        isStudentUser ? "bg-slate-50 border-slate-200 text-slate-800 cursor-default" : "border-slate-200 focus:ring-2 focus:ring-indigo-500 bg-white"
+                      )}
                       value={research?.type || 'individual'}
-                      onChange={(e) => handleResearchUpdate('type', e.target.value)}
+                      onChange={(e) => !isStudentUser && handleResearchUpdate('type', e.target.value)}
                     >
                       <option value="individual">فردی</option>
                       <option value="group">گروهی</option>
@@ -1219,11 +1270,12 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                       <label className="block text-[11px] font-bold text-slate-500 mb-2">هم‌گروهی‌ها</label>
                       <button 
                         type="button"
-                        onClick={() => setShowTeamModal(true)}
+                        disabled={isStudentUser}
+                        onClick={() => !isStudentUser && setShowTeamModal(true)}
                         className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 transition-colors flex items-center justify-between"
                       >
                         <span>{research?.teamMemberIds?.length || 0} نفر انتخاب شده</span>
-                        <Plus size={16} />
+                        {!isStudentUser && <Plus size={16} />}
                       </button>
                     </div>
                   )}
@@ -1234,10 +1286,14 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   <label className="block text-[11px] font-bold text-slate-500 mb-2">توضیحات و خلاصه روند پژوهش</label>
                   <textarea 
                     rows={3}
+                    readOnly={isStudentUser}
                     placeholder="توضیحات لازم درباره روند پژوهش، پیشرفت‌ها و چالش‌ها..."
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm leading-relaxed"
+                    className={cn(
+                      "w-full px-4 py-2.5 border rounded-xl outline-none text-sm leading-relaxed",
+                      isStudentUser ? "bg-slate-50 border-slate-200 text-slate-800" : "border-slate-200 focus:ring-2 focus:ring-indigo-500"
+                    )}
                     value={research?.description || ''}
-                    onChange={(e) => handleResearchUpdate('description', e.target.value)}
+                    onChange={(e) => !isStudentUser && handleResearchUpdate('description', e.target.value)}
                   />
                 </div>
 
@@ -1248,20 +1304,25 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                       <label className="block text-[11px] font-bold text-slate-600 mb-2">امتیاز پژوهش</label>
                       <input 
                         type="text"
+                        readOnly={isStudentUser}
                         placeholder="مثلا: ۹۵/۱۰۰ یا عالی"
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
+                        className={cn(
+                          "w-full px-4 py-2.5 border rounded-xl outline-none text-sm font-medium",
+                          isStudentUser ? "bg-slate-50 border-slate-200 text-slate-800" : "border-slate-200 focus:ring-2 focus:ring-indigo-500"
+                        )}
                         value={research?.score || ''}
-                        onChange={(e) => handleResearchUpdate('score', e.target.value)}
+                        onChange={(e) => !isStudentUser && handleResearchUpdate('score', e.target.value)}
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-2">نظر استاد پژوهش</label>
                       <textarea 
                         rows={2}
+                        readOnly={isStudentUser}
                         placeholder="نکات استاد پژوهش..."
                         className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800"
                         value={research?.professorNotes || ''}
-                        onChange={(e) => handleResearchUpdate('professorNotes', e.target.value)}
+                        onChange={(e) => !isStudentUser && handleResearchUpdate('professorNotes', e.target.value)}
                       />
                     </div>
                   </div>
@@ -1270,20 +1331,22 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                       <label className="block text-[11px] font-bold text-slate-700 mb-2">نظر استاد راهنما</label>
                       <textarea 
                         rows={2}
+                        readOnly={isStudentUser}
                         placeholder="نکات استاد راهنما..."
                         className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800"
                         value={research?.supervisorNotes || ''}
-                        onChange={(e) => handleResearchUpdate('supervisorNotes', e.target.value)}
+                        onChange={(e) => !isStudentUser && handleResearchUpdate('supervisorNotes', e.target.value)}
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-indigo-700 mb-2">نظر استاد ناقد</label>
                       <textarea 
                         rows={2}
+                        readOnly={isStudentUser}
                         placeholder="نکات استاد ناقد..."
                         className="w-full px-4 py-2 bg-indigo-50/50 border border-indigo-100 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-indigo-950 font-medium"
                         value={research?.criticNotes || ''}
-                        onChange={(e) => handleResearchUpdate('criticNotes', e.target.value)}
+                        onChange={(e) => !isStudentUser && handleResearchUpdate('criticNotes', e.target.value)}
                       />
                     </div>
                   </div>
@@ -1292,42 +1355,46 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 {/* Usages List */}
                 <div className="pt-4 border-t border-slate-100">
                   <label className="block text-[11px] font-bold text-slate-500 mb-2">از این مقاله در موارد زیر استفاده شده است:</label>
-                  <div className="flex gap-2 mb-3">
-                    <input 
-                      type="text"
-                      placeholder="مثلا: جشنواره علامه حلی، نشریه مدرسه..."
-                      className="flex-1 px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                      value={newUsage}
-                      onChange={(e) => setNewUsage(e.target.value)}
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        if (newUsage.trim()) {
-                          const current = research?.usages || [];
-                          handleResearchUpdate('usages', [...current, newUsage.trim()]);
-                          setNewUsage('');
-                        }
-                      }}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-bold text-xs"
-                    >
-                      افزودن
-                    </button>
-                  </div>
+                  {!isStudentUser && (
+                    <div className="flex gap-2 mb-3">
+                      <input 
+                        type="text"
+                        placeholder="مثلا: جشنواره علامه حلی، نشریه مدرسه..."
+                        className="flex-1 px-4 py-2 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                        value={newUsage}
+                        onChange={(e) => setNewUsage(e.target.value)}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          if (newUsage.trim()) {
+                            const current = research?.usages || [];
+                            handleResearchUpdate('usages', [...current, newUsage.trim()]);
+                            setNewUsage('');
+                          }
+                        }}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-bold text-xs"
+                      >
+                        افزودن
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {research?.usages?.map((usage, idx) => (
                       <div key={idx} className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 border border-slate-200">
                         <span>{usage}</span>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const current = research?.usages || [];
-                            handleResearchUpdate('usages', current.filter((_, i) => i !== idx));
-                          }}
-                          className="text-slate-400 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        {!isStudentUser && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const current = research?.usages || [];
+                              handleResearchUpdate('usages', current.filter((_, i) => i !== idx));
+                            }}
+                            className="text-slate-400 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                       </div>
                     ))}
                     {(!research?.usages || research.usages.length === 0) && (
@@ -1336,36 +1403,38 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   </div>
                 </div>
 
-                {/* Save Bar */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                  <div className="flex items-center gap-2">
-                    {saveStatus === 'saving' && (
-                      <span className="text-xs text-amber-600 font-bold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                        در حال ذخیره‌سازی خودکار...
-                      </span>
-                    )}
-                    {saveStatus === 'saved' && (
-                      <span className="text-xs text-emerald-600 font-bold flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                        <CheckCircle size={14} />
-                        تغییرات به‌صورت خودکار ذخیره شد
-                      </span>
-                    )}
-                    {saveStatus === 'idle' && (
-                      <span className="text-[11px] text-slate-400 font-medium">
-                        ✓ کلیه تغییرات به‌صورت خودکار ذخیره می‌شوند.
-                      </span>
-                    )}
-                  </div>
+                {/* Save Bar - Only for staff */}
+                {!isStudentUser && (
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                    <div className="flex items-center gap-2">
+                      {saveStatus === 'saving' && (
+                        <span className="text-xs text-amber-600 font-bold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                          در حال ذخیره‌سازی خودکار...
+                        </span>
+                      )}
+                      {saveStatus === 'saved' && (
+                        <span className="text-xs text-emerald-600 font-bold flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                          <CheckCircle size={14} />
+                          تغییرات به‌صورت خودکار ذخیره شد
+                        </span>
+                      )}
+                      {saveStatus === 'idle' && (
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          ✓ کلیه تغییرات به‌صورت خودکار ذخیره می‌شوند.
+                        </span>
+                      )}
+                    </div>
 
-                  <button 
-                    type="button"
-                    onClick={saveResearchData}
-                    className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
-                  >
-                    ذخیره فوری
-                  </button>
-                </div>
+                    <button 
+                      type="button"
+                      onClick={saveResearchData}
+                      className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                    >
+                      ذخیره فوری
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Internal Meeting Archives Section */}
@@ -1375,14 +1444,16 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                     <div className="w-1.5 h-5 bg-purple-500 rounded-full"></div>
                     آرشیو نشست‌ها و پیگیری‌های حضوری
                   </h3>
-                  <button 
-                    type="button"
-                    onClick={() => setShowArchiveModal(true)}
-                    className="px-3 py-1.5 bg-purple-50 text-purple-700 text-xs font-bold rounded-xl hover:bg-purple-100 transition-colors border border-purple-100 flex items-center gap-1"
-                  >
-                    <Plus size={14} />
-                    <span>ثبت جلسه/پیگیری</span>
-                  </button>
+                  {!isStudentUser && (
+                    <button 
+                      type="button"
+                      onClick={() => setShowArchiveModal(true)}
+                      className="px-3 py-1.5 bg-purple-50 text-purple-700 text-xs font-bold rounded-xl hover:bg-purple-100 transition-colors border border-purple-100 flex items-center gap-1"
+                    >
+                      <Plus size={14} />
+                      <span>ثبت جلسه/پیگیری</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -1390,9 +1461,11 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                     <div key={arch.id} className="p-4 bg-slate-50/70 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] text-slate-400 font-bold">{new Date(arch.createdAt).toLocaleDateString('fa-IR')}</span>
-                        <button onClick={() => deleteItem('conversation_archives', arch.id)} className="text-slate-300 hover:text-rose-600 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
+                        {!isStudentUser && (
+                          <button onClick={() => deleteItem('conversation_archives', arch.id)} className="text-slate-300 hover:text-rose-600 transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed text-justify">{arch.summary}</p>
                     </div>
@@ -1422,27 +1495,29 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setEditingHistoryItem(null);
-                    setHistoryForm({
-                      topic: '',
-                      academicYearOrPeriod: 'سال ۱۴۰۳-۱۴۰۲',
-                      stage: 'تکمیل شده',
-                      score: '',
-                      description: '',
-                      summary: '',
-                      professorNotes: '',
-                      supervisorNotes: '',
-                      criticNotes: ''
-                    });
-                    setShowHistoryModal(true);
-                  }}
-                  className="px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md shadow-amber-100 flex items-center gap-1.5"
-                >
-                  <Plus size={16} />
-                  <span>ثبت مستقیم سابقه جدید</span>
-                </button>
+                {!isStudentUser && (
+                  <button
+                    onClick={() => {
+                      setEditingHistoryItem(null);
+                      setHistoryForm({
+                        topic: '',
+                        academicYearOrPeriod: 'سال ۱۴۰۳-۱۴۰۲',
+                        stage: 'تکمیل شده',
+                        score: '',
+                        description: '',
+                        summary: '',
+                        professorNotes: '',
+                        supervisorNotes: '',
+                        criticNotes: ''
+                      });
+                      setShowHistoryModal(true);
+                    }}
+                    className="px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-all shadow-md shadow-amber-100 flex items-center gap-1.5"
+                  >
+                    <Plus size={16} />
+                    <span>ثبت مستقیم سابقه جدید</span>
+                  </button>
+                )}
               </div>
 
               {historyItems.length === 0 ? (
@@ -1450,7 +1525,7 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   <Archive size={40} className="mx-auto text-slate-300" />
                   <p className="text-xs text-slate-500 font-bold">هیچ سابقه پژوهشی برای این طلبه ثبت نشده است.</p>
                   <p className="text-[11px] text-slate-400">
-                    می‌توانید مقاله جاری را از تب اول به آرشیو منتقل کنید یا یک سابقه جدید ثبت نمایید.
+                    {isStudentUser ? 'هنوز سابقه پژوهشی در پرونده شما ثبت نگردیده است.' : 'می‌توانید مقاله جاری را از تب اول به آرشیو منتقل کنید یا یک سابقه جدید ثبت نمایید.'}
                   </p>
                 </div>
               ) : (
@@ -1475,37 +1550,41 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                             {item.stage || 'آرشیو شده'}
                           </span>
 
-                          <div className="h-4 w-px bg-slate-300 mx-1"></div>
+                          {!isStudentUser && (
+                            <>
+                              <div className="h-4 w-px bg-slate-300 mx-1"></div>
 
-                          {/* Action Buttons */}
-                          <button
-                            onClick={() => handleRestoreHistoryItem(item)}
-                            title="بازگردانی به مقاله فعال جاری"
-                            className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-[11px] font-bold border border-indigo-200 flex items-center gap-1 transition-colors"
-                          >
-                            <RotateCcw size={13} />
-                            <span>بازگردانی</span>
-                          </button>
+                              {/* Action Buttons */}
+                              <button
+                                onClick={() => handleRestoreHistoryItem(item)}
+                                title="بازگردانی به مقاله فعال جاری"
+                                className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-[11px] font-bold border border-indigo-200 flex items-center gap-1 transition-colors"
+                              >
+                                <RotateCcw size={13} />
+                                <span>بازگردانی</span>
+                              </button>
 
-                          <button
-                            onClick={() => {
-                              setEditingHistoryItem(item);
-                              setHistoryForm({ ...item });
-                              setShowHistoryModal(true);
-                            }}
-                            title="ویرایش سابقه"
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors"
-                          >
-                            <Edit3 size={15} />
-                          </button>
+                              <button
+                                onClick={() => {
+                                  setEditingHistoryItem(item);
+                                  setHistoryForm({ ...item });
+                                  setShowHistoryModal(true);
+                                }}
+                                title="ویرایش سابقه"
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors"
+                              >
+                                <Edit3 size={15} />
+                              </button>
 
-                          <button
-                            onClick={() => handleDeleteHistoryItem(item.id)}
-                            title="حذف سابقه"
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                              <button
+                                onClick={() => handleDeleteHistoryItem(item.id)}
+                                title="حذف سابقه"
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-colors"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -1567,21 +1646,23 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                     <Award size={18} className="text-emerald-600" />
-                    پایش و ارزیابی مهارت‌های پژوهشی {selStudentObj?.name}
+                    {isStudentUser ? 'مهارت‌های پژوهشی احراز شده من' : `پایش و ارزیابی مهارت‌های پژوهشی ${selStudentObj?.name}`}
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    علامت‌گذاری مهارت‌های احراز شده از بانک مهارت‌های تعریف‌شده در سیستم
+                    {isStudentUser ? 'لیست مهارت‌های پژوهشی ثبت و تایید شده برای شما' : 'علامت‌گذاری مهارت‌های احراز شده از بانک مهارت‌های تعریف‌شده در سیستم'}
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowSkillSettingsModal(true)}
-                  className="px-3.5 py-2 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200 flex items-center gap-1.5"
-                >
-                  <Settings size={15} className="text-emerald-600" />
-                  <span>مدیریت بانک مهارت‌های پژوهشی</span>
-                </button>
+                {!isStudentUser && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSkillSettingsModal(true)}
+                    className="px-3.5 py-2 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200 flex items-center gap-1.5"
+                  >
+                    <Settings size={15} className="text-emerald-600" />
+                    <span>مدیریت بانک مهارت‌های پژوهشی</span>
+                  </button>
+                )}
               </div>
 
               {/* If no skill defs exist in the bank */}
@@ -1590,23 +1671,25 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                   <Award size={40} className="mx-auto text-slate-300" />
                   <p className="text-xs font-bold text-slate-600">هنوز هیچ مهارتی در بانک مهارت‌های پژوهشی تعریف نشده است.</p>
                   <p className="text-[11px] text-slate-400">
-                    جهت تعریف مهارت‌های پژوهشی که برای همه طلاب قابل انتخاب باشد، وارد بخش تنظیمات بانک مهارت‌ها شوید.
+                    {isStudentUser ? 'مهارتی برای شما ثبت نگردیده است.' : 'جهت تعریف مهارت‌های پژوهشی که برای همه طلاب قابل انتخاب باشد، وارد بخش تنظیمات بانک مهارت‌ها شوید.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowSkillSettingsModal(true)}
-                    className="mt-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100 inline-flex items-center gap-1.5"
-                  >
-                    <Plus size={15} />
-                    <span>تعریف مهارت در بانک مهارت‌ها</span>
-                  </button>
+                  {!isStudentUser && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSkillSettingsModal(true)}
+                      className="mt-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100 inline-flex items-center gap-1.5"
+                    >
+                      <Plus size={15} />
+                      <span>تعریف مهارت در بانک مهارت‌ها</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 /* Skill Checklist Grouped by Category */
                 <div className="space-y-6">
                   <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2">
                     <CheckSquare size={16} className="text-emerald-600" />
-                    تیک زدن مهارت‌های احراز شده برای این طلبه:
+                    {isStudentUser ? 'وضعیت مهارت‌های تخصصی پژوهش:' : 'تیک زدن مهارت‌های احراز شده برای این طلبه:'}
                   </h4>
 
                   {categoriesList.map((cat) => {
@@ -1632,12 +1715,14 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                               <button
                                 key={sk.id}
                                 type="button"
-                                onClick={() => handleToggleSkill(sk.id)}
+                                disabled={isStudentUser}
+                                onClick={() => !isStudentUser && handleToggleSkill(sk.id)}
                                 className={cn(
-                                  "p-3 rounded-xl border text-right transition-all flex items-start gap-3 cursor-pointer group",
+                                  "p-3 rounded-xl border text-right transition-all flex items-start gap-3 group",
                                   isAcquired
                                     ? "bg-emerald-50 border-emerald-300 shadow-sm text-emerald-950 font-bold"
-                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300",
+                                  isStudentUser ? "cursor-default" : "cursor-pointer"
                                 )}
                               >
                                 <div className={cn(
@@ -1667,36 +1752,40 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 <label className="block text-xs font-bold text-slate-700">
                   مهارت‌های متفرقه / ویژه این طلبه:
                 </label>
-                <div className="flex gap-2 max-w-md">
-                  <input 
-                    type="text"
-                    placeholder="مثلا: تسلط بر درایه نور، فیش‌برداری موضوعی..."
-                    className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500"
-                    value={customSkillInput}
-                    onChange={(e) => setCustomSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddCustomSkill();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddCustomSkill}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors"
-                  >
-                    افزودن
-                  </button>
-                </div>
+                {!isStudentUser && (
+                  <div className="flex gap-2 max-w-md">
+                    <input 
+                      type="text"
+                      placeholder="مثلا: تسلط بر درایه نور، فیش‌برداری موضوعی..."
+                      className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+                      value={customSkillInput}
+                      onChange={(e) => setCustomSkillInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomSkill();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSkill}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors"
+                    >
+                      افزودن
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap gap-2 pt-2">
                   {studentSkills?.customSkills?.map((cs) => (
                     <span key={cs} className="px-3 py-1.5 bg-emerald-100 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
                       <span>{cs}</span>
-                      <button onClick={() => handleRemoveCustomSkill(cs)} className="text-emerald-700 hover:text-rose-600 transition-colors">
-                        <X size={13} />
-                      </button>
+                      {!isStudentUser && (
+                        <button onClick={() => handleRemoveCustomSkill(cs)} className="text-emerald-700 hover:text-rose-600 transition-colors">
+                          <X size={13} />
+                        </button>
+                      )}
                     </span>
                   ))}
                   {(!studentSkills?.customSkills || studentSkills.customSkills.length === 0) && (
@@ -1712,7 +1801,7 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                     <Sparkles size={16} className="text-amber-500" />
                     توضیحات و ارزیابی تفصیلی درباره مهارت‌های پژوهشی طلبه:
                   </label>
-                  {skillSaveStatus === 'saved' && (
+                  {!isStudentUser && skillSaveStatus === 'saved' && (
                     <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       ✓ ذخیره شد
                     </span>
@@ -1721,15 +1810,21 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
 
                 <textarea
                   rows={4}
+                  readOnly={isStudentUser}
                   placeholder="ملاحظات، استعدادها، علایق موضوعی، نقاط قوت در نگارش یا روش تحقیق و توصیه‌های آموزشی استاد درباره این طلبه..."
-                  className="w-full p-4 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-xs leading-relaxed text-slate-800 bg-slate-50/50"
+                  className={cn(
+                    "w-full p-4 border rounded-2xl outline-none text-xs leading-relaxed text-slate-800",
+                    isStudentUser ? "bg-slate-50 border-slate-200" : "border-slate-200 focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
+                  )}
                   value={studentSkills?.notes || ''}
-                  onChange={(e) => handleUpdateSkillNotes(e.target.value)}
-                  onBlur={() => studentSkills && saveStudentSkills(studentSkills)}
+                  onChange={(e) => !isStudentUser && handleUpdateSkillNotes(e.target.value)}
+                  onBlur={() => !isStudentUser && studentSkills && saveStudentSkills(studentSkills)}
                 />
-                <p className="text-[10px] text-slate-400">
-                  نکته: این توضیحات پس از ویرایش به‌صورت خودکار ذخیره می‌شوند و در گزارش PDF پژوهشی قابل مشاهده هستند.
-                </p>
+                {!isStudentUser && (
+                  <p className="text-[10px] text-slate-400">
+                    نکته: این توضیحات پس از ویرایش به‌صورت خودکار ذخیره می‌شوند و در گزارش PDF پژوهشی قابل مشاهده هستند.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -1741,39 +1836,45 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                 <div>
                   <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                     <FileText className="text-purple-600" size={18} />
-                    بخش ویژه: مقالات و کارهای پژوهشی دریافتی از این طلبه
+                    {isStudentUser ? 'مقالات و آثار پژوهشی من' : 'بخش ویژه: مقالات و کارهای پژوهشی دریافتی از این طلبه'}
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    مقالاتی که در پرونده پژوهشی وضعیت «تکمیل شده» دارند به همراه مقالات ثبت‌شده دستی در این بخش نمایش داده می‌شوند.
+                    {isStudentUser 
+                      ? 'لیست مقالات تکمیل شده و آثار پژوهشی تحویل داده شده شما' 
+                      : 'مقالاتی که در پرونده پژوهشی وضعیت «تکمیل شده» دارند به همراه مقالات ثبت‌شده دستی در این بخش نمایش داده می‌شوند.'}
                   </p>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setEditingReceivedArticle(null);
-                    setReceivedArticleForm({
-                      title: '',
-                      summary: '',
-                      type: 'individual',
-                      deliveryYear: '۱۴۰۳',
-                      pageCount: '',
-                      evaluationScores: '',
-                      evaluatorComments: ''
-                    });
-                    setShowReceivedArticleModal(true);
-                  }}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition-all shadow-md shadow-purple-100 flex items-center gap-2 shrink-0"
-                >
-                  <Plus size={16} />
-                  <span>افزودن مقاله دریافتی به صورت دستی</span>
-                </button>
+                {!isStudentUser && (
+                  <button
+                    onClick={() => {
+                      setEditingReceivedArticle(null);
+                      setReceivedArticleForm({
+                        title: '',
+                        summary: '',
+                        type: 'individual',
+                        deliveryYear: '۱۴۰۳',
+                        pageCount: '',
+                        evaluationScores: '',
+                        evaluatorComments: ''
+                      });
+                      setShowReceivedArticleModal(true);
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold hover:bg-purple-700 transition-all shadow-md shadow-purple-100 flex items-center gap-2 shrink-0"
+                  >
+                    <Plus size={16} />
+                    <span>افزودن مقاله دریافتی به صورت دستی</span>
+                  </button>
+                )}
               </div>
 
               {studentReceivedArticles.length === 0 ? (
                 <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
                   <BookOpen className="mx-auto text-slate-300" size={32} />
                   <p className="text-xs font-bold text-slate-600">هنوز مقاله دریافتی برای این طلبه ثبت نشده است.</p>
-                  <p className="text-[11px] text-slate-400">می‌توانید مقاله جدید اضافه کنید یا پرونده پژوهشی طلبه را به مرحله «تکمیل شده» تغییر دهید.</p>
+                  <p className="text-[11px] text-slate-400">
+                    {isStudentUser ? 'هنوز مقاله‌ای در سامانه برای شما ثبت نگردیده است.' : 'می‌توانید مقاله جدید اضافه کنید یا پرونده پژوهشی طلبه را به مرحله «تکمیل شده» تغییر دهید.'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1805,37 +1906,39 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => {
-                              setEditingReceivedArticle(art);
-                              setReceivedArticleForm({
-                                title: art.title,
-                                summary: art.summary,
-                                type: art.type,
-                                deliveryYear: art.deliveryYear,
-                                pageCount: art.pageCount,
-                                evaluationScores: art.evaluationScores,
-                                evaluatorComments: art.evaluatorComments
-                              });
-                              setShowReceivedArticleModal(true);
-                            }}
-                            className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5"
-                          >
-                            <Edit3 size={13} />
-                            <span>مشاهده و ویرایش خلاصه و جزییات</span>
-                          </button>
-
-                          {art.source !== 'auto_completed' && (
+                        {!isStudentUser && (
+                          <div className="flex items-center gap-2 shrink-0">
                             <button
-                              onClick={() => handleDeleteReceivedArticle(art.id)}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl border border-rose-100 transition-colors"
-                              title="حذف مقاله"
+                              onClick={() => {
+                                setEditingReceivedArticle(art);
+                                setReceivedArticleForm({
+                                  title: art.title,
+                                  summary: art.summary,
+                                  type: art.type,
+                                  deliveryYear: art.deliveryYear,
+                                  pageCount: art.pageCount,
+                                  evaluationScores: art.evaluationScores,
+                                  evaluatorComments: art.evaluatorComments
+                                });
+                                setShowReceivedArticleModal(true);
+                              }}
+                              className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl text-[11px] font-bold transition-colors flex items-center gap-1.5"
                             >
-                              <Trash2 size={15} />
+                              <Edit3 size={13} />
+                              <span>مشاهده و ویرایش خلاصه و جزییات</span>
                             </button>
-                          )}
-                        </div>
+
+                            {art.source !== 'auto_completed' && (
+                              <button
+                                onClick={() => handleDeleteReceivedArticle(art.id)}
+                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl border border-rose-100 transition-colors"
+                                title="حذف مقاله"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {art.summary && (

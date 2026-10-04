@@ -364,10 +364,10 @@ export default function TeacherPortal() {
   }, [loadingState, isCounselingTeacher, hasAutoDirected]);
 
   /**
-   * All counseling and teaching courses taught by this teacher for easy class shifting
+   * All counseling courses taught by this teacher (Strict: ONLY counseling classes, never main classes)
    */
   const counselingPrograms = useMemo(() => {
-    // 1. All explicit counseling programs
+    // 1. All explicit counseling programs taught by this teacher
     const explicitCounseling = teacherPrograms.filter(p => 
       p.title?.includes('مشاوره') || 
       (p.type as string) === 'مشاوره' || 
@@ -375,21 +375,17 @@ export default function TeacherPortal() {
       (p as any).category?.includes('مشاوره')
     );
 
-    // 2. Other courses of this teacher (for evaluation flexibility)
-    const otherProgs = teacherPrograms.filter(p => !explicitCounseling.some(ec => ec.id === p.id));
-    const combined = [...explicitCounseling, ...otherProgs];
+    if (explicitCounseling.length > 0) return explicitCounseling;
 
-    if (combined.length > 0) return combined;
-
-    // 3. Dynamic grade slots based on teacher's managedGrades or default grades
+    // 2. Dynamic grade slots based on teacher's managedGrades or default grades if teacher is marked as counselor
     const teacherManagedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades || [];
-    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد محترم';
+    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
 
     if (teacherManagedGrades.length > 0) {
       return teacherManagedGrades.map((g, idx) => ({
         id: `counseling-${g}-${currentTeacherObj?.id || idx}`,
         title: `کلاس مشاوره (${g})`,
-        type: 'counseling' as any,
+        type: 'مشاوره' as any,
         teacher: teacherDisplayName,
         grade: g,
         days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
@@ -402,7 +398,7 @@ export default function TeacherPortal() {
       {
         id: `counseling-p7-${currentTeacherObj?.id || 'main'}`,
         title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۷)',
-        type: 'counseling' as any,
+        type: 'مشاوره' as any,
         teacher: teacherDisplayName,
         grade: 'پایه ۷',
         days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
@@ -412,7 +408,7 @@ export default function TeacherPortal() {
       {
         id: `counseling-p8-${currentTeacherObj?.id || 'main'}`,
         title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۸)',
-        type: 'counseling' as any,
+        type: 'مشاوره' as any,
         teacher: teacherDisplayName,
         grade: 'پایه ۸',
         days: ['یکشنبه', 'سه‌شنبه'],
@@ -422,7 +418,7 @@ export default function TeacherPortal() {
       {
         id: `counseling-p9-${currentTeacherObj?.id || 'main'}`,
         title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۹ و ۱۰)',
-        type: 'counseling' as any,
+        type: 'مشاوره' as any,
         teacher: teacherDisplayName,
         grade: 'پایه ۹',
         days: ['شنبه', 'چهارشنبه'],
@@ -541,10 +537,17 @@ export default function TeacherPortal() {
   const enrolledStudents = useMemo(() => {
     if (!activeCounselingCourse) return [];
 
-    // 1. Direct enrollments for this specific program ID or parentProgramId
+    // 1. Direct enrollments or explicit studentIds for this specific counseling class
+    if (activeCounselingCourse.studentIds && activeCounselingCourse.studentIds.length > 0) {
+      const ids = new Set(activeCounselingCourse.studentIds);
+      const direct = students.filter(s => ids.has(s.id) && s.isActive !== false);
+      if (direct.length > 0) {
+        return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+      }
+    }
+
     const courseEnrollments = enrollments.filter(e => 
-      e.programId === activeCounselingCourse.id || 
-      (activeCounselingCourse.parentProgramId && e.programId === activeCounselingCourse.parentProgramId)
+      e.programId === activeCounselingCourse.id
     );
     if (courseEnrollments.length > 0) {
       const ids = new Set(courseEnrollments.map(e => e.studentId));

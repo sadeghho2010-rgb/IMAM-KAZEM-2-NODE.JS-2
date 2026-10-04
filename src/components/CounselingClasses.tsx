@@ -178,11 +178,20 @@ export default function CounselingClasses() {
   // Filtered Counseling Programs (Classes) in the System
   const counselingClassesList = useMemo(() => {
     // 1. Programs explicitly marked with type='مشاوره' or title including 'مشاوره'
-    const foundPrograms = programs.filter(p => 
+    let foundPrograms = programs.filter(p => 
       p.type === 'مشاوره' || 
       (p.title && p.title.includes('مشاوره')) ||
       (p.title && (p.title.includes('کارگاه') || p.title.includes('پژوهش') || p.title.includes('هدایت')))
     );
+
+    // If teacher is logged in (not super_admin or education_manager), strictly show only their own counseling classes
+    if (!isSuperAdmin && !isEducationManager && !isResearchManager && currentUser) {
+      const uName = (currentUser.name || currentUser.fullName || '').trim().toLowerCase();
+      foundPrograms = foundPrograms.filter(p => {
+        const tName = ((p as any).teacher || (p as any).teacherName || '').trim().toLowerCase();
+        return tName && (tName.includes(uName) || uName.includes(tName));
+      });
+    }
 
     // If programs exist, use them; otherwise provide default fallbacks
     if (foundPrograms.length > 0) {
@@ -196,7 +205,7 @@ export default function CounselingClasses() {
       { id: 'prog_counseling_3', title: 'مشاوره فلسفه و منطق', teacher: 'استاد مشاور فلسفه', grade: 'پایه ۹', type: 'مشاوره' as any },
       { id: 'prog_counseling_4', title: 'مشاوره پژوهش و مقاله‌نویسی', teacher: 'استاد مشاور پژوهش', grade: 'پایه ۱۰', type: 'مشاوره' as any }
     ] as Program[];
-  }, [programs]);
+  }, [programs, isSuperAdmin, isEducationManager, isResearchManager, currentUser]);
 
   // Handle Class Selection in Batch Modal
   const handleBatchProgramChange = (programId: string) => {
