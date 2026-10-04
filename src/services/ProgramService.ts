@@ -25,8 +25,42 @@ export const ProgramInputSchema = z.object({
   parentProgramId: z.string().optional(),
   representativeStudentIds: z.array(z.string()).optional(),
   representativeNames: z.array(z.string()).optional(),
-  customRepresentative: z.string().optional()
+  customRepresentative: z.string().optional(),
+  subjectCategory: z.enum(['اصول', 'فقه', 'فلسفه', 'سایر']).optional(),
+  subjectBook: z.string().optional()
 });
+
+// Helper to normalize time string (e.g., Persian digits to English, pad with zero)
+function normalizeTimeStr(timeStr?: string): string {
+  if (!timeStr) return '';
+  const eng = timeStr.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]).trim();
+  const parts = eng.split(':');
+  if (parts.length === 2) {
+    const hh = parts[0].padStart(2, '0');
+    const mm = parts[1].padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return eng;
+}
+
+// Helper to extract startTime and endTime from program or time field
+function extractProgramTimeRange(prog: { time?: string; startTime?: string; endTime?: string }): { startTime: string; endTime: string } | null {
+  if (prog.startTime && prog.endTime) {
+    const s = normalizeTimeStr(prog.startTime);
+    const e = normalizeTimeStr(prog.endTime);
+    if (s && e) return { startTime: s, endTime: e };
+  }
+  if (!prog.time) return null;
+  const eng = prog.time.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+  const match = eng.match(/(\d{1,2}:\d{2})\s*(?:الی|تا|-|to)\s*(\d{1,2}:\d{2})/i);
+  if (match) {
+    return {
+      startTime: normalizeTimeStr(match[1]),
+      endTime: normalizeTimeStr(match[2])
+    };
+  }
+  return null;
+}
 
 // Helper to check time overlap (format "HH:mm")
 function isTimeOverlapping(start1: string, end1: string, start2: string, end2: string): boolean {
@@ -102,34 +136,62 @@ export class ProgramService {
 
     const validData = parsed.data;
     const targetRoom = validData.madrasRoom || validData.classroom;
+    const targetTeacher = validData.teacher?.trim();
     const targetDays = validData.days && validData.days.length > 0 
       ? validData.days 
       : (validData.day ? [validData.day] : []);
 
     const id = validData.id || `prog_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const targetTimeRange = extractProgramTimeRange(validData);
 
-    // Collision Detection: Check if the room is already occupied at overlapping hours on any same day
-    if (targetRoom && targetDays.length > 0 && validData.startTime && validData.endTime) {
+    if (targetTimeRange && targetDays.length > 0) {
       const allPrograms = await serverQueryCollection('programs', callerUser);
       if (Array.isArray(allPrograms)) {
         for (const existing of allPrograms) {
           if (existing.id === id) continue; // skip self during update
-          const existingRoom = existing.madrasRoom || existing.classroom;
-          if (existingRoom && existingRoom.trim().toLowerCase() === targetRoom.trim().toLowerCase()) {
-            const existingDays = existing.days && existing.days.length > 0 
-              ? existing.days 
-              : (existing.day ? [existing.day] : []);
-            
-            const sharedDays = targetDays.filter(d => existingDays.includes(d));
-            if (sharedDays.length > 0) {
-              const startEx = existing.startTime || '';
-              const endEx = existing.endTime || '';
-              if (isTimeOverlapping(validData.startTime, validData.endTime, startEx, endEx)) {
-                throw new AppError(
-                  `تزاحم زمان و مکان: مَدرَس «${targetRoom}» در روز ${sharedDays.join(' و ')} ساعت ${startEx} تا ${endEx} قبلاً برای درس «${existing.title}» تخصیص داده شده است.`,
-                  { statusCode: 409 }
-                );
-              }
+
+          const existingDays = existing.days && existing.days.length > 0 
+            ? existing.days 
+            : (existing.day ? [existing.day] : []);
+          const sharedDays = targetDays.filter(d => existingDays.includes(d));
+          if (sharedDays.length === 0) continue;
+
+          const existingTimeRange = extractProgramTimeRange(existing);
+          if (!existingTimeRange) continue;
+
+          const hasTimeConflict = isTimeOverlapping(
+            targetTimeRange.startTime,
+            targetTimeRange.endTime,
+            existingTimeRange.startTime,
+            existingTimeRange.endTime
+          );
+
+          if (!hasTimeConflict) continue;
+
+          // 1. Teacher Collision Check: The same teacher cannot teach two classes simultaneously
+          if (targetTeacher) {
+            const existingTeacher = (existing.teacher || '').trim();
+            if (
+              existingTeacher &&
+              (existingTeacher.toLowerCase() === targetTeacher.toLowerCase() ||
+               existingTeacher.includes(targetTeacher) ||
+               targetTeacher.includes(existingTeacher))
+            ) {
+              throw new AppError(
+                `تزاحم زمان تدریس: استاد «${targetTeacher}» در روز ${sharedDays.join(' و ')} ساعت ${existingTimeRange.startTime} تا ${existingTimeRange.endTime} قبلاً برای کلاس «${existing.title}» (${existing.grade || 'عمومی'}) برنامه‌ریزی شده‌اند و امکان تداخل وجود ندارد.`,
+                { statusCode: 409 }
+              );
+            }
+          }
+
+          // 2. Madras Room Collision Check
+          if (targetRoom) {
+            const existingRoom = existing.madrasRoom || existing.classroom;
+            if (existingRoom && existingRoom.trim().toLowerCase() === targetRoom.trim().toLowerCase()) {
+              throw new AppError(
+                `تزاحم مکان و مدرَس: مدرَس «${targetRoom}» در روز ${sharedDays.join(' و ')} ساعت ${existingTimeRange.startTime} تا ${existingTimeRange.endTime} قبلاً برای درس «${existing.title}» تخصیص داده شده است.`,
+                { statusCode: 409 }
+              );
             }
           }
         }
@@ -142,10 +204,10 @@ export class ProgramService {
       type: validData.type as ProgramType,
       day: validData.day,
       days: validData.days,
-      time: validData.time || (validData.startTime && validData.endTime ? `${validData.startTime} - ${validData.endTime}` : undefined),
-      startTime: validData.startTime,
-      endTime: validData.endTime,
-      teacher: validData.teacher?.trim(),
+      time: validData.time || (targetTimeRange ? `${targetTimeRange.startTime} الی ${targetTimeRange.endTime}` : undefined),
+      startTime: validData.startTime || targetTimeRange?.startTime,
+      endTime: validData.endTime || targetTimeRange?.endTime,
+      teacher: targetTeacher,
       madrasRoom: targetRoom?.trim(),
       classroom: targetRoom?.trim(),
       grade: validData.grade?.trim(),
@@ -155,7 +217,9 @@ export class ProgramService {
       parentProgramId: validData.parentProgramId,
       representativeStudentIds: validData.representativeStudentIds,
       representativeNames: validData.representativeNames,
-      customRepresentative: validData.customRepresentative
+      customRepresentative: validData.customRepresentative,
+      subjectCategory: validData.subjectCategory,
+      subjectBook: validData.subjectBook?.trim()
     };
 
     await serverSaveDoc('programs', programRecord, callerUser);

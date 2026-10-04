@@ -468,6 +468,8 @@ export interface Program {
   representativeStudentIds?: string[]; // شناسه‌های طلاب نماینده کلاس
   representativeNames?: string[]; // نام‌های نمایندگان کلاس
   customRepresentative?: string; // نماینده متفرقه خارج از طلاب
+  subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر'; // گرایش/شاخه درسی
+  subjectBook?: string; // کتاب درسی (مثلا رسائل، حلقه ثالثه، کفایه، مکاسب، شرح لمعه، بدایه و...)
 }
 
 export interface ClassSessionAttendance {

@@ -154,6 +154,8 @@ CREATE TABLE IF NOT EXISTS public.programs (
   grade VARCHAR(50) NOT NULL,
   teacher_id TEXT,
   teacher_name VARCHAR(200),
+  subject_category VARCHAR(50), -- اصول | فقه | فلسفه | سایر
+  subject_book VARCHAR(100),    -- رسائل | حلقه ثالثه | کفایه | مکاسب | شرح لمعه | بدایه و...
   units INTEGER DEFAULT 2,
   term VARCHAR(50),
   schedule JSONB DEFAULT '[]'::jsonb,

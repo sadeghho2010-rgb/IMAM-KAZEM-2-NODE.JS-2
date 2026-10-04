@@ -168,12 +168,6 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     currentUser?.roleTitle?.includes('استاد پایه') ||
     currentUser?.roleTitle?.includes('مسئول پایه') ||
     ['ISJ', 'HO', 'SOL', 'ASADI'].includes(currentUser?.username?.toUpperCase() || ''));
-  const isRepresentative = currentUser?.role === 'class_representative';
-  const isStudent = currentUser?.role === 'student';
-
-  const canManageSettings = isSuperAdmin || isEducationManager || (isGradeSupervisor && settings.allowGradeProfessorSettingsEdit);
-  const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
-  const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
 
   // Toast helper
   const showToast = (msg: string) => {
@@ -228,11 +222,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     setIsSettingsOpen(false);
   };
 
-  // Check which programs the current user is a representative of
+  // Check which programs the current user is a representative of (immediate recognition)
   const representativePrograms = useMemo(() => {
     if (!currentUser) return [];
     
-    // Admins or Education Managers or Grade Supervisors have access to programs
+    // Admins or Education Managers or Grade Supervisors have broader access
     if (isSuperAdmin || isEducationManager || isGradeSupervisor) {
       if (isGradeSupervisor && currentUser.gradeLabel) {
         return programs.filter(p => !p.grade || p.grade === currentUser.gradeLabel || p.grade === 'همه پایه‌ها');
@@ -245,9 +239,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     const currentStudentId = currentUser.studentId || currentUser.linkedStudentId || '';
 
     return programs.filter(p => {
+      // 1. Direct ID match in representativeStudentIds
       if (currentStudentId && Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.includes(currentStudentId)) {
         return true;
       }
+      // 2. Student ID match via student roster
       const matchedStudent = students.find(s => 
         (currentStudentId && s.id === currentStudentId) ||
         (s.name && (s.name.trim().toLowerCase() === currentUserName || s.name.trim().toLowerCase() === currentStudentName))
@@ -255,15 +251,23 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       if (matchedStudent && Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.includes(matchedStudent.id)) {
         return true;
       }
+      // 3. Name match in representativeNames
       if (Array.isArray(p.representativeNames)) {
         const hasNameMatch = p.representativeNames.some((repName: string) => {
           const norm = repName.trim().toLowerCase();
           return norm === currentUserName || 
                  norm === currentStudentName ||
-                 (currentUserName && currentUserName.includes(norm)) ||
-                 (currentStudentName && currentStudentName.includes(norm));
+                 (currentUserName && (currentUserName.includes(norm) || norm.includes(currentUserName))) ||
+                 (currentStudentName && (currentStudentName.includes(norm) || norm.includes(currentStudentName)));
         });
         if (hasNameMatch) return true;
+      }
+      // 4. Custom representative string match
+      if (p.customRepresentative) {
+        const norm = p.customRepresentative.trim().toLowerCase();
+        if (norm === currentUserName || norm === currentStudentName || (currentUserName && currentUserName.includes(norm))) {
+          return true;
+        }
       }
       if (currentUser.role === 'class_representative' && currentUser.scope === 'all') {
         return true;
@@ -271,6 +275,26 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return false;
     });
   }, [currentUser, programs, students, isSuperAdmin, isEducationManager, isGradeSupervisor]);
+
+  // Determine if the user is a class representative vs ordinary student
+  const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && (
+    currentUser?.role === 'class_representative' || representativePrograms.length > 0
+  );
+
+  const isOrdinaryStudent = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && !isRepresentative && (
+    currentUser?.role === 'student' || currentUser?.level === 3 || !currentUser
+  );
+
+  const canManageSettings = isSuperAdmin || isEducationManager || (isGradeSupervisor && settings.allowGradeProfessorSettingsEdit);
+  const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
+  const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
+
+  // Enforce tab access: Ordinary students MUST only see 'report' tab
+  useEffect(() => {
+    if (isOrdinaryStudent && activeTab !== 'report') {
+      setActiveTab('report');
+    }
+  }, [isOrdinaryStudent, activeTab]);
 
   // Set default selected program
   useEffect(() => {
@@ -718,7 +742,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Aggregated Per-Student Report Data
   const studentReportList = useMemo(() => {
-    const isLevel3OrStudentOrRep = currentUser?.level === 3 || isStudent || isRepresentative;
+    const isLevel3OrStudentOrRep = currentUser?.level === 3 || isOrdinaryStudent || isRepresentative;
     
     const currentStudentId = currentUser?.studentId || currentUser?.linkedStudentId || '';
     const currentStudentObj = students.find(s => 
@@ -930,7 +954,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         {/* View Switcher & Settings */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Class Status tab - hidden for regular students; shown for staff & representatives */}
-          {(!isStudent || isRepresentative) && (
+          {!isOrdinaryStudent && (
             <button
               type="button"
               onClick={() => setActiveTab('class_status')}
@@ -950,7 +974,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
           <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200">
             {/* Record tab - hidden for regular students; shown for staff & representatives */}
-            {(!isStudent || isRepresentative) && (
+            {!isOrdinaryStudent && (
               <button
                 type="button"
                 onClick={() => setActiveTab('record')}
@@ -977,7 +1001,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               )}
             >
               <FileCheck2 size={15} />
-              <span>{(isStudent || isRepresentative || currentUser?.level === 3) ? 'گزارش و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
+              <span>{(isOrdinaryStudent || isRepresentative || currentUser?.level === 3) ? 'گزارش و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
             </button>
           </div>
 
@@ -998,7 +1022,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {/* TAB 3: CLASSROOM ATTENDANCE OVERVIEW (وضعیت کلاس‌ها) */}
       {/* ===================================================================== */}
-      {activeTab === 'class_status' && (() => {
+      {activeTab === 'class_status' && !isOrdinaryStudent && (() => {
         // Date helpers
         const handlePrevDay = () => {
           try {
@@ -1613,7 +1637,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {/* TAB 1: RECORD ATTENDANCE (ثبت و ویرایش جلسه) */}
       {/* ===================================================================== */}
-      {activeTab === 'record' && (
+      {activeTab === 'record' && !isOrdinaryStudent && (
         <div className="space-y-6">
           {/* Warning Banner if locked for Representative */}
           {isDateLockedForRepresentative && (
@@ -1641,7 +1665,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 onChange={(e) => setSelectedProgramId(e.target.value)}
                 className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
               >
-                {(representativePrograms.length > 0 ? representativePrograms : programs).map(p => {
+                {(isRepresentative ? representativePrograms : programs).map(p => {
                   const titleStr = p.title || p.name || 'کلاس بدون عنوان';
                   const gradeStr = p.grade ? ` (${p.grade})` : '';
                   const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';

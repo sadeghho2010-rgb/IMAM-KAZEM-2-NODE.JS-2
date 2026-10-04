@@ -169,7 +169,142 @@ export const UNASSIGNED_PALETTE = {
   gradeText: 'text-slate-400',
 };
 
-export function getCourseSubjectCategory(title?: string): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
+export const SUBJECT_CATEGORY_OPTIONS = ['اصول', 'فقه', 'فلسفه', 'سایر'] as const;
+
+export const SUBJECT_BOOKS_MAP: Record<'اصول' | 'فقه' | 'فلسفه', string[]> = {
+  'اصول': [
+    'رسائل',
+    'حلقه ثالثه',
+    'کفایه',
+    'اصول فقه (مظفر)',
+    'حلقه ثانیه',
+    'حلقه اولی',
+    'سایر (دستی)'
+  ],
+  'فقه': [
+    'مکاسب (محرمه / بیع / خیارات)',
+    'شرح لمعه',
+    'عروة الوثقی',
+    'تحریر الوسیله',
+    'منهاج الصالحین',
+    'سایر (دستی)'
+  ],
+  'فلسفه': [
+    'بدایة الحکمة',
+    'نهایة الحکمة',
+    'شرح منظومه',
+    'اشارات و تنبیهات',
+    'اسفار اربعه',
+    'سایر (دستی)'
+  ]
+};
+
+export function normalizeTimeStr(timeStr?: string): string {
+  if (!timeStr) return '';
+  const eng = timeStr.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]).trim();
+  const parts = eng.split(':');
+  if (parts.length === 2) {
+    const hh = parts[0].padStart(2, '0');
+    const mm = parts[1].padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return eng;
+}
+
+export function extractProgramTimeRange(prog: { time?: string; startTime?: string; endTime?: string }): { startTime: string; endTime: string } | null {
+  if (prog.startTime && prog.endTime) {
+    const s = normalizeTimeStr(prog.startTime);
+    const e = normalizeTimeStr(prog.endTime);
+    if (s && e) return { startTime: s, endTime: e };
+  }
+  if (!prog.time) return null;
+  const eng = prog.time.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+  const match = eng.match(/(\d{1,2}:\d{2})\s*(?:الی|تا|-|to)\s*(\d{1,2}:\d{2})/i);
+  if (match) {
+    return {
+      startTime: normalizeTimeStr(match[1]),
+      endTime: normalizeTimeStr(match[2])
+    };
+  }
+  return null;
+}
+
+export function isTimeSlotOverlapping(start1: string, end1: string, start2: string, end2: string): boolean {
+  if (!start1 || !end1 || !start2 || !end2) return false;
+  return (start1 < end2) && (start2 < end1);
+}
+
+export interface TeacherConflictInfo {
+  teacherName: string;
+  programTitle: string;
+  grade?: string;
+  day: string;
+  time: string;
+}
+
+export function getConflictingTeachers(
+  allPrograms: Program[],
+  targetDays: string[],
+  targetTime: string,
+  excludeProgramId?: string
+): Map<string, TeacherConflictInfo[]> {
+  const conflictMap = new Map<string, TeacherConflictInfo[]>();
+  if (!targetDays || targetDays.length === 0 || !targetTime) return conflictMap;
+
+  const targetRange = extractProgramTimeRange({ time: targetTime });
+  if (!targetRange) return conflictMap;
+
+  for (const prog of allPrograms) {
+    if (excludeProgramId && prog.id === excludeProgramId) continue;
+    const teacherName = (prog.teacher || '').trim();
+    if (!teacherName) continue;
+
+    const progDays = getProgramDays(prog);
+    const sharedDays = targetDays.filter(d => progDays.includes(d));
+    if (sharedDays.length === 0) continue;
+
+    const progRange = extractProgramTimeRange(prog);
+    if (!progRange) continue;
+
+    if (isTimeSlotOverlapping(targetRange.startTime, targetRange.endTime, progRange.startTime, progRange.endTime)) {
+      const existingList = conflictMap.get(teacherName) || [];
+      existingList.push({
+        teacherName,
+        programTitle: prog.title,
+        grade: prog.grade,
+        day: sharedDays.join(' و '),
+        time: prog.time || `${progRange.startTime} - ${progRange.endTime}`
+      });
+      conflictMap.set(teacherName, existingList);
+    }
+  }
+
+  return conflictMap;
+}
+
+export function isTeacherConflicting(teacher: Teacher, conflictMap: Map<string, TeacherConflictInfo[]>): boolean {
+  const tFull = (teacher.fullName || '').trim().toLowerCase();
+  const tName = (teacher.name || '').trim().toLowerCase();
+  for (const [busyName] of conflictMap.entries()) {
+    const bLower = busyName.toLowerCase();
+    if (
+      (tFull && (tFull === bLower || tFull.includes(bLower) || bLower.includes(tFull))) ||
+      (tName && (tName === bLower || tName.includes(bLower) || bLower.includes(tName)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getCourseSubjectCategory(p?: { title?: string; subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر' } | string): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
+  if (typeof p === 'object' && p !== null) {
+    if (p.subjectCategory && ['اصول', 'فقه', 'فلسفه', 'سایر'].includes(p.subjectCategory)) {
+      return p.subjectCategory;
+    }
+    return getCourseSubjectCategory(p.title);
+  }
+  const title = typeof p === 'string' ? p : '';
   if (!title) return 'سایر';
   const str = title.trim();
   if (/اصول|حلقه|مظفر|رسائل|کفايه|کفایه|استصحاب|اجتهاد|قطع|ظن|برائت|احتیاط|تخییر|عموم|خصوص|مفاهیم/i.test(str)) {
@@ -196,8 +331,10 @@ export function isProgramMatchingSearch(p: Program, search: string): boolean {
   const gradeMatch = p.grade?.toLowerCase().includes(term);
   const typeMatch = p.type?.toLowerCase().includes(term);
   const repMatch = p.representativeNames?.some(r => r.toLowerCase().includes(term));
+  const categoryMatch = p.subjectCategory?.toLowerCase().includes(term);
+  const bookMatch = p.subjectBook?.toLowerCase().includes(term);
 
-  return Boolean(titleMatch || teacherMatch || roomMatch || dayMatch || timeMatch || gradeMatch || typeMatch || repMatch);
+  return Boolean(titleMatch || teacherMatch || roomMatch || dayMatch || timeMatch || gradeMatch || typeMatch || repMatch || categoryMatch || bookMatch);
 }
 
 export function sortMainPrograms(
@@ -207,8 +344,8 @@ export function sortMainPrograms(
   if (sortMode === 'default') return mainProgs;
 
   return [...mainProgs].sort((a, b) => {
-    const catA = getCourseSubjectCategory(a.title);
-    const catB = getCourseSubjectCategory(b.title);
+    const catA = getCourseSubjectCategory(a);
+    const catB = getCourseSubjectCategory(b);
 
     let priorityOrder: Array<'اصول' | 'فقه' | 'فلسفه' | 'سایر'> = ['اصول', 'فقه', 'فلسفه', 'سایر'];
     if (sortMode === 'اصول') {
@@ -326,7 +463,9 @@ export default function Programs() {
     parentProgramId: '',
     representativeStudentIds: [],
     representativeNames: [],
-    customRepresentative: ''
+    customRepresentative: '',
+    subjectCategory: 'اصول',
+    subjectBook: 'رسائل'
   });
 
   // Custom room mode toggles
@@ -337,6 +476,23 @@ export default function Programs() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isCustomTeacherAdd, setIsCustomTeacherAdd] = useState(false);
   const [isCustomTeacherEdit, setIsCustomTeacherEdit] = useState(false);
+
+  // Teacher dynamic conflict detection for Add modal and Edit modal
+  const busyTeachersMapAdd = useMemo(() => {
+    return getConflictingTeachers(programs, addModalDays, newProgram.time || '');
+  }, [programs, addModalDays, newProgram.time]);
+
+  const availableTeachersAdd = useMemo(() => {
+    return teachers.filter(t => !isTeacherConflicting(t, busyTeachersMapAdd));
+  }, [teachers, busyTeachersMapAdd]);
+
+  const busyTeachersMapEdit = useMemo(() => {
+    return getConflictingTeachers(programs, editModalDays, editingProgram?.time || '', editingProgram?.id);
+  }, [programs, editModalDays, editingProgram?.time, editingProgram?.id]);
+
+  const availableTeachersEdit = useMemo(() => {
+    return teachers.filter(t => !isTeacherConflicting(t, busyTeachersMapEdit));
+  }, [teachers, busyTeachersMapEdit]);
 
   // Custom time mode state
   const [customStartAdd, setCustomStartAdd] = useState('08:00');
@@ -800,10 +956,28 @@ export default function Programs() {
       return;
     }
 
+    // Check teacher conflict
+    const targetTeacher = (newProgram.teacher || '').trim();
+    if (targetTeacher && targetTeacher !== '__OTHER__') {
+      for (const [busyName, conflicts] of busyTeachersMapAdd.entries()) {
+        const bLower = busyName.toLowerCase();
+        const tLower = targetTeacher.toLowerCase();
+        if (tLower === bLower || tLower.includes(bLower) || bLower.includes(tLower)) {
+          const first = conflicts[0];
+          alert(`امکان ثبت برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${first.day} ساعت ${first.time} در کلاس «${first.programTitle}» (${first.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+          return;
+        }
+      }
+    }
+
     try {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
       const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
+
+      if (targetTeacher) {
+        await syncTeacherWithBank(targetTeacher, title);
+      }
 
       await localDb.addDoc('programs', {
         ...newProgram,
@@ -816,6 +990,8 @@ export default function Programs() {
         classroom: newProgram.madrasRoom || '',
         representativeStudentIds: newProgram.representativeStudentIds || [],
         representativeNames: newProgram.representativeNames || [],
+        subjectCategory: newProgram.type === 'اصلی' ? newProgram.subjectCategory : undefined,
+        subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
         mentorId: currentMentorId || 'admin'
       });
 
@@ -830,7 +1006,9 @@ export default function Programs() {
         madrasRoom: '', 
         parentProgramId: '',
         representativeStudentIds: [],
-        representativeNames: []
+        representativeNames: [],
+        subjectCategory: 'اصول',
+        subjectBook: 'رسائل'
       });
       setAddModalDays(DEFAULT_MAIN_DAYS);
       setCustomStartAdd('08:00');
@@ -842,15 +1020,30 @@ export default function Programs() {
       }
 
       await fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding program:", error);
-      alert('خطا در افزودن برنامه. لطفاً دوباره تلاش فرمایید.');
+      alert(error?.message || 'خطا در افزودن برنامه. لطفاً دوباره تلاش فرمایید.');
     }
   };
 
   const handleEditProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProgram) return;
+
+    // Check teacher conflict
+    const targetTeacher = (editingProgram.teacher || '').trim();
+    if (targetTeacher && targetTeacher !== '__OTHER__') {
+      for (const [busyName, conflicts] of busyTeachersMapEdit.entries()) {
+        const bLower = busyName.toLowerCase();
+        const tLower = targetTeacher.toLowerCase();
+        if (tLower === bLower || tLower.includes(bLower) || bLower.includes(tLower)) {
+          const first = conflicts[0];
+          alert(`امکان بروزرسانی برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${first.day} ساعت ${first.time} در کلاس «${first.programTitle}» (${first.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+          return;
+        }
+      }
+    }
+
     try {
       const dayStr = editModalDays.join(' ، ');
 
@@ -871,13 +1064,15 @@ export default function Programs() {
         representativeStudentIds: editingProgram.representativeStudentIds || [],
         representativeNames: editingProgram.representativeNames || [],
         customRepresentative: editingProgram.customRepresentative || '',
-        parentProgramId: editingProgram.type === 'مشاوره' ? (editingProgram.parentProgramId || '') : ''
+        parentProgramId: editingProgram.type === 'مشاوره' ? (editingProgram.parentProgramId || '') : '',
+        subjectCategory: editingProgram.type === 'اصلی' ? editingProgram.subjectCategory : undefined,
+        subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined
       });
       setEditingProgram(null);
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error editing program:", error);
-      alert('خطا در بروزرسانی برنامه');
+      alert(error?.message || 'خطا در بروزرسانی برنامه');
     }
   };
 
@@ -1198,6 +1393,27 @@ export default function Programs() {
                   <GraduationCap size={11} className="text-indigo-600" />
                   <span>{program.grade}</span>
                 </span>
+              )}
+
+              {/* Subject Category & Book Badges */}
+              {(program.subjectCategory || program.type === 'اصلی') && (
+                (() => {
+                  const cat = program.subjectCategory || getCourseSubjectCategory(program);
+                  if (cat === 'سایر' && !program.subjectBook) return null;
+                  return (
+                    <span className={cn(
+                      "text-[10px] font-black px-2 py-0.5 rounded-md border flex items-center gap-1",
+                      cat === 'اصول' ? "bg-blue-50 text-blue-800 border-blue-200" :
+                      cat === 'فقه' ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
+                      cat === 'فلسفه' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                      "bg-purple-50 text-purple-800 border-purple-200"
+                    )}>
+                      <BookOpen size={10} />
+                      <span>{cat}</span>
+                      {program.subjectBook && <span className="font-bold text-slate-700">({program.subjectBook})</span>}
+                    </span>
+                  );
+                })()
               )}
               
               {/* If Counseling Class with linked Main Class */}
@@ -2459,6 +2675,113 @@ export default function Programs() {
                   </div>
                 </div>
 
+                {/* If Type === 'اصلی' -> Subject Category (اصول، فقه، فلسفه، سایر) and Book Selector */}
+                {newProgram.type === 'اصلی' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }} 
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-3"
+                  >
+                    <div>
+                      <label className="block text-xs font-black text-indigo-950 mb-1.5 flex items-center gap-1">
+                        <BookOpen size={13} className="text-indigo-600" />
+                        <span>رشته / شاخه درس اصلی:</span>
+                      </label>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {SUBJECT_CATEGORY_OPTIONS.map(cat => {
+                          const isSel = (newProgram.subjectCategory || 'اصول') === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => {
+                                const defaultBook = cat === 'اصول' ? 'رسائل' : cat === 'فقه' ? 'مکاسب (محرمه / بیع / خیارات)' : cat === 'فلسفه' ? 'بدایة الحکمة' : '';
+                                setNewProgram({
+                                  ...newProgram,
+                                  subjectCategory: cat,
+                                  subjectBook: defaultBook,
+                                  title: (!newProgram.title || newProgram.title.includes('اصول') || newProgram.title.includes('فقه') || newProgram.title.includes('فلسفه'))
+                                    ? (defaultBook ? `${cat} (${defaultBook})` : cat)
+                                    : newProgram.title
+                                });
+                              }}
+                              className={cn(
+                                "py-1.5 px-2 rounded-xl text-xs font-black transition-all border cursor-pointer select-none text-center",
+                                isSel
+                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                  : "bg-white text-slate-700 border-indigo-100 hover:bg-indigo-100/50"
+                              )}
+                            >
+                              {cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Book selection for اصول / فقه / فلسفه / سایر */}
+                    {newProgram.subjectCategory && newProgram.subjectCategory !== 'سایر' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                          کتاب / سرفصل درسی «{newProgram.subjectCategory}»:
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SUBJECT_BOOKS_MAP[newProgram.subjectCategory as 'اصول' | 'فقه' | 'فلسفه']?.map(book => {
+                            const isSel = newProgram.subjectBook === book;
+                            return (
+                              <button
+                                key={book}
+                                type="button"
+                                onClick={() => {
+                                  setNewProgram({
+                                    ...newProgram,
+                                    subjectBook: book,
+                                    title: (!newProgram.title || newProgram.title.includes('اصول') || newProgram.title.includes('فقه') || newProgram.title.includes('فلسفه'))
+                                      ? (book !== 'سایر (دستی)' ? `${newProgram.subjectCategory} (${book})` : newProgram.title)
+                                      : newProgram.title
+                                  });
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer select-none",
+                                  isSel
+                                    ? "bg-indigo-700 text-white border-indigo-700 shadow-2xs"
+                                    : "bg-white text-indigo-900 border-indigo-200/90 hover:bg-indigo-50"
+                                )}
+                              >
+                                {book}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {newProgram.subjectBook === 'سایر (دستی)' && (
+                          <input
+                            type="text"
+                            placeholder="نام کتاب یا سرفصل را دستی وارد کنید..."
+                            className="mt-2 w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                            value={newProgram.subjectBook === 'سایر (دستی)' ? '' : (newProgram.subjectBook || '')}
+                            onChange={(e) => setNewProgram({...newProgram, subjectBook: e.target.value})}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {newProgram.subjectCategory === 'سایر' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                          عنوان کتاب یا موضوع درس:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: نحو، بلاغت، عقاید، تفسیر و..."
+                          className="w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={newProgram.subjectBook || ''}
+                          onChange={(e) => setNewProgram({...newProgram, subjectBook: e.target.value})}
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
                 {/* If Type === 'مشاوره', show parent program select */}
                 {newProgram.type === 'مشاوره' && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
@@ -2660,34 +2983,43 @@ export default function Programs() {
                   </div>
 
                   {!isCustomTeacherAdd ? (
-                    <select
-                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
-                      value={newProgram.teacher || ''}
-                      onChange={(e) => {
-                        if (e.target.value === '__OTHER__') {
-                          setIsCustomTeacherAdd(true);
-                        } else {
-                          setNewProgram({...newProgram, teacher: e.target.value});
-                        }
-                      }}
-                    >
-                      <option value="">-- انتخاب استاد از بانک اساتید --</option>
-                      <optgroup label="اساتید داخلی مؤسسه">
-                        {teachers.filter(t => !t.isExternal).map(t => (
-                          <option key={t.id} value={t.fullName}>
-                            {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="مدرس‌های خارج از مجموعه">
-                        {teachers.filter(t => t.isExternal).map(t => (
-                          <option key={t.id} value={t.fullName}>
-                            {t.fullName} (خارج از مجموعه)
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
-                    </select>
+                    <>
+                      <select
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        value={newProgram.teacher || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__OTHER__') {
+                            setIsCustomTeacherAdd(true);
+                          } else {
+                            setNewProgram({...newProgram, teacher: e.target.value});
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب استاد از اساتید در دسترس (بدون تداخل زمانی) --</option>
+                        <optgroup label="اساتید داخلی مؤسسه (در دسترس)">
+                          {availableTeachersAdd.filter(t => !t.isExternal).map(t => (
+                            <option key={t.id} value={t.fullName}>
+                              {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
+                          {availableTeachersAdd.filter(t => t.isExternal).map(t => (
+                            <option key={t.id} value={t.fullName}>
+                              {t.fullName} (خارج از مجموعه)
+                            </option>
+                          ))}
+                        </optgroup>
+                        <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
+                      </select>
+
+                      {teachers.length - availableTeachersAdd.length > 0 && (
+                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>{teachers.length - availableTeachersAdd.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <div className="flex items-center gap-2">
                       <input 
@@ -2833,6 +3165,108 @@ export default function Programs() {
                     </select>
                   </div>
                 </div>
+
+                {/* If Type === 'اصلی' -> Subject Category (اصول، فقه، فلسفه، سایر) and Book Selector for Edit */}
+                {editingProgram.type === 'اصلی' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }} 
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-3"
+                  >
+                    <div>
+                      <label className="block text-xs font-black text-indigo-950 mb-1.5 flex items-center gap-1">
+                        <BookOpen size={13} className="text-indigo-600" />
+                        <span>رشته / شاخه درس اصلی:</span>
+                      </label>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {SUBJECT_CATEGORY_OPTIONS.map(cat => {
+                          const currentCat = editingProgram.subjectCategory || getCourseSubjectCategory(editingProgram);
+                          const isSel = currentCat === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => {
+                                const defaultBook = cat === 'اصول' ? 'رسائل' : cat === 'فقه' ? 'مکاسب (محرمه / بیع / خیارات)' : cat === 'فلسفه' ? 'بدایة الحکمة' : '';
+                                setEditingProgram({
+                                  ...editingProgram,
+                                  subjectCategory: cat,
+                                  subjectBook: defaultBook
+                                });
+                              }}
+                              className={cn(
+                                "py-1.5 px-2 rounded-xl text-xs font-black transition-all border cursor-pointer select-none text-center",
+                                isSel
+                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                  : "bg-white text-slate-700 border-indigo-100 hover:bg-indigo-100/50"
+                              )}
+                            >
+                              {cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Book selection for Edit */}
+                    {editingProgram.subjectCategory && editingProgram.subjectCategory !== 'سایر' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                          کتاب / سرفصل درسی «{editingProgram.subjectCategory}»:
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {SUBJECT_BOOKS_MAP[editingProgram.subjectCategory as 'اصول' | 'فقه' | 'فلسفه']?.map(book => {
+                            const isSel = editingProgram.subjectBook === book;
+                            return (
+                              <button
+                                key={book}
+                                type="button"
+                                onClick={() => {
+                                  setEditingProgram({
+                                    ...editingProgram,
+                                    subjectBook: book
+                                  });
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer select-none",
+                                  isSel
+                                    ? "bg-indigo-700 text-white border-indigo-700 shadow-2xs"
+                                    : "bg-white text-indigo-900 border-indigo-200/90 hover:bg-indigo-50"
+                                )}
+                              >
+                                {book}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {editingProgram.subjectBook === 'سایر (دستی)' && (
+                          <input
+                            type="text"
+                            placeholder="نام کتاب یا سرفصل را دستی وارد کنید..."
+                            className="mt-2 w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                            value={editingProgram.subjectBook === 'سایر (دستی)' ? '' : (editingProgram.subjectBook || '')}
+                            onChange={(e) => setEditingProgram({...editingProgram, subjectBook: e.target.value})}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {editingProgram.subjectCategory === 'سایر' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-indigo-900 mb-1">
+                          عنوان کتاب یا موضوع درس:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: نحو، بلاغت، عقاید، تفسیر و..."
+                          className="w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          value={editingProgram.subjectBook || ''}
+                          onChange={(e) => setEditingProgram({...editingProgram, subjectBook: e.target.value})}
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
 
                 {/* If Type === 'مشاوره', show parent program select */}
                 {editingProgram.type === 'مشاوره' && (
@@ -3043,34 +3477,43 @@ export default function Programs() {
                   </div>
 
                   {!isCustomTeacherEdit ? (
-                    <select
-                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
-                      value={editingProgram.teacher || ''}
-                      onChange={(e) => {
-                        if (e.target.value === '__OTHER__') {
-                          setIsCustomTeacherEdit(true);
-                        } else {
-                          setEditingProgram({...editingProgram, teacher: e.target.value});
-                        }
-                      }}
-                    >
-                      <option value="">-- انتخاب استاد از بانک اساتید --</option>
-                      <optgroup label="اساتید داخلی مؤسسه">
-                        {teachers.filter(t => !t.isExternal).map(t => (
-                          <option key={t.id} value={t.fullName}>
-                            {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="مدرس‌های خارج از مجموعه">
-                        {teachers.filter(t => t.isExternal).map(t => (
-                          <option key={t.id} value={t.fullName}>
-                            {t.fullName} (خارج از مجموعه)
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
-                    </select>
+                    <>
+                      <select
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        value={editingProgram.teacher || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__OTHER__') {
+                            setIsCustomTeacherEdit(true);
+                          } else {
+                            setEditingProgram({...editingProgram, teacher: e.target.value});
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب استاد از اساتید در دسترس (بدون تداخل زمانی) --</option>
+                        <optgroup label="اساتید داخلی مؤسسه (در دسترس)">
+                          {availableTeachersEdit.filter(t => !t.isExternal).map(t => (
+                            <option key={t.id} value={t.fullName}>
+                              {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
+                          {availableTeachersEdit.filter(t => t.isExternal).map(t => (
+                            <option key={t.id} value={t.fullName}>
+                              {t.fullName} (خارج از مجموعه)
+                            </option>
+                          ))}
+                        </optgroup>
+                        <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
+                      </select>
+
+                      {teachers.length - availableTeachersEdit.length > 0 && (
+                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>{teachers.length - availableTeachersEdit.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <div className="flex items-center gap-2">
                       <input 
