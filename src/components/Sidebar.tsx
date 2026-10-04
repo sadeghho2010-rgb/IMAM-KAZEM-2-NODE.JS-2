@@ -41,6 +41,7 @@ import {
   Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
 import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
@@ -198,16 +199,62 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
     return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab);
   });
-  const [collapsedCategories, setCollapsedCategories] = React.useState<Record<string, boolean>>({});
+  const [expandedCategoryId, setExpandedCategoryId] = React.useState<string | null>(() => {
+    const activeCat = MENU_CATEGORIES.find(cat => cat.itemIds.includes(activeTab));
+    return activeCat ? activeCat.id : (MENU_CATEGORIES[0]?.id || null);
+  });
 
-  const toggleCategory = (catId: string) => {
-    setCollapsedCategories(prev => ({
-      ...prev,
-      [catId]: !prev[catId]
-    }));
+  const hoverCategoryTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleCategoryMouseEnter = (catId: string) => {
+    // Read preferences dynamically in real-time
+    let smartHover = true;
+    try {
+      const saved = localStorage.getItem('user_app_preferences');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        smartHover = parsed.smartMenuHover !== false;
+      }
+    } catch {}
+
+    if (!smartHover) return;
+
+    if (hoverCategoryTimerRef.current) {
+      clearTimeout(hoverCategoryTimerRef.current);
+    }
+    hoverCategoryTimerRef.current = setTimeout(() => {
+      setExpandedCategoryId(catId);
+    }, 200); // 0.2 seconds delay as requested
   };
 
-  const hoverTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const handleCategoryMouseLeave = () => {
+    if (hoverCategoryTimerRef.current) {
+      clearTimeout(hoverCategoryTimerRef.current);
+    }
+  };
+
+  const toggleCategory = (catId: string) => {
+    if (hoverCategoryTimerRef.current) {
+      clearTimeout(hoverCategoryTimerRef.current);
+    }
+    setExpandedCategoryId(prev => prev === catId ? null : catId);
+  };
+
+  // Sync expanded category with activeTab changes
+  React.useEffect(() => {
+    const activeCat = MENU_CATEGORIES.find(cat => cat.itemIds.includes(activeTab));
+    if (activeCat) {
+      setExpandedCategoryId(activeCat.id);
+    }
+  }, [activeTab]);
+
+  React.useEffect(() => {
+    return () => {
+      if (hoverCategoryTimerRef.current) {
+        clearTimeout(hoverCategoryTimerRef.current);
+      }
+    };
+  }, []);
 
   // Real-time Badge Counts State
   const [unreadRequestsCount, setUnreadRequestsCount] = React.useState<number>(0);
@@ -301,17 +348,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   ].filter(sub => isTabAllowed(sub.id));
 
   const canAccessSiteManagement = siteManagementSubItems.length > 0;
-
-  const handleMouseEnterSiteManagement = () => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => {
-      setIsSiteManagementOpen(true);
-    }, 200);
-  };
-
-  const handleMouseLeaveSiteManagement = () => {
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-  };
 
   // Filter items based on user's authorized modules
   // Granular permissions set by Super Admin in User Management take ABSOLUTE priority!
@@ -488,11 +524,27 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
             const catItems = visibleMenuItems.filter(item => cat.itemIds.includes(item.id));
             if (catItems.length === 0) return null;
 
-            const isCollapsed = !!collapsedCategories[cat.id];
+            const isExpanded = expandedCategoryId === cat.id;
             const hasActiveItem = catItems.some(item => item.id === activeTab);
 
+            const isAnimsDisabled = (() => {
+              try {
+                const saved = localStorage.getItem('user_app_preferences');
+                if (saved) {
+                  const parsed = JSON.parse(saved);
+                  return parsed.disableAnimations === true;
+                }
+              } catch {}
+              return false;
+            })();
+
             return (
-              <div key={cat.id} className="space-y-1">
+              <div 
+                key={cat.id} 
+                className="space-y-1"
+                onMouseEnter={() => handleCategoryMouseEnter(cat.id)}
+                onMouseLeave={handleCategoryMouseLeave}
+              >
                 <button
                   type="button"
                   onClick={() => toggleCategory(cat.id)}
@@ -514,14 +566,22 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white border border-slate-200 text-slate-500 font-bold">{catItems.length}</span>
-                    <ChevronDown size={12} className={cn("text-slate-400 transition-transform duration-200", isCollapsed ? "-rotate-90" : "rotate-0")} />
+                    <ChevronDown size={12} className={cn("text-slate-400 transition-transform duration-200", isExpanded ? "rotate-180" : "-rotate-90")} />
                   </div>
                 </button>
-                {!isCollapsed && (
-                  <div className="space-y-0.5 animate-in fade-in slide-in-from-top-1 duration-150 pr-1">
-                    {catItems.map(renderMenuItem)}
-                  </div>
-                )}
+                <AnimatePresence initial={false}>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: isAnimsDisabled ? 0 : 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="overflow-hidden space-y-0.5 pr-1"
+                    >
+                      {catItems.map(renderMenuItem)}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })
@@ -533,11 +593,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
 
         {/* ===================== منوی کشویی مدیریت سایت ===================== */}
         {canAccessSiteManagement && (
-          <div 
-            className="pt-1"
-            onMouseEnter={handleMouseEnterSiteManagement}
-            onMouseLeave={handleMouseLeaveSiteManagement}
-          >
+          <div className="pt-1">
             {/* Parent Dropdown Button */}
             <button
               type="button"
@@ -597,64 +653,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
           </div>
         )}
       </nav>
-
-      {/* Active Logged-in User Profile Card (Moved to bottom of menu) */}
-      {currentUser && (
-        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
-          <div className="bg-white rounded-2xl p-2.5 border border-slate-200/90 shadow-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-400">حساب کاربری فعال:</span>
-              {isReadOnly ? (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 font-bold border border-amber-200 flex items-center gap-0.5">
-                  <Eye size={10} />
-                  فقط مشاهده
-                </span>
-              ) : (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-bold">
-                  {currentUser.gradeLabel || 'سراسری'}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className={cn("w-8 h-8 rounded-xl text-white font-black flex items-center justify-center text-xs shrink-0 shadow-xs", currentUser.avatarBg || 'bg-indigo-600')}>
-                {(currentUser.name || currentUser.fullName || currentUser.username || 'ک')[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-black text-slate-900 truncate flex items-center gap-1">
-                  <span>{(currentUser.name || currentUser.fullName || currentUser.username || '').split('(')[0]}</span>
-                  {currentUser.role === 'super_admin' && <ShieldCheck size={12} className="text-amber-600 shrink-0" />}
-                </div>
-                <p className="text-[10px] text-slate-500 font-medium truncate">{currentUser.roleTitle}</p>
-              </div>
-            </div>
-
-            <div className="pt-1 border-t border-slate-100">
-              <button
-                onClick={logout}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold transition-all border border-rose-200/60 cursor-pointer"
-                title="خروج از حساب کاربری"
-              >
-                <LogOut size={12} />
-                <span>خروج از حساب کاربری</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Footer System Info */}
-      <div className="p-3 border-t border-slate-100">
-        <div className="bg-slate-900 text-white rounded-2xl p-2.5 text-[10px]">
-          <div className="flex items-center justify-between opacity-80 mb-1">
-            <span>سیستم امنیتی RBAC</span>
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-          </div>
-          <p className="font-mono text-slate-300 text-[9px] truncate">
-            {currentUser ? `@${currentUser.username} (${currentUser.roleTitle})` : 'مهمان'}
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

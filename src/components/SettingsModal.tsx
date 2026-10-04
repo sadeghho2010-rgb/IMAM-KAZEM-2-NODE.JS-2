@@ -26,6 +26,7 @@ export interface AppPreferences {
   compactMode: boolean;
   highContrast: boolean;
   soundEffects: boolean;
+  smartMenuHover: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -33,7 +34,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   disableAnimations: false,
   compactMode: false,
   highContrast: false,
-  soundEffects: false
+  soundEffects: false,
+  smartMenuHover: true
 };
 
 interface SettingsModalProps {
@@ -232,6 +234,33 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   <span className={cn(
                     "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
                     prefs.compactMode ? "right-1" : "right-6"
+                  )} />
+                </button>
+              </div>
+
+              {/* Smart Menu Open Toggle */}
+              <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <Sparkles size={15} className="text-indigo-600" />
+                    <span>باز شدن هوشمند منوها (Smart Menu Hover)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    باز شدن خودکار دسته‌بندی‌های منوی سایدبار هنگام قرار گرفتن نشانگر ماوس به مدت ۰.۲ ثانیه.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updatePreference('smartMenuHover', !prefs.smartMenuHover)}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                    prefs.smartMenuHover ? "bg-indigo-600" : "bg-slate-300"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                    prefs.smartMenuHover ? "right-1" : "right-6"
                   )} />
                 </button>
               </div>

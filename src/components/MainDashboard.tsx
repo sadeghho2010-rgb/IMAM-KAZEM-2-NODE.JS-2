@@ -915,11 +915,11 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         </>
       )}
       
-      {/* 1. COMPACT ELEGANT GREETING TITLE BANNER (30% Smaller with 2-Minute Glowing Shift) */}
+      {/* 1. COMPACT ELEGANT GREETING TITLE BANNER (30% Smaller with 1-Minute Glowing Shift) */}
       <div className={cn(
-        "relative overflow-hidden border border-indigo-700/40 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-lg text-white font-vazir transition-all",
+        "relative overflow-hidden border border-white/15 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xl text-white font-vazir transition-all",
         !isAnimationsDisabled
-          ? "bg-gradient-to-r from-indigo-900 via-purple-950 via-rose-950 to-slate-900 animate-gradient-glow"
+          ? "animate-gradient-glow"
           : "bg-slate-900"
       )}>
         {/* Decorative Background Mesh */}

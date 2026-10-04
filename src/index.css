@@ -152,14 +152,44 @@
 }
 
 @keyframes gradientGlow {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 50% 100%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  75% {
+    background-position: 50% 0%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .animate-gradient-glow {
-  background-size: 300% 300%;
-  animation: gradientGlow 120s ease infinite;
+  background: linear-gradient(
+    -45deg,
+    #001219,
+    #003049,
+    #023e8a,
+    #0f4c5c,
+    #386641,
+    #6a994e,
+    #ee9b00,
+    #e36414,
+    #9a031e,
+    #c1121f,
+    #780000,
+    #9e0059,
+    #772e25,
+    #03045e,
+    #023047
+  );
+  background-size: 500% 500%;
+  animation: gradientGlow 60s ease-in-out infinite;
 }
 
 html, body {

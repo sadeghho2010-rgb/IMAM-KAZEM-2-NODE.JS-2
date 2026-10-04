@@ -56,7 +56,6 @@ import SettingsModal from './components/SettingsModal';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import DatabaseToastBanner from './components/DatabaseToastBanner';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight } from 'lucide-react';
@@ -431,30 +430,6 @@ function AppContent() {
               transition={{ duration: 0.2 }}
               className="max-w-7xl mx-auto space-y-4"
             >
-              {/* Prominent High-Visibility Return Banner for All Sections */}
-              {activeTab !== 'dashboard' && (
-                <div className="flex items-center justify-between gap-3 p-3.5 sm:p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-lg border border-indigo-500/30 mb-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
-                      <ArrowRight size={22} className="stroke-[2.5]" />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[11px] font-medium text-emerald-300">موقعیت فعلی شما:</span>
-                      <span className="text-xs sm:text-sm font-black text-white truncate">{getActiveTabTitle(activeTab)}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleBack}
-                    className="group flex items-center gap-2 sm:gap-2.5 px-5 py-2.5 sm:px-6 sm:py-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 text-slate-950 rounded-2xl shadow-lg hover:shadow-emerald-500/30 font-black text-xs sm:text-sm transition-all transform hover:-translate-y-0.5 active:scale-95 cursor-pointer border border-white/40 ring-2 ring-emerald-400/40 shrink-0"
-                    title="بازگشت به کارت‌ها و صفحه قبل"
-                  >
-                    <ArrowRight size={20} className="stroke-[3] transform group-hover:translate-x-1 transition-transform" />
-                    <span>برگشت به داشبورد</span>
-                  </button>
-                </div>
-              )}
-
               {renderContent()}
             </motion.div>
           </AnimatePresence>
@@ -469,7 +444,6 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <MentorProvider>
-          <DatabaseToastBanner />
           <AppContent />
         </MentorProvider>
       </AuthProvider>
