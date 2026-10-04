@@ -39,7 +39,8 @@ import {
   Inbox,
   ShieldAlert,
   Database,
-  Sliders
+  Sliders,
+  HeartPulse
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -137,6 +138,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'user-management',
       'user-credentials',
       'backup',
+      'system-health',
       'audit-logs',
       'app-logs',
       'db-save-errors',
@@ -193,13 +195,14 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی طلاب', icon: FileSpreadsheet },
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
+  { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSettings }: SidebarProps) {
   const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly, isTabAllowed } = useAuth();
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
-    return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab);
+    return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'system-health'].includes(activeTab);
   });
   const [expandedCategoryId, setExpandedCategoryId] = React.useState<string | null>(() => {
     const activeCat = MENU_CATEGORIES.find(cat => cat.itemIds.includes(activeTab));
@@ -334,7 +337,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
   }, [currentUser]);
 
   React.useEffect(() => {
-    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection'].includes(activeTab)) {
+    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health'].includes(activeTab)) {
       setIsSiteManagementOpen(true);
     }
   }, [activeTab]);
@@ -343,6 +346,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     { id: 'security-pin-settings', label: 'افزایش سطح امنیتی حساب', icon: KeyRound },
     { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', icon: ShieldAlert, badge: unresolvedAnomaliesCount },
     { id: 'backup', label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
+    { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
     { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
     { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
     { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
@@ -389,14 +393,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     }
 
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
-    if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
+    if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health'].includes(item.id)) {
       return false;
     }
 
     return true;
   });
 
-  const isSiteManagementActive = ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(activeTab);
+  const isSiteManagementActive = ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test', 'system-health'].includes(activeTab);
 
   const renderMenuItem = (item: MenuItemDef) => {
     const Icon = item.icon;

@@ -70,6 +70,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', group: 'مدیریت سیستم و امنیت', description: 'تولید شناسه ورود، بازنشانی رمز و چاپ کارت' },
   { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', group: 'مدیریت سیستم و امنیت', description: 'سامانه هوشمند مانیتورینگ تغییرات مشکوک و بازگردانی سریع' },
   { id: 'backup', label: 'پشتیبان‌گیری دیتابیس', group: 'مدیریت سیستم و امنیت', description: 'دریافت نسخه پشتیبان JSON و بازیابی داده‌ها' },
+  { id: 'system-health', label: 'سلامت سیستم', group: 'مدیریت سیستم و امنیت', description: 'پایش زنده مصرف رم، کوئری‌های کند و خطاهای سرور' },
   { id: 'audit-logs', label: 'فعالیت‌های سایت و وقایع', group: 'مدیریت سیستم و امنیت', description: 'لاگ تمامی تغییرات، ورودها و اقدامات کاربران' },
   { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', group: 'مدیریت سیستم و امنیت', description: 'مانیتورینگ رخدادهای سیستمی و هشدارهای سرور' },
   { id: 'db-connection-test', label: 'تست اتصال به دیتابیس', group: 'مدیریت سیستم و امنیت', description: 'بررسی وضعیت سرور و سینک ابری' },
@@ -141,12 +142,12 @@ export const DEFAULT_USERS: AppUser[] = [
     allowedTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'teachers-schedule', 'lockers', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
-      'summary', 'teachers-bank', 'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
+      'summary', 'teachers-bank', 'teacher-transport', 'backup', 'system-health', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
     ],
     editableTabs: [
       'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
       'student-schedule', 'teachers-schedule', 'lockers', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'oral-exams', 'comments',
-      'summary', 'teachers-bank', 'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
+      'summary', 'teachers-bank', 'teacher-transport', 'backup', 'system-health', 'user-credentials', 'audit-logs', 'app-logs', 'education-financial-report', 'presence-hours'
     ],
     modulePermissions: {
       'academic-calendar': 'edit',

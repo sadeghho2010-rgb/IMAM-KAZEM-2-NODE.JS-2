@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS public.attendance (
 );
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON public.attendance (date);
 CREATE INDEX IF NOT EXISTS idx_attendance_grade ON public.attendance (grade);
+CREATE INDEX IF NOT EXISTS idx_attendance_program_date ON public.attendance (program_id, date);
 
 -- ۹. جدول دوره‌ها و آمارهای مطالعه (Study Periods & Stats)
 CREATE TABLE IF NOT EXISTS public.study_periods (
@@ -451,6 +452,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   new_state JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_audit_user_created ON public.audit_logs (user_id, created_at);
 
 -- ۱۵. جدول کالکشن‌ها (App Collections)
 CREATE TABLE IF NOT EXISTS public.app_collections (

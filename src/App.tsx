@@ -14,6 +14,7 @@ import StudyStats from './components/StudyStats';
 import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
+import SystemHealth from './components/SystemHealth';
 import LogViewer from './components/LogViewer';
 import DbSaveErrorsView from './components/DbSaveErrorsView';
 import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
@@ -275,6 +276,8 @@ function AppContent() {
         return <BackupAndRestore />;
       case 'audit-logs':
         return <SiteAuditLogs />;
+      case 'system-health':
+        return <SystemHealth />;
       case 'app-logs':
         return <LogViewer />;
       case 'db-save-errors':

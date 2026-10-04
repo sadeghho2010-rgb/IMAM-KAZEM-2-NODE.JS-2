@@ -1292,6 +1292,7 @@ export type AppModuleId =
   | 'teacher-portal'
   | 'student-meals'
   | 'audit-logs'
+  | 'system-health'
   | 'education-financial-report'
   | 'counseling-classes'
   | 'course-selection'

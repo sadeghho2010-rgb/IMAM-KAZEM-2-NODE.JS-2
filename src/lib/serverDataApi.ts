@@ -451,6 +451,150 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
   }
 }
 
+// Internal helper to retrieve a single raw document by collection and ID
+async function fetchRawDocument(collection: string, id: string): Promise<any | null> {
+  if (!id) return null;
+
+  // 1. If MySQL is configured, fetch directly from MySQL
+  if (isMysqlConfigured) {
+    try {
+      const mysqlDoc = await MysqlRepository.getDocument(collection, id);
+      if (mysqlDoc) return mysqlDoc;
+    } catch (mErr: any) {
+      console.warn(`[MySQL Get Doc Error for ${collection}:${id}]:`, mErr?.message || mErr);
+    }
+  }
+
+  // 2. If Supabase is configured, fetch single record
+  if (isServerSupabaseConfigured) {
+    try {
+      const { data, error } = await serverSupabase
+        .from('app_collections')
+        .select('data')
+        .eq('collection_name', collection)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (!error && data?.data) {
+        return { ...data.data, id };
+      }
+    } catch (err) {
+      console.error(`Get raw document exception ${collection}:${id}:`, err);
+    }
+  }
+
+  return null;
+}
+
+// Server CRUD Handler: Get Single Document with Role-Based Access Control
+export async function serverGetDoc(collection: string, id: string, user?: any): Promise<any | null> {
+  if (!id) return null;
+
+  // 1. Security Check: Unauthenticated callers cannot query non-public collections
+  if (!user) {
+    if (PUBLIC_READ_COLLECTIONS.has(collection)) {
+      return fetchRawDocument(collection, id);
+    }
+    return null;
+  }
+
+  // 2. Authorization check
+  const authCheck = authorizeCollectionAccess(user, collection, 'read');
+  if (!authCheck.allowed) {
+    return null;
+  }
+
+  // 3. Fetch single document
+  const doc = await fetchRawDocument(collection, id);
+  if (!doc) return null;
+
+  // 4. Strict Row-Level Security verification: If caller is a student, ensure document belongs to them
+  if (user.role === 'student' || user.level === 3) {
+    const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
+    if (uStudentId) {
+      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
+      if (docStudentId && docStudentId !== uStudentId) {
+        return null;
+      }
+    }
+  }
+
+  return doc;
+}
+
+// Internal helper to retrieve multiple raw documents by collection and candidate IDs
+async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promise<any[]> {
+  if (!ids || ids.length === 0) return [];
+
+  // 1. If MySQL is configured, fetch directly from MySQL with IN (...)
+  if (isMysqlConfigured) {
+    try {
+      const mysqlDocs = await MysqlRepository.getDocumentsByIds(collection, ids);
+      if (mysqlDocs && mysqlDocs.length > 0) return mysqlDocs;
+    } catch (mErr: any) {
+      console.warn(`[MySQL Get Docs Error for ${collection}]:`, mErr?.message || mErr);
+    }
+  }
+
+  // 2. If Supabase is configured
+  if (isServerSupabaseConfigured) {
+    try {
+      const { data, error } = await serverSupabase
+        .from('app_collections')
+        .select('id, data')
+        .eq('collection_name', collection)
+        .in('id', ids);
+
+      if (!error && data) {
+        return data.map(r => ({ ...(r.data || {}), id: r.id }));
+      }
+    } catch (err) {
+      console.error(`Get raw documents exception ${collection}:`, err);
+    }
+  }
+
+  return [];
+}
+
+// Server CRUD Handler: Get Single Document from Candidate IDs with Strict Role-Based Filtering
+export async function serverGetDocByCandidateIds(collection: string, candidateIds: string[], user?: any): Promise<any | null> {
+  if (!candidateIds || candidateIds.length === 0) return null;
+
+  // 1. Security Check: Unauthenticated callers cannot query non-public collections
+  if (!user) {
+    if (PUBLIC_READ_COLLECTIONS.has(collection)) {
+      const rawDocs = await fetchRawDocumentsByIds(collection, candidateIds);
+      return rawDocs[0] || null;
+    }
+    return null;
+  }
+
+  // 2. Authorization check
+  const authCheck = authorizeCollectionAccess(user, collection, 'read');
+  if (!authCheck.allowed) {
+    return null;
+  }
+
+  // 3. Fetch matching candidate documents
+  const docs = await fetchRawDocumentsByIds(collection, candidateIds);
+  if (!docs || docs.length === 0) return null;
+
+  const doc = docs[0];
+
+  // 4. Strict Row-Level Security verification: If caller is a student, ensure document belongs to them
+  if (user.role === 'student' || user.level === 3) {
+    const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
+    if (uStudentId) {
+      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
+      if (docStudentId && docStudentId !== uStudentId) {
+        return null;
+      }
+    }
+  }
+
+  return doc;
+}
+
 // Server CRUD Handler: Query Collection with Strict Role-Based Filtering
 export async function serverQueryCollection(collection: string, user?: any): Promise<any[]> {
   // 1. Security Check: Unauthenticated callers cannot query non-public collections

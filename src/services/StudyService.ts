@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { serverQueryCollection, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
+import { serverQueryCollection, serverGetDoc, serverGetDocByCandidateIds, serverSaveDoc, authorizeCollectionAccess } from '../lib/serverDataApi';
 import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -161,13 +161,29 @@ export class StudyService {
    * Fetch study stats and evaluation for a specific student in a period
    */
   public static async getStudentStudyStats(studentId: string, periodId: string, callerUser?: any) {
-    const period = await this.getStudyPeriodById(periodId, callerUser);
-    const logs = await serverQueryCollection('periodic_study_logs', callerUser);
-    
-    const studentLog = Array.isArray(logs) 
-      ? logs.find((l: any) => l.periodId === periodId && l.studentId === studentId)
-      : null;
+    // ۱. بررسی دسترسی سطح ردیف: اگر فراخوان‌کننده طلبه باشد، فقط مجاز به دریافت کارنامه خودش است
+    if (callerUser && (callerUser.role === 'student' || callerUser.level === 3)) {
+      const uStudentId = String(callerUser.studentId || callerUser.linkedStudentId || callerUser.id || '').trim();
+      if (uStudentId && studentId !== uStudentId) {
+        throw new AppError('شما تنها مجاز به مشاهده آمار مطالعه خود هستید.', { statusCode: 403 });
+      }
+    }
 
+    const period = await this.getStudyPeriodById(periodId, callerUser);
+    
+    // ۲. خواندن مستقیم دو کلید ممکن با یک کوئری سریع IN ('log_{periodId}_{studentId}', 'studylog_{periodId}_{studentId}')
+    const candidateIds = [
+      `log_${periodId}_${studentId}`,
+      `studylog_${periodId}_${studentId}`
+    ];
+    let studentLog = await serverGetDocByCandidateIds('periodic_study_logs', candidateIds, callerUser);
+
+    // ۳. بررسی انطباق فیلدهای periodId و studentId با ورودی تابع
+    if (studentLog && (studentLog.periodId !== periodId || studentLog.studentId !== studentId)) {
+      studentLog = null;
+    }
+
+    // اگر رکوردی با دو کلید ممکن پیدا نشد، بدون بارگذاری کل کالکشن، همان null فرض می‌شود
     const loggedHours = studentLog?.hours || 0;
     const studyHours = studentLog?.studyHours || loggedHours;
     const discussionHours = studentLog?.discussionHours || 0;

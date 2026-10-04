@@ -122,7 +122,8 @@ CREATE TABLE IF NOT EXISTS `enrollments` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     INDEX `idx_enrollment_student` (`student_id`),
-    INDEX `idx_enrollment_program` (`program_id`)
+    INDEX `idx_enrollment_program` (`program_id`),
+    INDEX `idx_enrollment_student_program` (`student_id`, `program_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ۷. جدول حضور و غیاب (Attendance)
@@ -137,7 +138,8 @@ CREATE TABLE IF NOT EXISTS `attendance` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    INDEX `idx_attendance_date_grade` (`date`, `grade`)
+    INDEX `idx_attendance_date_grade` (`date`, `grade`),
+    INDEX `idx_attendance_program_date` (`program_id`, `date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ۸. جدول دوره‌ها و محاسبات شهریه طلاب (Tuition Periods & Records)
@@ -263,6 +265,7 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     INDEX `idx_audit_user` (`user_id`, `username`),
+    INDEX `idx_audit_user_created` (`user_id`, `created_at`),
     INDEX `idx_audit_action` (`action`),
     INDEX `idx_audit_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

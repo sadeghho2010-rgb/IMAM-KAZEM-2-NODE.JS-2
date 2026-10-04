@@ -11,6 +11,7 @@
 
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import { logSlowQuery, logServerError } from './systemHealthMonitor';
 
 dotenv.config();
 
@@ -59,6 +60,43 @@ export const isMysqlConfigured = Boolean(
 );
 
 let pool: mysql.Pool | null = null;
+let hasEnsuredIndexes = false;
+
+export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
+  const mysqlPool = p || getMysqlPool();
+  if (!mysqlPool) return;
+  if (hasEnsuredIndexes) return;
+  hasEnsuredIndexes = true;
+
+  // فقط ایندکس‌هایی که هم جدول فیزیکی دارند و هم کوئری واقعی در سورس‌کد به آن‌ها متصل است
+  const indexes = [
+    { table: 'app_collections', name: 'idx_col_name_updated', cols: '`collection_name`, `updated_at`' }
+  ];
+
+  for (const idx of indexes) {
+    const label = `${idx.table}.${idx.name}`;
+    try {
+      const [rows]: any = await mysqlPool.query(
+        `SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1`,
+        [idx.table, idx.name]
+      );
+      if (rows && rows.length > 0) {
+        console.log(`[MySQL Index] ${label}: از قبل وجود داشت`);
+      } else {
+        await mysqlPool.query(`CREATE INDEX \`${idx.name}\` ON \`${idx.table}\` (${idx.cols})`);
+        console.log(`[MySQL Index] ${label}: ساخته شد`);
+      }
+    } catch (e: any) {
+      const errCode = e?.errno || e?.code;
+      const errMsg = e?.message || String(e);
+      if (errCode === 1142 || errCode === 1044 || errMsg.toLowerCase().includes('command denied') || errMsg.toLowerCase().includes('access denied')) {
+        console.warn(`[MySQL Index] ${label}: خطا: عدم دسترسی لازم (کاربر دیتابیس مجوز ایجاد ایندکس INDEX privilege را ندارد)`);
+      } else {
+        console.warn(`[MySQL Index] ${label}: خطا: ${errMsg}`);
+      }
+    }
+  }
+}
 
 export function getMysqlPool(): mysql.Pool | null {
   if (!isMysqlConfigured) return null;
@@ -84,6 +122,7 @@ export function getMysqlPool(): mysql.Pool | null {
       });
 
       console.log(`[MySQL Engine] Connection pool initialized for database: ${database}@${host}:${port}`);
+      ensurePerformanceIndexes(pool).catch(() => {});
     } catch (err) {
       console.error('[MySQL Engine] Pool initialization error:', err);
       pool = null;
@@ -101,10 +140,16 @@ export async function executeMysqlQuery<T = any>(sql: string, params: any[] = []
     throw new Error('دیتابیس MySQL تنظیم نشده است.');
   }
 
+  const startTime = Date.now();
   try {
     const [rows] = await mysqlPool.execute(sql, params);
+    const duration = Date.now() - startTime;
+    if (duration > 1000) {
+      logSlowQuery('MySQL Query', duration, sql);
+    }
     return rows as T[];
   } catch (err: any) {
+    logServerError(err.message, err.stack, 'executeMysqlQuery');
     console.error('[MySQL Execution Error]:', err.message, '\nQuery:', sql);
     throw err;
   }
@@ -297,15 +342,56 @@ export const MysqlRepository = {
     );
   },
 
-  // 7. Query Documents
+  // 7. Get Single Document by Primary Key
+  async getDocument(collectionName: string, id: string): Promise<any | null> {
+    const pool = getMysqlPool();
+    if (!pool) return null;
+
+    const [rows]: any = await pool.execute(
+      `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
+      [collectionName, id]
+    );
+
+    if (rows && rows.length > 0) {
+      const r = rows[0];
+      const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+      return { ...parsed, id };
+    }
+    return null;
+  },
+
+  // 8. Get Multiple Documents by Candidate IDs (Primary Keys)
+  async getDocumentsByIds(collectionName: string, ids: string[]): Promise<any[]> {
+    if (!ids || ids.length === 0) return [];
+    const pool = getMysqlPool();
+    if (!pool) return [];
+
+    const placeholders = ids.map(() => '?').join(', ');
+    const [rows]: any = await pool.execute(
+      `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+      [collectionName, ...ids]
+    );
+
+    return (rows || []).map((r: any) => {
+      const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+      return { ...parsed, id: r.id };
+    });
+  },
+
+  // 9. Query Documents
   async queryCollection(collectionName: string): Promise<any[]> {
     const pool = getMysqlPool();
     if (!pool) return [];
 
+    const startTime = Date.now();
     const [rows]: any = await pool.execute(
       `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
       [collectionName]
     );
+    const duration = Date.now() - startTime;
+    if (duration > 1000) {
+      logSlowQuery(collectionName, duration, `SELECT id, data FROM app_collections WHERE collection_name = '${collectionName}' ORDER BY updated_at DESC`);
+    }
 
     return (rows || []).map((r: any) => {
       const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;

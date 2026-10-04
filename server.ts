@@ -26,11 +26,13 @@ import transportRoutes from "./src/routes/transportRoutes";
 import courseSelectionRoutes from "./src/routes/courseSelectionRoutes";
 import counselingRoutes from "./src/routes/counselingRoutes";
 import dataRoutes from "./src/routes/dataRoutes";
+import systemRoutes from "./src/routes/systemRoutes";
 
 // 2. Cross-cutting Infrastructure
 import { logger, requestLogger } from "./src/lib/logger";
 import { globalErrorHandler } from "./src/lib/errorHandler";
 import { startMemoryMonitor } from "./src/lib/memoryMonitor";
+import { startSystemHealthMonitor } from "./src/lib/systemHealthMonitor";
 
 dotenv.config();
 
@@ -97,6 +99,7 @@ async function startServer() {
   app.use('/api/transport', transportRoutes);
   app.use('/api/course-selection', courseSelectionRoutes);
   app.use('/api/counseling', counselingRoutes);
+  app.use('/api/system', systemRoutes);
   app.use('/api', dataRoutes);
 
   // System Health Check Endpoint
@@ -147,11 +150,22 @@ async function startServer() {
   // Universal Global Error Handler for API routes
   app.use(globalErrorHandler);
 
+  // Ensure critical database performance indexes before accepting incoming requests
+  try {
+    const { isMysqlConfigured, ensurePerformanceIndexes } = await import("./src/lib/databaseAbstraction");
+    if (isMysqlConfigured) {
+      await ensurePerformanceIndexes();
+    }
+  } catch (idxErr: any) {
+    logger.warn('[Startup] Performance index initialization notice:', idxErr?.message || idxErr);
+  }
+
   const server = app.listen(PORT, "0.0.0.0", () => {
     logger.info(`[Production Server] running on http://0.0.0.0:${PORT}`);
     
     // Automated memory monitoring
     startMemoryMonitor(5 * 60 * 1000, 450);
+    startSystemHealthMonitor(10 * 60 * 1000);
 
     // Automated database backup scheduler
     import('./src/lib/serverBackupEngine').then(mod => {
