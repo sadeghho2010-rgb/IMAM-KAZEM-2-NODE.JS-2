@@ -2604,18 +2604,23 @@ export default function Programs() {
                       }}
                     >
                       <option value="">-- انتخاب شماره و نام مَدرَس از لیست --</option>
-                      {rooms.map(r => (
-                        <option key={r.id} value={r.name}>
-                          {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
-                        </option>
-                      ))}
-                      <option value="مدرس ۱ (شیخ انصاری)">مدرس ۱ (شیخ انصاری)</option>
-                      <option value="مدرس ۲ (علامه حلی)">مدرس ۲ (علامه حلی)</option>
-                      <option value="مدرس ۳ (شهید بهشتی)">مدرس ۳ (شهید بهشتی)</option>
-                      <option value="مدرس ۴ (ملاصدرا)">مدرس ۴ (ملاصدرا)</option>
-                      <option value="مدرس ۵ (شیخ طوسی)">مدرس ۵ (شیخ طوسی)</option>
-                      <option value="مدرس ۶ (علامه طباطبایی)">مدرس ۶ (علامه طباطبایی)</option>
-                      <option value="سالن اجتماعات (شهید مطهری)">سالن اجتماعات (شهید مطهری)</option>
+                      <optgroup label="مدرس‌های داخل مجموعه">
+                        {rooms.filter(r => !r.isExternal).map(r => (
+                          <option key={r.id} value={r.name}>
+                            {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="مدرس‌های خارج از مجموعه (محل‌های برگزاری خارج از مؤسسه)">
+                        {rooms.filter(r => r.isExternal).map(r => (
+                          <option key={r.id} value={r.name}>
+                            📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
+                          </option>
+                        ))}
+                        <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                        <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                        <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                      </optgroup>
                       <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
                     </select>
                   ) : (
@@ -2978,18 +2983,23 @@ export default function Programs() {
                       }}
                     >
                       <option value="">-- انتخاب شماره و نام مَدرَس از لیست --</option>
-                      {rooms.map(r => (
-                        <option key={r.id} value={r.name}>
-                          {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
-                        </option>
-                      ))}
-                      <option value="مدرس ۱ (شیخ انصاری)">مدرس ۱ (شیخ انصاری)</option>
-                      <option value="مدرس ۲ (علامه حلی)">مدرس ۲ (علامه حلی)</option>
-                      <option value="مدرس ۳ (شهید بهشتی)">مدرس ۳ (شهید بهشتی)</option>
-                      <option value="مدرس ۴ (ملاصدرا)">مدرس ۴ (ملاصدرا)</option>
-                      <option value="مدرس ۵ (شیخ طوسی)">مدرس ۵ (شیخ طوسی)</option>
-                      <option value="مدرس ۶ (علامه طباطبایی)">مدرس ۶ (علامه طباطبایی)</option>
-                      <option value="سالن اجتماعات (شهید مطهری)">سالن اجتماعات (شهید مطهری)</option>
+                      <optgroup label="مدرس‌های داخل مجموعه">
+                        {rooms.filter(r => !r.isExternal).map(r => (
+                          <option key={r.id} value={r.name}>
+                            {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="مدرس‌های خارج از مجموعه (محل‌های برگزاری خارج از مؤسسه)">
+                        {rooms.filter(r => r.isExternal).map(r => (
+                          <option key={r.id} value={r.name}>
+                            📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
+                          </option>
+                        ))}
+                        <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                        <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                        <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                      </optgroup>
                       <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
                     </select>
                   ) : (
@@ -3643,14 +3653,14 @@ export default function Programs() {
                               value={editingSecTitle}
                               onChange={(e) => setEditingSecTitle(e.target.value)}
                               placeholder="عنوان جدید..."
-                              className="w-full p-1.5 text-xs font-bold border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-indigo-50/50"
+                              className="w-full p-1.5 text-xs font-bold text-slate-900 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-400"
                             />
                             <input
                               type="text"
                               value={editingSecDesc}
                               onChange={(e) => setEditingSecDesc(e.target.value)}
                               placeholder="توضیح کوتاه..."
-                              className="w-full p-1.5 text-[11px] border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full p-1.5 text-[11px] font-bold text-slate-900 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
                             />
                             <div className="flex items-center justify-end gap-1.5 pt-1">
                               <button
@@ -3729,14 +3739,14 @@ export default function Programs() {
                         placeholder="عنوان بخش جدید (مثلاً: مهارت پژوهشی، پیش مطالعه...)"
                         value={newSectionTitleInput}
                         onChange={(e) => setNewSectionTitleInput(e.target.value)}
-                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500"
+                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
                       />
                       <input
                         type="text"
                         placeholder="توضیح کوتاه بخش (اختیاری)..."
                         value={newSectionDescInput}
                         onChange={(e) => setNewSectionDescInput(e.target.value)}
-                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                        className="flex-1 p-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
                       />
                       <button
                         type="button"

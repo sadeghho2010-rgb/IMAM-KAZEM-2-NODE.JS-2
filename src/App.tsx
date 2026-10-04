@@ -51,6 +51,7 @@ import TeacherPortal from './components/TeacherPortal';
 import StudentRequestsPortal from './components/StudentRequestsPortal';
 import AnomalyDetectionView from './components/admin/AnomalyDetectionView';
 import SecurityPinModal from './components/auth/SecurityPinModal';
+import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import MainDashboard from './components/MainDashboard';
 import SettingsModal from './components/SettingsModal';
 import { MentorProvider, useMentor } from './context/MentorContext';
@@ -58,7 +59,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -290,6 +291,32 @@ function AppContent() {
         );
       case 'user-credentials':
         return <UserCredentialsSettings />;
+      case 'security-pin-settings':
+        return (
+          <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6" dir="rtl">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-200 shrink-0">
+                  <KeyRound size={24} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">افزایش سطح امنیتی حساب (پین ۴ رقمی)</h2>
+                  <p className="text-xs text-slate-500 font-bold mt-0.5">
+                    تنظیم پین اختصاصی جهت افزایش امنیت ورود و قفل خودکار حساب کاربری
+                  </p>
+                </div>
+              </div>
+              <AccountSecurityPinModal
+                isOpen={true}
+                onClose={() => setActiveTab('dashboard')}
+                targetUser={currentUser}
+                onUpdated={() => {
+                  alert('تنظیمات امنیتی پین حساب کاربری با موفقیت بروزرسانی گردید.');
+                }}
+              />
+            </div>
+          </div>
+        );
       case 'teacher-portal':
         return <TeacherPortal />;
       case 'db-connection-test':

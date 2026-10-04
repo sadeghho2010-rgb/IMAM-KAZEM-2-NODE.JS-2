@@ -340,6 +340,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
   }, [activeTab]);
 
   const siteManagementSubItems = [
+    { id: 'security-pin-settings', label: 'افزایش سطح امنیتی حساب', icon: KeyRound },
     { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', icon: ShieldAlert, badge: unresolvedAnomaliesCount },
     { id: 'backup', label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
     { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
@@ -347,7 +348,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
     { id: 'db-save-errors', label: 'بازرسی خطاهای ثبت دیتابیس', icon: Database },
     { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
-  ].filter(sub => isTabAllowed(sub.id));
+  ].filter(sub => sub.id === 'security-pin-settings' || isTabAllowed(sub.id));
 
   const canAccessSiteManagement = siteManagementSubItems.length > 0;
 
@@ -388,14 +389,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     }
 
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
-    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
+    if (canAccessSiteManagement && ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
       return false;
     }
 
     return true;
   });
 
-  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(activeTab);
+  const isSiteManagementActive = ['security-pin-settings', 'backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(activeTab);
 
   const renderMenuItem = (item: MenuItemDef) => {
     const Icon = item.icon;

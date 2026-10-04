@@ -62,6 +62,7 @@ export default function MadrasRooms() {
   const [floorFilter, setFloorFilter] = useState('all');
   const [capacityFilter, setCapacityFilter] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<'all' | 'free' | 'occupied'>('all');
+  const [roomScopeFilter, setRoomScopeFilter] = useState<'all' | 'internal' | 'external'>('all');
 
   // Quick Finder Toggle
   const [showEmptyFinder, setShowEmptyFinder] = useState(false);
@@ -175,9 +176,13 @@ export default function MadrasRooms() {
         if (statusFilter === 'occupied' && !isOccupied) return false;
       }
 
+      // 5. Room Scope Filter (داخل مجموعه / خارج از مجموعه)
+      if (roomScopeFilter === 'internal' && room.isExternal) return false;
+      if (roomScopeFilter === 'external' && !room.isExternal) return false;
+
       return true;
     });
-  }, [rooms, programs, searchFilter, floorFilter, capacityFilter, statusFilter]);
+  }, [rooms, programs, searchFilter, floorFilter, capacityFilter, statusFilter, roomScopeFilter]);
 
   // Open modal for new class with prefilled room and time
   const handleOpenAddClass = (prefillRoomName?: string, prefillDay?: string, prefillTime?: string) => {
@@ -463,8 +468,45 @@ export default function MadrasRooms() {
           />
         </div>
 
-        {/* Filters Group: Floor, Capacity, Status */}
+        {/* Filters Group: Scope, Floor, Capacity, Status */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+
+          {/* Room Scope Filter (اصلاح مدرس‌های خارج از مجموعه) */}
+          <div className="flex items-center bg-indigo-50/70 border border-indigo-100 p-0.5 rounded-xl text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setRoomScopeFilter('all')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                roomScopeFilter === 'all' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              همه مَدرَس‌ها
+            </button>
+            <button
+              type="button"
+              onClick={() => setRoomScopeFilter('internal')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                roomScopeFilter === 'internal' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              داخل مجموعه
+            </button>
+            <button
+              type="button"
+              onClick={() => setRoomScopeFilter('external')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1",
+                roomScopeFilter === 'external' ? "bg-amber-500 text-white shadow-2xs font-black" : "text-amber-800 hover:text-amber-950"
+              )}
+            >
+              <span>📍 خارج از مجموعه</span>
+              <span className="text-[10px] bg-amber-100 text-amber-900 px-1 rounded-full font-bold">
+                {rooms.filter(r => r.isExternal).length}
+              </span>
+            </button>
+          </div>
           
           {/* Floor Filter */}
           <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">

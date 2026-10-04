@@ -217,9 +217,6 @@ export default function CounselingClasses() {
     if (targetStudents.length === 0 && selectedProg.grade) {
       targetStudents = students.filter(s => s.grade === selectedProg.grade);
     }
-    if (targetStudents.length === 0) {
-      targetStudents = students.slice(0, 15);
-    }
 
     const rows: StudentBatchRow[] = targetStudents.map(s => ({
       studentId: s.id,
@@ -250,9 +247,6 @@ export default function CounselingClasses() {
       let targetStudents = students.filter(s => enrolledStudentIds.has(s.id));
       if (targetStudents.length === 0 && prog.grade) {
         targetStudents = students.filter(s => s.grade === prog.grade);
-      }
-      if (targetStudents.length === 0) {
-        targetStudents = students.slice(0, 15);
       }
 
       const rows: StudentBatchRow[] = targetStudents.map(s => ({

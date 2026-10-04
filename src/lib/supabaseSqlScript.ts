@@ -69,6 +69,9 @@ ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS failed_login_attempts I
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS account_locked_until TIMESTAMPTZ;
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS security_pin_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS special_security_pin_hash TEXT;
+ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS pin_challenge_interval INTEGER DEFAULT 15;
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.system_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 

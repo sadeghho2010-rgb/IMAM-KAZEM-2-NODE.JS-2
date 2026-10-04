@@ -147,6 +147,11 @@ export default function MadrasEmptyFinder({
     const occupied: { room: MadrasRoom; conflictingPrograms: Program[] }[] = [];
 
     rooms.forEach(room => {
+      // Exclude external classrooms/venues from empty room search results (مدرس‌های خارج از مجموعه در نتایج جستجو نمی‌آیند)
+      if (room.isExternal) {
+        return;
+      }
+
       // 1. Floor Filter
       if (selectedFloor !== 'all' && (room.floor || '').trim() !== selectedFloor) {
         return;

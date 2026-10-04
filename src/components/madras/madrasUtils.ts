@@ -117,6 +117,40 @@ export const DEFAULT_MADRAS_ROOMS: MadrasRoom[] = [
     description: 'کلاس تخصصی حلقات و مباحثه',
     isActive: true,
   },
+  // مدرس‌های خارج از مجموعه (محل‌های برگزاری خارج از مؤسسه)
+  {
+    id: 'ext-room-1',
+    name: 'مدرسه امام باقر علیه السلام',
+    code: 'خ-۱',
+    capacity: 50,
+    floor: 'خارج از مجموعه',
+    facilities: ['محل برگزاری همکار'],
+    description: 'محل برگزاری کلاس‌های خارج از مؤسسه (مدرسه امام باقر ع)',
+    isActive: true,
+    isExternal: true
+  },
+  {
+    id: 'ext-room-2',
+    name: 'مدرسه امام حسین علیه السلام',
+    code: 'خ-۲',
+    capacity: 50,
+    floor: 'خارج از مجموعه',
+    facilities: ['محل برگزاری همکار'],
+    description: 'محل برگزاری کلاس‌های خارج از مؤسسه (مدرسه امام حسین ع)',
+    isActive: true,
+    isExternal: true
+  },
+  {
+    id: 'ext-room-3',
+    name: 'موسسه ائمه اطهار علیهم السلام',
+    code: 'خ-۳',
+    capacity: 50,
+    floor: 'خارج از مجموعه',
+    facilities: ['محل برگزاری همکار'],
+    description: 'محل برگزاری کلاس‌های خارج از مؤسسه (موسسه ائمه اطهار ع)',
+    isActive: true,
+    isExternal: true
+  },
 ];
 
 export function toEnglishDigits(str: string): string {

@@ -87,18 +87,34 @@ export default function SecurityPinModal({ onSuccess }: SecurityPinModalProps) {
         return;
       }
 
-      // 2. Server verification
-      const res = await fetch('/api/auth/pin/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ pin: cleanPin })
-      });
+      // 2. Client-side fallback / local hash verification
+      let isValid = false;
+      try {
+        const res = await fetch('/api/auth/pin/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ pin: cleanPin })
+        });
+        const data = await res.json().catch(() => ({ success: false }));
+        if (res.ok && data.success && data.verified) {
+          isValid = true;
+        }
+      } catch (err) {
+        // Fallback to local salted hash verification
+        const { verifySecurityPin } = await import('./AccountSecurityPinModal');
+        isValid = await verifySecurityPin(cleanPin, currentUser?.specialSecurityPinHash);
+      }
 
-      const data = await res.json().catch(() => ({ success: false }));
+      // If server fetch wasn't valid, also test client-side hash
+      if (!isValid && currentUser?.specialSecurityPinHash) {
+        const { verifySecurityPin } = await import('./AccountSecurityPinModal');
+        isValid = await verifySecurityPin(cleanPin, currentUser.specialSecurityPinHash);
+      }
+
       setIsLoading(false);
 
-      if (res.ok && data.success && data.verified) {
+      if (isValid) {
         setIsLocked(false);
         setPin('');
         setFailedAttempts(0);
@@ -107,10 +123,12 @@ export default function SecurityPinModal({ onSuccess }: SecurityPinModalProps) {
         const nextFailed = failedAttempts + 1;
         setFailedAttempts(nextFailed);
         if (nextFailed >= 3) {
-          setLockoutSeconds(300); // 5-minute lockout
-          setErrorMessage('۳ بار تلاش ناموفق پین ثبت شد. دسترسی به مدت ۵ دقیقه قفل گردید.');
+          setErrorMessage('۳ بار ورود کد پین نادرست انجام شد. به دلایل امنیتی از حساب کاربری خارج می‌شوید...');
+          setTimeout(() => {
+            logout();
+          }, 1500);
         } else {
-          setErrorMessage(data.message || 'کد پین امنیتی نادرست است.');
+          setErrorMessage(`کد پین امنیتی نادرست است. (${3 - nextFailed} بار تلاش مجاز باقی‌مانده)`);
         }
       }
     } catch (err: unknown) {

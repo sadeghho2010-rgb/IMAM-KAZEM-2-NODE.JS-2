@@ -718,6 +718,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Aggregated Per-Student Report Data
   const studentReportList = useMemo(() => {
+    const isLevel3OrStudentOrRep = currentUser?.level === 3 || isStudent || isRepresentative;
+    
+    const currentStudentId = currentUser?.studentId || currentUser?.linkedStudentId || '';
+    const currentStudentObj = students.find(s => 
+      (currentStudentId && String(s.id) === String(currentStudentId)) ||
+      (s.name && (s.name.trim() === currentUser?.name?.trim() || s.name.trim() === currentUser?.studentName?.trim())) ||
+      (s.nationalId && currentUser?.username && s.nationalId.trim() === currentUser.username.trim())
+    );
+
     const studentMap: Record<string, {
       student: any;
       heldSessionsEnrolled: number;
@@ -732,6 +741,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     // Initialize students matching filter
     students.forEach(s => {
+      // STRICT PRIVACY RULE: Regular students AND class representatives ONLY see THEIR OWN report!
+      if (isLevel3OrStudentOrRep) {
+        if (currentStudentObj) {
+          if (String(s.id) !== String(currentStudentObj.id)) return;
+        } else {
+          // If student profile not matched yet, match by name or username
+          const nameMatch = s.name && currentUser?.name && s.name.trim() === currentUser.name.trim();
+          const natMatch = s.nationalId && currentUser?.username && s.nationalId.trim() === currentUser.username.trim();
+          if (!nameMatch && !natMatch) return;
+        }
+      }
+
       if (reportGradeFilter !== 'all' && s.grade !== reportGradeFilter) return;
       if (reportSearchQuery && !s.name?.toLowerCase().includes(reportSearchQuery.toLowerCase()) && !s.nationalId?.includes(reportSearchQuery)) return;
 
@@ -908,35 +929,43 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
         {/* View Switcher & Settings */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setActiveTab('class_status')}
-            className={cn(
-              "px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-sm active:scale-95",
-              activeTab === 'class_status'
-                ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white border-transparent shadow-md ring-2 ring-emerald-500/30"
-                : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
-            )}
-          >
-            <LayoutGrid size={17} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
-            <span className="text-xs sm:text-sm font-black">وضعیت کلاس‌ها</span>
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-600 text-white font-black">جدید</span>
-          </button>
-
-          <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200">
+          {/* Class Status tab - hidden for regular students; shown for staff & representatives */}
+          {(!isStudent || isRepresentative) && (
             <button
               type="button"
-              onClick={() => setActiveTab('record')}
+              onClick={() => setActiveTab('class_status')}
               className={cn(
-                "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                activeTab === 'record'
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
+                "px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-sm active:scale-95",
+                activeTab === 'class_status'
+                  ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white border-transparent shadow-md ring-2 ring-emerald-500/30"
+                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
               )}
             >
-              <CheckSquare size={15} />
-              <span>ثبت و ویرایش جلسه</span>
+              <LayoutGrid size={17} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
+              <span className="text-xs sm:text-sm font-black">
+                {isRepresentative ? 'وضعیت کلاس‌های من' : 'وضعیت کلاس‌ها'}
+              </span>
             </button>
+          )}
+
+          <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200">
+            {/* Record tab - hidden for regular students; shown for staff & representatives */}
+            {(!isStudent || isRepresentative) && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('record')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                  activeTab === 'record'
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <CheckSquare size={15} />
+                <span>ثبت و ویرایش جلسه</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setActiveTab('report')}
@@ -948,7 +977,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               )}
             >
               <FileCheck2 size={15} />
-              <span>گزارش‌ها و آمار غیبت</span>
+              <span>{(isStudent || isRepresentative || currentUser?.level === 3) ? 'گزارش و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
             </button>
           </div>
 
@@ -990,8 +1019,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         // Get day of week name
         const currentDayName = getShamsiDayOfWeekName(selectedDate);
 
-        // Filter programs scheduled for currentDayName
-        const scheduledOnDate = programs.filter(p => {
+        // Filter programs scheduled for currentDayName (Class Representatives only see their own assigned classes)
+        const availablePrograms = isRepresentative ? representativePrograms : programs;
+        const scheduledOnDate = availablePrograms.filter(p => {
           const days = getProgramDays(p);
           if (days && days.length > 0) {
             return days.includes(currentDayName);

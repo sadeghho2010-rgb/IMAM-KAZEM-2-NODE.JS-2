@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import AccountSecurityPinModal from '../auth/AccountSecurityPinModal';
 
 export default function UserCredentialsSettings() {
   const { users, currentUser, addUser, updateUser, deleteUser, adminResetPassword } = useAuth();
@@ -38,6 +39,10 @@ export default function UserCredentialsSettings() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [modalStudent, setModalStudent] = useState<Student | null>(null);
+
+  // Security PIN Modal states
+  const [isSecurityPinModalOpen, setIsSecurityPinModalOpen] = useState(false);
+  const [userForSecurityPin, setUserForSecurityPin] = useState<AppUser | null>(null);
 
   // Form states
   const [formUsername, setFormUsername] = useState('');
@@ -313,15 +318,28 @@ export default function UserCredentialsSettings() {
           </div>
         </div>
         
-        {canModifyCredentials && (
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => handleOpenCreateModal()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
+            onClick={() => {
+              setUserForSecurityPin(currentUser);
+              setIsSecurityPinModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-emerald-600/10 cursor-pointer"
           >
-            <Plus size={16} />
-            <span>تعریف کاربری جدید</span>
+            <ShieldCheck size={18} />
+            <span>افزایش سطح امنیتی حساب</span>
           </button>
-        )}
+
+          {canModifyCredentials && (
+            <button
+              onClick={() => handleOpenCreateModal()}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>تعریف کاربری جدید</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -784,6 +802,12 @@ export default function UserCredentialsSettings() {
         )}
       </AnimatePresence>
 
+      {/* Account Security PIN Modal */}
+      <AccountSecurityPinModal
+        isOpen={isSecurityPinModalOpen}
+        onClose={() => setIsSecurityPinModalOpen(false)}
+        targetUser={userForSecurityPin}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { DoorOpen, Users, Layers, Calendar, Edit3, Trash2, ArrowLeft } from 'lucide-react';
+import { DoorOpen, Users, Layers, Calendar, Edit3, Trash2, ArrowLeft, Building2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { MadrasRoom, Program } from '../../types';
 import { getRoomCurrentStatus } from './madrasUtils';
@@ -43,16 +43,25 @@ export default function MadrasRoomCard({
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={cn(
             "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors",
-            isOccupied 
-              ? "bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-600 group-hover:text-white"
-              : "bg-indigo-50 text-indigo-700 border border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white"
+            room.isExternal
+              ? "bg-amber-100 text-amber-800 border border-amber-300"
+              : isOccupied 
+                ? "bg-rose-50 text-rose-600 border border-rose-200 group-hover:bg-rose-600 group-hover:text-white"
+                : "bg-indigo-50 text-indigo-700 border border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white"
           )}>
-            <DoorOpen size={18} />
+            {room.isExternal ? <Building2 size={18} /> : <DoorOpen size={18} />}
           </div>
           <div className="min-w-0">
-            <h4 className="font-black text-slate-900 text-sm truncate leading-tight group-hover:text-indigo-600 transition-colors">
-              {room.name}
-            </h4>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h4 className="font-black text-slate-900 text-sm truncate leading-tight group-hover:text-indigo-600 transition-colors">
+                {room.name}
+              </h4>
+              {room.isExternal && (
+                <span className="text-[9px] bg-amber-100 text-amber-900 font-extrabold px-1.5 py-0.5 rounded-md border border-amber-200 shrink-0">
+                  خارج از مجموعه
+                </span>
+              )}
+            </div>
             {room.code && (
               <span className="text-[10px] font-mono text-slate-400 font-bold">
                 کد: {room.code}

@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { realtimeSync } from '../lib/realtimeSync';
+import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';
 
 export interface SystemTabDef {
   id: string;
@@ -602,7 +603,7 @@ export const DEFAULT_USERS: AppUser[] = [
 interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  login: (username: string, password: string, pinInput?: string) => Promise<{ success: boolean; message?: string; requirePin?: boolean }>;
   logout: () => void;
   logoutAllSessions: () => Promise<{ success: boolean; message?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
@@ -969,12 +970,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { isMounted = false; };
   }, []);
 
-  const login = async (usernameInput: string, passwordInput: string): Promise<{ success: boolean; message?: string }> => {
+  const login = async (usernameInput: string, passwordInput: string, pinInput?: string): Promise<{ success: boolean; message?: string; requirePin?: boolean }> => {
     const cleanUser = usernameInput.trim().toUpperCase();
     const cleanPass = passwordInput.trim();
 
     if (!cleanUser || !cleanPass) {
       return { success: false, message: 'لطفاً نام کاربری و رمز عبور را وارد نمایید.' };
+    }
+
+    const localMatched = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
+
+    // Check if security PIN is enabled for this user account
+    if (localMatched?.securityPinEnabled && localMatched?.specialSecurityPinHash) {
+      const cleanPin = (pinInput || '').trim();
+      if (!cleanPin) {
+        return { 
+          success: false, 
+          requirePin: true, 
+          message: 'این حساب دارای سطح امنیتی بالاست. لطفاً کد پین ۴ رقمی خود را وارد نمایید.' 
+        };
+      }
+      const isPinValid = await verifySecurityPin(cleanPin, localMatched.specialSecurityPinHash);
+      if (!isPinValid) {
+        return { 
+          success: false, 
+          requirePin: true, 
+          message: 'کد پین ۴ رقمی امنیتی وارد شده نادرست است.' 
+        };
+      }
     }
 
     try {

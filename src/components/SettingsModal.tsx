@@ -22,6 +22,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import AccountSecurityPinModal from './auth/AccountSecurityPinModal';
 
 export interface AppPreferences {
   theme: 'default' | 'emerald' | 'dark' | 'amber' | 'violet';
@@ -69,6 +70,7 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
   });
 
   const [isSavedToastVisible, setIsSavedToastVisible] = useState(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
 
   // Apply preferences to DOM whenever changed
   useEffect(() => {
@@ -385,7 +387,36 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   )} />
                 </button>
               </div>
+
+              {/* Account Security Level PIN Banner */}
+              <div className="pt-3 border-t border-slate-200/80 bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-black text-indigo-950 text-xs">
+                    <ShieldCheck size={16} className="text-indigo-600" />
+                    <span>افزایش سطح امنیتی حساب (تنظیم پین ۴ رقمی)</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800/80 font-medium">
+                    {currentUser?.securityPinEnabled 
+                      ? `سطح امنیتی فعال است (قفل خودکار: هر ${currentUser?.pinChallengeInterval || 5} دقیقه)`
+                      : 'الزامی کردن ورود پین ۴ رقمی برای ورود به سیستم و عدم فعالیت.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPinModalOpen(true)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer shadow-2xs"
+                >
+                  {currentUser?.securityPinEnabled ? 'ویرایش / خاموش کردن پین' : 'افزایش سطح امنیتی'}
+                </button>
+              </div>
             </div>
+
+            {/* Account Security PIN Modal */}
+            <AccountSecurityPinModal
+              isOpen={isPinModalOpen}
+              onClose={() => setIsPinModalOpen(false)}
+            />
 
             {/* Status Feedback Toast */}
             {isSavedToastVisible && (

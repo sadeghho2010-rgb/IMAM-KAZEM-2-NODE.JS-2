@@ -44,6 +44,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // 2-Step PIN verification modal state
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinInputValue, setPinInputValue] = useState('');
+  const [pinErrorMessage, setPinErrorMessage] = useState<string | null>(null);
+
   // Brute force protection: 3 failed attempts => 5s cooldown
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -230,6 +235,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       const result = await login(cleanUser, cleanPass);
       setIsLoading(false);
 
+      if (result.requirePin) {
+        setShowPinPrompt(true);
+        setPinErrorMessage(null);
+        setPinInputValue('');
+        return;
+      }
+
       if (result.success) {
         setFailedAttempts(0);
         if (onLoginSuccess) {
@@ -258,6 +270,31 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       } else {
         setErrorMessage(errMsg);
       }
+    }
+  };
+
+  const handlePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPin = pinInputValue.trim();
+    if (!cleanPin) {
+      setPinErrorMessage('لطفاً پین ۴ رقمی امنیتی را وارد فرمایید.');
+      return;
+    }
+    setIsLoading(true);
+    setPinErrorMessage(null);
+    try {
+      const res = await login(username.trim(), password.trim(), cleanPin);
+      setIsLoading(false);
+      if (res.success) {
+        setShowPinPrompt(false);
+        setFailedAttempts(0);
+        if (onLoginSuccess) onLoginSuccess();
+      } else {
+        setPinErrorMessage(res.message || 'کد پین ۴ رقمی امنیتی وارد شده نادرست است.');
+      }
+    } catch (err) {
+      setIsLoading(false);
+      setPinErrorMessage('خطا در بررسی و تایید کد پین.');
     }
   };
 
@@ -886,6 +923,93 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   <span>پیش‌نمایش تمام‌صفحه</span>
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 2-Step PIN Verification Modal (ورود دو مرحله‌ای با پین ۴ رقمی) */}
+      <AnimatePresence>
+        {showPinPrompt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 15 }}
+              className="w-full max-w-md bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden font-vazir"
+            >
+              <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+              
+              <div className="text-center space-y-3 mb-6">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 mx-auto flex items-center justify-center shadow-lg">
+                  <ShieldCheck size={32} className="animate-pulse text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">تایید هویت دو مرحله‌ای (پین امنیتی)</h3>
+                  <p className="text-xs text-slate-300 mt-1">
+                    این حساب دارای سطح امنیتی بالاست. لطفاً رمز پین ۴ رقمی خود را وارد فرمایید:
+                  </p>
+                </div>
+              </div>
+
+              {pinErrorMessage && (
+                <div className="mb-4 p-3 bg-rose-500/20 border border-rose-400/40 rounded-xl text-rose-200 text-xs flex items-center gap-2">
+                  <AlertCircle size={16} className="shrink-0 text-rose-300" />
+                  <span>{pinErrorMessage}</span>
+                </div>
+              )}
+
+              <form onSubmit={handlePinSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5 text-right">
+                    کد پین ۴ رقمی حساب کاربری:
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="password"
+                      maxLength={4}
+                      value={pinInputValue}
+                      onChange={(e) => setPinInputValue(e.target.value.replace(/\D/g, ''))}
+                      placeholder="۴۷۴۲"
+                      disabled={isLoading}
+                      autoFocus
+                      className="w-full py-3.5 px-4 bg-white/10 border border-white/20 rounded-2xl text-center text-2xl tracking-[0.5em] font-mono text-white placeholder-white/30 focus:border-indigo-400 focus:bg-white/15 outline-none transition-all disabled:opacity-50"
+                    />
+                    <KeyRound size={20} className="absolute right-3.5 text-indigo-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="pt-2 space-y-2">
+                  <button
+                    type="submit"
+                    disabled={isLoading || pinInputValue.length !== 4}
+                    className="w-full py-3.5 px-4 rounded-2xl font-black text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin text-white" />
+                        <span>در حال بررسی پین...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={18} />
+                        <span>ورود به سامانه</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPinPrompt(false);
+                      setIsLoading(false);
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

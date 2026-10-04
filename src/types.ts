@@ -495,6 +495,7 @@ export interface MadrasRoom {
   description?: string;
   color?: string;           // رنگ شاخص
   isActive: boolean;
+  isExternal?: boolean;     // مدرس/محل درس خارج از مجموعه (مجموعه همکار)
   createdAt?: string;
 }
 
