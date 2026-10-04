@@ -15,6 +15,7 @@ import Summary from './components/Summary';
 import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
 import LogViewer from './components/LogViewer';
+import DbSaveErrorsView from './components/DbSaveErrorsView';
 import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
 import TeacherTransportManagement from './components/education/TeacherTransportManagement';
 import TodoList from './components/TodoList';
@@ -137,6 +138,7 @@ function AppContent() {
       case 'teacher-transport': return 'سرویس و ایاب و ذهاب اساتید';
       case 'education-financial-report': return 'تنظیم گزارش مالی طلاب';
       case 'db-connection-test': return 'تست اتصال دیتابیس';
+      case 'db-save-errors': return 'بازرسی خطاهای ثبت دیتابیس';
       case 'user-credentials': return 'مدیریت ورود و مشخصات کاربری';
       case 'anomaly-detection': return 'تشخیص ناهنجاری‌ها و بازرسی';
       case 'backup': return 'پشتیبان‌گیری از دیتابیس';
@@ -278,6 +280,8 @@ function AppContent() {
         return <SiteAuditLogs />;
       case 'app-logs':
         return <LogViewer />;
+      case 'db-save-errors':
+        return <DbSaveErrorsView />;
       case 'education-financial-report':
         return <EducationFinancialReportSettings onNavigateTab={handleNavigate} />;
       case 'user-management':

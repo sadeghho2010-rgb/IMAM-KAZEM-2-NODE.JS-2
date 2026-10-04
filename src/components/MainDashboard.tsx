@@ -46,7 +46,8 @@ import {
   ShieldCheck,
   Activity,
   RefreshCw,
-  Terminal
+  Terminal,
+  Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -664,6 +665,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-emerald-600'
     },
     {
+      id: 'db-save-errors',
+      title: 'بازرسی خطاهای ثبت دیتابیس (DB Save Errors)',
+      subtitle: 'مشاهده خطاهای عدم اتصال به دیتابیس، نبود جدول و علل عدم ثبت داده',
+      category: 'system',
+      icon: Database,
+      iconBg: 'bg-gradient-to-br from-rose-600 via-red-700 to-indigo-900 text-white shadow-lg shadow-rose-600/30',
+      cardGradient: 'from-rose-600/10 via-red-500/5 to-transparent',
+      borderGlow: 'hover:border-rose-500 hover:shadow-2xl hover:shadow-rose-600/20',
+      accentText: 'text-rose-700'
+    },
+    {
       id: 'anomaly-detection',
       title: 'تشخیص ناهنجاری‌ها و بازرسی امنیت',
       subtitle: 'پایش رویدادهای مشکوک، هشدارها و رولبک خودکار',
@@ -762,7 +774,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-slate-700/15 via-indigo-500/5 to-transparent',
       borderGlow: 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/25',
       accentText: 'text-slate-700',
-      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'anomaly-detection', 'db-connection-test']
+      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test']
     }
   ];
 

@@ -471,6 +471,34 @@ CREATE TABLE IF NOT EXISTS public.counseling_session_grades (
 CREATE INDEX IF NOT EXISTS idx_counseling_grades_date ON public.counseling_session_grades (session_date);
 CREATE INDEX IF NOT EXISTS idx_counseling_grades_student ON public.counseling_session_grades (student_id);
 
+-- ۱۷. جدول لاگ‌های خطای ثبت در دیتابیس (DB Save Error Logs)
+CREATE TABLE IF NOT EXISTS public.db_save_errors (
+  id TEXT PRIMARY KEY,
+  collection_name VARCHAR(100) NOT NULL,
+  module_label VARCHAR(200) NOT NULL,
+  record_id VARCHAR(100),
+  record_summary TEXT,
+  cause_type VARCHAR(50) NOT NULL, -- 'no_connection', 'table_not_found', 'permission_denied', 'timeout', 'unknown'
+  cause_title TEXT NOT NULL,
+  cause_description TEXT NOT NULL,
+  raw_error_message TEXT,
+  timestamp TIMESTAMPTZ DEFAULT NOW(),
+  user_id VARCHAR(100),
+  user_name VARCHAR(200),
+  user_role VARCHAR(100),
+  user_level INTEGER DEFAULT 3,
+  is_resolved BOOLEAN DEFAULT FALSE,
+  resolution_note TEXT,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_db_save_errors_timestamp ON public.db_save_errors (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_db_save_errors_user ON public.db_save_errors (user_id);
+CREATE INDEX IF NOT EXISTS idx_db_save_errors_cause ON public.db_save_errors (cause_type);
+ALTER TABLE public.db_save_errors ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_db_save_errors_access" ON public.db_save_errors FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
 -- ۱۷. فعال‌سازی سیاست‌های امنیتی RLS
 ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;

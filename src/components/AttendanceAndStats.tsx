@@ -39,10 +39,13 @@ import {
   UserPlus,
   UserCheck2,
   Edit3,
-  User
+  User,
+  LayoutGrid,
+  Layers,
+  Building2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { cn } from '../lib/utils';
+import { cn, getProgramDays, matchesGradeFilter } from '../lib/utils';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
@@ -76,8 +79,13 @@ interface AttendanceAndStatsProps {
 export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
 
-  // Active view tab: 'record' (ثبت حضور و غیاب) or 'report' (گزارش‌ها و آمار غیبت)
-  const [activeTab, setActiveTab] = useState<'record' | 'report'>('record');
+  // Active view tab: 'record' (ثبت حضور و غیاب), 'report' (گزارش‌ها و آمار غیبت), or 'class_status' (وضعیت کارت‌های کلاس)
+  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status'>('class_status');
+
+  // Class Status Overview filters
+  const [classStatusGradeFilter, setClassStatusGradeFilter] = useState<string>('all');
+  const [classStatusSearchQuery, setClassStatusSearchQuery] = useState<string>('');
+  const [classStatusCategoryTab, setClassStatusCategoryTab] = useState<'all' | 'academic' | 'counseling'>('all');
 
   // Data states
   const [programs, setPrograms] = useState<any[]>([]);
@@ -900,6 +908,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
         {/* View Switcher & Settings */}
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveTab('class_status')}
+            className={cn(
+              "px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-sm active:scale-95",
+              activeTab === 'class_status'
+                ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white border-transparent shadow-md ring-2 ring-emerald-500/30"
+                : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
+            )}
+          >
+            <LayoutGrid size={17} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
+            <span className="text-xs sm:text-sm font-black">وضعیت کلاس‌ها</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-600 text-white font-black">جدید</span>
+          </button>
+
           <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200">
             <button
               type="button"
@@ -942,6 +965,571 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           )}
         </div>
       </div>
+
+      {/* ===================================================================== */}
+      {/* TAB 3: CLASSROOM ATTENDANCE OVERVIEW (وضعیت کلاس‌ها) */}
+      {/* ===================================================================== */}
+      {activeTab === 'class_status' && (() => {
+        // Date helpers
+        const handlePrevDay = () => {
+          try {
+            const dt = shamsiToDate(selectedDate);
+            dt.setDate(dt.getDate() - 1);
+            setSelectedDate(dateToShamsi(dt));
+          } catch {}
+        };
+
+        const handleNextDay = () => {
+          try {
+            const dt = shamsiToDate(selectedDate);
+            dt.setDate(dt.getDate() + 1);
+            setSelectedDate(dateToShamsi(dt));
+          } catch {}
+        };
+
+        // Get day of week name
+        const currentDayName = getShamsiDayOfWeekName(selectedDate);
+
+        // Filter programs scheduled for currentDayName
+        const scheduledOnDate = programs.filter(p => {
+          const days = getProgramDays(p);
+          if (days && days.length > 0) {
+            return days.includes(currentDayName);
+          }
+          if (Array.isArray(p.daysOfWeek) && p.daysOfWeek.length > 0) {
+            return p.daysOfWeek.includes(currentDayName as any);
+          }
+          // Fallback: Saturday to Wednesday
+          return currentDayName !== 'جمعه' && currentDayName !== 'پنج‌شنبه';
+        });
+
+        // Filter by grade and search query
+        const filteredPrograms = scheduledOnDate.filter(p => {
+          if (classStatusGradeFilter !== 'all' && !matchesGradeFilter(p.grade, classStatusGradeFilter)) {
+            return false;
+          }
+          if (classStatusSearchQuery.trim()) {
+            const q = classStatusSearchQuery.toLowerCase().trim();
+            const matchTitle = p.title?.toLowerCase().includes(q);
+            const matchTeacher = p.teacherName?.toLowerCase().includes(q);
+            const matchRoom = p.classroomTitle?.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q);
+            if (!matchTitle && !matchTeacher && !matchRoom) return false;
+          }
+          return true;
+        });
+
+        // Separate Academic and Counseling programs
+        const academicProgs = filteredPrograms.filter(p => 
+          !p.isCounseling && 
+          p.category !== 'counseling' && 
+          p.type !== 'counseling' && 
+          !p.title?.includes('مشاوره') && 
+          !p.grade?.includes('مشاوره')
+        );
+
+        const counselingProgs = filteredPrograms.filter(p => 
+          p.isCounseling || 
+          p.category === 'counseling' || 
+          p.type === 'counseling' || 
+          p.title?.includes('مشاوره') || 
+          p.grade?.includes('مشاوره')
+        );
+
+        // Card Helper Status Function
+        const getStatusCardData = (prog: any) => {
+          const hol = getHolidayForDate(selectedDate);
+          const rec = attendanceRecords.find(r => r.programId === prog.id && r.date === selectedDate);
+
+          if (rec) {
+            if (rec.isCancelled) {
+              return {
+                statusKey: 'cancelled' as const,
+                badgeText: 'کلاس تعطیل شده',
+                badgeClass: 'bg-rose-500 text-white border-rose-600 font-black shadow-xs',
+                cardBorder: 'border-rose-300/90 bg-gradient-to-br from-rose-50/90 via-red-50/40 to-white shadow-xs hover:shadow-md hover:border-rose-400',
+                statusIcon: <XCircle className="w-4 h-4 text-rose-600" />,
+                description: rec.cancellationReason || 'عدم تشکیل جلسه به علت اعلام استاد/نماینده'
+              };
+            }
+
+            if (rec.hasSubstituteTeacher) {
+              return {
+                statusKey: 'substitute' as const,
+                badgeText: `استاد جایگزین: ${rec.substituteTeacherName || 'مشخص شده'}`,
+                badgeClass: 'bg-purple-600 text-white border-purple-700 font-black shadow-xs',
+                cardBorder: 'border-purple-300/90 bg-gradient-to-br from-purple-50/90 via-indigo-50/40 to-white shadow-xs hover:shadow-md hover:border-purple-400',
+                statusIcon: <UserCheck2 className="w-4 h-4 text-purple-600" />,
+                substituteName: rec.substituteTeacherName,
+                notes: rec.substituteTeacherNotes
+              };
+            }
+
+            // Normal recorded
+            const presentCount = rec.students?.filter(s => s.status === 'present').length || 0;
+            const absentCount = rec.students?.filter(s => s.status === 'absent').length || 0;
+            const lateCount = rec.students?.filter(s => s.status === 'late').length || 0;
+            const totalCount = rec.students?.length || 0;
+
+            return {
+              statusKey: 'recorded' as const,
+              badgeText: 'حضور و غیاب ثبت‌شده (سبز)',
+              badgeClass: 'bg-emerald-600 text-white border-emerald-700 font-black shadow-xs',
+              cardBorder: 'border-emerald-300/90 bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-white shadow-xs hover:shadow-md hover:border-emerald-400',
+              statusIcon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
+              presentCount,
+              absentCount,
+              lateCount,
+              totalCount
+            };
+          }
+
+          if (hol) {
+            return {
+              statusKey: 'holiday' as const,
+              badgeText: `تعطیلی تقویم: ${hol.title}`,
+              badgeClass: 'bg-orange-500 text-white border-orange-600 font-black shadow-xs',
+              cardBorder: 'border-orange-300/90 bg-gradient-to-br from-orange-50/90 via-amber-50/40 to-white shadow-xs hover:shadow-md hover:border-orange-400',
+              statusIcon: <AlertOctagon className="w-4 h-4 text-orange-600" />,
+              description: hol.title
+            };
+          }
+
+          // Pending
+          return {
+            statusKey: 'pending' as const,
+            badgeText: 'در انتظار ثبت حضور و غیاب',
+            badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-bold',
+            cardBorder: 'border-amber-200/90 bg-gradient-to-br from-amber-50/40 via-slate-50/30 to-white shadow-xs hover:shadow-md hover:border-amber-300',
+            statusIcon: <Clock3 className="w-4 h-4 text-amber-600 animate-pulse" />
+          };
+        };
+
+        // Stats metrics
+        let totalRec = 0;
+        let totalSub = 0;
+        let totalCanc = 0;
+        let totalPend = 0;
+
+        filteredPrograms.forEach(p => {
+          const st = getStatusCardData(p);
+          if (st.statusKey === 'recorded') totalRec++;
+          else if (st.statusKey === 'substitute') totalSub++;
+          else if (st.statusKey === 'cancelled' || st.statusKey === 'holiday') totalCanc++;
+          else if (st.statusKey === 'pending') totalPend++;
+        });
+
+        // Grade options extracted dynamically
+        const gradeOptions = Array.from(new Set(programs.map(p => p.grade).filter(Boolean))).sort();
+
+        return (
+          <div className="space-y-6">
+            {/* Top Date & Day Navigation Bar */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-500/20 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                    <LayoutGrid size={22} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black text-white">پایش کارتی وضعیت کلاس‌های روزانه</h2>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-white">
+                        {currentDayName}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 font-medium mt-0.5">
+                      نمایش هوشمند فقط کلاس‌های دارای برنامه در روز انتخاب‌شده، همراه با تفکیک کلاس‌های مشاوره و وضعیت حضور و غیاب
+                    </p>
+                  </div>
+                </div>
+
+                {/* Date Picker & Prev/Next Day Controls */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handlePrevDay}
+                    className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title="روز قبل"
+                  >
+                    <ChevronRight size={16} />
+                    <span className="hidden sm:inline">روز قبل</span>
+                  </button>
+
+                  <div className="w-44 text-slate-900">
+                    <ShamsiDatePicker
+                      value={selectedDate}
+                      onChange={(d) => setSelectedDate(d)}
+                      label=""
+                      placeholder="انتخاب تاریخ"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleNextDay}
+                    className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20 cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title="روز بعد"
+                  >
+                    <span className="hidden sm:inline">روز بعد</span>
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(getTodayShamsi())}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-xs border border-white/20 cursor-pointer"
+                  >
+                    امروز
+                  </button>
+                </div>
+              </div>
+
+              {/* Day Notice & Stats Counter Strip */}
+              <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-emerald-300 font-bold">
+                  <Info size={14} className="shrink-0 text-emerald-400" />
+                  <span>تضمین برنامه‌ریزی: کلاس‌هایی که در روز «{currentDayName}» درس ندارند کلاً از لیست مخفی شده‌اند.</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-bold shrink-0">
+                  <span className="px-2.5 py-1 bg-white/10 rounded-lg text-white border border-white/15">
+                    کل کلاس‌ها: {filteredPrograms.length}
+                  </span>
+                  <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-lg border border-emerald-500/30">
+                    ثبت‌شده (سبز): {totalRec}
+                  </span>
+                  <span className="px-2.5 py-1 bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/30">
+                    استاد جایگزین: {totalSub}
+                  </span>
+                  <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded-lg border border-rose-500/30">
+                    تعطیل‌شده: {totalCanc}
+                  </span>
+                  <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30">
+                    در انتظار: {totalPend}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap flex-1">
+                {/* Search */}
+                <div className="relative min-w-[220px] flex-1">
+                  <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={classStatusSearchQuery}
+                    onChange={(e) => setClassStatusSearchQuery(e.target.value)}
+                    placeholder="جستجوی نام درس، استاد یا مدرس..."
+                    className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                  {classStatusSearchQuery && (
+                    <button onClick={() => setClassStatusSearchQuery('')} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Grade Filter */}
+                <div className="min-w-[160px]">
+                  <select
+                    value={classStatusGradeFilter}
+                    onChange={(e) => setClassStatusGradeFilter(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">همه پایه‌های تحصیلی</option>
+                    {gradeOptions.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Category Tab Toggle (All / Academic / Counseling) */}
+              <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setClassStatusCategoryTab('all')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                    classStatusCategoryTab === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  همه ({filteredPrograms.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClassStatusCategoryTab('academic')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                    classStatusCategoryTab === 'academic' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <BookOpen size={13} />
+                  <span>درسی ({academicProgs.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClassStatusCategoryTab('counseling')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                    classStatusCategoryTab === 'counseling' ? "bg-white text-amber-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <Sparkles size={13} />
+                  <span>مشاوره ({counselingProgs.length})</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Empty State */}
+            {filteredPrograms.length === 0 && (
+              <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-3">
+                <CalendarIcon size={48} className="mx-auto text-slate-300" />
+                <h3 className="text-base font-black text-slate-800">هیچ کلاسی برای نمایش در این روز وجود ندارد</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  طبق برنامه‌ریزی هفتگی، برای روز «{currentDayName}» ({selectedDate}) با فیلترهای انتخابی کلاسی تعریف نشده است.
+                </p>
+              </div>
+            )}
+
+            {/* SECTION 1: ACADEMIC CLASSES */}
+            {(classStatusCategoryTab === 'all' || classStatusCategoryTab === 'academic') && academicProgs.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-xl">
+                      <GraduationCap size={18} />
+                    </div>
+                    <h3 className="text-sm font-black text-slate-900">کلاس‌های درسی و آموزشی اصلی</h3>
+                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[11px] font-black rounded-full">
+                      {academicProgs.length} کلاس
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {academicProgs.map(prog => {
+                    const st = getStatusCardData(prog);
+                    return (
+                      <div
+                        key={prog.id}
+                        className={cn(
+                          "rounded-3xl p-4 sm:p-5 border transition-all duration-200 flex flex-col justify-between space-y-4 relative overflow-hidden",
+                          st.cardBorder
+                        )}
+                      >
+                        {/* Header Badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-1 bg-slate-900/10 text-slate-800 font-black text-[11px] rounded-xl">
+                            {prog.grade || 'پایه عمومی'}
+                          </span>
+                          <span className={cn("px-2.5 py-1 text-[10px] rounded-full border flex items-center gap-1", st.badgeClass)}>
+                            {st.statusIcon}
+                            <span>{st.badgeText}</span>
+                          </span>
+                        </div>
+
+                        {/* Title & Teacher */}
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-black text-slate-900 leading-snug">{prog.title}</h4>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                            <User size={13} className="text-slate-400 shrink-0" />
+                            <span>استاد: {prog.teacherName || 'مشخص نشده'}</span>
+                          </div>
+                          {(prog.classroomTitle || prog.location) && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                              <DoorOpen size={13} className="text-slate-400 shrink-0" />
+                              <span>مدرس: {prog.classroomTitle || prog.location}</span>
+                            </div>
+                          )}
+                          {prog.timeSlot && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                              <Clock size={13} className="text-slate-400 shrink-0" />
+                              <span>زمان: {prog.timeSlot}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Attendance Stats / Notes Box */}
+                        {st.statusKey === 'recorded' && (
+                          <div className="p-2.5 bg-white/80 backdrop-blur-xs rounded-2xl border border-emerald-200 text-xs font-bold flex items-center justify-around gap-2 text-center">
+                            <div className="text-emerald-700">
+                              <span className="block text-[10px] text-emerald-800">حاضر</span>
+                              <span className="text-sm font-black">{st.presentCount}</span>
+                            </div>
+                            <div className="text-rose-700 border-x border-slate-200 px-3">
+                              <span className="block text-[10px] text-rose-800">غایب</span>
+                              <span className="text-sm font-black">{st.absentCount}</span>
+                            </div>
+                            <div className="text-amber-700">
+                              <span className="block text-[10px] text-amber-800">تاخیر</span>
+                              <span className="text-sm font-black">{st.lateCount}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {st.statusKey === 'substitute' && (
+                          <div className="p-2.5 bg-purple-100/80 rounded-2xl border border-purple-200 text-xs font-bold text-purple-900 space-y-1">
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <UserCheck2 size={13} className="text-purple-700" />
+                              <span>استاد جایگزین: {st.substituteName}</span>
+                            </div>
+                            {st.notes && <p className="text-[10px] text-purple-700 font-medium">{st.notes}</p>}
+                          </div>
+                        )}
+
+                        {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
+                          <div className="p-2.5 bg-rose-100/80 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900">
+                            <span>علت تعطیلی: {st.description}</span>
+                          </div>
+                        )}
+
+                        {st.statusKey === 'pending' && (
+                          <div className="p-2.5 bg-amber-100/50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 text-center">
+                            <span>هنوز حضور و غیاب ثبت نگردیده است.</span>
+                          </div>
+                        )}
+
+                        {/* Quick Action */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProgramId(prog.id);
+                            setActiveTab('record');
+                          }}
+                          className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+                        >
+                          <CheckSquare size={14} />
+                          <span>ثبت / ویرایش حضور و غیاب</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 2: COUNSELING CLASSES */}
+            {(classStatusCategoryTab === 'all' || classStatusCategoryTab === 'counseling') && counselingProgs.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-amber-50 text-amber-700 rounded-xl">
+                      <Sparkles size={18} />
+                    </div>
+                    <h3 className="text-sm font-black text-slate-900">کلاس‌ها و جلسات مشاوره و تربیتی</h3>
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-black rounded-full">
+                      {counselingProgs.length} کلاس
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {counselingProgs.map(prog => {
+                    const st = getStatusCardData(prog);
+                    return (
+                      <div
+                        key={prog.id}
+                        className={cn(
+                          "rounded-3xl p-4 sm:p-5 border transition-all duration-200 flex flex-col justify-between space-y-4 relative overflow-hidden",
+                          st.cardBorder
+                        )}
+                      >
+                        {/* Header Badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-1 bg-amber-100 text-amber-900 font-black text-[11px] rounded-xl border border-amber-300">
+                            {prog.grade || 'جلسه مشاوره'}
+                          </span>
+                          <span className={cn("px-2.5 py-1 text-[10px] rounded-full border flex items-center gap-1", st.badgeClass)}>
+                            {st.statusIcon}
+                            <span>{st.badgeText}</span>
+                          </span>
+                        </div>
+
+                        {/* Title & Teacher */}
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-black text-slate-900 leading-snug">{prog.title}</h4>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                            <User size={13} className="text-slate-400 shrink-0" />
+                            <span>استاد مشاور: {prog.teacherName || 'مشخص نشده'}</span>
+                          </div>
+                          {(prog.classroomTitle || prog.location) && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                              <DoorOpen size={13} className="text-slate-400 shrink-0" />
+                              <span>مکان: {prog.classroomTitle || prog.location}</span>
+                            </div>
+                          )}
+                          {prog.timeSlot && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                              <Clock size={13} className="text-slate-400 shrink-0" />
+                              <span>زمان: {prog.timeSlot}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Attendance Stats / Notes Box */}
+                        {st.statusKey === 'recorded' && (
+                          <div className="p-2.5 bg-white/80 backdrop-blur-xs rounded-2xl border border-emerald-200 text-xs font-bold flex items-center justify-around gap-2 text-center">
+                            <div className="text-emerald-700">
+                              <span className="block text-[10px] text-emerald-800">حاضر</span>
+                              <span className="text-sm font-black">{st.presentCount}</span>
+                            </div>
+                            <div className="text-rose-700 border-x border-slate-200 px-3">
+                              <span className="block text-[10px] text-rose-800">غایب</span>
+                              <span className="text-sm font-black">{st.absentCount}</span>
+                            </div>
+                            <div className="text-amber-700">
+                              <span className="block text-[10px] text-amber-800">تاخیر</span>
+                              <span className="text-sm font-black">{st.lateCount}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {st.statusKey === 'substitute' && (
+                          <div className="p-2.5 bg-purple-100/80 rounded-2xl border border-purple-200 text-xs font-bold text-purple-900 space-y-1">
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <UserCheck2 size={13} className="text-purple-700" />
+                              <span>استاد جایگزین: {st.substituteName}</span>
+                            </div>
+                            {st.notes && <p className="text-[10px] text-purple-700 font-medium">{st.notes}</p>}
+                          </div>
+                        )}
+
+                        {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
+                          <div className="p-2.5 bg-rose-100/80 rounded-2xl border border-rose-200 text-xs font-bold text-rose-900">
+                            <span>علت تعطیلی: {st.description}</span>
+                          </div>
+                        )}
+
+                        {st.statusKey === 'pending' && (
+                          <div className="p-2.5 bg-amber-100/50 rounded-2xl border border-amber-200 text-xs font-bold text-amber-800 text-center">
+                            <span>ارزیابی و حضور مشاوره انجام نشده است.</span>
+                          </div>
+                        )}
+
+                        {/* Quick Action */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProgramId(prog.id);
+                            setActiveTab('record');
+                          }}
+                          className="w-full py-2 px-3 bg-amber-700 hover:bg-amber-800 text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+                        >
+                          <CheckSquare size={14} />
+                          <span>ثبت / ویرایش جلسات مشاوره</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ===================================================================== */}
       {/* TAB 1: RECORD ATTENDANCE (ثبت و ویرایش جلسه) */}

@@ -48,7 +48,10 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-export const isSupabaseConfigured = true;
+export const isSupabaseConfigured = Boolean(
+  typeof window !== 'undefined' &&
+  (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL') || env.VITE_SUPABASE_URL)
+);
 
 export function checkIsSupabaseConfigured(): boolean {
   const { url, anonKey } = getSupabaseCredentials();

@@ -37,7 +37,8 @@ import {
   Terminal,
   KeyRound,
   Inbox,
-  ShieldAlert
+  ShieldAlert,
+  Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useMentor } from '../context/MentorContext';
@@ -135,6 +136,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'backup',
       'audit-logs',
       'app-logs',
+      'db-save-errors',
       'anomaly-detection',
       'db-connection-test'
     ]
@@ -183,6 +185,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
   { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
   { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
+  { id: 'db-save-errors', label: 'خطاهای ثبت دیتابیس', icon: Database },
   { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها', icon: ShieldAlert },
   { id: 'education-financial-report', label: 'تنظیم گزارش مالی طلاب', icon: FileSpreadsheet },
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
@@ -282,7 +285,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
   }, [currentUser]);
 
   React.useEffect(() => {
-    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection'].includes(activeTab)) {
+    if (['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection'].includes(activeTab)) {
       setIsSiteManagementOpen(true);
     }
   }, [activeTab]);
@@ -293,6 +296,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     { id: 'user-credentials', label: 'مدیریت ورود کاربران', icon: ShieldCheck },
     { id: 'audit-logs', label: 'فعالیت‌های سایت', icon: Activity },
     { id: 'app-logs', label: 'لاگ‌ها و خطاهای سیستم', icon: Terminal },
+    { id: 'db-save-errors', label: 'بازرسی خطاهای ثبت دیتابیس', icon: Database },
     { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   ].filter(sub => isTabAllowed(sub.id));
 
@@ -346,14 +350,14 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
     }
 
     // When site management dropdown is active and this item is inside it, hide its sub-items from top level
-    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
+    if (canAccessSiteManagement && ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(item.id)) {
       return false;
     }
 
     return true;
   });
 
-  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs', 'app-logs'].includes(activeTab);
+  const isSiteManagementActive = ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test'].includes(activeTab);
 
   const renderMenuItem = (item: MenuItemDef) => {
     const Icon = item.icon;

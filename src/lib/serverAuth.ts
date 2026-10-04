@@ -106,11 +106,8 @@ const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL 
 const SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
 
 export const isServerSupabaseConfigured = Boolean(
-  SUPABASE_URL &&
-  SUPABASE_KEY &&
-  SUPABASE_URL !== 'https://placeholder.supabase.co' &&
-  SUPABASE_KEY !== 'placeholder' &&
-  (SUPABASE_KEY.startsWith('sb_') || SUPABASE_KEY.startsWith('eyJ') || SUPABASE_KEY.startsWith('sbp_') || SUPABASE_KEY.length > 20)
+  (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) &&
+  (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY)
 );
 
 export const serverSupabase = createClient(
