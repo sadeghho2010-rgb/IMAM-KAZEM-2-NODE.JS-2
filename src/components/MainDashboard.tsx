@@ -48,7 +48,9 @@ import {
   RefreshCw,
   Terminal,
   Database,
-  CalendarCheck
+  CalendarCheck,
+  RotateCw,
+  EyeOff
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -60,10 +62,30 @@ import {
   getShamsiMonthName, 
   parseShamsiDate, 
   generateShamsiDateRange, 
-  isDateBetween,
-  getShamsiDayOfWeek,
-  compareShamsi
+  isDateBetween, 
+  getShamsiDayOfWeek, 
+  compareShamsi 
 } from '../lib/jalali';
+
+// Authentic Shia Hadiths on the Virtue of Seeking Knowledge (Arabic & Book Name Only)
+const SHIA_KNOWLEDGE_HADITHS = [
+  {
+    arabic: 'قَالَ الإِمَامُ الصَّادِقُ (عَلَيْهِ السَّلَامُ): «مَنْ سَلَكَ طَرِيقاً يَطْلُبُ فِيهِ عِلْماً سَلَكَ اللَّهُ بِهِ طَرِيقاً إِلَى الْجَنَّةِ... وَإِنَّ الْمَلَائِكَةَ لَتَضَعُ أَجْنِحَتَهَا لِطَالِبِ الْعِلْمِ رِضًا بِهِ»',
+    source: 'الکافی'
+  },
+  {
+    arabic: 'قَالَ رَسُولُ اللَّهِ (صَلَّى اللَّهُ عَلَيْهِ وَآلِهِ): «طَلَبُ الْعِلْمِ فَرِيضَةٌ عَلَى كُلِّ مُسْلِمٍ، أَلَا وَإِنَّ اللَّهَ يُحِبُّ بُغَاةَ الْعِلْمِ»',
+    source: 'الکافی'
+  },
+  {
+    arabic: 'قَالَ أَمِيرُ الْمُؤْمِنِينَ (عَلَيْهِ السَّلَامُ): «العِلْمُ أَصْلُ كُلِّ خَيْرٍ... وَمُدَارَسَتُهُ تَسْبِيحٌ، وَالْبَحْثُ عَنْهُ جِهَادٌ»',
+    source: 'بحارالأنوار'
+  },
+  {
+    arabic: 'قَالَ الإِمَامُ البَاقِرُ (عَلَيْهِ السَّلَامُ): «عَالِمٌ يُنْتَفَعُ بِعِلْمِهِ أَفْضَلُ مِنْ سَبْعِينَ أَلْفَ عَابِدٍ»',
+    source: 'الکافی'
+  }
+];
 
 interface DashboardCardDef {
   id: string;
@@ -215,6 +237,25 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   // Dragging Index State
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Shia Hadith on Virtue of Knowledge Banner State
+  const [hadithIndex, setHadithIndex] = useState(0);
+  const [isHadithDismissed, setIsHadithDismissed] = useState<boolean>(() => {
+    return localStorage.getItem('hide_hadith_banner_v1') === 'true';
+  });
+
+  const showHadithBanner = !isHadithDismissed && (prefsState.showHadithBanner !== false);
+
+  const toggleHadithBanner = () => {
+    const nextVal = !isHadithDismissed;
+    setIsHadithDismissed(nextVal);
+    localStorage.setItem('hide_hadith_banner_v1', String(nextVal));
+  };
+
+  const nextHadith = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHadithIndex(prev => (prev + 1) % SHIA_KNOWLEDGE_HADITHS.length);
+  };
 
   // Ripple Coordinates
   const [ripples, setRipples] = useState<{ id: number; x: number; y: number }[]>([]);
@@ -378,8 +419,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     // 1. CARDS FOR REQUESTS & WORKFLOW
     {
       id: 'student-requests',
-      title: 'پنل رسیدگی به درخواست طلاب',
-      subtitle: 'بررسی، تایید و صدور پاسخ آنلاین به مراجعین و طلاب حوزه',
+      title: currentUser?.level === 3 ? 'سامانه ثبت درخواست‌های من' : 'پنل رسیدگی به درخواست طلاب',
+      subtitle: currentUser?.level === 3 ? 'ثبت، پیگیری آنلاین و مشاهده پاسخ درخواست‌های آموزشی و رفاهی' : 'بررسی، تایید و صدور پاسخ آنلاین به مراجعین و طلاب حوزه',
       category: 'requests',
       icon: Inbox,
       iconBg: 'bg-gradient-to-br from-rose-500 via-rose-600 to-pink-600 text-white shadow-lg shadow-rose-500/30',
@@ -387,7 +428,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       borderGlow: 'hover:border-rose-400 hover:shadow-2xl hover:shadow-rose-500/20',
       accentText: 'text-rose-600',
       badgeCount: unreadRequestsCount,
-      badgeText: unreadRequestsCount > 0 ? `${unreadRequestsCount} جدید` : undefined,
+      badgeText: unreadRequestsCount > 0 ? (currentUser?.level === 3 ? `${unreadRequestsCount} پاسخ جدید` : `${unreadRequestsCount} جدید`) : undefined,
       highlight: unreadRequestsCount > 0
     },
     {
@@ -438,8 +479,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     },
     {
       id: 'student-schedule',
-      title: 'برنامه درسی و هفتگی طلاب',
-      subtitle: 'مشاهده تقویم هفتگی کلاس‌ها و برنامه آموزشی طلاب',
+      title: currentUser?.level === 3 ? 'برنامه درسی و هفتگی من' : 'برنامه درسی و هفتگی طلاب',
+      subtitle: currentUser?.level === 3 ? 'مشاهده ساعات کلاس‌ها، مدرس‌ها و اساتید در طول ایام هفته' : 'مشاهده تقویم هفتگی کلاس‌ها و برنامه آموزشی طلاب',
       category: 'education',
       icon: CalendarDays,
       iconBg: 'bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 text-white shadow-lg shadow-sky-500/30',
@@ -527,9 +568,20 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-teal-600'
     },
     {
+      id: 'student-portal',
+      title: 'پرتال اختصاصی پرونده و کارنامه',
+      subtitle: 'مشاهده مشخصات فردی، پرونده علمی، سوابق تحصیلی و نمرات',
+      category: 'students',
+      icon: UserCheck,
+      iconBg: 'bg-gradient-to-br from-indigo-500 via-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-500/30',
+      cardGradient: 'from-indigo-500/10 via-blue-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/20',
+      accentText: 'text-indigo-600'
+    },
+    {
       id: 'attendance',
-      title: 'حضور و غیاب طلاب',
-      subtitle: 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
+      title: currentUser?.level === 3 ? (currentUser.role === 'class_representative' ? 'ثبت و پایش حضور و غیاب کلاس' : 'کارنامه حضور و غیاب من') : 'حضور و غیاب طلاب',
+      subtitle: currentUser?.level === 3 ? 'مشاهده ریز تاخیرها، غیبت‌ها و کارنامه حضور در جلسات درس' : 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
       category: 'students',
       icon: CheckSquare,
       iconBg: 'bg-gradient-to-br from-emerald-500 via-teal-600 to-green-600 text-white shadow-lg shadow-emerald-500/30',
@@ -903,7 +955,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'active-students', 'attendance', 'discussion', 'stats', 'comments', 'summary']
+      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'discussion', 'stats', 'comments', 'summary']
     },
     {
       id: 'research_group',
@@ -1118,6 +1170,57 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         </>
       )}
       
+      {/* 0. CALLIGRAPHIC BISMILLAH & HADITH (Boxless, Minimal, Fine & Beautiful Typography) */}
+      {showHadithBanner ? (
+        <div className="text-center py-1 select-none transition-all group relative max-w-4xl mx-auto space-y-1">
+          {/* Centered Small & Beautiful Bismillah with Subtle Hover Controls */}
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-serif text-xs sm:text-sm md:text-[15px] font-bold text-black dark:text-slate-100 tracking-widest">
+              بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+            </span>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-slate-400">
+              <button
+                type="button"
+                onClick={nextHadith}
+                className="p-0.5 hover:text-black transition-colors cursor-pointer"
+                title="روایت دیگر"
+              >
+                <RotateCw size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={toggleHadithBanner}
+                className="p-0.5 hover:text-rose-600 transition-colors cursor-pointer"
+                title="عدم نمایش"
+              >
+                <EyeOff size={11} />
+              </button>
+            </div>
+          </div>
+
+          {/* Hadith Narration: Fine, Small & Beautiful Font without Translation, Source is ONLY Book Name */}
+          <div className="flex items-center justify-center gap-1.5 flex-wrap px-2">
+            <p className="font-serif text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-normal inline">
+              {SHIA_KNOWLEDGE_HADITHS[hadithIndex].arabic}
+            </p>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans inline">
+              ({SHIA_KNOWLEDGE_HADITHS[hadithIndex].source})
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-center -mb-2">
+          <button
+            type="button"
+            onClick={toggleHadithBanner}
+            className="text-[11px] font-serif text-black dark:text-slate-200 hover:opacity-80 tracking-wider transition-colors cursor-pointer select-none font-bold"
+            title="نمایش بسم‌الله و روایت"
+          >
+            بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+          </button>
+        </div>
+      )}
+
       {/* 1. COMPACT ELEGANT GREETING TITLE BANNER */}
       <div className={cn(
         "relative overflow-hidden border border-white/15 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xl text-white font-vazir transition-all",
@@ -1139,18 +1242,20 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
                 <Sparkles size={12} className="text-amber-300" />
-                <span>داشبورد اختصاصی</span>
+                <span>{currentUser?.level === 3 ? 'پرتال اختصاصی طلاب' : 'داشبورد اختصاصی'}</span>
               </span>
               <span className="text-[11px] text-indigo-200/80 font-medium">
-                سطح {currentUser?.level || 2}: {currentUser?.roleTitle || 'مسئول سازمانی'}
+                سطح {currentUser?.level || 2}: {currentUser?.roleTitle || (currentUser?.level === 3 ? 'طلبه / دانش‌پژوه' : 'مسئول سازمانی')}
               </span>
             </div>
 
             <h1 className="text-base sm:text-lg lg:text-xl font-black text-white tracking-tight">
-              سلام و احترام، {currentUser?.name || currentUser?.fullName || currentUser?.username}
+              سلام و احترام، {currentUser?.level === 3 ? (currentUser?.studentName || currentUser?.name || currentUser?.fullName || currentUser?.username) : (currentUser?.name || currentUser?.fullName || currentUser?.username)}
             </h1>
             <p className="text-xs text-indigo-100/85 font-medium leading-normal">
-              به سامانه جامع حوزه علمیه خوش آمدید. تمامی ابزارها و کارتابل‌ها آماده دسترسی هستند.
+              {currentUser?.level === 3
+                ? 'به سامانه جامع خدمات طلاب خوش آمدید. کارت‌های آموزشی و رفاهی شما در دسترس هستند.'
+                : 'به سامانه جامع حوزه علمیه خوش آمدید. تمامی ابزارها و کارتابل‌ها آماده دسترسی هستند.'}
             </p>
 
             {/* Date Badge directly under welcome text on the right side */}
@@ -1160,18 +1265,6 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                 <span className="text-amber-200/90 text-[10px]">امروز:</span>
                 <span className="tracking-tight">{todayFormatted}</span>
               </div>
-            </div>
-          </div>
-
-          {/* CENTER: Delicate Calligraphic Bismillah */}
-          <div className="flex flex-col items-center justify-center self-center text-center select-none py-1 px-2">
-            <span className="text-amber-200/95 text-xs sm:text-sm font-serif tracking-widest font-black drop-shadow-md">
-              بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
-            </span>
-            <div className="flex items-center gap-1.5 mt-1 opacity-70">
-              <div className="w-8 h-px bg-gradient-to-r from-transparent to-amber-300" />
-              <div className="w-1.5 h-1.5 rotate-45 border border-amber-300/80 bg-amber-400/30" />
-              <div className="w-8 h-px bg-gradient-to-l from-transparent to-amber-300" />
             </div>
           </div>
 
@@ -1240,8 +1333,167 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         </div>
       </div>
 
-      {/* 2. DYNAMIC DISPLAY MODE TOOLBAR */}
-      <div className="bg-white/80 backdrop-blur-md rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* LEVEL 3 MOBILE QUICK ACTIONS TOUCH BAR (90% Mobile Users) */}
+      {currentUser?.level === 3 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+              <Sparkles size={14} className="text-amber-500" />
+              <span>دسترسی‌های سریع روزانه</span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-bold">لمس سریع ویژه موبایل</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {isTabAllowed('student-requests') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-requests')}
+                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 border border-rose-200/80 text-rose-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <Inbox size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">ثبت تقاضا</div>
+                  <div className="text-[10px] text-rose-700/80 truncate">آموزشی و رفاهی</div>
+                </div>
+              </button>
+            )}
+
+            {isTabAllowed('student-meals') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-meals')}
+                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200/80 text-amber-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <UtensilsCrossed size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">رزرو غذا</div>
+                  <div className="text-[10px] text-amber-700/80 truncate">سلف و وعده‌ها</div>
+                </div>
+              </button>
+            )}
+
+            {isTabAllowed('attendance') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('attendance')}
+                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border border-emerald-200/80 text-emerald-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <CheckSquare size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">ثبت حضور و غیاب</div>
+                  <div className="text-[10px] text-emerald-700/80 truncate">کلاس‌ها و جلسات</div>
+                </div>
+              </button>
+            )}
+
+            {isTabAllowed('student-portal') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-portal')}
+                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 border border-indigo-200/80 text-indigo-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <UserCheck size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">کارنامه و پرونده</div>
+                  <div className="text-[10px] text-indigo-700/80 truncate">سوابق تحصیلی</div>
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 2. DYNAMIC DISPLAY MODE TOOLBAR & CARDS CONTAINER */}
+      {currentUser?.level === 3 ? (
+        <div className="space-y-4">
+          <div className="bg-white/90 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
+                <Grid size={16} />
+              </div>
+              <div>
+                <h2 className="text-xs sm:text-sm font-black text-slate-800">پیشخوان و سامانه‌های فعال شما</h2>
+                <p className="text-[10px] text-slate-400 font-medium">مشاهده تمامی کارت‌های دسترسی طلاب ({allowedCardsMap.size} بخش)</p>
+              </div>
+            </div>
+            <span className="text-[11px] font-black px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200/80 rounded-xl">
+              {allowedCardsMap.size} بخش فعال
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4.5">
+            {Array.from(allowedCardsMap.values()).map(card => {
+              const Icon = card.icon;
+              return (
+                <motion.div
+                  key={card.id}
+                  whileHover={!isAnimationsDisabled ? { scale: 1.02, y: -3 } : undefined}
+                  whileTap={!isAnimationsDisabled ? { scale: 0.98 } : undefined}
+                  onClick={(e) => handleCardClick(e as any, card.id)}
+                  className={cn(
+                    "relative group overflow-hidden bg-white/95 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-2xs hover:shadow-md select-none backdrop-blur-md min-h-[145px] active:scale-[0.98]",
+                    card.borderGlow,
+                    card.highlight ? "border-rose-400 ring-2 ring-rose-500/20" : "border-slate-200/90"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                    card.cardGradient
+                  )} />
+
+                  <div className="relative z-10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-105 shrink-0",
+                        card.iconBg
+                      )}>
+                        <Icon size={24} />
+                      </div>
+
+                      {card.badgeText && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xs animate-bounce flex items-center gap-1">
+                          <span>{card.badgeText}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
+                        {card.title}
+                      </h3>
+                      <p className="text-[11px] sm:text-xs text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                        {card.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative z-10 pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                    <span className="text-[11px] font-bold">ورود به بخش</span>
+                    <div className={cn(
+                      "w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs",
+                      card.accentText
+                    )}>
+                      <ArrowLeft size={13} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 2. DYNAMIC DISPLAY MODE TOOLBAR */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
         
         {/* Mode Selector Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-2xl w-full sm:w-auto">
@@ -1742,6 +1994,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         )}
 
       </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }

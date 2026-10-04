@@ -1324,7 +1324,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                   {academicProgs.map(prog => {
                     const st = getStatusCardData(prog);
                     const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
@@ -1333,104 +1333,108 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-xl p-2 border transition-all duration-300 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm backdrop-blur-md hover:border-white/50 hover:ring-1 hover:ring-white/30 hover:shadow-[0_6px_20px_rgba(0,0,0,0.18)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
+                          "rounded-2xl sm:rounded-3xl p-4 sm:p-5 border transition-all duration-300 flex flex-col justify-between space-y-3.5 relative overflow-hidden text-xs shadow-md backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.22)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/30 before:to-transparent before:translate-x-[-120%] hover:before:translate-x-[120%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.02] cursor-default active:scale-[0.99] min-h-[195px]",
                           st.cardBorder
                         )}
                       >
-                        {/* Header Badge */}
-                        <div className="flex items-center justify-between gap-1">
-                          <span className={cn("px-1.5 py-0.5 text-[8.5px] rounded-md font-black truncate max-w-[65px]", st.gradePill)}>
+                        {/* Bank Card Top Row: Grade Pill + Donut & Status Badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={cn("px-2.5 py-1 text-xs rounded-xl font-black truncate max-w-[110px] tracking-wide shadow-2xs", st.gradePill)}>
                             {prog.grade || 'عمومی'}
                           </span>
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             {st.statusKey === 'recorded' && (
-                              <div className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-black/25 text-white/95" title={`درصد حضور: ${presenceRate}٪`}>
-                                <svg className="w-3 h-3 -rotate-90" viewBox="0 0 36 36">
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-md text-white/95 border border-white/15 shadow-2xs" title={`درصد حضور روزانه: ${presenceRate}٪`}>
+                                <svg className="w-4 h-4 -rotate-90 shrink-0" viewBox="0 0 36 36">
                                   <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                   <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                 </svg>
-                                <span className="text-[7.5px] font-black">{presenceRate}٪</span>
+                                <span className="text-[10px] font-black">{presenceRate}٪</span>
                               </div>
                             )}
-                            <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 font-extrabold", st.badgeClass)}>
+                            <span className={cn("px-2.5 py-1 text-[10px] rounded-xl border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
                               {st.statusIcon}
-                              <span className="truncate max-w-[50px]">{st.badgeText}</span>
+                              <span className="truncate max-w-[70px]">{st.badgeText}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Title & Teacher */}
-                        <div className="space-y-0.5">
-                          <h4 className="text-[11px] font-black leading-tight line-clamp-1 drop-shadow-xs" title={prog.title}>{prog.title}</h4>
-                          <div className="flex items-center gap-1 text-[9.5px] font-bold opacity-95">
-                            <User size={10} className="shrink-0 opacity-80" />
-                            <span className="truncate">{prog.teacherName || 'مشخص نشده'}</span>
+                        {/* Title & Teacher & Schedule Meta */}
+                        <div className="space-y-1.5 flex-1">
+                          <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
+                            {prog.title}
+                          </h4>
+                          <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
+                            <User size={13} className="shrink-0 opacity-80" />
+                            <span className="truncate">استاد: {prog.teacherName || 'مشخص نشده'}</span>
                           </div>
-                          {(prog.classroomTitle || prog.location) && (
-                            <div className="flex items-center gap-1 text-[9px] opacity-80 font-medium">
-                              <DoorOpen size={9} className="shrink-0" />
-                              <span className="truncate">{prog.classroomTitle || prog.location}</span>
-                            </div>
-                          )}
-                          {prog.timeSlot && (
-                            <div className="flex items-center gap-1 text-[9px] opacity-80 font-medium">
-                              <Clock size={9} className="shrink-0" />
-                              <span className="truncate">{prog.timeSlot}</span>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                            {(prog.classroomTitle || prog.location) && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
+                                <DoorOpen size={11} className="shrink-0" />
+                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location}</span>
+                              </div>
+                            )}
+                            {prog.timeSlot && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
+                                <Clock size={11} className="shrink-0" />
+                                <span className="truncate">{prog.timeSlot}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Attendance Stats / Notes Box */}
+                        {/* Middle Stats Ribbon / Status Details */}
                         {st.statusKey === 'recorded' && (
-                          <div className={cn("flex items-center justify-around py-1 text-center font-black", st.boxBg)}>
+                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1.5 rounded-xl text-center font-black", st.boxBg)}>
                             <div>
-                              <span className="block text-[8px] opacity-80 scale-90">حاضر</span>
-                              <span className="text-[10px] font-black">{st.presentCount}</span>
-                            </div>
-                            <div className="border-x border-white/10 px-1.5">
-                              <span className="block text-[8px] opacity-80 scale-90">غایب</span>
-                              <span className="text-[10px] font-black">{st.absentCount}</span>
+                              <span className="block text-[9px] opacity-80">حاضر</span>
+                              <span className="text-xs sm:text-sm font-black">{st.presentCount}</span>
                             </div>
                             <div>
-                              <span className="block text-[8px] opacity-80 scale-90">تاخیر</span>
-                              <span className="text-[10px] font-black">{st.lateCount}</span>
+                              <span className="block text-[9px] opacity-80">غایب</span>
+                              <span className="text-xs sm:text-sm font-black">{st.absentCount}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[9px] opacity-80">تاخیر</span>
+                              <span className="text-xs sm:text-sm font-black">{st.lateCount}</span>
                             </div>
                           </div>
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className={cn("space-y-0.5 py-1 px-1.5", st.boxBg)}>
-                            <div className="flex items-center gap-1 text-[8.5px]">
-                              <UserCheck2 size={10} className="shrink-0" />
-                              <span className="truncate font-extrabold">جایگزین: {st.substituteName}</span>
+                          <div className={cn("space-y-1 py-1.5 px-2.5 rounded-xl", st.boxBg)}>
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              <UserCheck2 size={13} className="shrink-0" />
+                              <span className="truncate font-extrabold">استاد جایگزین: {st.substituteName}</span>
                             </div>
-                            {st.notes && <p className="text-[8px] opacity-80 font-medium line-clamp-1">{st.notes}</p>}
+                            {st.notes && <p className="text-[10px] opacity-85 font-medium line-clamp-1">{st.notes}</p>}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className={cn("py-0.5 px-1.5 line-clamp-1 text-[8.5px]", st.boxBg)}>
-                            <span className="truncate font-bold">علت: {st.description}</span>
+                          <div className={cn("py-1.5 px-2.5 rounded-xl line-clamp-1 text-[11px] font-bold", st.boxBg)}>
+                            <span className="truncate">علت عدم تشکیل: {st.description}</span>
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className={cn("py-0.5 text-center text-[8.5px] font-extrabold", st.boxBg)}>
-                            <span>در انتظار ثبت حضور</span>
+                          <div className={cn("py-1.5 text-center text-[11px] font-extrabold rounded-xl", st.boxBg)}>
+                            <span>در انتظار ثبت آمار حضور و غیاب امروز</span>
                           </div>
                         )}
 
-                        {/* Quick Action */}
+                        {/* Quick Action Button */}
                         <button
                           type="button"
                           onClick={() => {
                             setSelectedProgramId(prog.id);
                             setActiveTab('record');
                           }}
-                          className={cn("w-full py-1 px-1 rounded-lg text-[9px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
+                          className={cn("w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
                         >
-                          <CheckSquare size={10} className="shrink-0" />
-                          <span>ثبت / ویرایش</span>
+                          <CheckSquare size={13} className="shrink-0" />
+                          <span>ثبت و ویرایش حضور و غیاب</span>
                         </button>
                       </div>
                     );
@@ -1454,7 +1458,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
                   {counselingProgs.map(prog => {
                     const st = getStatusCardData(prog);
                     const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
@@ -1463,104 +1467,108 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-xl p-2 border transition-all duration-300 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm backdrop-blur-md hover:border-white/50 hover:ring-1 hover:ring-white/30 hover:shadow-[0_6px_20px_rgba(0,0,0,0.18)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
+                          "rounded-2xl sm:rounded-3xl p-4 sm:p-5 border transition-all duration-300 flex flex-col justify-between space-y-3.5 relative overflow-hidden text-xs shadow-md backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.22)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/30 before:to-transparent before:translate-x-[-120%] hover:before:translate-x-[120%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.02] cursor-default active:scale-[0.99] min-h-[195px]",
                           st.cardBorder
                         )}
                       >
-                        {/* Header Badge */}
-                        <div className="flex items-center justify-between gap-1">
-                          <span className={cn("px-1.5 py-0.5 text-[8.5px] rounded-md font-black truncate max-w-[65px]", st.gradePill)}>
+                        {/* Bank Card Top Row: Grade Pill + Donut & Status Badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={cn("px-2.5 py-1 text-xs rounded-xl font-black truncate max-w-[110px] tracking-wide shadow-2xs", st.gradePill)}>
                             {prog.grade || 'مشاوره'}
                           </span>
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
                             {st.statusKey === 'recorded' && (
-                              <div className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-black/25 text-white/95" title={`درصد حضور: ${presenceRate}٪`}>
-                                <svg className="w-3 h-3 -rotate-90" viewBox="0 0 36 36">
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-md text-white/95 border border-white/15 shadow-2xs" title={`درصد حضور روزانه: ${presenceRate}٪`}>
+                                <svg className="w-4 h-4 -rotate-90 shrink-0" viewBox="0 0 36 36">
                                   <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                   <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                 </svg>
-                                <span className="text-[7.5px] font-black">{presenceRate}٪</span>
+                                <span className="text-[10px] font-black">{presenceRate}٪</span>
                               </div>
                             )}
-                            <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 font-extrabold", st.badgeClass)}>
+                            <span className={cn("px-2.5 py-1 text-[10px] rounded-xl border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
                               {st.statusIcon}
-                              <span className="truncate max-w-[50px]">{st.badgeText}</span>
+                              <span className="truncate max-w-[70px]">{st.badgeText}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Title & Teacher */}
-                        <div className="space-y-0.5">
-                          <h4 className="text-[11px] font-black leading-tight line-clamp-1 drop-shadow-xs" title={prog.title}>{prog.title}</h4>
-                          <div className="flex items-center gap-1 text-[9.5px] font-bold opacity-95">
-                            <User size={10} className="shrink-0 opacity-80" />
+                        {/* Title & Teacher & Schedule Meta */}
+                        <div className="space-y-1.5 flex-1">
+                          <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
+                            {prog.title}
+                          </h4>
+                          <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
+                            <User size={13} className="shrink-0 opacity-80" />
                             <span className="truncate">مشاور: {prog.teacherName || 'مشخص نشده'}</span>
                           </div>
-                          {(prog.classroomTitle || prog.location) && (
-                            <div className="flex items-center gap-1 text-[9px] opacity-80 font-medium">
-                              <DoorOpen size={9} className="shrink-0" />
-                              <span className="truncate">{prog.classroomTitle || prog.location}</span>
-                            </div>
-                          )}
-                          {prog.timeSlot && (
-                            <div className="flex items-center gap-1 text-[9px] opacity-80 font-medium">
-                              <Clock size={9} className="shrink-0" />
-                              <span className="truncate">{prog.timeSlot}</span>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                            {(prog.classroomTitle || prog.location) && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
+                                <DoorOpen size={11} className="shrink-0" />
+                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location}</span>
+                              </div>
+                            )}
+                            {prog.timeSlot && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
+                                <Clock size={11} className="shrink-0" />
+                                <span className="truncate">{prog.timeSlot}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Attendance Stats / Notes Box */}
+                        {/* Middle Stats Ribbon / Status Details */}
                         {st.statusKey === 'recorded' && (
-                          <div className={cn("flex items-center justify-around py-1 text-center font-black", st.boxBg)}>
+                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1.5 rounded-xl text-center font-black", st.boxBg)}>
                             <div>
-                              <span className="block text-[8px] opacity-80 scale-90">حاضر</span>
-                              <span className="text-[10px] font-black">{st.presentCount}</span>
-                            </div>
-                            <div className="border-x border-white/10 px-1.5">
-                              <span className="block text-[8px] opacity-80 scale-90">غایب</span>
-                              <span className="text-[10px] font-black">{st.absentCount}</span>
+                              <span className="block text-[9px] opacity-80">حاضر</span>
+                              <span className="text-xs sm:text-sm font-black">{st.presentCount}</span>
                             </div>
                             <div>
-                              <span className="block text-[8px] opacity-80 scale-90">تاخیر</span>
-                              <span className="text-[10px] font-black">{st.lateCount}</span>
+                              <span className="block text-[9px] opacity-80">غایب</span>
+                              <span className="text-xs sm:text-sm font-black">{st.absentCount}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[9px] opacity-80">تاخیر</span>
+                              <span className="text-xs sm:text-sm font-black">{st.lateCount}</span>
                             </div>
                           </div>
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className={cn("space-y-0.5 py-1 px-1.5", st.boxBg)}>
-                            <div className="flex items-center gap-1 text-[8.5px]">
-                              <UserCheck2 size={10} className="shrink-0" />
-                              <span className="truncate font-extrabold">جایگزین: {st.substituteName}</span>
+                          <div className={cn("space-y-1 py-1.5 px-2.5 rounded-xl", st.boxBg)}>
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              <UserCheck2 size={13} className="shrink-0" />
+                              <span className="truncate font-extrabold">استاد جایگزین: {st.substituteName}</span>
                             </div>
-                            {st.notes && <p className="text-[8px] opacity-80 font-medium line-clamp-1">{st.notes}</p>}
+                            {st.notes && <p className="text-[10px] opacity-85 font-medium line-clamp-1">{st.notes}</p>}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className={cn("py-0.5 px-1.5 line-clamp-1 text-[8.5px]", st.boxBg)}>
-                            <span className="truncate font-bold">علت: {st.description}</span>
+                          <div className={cn("py-1.5 px-2.5 rounded-xl line-clamp-1 text-[11px] font-bold", st.boxBg)}>
+                            <span className="truncate">علت عدم تشکیل: {st.description}</span>
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className={cn("py-0.5 text-center text-[8.5px] font-extrabold", st.boxBg)}>
-                            <span>در انتظار ثبت حضور</span>
+                          <div className={cn("py-1.5 text-center text-[11px] font-extrabold rounded-xl", st.boxBg)}>
+                            <span>در انتظار ثبت آمار حضور و غیاب امروز</span>
                           </div>
                         )}
 
-                        {/* Quick Action */}
+                        {/* Quick Action Button */}
                         <button
                           type="button"
                           onClick={() => {
                             setSelectedProgramId(prog.id);
                             setActiveTab('record');
                           }}
-                          className={cn("w-full py-1 px-1 rounded-lg text-[9px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
+                          className={cn("w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
                         >
-                          <CheckSquare size={10} className="shrink-0" />
-                          <span>ثبت / ویرایش</span>
+                          <CheckSquare size={13} className="shrink-0" />
+                          <span>ثبت و ویرایش حضور و غیاب</span>
                         </button>
                       </div>
                     );

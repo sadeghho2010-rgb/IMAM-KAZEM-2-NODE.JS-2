@@ -684,7 +684,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Level 3 (Students & class rep)
   if (user.level === 3 || role === 'student' || role === 'class_representative') {
     const allowed = [
-      'student-requests', 'student-portal', 'student-meals', 'student-schedule', 'academic-calendar',
+      'dashboard', 'student-requests', 'student-portal', 'student-meals', 'student-schedule', 'academic-calendar',
       'discussion', 'research', 'attendance', 'stats', 'course-selection', 'programs', 'classrooms'
     ];
     return allowed.includes(tabId);
@@ -1352,6 +1352,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isTabAllowed = (tabId: string, user?: AppUser): boolean => {
     const target = user || currentUser;
     if (!target) return false;
+
+    // Dashboard is universally available for all authenticated users
+    if (tabId === 'dashboard') {
+      return true;
+    }
 
     // 1. Super Admin (Level 1) has universal access
     if (target.level === 1 && target.role === 'super_admin') {

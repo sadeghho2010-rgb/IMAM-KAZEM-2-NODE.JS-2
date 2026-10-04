@@ -16,7 +16,8 @@ import {
   Sliders,
   Monitor,
   Timer,
-  Layers
+  Layers,
+  BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -32,6 +33,7 @@ export interface AppPreferences {
   titleGradientAnimation: boolean;
   counterAnimation: boolean;
   ambientOrbs: boolean;
+  showHadithBanner: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -43,7 +45,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   smartMenuHover: true,
   titleGradientAnimation: true,
   counterAnimation: true,
-  ambientOrbs: true
+  ambientOrbs: true,
+  showHadithBanner: true
 };
 
 interface SettingsModalProps {
@@ -352,6 +355,33 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   <span className={cn(
                     "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
                     prefs.ambientOrbs ? "right-1" : "right-6"
+                  )} />
+                </button>
+              </div>
+
+              {/* Hadith & Bismillah Banner Toggle */}
+              <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <BookOpen size={15} className="text-amber-600" />
+                    <span>نمایش کتیبه بسم‌الله و روایت طلب علم در بالای داشبورد</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    نمایش خوشنویسی بسم‌الله الرحمن الرحیم و احادیث اهل‌بیت (ع) در فضیلت دانش‌آموزی در صدر صفحه اصلی.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updatePreference('showHadithBanner', !prefs.showHadithBanner)}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                    prefs.showHadithBanner ? "bg-amber-600" : "bg-slate-300"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                    prefs.showHadithBanner ? "right-1" : "right-6"
                   )} />
                 </button>
               </div>

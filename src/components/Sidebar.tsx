@@ -493,8 +493,8 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
 
       {/* Navigation Menu Items */}
       <nav className="flex-1 p-2.5 overflow-y-auto space-y-2.5 custom-scrollbar">
-        {/* Main Dashboard Shortcut for Level 1 & Level 2 Users */}
-        {currentUser && currentUser.level < 3 && (
+        {/* Main Dashboard Shortcut for All Users */}
+        {currentUser && (
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}

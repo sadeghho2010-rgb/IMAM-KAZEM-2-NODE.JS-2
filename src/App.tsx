@@ -58,13 +58,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
   const { currentUser, logout, isTabAllowed, isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<string>(() => {
-    return (currentUser && currentUser.level < 3) ? 'dashboard' : 'todos';
+    return 'dashboard';
   });
   const [navigationHistory, setNavigationHistory] = useState<string[]>(['dashboard']);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
@@ -166,18 +166,13 @@ function AppContent() {
     currentMentorId 
   } = useMentor();
 
-  // When user logs in or role changes, default to dashboard for level 1 and 2
+  // When user logs in or role changes, default to dashboard for all users (including level 3)
   useEffect(() => {
     if (currentUser) {
-      if (currentUser.level < 3) {
-        if (!activeTab || activeTab === 'todos') {
-          setActiveTab('dashboard');
-        }
-      } else {
-        if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
-          const fallback = currentUser.allowedTabs?.[0] || (currentUser as any).allowedModules?.[0] || 'todos';
-          setActiveTab(fallback);
-        }
+      if (!activeTab || activeTab === 'todos') {
+        setActiveTab('dashboard');
+      } else if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
+        setActiveTab('dashboard');
       }
     }
   }, [currentUser]);
@@ -271,6 +266,8 @@ function AppContent() {
         return <TeacherTransportManagement />;
       case 'student-requests':
         return <StudentRequestsPortal />;
+      case 'student-portal':
+        return <Summary onNavigate={handleNavigate} initialStudentId={currentUser?.studentId || selectedStudentIdForTab} />;
       case 'anomaly-detection':
         return <AnomalyDetectionView />;
       case 'backup':
@@ -344,6 +341,19 @@ function AppContent() {
               >
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
+
+              {/* Universal Header Return to Dashboard Button */}
+              {activeTab !== 'dashboard' && (
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('dashboard')}
+                  className="flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 border border-indigo-200/90 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs shrink-0 group active:scale-95"
+                  title="بازگشت به داشبورد اصلی"
+                >
+                  <LayoutDashboard size={14} className="text-indigo-600 group-hover:scale-110 transition-transform shrink-0" />
+                  <span className="hidden xs:inline">بازگشت به داشبورد</span>
+                </button>
+              )}
 
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-2">
@@ -444,6 +454,33 @@ function AppContent() {
         <main className="p-4 lg:p-8">
           {/* Global Security PIN Challenge Modal */}
           <SecurityPinModal />
+
+          {/* Universal Sticky / Prominent Back to Dashboard Banner for all sections */}
+          {activeTab !== 'dashboard' && (
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 px-3.5 sm:px-4 py-2.5 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xs mb-4">
+              <div className="flex items-center gap-2 text-xs min-w-0">
+                <button
+                  type="button"
+                  onClick={() => navigateToTab('dashboard')}
+                  className="flex items-center gap-1.5 text-indigo-700 hover:text-indigo-900 font-black hover:underline cursor-pointer group shrink-0"
+                >
+                  <LayoutDashboard size={14} className="text-indigo-600 group-hover:scale-110 transition-transform shrink-0" />
+                  <span>داشبورد اصلی</span>
+                </button>
+                <ChevronLeft size={13} className="text-slate-400 shrink-0" />
+                <span className="font-bold text-slate-800 truncate">{getActiveTabTitle(activeTab)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigateToTab('dashboard')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shrink-0"
+                title="بازگشت سریع به صفحه اصلی"
+              >
+                <ArrowRight size={13} />
+                <span>بازگشت به داشبورد</span>
+              </button>
+            </div>
+          )}
 
           <AnimatePresence mode="wait">
             <motion.div
