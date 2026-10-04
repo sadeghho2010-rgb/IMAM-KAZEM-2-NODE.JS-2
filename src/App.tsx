@@ -331,6 +331,7 @@ function AppContent() {
         }} 
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
       
       <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
@@ -371,7 +372,30 @@ function AppContent() {
             </div>
 
             {/* Top Right Header Space - User Badge & Logout */}
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              {/* Minimal Live Database Connection Health Indicator */}
+              <div 
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded-2xl text-[11px] font-bold shadow-2xs select-none cursor-default"
+                title="پایگاه داده متصل و همگام است (Live DB Connected)"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+                <span className="hidden lg:inline text-[10px] text-emerald-700 font-black">پایگاه داده متصل</span>
+              </div>
+
+              {/* Display & Visual Preferences Button */}
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="flex items-center gap-1.5 py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200/90 text-slate-700 hover:text-indigo-700 border border-slate-200/90 hover:border-indigo-200 rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title="تنظیمات نمایش سایت، تم رنگی و انیمیشن‌ها"
+              >
+                <Sliders size={14} className="text-indigo-600 shrink-0" />
+                <span className="hidden sm:inline">تنظیمات نمایش</span>
+              </button>
+
               {currentUser.role === 'super_admin' && (
                 <button
                   onClick={() => navigateToTab('user-management')}

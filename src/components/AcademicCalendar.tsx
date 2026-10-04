@@ -2067,6 +2067,62 @@ export default function AcademicCalendar() {
             )}
           </div>
         )}
+
+        {/* Interactive Gantt-Style Timeline Bar with Needle Pin for "Today" */}
+        {selectedPeriod && periodDateList.length > 0 && (() => {
+          const todayStr = getTodayShamsi();
+          const totalDays = periodDateList.length;
+          const todayIdx = periodDateList.indexOf(todayStr);
+          let percent = 0;
+          if (todayIdx >= 0) {
+            percent = Math.round(((todayIdx + 1) / totalDays) * 100);
+          } else if (compareShamsi(todayStr, selectedPeriod.startDate) > 0) {
+            percent = 100;
+          }
+
+          return (
+            <div className="mt-4 pt-3.5 border-t border-indigo-700/50 space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-indigo-200 flex-wrap gap-2">
+                <span className="font-bold flex items-center gap-1.5">
+                  <CalendarDays size={14} className="text-amber-400" />
+                  <span>خط زمانی پیشرفت سال تحصیلی (Gantt Progress Timeline)</span>
+                </span>
+                <span className="font-black text-amber-300">
+                  {percent}٪ سپری‌شده ({todayIdx >= 0 ? `${todayIdx + 1} از ${totalDays} روز` : compareShamsi(todayStr, selectedPeriod.startDate) < 0 ? 'قبل از شروع دوره' : 'دوره به پایان رسیده'})
+                </span>
+              </div>
+
+              {/* Progress Track */}
+              <div className="relative w-full h-3.5 bg-slate-950/60 rounded-full overflow-visible border border-white/20 p-0.5 shadow-inner">
+                {/* Fill bar */}
+                <div 
+                  className="h-full rounded-full bg-gradient-to-l from-amber-400 via-emerald-400 to-indigo-500 transition-all duration-700 shadow-xs"
+                  style={{ width: `${percent}%` }}
+                />
+
+                {/* Needle Pin for "Today" */}
+                {todayIdx >= 0 && (
+                  <div 
+                    className="absolute top-1/2 -translate-y-1/2 z-20 flex flex-col items-center"
+                    style={{ right: `${percent}%`, transform: 'translate(50%, -50%)' }}
+                    title={`امروز: ${todayStr} (روز ${todayIdx + 1})`}
+                  >
+                    <div className="w-3.5 h-3.5 rounded-full bg-rose-500 ring-2 ring-white shadow-md animate-pulse" />
+                    <div className="absolute -bottom-5 px-1.5 py-0.2 bg-rose-600 text-white text-[8.5px] font-black rounded-md whitespace-nowrap shadow-xs">
+                      امروز ({todayStr.slice(5)})
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Milestones labels */}
+              <div className="flex items-center justify-between text-[10px] text-indigo-300/80 font-bold pt-1.5">
+                <span>شروع دوره: {selectedPeriod.startDate}</span>
+                <span>پایان دوره: {selectedPeriod.endDate}</span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Main Tabs Navigation */}

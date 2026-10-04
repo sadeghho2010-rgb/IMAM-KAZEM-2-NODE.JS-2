@@ -38,7 +38,8 @@ import {
   KeyRound,
   Inbox,
   ShieldAlert,
-  Database
+  Database,
+  Sliders
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -52,6 +53,7 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   isOpen: boolean;
   onToggle: () => void;
+  onOpenSettings?: () => void;
 }
 
 interface MenuItemDef {
@@ -193,7 +195,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
 ];
 
-export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProps) {
+export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSettings }: SidebarProps) {
   const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly, isTabAllowed } = useAuth();
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
@@ -653,6 +655,63 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen }: SidebarProp
           </div>
         )}
       </nav>
+
+      {/* Active Logged-in User Profile Card */}
+      {currentUser && (
+        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+          <div className="bg-white rounded-2xl p-2.5 border border-slate-200/90 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400">حساب کاربری فعال:</span>
+              {isReadOnly ? (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 font-bold border border-amber-200 flex items-center gap-0.5">
+                  <Eye size={10} />
+                  فقط مشاهده
+                </span>
+              ) : (
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-bold">
+                  {currentUser.gradeLabel || 'سراسری'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className={cn("w-8 h-8 rounded-xl text-white font-black flex items-center justify-center text-xs shrink-0 shadow-xs", currentUser.avatarBg || 'bg-indigo-600')}>
+                {(currentUser.name || currentUser.fullName || currentUser.username || 'ک')[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-black text-slate-900 truncate flex items-center gap-1">
+                  <span>{(currentUser.name || currentUser.fullName || currentUser.username || '').split('(')[0]}</span>
+                  {currentUser.role === 'super_admin' && <ShieldCheck size={12} className="text-amber-600 shrink-0" />}
+                </div>
+                <p className="text-[10px] text-slate-500 font-medium truncate">{currentUser.roleTitle}</p>
+              </div>
+            </div>
+
+            <div className="pt-1.5 border-t border-slate-100 flex flex-col gap-1.5">
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 rounded-xl text-[11px] font-bold transition-all border border-indigo-200/60 cursor-pointer"
+                  title="تنظیمات نمایش، تم و انیمیشن‌های سامانه"
+                >
+                  <Sliders size={13} className="text-indigo-600" />
+                  <span>تنظیمات نمایش سایت</span>
+                </button>
+              )}
+
+              <button
+                onClick={logout}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[11px] font-bold transition-all border border-rose-200/60 cursor-pointer"
+                title="خروج از حساب کاربری"
+              >
+                <LogOut size={12} />
+                <span>خروج از حساب کاربری</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

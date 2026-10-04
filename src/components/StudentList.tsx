@@ -1322,7 +1322,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
         <table className="w-full text-right border-collapse min-w-max">
           <thead>
-            <tr className="bg-slate-50 text-slate-500 border-b border-slate-100">
+            <tr className="bg-gradient-to-r from-slate-100/95 via-slate-50 to-slate-100/95 text-slate-900 border-b border-slate-200/90 shadow-2xs">
               {allColumns.filter(c => visibleColumns.includes(c.id)).map(col => {
                 const sortableMap: Record<string, string> = {
                   'grade': 'grade',
@@ -1344,18 +1344,18 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     key={col.id} 
                     onClick={() => sortKey && handleSort(sortKey)}
                     className={cn(
-                      "px-6 py-3 text-[11px] font-bold uppercase tracking-wider select-none",
-                      sortKey && "cursor-pointer hover:text-indigo-600 transition-colors",
+                      "px-5 py-3.5 text-xs font-black tracking-tight select-none text-slate-800",
+                      sortKey && "cursor-pointer hover:text-indigo-700 transition-colors",
                       col.id === 'actions' && "text-left"
                     )}
                   >
                     <div className={cn("flex items-center gap-1.5", col.id === 'actions' && "justify-end")}>
-                      <span>{col.label}</span>
+                      <span className="font-black drop-shadow-2xs">{col.label}</span>
                       {sortKey && (
                         isCurrentlySorted ? (
                           sortOrder === 'asc' ? <ArrowUp size={13} className="text-indigo-600 shrink-0" /> : <ArrowDown size={13} className="text-indigo-600 shrink-0" />
                         ) : (
-                          <ArrowUpDown size={12} className="text-slate-300 opacity-50 hover:opacity-100 shrink-0" />
+                          <ArrowUpDown size={12} className="text-slate-400 opacity-60 hover:opacity-100 shrink-0" />
                         )
                       )}
                     </div>

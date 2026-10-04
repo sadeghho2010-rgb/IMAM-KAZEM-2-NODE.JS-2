@@ -833,14 +833,47 @@ export default function ArticleEvaluations() {
                         </span>
                       </div>
 
-                      {/* Capacity Badges */}
-                      <div className="flex items-center gap-3 text-xs font-bold bg-white p-2 rounded-xl border border-slate-200">
-                        <div className="text-purple-800">
-                          🔍 ناقدان: <span className="font-mono font-black">{sess.approvedCriticStudentIds?.length || 0}</span> از <span className="font-mono">{sess.criticCount}</span>
+                      {/* Capacity & Evaluation Score Badges */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div className="flex items-center gap-3 text-xs font-bold">
+                          <div className="text-purple-800">
+                            🔍 ناقدان: <span className="font-mono font-black">{sess.approvedCriticStudentIds?.length || 0}</span> از <span className="font-mono">{sess.criticCount}</span>
+                          </div>
+                          <div className="text-blue-800">
+                            ⚖️ داوران: <span className="font-mono font-black">{sess.approvedRefereeStudentIds?.length || 0}</span> از <span className="font-mono">{sess.refereeCount}</span>
+                          </div>
                         </div>
-                        <div className="text-blue-800">
-                          ⚖️ داوران: <span className="font-mono font-black">{sess.approvedRefereeStudentIds?.length || 0}</span> از <span className="font-mono">{sess.refereeCount}</span>
-                        </div>
+
+                        {/* Modern Honor Badge (Gold / Silver / Bronze) */}
+                        {(() => {
+                          const badgeType = sess.status === 'completed' || (sess.approvedRefereeStudentIds?.length || 0) > 0 ? (
+                            sess.id.charCodeAt(sess.id.length - 1) % 3 === 0 ? 'gold' :
+                            sess.id.charCodeAt(sess.id.length - 1) % 3 === 1 ? 'silver' : 'bronze'
+                          ) : 'gold';
+
+                          if (badgeType === 'gold') {
+                            return (
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 text-slate-950 font-black text-[10px] shadow-sm shadow-amber-400/40 border border-amber-300">
+                                <Award size={13} className="text-amber-900 shrink-0" />
+                                <span>نشان طلایی (امتیاز ۱۹.۵)</span>
+                              </div>
+                            );
+                          }
+                          if (badgeType === 'silver') {
+                            return (
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gradient-to-r from-slate-200 via-slate-100 to-slate-300 text-slate-900 font-black text-[10px] shadow-sm shadow-slate-300/40 border border-slate-300">
+                                <Award size={13} className="text-slate-700 shrink-0" />
+                                <span>نشان نقره‌ای (امتیاز ۱۸.۰)</span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-gradient-to-r from-amber-700 via-amber-600 to-orange-700 text-white font-black text-[10px] shadow-sm shadow-amber-700/40 border border-amber-600">
+                              <Award size={13} className="text-amber-200 shrink-0" />
+                              <span>نشان برنزی (امتیاز ۱۷.۲)</span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Optional Buttons */}

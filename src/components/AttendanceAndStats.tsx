@@ -1327,11 +1327,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                   {academicProgs.map(prog => {
                     const st = getStatusCardData(prog);
+                    const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
+                    const presenceRate = totalAtt > 0 ? Math.round(((st.presentCount || 0) / totalAtt) * 100) : 100;
                     return (
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-xl p-2 border transition-all duration-350 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/10 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
+                          "rounded-xl p-2 border transition-all duration-300 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm backdrop-blur-md hover:border-white/50 hover:ring-1 hover:ring-white/30 hover:shadow-[0_6px_20px_rgba(0,0,0,0.18)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
                           st.cardBorder
                         )}
                       >
@@ -1340,10 +1342,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           <span className={cn("px-1.5 py-0.5 text-[8.5px] rounded-md font-black truncate max-w-[65px]", st.gradePill)}>
                             {prog.grade || 'عمومی'}
                           </span>
-                          <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 shrink-0 font-extrabold", st.badgeClass)}>
-                            {st.statusIcon}
-                            <span className="truncate max-w-[55px]">{st.badgeText}</span>
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {st.statusKey === 'recorded' && (
+                              <div className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-black/25 text-white/95" title={`درصد حضور: ${presenceRate}٪`}>
+                                <svg className="w-3 h-3 -rotate-90" viewBox="0 0 36 36">
+                                  <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                  <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <span className="text-[7.5px] font-black">{presenceRate}٪</span>
+                              </div>
+                            )}
+                            <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 font-extrabold", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate max-w-[50px]">{st.badgeText}</span>
+                            </span>
+                          </div>
                         </div>
 
                         {/* Title & Teacher */}
@@ -1444,11 +1457,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
                   {counselingProgs.map(prog => {
                     const st = getStatusCardData(prog);
+                    const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
+                    const presenceRate = totalAtt > 0 ? Math.round(((st.presentCount || 0) / totalAtt) * 100) : 100;
                     return (
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-xl p-2 border transition-all duration-350 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/10 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
+                          "rounded-xl p-2 border transition-all duration-300 flex flex-col justify-between space-y-2 relative overflow-hidden text-[10px] shadow-sm backdrop-blur-md hover:border-white/50 hover:ring-1 hover:ring-white/30 hover:shadow-[0_6px_20px_rgba(0,0,0,0.18)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700 before:ease-in-out hover:scale-[1.03] cursor-default active:scale-[0.98]",
                           st.cardBorder
                         )}
                       >
@@ -1457,10 +1472,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           <span className={cn("px-1.5 py-0.5 text-[8.5px] rounded-md font-black truncate max-w-[65px]", st.gradePill)}>
                             {prog.grade || 'مشاوره'}
                           </span>
-                          <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 shrink-0 font-extrabold", st.badgeClass)}>
-                            {st.statusIcon}
-                            <span className="truncate max-w-[55px]">{st.badgeText}</span>
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {st.statusKey === 'recorded' && (
+                              <div className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-black/25 text-white/95" title={`درصد حضور: ${presenceRate}٪`}>
+                                <svg className="w-3 h-3 -rotate-90" viewBox="0 0 36 36">
+                                  <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                  <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <span className="text-[7.5px] font-black">{presenceRate}٪</span>
+                              </div>
+                            )}
+                            <span className={cn("px-1.5 py-0.5 text-[8px] rounded-md border flex items-center gap-0.5 font-extrabold", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate max-w-[50px]">{st.badgeText}</span>
+                            </span>
+                          </div>
                         </div>
 
                         {/* Title & Teacher */}

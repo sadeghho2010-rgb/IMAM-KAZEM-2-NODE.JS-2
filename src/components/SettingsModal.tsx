@@ -14,7 +14,9 @@ import {
   ShieldCheck, 
   RotateCcw,
   Sliders,
-  Monitor
+  Monitor,
+  Timer,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -27,6 +29,9 @@ export interface AppPreferences {
   highContrast: boolean;
   soundEffects: boolean;
   smartMenuHover: boolean;
+  titleGradientAnimation: boolean;
+  counterAnimation: boolean;
+  ambientOrbs: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -35,7 +40,10 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   compactMode: false,
   highContrast: false,
   soundEffects: false,
-  smartMenuHover: true
+  smartMenuHover: true,
+  titleGradientAnimation: true,
+  counterAnimation: true,
+  ambientOrbs: true
 };
 
 interface SettingsModalProps {
@@ -91,6 +99,8 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
       if (onPreferencesChange) {
         onPreferencesChange(prefs);
       }
+
+      window.dispatchEvent(new CustomEvent('app-preferences-updated', { detail: prefs }));
     } catch (e) {}
   }, [prefs]);
 
@@ -261,6 +271,87 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   <span className={cn(
                     "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
                     prefs.smartMenuHover ? "right-1" : "right-6"
+                  )} />
+                </button>
+              </div>
+
+              {/* Title Gradient Shift Animation Toggle */}
+              <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <Palette size={15} className="text-purple-600" />
+                    <span>انیمیشن گردش طیف رنگ تیتر داشبورد</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    تغییر ملایم و نرم پالت رنگی تیتر بالایی داشبورد طی ۱ دقیقه.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updatePreference('titleGradientAnimation', !prefs.titleGradientAnimation)}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                    prefs.titleGradientAnimation ? "bg-purple-600" : "bg-slate-300"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                    prefs.titleGradientAnimation ? "right-1" : "right-6"
+                  )} />
+                </button>
+              </div>
+
+              {/* Counter Numbers Live Animation Toggle */}
+              <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <Timer size={15} className="text-emerald-600" />
+                    <span>انیمیشن شمارشگر زنده اعداد (شروع از صفر)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    شمارش افزایشی و نرم آمارهای داشبورد و شاخص‌های دایره‌ای هنگام ورود به صفحه.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updatePreference('counterAnimation', !prefs.counterAnimation)}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                    prefs.counterAnimation ? "bg-emerald-600" : "bg-slate-300"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                    prefs.counterAnimation ? "right-1" : "right-6"
+                  )} />
+                </button>
+              </div>
+
+              {/* Ambient Floating Orbs Toggle */}
+              <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                    <Layers size={15} className="text-teal-600" />
+                    <span>هاله‌ها و ذرات نورانی متحرک پس‌زمینه</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-normal">
+                    افکت‌های نوری ملایم شناور در پس‌زمینه داشبورد جهت زیبایی بصری بیشتر.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => updatePreference('ambientOrbs', !prefs.ambientOrbs)}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                    prefs.ambientOrbs ? "bg-teal-600" : "bg-slate-300"
+                  )}
+                >
+                  <span className={cn(
+                    "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                    prefs.ambientOrbs ? "right-1" : "right-6"
                   )} />
                 </button>
               </div>

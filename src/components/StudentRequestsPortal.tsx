@@ -1107,6 +1107,71 @@ export default function StudentRequestsPortal() {
                 </button>
               </div>
 
+              {/* Stepped Progress Bar: ۱. ثبت طلبه ➔ ۲. بررسی معاونت ➔ ۳. صدور پاسخ */}
+              <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/80 shadow-2xs">
+                <div className="flex items-center justify-between relative px-2">
+                  {/* Background Track Line */}
+                  <div className="absolute top-3.5 right-8 left-8 h-1 bg-slate-200 -z-0" />
+                  {/* Active Highlight Line */}
+                  <div 
+                    className={cn(
+                      "absolute top-3.5 right-8 h-1 transition-all duration-500 -z-0",
+                      selectedRequestForReview.status === 'pending'
+                        ? "w-1/2 bg-blue-500"
+                        : "w-[calc(100%-4rem)] bg-emerald-500"
+                    )} 
+                  />
+
+                  {/* Step 1: ثبت طلبه */}
+                  <div className="flex flex-col items-center gap-1 z-10 select-none">
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs shadow-md shadow-emerald-500/25 ring-2 ring-emerald-100">
+                      <Check size={14} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-800">۱. ثبت طلبه</span>
+                  </div>
+
+                  {/* Step 2: بررسی معاونت */}
+                  <div className="flex flex-col items-center gap-1 z-10 select-none">
+                    <div className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-xs shadow-md transition-all ring-2",
+                      selectedRequestForReview.status === 'pending'
+                        ? "bg-blue-600 text-white animate-pulse shadow-blue-500/25 ring-blue-100"
+                        : "bg-emerald-600 text-white shadow-emerald-500/25 ring-emerald-100"
+                    )}>
+                      {selectedRequestForReview.status === 'pending' ? <Clock size={13} /> : <Check size={14} />}
+                    </div>
+                    <span className="text-[10px] font-black text-slate-800">۲. بررسی معاونت</span>
+                  </div>
+
+                  {/* Step 3: صدور پاسخ */}
+                  <div className="flex flex-col items-center gap-1 z-10 select-none">
+                    <div className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-xs shadow-md transition-all ring-2",
+                      selectedRequestForReview.status === 'resolved'
+                        ? "bg-emerald-600 text-white shadow-emerald-500/25 ring-emerald-100"
+                        : selectedRequestForReview.status === 'rejected'
+                        ? "bg-rose-600 text-white shadow-rose-500/25 ring-rose-100"
+                        : "bg-slate-200 text-slate-500 border border-slate-300 ring-slate-100"
+                    )}>
+                      {selectedRequestForReview.status === 'resolved' ? (
+                        <CheckCircle2 size={14} />
+                      ) : selectedRequestForReview.status === 'rejected' ? (
+                        <XCircle size={14} />
+                      ) : (
+                        <span className="text-[10px] font-black">۳</span>
+                      )}
+                    </div>
+                    <span className={cn(
+                      "text-[10px] font-black",
+                      selectedRequestForReview.status === 'resolved' ? "text-emerald-700" :
+                      selectedRequestForReview.status === 'rejected' ? "text-rose-700" : "text-slate-500"
+                    )}>
+                      ۳. نتیجه نهایی
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Student Details Summary Box */}
               <div className="p-3.5 bg-slate-50 rounded-2xl space-y-1.5 text-xs border border-slate-100">
                 <div className="flex items-center justify-between font-bold text-slate-800">

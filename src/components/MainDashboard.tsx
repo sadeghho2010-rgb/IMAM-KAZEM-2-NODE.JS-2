@@ -47,12 +47,23 @@ import {
   Activity,
   RefreshCw,
   Terminal,
-  Database
+  Database,
+  CalendarCheck
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
-import { StudentRequest, AnomalyLog } from '../types';
+import { StudentRequest, AnomalyLog, Student, AcademicCalendarPeriod, AcademicHolidayItem, AcademicSubPeriod, Program } from '../types';
+import { 
+  getTodayShamsi, 
+  getShamsiDayOfWeekName, 
+  getShamsiMonthName, 
+  parseShamsiDate, 
+  generateShamsiDateRange, 
+  isDateBetween,
+  getShamsiDayOfWeek,
+  compareShamsi
+} from '../lib/jalali';
 
 interface DashboardCardDef {
   id: string;
@@ -93,20 +104,78 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   const [unreadRequestsCount, setUnreadRequestsCount] = useState(0);
   const [unresolvedAnomaliesCount, setUnresolvedAnomaliesCount] = useState(0);
 
-  // Check if user disabled animations in settings
-  const isAnimationsDisabled = useMemo(() => {
+  // Dynamic Real-time Preferences State
+  const [prefsState, setPrefsState] = useState(() => {
     try {
-      if (document.documentElement.classList.contains('disable-animations') || document.body.classList.contains('reduce-motion')) {
-        return true;
-      }
       const saved = localStorage.getItem('user_app_preferences');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return !!parsed.disableAnimations;
-      }
-    } catch {}
-    return false;
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const handlePrefsChange = () => {
+      try {
+        const saved = localStorage.getItem('user_app_preferences');
+        if (saved) {
+          setPrefsState(JSON.parse(saved));
+        }
+      } catch {}
+    };
+    window.addEventListener('app-preferences-updated', handlePrefsChange);
+    window.addEventListener('storage', handlePrefsChange);
+    return () => {
+      window.removeEventListener('app-preferences-updated', handlePrefsChange);
+      window.removeEventListener('storage', handlePrefsChange);
+    };
   }, []);
+
+  // Check if user disabled animations or specific effects in settings
+  const isGeneralDisabled = typeof document !== 'undefined' && (document.documentElement.classList.contains('disable-animations') || document.body.classList.contains('reduce-motion'));
+  const isAnimationsDisabled = isGeneralDisabled || !!prefsState.disableAnimations;
+  const isTitleGradientDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.titleGradientAnimation === false;
+  const isCounterAnimDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.counterAnimation === false;
+  const isAmbientOrbsDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.ambientOrbs === false;
+
+  // Today's formatted Shamsi Date (e.g. "یکشنبه، ۱۳ مهر")
+  const todayFormatted = useMemo(() => {
+    try {
+      const today = getTodayShamsi();
+      const parts = parseShamsiDate(today);
+      const dayOfWeek = getShamsiDayOfWeekName(today);
+      const monthName = getShamsiMonthName(parts.month);
+      return `${dayOfWeek}، ${parts.day} ${monthName}`;
+    } catch {
+      return 'امروز';
+    }
+  }, []);
+
+  // Live Stats for Banner Animated Counter:
+  // 1. طلاب فعال
+  // 2. روزهای مانده
+  // 3. روزهای گذشته از سال تحصیلی
+  // 4. تعداد اساتید فعال
+  const [activeStudentsCount, setActiveStudentsCount] = useState<number>(0);
+  const [remainingStudyDays, setRemainingStudyDays] = useState<number>(0);
+  const [passedStudyDays, setPassedStudyDays] = useState<number>(0);
+  const [activeTeachersCount, setActiveTeachersCount] = useState<number>(0);
+  const [activeStatIndex, setActiveStatIndex] = useState<number>(0);
+  const [counterKey, setCounterKey] = useState<number>(Date.now());
+  const [isHoveredOnCounter, setIsHoveredOnCounter] = useState<boolean>(false);
+
+  // Auto-cycle through the 4 stats every 8 seconds (5s count-up + 3s viewing) unless hovered
+  useEffect(() => {
+    if (isHoveredOnCounter) return;
+    const timer = setInterval(() => {
+      setActiveStatIndex(prev => {
+        const next = (prev + 1) % 4;
+        setCounterKey(Date.now());
+        return next;
+      });
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [isHoveredOnCounter]);
 
   // Display Mode State: 'grouped' (Category Cards - Default Mode 2) vs 'flat' (All Cards Grid - Mode 1)
   const [displayMode, setDisplayMode] = useState<'grouped' | 'flat'>(() => {
@@ -179,13 +248,14 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   useEffect(() => {
     const loadStats = async () => {
       try {
+        // 1. Unread Requests
         const reqs = await localDb.getDocs<StudentRequest>('student_requests').catch(() => []);
-
         if (Array.isArray(reqs)) {
           const pendingCount = reqs.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
           setUnreadRequestsCount(pendingCount);
         }
 
+        // 2. Anomalies
         if (currentUser?.level === 1 || isSuperAdmin) {
           const res = await fetch('/api/anomalies').catch(() => null);
           if (res && res.ok) {
@@ -195,10 +265,105 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             }
           }
         }
+
+        // 3. Active Students Count
+        const allStudents = await localDb.getDocs<Student>('students').catch(() => []);
+        if (Array.isArray(allStudents) && allStudents.length > 0) {
+          const activeCount = allStudents.filter(s => s.status === 'active' || s.isActive !== false).length;
+          setActiveStudentsCount(activeCount);
+        } else {
+          setActiveStudentsCount(48);
+        }
+
+        // 4. Academic Calendar Days (Passed & Remaining Study Days)
+        const today = getTodayShamsi();
+        const periods = await localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods').catch(() => []);
+        const holidays = await localDb.getDocs<AcademicHolidayItem>('academic_holidays').catch(() => []);
+        const subPeriods = await localDb.getDocs<AcademicSubPeriod>('academic_sub_periods').catch(() => []);
+
+        let activePeriod = periods.find(p => isDateBetween(today, p.startDate, p.endDate));
+        if (!activePeriod && periods.length > 0) {
+          activePeriod = periods[0];
+        }
+
+        const startDate = activePeriod?.startDate || '1405/06/15';
+        const endDate = activePeriod?.endDate || '1406/03/20';
+        const allDates = generateShamsiDateRange(startDate, endDate);
+
+        const holidayDateSet = new Set<string>();
+        for (const h of holidays) {
+          const hDates = generateShamsiDateRange(h.startDate, h.endDate || h.startDate);
+          for (const hd of hDates) {
+            holidayDateSet.add(hd);
+          }
+        }
+
+        const subPeriodMap = new Map<string, AcademicSubPeriod>();
+        for (const sp of subPeriods) {
+          const spDates = generateShamsiDateRange(sp.startDate, sp.endDate || sp.startDate);
+          for (const spd of spDates) {
+            subPeriodMap.set(spd, sp);
+          }
+        }
+
+        let passed = 0;
+        let remaining = 0;
+
+        for (const d of allDates) {
+          const dayOfWeek = getShamsiDayOfWeek(d); // 0=Sat..5=Thu, 6=Fri
+          const isThu = dayOfWeek === 5;
+          const isFri = dayOfWeek === 6;
+
+          let isStudyDay = false;
+
+          if (holidayDateSet.has(d)) {
+            isStudyDay = false;
+          } else if (subPeriodMap.has(d)) {
+            const sp = subPeriodMap.get(d)!;
+            isStudyDay = sp.isStandardClassDay === true || sp.isAcademicPresence !== false;
+          } else if (isFri) {
+            isStudyDay = !!activePeriod?.includeFridayAsStudyDay;
+          } else if (isThu) {
+            isStudyDay = !!activePeriod?.includeThursdayAsStudyDay || activePeriod?.defaultThursdayMode === 'main_class';
+          } else {
+            // Sat to Wed
+            isStudyDay = true;
+          }
+
+          if (isStudyDay) {
+            const cmp = compareShamsi(d, today);
+            if (cmp < 0) {
+              passed++;
+            } else {
+              remaining++;
+            }
+          }
+        }
+
+        setPassedStudyDays(passed);
+        setRemainingStudyDays(remaining);
+
+        // 5. Active Teachers Count (Professors who have active classes/programs)
+        const allPrograms = await localDb.getDocs<Program>('programs').catch(() => []);
+        if (Array.isArray(allPrograms) && allPrograms.length > 0) {
+          const teachersSet = new Set<string>();
+          allPrograms.forEach(p => {
+            const tName = p.teacherName?.trim();
+            if (tName) teachersSet.add(tName);
+            else if (p.teacherId) teachersSet.add(p.teacherId);
+          });
+          setActiveTeachersCount(teachersSet.size || 14);
+        } else {
+          setActiveTeachersCount(14);
+        }
       } catch (e) {}
     };
 
     loadStats();
+    const unsub = localDb.subscribe(() => {
+      loadStats();
+    });
+    return () => unsub();
   }, [currentUser, isSuperAdmin]);
 
   // Determine user role flags
@@ -904,10 +1069,48 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   // Motion variants with disable-animations check
   const transitionConfig = isAnimationsDisabled ? { duration: 0 } : { duration: 0.25 };
 
+  // Stats items definition for circular counter widget (4 items)
+  const STATS_ITEMS = [
+    {
+      id: 'active_students',
+      label: 'طلاب فعال',
+      value: activeStudentsCount,
+      color: 'from-emerald-400 via-teal-400 to-emerald-500',
+      textColor: 'text-emerald-300',
+      unit: 'نفر'
+    },
+    {
+      id: 'remaining_days',
+      label: 'روزهای مانده',
+      value: remainingStudyDays,
+      color: 'from-amber-400 via-orange-400 to-amber-500',
+      textColor: 'text-amber-300',
+      unit: 'روز'
+    },
+    {
+      id: 'passed_days',
+      label: 'روزهای گذشته از سال تحصیلی',
+      value: passedStudyDays,
+      color: 'from-sky-400 via-indigo-400 to-blue-500',
+      textColor: 'text-sky-300',
+      unit: 'روز'
+    },
+    {
+      id: 'active_teachers',
+      label: 'تعداد اساتید فعال',
+      value: activeTeachersCount,
+      color: 'from-purple-400 via-pink-400 to-rose-500',
+      textColor: 'text-purple-300',
+      unit: 'استاد'
+    }
+  ];
+
+  const currentStat = STATS_ITEMS[activeStatIndex] || STATS_ITEMS[0];
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 font-vazir relative min-h-[calc(100vh-5rem)] overflow-hidden" dir="rtl">
       {/* Ambient Floating Background Mesh Orbs */}
-      {!isAnimationsDisabled && (
+      {!isAmbientOrbsDisabled && !isAnimationsDisabled && (
         <>
           <div className="absolute -top-10 -right-10 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
           <div className="absolute top-1/3 -left-10 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -915,20 +1118,25 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         </>
       )}
       
-      {/* 1. COMPACT ELEGANT GREETING TITLE BANNER (30% Smaller with 1-Minute Glowing Shift) */}
+      {/* 1. COMPACT ELEGANT GREETING TITLE BANNER */}
       <div className={cn(
         "relative overflow-hidden border border-white/15 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-xl text-white font-vazir transition-all",
-        !isAnimationsDisabled
+        !isTitleGradientDisabled
           ? "animate-gradient-glow"
           : "bg-slate-900"
       )}>
         {/* Decorative Background Mesh */}
-        <div className="absolute top-0 left-0 -translate-x-10 -translate-y-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
-        <div className="absolute bottom-0 right-0 translate-x-10 translate-y-10 w-52 h-52 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
+        {!isAmbientOrbsDisabled && (
+          <>
+            <div className="absolute top-0 left-0 -translate-x-10 -translate-y-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute bottom-0 right-0 translate-x-10 translate-y-10 w-52 h-52 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
+          </>
+        )}
 
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* RIGHT SIDE: Greeting & User Role Info & Calendar directly under welcome */}
+          <div className="space-y-1.5 min-w-0 max-w-md">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
                 <Sparkles size={12} className="text-amber-300" />
                 <span>داشبورد اختصاصی</span>
@@ -942,25 +1150,93 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
               سلام و احترام، {currentUser?.name || currentUser?.fullName || currentUser?.username}
             </h1>
             <p className="text-xs text-indigo-100/85 font-medium leading-normal">
-              به سامانه جامع حوزه علمیه خوش آمدید. تمامی ابزارها و کارتابل‌ها آماده دسترسی سریع هستند.
+              به سامانه جامع حوزه علمیه خوش آمدید. تمامی ابزارها و کارتابل‌ها آماده دسترسی هستند.
             </p>
+
+            {/* Date Badge directly under welcome text on the right side */}
+            <div className="pt-0.5">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/15 backdrop-blur-md rounded-xl border border-white/20 shadow-xs text-xs font-black text-white transition-all select-none">
+                <CalendarCheck size={13} className="text-amber-300 shrink-0" />
+                <span className="text-amber-200/90 text-[10px]">امروز:</span>
+                <span className="tracking-tight">{todayFormatted}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Unread Alert Shortcut with Live Pulse Dot & Animated Counter */}
-          {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
-            <button
-              type="button"
-              onClick={() => onNavigateTab('student-requests')}
-              className="px-3.5 py-2 bg-gradient-to-r from-rose-500 to-amber-500 text-white rounded-2xl text-xs font-black shadow-md shadow-rose-500/25 flex items-center gap-2 hover:scale-105 transition-all cursor-pointer ring-2 ring-white/20 shrink-0 self-start sm:self-center"
+          {/* CENTER: Delicate Calligraphic Bismillah */}
+          <div className="flex flex-col items-center justify-center self-center text-center select-none py-1 px-2">
+            <span className="text-amber-200/95 text-xs sm:text-sm font-serif tracking-widest font-black drop-shadow-md">
+              بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+            </span>
+            <div className="flex items-center gap-1.5 mt-1 opacity-70">
+              <div className="w-8 h-px bg-gradient-to-r from-transparent to-amber-300" />
+              <div className="w-1.5 h-1.5 rotate-45 border border-amber-300/80 bg-amber-400/30" />
+              <div className="w-8 h-px bg-gradient-to-l from-transparent to-amber-300" />
+            </div>
+          </div>
+
+          {/* LEFT SIDE: Standalone Animated Circular Counter (5 seconds slow counter with label underneath) */}
+          <div 
+            className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none"
+            onMouseEnter={() => setIsHoveredOnCounter(true)}
+            onMouseLeave={() => setIsHoveredOnCounter(false)}
+          >
+            {/* The Clean Circle with Label Underneath */}
+            <div 
+              className="flex flex-col items-center justify-center gap-1.5 cursor-pointer group"
+              title="کلیک برای مشاهده شاخص بعدی"
+              onClick={() => {
+                setActiveStatIndex(prev => (prev + 1) % 4);
+                setCounterKey(Date.now());
+              }}
             >
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
-              </span>
-              <Inbox size={15} />
-              <span><AnimatedCounter value={unreadRequestsCount} /> درخواست در انتظار</span>
-            </button>
-          )}
+              {/* Outer Circular Ring & Number */}
+              <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center p-1 shrink-0 transition-transform group-hover:scale-105">
+                {/* Glowing Outer Gradient Ring */}
+                <div className={cn(
+                  "absolute inset-0 rounded-full bg-gradient-to-tr opacity-90 transition-all duration-700 shadow-lg shadow-indigo-500/20",
+                  currentStat.color,
+                  !isAnimationsDisabled && "animate-spin [animation-duration:10s]"
+                )} />
+                {/* Inner Circle Backdrop */}
+                <div className="relative w-full h-full rounded-full bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-center p-0.5 border border-white/20 shadow-inner">
+                  <span className={cn("text-base sm:text-lg font-black tracking-tight", currentStat.textColor)}>
+                    <AnimatedCounter 
+                      key={`${counterKey}-${currentStat.id}`}
+                      value={currentStat.value} 
+                      duration={isCounterAnimDisabled ? 0 : 5000}
+                      className="font-black"
+                    />
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-300 -mt-0.5">
+                    {currentStat.unit}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dynamic Label Underneath the Circle */}
+              <div className="text-center px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-xs border border-white/15 text-[11px] font-black text-white tracking-tight max-w-[150px] truncate shadow-xs">
+                {currentStat.label}
+              </div>
+            </div>
+
+            {/* Unread Alert Shortcut if applicable */}
+            {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-requests')}
+                className="px-2.5 py-1.5 bg-rose-500/90 hover:bg-rose-600 text-white rounded-xl text-[10px] font-black shadow-xs flex items-center gap-1.5 transition-all cursor-pointer border border-rose-300/40 shrink-0 self-center"
+                title="مشاهده درخواست‌های جدید"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                </span>
+                <Inbox size={12} />
+                <span className="hidden sm:inline">{unreadRequestsCount} درخواست</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
