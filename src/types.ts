@@ -1106,6 +1106,16 @@ export interface TeacherDetailedSpecialties {
   thursdayNote?: string;
 }
 
+export interface TeacherBankAccount {
+  id: string;
+  bankName: string; // نام بانک (مثلاً بانک ملی، سپه، پاسارگاد...)
+  accountNumber?: string; // شماره حساب
+  cardNumber?: string; // شماره کارت (۱۶ رقمی)
+  shebaNumber?: string; // شماره شبا (IR...)
+  isPrimary?: boolean; // حساب اصلی
+  note?: string; // توضیح کوتاه (مثلاً حساب شهریه، پاداش)
+}
+
 export interface Teacher {
   id: string;
   fullName: string;
@@ -1125,6 +1135,7 @@ export interface Teacher {
   bankName?: string; // نام بانک
   bankAccount?: string; // شماره حساب
   bankSheba?: string; // شماره شبا
+  bankAccounts?: TeacherBankAccount[]; // لیست شماره حساب‌ها و کارت‌های متکثر استاد
   priority: 1 | 2 | 3 | '1' | '2' | '3';
   isActive: boolean;
   createdAt: string;
@@ -1320,6 +1331,7 @@ export interface CourseSelectionPeriod {
   id: string;
   title: string;
   academicYear?: string;
+  mode?: 'normal' | 'thursday'; // 'normal' (برنامه عادی طول سال) | 'thursday' (کلاس‌های پنجشنبه)
   term?: string;
   allowedProgramTypes: ProgramType[];
   allowedGrades: string[]; // e.g. ['پایه ۷', 'پایه ۸'] or ['همه پایه‌ها']

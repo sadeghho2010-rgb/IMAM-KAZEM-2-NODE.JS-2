@@ -987,9 +987,9 @@ ON DUPLICATE KEY UPDATE `is_global_enabled` = 1;
 -- ۴. تنظیمات واحدهای سه‌گانه
 INSERT INTO `unit_request_settings` (`id`, `unit`, `unit_name`, `is_accepting_requests`, `disabled_notice_message`, `allowed_categories`)
 VALUES 
-('setting_education', 'education', 'واحد آموزش و امتحانات', 1, 'پذیرش درخواست‌های آموزشی موقتاً به دلیل بازه امتحانات غیرفعال است.', JSON_ARRAY('گواهی اشتغال به تحصیل', 'درخواست انتخاب واحد', 'تغییر یا تطبیق پایه', 'مرخصی تحصیلی', 'تجدید نظر در آزمون شفاهی', 'سایر امور آموزشی')),
-('setting_finance', 'finance', 'واحد مالی، شهریه و وام‌ها', 1, 'سامانه ثبت درخواست‌های مالی موقتاً در حال محاسبه شهریه ماهانه است.', JSON_ARRAY('درخواست وام قرض‌الحسنه', 'تسویه و بررسی شهریه', 'تجدید نظر در کمک‌هزینه مسکن', 'تقاضای مساعده مالی', 'گزارش خطای واریزی', 'سایر امور مالی')),
-('setting_cultural_welfare', 'cultural_welfare', 'واحد فرهنگی، رفاهی و کمدها', 1, 'پذیرش درخواست‌های رفاهی موقتاً بسته شده است.', JSON_ARRAY('درخواست تخصیص یا جابجایی کمد', 'رزرو ویژه غذا و مناسبات', 'ثبت‌نام اردوها و دوره‌های فرهنگی', 'گزارش نقص فنی کمد و کلید', 'سایر امور رفاهی'))
-ON DUPLICATE KEY UPDATE `unit_name` = VALUES(`unit_name`);
+('setting_education', 'education', 'واحد آموزش و امتحانات', 1, 'پذیرش درخواست‌های آموزشی موقتاً به دلیل بازه امتحانات غیرفعال است.', JSON_ARRAY('درخواست تغییر کلاس', 'درخواست مرخصی', 'تجدید نظر در ازمون شفاهی')),
+('setting_finance', 'finance', 'واحد مالی، شهریه و وام‌ها', 1, 'سامانه ثبت درخواست‌های مالی موقتاً در حال محاسبه شهریه ماهانه است.', JSON_ARRAY('گزارش کسریات شهریه')),
+('setting_cultural_welfare', 'cultural_welfare', 'واحد فرهنگی، رفاهی و کمدها', 1, 'پذیرش درخواست‌های رفاهی موقتاً بسته شده است.', JSON_ARRAY('سایر'))
+ON DUPLICATE KEY UPDATE `unit_name` = VALUES(`unit_name`), `allowed_categories` = VALUES(`allowed_categories`);
 
 SET FOREIGN_KEY_CHECKS = 1;

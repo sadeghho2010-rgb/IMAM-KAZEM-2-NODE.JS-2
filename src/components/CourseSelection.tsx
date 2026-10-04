@@ -36,6 +36,9 @@ import {
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
+const ACADEMIC_YEARS_LIST = ['۱۴۰۲-۱۴۰۳', '۱۴۰۳-۱۴۰۴', '۱۴۰۴-۱۴۰۵', '۱۴۰۵-۱۴۰۶', '۱۴۰۶-۱۴۰۷'];
+const SEMESTER_OPTIONS_LIST = ['نیم‌سال اول', 'نیم‌سال دوم', 'تمامی سال', 'تابستان', 'پنج‌شنبه‌ها'];
+
 export default function CourseSelection() {
   const { currentUser, isSuperAdmin } = useAuth();
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
@@ -80,6 +83,7 @@ export default function CourseSelection() {
   // Period Form State
   const [periodTitle, setPeriodTitle] = useState('انتخاب واحد نیم‌سال اول ۱۴۰۴-۱۴۰۳');
   const [periodAcademicYear, setPeriodAcademicYear] = useState('۱۴۰۳-۱۴۰۴');
+  const [periodMode, setPeriodMode] = useState<'normal' | 'thursday'>('normal');
   const [periodTerm, setTerm] = useState('نیم‌سال اول');
   const [periodAllowedTypes, setPeriodAllowedTypes] = useState<ProgramType[]>(['اصلی', 'مشاوره', 'دروس 5 شنبه', 'پژوهش']);
   const [periodAllowedGrades, setPeriodAllowedGrades] = useState<string[]>(['همه پایه‌ها']);
@@ -238,6 +242,7 @@ export default function CourseSelection() {
     const payload: Partial<CourseSelectionPeriod> = {
       title: periodTitle.trim(),
       academicYear: periodAcademicYear.trim(),
+      mode: periodMode,
       term: periodTerm.trim(),
       allowedProgramTypes: periodAllowedTypes,
       allowedGrades: periodAllowedGrades,
@@ -276,6 +281,7 @@ export default function CourseSelection() {
       setEditingPeriod(p);
       setPeriodTitle(p.title);
       setPeriodAcademicYear(p.academicYear || '۱۴۰۳-۱۴۰۴');
+      setPeriodMode(p.mode || 'normal');
       setTerm(p.term || 'نیم‌سال اول');
       setPeriodAllowedTypes(p.allowedProgramTypes || ['اصلی', 'مشاوره', 'دروس 5 شنبه', 'پژوهش']);
       setPeriodAllowedGrades(p.allowedGrades || ['همه پایه‌ها']);
@@ -291,6 +297,7 @@ export default function CourseSelection() {
       setEditingPeriod(null);
       setPeriodTitle('انتخاب واحد نیم‌سال اول ۱۴۰۴-۱۴۰۳');
       setPeriodAcademicYear('۱۴۰۳-۱۴۰۴');
+      setPeriodMode('normal');
       setTerm('نیم‌سال اول');
       setPeriodAllowedTypes(['اصلی', 'مشاوره', 'دروس 5 شنبه', 'پژوهش']);
       setPeriodAllowedGrades(['همه پایه‌ها']);
@@ -890,12 +897,20 @@ export default function CourseSelection() {
               <div key={p.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
-                    <span className={cn(
-                      "text-[9px] font-black px-2 py-0.5 rounded-full border",
-                      p.isActive ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"
-                    )}>
-                      {p.isActive ? 'فعال' : 'غیرفعال / بایگانی'}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={cn(
+                        "text-[9px] font-black px-2 py-0.5 rounded-full border",
+                        p.isActive ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"
+                      )}>
+                        {p.isActive ? 'فعال' : 'غیرفعال / بایگانی'}
+                      </span>
+                      <span className={cn(
+                        "text-[9px] font-black px-2 py-0.5 rounded-full border",
+                        p.mode === 'thursday' ? "bg-purple-50 text-purple-800 border-purple-200" : "bg-indigo-50 text-indigo-800 border-indigo-200"
+                      )}>
+                        {p.mode === 'thursday' ? 'کلاس‌های پنجشنبه' : 'برنامه عادی طول سال'}
+                      </span>
+                    </div>
                     <h4 className="font-black text-sm text-slate-900 mt-1">{p.title}</h4>
                   </div>
 
@@ -998,6 +1013,49 @@ export default function CourseSelection() {
                 {/* TAB 1: BASIC INFO */}
                 {modalTab === 'info' && (
                   <div className="space-y-4">
+                    {/* Course Selection Mode Toggle */}
+                    <div className="space-y-1.5 bg-indigo-50/70 p-3 rounded-2xl border border-indigo-100">
+                      <label className="text-indigo-950 font-black block text-xs">نوع برنامه‌ریزی / حالت انتخاب واحد:</label>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPeriodMode('normal');
+                            if (periodTerm === 'پنج‌شنبه‌ها') setTerm('نیم‌سال اول');
+                          }}
+                          className={cn(
+                            "py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer border flex items-center justify-center gap-1.5",
+                            periodMode === 'normal'
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-xs font-black"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          )}
+                        >
+                          <Calendar size={14} />
+                          <span>برنامه عادی طول سال</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPeriodMode('thursday');
+                            setTerm('پنج‌شنبه‌ها');
+                            if (!periodAllowedTypes.includes('دروس 5 شنبه')) {
+                              setPeriodAllowedTypes([...periodAllowedTypes, 'دروس 5 شنبه']);
+                            }
+                          }}
+                          className={cn(
+                            "py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer border flex items-center justify-center gap-1.5",
+                            periodMode === 'thursday'
+                              ? "bg-purple-600 text-white border-purple-600 shadow-xs font-black"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          )}
+                        >
+                          <Clock size={14} />
+                          <span>کلاس‌های پنجشنبه</span>
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="space-y-1">
                       <label>عنوان دوره انتخاب واحد:</label>
                       <input
@@ -1005,20 +1063,22 @@ export default function CourseSelection() {
                         required
                         value={periodTitle}
                         onChange={(e) => setPeriodTitle(e.target.value)}
-                        className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label>سال تحصیلی:</label>
-                        <input
-                          type="text"
-                          required
+                        <label>سال تحصیلی (انتخابی):</label>
+                        <select
                           value={periodAcademicYear}
                           onChange={(e) => setPeriodAcademicYear(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                        >
+                          {ACADEMIC_YEARS_LIST.map(yr => (
+                            <option key={yr} value={yr}>{yr}</option>
+                          ))}
+                        </select>
                       </div>
 
                       <div className="space-y-1">
@@ -1026,11 +1086,11 @@ export default function CourseSelection() {
                         <select
                           value={periodTerm}
                           onChange={(e) => setTerm(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
                         >
-                          <option value="نیم‌سال اول">نیم‌سال اول</option>
-                          <option value="نیم‌سال دوم">نیم‌سال دوم</option>
-                          <option value="ترک تحصیلی / تابستان">ترک تحصیلی / تابستان</option>
+                          {SEMESTER_OPTIONS_LIST.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
                         </select>
                       </div>
                     </div>

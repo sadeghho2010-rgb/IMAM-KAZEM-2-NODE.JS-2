@@ -611,21 +611,29 @@ export default function CreateOralExamWizard({
     onFinishPeriod(periodData);
   };
 
-  // Filtered scopes for quick search in Step 2 (اصلاح ۷)
+  // Filtered scopes for quick search in Step 2 (اصلاح ۴ و ۷)
   const matchingScopeItems = useMemo(() => {
     if (!activeScopeSearch) return [];
     const term = scopeSearchQuery.trim().toLowerCase();
+    const stRec = recordsMap[activeScopeSearch.studentId];
+
     return allFlattenedScopes.filter(s => {
       if (activeScopeSearch.course === 'fiqh') {
         if (s.category === 'usul') return false;
-        if (fiqhBooks.length > 0) {
+        const selectedBook = stRec?.fiqhBookTitle;
+        if (selectedBook) {
+          if (!s.bookTitle.includes(selectedBook) && !selectedBook.includes(s.bookTitle)) return false;
+        } else if (fiqhBooks.length > 0) {
           const matchBook = fiqhBooks.some(fb => s.bookTitle.includes(fb) || fb.includes(s.bookTitle));
           if (!matchBook && s.category !== 'entrance') return false;
         }
       }
       if (activeScopeSearch.course === 'usul') {
         if (s.category === 'fiqh') return false;
-        if (usulBooks.length > 0) {
+        const selectedBook = stRec?.usulBookTitle;
+        if (selectedBook) {
+          if (!s.bookTitle.includes(selectedBook) && !selectedBook.includes(s.bookTitle)) return false;
+        } else if (usulBooks.length > 0) {
           const matchBook = usulBooks.some(ub => s.bookTitle.includes(ub) || ub.includes(s.bookTitle));
           if (!matchBook && s.category !== 'entrance') return false;
         }
@@ -637,7 +645,7 @@ export default function CreateOralExamWizard({
              s.subScopeTitle.toLowerCase().includes(term) ||
              (s.pages && s.pages.toLowerCase().includes(term));
     }).slice(0, 20);
-  }, [activeScopeSearch, scopeSearchQuery, allFlattenedScopes, fiqhBooks, usulBooks]);
+  }, [activeScopeSearch, scopeSearchQuery, allFlattenedScopes, fiqhBooks, usulBooks, recordsMap]);
 
   return (
     <div className="space-y-6">
@@ -791,16 +799,18 @@ export default function CreateOralExamWizard({
               />
             </div>
 
-            {/* Academic Year */}
+            {/* Academic Year Select Dropdown (اصلاح ۴) */}
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700">سال تحصیلی</label>
-              <input
-                type="text"
+              <label className="block text-xs font-bold text-slate-700">سال تحصیلی (انتخابی)</label>
+              <select
                 value={academicYear}
                 onChange={(e) => setAcademicYear(e.target.value)}
-                placeholder="۱۴۰۳-۱۴۰۴"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
-              />
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 cursor-pointer"
+              >
+                {['۱۴۰۲-۱۴۰۳', '۱۴۰۳-۱۴۰۴', '۱۴۰۴-۱۴۰۵', '۱۴۰۵-۱۴۰۶', '۱۴۰۶-۱۴۰۷'].map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
             </div>
 
             {/* Exam Date */}
@@ -839,50 +849,80 @@ export default function CreateOralExamWizard({
               </div>
             )}
 
-            {/* Book Selection for Usul (اصلاح ۵ و ۷) */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-indigo-900">کتاب مورد آزمون در اصول</label>
-              <select
-                value={usulBooks[0] || ''}
-                onChange={(e) => setUsulBooks([e.target.value])}
-                className="w-full px-4 py-2.5 bg-indigo-50/60 border border-indigo-200 rounded-xl text-xs text-indigo-950 font-bold cursor-pointer"
-              >
-                {examCategory === 'entrance' ? (
-                  <>
-                    <option value="اصول مرحوم مظفر">اصول الفقه (مرحوم مظفر)</option>
-                    <option value="حلقه ثانیه">حلقه ثانیه (شهید صدر)</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="رسائل">رسائل (فرائد الأصول شیخ انصاری)</option>
-                    <option value="کفایه">کفایة الأصول (آخوند خراسانی)</option>
-                    <option value="حلقه ثالثه">حلقه ثالثه (شهید صدر)</option>
-                  </>
-                )}
-              </select>
+            {/* Book Selection for Usul with Multi-Select Capability (اصلاح ۴) */}
+            <div className="space-y-1 md:col-span-1">
+              <label className="block text-xs font-bold text-indigo-900">
+                کتاب/کتب مورد آزمون در اصول (امکان انتخاب چندتایی):
+              </label>
+              <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 space-y-1.5">
+                {(examCategory === 'entrance' ? [
+                  { id: 'اصول مرحوم مظفر', label: 'اصول الفقه (مرحوم مظفر)' },
+                  { id: 'حلقه ثانیه', label: 'حلقه ثانیه (شهید صدر)' }
+                ] : [
+                  { id: 'رسائل', label: 'رسائل (شیخ انصاری)' },
+                  { id: 'کفایه', label: 'کفایة الأصول (آخوند خراسانی)' },
+                  { id: 'حلقه ثالثه', label: 'حلقه ثالثه (شهید صدر)' }
+                ]).map(bk => {
+                  const isChecked = usulBooks.includes(bk.id);
+                  return (
+                    <label key={bk.id} className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-950 hover:text-indigo-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setUsulBooks([...usulBooks, bk.id]);
+                          } else {
+                            if (usulBooks.length > 1) {
+                              setUsulBooks(usulBooks.filter(b => b !== bk.id));
+                            }
+                          }
+                        }}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>{bk.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Book Selection for Fiqh (اصلاح ۵ و ۷) */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-amber-900">کتاب مورد آزمون در فقه</label>
-              <select
-                value={fiqhBooks[0] || ''}
-                onChange={(e) => setFiqhBooks([e.target.value])}
-                className="w-full px-4 py-2.5 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-950 font-bold cursor-pointer"
-              >
-                {examCategory === 'entrance' ? (
-                  <>
-                    <option value="لمعه">شرح اللمعة الدمشقیة (لمعه)</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="مکاسب - محرمه">مکاسب - مکاسب محرمه</option>
-                    <option value="مکاسب - بیع">مکاسب - کتاب البيع</option>
-                    <option value="مکاسب - شروط متعاقدین">مکاسب - شروط متعاقدین</option>
-                    <option value="مکاسب - شروط عوضین">مکاسب - شروط عوضین</option>
-                  </>
-                )}
-              </select>
+            {/* Book Selection for Fiqh with Multi-Select Capability (اصلاح ۴) */}
+            <div className="space-y-1 md:col-span-1">
+              <label className="block text-xs font-bold text-amber-900">
+                کتاب/کتب مورد آزمون در فقه (امکان انتخاب چندتایی):
+              </label>
+              <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 space-y-1.5">
+                {(examCategory === 'entrance' ? [
+                  { id: 'لمعه', label: 'شرح اللمعة الدمشقیة (لمعه)' }
+                ] : [
+                  { id: 'مکاسب - محرمه', label: 'مکاسب - مکاسب محرمه' },
+                  { id: 'مکاسب - بیع', label: 'مکاسب - کتاب البيع' },
+                  { id: 'مکاسب - شروط متعاقدین', label: 'مکاسب - شروط متعاقدین' },
+                  { id: 'مکاسب - شروط عوضین', label: 'مکاسب - شروط عوضین' }
+                ]).map(bk => {
+                  const isChecked = fiqhBooks.includes(bk.id);
+                  return (
+                    <label key={bk.id} className="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-950 hover:text-amber-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFiqhBooks([...fiqhBooks, bk.id]);
+                          } else {
+                            if (fiqhBooks.length > 1) {
+                              setFiqhBooks(fiqhBooks.filter(b => b !== bk.id));
+                            }
+                          }
+                        }}
+                        className="rounded text-amber-600 focus:ring-amber-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>{bk.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -1556,6 +1596,22 @@ export default function CreateOralExamWizard({
                             </select>
                           </div>
 
+                          {/* Book Title Selector for Student (اصلاح ۴) */}
+                          {fiqhBooks.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-amber-900 shrink-0">کتاب فقه:</span>
+                              <select
+                                value={rec.fiqhBookTitle || fiqhBooks[0] || ''}
+                                onChange={(e) => handleUpdateRecord(stId, { fiqhBookTitle: e.target.value, fiqhMainScopeTitle: '', fiqhSubScopeTitle: '', fiqhPages: '' })}
+                                className="flex-1 px-2 py-1 bg-amber-100/80 border border-amber-300 rounded-lg text-xs font-bold text-amber-950 focus:outline-none cursor-pointer"
+                              >
+                                {fiqhBooks.map(bk => (
+                                  <option key={bk} value={bk}>{bk}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           {/* Scope Search & Display */}
                           <div className="relative">
                             <div
@@ -1578,7 +1634,9 @@ export default function CreateOralExamWizard({
                             {activeScopeSearch?.studentId === stId && activeScopeSearch?.course === 'fiqh' && (
                               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-2 space-y-2">
                                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                                  <span className="text-[11px] font-bold text-slate-700">جستجوی محدوده در بانک فقه:</span>
+                                  <span className="text-[11px] font-bold text-amber-900">
+                                    جستجوی محدوده فقه ({rec.fiqhBookTitle || fiqhBooks[0] || 'کل کتب'}):
+                                  </span>
                                   <button onClick={() => setActiveScopeSearch(null)} className="text-slate-400 hover:text-slate-600">
                                     <X size={14} />
                                   </button>
@@ -1588,7 +1646,7 @@ export default function CreateOralExamWizard({
                                   autoFocus
                                   value={scopeSearchQuery}
                                   onChange={(e) => setScopeSearchQuery(e.target.value)}
-                                  placeholder="تایپ ۱ یا ۲ حرف از نام محدوده یا صفحات (مثلاً: بیع، ص ۲۰)..."
+                                  placeholder="تایپ ۱ یا ۲ حرف از نام محدوده یا صفحات..."
                                   className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
                                 />
                                 <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 text-xs">
@@ -1636,6 +1694,22 @@ export default function CreateOralExamWizard({
                             </select>
                           </div>
 
+                          {/* Book Title Selector for Student (اصلاح ۴) */}
+                          {usulBooks.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-indigo-900 shrink-0">کتاب اصول:</span>
+                              <select
+                                value={rec.usulBookTitle || usulBooks[0] || ''}
+                                onChange={(e) => handleUpdateRecord(stId, { usulBookTitle: e.target.value, usulMainScopeTitle: '', usulSubScopeTitle: '', usulPages: '' })}
+                                className="flex-1 px-2 py-1 bg-indigo-100/80 border border-indigo-300 rounded-lg text-xs font-bold text-indigo-950 focus:outline-none cursor-pointer"
+                              >
+                                {usulBooks.map(bk => (
+                                  <option key={bk} value={bk}>{bk}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           {/* Scope Search & Display */}
                           <div className="relative">
                             <div
@@ -1658,7 +1732,9 @@ export default function CreateOralExamWizard({
                             {activeScopeSearch?.studentId === stId && activeScopeSearch?.course === 'usul' && (
                               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-2 space-y-2">
                                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                                  <span className="text-[11px] font-bold text-slate-700">جستجوی محدوده در بانک اصول:</span>
+                                  <span className="text-[11px] font-bold text-indigo-900">
+                                    جستجوی محدوده اصول ({rec.usulBookTitle || usulBooks[0] || 'کل کتب'}):
+                                  </span>
                                   <button onClick={() => setActiveScopeSearch(null)} className="text-slate-400 hover:text-slate-600">
                                     <X size={14} />
                                   </button>
@@ -1668,7 +1744,7 @@ export default function CreateOralExamWizard({
                                   autoFocus
                                   value={scopeSearchQuery}
                                   onChange={(e) => setScopeSearchQuery(e.target.value)}
-                                  placeholder="تایپ ۱ یا ۲ حرف از نام محدوده یا صفحات (مثلاً: قطع و ظن، ص ۱۴)..."
+                                  placeholder="تایپ ۱ یا ۲ حرف از نام محدوده یا صفحات..."
                                   className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
                                 />
                                 <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 text-xs">

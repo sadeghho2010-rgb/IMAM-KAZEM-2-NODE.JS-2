@@ -39,7 +39,9 @@ import {
   HelpCircle,
   UserCheck,
   HeartHandshake,
-  CheckSquare
+  CheckSquare,
+  Settings,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -77,7 +79,7 @@ const DEFAULT_UNIT_SETTINGS: Record<RequestTargetUnit, UnitRequestSettings> = {
     unitName: 'واحد آموزش و امتحانات',
     isAcceptingRequests: true,
     disabledNoticeMessage: 'پذیرش درخواست‌های آموزشی موقتاً به دلیل بازه امتحانات غیرفعال است.',
-    allowedCategories: ['گواهی اشتغال به تحصیل', 'درخواست انتخاب واحد', 'تغییر یا تطبیق پایه', 'مرخصی تحصیلی', 'تجدید نظر در آزمون شفاهی', 'سایر امور آموزشی']
+    allowedCategories: ['درخواست تغییر کلاس', 'درخواست مرخصی', 'تجدید نظر در ازمون شفاهی']
   },
   finance: {
     id: 'setting_finance',
@@ -85,7 +87,7 @@ const DEFAULT_UNIT_SETTINGS: Record<RequestTargetUnit, UnitRequestSettings> = {
     unitName: 'واحد مالی، شهریه و وام‌ها',
     isAcceptingRequests: true,
     disabledNoticeMessage: 'سامانه ثبت درخواست‌های مالی موقتاً در حال محاسبه شهریه ماهانه است.',
-    allowedCategories: ['درخواست وام قرض‌الحسنه', 'تسویه و بررسی شهریه', 'تجدید نظر در کمک‌هزینه مسکن', 'تقاضای مساعده مالی', 'گزارش خطای واریزی', 'سایر امور مالی']
+    allowedCategories: ['گزارش کسریات شهریه']
   },
   cultural_welfare: {
     id: 'setting_cultural_welfare',
@@ -93,7 +95,7 @@ const DEFAULT_UNIT_SETTINGS: Record<RequestTargetUnit, UnitRequestSettings> = {
     unitName: 'واحد فرهنگی، رفاهی و کمدها',
     isAcceptingRequests: true,
     disabledNoticeMessage: 'پذیرش درخواست‌های رفاهی موقتاً بسته شده است.',
-    allowedCategories: ['درخواست تخصیص یا جابجایی کمد', 'رزرو ویژه غذا و مناسبات', 'ثبت‌نام اردوها و دوره‌های فرهنگی', 'گزارش نقص فنی کمد و کلید', 'سایر امور رفاهی']
+    allowedCategories: ['سایر']
   }
 };
 
@@ -123,6 +125,9 @@ export default function StudentRequestsPortal() {
   const [selectedRequestForReview, setSelectedRequestForReview] = useState<StudentRequest | null>(null);
   const [showSuperAdminSettingsModal, setShowSuperAdminSettingsModal] = useState(false);
   const [showOfficerToggleStatusModal, setShowOfficerToggleStatusModal] = useState(false);
+  const [showSubjectSettingsModal, setShowSubjectSettingsModal] = useState(false);
+  const [subjectSettingUnit, setSubjectSettingUnit] = useState<RequestTargetUnit>('education');
+  const [newSubjectInput, setNewSubjectInput] = useState('');
 
   // New Request Form State
   const [newUnit, setNewUnit] = useState<RequestTargetUnit>('education');
@@ -255,6 +260,67 @@ export default function StudentRequestsPortal() {
       alert('تنظیمات سراسری سوپر ادمین با موفقیت ذخیره شد.');
     } catch (e: any) {
       alert('خطا در ذخیره تنظیمات سوپر ادمین: ' + (e?.message || ''));
+    }
+  };
+
+  // Add a new category/subject to the selected unit
+  const handleAddSubject = async () => {
+    if (!newSubjectInput.trim()) return;
+    const currentUnitSettings = unitSettings[subjectSettingUnit];
+    if (currentUnitSettings.allowedCategories.includes(newSubjectInput.trim())) {
+      alert('این موضوع قبلاً اضافه شده است.');
+      return;
+    }
+    
+    const updatedCategories = [...currentUnitSettings.allowedCategories, newSubjectInput.trim()];
+    const updatedSettings: UnitRequestSettings = {
+      ...currentUnitSettings,
+      allowedCategories: updatedCategories,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.name || currentUser?.username || 'system'
+    };
+
+    try {
+      await localDb.saveDoc('unit_request_settings', updatedSettings.id, updatedSettings);
+      setUnitSettings(prev => ({
+        ...prev,
+        [subjectSettingUnit]: updatedSettings
+      }));
+      setNewSubjectInput('');
+      triggerUpdateEvent();
+    } catch (e) {
+      console.error('Error saving new subject:', e);
+      alert('خطا در ذخیره‌سازی موضوع جدید در پایگاه داده.');
+    }
+  };
+
+  // Delete a category/subject from the selected unit
+  const handleDeleteSubject = async (subjectToDelete: string) => {
+    const currentUnitSettings = unitSettings[subjectSettingUnit];
+    if (currentUnitSettings.allowedCategories.length <= 1) {
+      alert('هر واحد باید حداقل دارای یک موضوع معتبر باشد.');
+      return;
+    }
+    if (!window.confirm(`آیا مایل به حذف موضوع «${subjectToDelete}» هستید؟`)) return;
+
+    const updatedCategories = currentUnitSettings.allowedCategories.filter(cat => cat !== subjectToDelete);
+    const updatedSettings: UnitRequestSettings = {
+      ...currentUnitSettings,
+      allowedCategories: updatedCategories,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.name || currentUser?.username || 'system'
+    };
+
+    try {
+      await localDb.saveDoc('unit_request_settings', updatedSettings.id, updatedSettings);
+      setUnitSettings(prev => ({
+        ...prev,
+        [subjectSettingUnit]: updatedSettings
+      }));
+      triggerUpdateEvent();
+    } catch (e) {
+      console.error('Error deleting subject:', e);
+      alert('خطا در حذف موضوع از پایگاه داده.');
     }
   };
 
@@ -495,11 +561,26 @@ export default function StudentRequestsPortal() {
           {isSuperAdmin && (
             <button
               onClick={() => setShowSuperAdminSettingsModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
               title="کنترل دسترسی سوپرادمین: نمایش در منوی طلاب و فعال/غیرفعال بودن سراسری"
             >
               <Sliders size={15} />
               <span>کنترل سراسری (سوپر ادمین)</span>
+            </button>
+          )}
+
+          {/* Manage Request Subjects Button (Super Admin & Education Manager) */}
+          {(isSuperAdmin || isEduOfficer) && (
+            <button
+              onClick={() => {
+                setSubjectSettingUnit(isEduOfficer ? 'education' : 'education');
+                setShowSubjectSettingsModal(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+              title="مدیریت و افزودن موضوعات درخواست‌ها"
+            >
+              <Settings size={15} />
+              <span>مدیریت موضوعات درخواست‌ها</span>
             </button>
           )}
 
@@ -1446,6 +1527,145 @@ export default function StudentRequestsPortal() {
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-xs"
                 >
                   ذخیره وضعیت جدید
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================= Modal: Manage Request Subjects (Super Admin & Education Manager) ======================= */}
+      <AnimatePresence>
+        {showSubjectSettingsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Settings size={20} className="text-indigo-600 animate-spin-slow" />
+                  <h3 className="text-sm font-black text-slate-900">مدیریت موضوعات درخواست‌های طلاب</h3>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowSubjectSettingsModal(false);
+                    setNewSubjectInput('');
+                  }} 
+                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Unit Selector Tabs */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1.5">انتخاب واحد جهت مدیریت موضوعات:</label>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setSubjectSettingUnit('education')}
+                      className={cn(
+                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
+                        subjectSettingUnit === 'education'
+                          ? "bg-white text-indigo-900 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      واحد آموزش
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubjectSettingUnit('finance')}
+                      className={cn(
+                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
+                        subjectSettingUnit === 'finance'
+                          ? "bg-white text-indigo-900 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      واحد مالی
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSubjectSettingUnit('cultural_welfare')}
+                      className={cn(
+                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
+                        subjectSettingUnit === 'cultural_welfare'
+                          ? "bg-white text-indigo-900 shadow-xs"
+                          : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      واحد فرهنگی و رفاهی
+                    </button>
+                  </div>
+                </div>
+
+                {/* Categories List */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-700">موضوعات فعال فعلی:</label>
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+                    {((unitSettings[subjectSettingUnit]?.allowedCategories) || []).map((cat) => (
+                      <div 
+                        key={cat} 
+                        className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-slate-100 shadow-3xs hover:border-slate-300 transition-colors"
+                      >
+                        <span className="font-bold text-slate-800">{cat}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubject(cat)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                          title="حذف این موضوع"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Add New Category Form */}
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                  <label className="block font-bold text-slate-700">افزودن موضوع جدید به این واحد:</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newSubjectInput}
+                      onChange={(e) => setNewSubjectInput(e.target.value)}
+                      placeholder="مثال: درخواست تأییدیه مدارک یا تسویه..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddSubject();
+                        }
+                      }}
+                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-indigo-400 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddSubject}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                    >
+                      <PlusCircle size={14} />
+                      <span>افزودن</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSubjectSettingsModal(false);
+                    setNewSubjectInput('');
+                  }}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-200"
+                >
+                  بستن پنجره
                 </button>
               </div>
             </motion.div>

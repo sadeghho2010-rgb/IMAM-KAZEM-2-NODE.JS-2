@@ -241,7 +241,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   // Shia Hadith on Virtue of Knowledge Banner State
   const [hadithIndex, setHadithIndex] = useState(0);
   const [isHadithDismissed, setIsHadithDismissed] = useState<boolean>(() => {
-    return localStorage.getItem('hide_hadith_banner_v1') === 'true';
+    return localStorage.getItem('hide_hadith_banner_v2') === 'true';
   });
 
   const showHadithBanner = !isHadithDismissed && (prefsState.showHadithBanner !== false);
@@ -249,7 +249,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   const toggleHadithBanner = () => {
     const nextVal = !isHadithDismissed;
     setIsHadithDismissed(nextVal);
-    localStorage.setItem('hide_hadith_banner_v1', String(nextVal));
+    localStorage.setItem('hide_hadith_banner_v2', String(nextVal));
   };
 
   const nextHadith = (e: React.MouseEvent) => {
@@ -1158,6 +1158,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   ];
 
   const currentStat = STATS_ITEMS[activeStatIndex] || STATS_ITEMS[0];
+  const currentHadith = SHIA_KNOWLEDGE_HADITHS[Math.abs(hadithIndex) % SHIA_KNOWLEDGE_HADITHS.length] || SHIA_KNOWLEDGE_HADITHS[0];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 font-vazir relative min-h-[calc(100vh-5rem)] overflow-hidden" dir="rtl">
@@ -1172,10 +1173,13 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       
       {/* 0. CALLIGRAPHIC BISMILLAH & HADITH (Boxless, Minimal, Fine & Beautiful Typography) */}
       {showHadithBanner ? (
-        <div className="text-center py-1 select-none transition-all group relative max-w-4xl mx-auto space-y-1">
-          {/* Centered Small & Beautiful Bismillah with Subtle Hover Controls */}
+        <div className="text-center py-2 select-none transition-all group relative max-w-4xl mx-auto space-y-1.5">
+          {/* Centered Small & Beautiful Bismillah with Pure Black Color */}
           <div className="flex items-center justify-center gap-2">
-            <span className="font-serif text-xs sm:text-sm md:text-[15px] font-bold text-black dark:text-slate-100 tracking-widest">
+            <span 
+              style={{ color: '#000000' }}
+              className="font-serif text-sm sm:text-base md:text-lg font-black tracking-widest select-none drop-shadow-none"
+            >
               بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
             </span>
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-slate-400">
@@ -1198,13 +1202,19 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             </div>
           </div>
 
-          {/* Hadith Narration: Fine, Small & Beautiful Font without Translation, Source is ONLY Book Name */}
+          {/* Hadith Narration: Fine, Small & Beautiful Font in Pure Black without Translation, Source is ONLY Book Name */}
           <div className="flex items-center justify-center gap-1.5 flex-wrap px-2">
-            <p className="font-serif text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-normal inline">
-              {SHIA_KNOWLEDGE_HADITHS[hadithIndex].arabic}
+            <p 
+              style={{ color: '#000000' }}
+              className="font-serif text-xs sm:text-[13px] leading-relaxed font-bold inline"
+            >
+              {currentHadith.arabic}
             </p>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans inline">
-              ({SHIA_KNOWLEDGE_HADITHS[hadithIndex].source})
+            <span 
+              style={{ color: '#1e293b' }}
+              className="text-[11px] font-sans font-bold inline mr-1"
+            >
+              ({currentHadith.source})
             </span>
           </div>
         </div>
@@ -1213,7 +1223,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           <button
             type="button"
             onClick={toggleHadithBanner}
-            className="text-[11px] font-serif text-black dark:text-slate-200 hover:opacity-80 tracking-wider transition-colors cursor-pointer select-none font-bold"
+            style={{ color: '#000000' }}
+            className="text-xs sm:text-sm font-serif tracking-wider transition-colors cursor-pointer select-none font-black"
             title="نمایش بسم‌الله و روایت"
           >
             بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ

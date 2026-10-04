@@ -165,6 +165,7 @@ export default function TeachersSchedule() {
   const [copiedAccountSms, setCopiedAccountSms] = useState<boolean>(false);
 
   // Filters for teachers list view
+  const [teacherTab, setTeacherTab] = useState<'internal' | 'external'>('internal');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
@@ -343,7 +344,7 @@ export default function TeachersSchedule() {
       ]);
 
       setPrograms(rawPrograms || []);
-      setTeachers((rawTeachers || []).filter(t => !t.isExternal));
+      setTeachers(rawTeachers || []);
       setManualSchedules(rawManual || []);
       setRooms(rawRooms || []);
     } catch (err) {
@@ -436,6 +437,8 @@ export default function TeachersSchedule() {
           if (it.madrasRoom && it.madrasRoom !== 'نامشخص') roomsSet.add(it.madrasRoom);
         });
 
+        const totalWeeklySessions = matchedItems.reduce((acc, it) => acc + (it.days && it.days.length > 0 ? it.days.length : 1), 0);
+
         result.push({
           id: teacherObj.id,
           name: teacherObj.fullName.trim(),
@@ -445,7 +448,7 @@ export default function TeachersSchedule() {
           activeDays,
           grades: Array.from(gradesSet),
           rooms: Array.from(roomsSet),
-          totalHoursApprox: Number((matchedItems.length * 1.5).toFixed(1))
+          totalHoursApprox: totalWeeklySessions
         });
       }
     });
@@ -481,6 +484,8 @@ export default function TeachersSchedule() {
           if (it.madrasRoom && it.madrasRoom !== 'نامشخص') roomsSet.add(it.madrasRoom);
         });
 
+        const totalWeeklySessions = itemsList.reduce((acc, it) => acc + (it.days && it.days.length > 0 ? it.days.length : 1), 0);
+
         result.push({
           id: `unregistered_${teacherName}`,
           name: teacherName,
@@ -496,7 +501,7 @@ export default function TeachersSchedule() {
           activeDays,
           grades: Array.from(gradesSet),
           rooms: Array.from(roomsSet),
-          totalHoursApprox: Number((itemsList.length * 1.5).toFixed(1))
+          totalHoursApprox: totalWeeklySessions
         });
       });
     }
@@ -513,6 +518,10 @@ export default function TeachersSchedule() {
   // Filtered teachers list for main directory view
   const displayedTeachers = useMemo(() => {
     return registeredTeachersWithClasses.filter(t => {
+      // Tab filter (internal vs external institutes)
+      if (teacherTab === 'internal' && t.teacherObj.isExternal === true) return false;
+      if (teacherTab === 'external' && t.teacherObj.isExternal !== true) return false;
+
       // Day filter
       if (selectedDayFilter !== 'all') {
         const hasDay = t.activeDays.includes(selectedDayFilter);
@@ -860,6 +869,36 @@ export default function TeachersSchedule() {
         /* VIEW A: LIST OF REGISTERED TEACHERS ONLY                              */
         /* ===================================================================== */
         <div className="space-y-5">
+          {/* Tab Switcher: Internal Teachers vs External Institutes */}
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 max-w-md">
+            <button
+              type="button"
+              onClick={() => setTeacherTab('internal')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+                teacherTab === 'internal'
+                  ? "bg-indigo-600 text-white shadow-md font-black"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
+              )}
+            >
+              <GraduationCap size={15} />
+              <span>اساتید و مدرسین کلاسی</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTeacherTab('external')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+                teacherTab === 'external'
+                  ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
+              )}
+            >
+              <DoorOpen size={15} />
+              <span>مدرس‌های خارج از مجموعه</span>
+            </button>
+          </div>
+
           {/* Filter Bar */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
             <div className="flex items-center flex-wrap gap-2.5 flex-1">
@@ -1859,11 +1898,20 @@ export default function TeachersSchedule() {
                     required
                   >
                     <option value="">-- انتخاب استاد از بانک اساتید --</option>
-                    {teachers.map(t => (
-                      <option key={t.id} value={t.id}>
-                        استاد {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                      </option>
-                    ))}
+                    <optgroup label="اساتید داخلی مؤسسه">
+                      {teachers.filter(t => !t.isExternal).map(t => (
+                        <option key={t.id} value={t.id}>
+                          استاد {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="مدرس‌های خارج از مجموعه">
+                      {teachers.filter(t => t.isExternal).map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.fullName} (خارج از مجموعه)
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
 

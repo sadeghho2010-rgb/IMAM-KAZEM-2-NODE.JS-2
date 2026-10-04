@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   UserPlus, 
+  Plus,
   Search, 
   Filter, 
   Phone, 
@@ -30,7 +31,7 @@ import {
   ShieldAlert,
   Building2
 } from 'lucide-react';
-import { Teacher, TeacherCategory, TeacherDetailedSpecialties } from '../types';
+import { Teacher, TeacherCategory, TeacherDetailedSpecialties, TeacherBankAccount } from '../types';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -65,7 +66,6 @@ export default function TeachersBank() {
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'internal' | 'external'>('internal');
 
   // Multi-copy phone state (Level 2)
   const [isMultiCopyMode, setIsMultiCopyMode] = useState<boolean>(false);
@@ -108,6 +108,10 @@ export default function TeachersBank() {
   const [selectedCategories, setSelectedCategories] = useState<TeacherCategory[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [experienceHistory, setExperienceHistory] = useState<string>('');
+  // Financial & Multiple Bank Accounts State
+  const [bankAccountsList, setBankAccountsList] = useState<TeacherBankAccount[]>([
+    { id: 'acc_1', bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: '' }
+  ]);
   const [bankName, setBankName] = useState<string>('');
   const [bankAccount, setBankAccount] = useState<string>('');
   const [bankSheba, setBankSheba] = useState<string>('');
@@ -144,35 +148,9 @@ export default function TeachersBank() {
           cleanDocs = (await localDb.getDocs('teachers')) as Teacher[];
         }
 
-        // Automatically seed default external institutes if they don't exist
-        const defaultExternals = [
-          'مدرسه امام حسین علیه السلام',
-          'مدرسه امام باقر علیه السلام',
-          'موسسه ائمه اطهار علیهم السلام'
-        ];
-        const currentExternals = cleanDocs.filter(t => t.isExternal).map(t => t.fullName);
-        const missingExternals = defaultExternals.filter(name => !currentExternals.includes(name));
-
-        if (missingExternals.length > 0) {
-          for (const extName of missingExternals) {
-            await localDb.addDoc('teachers', {
-              fullName: extName,
-              phoneNumber: '',
-              priority: 2,
-              isActive: true,
-              categories: ['ویژه'],
-              isExternal: true,
-              notes: 'تعریف‌شده به عنوان محل برگزاری کلاس خارج از مؤسسه',
-              createdAt: new Date().toISOString()
-            });
-          }
-          const updatedDocs = (await localDb.getDocs('teachers')) as Teacher[];
-          setTeachers(updatedDocs);
-        } else {
-          setTeachers(cleanDocs);
-        }
+        setTeachers(cleanDocs.filter(t => !t.isExternal));
       } else {
-        setTeachers(docs);
+        setTeachers(docs.filter(t => !t.isExternal));
       }
     } catch (err) {
       console.error('Error fetching teachers:', err);
@@ -209,6 +187,9 @@ export default function TeachersBank() {
     setBankName('بانک ملی');
     setBankAccount('');
     setBankSheba('');
+    setBankAccountsList([
+      { id: `acc_${Date.now()}`, bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: 'حساب اصلی' }
+    ]);
     setUsulSpecialties([]);
     setFiqhSpecialties([]);
     setFalsafaSpecialties([]);
@@ -231,6 +212,16 @@ export default function TeachersBank() {
     setBankName(t.bankName || '');
     setBankAccount(t.bankAccount || '');
     setBankSheba(t.bankSheba || '');
+    
+    // Multiple bank accounts fallback
+    if (t.bankAccounts && t.bankAccounts.length > 0) {
+      setBankAccountsList(t.bankAccounts);
+    } else {
+      setBankAccountsList([
+        { id: `acc_1`, bankName: t.bankName || 'بانک ملی', accountNumber: t.bankAccount || '', cardNumber: '', shebaNumber: t.bankSheba || '', note: 'حساب اصلی' }
+      ]);
+    }
+
     setUsulSpecialties(t.detailedSpecialties?.usul || []);
     setFiqhSpecialties(t.detailedSpecialties?.fiqh || []);
     setFalsafaSpecialties(t.detailedSpecialties?.falsafa || []);
@@ -245,6 +236,8 @@ export default function TeachersBank() {
     // Ensure teacherCode always exists even if left blank
     const finalTeacherCode = teacherCode.trim() || generateUniqueTeacherCode();
 
+    const primaryAcc = bankAccountsList[0];
+
     const teacherData: Partial<Teacher> = {
       fullName: fullName.trim(),
       nationalId: nationalId.trim(),
@@ -256,9 +249,10 @@ export default function TeachersBank() {
       categories: selectedCategories,
       notes: notes.trim(),
       experienceHistory: experienceHistory.trim(),
-      bankName: bankName.trim(),
-      bankAccount: bankAccount.trim(),
-      bankSheba: bankSheba.trim(),
+      bankName: primaryAcc?.bankName || bankName.trim(),
+      bankAccount: primaryAcc?.accountNumber || bankAccount.trim(),
+      bankSheba: primaryAcc?.shebaNumber || bankSheba.trim(),
+      bankAccounts: bankAccountsList,
       detailedSpecialties: {
         usul: (selectedCategories.includes('اصول') || selectedCategories.includes('مشاوره اصول')) ? usulSpecialties : [],
         fiqh: (selectedCategories.includes('فقه') || selectedCategories.includes('مشاوره فقه')) ? fiqhSpecialties : [],
@@ -266,7 +260,7 @@ export default function TeachersBank() {
         thursdayNote: selectedCategories.includes('دروس پنجشنبه') ? thursdayNote.trim() : ''
       },
       updatedAt: new Date().toISOString(),
-      isExternal: editingTeacher ? (editingTeacher.isExternal || false) : (activeTab === 'external')
+      isExternal: false
     };
 
     try {
@@ -356,8 +350,7 @@ export default function TeachersBank() {
 
   // Filter logic
   const filteredTeachers = teachers.filter(t => {
-    if (activeTab === 'internal' && t.isExternal === true) return false;
-    if (activeTab === 'external' && t.isExternal !== true) return false;
+    if (t.isExternal === true) return false;
 
     const searchLower = searchTerm.toLowerCase().trim();
     const matchesSearch = !searchLower || 
@@ -660,7 +653,7 @@ export default function TeachersBank() {
   const hasFalsafaOrCounseling = selectedCategories.includes('فلسفه') || selectedCategories.includes('مشاوره فلسفه');
   const hasThursday = selectedCategories.includes('دروس پنجشنبه');
 
-  const isExternalForm = editingTeacher ? editingTeacher.isExternal : (activeTab === 'external');
+  const isExternalForm = Boolean(editingTeacher?.isExternal);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6" dir="rtl">
@@ -744,46 +737,12 @@ export default function TeachersBank() {
                   className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
                 >
                   <UserPlus size={16} />
-                  <span>{activeTab === 'external' ? 'افزودن مجموعه همکار' : 'افزودن استاد جدید'}</span>
+                  <span>افزودن استاد جدید</span>
                 </button>
               </>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Tab Switcher for Internal Teachers vs External Institutes */}
-      <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 max-w-md">
-        <button
-          onClick={() => {
-            setActiveTab('internal');
-            setSelectedMultiPhoneIds([]);
-          }}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
-            activeTab === 'internal'
-              ? "bg-slate-900 text-white shadow-md font-black"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
-          )}
-        >
-          <GraduationCap size={15} />
-          <span>اساتید داخلی مؤسسه</span>
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('external');
-            setSelectedMultiPhoneIds([]);
-          }}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
-            activeTab === 'external'
-              ? "bg-amber-500 text-slate-950 shadow-md font-black"
-              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
-          )}
-        >
-          <Building2 size={15} />
-          <span>مجموعه‌های همکار (خارج از مؤسسه)</span>
-        </button>
       </div>
 
       {/* Multi-copy Phone Banner */}
@@ -1607,43 +1566,109 @@ export default function TeachersBank() {
                   </div>
                 </div>
 
-                {/* Financial & Bank Details Section */}
-                <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/80 space-y-2">
-                  <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
-                    <Building2 size={14} className="text-emerald-700" />
-                    <span>اطلاعات مالی و حساب بانکی استاد جهت واریز حق‌الزحمه</span>
+                {/* Financial & Multiple Bank Accounts Section */}
+                <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                      <Building2 size={16} className="text-emerald-700" />
+                      <span>اطلاعات مالی و شماره حساب‌ها / کارت‌های واریز حق‌الزحمه:</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBankAccountsList([
+                        ...bankAccountsList,
+                        { id: `acc_${Date.now()}`, bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: '' }
+                      ])}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                    >
+                      <Plus size={13} />
+                      <span>+ افزودن شماره حساب / کارت جدید</span>
+                    </button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">نام بانک</label>
-                      <input
-                        type="text"
-                        placeholder="مثلا: بانک ملی"
-                        value={bankName}
-                        onChange={(e) => setBankName(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">شماره حساب / کارت</label>
-                      <input
-                        type="text"
-                        placeholder="۶۰۳۷-..."
-                        value={bankAccount}
-                        onChange={(e) => setBankAccount(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">شماره شبا (IR...)</label>
-                      <input
-                        type="text"
-                        placeholder="IR120..."
-                        value={bankSheba}
-                        onChange={(e) => setBankSheba(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
+
+                  <div className="space-y-3">
+                    {bankAccountsList.map((acc, accIdx) => (
+                      <div key={acc.id || accIdx} className="bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                          <span className="text-[11px] font-black text-emerald-900 flex items-center gap-1">
+                            <span>حساب شماره {accIdx + 1}</span>
+                            {accIdx === 0 && <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">حساب اصلی</span>}
+                          </span>
+                          {bankAccountsList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setBankAccountsList(bankAccountsList.filter((_, i) => i !== accIdx))}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="حذف این شماره حساب"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">نام بانک</label>
+                            <input
+                              type="text"
+                              placeholder="مثلاً: بانک ملی"
+                              value={acc.bankName}
+                              onChange={(e) => {
+                                const updated = [...bankAccountsList];
+                                updated[accIdx].bankName = e.target.value;
+                                setBankAccountsList(updated);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">شماره حساب</label>
+                            <input
+                              type="text"
+                              placeholder="۰۱۰..."
+                              value={acc.accountNumber || ''}
+                              onChange={(e) => {
+                                const updated = [...bankAccountsList];
+                                updated[accIdx].accountNumber = e.target.value;
+                                setBankAccountsList(updated);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold focus:bg-white focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">شماره کارت (۱۶ رقمی)</label>
+                            <input
+                              type="text"
+                              placeholder="۶۰۳۷-..."
+                              value={acc.cardNumber || ''}
+                              onChange={(e) => {
+                                const updated = [...bankAccountsList];
+                                updated[accIdx].cardNumber = e.target.value;
+                                setBankAccountsList(updated);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold focus:bg-white focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">شماره شبا (IR...)</label>
+                            <input
+                              type="text"
+                              placeholder="IR120..."
+                              value={acc.shebaNumber || ''}
+                              onChange={(e) => {
+                                const updated = [...bankAccountsList];
+                                updated[accIdx].shebaNumber = e.target.value;
+                                setBankAccountsList(updated);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold focus:bg-white focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

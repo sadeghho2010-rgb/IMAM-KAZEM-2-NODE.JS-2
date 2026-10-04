@@ -117,10 +117,20 @@ CREATE TABLE IF NOT EXISTS public.teachers (
   national_id VARCHAR(20),
   specialty VARCHAR(150),
   is_active BOOLEAN DEFAULT TRUE,
+  is_external BOOLEAN DEFAULT FALSE,
   data JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.teachers ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT FALSE;
+
+-- درج پیش‌فرض مدرس‌های خارج از مجموعه (مجموعه‌های همکار)
+INSERT INTO public.teachers (id, name, is_external, created_at)
+VALUES 
+  ('ext_inst_1', 'مدرسه امام باقر علیه السلام', true, NOW()),
+  ('ext_inst_2', 'مدرسه امام حسین علیه السلام', true, NOW()),
+  ('ext_inst_3', 'موسسه ائمه اطهار علیهم السلام', true, NOW())
+ON CONFLICT (id) DO UPDATE SET is_external = true;
 
 -- ۶. جدول کلاس‌ها و حجرات (Classrooms)
 CREATE TABLE IF NOT EXISTS public.classrooms (
@@ -498,6 +508,45 @@ CREATE INDEX IF NOT EXISTS idx_db_save_errors_user ON public.db_save_errors (use
 CREATE INDEX IF NOT EXISTS idx_db_save_errors_cause ON public.db_save_errors (cause_type);
 ALTER TABLE public.db_save_errors ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_db_save_errors_access" ON public.db_save_errors FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- ۱۸. جداول سامانه انتخاب واحد (Course Selection Periods & Requests)
+CREATE TABLE IF NOT EXISTS public.course_selection_periods (
+  id TEXT PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  academic_year VARCHAR(50) NOT NULL,
+  mode VARCHAR(50) DEFAULT 'normal', -- 'normal' (برنامه عادی طول سال) | 'thursday' (کلاس‌های پنجشنبه)
+  term VARCHAR(50) NOT NULL, -- 'نیم‌سال اول' | 'نیم‌سال دوم' | 'تمامی سال' | 'تابستان' | 'پنج‌شنبه‌ها'
+  start_date VARCHAR(30),
+  end_date VARCHAR(30),
+  is_active BOOLEAN DEFAULT TRUE,
+  description TEXT,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.course_selection_requests (
+  id TEXT PRIMARY KEY,
+  period_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  student_name VARCHAR(200),
+  grade VARCHAR(50),
+  status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+  admin_notes TEXT,
+  selected_courses JSONB DEFAULT '[]'::jsonb,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۱۹. جدول موضوعات قابل ثبت درخواست طلاب (Student Request Topics)
+CREATE TABLE IF NOT EXISTS public.student_request_topics (
+  id TEXT PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  order_index INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
 -- ۱۷. فعال‌سازی سیاست‌های امنیتی RLS
 ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
