@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot } from 'firebase/firestore';
@@ -870,6 +870,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
 
+  const currentUserRef = useRef<AppUser | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
   // Fetch and real-time synchronize users from Firestore & Server API across all hosts and devices
   useEffect(() => {
     let isMounted = true;
@@ -900,13 +905,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               canEdit: u.canEdit !== undefined ? u.canEdit : (currentObj?.canEdit !== undefined ? currentObj.canEdit : true),
             };
             map.set(uname, mergedUser);
-
-            if (currentUser && uname === currentUser.username.toUpperCase()) {
-              setCurrentUser(mergedUser);
-              try {
-                localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(mergedUser));
-              } catch (e) {}
-            }
           }
         });
 
@@ -916,14 +914,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (e) {}
         return merged;
       });
+
+      // Safely update metadata for active user ONLY if active user username matches. Never switch to another user!
+      const activeUser = currentUserRef.current;
+      if (activeUser && activeUser.username) {
+        const activeUname = activeUser.username.toUpperCase();
+        const updatedMatch = incomingList.find(u => (u.username || u.id || '').toUpperCase() === activeUname);
+        if (updatedMatch) {
+          setCurrentUser(prev => {
+            if (!prev || prev.username.toUpperCase() !== activeUname) return prev;
+            const updated: AppUser = {
+              ...prev,
+              ...updatedMatch,
+              username: activeUname,
+              allowedTabs: Array.isArray(updatedMatch.allowedTabs) ? updatedMatch.allowedTabs : prev.allowedTabs,
+              editableTabs: Array.isArray(updatedMatch.editableTabs) ? updatedMatch.editableTabs : prev.editableTabs,
+              modulePermissions: updatedMatch.modulePermissions || prev.modulePermissions,
+            };
+            try {
+              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+        }
+      }
     };
 
     // 1. Direct Server API fetch
     const syncWithServer = async () => {
       try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch('/api/auth/public-users', {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include'
         });
         if (res.ok) {
@@ -970,15 +996,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
     const verifySession = async () => {
       try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        if (!token) {
+          return;
+        }
+
         const res = await fetch('/api/auth/me', {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           credentials: 'include'
         });
+
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated && data.user && isMounted) {
+            const serverUsername = (data.user.username || '').toUpperCase();
+            const activeUser = currentUserRef.current;
+            
+            // If active user in storage doesn't match the token user on server, do not cross-assign
+            if (activeUser && activeUser.username.toUpperCase() !== serverUsername) {
+              console.warn('Session user mismatch detected.');
+              return;
+            }
+
             setCurrentUser(prev => {
+              if (!prev) return data.user;
               const updated = {
                 ...prev,
                 ...data.user,
@@ -991,6 +1036,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } catch (e) {}
               return updated;
             });
+          }
+        } else if (res.status === 401 || res.status === 403) {
+          // Token is expired on server
+          if (isMounted) {
+            logout();
           }
         }
       } catch (e) {}
@@ -1083,10 +1133,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setCurrentUser(null);
+    currentUserRef.current = null;
     try {
       localStorage.removeItem(CURRENT_USER_KEY);
       localStorage.removeItem('auth_token');
       sessionStorage.removeItem('auth_token');
+      localStorage.removeItem('current_mentor_id');
+      localStorage.removeItem('shahpoori_active_filter');
     } catch (e) {}
 
     fetch('/api/auth/logout', {
@@ -1293,7 +1346,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           targetUser = updated;
 
-          if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase() || currentUser.username.toUpperCase() === u.username.toUpperCase())) {
+          const activeUser = currentUserRef.current;
+          if (activeUser && (activeUser.id === id || activeUser.username.toUpperCase() === id.toUpperCase() || activeUser.username.toUpperCase() === u.username.toUpperCase())) {
             setCurrentUser(updated);
             try {
               localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
@@ -1378,7 +1432,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
           const updated = { ...u, isActive: u.isActive === false ? true : false, updatedAt: new Date().toISOString() };
           targetUpdated = updated;
-          if (currentUser && currentUser.username.toUpperCase() === u.username.toUpperCase()) {
+          const activeUser = currentUserRef.current;
+          if (activeUser && activeUser.username.toUpperCase() === u.username.toUpperCase()) {
             setCurrentUser(updated);
             try { localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated)); } catch (e) {}
           }
