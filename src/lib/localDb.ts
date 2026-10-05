@@ -526,6 +526,9 @@ class LocalDatabase {
 
   constructor() {
     this.initDb();
+    if (typeof window !== 'undefined') {
+      this.setupRealtimeSync();
+    }
   }
 
   private resolveCollection(name: string): string {
