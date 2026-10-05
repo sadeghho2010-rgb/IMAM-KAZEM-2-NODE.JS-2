@@ -49,9 +49,9 @@ class RealtimeSyncManager {
         this.isConnecting = false;
       };
 
-      this.eventSource.addEventListener('data_change', (event: MessageEvent) => {
+      const handlePayload = (eventData: string) => {
         try {
-          const payload: RealtimeChangeEvent = JSON.parse(event.data);
+          const payload: RealtimeChangeEvent = JSON.parse(eventData);
           if (payload && payload.collection) {
             this.lastTimestamp = Math.max(this.lastTimestamp, payload.timestamp || Date.now());
             this.dispatchChange(payload);
@@ -59,6 +59,14 @@ class RealtimeSyncManager {
         } catch (e) {
           console.warn('[RealtimeSync] Error parsing change event:', e);
         }
+      };
+
+      this.eventSource.onmessage = (event: MessageEvent) => {
+        handlePayload(event.data);
+      };
+
+      this.eventSource.addEventListener('data_change', (event: MessageEvent) => {
+        handlePayload(event.data);
       });
 
       this.eventSource.onerror = () => {

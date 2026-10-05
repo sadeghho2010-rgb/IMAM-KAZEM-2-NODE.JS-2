@@ -417,7 +417,7 @@ router.get('/sync/events', async (req: Request, res: Response) => {
   const { registerRealtimeListener } = await import('../lib/serverDataApi');
   const unsubscribe = registerRealtimeListener((event) => {
     try {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      res.write(`event: data_change\ndata: ${JSON.stringify(event)}\n\n`);
     } catch (e) {}
   });
 

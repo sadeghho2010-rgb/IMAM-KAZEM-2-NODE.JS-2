@@ -201,7 +201,7 @@ export async function saveToCloudWithTimeout(
         success: false,
         status: apiRes.status,
         isSessionExpired: true,
-        message: 'نشست شما منقضی شده است. لطفاً دوباره وارد شوید.'
+        message: errMsg || 'نشست شما منقضی شده است. لطفاً دوباره وارد شوید.'
       };
     }
 
@@ -220,7 +220,7 @@ export async function saveToCloudWithTimeout(
       success: false,
       status: apiRes.status,
       isServerError: true,
-      message: 'خطا در سرور. داده در صف ارسال قرار گرفت.'
+      message: errMsg || 'خطا در سرور. داده در صف ارسال قرار گرفت.'
     };
   } catch (err: any) {
     clearTimeout(timeoutId);
@@ -1031,8 +1031,9 @@ class LocalDatabase {
     }
 
     // Server 5xx / Network Error -> Item enqueued into sync queue
-    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.', 'warning');
-    throw new Error('ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.');
+    const msg = res.message || 'ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.';
+    dispatchDatabaseErrorToast(msg, 'warning');
+    throw new Error(msg);
   }
 
   // Update existing document (Server-First with IndexedDB Read Cache)
@@ -1087,8 +1088,9 @@ class LocalDatabase {
     }
 
     // Server 5xx / Network Error -> Item enqueued into sync queue
-    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.', 'warning');
-    throw new Error('ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.');
+    const msg = res.message || 'ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.';
+    dispatchDatabaseErrorToast(msg, 'warning');
+    throw new Error(msg);
   }
 
   // Delete a document (Server-First with IndexedDB Read Cache)
