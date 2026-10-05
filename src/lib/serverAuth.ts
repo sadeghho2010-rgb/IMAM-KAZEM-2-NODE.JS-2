@@ -677,46 +677,6 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = [
       'user-credentials'
     ],
   },
-  {
-    id: 'user_sarlak',
-    username: 'SARLAK',
-    password: '8411924',
-    name: 'طلبه سرلک (نماینده کلاس)',
-    level: 3,
-    role: 'class_representative',
-    roleTitle: 'نماینده کلاس',
-    scope: 'class',
-    gradeLabel: 'نماینده پایه',
-    studentName: 'محمد سرلک',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-blue-600',
-    allowedTabs: [
-      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'article-evaluations'
-    ],
-  },
-  {
-    id: 'user_jalili',
-    username: 'JALILI',
-    password: '8411924',
-    name: 'طلبه جلیلی',
-    level: 3,
-    role: 'student',
-    roleTitle: 'طلبه',
-    scope: 'self',
-    gradeLabel: 'طلبه پایه',
-    studentName: 'علیرضا جلیلی',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-emerald-700',
-    allowedTabs: [
-      'student-meals', 'attendance', 'student-schedule', 'programs', 'classrooms', 'discussion', 'stats', 'comments', 'article-evaluations'
-    ],
-  },
 ];
 
 // In-memory user store on server for fast fallback & dev environment

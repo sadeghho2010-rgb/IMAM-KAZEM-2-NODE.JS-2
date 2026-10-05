@@ -198,9 +198,16 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
 ];
 
-export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSettings }: SidebarProps) {
+export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onOpenSettings }: SidebarProps) {
   const { currentMentor } = useMentor();
   const { currentUser, logout, hasModuleAccess, isReadOnly, isTabAllowed } = useAuth();
+
+  const handleItemSelect = (tabId: string) => {
+    setActiveTab(tabId);
+    if (isOpen && typeof onToggle === 'function') {
+      onToggle();
+    }
+  };
   const [isSiteManagementOpen, setIsSiteManagementOpen] = React.useState<boolean>(() => {
     return ['backup', 'user-credentials', 'audit-logs', 'app-logs', 'anomaly-detection', 'system-health'].includes(activeTab);
   });
@@ -454,7 +461,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     return (
       <button
         key={item.id}
-        onClick={() => setActiveTab(item.id)}
+        onClick={() => handleItemSelect(item.id)}
         className={cn(
           "w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 text-right group cursor-pointer",
           isActive 
@@ -533,7 +540,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
         {currentUser && (
           <button
             type="button"
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleItemSelect('dashboard')}
             className={cn(
               "w-full flex items-center justify-between px-3 py-2.5 rounded-2xl transition-all duration-200 text-right group cursor-pointer mb-2",
               activeTab === 'dashboard'
@@ -670,7 +677,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
                   return (
                     <button
                       key={sub.id}
-                      onClick={() => setActiveTab(sub.id)}
+                      onClick={() => handleItemSelect(sub.id)}
                       className={cn(
                         "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-right transition-all text-xs cursor-pointer",
                         isSubActive

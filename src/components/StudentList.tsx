@@ -68,7 +68,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     shahpooriFilter,
     setShahpooriFilter 
   } = useMentor();
-  const { users, currentUser, addUser, updateUser } = useAuth();
+  const { users, currentUser, addUser, updateUser, deleteUser } = useAuth();
   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState<Student | null>(null);
   const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
   const [editingCredUser, setEditingCredUser] = useState<AppUser | null>(null);
@@ -597,6 +597,16 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     if (!studentToDelete) return;
     try {
       await localDb.deleteDoc('students', studentToDelete.id);
+      if (deleteUser) {
+        const linkedAcc = getStudentAccount(studentToDelete);
+        if (linkedAcc) {
+          deleteUser(linkedAcc.id);
+        } else {
+          deleteUser(studentToDelete.id);
+          if (studentToDelete.nationalId) deleteUser(studentToDelete.nationalId);
+          if (studentToDelete.studentCode) deleteUser(studentToDelete.studentCode);
+        }
+      }
       setStudentToDelete(null);
       fetchStudents();
     } catch (error: any) {

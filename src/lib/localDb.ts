@@ -595,14 +595,22 @@ class LocalDatabase {
     };
   }
 
+  private notifyTimeout: any = null;
+
   private notify() {
-    this.listeners.forEach((cb) => {
-      try {
-        cb();
-      } catch (e) {
-        console.error('LocalDb listener error:', e);
-      }
-    });
+    if (this.notifyTimeout) {
+      clearTimeout(this.notifyTimeout);
+    }
+    this.notifyTimeout = setTimeout(() => {
+      this.notifyTimeout = null;
+      this.listeners.forEach((cb) => {
+        try {
+          cb();
+        } catch (e) {
+          console.error('LocalDb listener error:', e);
+        }
+      });
+    }, 60);
   }
 
   // LocalStorage Fallback Helpers for when IndexedDB Store does not exist
@@ -2508,9 +2516,12 @@ class LocalDatabase {
     };
   }
 
-  // Seed default data if database is empty
+  // Seed default data if database is empty on first ever installation only
   private async checkAndSeedDefaultData(db: IDBDatabase) {
     try {
+      if (typeof window !== 'undefined' && localStorage.getItem('app_baseline_seeded_v1') === 'true') {
+        return;
+      }
       if (!db.objectStoreNames.contains('students')) return;
       const transaction = db.transaction('students', 'readonly');
       const store = transaction.objectStore('students');
@@ -2519,7 +2530,10 @@ class LocalDatabase {
       countReq.onsuccess = async () => {
         try {
           if (countReq.result === 0) {
-          console.log('Local Database is empty. Seeding initial baseline data...');
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('app_baseline_seeded_v1', 'true');
+            }
+            console.log('Local Database is empty. Seeding initial baseline data...');
           const initialStudents = [
           {
             id: 'stu_1',

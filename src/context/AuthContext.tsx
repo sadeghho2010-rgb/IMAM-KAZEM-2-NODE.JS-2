@@ -536,73 +536,6 @@ export const DEFAULT_USERS: AppUser[] = [
       'user-management': 'none'
     }
   },
-
-  // ====================== سطح ۳ (Level 3) ======================
-  {
-    id: 'user_sarlak',
-    username: 'SARLAK',
-    name: 'طلبه سرلک (نماینده کلاس)',
-    level: 3,
-    role: 'class_representative',
-    roleTitle: 'نماینده کلاس',
-    scope: 'class',
-    gradeLabel: 'نماینده پایه',
-    studentName: 'محمد سرلک',
-    studentId: 'std_sarlak',
-    isReadOnly: false,
-    canEdit: false,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-blue-600',
-    allowedTabs: [
-      'student-portal', 'student-meals', 'student-schedule', 'academic-calendar', 'discussion', 'stats', 'attendance', 'course-selection', 'programs', 'classrooms'
-    ],
-    editableTabs: ['attendance', 'discussion'],
-    modulePermissions: {
-      'student-portal': 'edit',
-      'student-meals': 'edit',
-      'attendance': 'edit', // ثبت حضور و غیاب کلاسی
-      'discussion': 'edit',
-      'student-schedule': 'view',
-      'academic-calendar': 'view', // فقط مشاهده رویدادهای پایه خود
-      'stats': 'view',
-      'course-selection': 'view',
-      'programs': 'view',
-      'classrooms': 'view'
-    }
-  },
-  {
-    id: 'user_jalili',
-    username: 'JALILI',
-    name: 'طلبه جلیلی (دانش‌پژوه)',
-    level: 3,
-    role: 'student',
-    roleTitle: 'طلبه / دانش‌پژوه',
-    scope: 'self',
-    gradeLabel: 'طلبه پایه ۷',
-    studentName: 'علی جلیلی',
-    studentId: 'std_jalili',
-    isReadOnly: false,
-    canEdit: false,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-emerald-700',
-    allowedTabs: [
-      'student-portal', 'student-meals', 'student-schedule', 'academic-calendar', 'discussion', 'research', 'attendance', 'stats', 'course-selection'
-    ],
-    editableTabs: ['student-portal', 'student-meals', 'research', 'course-selection'],
-    modulePermissions: {
-      'student-portal': 'edit',
-      'student-meals': 'edit',
-      'research': 'edit',
-      'course-selection': 'edit',
-      'student-schedule': 'view',
-      'academic-calendar': 'view',
-      'discussion': 'view',
-      'attendance': 'view',
-      'stats': 'view'
-    }
-  },
 ];
 
 interface AuthContextType {
@@ -910,7 +843,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const merged = Array.from(map.values());
         try {
-          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+          const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
+          const newStr = JSON.stringify(merged);
+          if (oldStr === newStr && prev.length === merged.length) {
+            return prev;
+          }
+          localStorage.setItem(USERS_STORAGE_KEY, newStr);
         } catch (e) {}
         return merged;
       });
@@ -932,7 +870,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               modulePermissions: updatedMatch.modulePermissions || prev.modulePermissions,
             };
             try {
-              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated));
+              const oldStr = localStorage.getItem(CURRENT_USER_KEY);
+              const newStr = JSON.stringify(updated);
+              if (oldStr === newStr) return prev;
+              localStorage.setItem(CURRENT_USER_KEY, newStr);
             } catch (e) {}
             return updated;
           });

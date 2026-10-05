@@ -356,9 +356,7 @@ function AppContent() {
         activeTab={activeTab} 
         setActiveTab={(tab) => {
           navigateToTab(tab);
-          if (window.innerWidth < 1024) {
-            setIsSidebarOpen(false);
-          }
+          setIsSidebarOpen(false);
         }} 
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}

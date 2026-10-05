@@ -323,6 +323,85 @@ export function getTeacherConflictDetails(targetTeacherName: string, conflictMap
   return null;
 }
 
+export interface ClassroomConflictInfo {
+  roomName: string;
+  programTitle: string;
+  grade?: string;
+  day: string;
+  time: string;
+}
+
+export function getConflictingClassrooms(
+  allPrograms: Program[],
+  targetDays: string[],
+  targetTime: string,
+  excludeProgramId?: string
+): Map<string, ClassroomConflictInfo[]> {
+  const conflictMap = new Map<string, ClassroomConflictInfo[]>();
+  if (!targetDays || targetDays.length === 0 || !targetTime) return conflictMap;
+
+  const targetRange = extractProgramTimeRange({ time: targetTime });
+  if (!targetRange) return conflictMap;
+
+  for (const prog of allPrograms) {
+    if (excludeProgramId && prog.id === excludeProgramId) continue;
+    const roomName = (prog.madrasRoom || prog.classroom || '').trim();
+    if (!roomName || roomName === '__OTHER__') continue;
+
+    const progDays = getProgramDays(prog);
+    const sharedDays = targetDays.filter(d => progDays.includes(d));
+    if (sharedDays.length === 0) continue;
+
+    const progRange = extractProgramTimeRange(prog);
+    if (!progRange) continue;
+
+    if (isTimeSlotOverlapping(targetRange.startTime, targetRange.endTime, progRange.startTime, progRange.endTime)) {
+      const existingList = conflictMap.get(roomName) || [];
+      existingList.push({
+        roomName,
+        programTitle: prog.title,
+        grade: prog.grade,
+        day: sharedDays.join(' و '),
+        time: prog.time || `${progRange.startTime} - ${progRange.endTime}`
+      });
+      conflictMap.set(roomName, existingList);
+    }
+  }
+
+  return conflictMap;
+}
+
+export function isClassroomConflicting(room: MadrasRoom, conflictMap: Map<string, ClassroomConflictInfo[]>): boolean {
+  const rName = (room.name || '').trim().toLowerCase();
+  const rCode = (room.code || '').trim().toLowerCase();
+
+  for (const [busyName] of conflictMap.entries()) {
+    const bLower = busyName.trim().toLowerCase();
+    if (
+      (rName && (rName === bLower || rName.includes(bLower) || bLower.includes(rName))) ||
+      (rCode && (rCode === bLower || bLower.includes(rCode)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getClassroomConflictDetails(targetRoomName: string, conflictMap: Map<string, ClassroomConflictInfo[]>): ClassroomConflictInfo | null {
+  if (!targetRoomName || targetRoomName === '__OTHER__') return null;
+  const targetLower = targetRoomName.trim().toLowerCase();
+
+  for (const [busyName, list] of conflictMap.entries()) {
+    const bLower = busyName.trim().toLowerCase();
+    if (
+      targetLower === bLower || targetLower.includes(bLower) || bLower.includes(targetLower)
+    ) {
+      return list[0] || null;
+    }
+  }
+  return null;
+}
+
 export function getCourseSubjectCategory(p?: { title?: string; subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر' } | string): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
   if (typeof p === 'object' && p !== null) {
     if (p.subjectCategory && ['اصول', 'فقه', 'فلسفه', 'سایر'].includes(p.subjectCategory)) {
@@ -519,6 +598,23 @@ export default function Programs() {
   const availableTeachersEdit = useMemo(() => {
     return teachers.filter(t => !isTeacherConflicting(t, busyTeachersMapEdit));
   }, [teachers, busyTeachersMapEdit]);
+
+  // Classroom dynamic conflict detection for Add modal and Edit modal
+  const busyRoomsMapAdd = useMemo(() => {
+    return getConflictingClassrooms(programs, addModalDays, newProgram.time || '');
+  }, [programs, addModalDays, newProgram.time]);
+
+  const availableRoomsAdd = useMemo(() => {
+    return rooms.filter(r => !isClassroomConflicting(r, busyRoomsMapAdd));
+  }, [rooms, busyRoomsMapAdd]);
+
+  const busyRoomsMapEdit = useMemo(() => {
+    return getConflictingClassrooms(programs, editModalDays, editingProgram?.time || '', editingProgram?.id);
+  }, [programs, editModalDays, editingProgram?.time, editingProgram?.id]);
+
+  const availableRoomsEdit = useMemo(() => {
+    return rooms.filter(r => !isClassroomConflicting(r, busyRoomsMapEdit));
+  }, [rooms, busyRoomsMapEdit]);
 
   // Custom time mode state
   const [customStartAdd, setCustomStartAdd] = useState('08:00');
@@ -1032,6 +1128,16 @@ export default function Programs() {
       }
     }
 
+    // Check classroom / room conflict
+    const targetRoom = (newProgram.madrasRoom || '').trim();
+    if (targetRoom && targetRoom !== '__OTHER__') {
+      const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapAdd);
+      if (roomConflict) {
+        alert(`امکان ثبت برنامه وجود ندارد: مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» (${roomConflict.grade || 'عمومی'}) رزرو شده است و تداخل مکانی/زمانی دارد.`);
+        return;
+      }
+    }
+
     try {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
@@ -1103,6 +1209,16 @@ export default function Programs() {
       const conflict = getTeacherConflictDetails(targetTeacher, busyTeachersMapEdit);
       if (conflict) {
         alert(`امکان بروزرسانی برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» (${conflict.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+        return;
+      }
+    }
+
+    // Check classroom / room conflict
+    const targetRoom = (editingProgram.madrasRoom || editingProgram.classroom || '').trim();
+    if (targetRoom && targetRoom !== '__OTHER__') {
+      const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapEdit);
+      if (roomConflict) {
+        alert(`امکان بروزرسانی برنامه وجود ندارد: مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» (${roomConflict.grade || 'عمومی'}) رزرو شده است و تداخل مکانی/زمانی دارد.`);
         return;
       }
     }
@@ -2996,37 +3112,46 @@ export default function Programs() {
                   </div>
 
                   {!isCustomRoomAdd ? (
-                    <select
-                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
-                      value={newProgram.madrasRoom || ''}
-                      onChange={(e) => {
-                        if (e.target.value === '__OTHER__') {
-                          setIsCustomRoomAdd(true);
-                        } else {
-                          setNewProgram({...newProgram, madrasRoom: e.target.value});
-                        }
-                      }}
-                    >
-                      <option value="">-- انتخاب شماره و نام مَدرَس از لیست --</option>
-                      <optgroup label="مدرس‌های داخل مجموعه">
-                        {rooms.filter(r => !r.isExternal).map(r => (
-                          <option key={r.id} value={r.name}>
-                            {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="مدرس‌های خارج از مجموعه (محل‌های برگزاری خارج از مؤسسه)">
-                        {rooms.filter(r => r.isExternal).map(r => (
-                          <option key={r.id} value={r.name}>
-                            📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
-                          </option>
-                        ))}
-                        <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
-                        <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
-                        <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
-                      </optgroup>
-                      <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
-                    </select>
+                    <>
+                      <select
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        value={newProgram.madrasRoom || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__OTHER__') {
+                            setIsCustomRoomAdd(true);
+                          } else {
+                            setNewProgram({...newProgram, madrasRoom: e.target.value});
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب شماره و نام مَدرَس از لیست (بدون تداخل زمانی) --</option>
+                        <optgroup label="مدرس‌های داخل مجموعه (در دسترس)">
+                          {availableRoomsAdd.filter(r => !r.isExternal).map(r => (
+                            <option key={r.id} value={r.name}>
+                              {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
+                          {availableRoomsAdd.filter(r => r.isExternal).map(r => (
+                            <option key={r.id} value={r.name}>
+                              📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
+                            </option>
+                          ))}
+                          <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                          <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                          <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                        </optgroup>
+                        <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
+                      </select>
+
+                      {rooms.length - availableRoomsAdd.length > 0 && (
+                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>{rooms.length - availableRoomsAdd.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند.</span>
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <div className="flex items-center gap-2">
                       <input 
@@ -3494,41 +3619,50 @@ export default function Programs() {
                   </div>
 
                   {!isCustomRoomEdit ? (
-                    <select
-                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
-                      value={editingProgram.madrasRoom || editingProgram.classroom || ''}
-                      onChange={(e) => {
-                        if (e.target.value === '__OTHER__') {
-                          setIsCustomRoomEdit(true);
-                        } else {
-                          setEditingProgram({
-                            ...editingProgram, 
-                            madrasRoom: e.target.value,
-                            classroom: e.target.value
-                          });
-                        }
-                      }}
-                    >
-                      <option value="">-- انتخاب شماره و نام مَدرَس از لیست --</option>
-                      <optgroup label="مدرس‌های داخل مجموعه">
-                        {rooms.filter(r => !r.isExternal).map(r => (
-                          <option key={r.id} value={r.name}>
-                            {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="مدرس‌های خارج از مجموعه (محل‌های برگزاری خارج از مؤسسه)">
-                        {rooms.filter(r => r.isExternal).map(r => (
-                          <option key={r.id} value={r.name}>
-                            📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
-                          </option>
-                        ))}
-                        <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
-                        <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
-                        <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
-                      </optgroup>
-                      <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
-                    </select>
+                    <>
+                      <select
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        value={editingProgram.madrasRoom || editingProgram.classroom || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__OTHER__') {
+                            setIsCustomRoomEdit(true);
+                          } else {
+                            setEditingProgram({
+                              ...editingProgram, 
+                              madrasRoom: e.target.value,
+                              classroom: e.target.value
+                            });
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب شماره و نام مَدرَس از لیست (بدون تداخل زمانی) --</option>
+                        <optgroup label="مدرس‌های داخل مجموعه (در دسترس)">
+                          {availableRoomsEdit.filter(r => !r.isExternal).map(r => (
+                            <option key={r.id} value={r.name}>
+                              {r.name} {r.code ? `(کد ${r.code})` : ''} {r.capacity ? `- ظرفیت: ${r.capacity} نفر` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
+                          {availableRoomsEdit.filter(r => r.isExternal).map(r => (
+                            <option key={r.id} value={r.name}>
+                              📍 {r.name} {r.code ? `(کد ${r.code})` : ''}
+                            </option>
+                          ))}
+                          <option value="مدرسه امام باقر علیه السلام">📍 مدرسه امام باقر علیه السلام</option>
+                          <option value="مدرسه امام حسین علیه السلام">📍 مدرسه امام حسین علیه السلام</option>
+                          <option value="موسسه ائمه اطهار علیهم السلام">📍 موسسه ائمه اطهار علیهم السلام</option>
+                        </optgroup>
+                        <option value="__OTHER__">➕ سایر (ورود دستی نام یا شماره مَدرَس)...</option>
+                      </select>
+
+                      {rooms.length - availableRoomsEdit.length > 0 && (
+                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
+                          <span>⚡</span>
+                          <span>{rooms.length - availableRoomsEdit.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند.</span>
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <div className="flex items-center gap-2">
                       <input 
