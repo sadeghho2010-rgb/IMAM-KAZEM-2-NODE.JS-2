@@ -32,7 +32,12 @@ const SYNC_QUEUE_KEY = 'madrasah_offline_sync_queue';
 export function getSyncQueue(): SyncQueueItem[] {
   try {
     const raw = typeof window !== 'undefined' ? localStorage.getItem(SYNC_QUEUE_KEY) : null;
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: SyncQueueItem[] = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Expire items older than 5 minutes to prevent ancient destructive replays
+    const now = Date.now();
+    return parsed.filter(item => item && (now - (item.timestamp || 0)) < 5 * 60 * 1000 && (item.attempts || 0) < 3);
   } catch (e) {
     return [];
   }
@@ -41,7 +46,9 @@ export function getSyncQueue(): SyncQueueItem[] {
 export function saveSyncQueue(queue: SyncQueueItem[]) {
   try {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+      const now = Date.now();
+      const valid = queue.filter(item => item && (now - (item.timestamp || 0)) < 5 * 60 * 1000 && (item.attempts || 0) < 3);
+      localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(valid));
     }
   } catch (e) {}
 }
@@ -71,14 +78,10 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
                 localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
                 localStorage.getItem('token') || sessionStorage.getItem('token');
 
-  if (!token) {
-    return { synced: 0, failed: queue.length };
-  }
-
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
+    'Content-Type': 'application/json'
   };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const remaining: SyncQueueItem[] = [];
   let synced = 0;
@@ -105,24 +108,27 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
       if (apiRes.ok) {
         synced++;
       } else if (apiRes.status === 401 || apiRes.status === 403) {
-        // Session Expired -> DO NOT RETRY! Keep in queue and alert user
-        remaining.push(item);
+        // Session Expired -> Keep for 1 attempt, alert user
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts < 2) remaining.push(item);
         failed++;
-        dispatchDatabaseErrorToast('نشست شما منقضی شده. لطفاً دوباره وارد شوید.', 'warning');
-        break; // Pause remaining sync until re-login
+        break;
       } else if (apiRes.status >= 400 && apiRes.status < 500) {
-        // Client Error -> Do not retry indefinitely, keep in queue for manual inspection
-        remaining.push(item);
+        // Client Error 4xx -> Discard item from queue (do not replay bad requests)
         failed++;
       } else {
-        // Server 5xx Error -> Increment attempts but DO NOT DELETE FROM QUEUE after 5 attempts
+        // Server 5xx Error -> Increment attempts and discard after 3 attempts
         item.attempts = (item.attempts || 0) + 1;
-        remaining.push(item);
+        if (item.attempts < 3) {
+          remaining.push(item);
+        }
         failed++;
       }
     } catch (e) {
       item.attempts = (item.attempts || 0) + 1;
-      remaining.push(item);
+      if (item.attempts < 3) {
+        remaining.push(item);
+      }
       failed++;
     }
   }
@@ -1139,10 +1145,6 @@ class LocalDatabase {
   // Fetch authoritative collections from Server on startup / login and cache in IndexedDB
   async loadAllCollectionsFromServer(): Promise<{ success: boolean; totalRecords: number }> {
     if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-                  localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
-                  localStorage.getItem('token') || sessionStorage.getItem('token');
-    if (!token) return { success: false, totalRecords: 0 };
 
     const collectionsToLoad: CollectionName[] = [
       'system_users', 'students', 'teachers', 'classrooms', 'programs',
@@ -1150,28 +1152,19 @@ class LocalDatabase {
       'periodic_study_logs', 'discussion_groups', 'research', 'received_articles',
       'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
       'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
-      'student_lockers', 'academic_calendar_periods', 'academic_holidays', 'school_events'
+      'student_lockers', 'academic_calendar_periods', 'academic_holidays'
     ];
 
     let totalRecords = 0;
-    const headers = { 'Authorization': `Bearer ${token}` };
-
-    for (const col of collectionsToLoad) {
-      try {
-        const res = await fetch(`/api/data/${col}`, { headers, credentials: 'include' });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && Array.isArray(json.items)) {
-            await this.clearCollection(col);
-            if (json.items.length > 0) {
-              await this.bulkPut(col, json.items);
-              totalRecords += json.items.length;
-            }
-          }
+    try {
+      const results = await Promise.allSettled(collectionsToLoad.map(col => this.syncCollectionFromCloud(col, true)));
+      results.forEach(r => {
+        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+          totalRecords += r.value.length;
         }
-      } catch (e) {
-        console.warn(`[Startup Sync Error] ${col}:`, e);
-      }
+      });
+    } catch (e) {
+      console.warn('[Startup Sync Error]:', e);
     }
 
     this.notify();
