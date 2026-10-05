@@ -17,6 +17,105 @@ export function isOfflineStorageAllowedForUser(): boolean {
   return true;
 }
 
+export interface SyncQueueItem {
+  id: string;
+  collectionName: string;
+  action: 'upsert' | 'delete';
+  data?: any;
+  timestamp: number;
+  attempts: number;
+}
+
+const SYNC_QUEUE_KEY = 'madrasah_offline_sync_queue';
+
+export function getSyncQueue(): SyncQueueItem[] {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(SYNC_QUEUE_KEY) : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveSyncQueue(queue: SyncQueueItem[]) {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
+    }
+  } catch (e) {}
+}
+
+export function enqueueSync(item: Omit<SyncQueueItem, 'attempts' | 'timestamp'>) {
+  const queue = getSyncQueue();
+  const existingIdx = queue.findIndex(q => q.collectionName === item.collectionName && q.id === item.id);
+  const newItem: SyncQueueItem = {
+    ...item,
+    timestamp: Date.now(),
+    attempts: 0
+  };
+  if (existingIdx >= 0) {
+    queue[existingIdx] = newItem;
+  } else {
+    queue.push(newItem);
+  }
+  saveSyncQueue(queue);
+}
+
+export async function processSyncQueue(): Promise<{ synced: number; failed: number }> {
+  if (typeof window === 'undefined' || !navigator.onLine) return { synced: 0, failed: 0 };
+  const queue = getSyncQueue();
+  if (queue.length === 0) return { synced: 0, failed: 0 };
+
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+                localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+                localStorage.getItem('token') || sessionStorage.getItem('token');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const remaining: SyncQueueItem[] = [];
+  let synced = 0;
+  let failed = 0;
+
+  for (const item of queue) {
+    try {
+      let apiRes: Response;
+      if (item.action === 'delete') {
+        apiRes = await fetch(`/api/data/${item.collectionName}/${item.id}`, {
+          method: 'DELETE',
+          headers,
+          credentials: 'include'
+        });
+      } else {
+        apiRes = await fetch(`/api/data/${item.collectionName}`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify({ ...(item.data || {}), id: item.id })
+        });
+      }
+
+      if (apiRes.ok) {
+        synced++;
+      } else {
+        item.attempts += 1;
+        if (item.attempts < 15) {
+          remaining.push(item);
+        }
+        failed++;
+      }
+    } catch (e) {
+      item.attempts += 1;
+      if (item.attempts < 15) {
+        remaining.push(item);
+      }
+      failed++;
+    }
+  }
+
+  saveSyncQueue(remaining);
+  return { synced, failed };
+}
+
 /**
  * Direct authoritative Cloud Database write with a strict 4-second timeout.
  */
@@ -27,10 +126,6 @@ export async function saveToCloudWithTimeout(
   data?: any,
   timeoutMs = 4000
 ): Promise<void> {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
-  }
-
   const cloudPromise = new Promise<void>(async (resolve, reject) => {
     try {
       let isSaved = false;
@@ -55,7 +150,7 @@ export async function saveToCloudWithTimeout(
             method: 'POST',
             headers,
             credentials: 'include',
-            body: JSON.stringify({ ...data, id })
+            body: JSON.stringify({ ...(data || {}), id, _synced: true })
           });
         }
 
@@ -63,9 +158,12 @@ export async function saveToCloudWithTimeout(
           isSaved = true;
           resolve();
           return;
+        } else {
+          const errText = await apiRes.text().catch(() => '');
+          console.warn(`[Server Data API] ${action} ${collectionName}/${id} response ${apiRes.status}:`, errText);
         }
       } catch (e) {
-        // Fallback to legacy BaaS if server route is temporarily unreachable
+        console.warn(`[Server Data API] ${action} ${collectionName}/${id} network notice:`, e);
       }
 
       // 2. Legacy Fallback: Direct Supabase write (for local/serverless development)
@@ -76,11 +174,7 @@ export async function saveToCloudWithTimeout(
             .delete()
             .match({ collection_name: collectionName, id });
 
-          if (error) {
-            reject(new Error(error.message || 'خطا در حذف از پایگاه داده'));
-            return;
-          }
-          isSaved = true;
+          if (!error) isSaved = true;
         } else {
           const sanitized = sanitizeForCloud(data);
           const { error } = await supabase
@@ -88,36 +182,11 @@ export async function saveToCloudWithTimeout(
             .upsert({
               collection_name: collectionName,
               id,
-              data: sanitized,
+              data: { ...sanitized, _synced: true },
               updated_at: new Date().toISOString()
             }, { onConflict: 'collection_name,id' });
 
-          if (error) {
-            // Fallback for collections that might be blocked by restrictive RLS in Supabase
-            if (error.code === '42501' && (collectionName === 'finance_student_claims' || collectionName === 'student_claims')) {
-              const fallbackCol = collectionName === 'finance_student_claims' ? 'student_claims' : 'claims';
-              const retryRes = await supabase
-                .from('app_collections')
-                .upsert({
-                  collection_name: fallbackCol,
-                  id,
-                  data: sanitized,
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'collection_name,id' });
-
-              if (!retryRes.error) {
-                isSaved = true;
-              } else {
-                reject(new Error(retryRes.error.message || 'خطا در ثبت پایگاه داده'));
-                return;
-              }
-            } else {
-              reject(new Error(error.message || 'خطا در ثبت پایگاه داده'));
-              return;
-            }
-          } else {
-            isSaved = true;
-          }
+          if (!error) isSaved = true;
         }
       }
 
@@ -125,27 +194,33 @@ export async function saveToCloudWithTimeout(
       try {
         if (action === 'delete') {
           await deleteDoc(doc(db, collectionName, id));
+          isSaved = true;
         } else {
-          await setDoc(doc(db, collectionName, id), sanitizeForCloud(data), { merge: true });
+          await setDoc(doc(db, collectionName, id), sanitizeForCloud({ ...data, _synced: true }), { merge: true });
+          isSaved = true;
         }
-        isSaved = true;
       } catch (fsErr) {
         // Ignore fallback notice
       }
 
-      if (isSaved || !isSupabaseConfigured) {
+      if (isSaved) {
         resolve();
       } else {
-        reject(new Error('خطا در ذخیره‌سازی داده‌ها در سرور'));
+        // Enqueue into offline sync queue for automatic retry
+        enqueueSync({ action, collectionName, id, data });
+        resolve();
       }
     } catch (err) {
-      reject(err);
+      enqueueSync({ action, collectionName, id, data });
+      resolve();
     }
   });
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
-      reject(new Error('مهلت زمانی اتصال به دیتابیس پایان یافت (بیش از ۴ ثانیه).'));
+      // If timeout occurs, enqueue for background retry so user isn't blocked
+      enqueueSync({ action, collectionName, id, data });
+      reject(new Error('مهلت زمانی اتصال به دیتابیس پایان یافت (بیش از ۴ ثانیه). داده‌ها در صف همگام‌سازی قرار گرفتند.'));
     }, timeoutMs);
   });
 
@@ -157,7 +232,7 @@ export async function saveToCloudWithTimeout(
     } else {
       console.error(`[Cloud Write Error] ${collectionName}/${id}:`, err);
     }
-    throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+    throw new Error('فعلا اتصال مستقیم به پایگاه داده مقدور نیست، اطلاعات در مرورگر ثبت شد و در صف ارسال قرار گرفت.');
   }
 }
 
@@ -461,6 +536,8 @@ class LocalDatabase {
   }
 
   private resolveCollection(name: string): string {
+    if (name === 'classes') return 'classrooms';
+    if (name === 'users') return 'system_users';
     if (name === 'research_records') return 'research';
     if (name === 'student_claims') return 'finance_student_claims';
     if (name === 'destination_accounts') return 'finance_destination_accounts';
@@ -2897,11 +2974,23 @@ if (typeof window !== 'undefined') {
   setTimeout(() => {
     localDb.setupRealtimeSync();
     localDb.initCloudSync();
+    processSyncQueue();
   }, 100);
+
+  window.addEventListener('online', () => {
+    localDb.initCloudSync();
+    processSyncQueue();
+  });
 
   window.addEventListener('focus', () => {
     localDb.initCloudSync();
+    processSyncQueue();
   });
+
+  // Periodic offline queue processor every 12 seconds
+  setInterval(() => {
+    processSyncQueue();
+  }, 12000);
 }
 
 export async function getCollection<T = any>(collectionName: CollectionName): Promise<T[]> {

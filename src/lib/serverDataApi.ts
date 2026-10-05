@@ -71,9 +71,11 @@ export function notifyRealtimeChange(collection: string, id: string, action: 'up
 // Mapping between logical collection names and dedicated PostgreSQL/MySQL tables
 export const COLLECTION_TABLE_MAP: Record<string, string> = {
   system_users: 'system_users',
+  users: 'system_users',
   students: 'students',
   teachers: 'teachers',
   classrooms: 'classrooms',
+  classes: 'classrooms',
   programs: 'programs',
   enrollments: 'enrollments',
   attendance: 'attendance',
@@ -100,6 +102,83 @@ export const COLLECTION_TABLE_MAP: Record<string, string> = {
   lockers: 'student_lockers',
   audit_logs: 'audit_logs'
 };
+
+// Client-side helper functions for direct REST API access
+export async function postDataToServer(collection: string, data: any): Promise<{ success: boolean; id?: string; error?: string }> {
+  try {
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+         localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+         localStorage.getItem('token') || sessionStorage.getItem('token'))
+      : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/data/${collection}`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify(data)
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      return { success: true, id: json.id };
+    }
+    return { success: false, error: json.message || `HTTP ${res.status}` };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'خطا در ارتباط با سرور' };
+  }
+}
+
+export async function fetchDataFromServer(collection: string): Promise<{ success: boolean; items?: any[]; error?: string }> {
+  try {
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+         localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+         localStorage.getItem('token') || sessionStorage.getItem('token'))
+      : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/data/${collection}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include'
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success && Array.isArray(json.items)) {
+      return { success: true, items: json.items };
+    }
+    return { success: false, error: json.message || `HTTP ${res.status}`, items: [] };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'خطا در ارتباط با سرور', items: [] };
+  }
+}
+
+export async function deleteDataFromServer(collection: string, id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+         localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+         localStorage.getItem('token') || sessionStorage.getItem('token'))
+      : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`/api/data/${collection}/${id}`, {
+      method: 'DELETE',
+      headers,
+      credentials: 'include'
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      return { success: true };
+    }
+    return { success: false, error: json.message || `HTTP ${res.status}` };
+  } catch (e: any) {
+    return { success: false, error: e?.message || 'خطا در ارتباط با سرور' };
+  }
+}
 
 // Sensitive collections requiring elevated roles
 const FINANCIAL_COLLECTIONS = new Set([
