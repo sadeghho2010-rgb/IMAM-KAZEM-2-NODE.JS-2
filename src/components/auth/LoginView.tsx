@@ -29,6 +29,7 @@ import { AppUser } from '../../types/auth';
 import { Teacher } from '../../types';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
+import { PWAInstallButton } from '../PWAInstallButton';
 
 interface LoginViewProps {
   onLoginSuccess?: () => void;
@@ -509,10 +510,10 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-white/50 to-transparent rounded-t-2xl pointer-events-none" />
 
         {/* Header: Seminary identity & Logo */}
-        <div className="text-center space-y-2.5 mb-6">
+        <div className="text-center space-y-2.5 mb-5">
           {/* Emblem Icon */}
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/80 to-indigo-600/80 border border-white/40 shadow-lg flex items-center justify-center text-white backdrop-blur-md">
-            <BookOpen size={30} className="drop-shadow" />
+          <div className="mx-auto w-18 h-18 rounded-2xl bg-gradient-to-br from-indigo-900 to-indigo-950 border border-amber-400/40 shadow-xl flex items-center justify-center p-2 backdrop-blur-md">
+            <img src="/pwa-192x192.png" alt="سامانه جامع طلاب" className="w-14 h-14 object-contain rounded-xl drop-shadow" />
           </div>
 
           <div>
@@ -527,6 +528,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               <span>سامانه جامع مدیریت آموزشی، پژوهشی و مالی</span>
             </div>
           </div>
+        </div>
+
+        {/* In-App PWA Install Banner on Login View */}
+        <div className="mb-4">
+          <PWAInstallButton variant="sidebar" />
         </div>
 
         {/* Success Toast */}

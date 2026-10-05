@@ -55,6 +55,7 @@ import SecurityPinModal from './components/auth/SecurityPinModal';
 import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import MainDashboard from './components/MainDashboard';
 import SettingsModal from './components/SettingsModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -415,6 +416,9 @@ function AppContent() {
 
             {/* Top Right Header Space - User Badge & Logout */}
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              {/* In-App PWA Install Button for Mobile & Desktop */}
+              <PWAInstallButton variant="header" />
+
               {/* Minimal Live Database Connection Health Indicator */}
               <div 
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded-2xl text-[11px] font-bold shadow-2xs select-none cursor-default"

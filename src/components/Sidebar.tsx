@@ -48,6 +48,7 @@ import { useMentor } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
 import { StudentRequest, AnomalyLog, GlobalRequestsConfig, WorkflowItem } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
   activeTab: string;
@@ -513,9 +514,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
       {/* Brand Header */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm">
-            ط
-          </div>
+          <img 
+            src="/pwa-192x192.png" 
+            alt="سامانه جامع طلاب" 
+            className="w-8 h-8 rounded-xl object-contain shadow-xs border border-indigo-100 shrink-0" 
+          />
           <div>
             <h1 className="text-sm font-black text-slate-900 tracking-tight">سامانه جامع طلاب</h1>
             <p className="text-[9px] text-slate-400 font-medium">نسخه ۲.۰ • احراز هویت ۳ سطحی</p>
@@ -698,6 +701,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
           </div>
         )}
       </nav>
+
+      {/* In-App PWA Install Banner */}
+      <div className="px-3 pt-2">
+        <PWAInstallButton variant="sidebar" />
+      </div>
 
       {/* Active Logged-in User Profile Card */}
       {currentUser && (
