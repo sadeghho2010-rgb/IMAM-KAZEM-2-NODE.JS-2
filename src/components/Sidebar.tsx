@@ -346,10 +346,12 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
 
     const handleReqUpdate = () => fetchBadgeCounts();
     window.addEventListener('student_requests_updated', handleReqUpdate);
+    window.addEventListener('workflow_items_updated', handleReqUpdate);
     const interval = setInterval(fetchBadgeCounts, 15000);
 
     return () => {
       window.removeEventListener('student_requests_updated', handleReqUpdate);
+      window.removeEventListener('workflow_items_updated', handleReqUpdate);
       clearInterval(interval);
     };
   }, [currentUser]);
@@ -433,7 +435,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onOpenSetting
     if (currentUser?.level === 3) {
       if (item.id === 'student-requests') label = 'پنل ثبت درخواست';
       if (item.id === 'student-schedule') label = 'برنامه درسی من';
-      if (item.id === 'attendance') label = currentUser.role === 'class_representative' ? 'ثبت و مشاهده حضور و غیاب' : 'حضور و غیاب من';
+      if (item.id === 'attendance') label = (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب من';
       if (item.id === 'stats') label = 'ساعات مطالعه من';
       if (item.id === 'research') label = 'پژوهش و مقالات من';
     } else {

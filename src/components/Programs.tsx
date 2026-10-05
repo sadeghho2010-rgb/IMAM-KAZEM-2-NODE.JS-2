@@ -30,7 +30,8 @@ import {
   GraduationCap,
   Check,
   X,
-  PhoneCall
+  PhoneCall,
+  AlertTriangle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup } from '../types';
@@ -176,18 +177,11 @@ export const SUBJECT_BOOKS_MAP: Record<'اصول' | 'فقه' | 'فلسفه', str
     'رسائل',
     'حلقه ثالثه',
     'کفایه',
-    'اصول فقه (مظفر)',
-    'حلقه ثانیه',
-    'حلقه اولی',
-    'سایر (دستی)'
+    'سایر'
   ],
   'فقه': [
-    'مکاسب (محرمه / بیع / خیارات)',
-    'شرح لمعه',
-    'عروة الوثقی',
-    'تحریر الوسیله',
-    'منهاج الصالحین',
-    'سایر (دستی)'
+    'مکاسب',
+    'سایر'
   ],
   'فلسفه': [
     'بدایة الحکمة',
@@ -195,9 +189,17 @@ export const SUBJECT_BOOKS_MAP: Record<'اصول' | 'فقه' | 'فلسفه', str
     'شرح منظومه',
     'اشارات و تنبیهات',
     'اسفار اربعه',
-    'سایر (دستی)'
+    'سایر'
   ]
 };
+
+export function cleanTeacherName(name: string): string {
+  if (!name) return '';
+  return name
+    .replace(/^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|حضرت\s*آیت\s*الله|آیت\s*الله|دکتر|مهندس|جناب\s*آقای|آقای|شیخ|سید)\s+/gi, '')
+    .trim()
+    .toLowerCase();
+}
 
 export function normalizeTimeStr(timeStr?: string): string {
   if (!timeStr) return '';
@@ -285,16 +287,40 @@ export function getConflictingTeachers(
 export function isTeacherConflicting(teacher: Teacher, conflictMap: Map<string, TeacherConflictInfo[]>): boolean {
   const tFull = (teacher.fullName || '').trim().toLowerCase();
   const tName = (teacher.name || '').trim().toLowerCase();
+  const tCleanFull = cleanTeacherName(teacher.fullName || '');
+  const tCleanName = cleanTeacherName(teacher.name || '');
+
   for (const [busyName] of conflictMap.entries()) {
-    const bLower = busyName.toLowerCase();
+    const bLower = busyName.trim().toLowerCase();
+    const bClean = cleanTeacherName(busyName);
     if (
       (tFull && (tFull === bLower || tFull.includes(bLower) || bLower.includes(tFull))) ||
-      (tName && (tName === bLower || tName.includes(bLower) || bLower.includes(tName)))
+      (tName && (tName === bLower || tName.includes(bLower) || bLower.includes(tName))) ||
+      (tCleanFull && bClean && (tCleanFull === bClean || tCleanFull.includes(bClean) || bClean.includes(tCleanFull))) ||
+      (tCleanName && bClean && (tCleanName === bClean || tCleanName.includes(bClean) || bClean.includes(tCleanName)))
     ) {
       return true;
     }
   }
   return false;
+}
+
+export function getTeacherConflictDetails(targetTeacherName: string, conflictMap: Map<string, TeacherConflictInfo[]>): TeacherConflictInfo | null {
+  if (!targetTeacherName || targetTeacherName === '__OTHER__') return null;
+  const targetLower = targetTeacherName.trim().toLowerCase();
+  const targetClean = cleanTeacherName(targetTeacherName);
+
+  for (const [busyName, list] of conflictMap.entries()) {
+    const bLower = busyName.trim().toLowerCase();
+    const bClean = cleanTeacherName(busyName);
+    if (
+      targetLower === bLower || targetLower.includes(bLower) || bLower.includes(targetLower) ||
+      (targetClean && bClean && (targetClean === bClean || targetClean.includes(bClean) || bClean.includes(targetClean)))
+    ) {
+      return list[0] || null;
+    }
+  }
+  return null;
 }
 
 export function getCourseSubjectCategory(p?: { title?: string; subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر' } | string): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
@@ -902,7 +928,7 @@ export default function Programs() {
     }
   };
 
-  const handleSaveRepModal = () => {
+  const handleSaveRepModal = async () => {
     if (repModalTarget === 'add') {
       setNewProgram({
         ...newProgram,
@@ -915,6 +941,19 @@ export default function Programs() {
         representativeStudentIds: repModalStudentIds,
         representativeNames: repModalNames
       });
+      // Persist immediately to database and promote user to class representative
+      try {
+        await localDb.updateDoc('programs', editingProgram.id, {
+          representativeStudentIds: repModalStudentIds,
+          representativeNames: repModalNames
+        });
+        if (repModalStudentIds.length > 0) {
+          await syncRepresentativeUsers(repModalStudentIds);
+        }
+        await fetchData();
+      } catch (err) {
+        console.warn('Error saving representative immediately:', err);
+      }
     }
     setShowRepModal(false);
   };
@@ -948,6 +987,33 @@ export default function Programs() {
     }
   };
 
+  const syncRepresentativeUsers = async (studentIds: string[]) => {
+    if (!studentIds || studentIds.length === 0) return;
+    try {
+      const allUsers = await localDb.getDocs<any>('users');
+      const allStudents = await localDb.getDocs<any>('students');
+      
+      for (const sid of studentIds) {
+        const st = allStudents.find(s => s.id === sid);
+        const u = allUsers.find(usr => 
+          usr.studentId === sid || 
+          usr.linkedStudentId === sid || 
+          usr.id === sid ||
+          (st && (usr.username === st.nationalId || usr.username === st.studentCode || (usr.name && st.name && usr.name.includes(st.name))))
+        );
+        if (u) {
+          await localDb.updateDoc('users', u.id, {
+            role: 'class_representative',
+            roleTitle: 'نماینده کلاس',
+            scope: 'class'
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Error syncing representative user roles:', e);
+    }
+  };
+
   const handleAddProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     const title = (newProgram.title || '').trim();
@@ -959,14 +1025,10 @@ export default function Programs() {
     // Check teacher conflict
     const targetTeacher = (newProgram.teacher || '').trim();
     if (targetTeacher && targetTeacher !== '__OTHER__') {
-      for (const [busyName, conflicts] of busyTeachersMapAdd.entries()) {
-        const bLower = busyName.toLowerCase();
-        const tLower = targetTeacher.toLowerCase();
-        if (tLower === bLower || tLower.includes(bLower) || bLower.includes(tLower)) {
-          const first = conflicts[0];
-          alert(`امکان ثبت برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${first.day} ساعت ${first.time} در کلاس «${first.programTitle}» (${first.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
-          return;
-        }
+      const conflict = getTeacherConflictDetails(targetTeacher, busyTeachersMapAdd);
+      if (conflict) {
+        alert(`امکان ثبت برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» (${conflict.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+        return;
       }
     }
 
@@ -994,6 +1056,11 @@ export default function Programs() {
         subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
         mentorId: currentMentorId || 'admin'
       });
+
+      // Sync representative user roles so student immediately gets class_representative powers
+      if (newProgram.representativeStudentIds && newProgram.representativeStudentIds.length > 0) {
+        await syncRepresentativeUsers(newProgram.representativeStudentIds);
+      }
 
       setShowAddModal(false);
       setNewProgram({ 
@@ -1033,14 +1100,10 @@ export default function Programs() {
     // Check teacher conflict
     const targetTeacher = (editingProgram.teacher || '').trim();
     if (targetTeacher && targetTeacher !== '__OTHER__') {
-      for (const [busyName, conflicts] of busyTeachersMapEdit.entries()) {
-        const bLower = busyName.toLowerCase();
-        const tLower = targetTeacher.toLowerCase();
-        if (tLower === bLower || tLower.includes(bLower) || bLower.includes(tLower)) {
-          const first = conflicts[0];
-          alert(`امکان بروزرسانی برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${first.day} ساعت ${first.time} در کلاس «${first.programTitle}» (${first.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
-          return;
-        }
+      const conflict = getTeacherConflictDetails(targetTeacher, busyTeachersMapEdit);
+      if (conflict) {
+        alert(`امکان بروزرسانی برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» (${conflict.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+        return;
       }
     }
 
@@ -1068,6 +1131,12 @@ export default function Programs() {
         subjectCategory: editingProgram.type === 'اصلی' ? editingProgram.subjectCategory : undefined,
         subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined
       });
+
+      // Sync representative user roles so student immediately gets class_representative powers
+      if (editingProgram.representativeStudentIds && editingProgram.representativeStudentIds.length > 0) {
+        await syncRepresentativeUsers(editingProgram.representativeStudentIds);
+      }
+
       setEditingProgram(null);
       fetchData();
     } catch (error: any) {
@@ -1480,6 +1549,18 @@ export default function Programs() {
 
             {isAuthorizedToEdit && (
               <>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setEditingProgram(program);
+                    openRepModal('edit');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-all cursor-pointer"
+                  title="تعیین / ویرایش نماینده کلاس"
+                >
+                  <UserCheck size={16} />
+                </button>
+
                 <button 
                   type="button"
                   onClick={() => {
@@ -2608,12 +2689,12 @@ export default function Programs() {
       {/* Add Program Modal */}
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 sm:p-6 overflow-y-auto">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-5"
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[78vh] my-6 overflow-y-auto custom-scrollbar border border-slate-100"
             >
               <h3 className="text-xl font-black text-slate-900 text-right border-b border-slate-100 pb-3">افزودن برنامه جدید</h3>
               <form onSubmit={handleAddProgram} className="space-y-4 text-right">
@@ -3038,6 +3119,18 @@ export default function Programs() {
                       </button>
                     </div>
                   )}
+
+                  {getTeacherConflictDetails(newProgram.teacher || '', busyTeachersMapAdd) && (
+                    <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs font-bold space-y-1 mt-2">
+                      <div className="flex items-center gap-1.5 font-black text-rose-800">
+                        <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                        <span>هشدار تداخل زمانی مدرس:</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 leading-relaxed font-medium">
+                        استاد «{newProgram.teacher}» در روزهای انتخابی ساعت {getTeacherConflictDetails(newProgram.teacher || '', busyTeachersMapAdd)?.time} در کلاس «{getTeacherConflictDetails(newProgram.teacher || '', busyTeachersMapAdd)?.programTitle}» مشغول تدریس است. تا زمان تغییر روز یا ساعت یا تغییر مدرس، امکان ثبت این برنامه وجود ندارد.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Class Representative Section */}
@@ -3102,12 +3195,12 @@ export default function Programs() {
       {/* Edit Program Modal */}
       <AnimatePresence>
         {editingProgram && (
-          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 sm:p-6 overflow-y-auto">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[78vh] my-6 overflow-y-auto custom-scrollbar border border-slate-100"
             >
               <h3 className="text-xl font-black text-slate-900 text-right border-b border-slate-100 pb-3">ویرایش مشخصات برنامه</h3>
               <form onSubmit={handleEditProgram} className="space-y-4 text-right">
@@ -3530,6 +3623,18 @@ export default function Programs() {
                       >
                         لیست
                       </button>
+                    </div>
+                  )}
+
+                  {getTeacherConflictDetails(editingProgram.teacher || '', busyTeachersMapEdit) && (
+                    <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs font-bold space-y-1 mt-2">
+                      <div className="flex items-center gap-1.5 font-black text-rose-800">
+                        <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                        <span>هشدار تداخل زمانی مدرس:</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 leading-relaxed font-medium">
+                        استاد «{editingProgram.teacher}» در روزهای انتخابی ساعت {getTeacherConflictDetails(editingProgram.teacher || '', busyTeachersMapEdit)?.time} در کلاس «{getTeacherConflictDetails(editingProgram.teacher || '', busyTeachersMapEdit)?.programTitle}» مشغول تدریس است. تا زمان تغییر روز یا ساعت یا تغییر مدرس، امکان ثبت این برنامه وجود ندارد.
+                      </p>
                     </div>
                   )}
                 </div>

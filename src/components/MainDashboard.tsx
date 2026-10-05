@@ -55,7 +55,8 @@ import {
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
-import { StudentRequest, AnomalyLog, Student, AcademicCalendarPeriod, AcademicHolidayItem, AcademicSubPeriod, Program } from '../types';
+import { StudentMobilePanel } from './student/StudentMobilePanel';
+import { StudentRequest, AnomalyLog, Student, AcademicCalendarPeriod, AcademicHolidayItem, AcademicSubPeriod, Program, WorkflowItem } from '../types';
 import { 
   getTodayShamsi, 
   getShamsiDayOfWeekName, 
@@ -244,6 +245,25 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     return localStorage.getItem('hide_hadith_banner_v2') === 'true';
   });
 
+  // Mobile Device Auto-Detection for Student Panel
+  const [isMobileDevice, setIsMobileDevice] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth <= 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    }
+    return false;
+  });
+  const [forceDesktopMode, setForceDesktopMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileDevice(window.innerWidth <= 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const [pendingWorkflowCount, setPendingWorkflowCount] = useState<number>(0);
+
   const showHadithBanner = !isHadithDismissed && (prefsState.showHadithBanner !== false);
 
   const toggleHadithBanner = () => {
@@ -294,6 +314,23 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         if (Array.isArray(reqs)) {
           const pendingCount = reqs.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
           setUnreadRequestsCount(pendingCount);
+        }
+
+        // 1.5 Pending Workflow items for destination officer
+        const allWorkflow = await localDb.getDocs<WorkflowItem>('workflow_items').catch(() => []);
+        if (Array.isArray(allWorkflow)) {
+          const isSuper = currentUser?.level === 1 || isSuperAdmin;
+          const isEdu = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
+          const isSupervisor = currentUser?.role === 'grade_supervisor' || currentUser?.role === 'grade_mentor';
+          const userGrade = currentUser?.gradeLabel || '';
+
+          let wfCount = 0;
+          if (isSuper || isEdu) {
+            wfCount = allWorkflow.filter(w => w.status === 'pending' && (w.requiresEducationApproval || isSuper)).length;
+          } else if (isSupervisor) {
+            wfCount = allWorkflow.filter(w => w.status === 'pending' && (!w.grade || w.grade === userGrade || w.grade === 'همه پایه‌ها')).length;
+          }
+          setPendingWorkflowCount(wfCount);
         }
 
         // 2. Anomalies
@@ -438,9 +475,12 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       category: 'requests',
       icon: GitBranch,
       iconBg: 'bg-gradient-to-br from-purple-500 via-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/30',
-      cardGradient: 'from-purple-500/10 via-indigo-500/5 to-transparent',
-      borderGlow: 'hover:border-purple-400 hover:shadow-2xl hover:shadow-purple-500/20',
-      accentText: 'text-purple-600'
+      cardGradient: 'from-purple-500/15 via-indigo-500/5 to-transparent',
+      borderGlow: 'hover:border-purple-400 hover:shadow-2xl hover:shadow-purple-500/25',
+      accentText: 'text-purple-600',
+      badgeCount: pendingWorkflowCount,
+      badgeText: pendingWorkflowCount > 0 ? `${pendingWorkflowCount} تایید معوق` : undefined,
+      highlight: pendingWorkflowCount > 0
     },
     {
       id: 'todos',
@@ -580,8 +620,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     },
     {
       id: 'attendance',
-      title: currentUser?.level === 3 ? (currentUser.role === 'class_representative' ? 'ثبت و پایش حضور و غیاب کلاس' : 'کارنامه حضور و غیاب من') : 'حضور و غیاب طلاب',
-      subtitle: currentUser?.level === 3 ? 'مشاهده ریز تاخیرها، غیبت‌ها و کارنامه حضور در جلسات درس' : 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
+      title: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب من') : 'حضور و غیاب طلاب',
+      subtitle: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت روزانه وضعیت حضور و غیاب کلاس تحت نمایندگی' : 'مشاهده ریز تاخیرها، غیبت‌ها و کارنامه حضور در جلسات درس') : 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
       category: 'students',
       icon: CheckSquare,
       iconBg: 'bg-gradient-to-br from-emerald-500 via-teal-600 to-green-600 text-white shadow-lg shadow-emerald-500/30',
@@ -1162,6 +1202,16 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   const currentStat = STATS_ITEMS[activeStatIndex] || STATS_ITEMS[0];
   const currentHadith = SHIA_KNOWLEDGE_HADITHS[Math.abs(hadithIndex) % SHIA_KNOWLEDGE_HADITHS.length] || SHIA_KNOWLEDGE_HADITHS[0];
 
+  // Auto-detect mobile device for Level 3 students and provide dedicated mobile UI
+  if (currentUser?.level === 3 && isMobileDevice && !forceDesktopMode) {
+    return (
+      <StudentMobilePanel 
+        onNavigateTab={onNavigateTab} 
+        onSwitchToDesktopView={() => setForceDesktopMode(true)} 
+      />
+    );
+  }
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5 font-vazir relative min-h-[calc(100vh-5rem)] overflow-hidden" dir="rtl">
       {/* Ambient Floating Background Mesh Orbs */}
@@ -1171,6 +1221,51 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           <div className="absolute top-1/3 -left-10 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
           <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
         </>
+      )}
+
+      {/* Switch back to mobile for students if forced desktop */}
+      {currentUser?.level === 3 && isMobileDevice && forceDesktopMode && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-2.5 flex items-center justify-between text-xs">
+          <span className="font-bold text-indigo-900">شما در حال مشاهده نسخه استاندارد هستید.</span>
+          <button 
+            type="button"
+            onClick={() => setForceDesktopMode(false)}
+            className="px-3 py-1 bg-indigo-600 text-white font-black rounded-xl cursor-pointer shadow-xs"
+          >
+            بازگشت به نسخه ویژه موبایل طلاب
+          </button>
+        </div>
+      )}
+
+      {/* Pending Workflow Alert Banner for Destination Officers */}
+      {pendingWorkflowCount > 0 && isTabAllowed('workflow') && (
+        <div 
+          onClick={() => onNavigateTab('workflow')}
+          className="p-4 rounded-3xl bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 text-white shadow-xl shadow-purple-900/20 border-2 border-purple-300 flex items-center justify-between cursor-pointer active:scale-98 transition-all animate-pulse"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-white text-purple-700 flex items-center justify-center font-black shadow-md shrink-0">
+              <GitBranch size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black">هشدار کارتابل: جریان‌های کار معوق نیازمند بررسی</h4>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black shadow-xs">
+                  {pendingWorkflowCount} مورد جدید
+                </span>
+              </div>
+              <p className="text-xs text-purple-100 mt-0.5">
+                تغییرات گروه‌های مباحثه و فرایندهای آموزشی نیازمند تایید شما هستند. پس از تایید، این هشدار خودکار حذف خواهد شد.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="px-3.5 py-2 bg-white text-purple-900 hover:bg-purple-50 rounded-xl text-xs font-black shrink-0 shadow-md transition-all cursor-pointer"
+          >
+            مشاهده کارتابل
+          </button>
+        </div>
       )}
       
       {/* 0. CALLIGRAPHIC BISMILLAH & HADITH (Boxless, Minimal, Fine & Beautiful Typography) */}
@@ -1417,8 +1512,12 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                   <CheckSquare size={18} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">کارنامه حضور و غیاب</div>
-                  <div className="text-[10px] text-emerald-700/80 truncate">آمار و غیبت‌ها</div>
+                  <div className="text-xs font-black truncate">
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب'}
+                  </div>
+                  <div className="text-[10px] text-emerald-700/80 truncate">
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') ? 'ثبت وضعیت کلاس' : 'آمار و غیبت‌ها'}
+                  </div>
                 </div>
               </button>
             )}

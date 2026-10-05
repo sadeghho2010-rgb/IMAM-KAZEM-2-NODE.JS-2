@@ -24,6 +24,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { SectionPermissionsManager } from './admin/SectionPermissionsManager';
 
 const ALL_MODULES: { id: AppModuleId; label: string; group: string }[] = [
   { id: 'todos', label: 'پیگیری‌ها', group: 'عمومی و اداری' },
@@ -62,6 +63,7 @@ export default function UserManagement() {
   const [filterLevel, setFilterLevel] = useState<'all' | '1' | '2' | '3'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [activeViewMode, setActiveViewMode] = useState<'users' | 'sections'>('users');
 
   // Form State
   const [formUsername, setFormUsername] = useState('');
@@ -73,7 +75,13 @@ export default function UserManagement() {
   const [formScope, setFormScope] = useState<UserScope>('global');
   const [formGradeLabel, setFormGradeLabel] = useState('کل پایه‌ها');
   const [formManagedGrades, setFormManagedGrades] = useState<string[]>([]);
+  const [formManagedClassId, setFormManagedClassId] = useState<string>('');
+  const [availableProgramsList, setAvailableProgramsList] = useState<any[]>([]);
   const [formIsReadOnly, setFormIsReadOnly] = useState(false);
+
+  useEffect(() => {
+    localDb.getDocs('programs').then(setAvailableProgramsList).catch(() => []);
+  }, []);
   const [formAllowedModules, setFormAllowedModules] = useState<AppModuleId[]>([
     'todos', 'students', 'active-students', 'programs', 'attendance', 'stats', 'discussion'
   ]);
@@ -91,6 +99,7 @@ export default function UserManagement() {
     setFormScope('global');
     setFormGradeLabel('کل پایه‌ها');
     setFormManagedGrades([]);
+    setFormManagedClassId('');
     setFormIsReadOnly(false);
     setFormAllowedModules([
       'todos', 'students', 'active-students', 'programs', 'attendance', 'stats', 'discussion'
@@ -115,6 +124,7 @@ export default function UserManagement() {
     setFormScope(user.scope);
     setFormGradeLabel(user.gradeLabel || 'کل پایه‌ها');
     setFormManagedGrades(user.managedGrades || []);
+    setFormManagedClassId((user as any).managedClassId || '');
     setFormIsReadOnly(user.isReadOnly || false);
     setFormAllowedModules((user.allowedModules as AppModuleId[]) || (user.allowedTabs as AppModuleId[]) || []);
     setFormError(null);
@@ -156,9 +166,26 @@ export default function UserManagement() {
         scope: formScope,
         gradeLabel: formGradeLabel,
         managedGrades: formManagedGrades,
+        managedClassId: formManagedClassId || undefined,
         isReadOnly: formIsReadOnly,
         allowedModules: formAllowedModules,
       });
+
+      if (formManagedClassId) {
+        localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
+          if (prog) {
+            const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
+            const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
+            if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+            if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
+            await localDb.updateDoc('programs', formManagedClassId, {
+              representativeNames: repNames,
+              representativeStudentIds: repIds
+            });
+          }
+        }).catch(console.warn);
+      }
+
       setIsCreateModalOpen(false);
       setEditingUser(null);
     } else {
@@ -173,11 +200,27 @@ export default function UserManagement() {
         scope: formScope,
         gradeLabel: formGradeLabel,
         managedGrades: formManagedGrades,
+        managedClassId: formManagedClassId || undefined,
         isReadOnly: formIsReadOnly,
         isActive: true,
         allowedModules: formAllowedModules,
         avatarBg: formLevel === 1 ? 'bg-indigo-600' : formLevel === 2 ? 'bg-emerald-600' : 'bg-cyan-600',
       });
+
+      if (res.success && res.user && formManagedClassId) {
+        localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
+          if (prog) {
+            const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
+            const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
+            if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+            if (res.user?.id && !repIds.includes(res.user.id)) repIds.push(res.user.id);
+            await localDb.updateDoc('programs', formManagedClassId, {
+              representativeNames: repNames,
+              representativeStudentIds: repIds
+            });
+          }
+        }).catch(console.warn);
+      }
 
       if (res.success) {
         setIsCreateModalOpen(false);
@@ -244,8 +287,44 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* View Mode Switcher */}
+      <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-wrap items-center gap-2 border border-slate-200 w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveViewMode('users')}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+            activeViewMode === 'users'
+              ? "bg-white text-indigo-700 shadow-xs"
+              : "text-slate-600 hover:text-slate-900"
+          )}
+        >
+          <Users size={16} />
+          <span>مدیریت بر محور افراد (حساب‌های کاربری)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveViewMode('sections')}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+            activeViewMode === 'sections'
+              ? "bg-white text-indigo-700 shadow-xs"
+              : "text-slate-600 hover:text-slate-900"
+          )}
+        >
+          <Layers size={16} />
+          <span>مدیریت دسترسی بر محور بخش‌ها (ماتریس گروهی و جمعی)</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-black">جدید</span>
+        </button>
+      </div>
+
+      {activeViewMode === 'sections' ? (
+        <SectionPermissionsManager />
+      ) : (
+        <>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-400">کل کاربران سامانه</span>
@@ -471,6 +550,8 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Create / Edit User Modal */}
       {isCreateModalOpen && (
@@ -699,6 +780,31 @@ export default function UserManagement() {
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Representative Class Selector for Level 3 Class Representative */}
+              {(formRole === 'class_representative' || formRoleTitle === 'نماینده کلاس') && (
+                <div className="p-3.5 bg-teal-50/70 rounded-2xl border border-teal-200/90 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-teal-950 flex items-center gap-1.5">
+                      <CheckSquare size={15} className="text-teal-700" />
+                      <span>کلاس تحت نمایندگی:</span>
+                    </label>
+                    <span className="text-[10px] text-teal-700 font-bold">دسترسی ثبت حضور و غیاب برای این کلاس فعال می‌شود</span>
+                  </div>
+                  <select
+                    value={formManagedClassId}
+                    onChange={(e) => setFormManagedClassId(e.target.value)}
+                    className="w-full bg-white border border-teal-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                  >
+                    <option value="">-- انتخاب کلاس درس از برنامه‌ها --</option>
+                    {availableProgramsList.map(prog => (
+                      <option key={prog.id} value={prog.id}>
+                        {prog.title} ({prog.grade || 'عمومی'}) - استاد {prog.teacher || '---'} ({prog.day} {prog.time})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 

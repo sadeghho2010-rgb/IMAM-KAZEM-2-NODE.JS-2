@@ -112,13 +112,27 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   // Identify logged student if student role
   const loggedStudent = useMemo(() => {
     if (!isStudentUser) return null;
-    return allStudentsList.find(s => 
-      (currentUser?.linkedStudentId && s.id === currentUser.linkedStudentId) ||
-      (currentUser?.studentId && s.id === currentUser.studentId) ||
-      (s.nationalId && s.nationalId.trim() === currentUser?.username?.trim()) ||
-      s.name === currentUser?.fullName ||
-      s.name === currentUser?.name
-    ) || (allStudentsList.length > 0 ? allStudentsList[0] : null);
+    const cleanStr = (raw?: string) => {
+      if (!raw) return '';
+      return raw
+        .replace(/\(.*?\)/g, '')
+        .replace(/^(طلبه|دانش‌پژوه|سید|آقای|استاد|حجت\s*الاسلام)\s+/gi, '')
+        .trim()
+        .toLowerCase();
+    };
+
+    const cName = cleanStr(currentUser?.name || currentUser?.fullName || '');
+    const uName = (currentUser?.username || '').trim().toLowerCase();
+    const sid = currentUser?.linkedStudentId || currentUser?.studentId || currentUser?.id;
+
+    return allStudentsList.find(s => {
+      if (sid && s.id === sid) return true;
+      if (s.nationalId && s.nationalId.trim().toLowerCase() === uName) return true;
+      if (s.studentCode && s.studentCode.trim().toLowerCase() === uName) return true;
+      const sName = cleanStr(s.name);
+      if (sName && cName && (sName === cName || sName.includes(cName) || cName.includes(sName))) return true;
+      return false;
+    }) || null;
   }, [isStudentUser, allStudentsList, currentUser]);
 
   // Export PDF State
@@ -346,6 +360,9 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         };
 
         await localDb.addDoc('workflow_items', reqItem);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+        }
         setToastMessage('درخواست ویرایش گروه مباحثه با موفقیت به جریان کار ارسال شد و پس از تایید مسئول پایه و مسئول آموزش اعمال خواهد شد.');
         setShowModal(false);
         await loadData();
@@ -1725,83 +1742,85 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         </div>
       )}
 
-      {/* SECTION 3: BOTTOM GROUP COMPARISON & GROUP STUDY STATUS TABLE */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
-              <BarChart2 size={24} />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-slate-800">جدول مقایسه‌ای مجموع (مطالعه + مباحثه) گروه‌ها</h2>
-              <p className="text-xs text-slate-500">
-                بررسی و مقایسه تفکیکی ساعات مطالعه فردی، مباحثه گروهی و مجموع کل فعالیت علمی
-              </p>
+      {/* SECTION 3: BOTTOM GROUP COMPARISON & GROUP STUDY STATUS TABLE - Strictly hidden for students */}
+      {!isStudentUser && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                <BarChart2 size={24} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-800">جدول مقایسه‌ای مجموع (مطالعه + مباحثه) گروه‌ها</h2>
+                <p className="text-xs text-slate-500">
+                  بررسی و مقایسه تفکیکی ساعات مطالعه فردی، مباحثه گروهی و مجموع کل فعالیت علمی
+                </p>
+              </div>
             </div>
           </div>
+
+          {/* Groups Comparison Table */}
+          {groups.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">گروهی جهت مقایسه ثبت نشده است.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
+                    <th className="py-3.5 px-4 rounded-r-xl">عنوان گروه مباحثه</th>
+                    <th className="py-3.5 px-4">پایه تحصیلی</th>
+                    <th className="py-3.5 px-4">تعداد اعضا</th>
+                    <th className="py-3.5 px-4">میزان مطالعه (مجموع / میانگین)</th>
+                    <th className="py-3.5 px-4">ساعات مباحثه (مجموع / میانگین)</th>
+                    <th className="py-3.5 px-4 bg-indigo-50/50 text-indigo-900 font-black">مجموع (مطالعه + مباحثه)</th>
+                    <th className="py-3.5 px-4 rounded-l-xl">ارزیابی عملکرد</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {groups.map((g) => {
+                    const stats = calculateGroupStats(g);
+                    const statusLevel = stats.avgCombinedHours >= 80 ? 'ممتاز' : stats.avgCombinedHours >= 50 ? 'خوب' : 'متوسط';
+
+                    return (
+                      <tr key={g.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-4 px-4 font-black text-slate-800">
+                          <div>{g.title}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{g.subject || 'فقه و اصول'}</div>
+                        </td>
+                        <td className="py-4 px-4 font-bold text-slate-600">{g.grade || 'پایه عمومی'}</td>
+                        <td className="py-4 px-4 font-bold text-slate-800">
+                          {stats.memberCount} طلبه + {g.externalMembers?.length || 0} سایر
+                        </td>
+                        <td className="py-4 px-4 font-bold text-slate-700">
+                          <span>{stats.totalStudyHours}س</span>
+                          <span className="text-[10px] text-slate-400 block font-normal">({stats.avgStudyHours}س/نفر)</span>
+                        </td>
+                        <td className="py-4 px-4 font-bold text-indigo-600">
+                          <span>{stats.totalDiscussionHours}س</span>
+                          <span className="text-[10px] text-indigo-400 block font-normal">({stats.avgDiscussionHours}س/نفر)</span>
+                        </td>
+                        <td className="py-4 px-4 font-black text-indigo-950 bg-indigo-50/30">
+                          <span className="text-sm">{stats.totalCombinedHours} ساعت</span>
+                          <span className="text-[10px] text-indigo-700 block font-bold">میانگین: {stats.avgCombinedHours}س / نفر</span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-full text-[10px] font-black inline-block",
+                            statusLevel === 'ممتاز' ? "bg-emerald-100 text-emerald-800" :
+                            statusLevel === 'خوب' ? "bg-sky-100 text-sky-800" : "bg-amber-100 text-amber-800"
+                          )}>
+                            {statusLevel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-
-        {/* Groups Comparison Table */}
-        {groups.length === 0 ? (
-          <p className="text-xs text-slate-400 text-center py-6">گروهی جهت مقایسه ثبت نشده است.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
-                  <th className="py-3.5 px-4 rounded-r-xl">عنوان گروه مباحثه</th>
-                  <th className="py-3.5 px-4">پایه تحصیلی</th>
-                  <th className="py-3.5 px-4">تعداد اعضا</th>
-                  <th className="py-3.5 px-4">میزان مطالعه (مجموع / میانگین)</th>
-                  <th className="py-3.5 px-4">ساعات مباحثه (مجموع / میانگین)</th>
-                  <th className="py-3.5 px-4 bg-indigo-50/50 text-indigo-900 font-black">مجموع (مطالعه + مباحثه)</th>
-                  <th className="py-3.5 px-4 rounded-l-xl">ارزیابی عملکرد</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {groups.map((g) => {
-                  const stats = calculateGroupStats(g);
-                  const statusLevel = stats.avgCombinedHours >= 80 ? 'ممتاز' : stats.avgCombinedHours >= 50 ? 'خوب' : 'متوسط';
-
-                  return (
-                    <tr key={g.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-4 font-black text-slate-800">
-                        <div>{g.title}</div>
-                        <div className="text-[10px] text-slate-400 font-medium">{g.subject || 'فقه و اصول'}</div>
-                      </td>
-                      <td className="py-4 px-4 font-bold text-slate-600">{g.grade || 'پایه عمومی'}</td>
-                      <td className="py-4 px-4 font-bold text-slate-800">
-                        {stats.memberCount} طلبه + {g.externalMembers?.length || 0} سایر
-                      </td>
-                      <td className="py-4 px-4 font-bold text-slate-700">
-                        <span>{stats.totalStudyHours}س</span>
-                        <span className="text-[10px] text-slate-400 block font-normal">({stats.avgStudyHours}س/نفر)</span>
-                      </td>
-                      <td className="py-4 px-4 font-bold text-indigo-600">
-                        <span>{stats.totalDiscussionHours}س</span>
-                        <span className="text-[10px] text-indigo-400 block font-normal">({stats.avgDiscussionHours}س/نفر)</span>
-                      </td>
-                      <td className="py-4 px-4 font-black text-indigo-950 bg-indigo-50/30">
-                        <span className="text-sm">{stats.totalCombinedHours} ساعت</span>
-                        <span className="text-[10px] text-indigo-700 block font-bold">میانگین: {stats.avgCombinedHours}س / نفر</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={cn(
-                          "px-2.5 py-1 rounded-full text-[10px] font-black inline-block",
-                          statusLevel === 'ممتاز' ? "bg-emerald-100 text-emerald-800" :
-                          statusLevel === 'خوب' ? "bg-sky-100 text-sky-800" : "bg-amber-100 text-amber-800"
-                        )}>
-                          {statusLevel}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* CREATE / EDIT GROUP MODAL */}
       <AnimatePresence>

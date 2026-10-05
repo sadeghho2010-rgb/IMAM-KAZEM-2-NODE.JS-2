@@ -565,6 +565,9 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
       }
 
       await fetchData();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+      }
     } catch (e) {
       console.error('Error approving workflow item:', e);
     }
@@ -593,6 +596,9 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
       setRejectionModalItem(null);
       setRejectionReasonInput('');
       await fetchData();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+      }
     } catch (e) {
       console.error('Error rejecting workflow item:', e);
     }
@@ -749,6 +755,9 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
       setNewPeriodRange('');
       setSelectedStudentForEvent('');
       await fetchData();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+      }
     } catch (err) {
       console.error('Error creating workflow item:', err);
     }

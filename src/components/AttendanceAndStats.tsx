@@ -79,8 +79,15 @@ interface AttendanceAndStatsProps {
 export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
 
-  // Active view tab: 'record' (ثبت حضور و غیاب), 'report' (گزارش‌ها و آمار غیبت), or 'class_status' (وضعیت کارت‌های کلاس)
-  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status'>('class_status');
+  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status'>(() => {
+    if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || (currentUser as any)?.managedClassId) {
+      return 'record';
+    }
+    if (currentUser?.level === 3 || currentUser?.role === 'student') {
+      return 'report';
+    }
+    return 'class_status';
+  });
 
   // Class Status Overview filters
   const [classStatusGradeFilter, setClassStatusGradeFilter] = useState<string>('all');
@@ -234,51 +241,111 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return programs;
     }
 
+    // 0. Direct Link via managedClassId or representativeProgramIds
+    if (currentUser.managedClassId) {
+      const direct = programs.filter(p => p.id === currentUser.managedClassId);
+      if (direct.length > 0) return direct;
+    }
+    if (Array.isArray((currentUser as any).representativeProgramIds) && (currentUser as any).representativeProgramIds.length > 0) {
+      const directList = programs.filter(p => (currentUser as any).representativeProgramIds.includes(p.id));
+      if (directList.length > 0) return directList;
+    }
+
+    const cleanStr = (raw?: string) => {
+      if (!raw) return '';
+      return raw
+        .replace(/\(.*?\)/g, '')
+        .replace(/^(طلبه|دانش‌پژوه|سید|آقای|استاد|حجت\s*الاسلام)\s+/gi, '')
+        .trim()
+        .toLowerCase();
+    };
+
     const currentUserName = (currentUser.name || '').trim().toLowerCase();
     const currentStudentName = (currentUser.studentName || '').trim().toLowerCase();
+    const currentCleanName = cleanStr(currentUser.name || currentUser.fullName || currentUser.studentName || '');
     const currentStudentId = currentUser.studentId || currentUser.linkedStudentId || '';
+    const currentUserId = currentUser.id || '';
+    const currentUsername = (currentUser.username || '').trim().toLowerCase();
 
-    return programs.filter(p => {
+    // Match student from students list
+    const matchedStudent = students.find(s => {
+      if (currentStudentId && s.id === currentStudentId) return true;
+      if (currentUserId && s.id === currentUserId) return true;
+      if (s.nationalId && (s.nationalId.toLowerCase() === currentUsername || s.nationalId.toLowerCase() === currentStudentId.toLowerCase())) return true;
+      if (s.studentCode && (s.studentCode.toLowerCase() === currentUsername || s.studentCode.toLowerCase() === currentStudentId.toLowerCase())) return true;
+      const sClean = cleanStr(s.name);
+      if (sClean && currentCleanName && (sClean === currentCleanName || sClean.includes(currentCleanName) || currentCleanName.includes(sClean))) return true;
+      return false;
+    });
+
+    const candidateIds = [
+      currentStudentId,
+      currentUserId,
+      matchedStudent?.id,
+      (currentUser as any).uid
+    ].filter(Boolean) as string[];
+
+    const candidateNames = [
+      currentUserName,
+      currentStudentName,
+      currentCleanName,
+      cleanStr(matchedStudent?.name),
+      matchedStudent?.name?.trim().toLowerCase()
+    ].filter(Boolean) as string[];
+
+    const matchedProgs = programs.filter(p => {
       // 1. Direct ID match in representativeStudentIds
-      if (currentStudentId && Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.includes(currentStudentId)) {
-        return true;
-      }
-      // 2. Student ID match via student roster
-      const matchedStudent = students.find(s => 
-        (currentStudentId && s.id === currentStudentId) ||
-        (s.name && (s.name.trim().toLowerCase() === currentUserName || s.name.trim().toLowerCase() === currentStudentName))
-      );
-      if (matchedStudent && Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.includes(matchedStudent.id)) {
-        return true;
-      }
-      // 3. Name match in representativeNames
-      if (Array.isArray(p.representativeNames)) {
-        const hasNameMatch = p.representativeNames.some((repName: string) => {
-          const norm = repName.trim().toLowerCase();
-          return norm === currentUserName || 
-                 norm === currentStudentName ||
-                 (currentUserName && (currentUserName.includes(norm) || norm.includes(currentUserName))) ||
-                 (currentStudentName && (currentStudentName.includes(norm) || norm.includes(currentStudentName)));
-        });
-        if (hasNameMatch) return true;
-      }
-      // 4. Custom representative string match
-      if (p.customRepresentative) {
-        const norm = p.customRepresentative.trim().toLowerCase();
-        if (norm === currentUserName || norm === currentStudentName || (currentUserName && currentUserName.includes(norm))) {
+      if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
+        if (p.representativeStudentIds.some(id => candidateIds.includes(id))) {
           return true;
         }
       }
-      if (currentUser.role === 'class_representative' && currentUser.scope === 'all') {
-        return true;
+      // 2. Name match in representativeNames
+      if (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) {
+        const hasNameMatch = p.representativeNames.some((repName: string) => {
+          const norm = repName.trim().toLowerCase();
+          const clean = cleanStr(repName);
+          return candidateNames.some(c => c && (norm.includes(c) || c.includes(norm) || (clean && (clean === c || clean.includes(c) || c.includes(clean)))));
+        });
+        if (hasNameMatch) return true;
+      }
+      // 3. Custom representative string match
+      if (p.customRepresentative) {
+        const norm = p.customRepresentative.trim().toLowerCase();
+        const clean = cleanStr(p.customRepresentative);
+        if (candidateNames.some(c => c && (norm.includes(c) || c.includes(norm) || (clean && clean.includes(c))))) {
+          return true;
+        }
       }
       return false;
     });
-  }, [currentUser, programs, students, isSuperAdmin, isEducationManager, isGradeSupervisor]);
+
+    if (matchedProgs.length > 0) {
+      return matchedProgs;
+    }
+
+    // If user's role is class_representative or title contains نماینده, but program hasn't stored ID yet,
+    // link strictly through enrolled classes of this student (NEVER return all classes of the grade)
+    if (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) {
+      const studentId = matchedStudent?.id || currentStudentId || currentUserId;
+      if (studentId) {
+        const enrolled = programs.filter(p => {
+          const inEnroll = enrollments.some(e => e.programId === p.id && e.studentId === studentId);
+          const inArray = Array.isArray(p.studentIds) && p.studentIds.includes(studentId);
+          return inEnroll || inArray;
+        });
+        if (enrolled.length > 0) return enrolled;
+      }
+    }
+
+    return [];
+  }, [currentUser, programs, students, enrollments, isSuperAdmin, isEducationManager, isGradeSupervisor]);
 
   // Determine if the user is a class representative vs ordinary student
   const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && (
-    currentUser?.role === 'class_representative' || representativePrograms.length > 0
+    currentUser?.role === 'class_representative' || 
+    currentUser?.roleTitle?.includes('نماینده') || 
+    representativePrograms.length > 0
   );
 
   const isOrdinaryStudent = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && !isRepresentative && (
@@ -289,12 +356,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
   const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
 
-  // Enforce tab access: Ordinary students MUST only see 'report' tab
+  // Enforce tab access:
+  // - Ordinary students MUST only see 'report' tab
+  // - Representatives MUST default to 'record' tab to immediately record attendance
   useEffect(() => {
     if (isOrdinaryStudent && activeTab !== 'report') {
       setActiveTab('report');
+    } else if (isRepresentative && activeTab === 'class_status') {
+      setActiveTab('record');
     }
-  }, [isOrdinaryStudent, activeTab]);
+  }, [isOrdinaryStudent, isRepresentative, activeTab]);
 
   // Set default selected program
   useEffect(() => {
@@ -940,21 +1011,27 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">سامانه حضور و غیاب و آمار کلاس‌ها</h1>
+              <h1 className="text-lg font-black text-slate-900">
+                {isRepresentative ? 'ثبت حضور و غیاب کلاس' : isOrdinaryStudent ? 'کارنامه حضور و غیاب من' : 'سامانه حضور و غیاب و آمار کلاس‌ها'}
+              </h1>
               <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black rounded-lg">
-                نسخه هوشمند مدرسه
+                {isRepresentative ? 'پنل نماینده کلاس' : isOrdinaryStudent ? 'پرونده انضباطی' : 'نسخه هوشمند مدرسه'}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              ثبت روزانه توسط نمایندگان کلاس‌ها و مسئولین آموزش همراه با گزارش‌گیری جامع، اخطار آموزشی و موجه‌سازی
+              {isRepresentative 
+                ? 'ثبت و ویرایش وضعیت حضور، غیبت و تاخیر طلاب کلاس تحت نمایندگی شما' 
+                : isOrdinaryStudent 
+                ? 'مشاهده وضعیت حضور، تاخیرها، غیبت‌های موجه و غیرموجه شما در دوره‌های آموزشی'
+                : 'ثبت روزانه توسط نمایندگان کلاس‌ها و مسئولین آموزش همراه با گزارش‌گیری جامع، اخطار آموزشی و موجه‌سازی'}
             </p>
           </div>
         </div>
 
         {/* View Switcher & Settings */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Class Status tab - hidden for regular students; shown for staff & representatives */}
-          {!isOrdinaryStudent && (
+          {/* Class Status tab - hidden for regular students & representatives (representatives only see their own class) */}
+          {!isOrdinaryStudent && !isRepresentative && (
             <button
               type="button"
               onClick={() => setActiveTab('class_status')}
@@ -967,7 +1044,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             >
               <LayoutGrid size={17} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
               <span className="text-xs sm:text-sm font-black">
-                {isRepresentative ? 'وضعیت کلاس‌های من' : 'وضعیت کلاس‌ها'}
+                وضعیت کلاس‌ها
               </span>
             </button>
           )}
@@ -986,7 +1063,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 )}
               >
                 <CheckSquare size={15} />
-                <span>ثبت و ویرایش جلسه</span>
+                <span>{isRepresentative ? 'ثبت حضور و غیاب' : 'ثبت و ویرایش جلسه'}</span>
               </button>
             )}
 
@@ -1001,7 +1078,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               )}
             >
               <FileCheck2 size={15} />
-              <span>{(isOrdinaryStudent || isRepresentative || currentUser?.level === 3) ? 'گزارش و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
+              <span>{isRepresentative ? 'آمار غیبت من' : (isOrdinaryStudent || currentUser?.level === 3) ? 'کارنامه و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
             </button>
           </div>
 
@@ -1022,7 +1099,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {/* TAB 3: CLASSROOM ATTENDANCE OVERVIEW (وضعیت کلاس‌ها) */}
       {/* ===================================================================== */}
-      {activeTab === 'class_status' && !isOrdinaryStudent && (() => {
+      {activeTab === 'class_status' && !isOrdinaryStudent && !isRepresentative && (() => {
         // Date helpers
         const handlePrevDay = () => {
           try {
@@ -1639,6 +1716,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {activeTab === 'record' && !isOrdinaryStudent && (
         <div className="space-y-6">
+          {/* Notice if representative has no linked class */}
+          {isRepresentative && representativePrograms.length === 0 && (
+            <div className="p-5 bg-amber-50 border border-amber-200 rounded-3xl flex items-center gap-3 text-amber-950 text-xs">
+              <AlertCircle size={24} className="text-amber-600 shrink-0" />
+              <div>
+                <h4 className="font-black text-sm">حساب شما به عنوان نماینده کلاس فعال است</h4>
+                <p className="text-amber-800 text-xs mt-0.5">
+                  کلاس درسی در سیستم به عنوان کلاس تحت نمایندگی شما ثبت نشده است. لطفاً از مدیر یا مسئول پایه درخواست فرمایید شما را در بخش برنامه هفتگی به عنوان نماینده کلاس تعیین نمایند.
+                </p>
+              </div>
+            </div>
+          )}
           {/* Warning Banner if locked for Representative */}
           {isDateLockedForRepresentative && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-900 text-xs font-bold">

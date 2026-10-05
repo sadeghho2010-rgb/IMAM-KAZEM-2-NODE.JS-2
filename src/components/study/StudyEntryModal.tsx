@@ -776,6 +776,10 @@ export default function StudyEntryModal({
         }
       }
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+      }
+
       onSaveSuccess();
       onClose();
     } catch (error) {
