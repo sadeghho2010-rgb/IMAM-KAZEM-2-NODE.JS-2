@@ -1,56 +1,6 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
-
-const COLLECTIONS_DIR = path.join(process.cwd(), 'data', 'collections');
-
-function getCollectionFilePath(collection: string): string {
-  return path.join(COLLECTIONS_DIR, `${collection}.json`);
-}
-
-function loadCollectionFromFile(collection: string): any[] {
-  try {
-    const filePath = getCollectionFilePath(collection);
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn(`Could not read collection ${collection} from file:`, e);
-  }
-  return [];
-}
-
-function saveCollectionToFile(collection: string, items: any[]) {
-  try {
-    if (!fs.existsSync(COLLECTIONS_DIR)) {
-      fs.mkdirSync(COLLECTIONS_DIR, { recursive: true });
-    }
-    fs.writeFileSync(getCollectionFilePath(collection), JSON.stringify(items, null, 2), 'utf-8');
-  } catch (e) {
-    console.warn(`Could not write collection ${collection} to file:`, e);
-  }
-}
-
-// In-memory collection cache on server
-const serverMemoryCollections = new Map<string, Map<string, any>>();
-
-function getMemoryCollection(collection: string): Map<string, any> {
-  let colMap = serverMemoryCollections.get(collection);
-  if (!colMap) {
-    colMap = new Map<string, any>();
-    loadCollectionFromFile(collection).forEach(item => {
-      if (item && item.id) {
-        colMap!.set(item.id, item);
-      }
-    });
-    serverMemoryCollections.set(collection, colMap);
-  }
-  return colMap;
-}
 
 // Real-time synchronization event bus
 type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
@@ -425,26 +375,28 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
 // Server CRUD Handler: Save Document (Dedicated Table + App Collections Mirror)
 export async function serverSaveDoc(collection: string, data: any, callerUser?: any): Promise<{ success: boolean; id: string; error?: string }> {
   if (!data) return { success: false, id: '', error: 'داده‌های ارسالی نامعتبر است.' };
-  const id = data.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const id = String(data.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
   const record = { ...data, id };
 
-  // Always update server memory & file cache
-  const memCol = getMemoryCollection(collection);
-  memCol.set(id, record);
-  saveCollectionToFile(collection, Array.from(memCol.values()));
-
-  // 1. If MySQL is configured, execute via MySQL Repository
+  // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
       await MysqlRepository.saveDocument(collection, id, record);
       notifyRealtimeChange(collection, id, 'upsert');
       return { success: true, id };
     } catch (mErr: any) {
-      console.warn(`[MySQL Save Doc Error for ${collection}]:`, mErr?.message || mErr);
+      console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
+      console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
+      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      return {
+        success: false,
+        id: '',
+        error: 'خطا در ذخیره‌سازی. لطفاً با مدیر سیستم تماس بگیرید.'
+      };
     }
   }
 
-  // 2. If Supabase is configured, execute via Supabase
+  // 2. Exception: Cloudflare + Supabase mode (when MySQL is not configured)
   if (isServerSupabaseConfigured) {
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
@@ -463,8 +415,8 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
         }
       }
 
-      // Also mirror to app_collections for full persistence and backward compatibility
-      await serverSupabase
+      // Also mirror to app_collections for full persistence
+      const { error: appErr } = await serverSupabase
         .from('app_collections')
         .upsert({
           collection_name: collection,
@@ -473,38 +425,50 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
           updated_at: new Date().toISOString()
         }, { onConflict: 'collection_name,id' });
 
+      if (appErr) {
+        console.error(`[Supabase Save Error] Collection: "${collection}", ID: "${id}":`, appErr.message);
+        return { success: false, id: '', error: 'خطا در ذخیره‌سازی. لطفاً با مدیر سیستم تماس بگیرید.' };
+      }
+
       notifyRealtimeChange(collection, id, 'upsert');
       return { success: true, id };
     } catch (err: any) {
-      console.error(`Server save error for ${collection}:`, err?.message || err);
+      console.error(`[Supabase Save Fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err, err?.stack);
+      return { success: false, id: '', error: 'خطا در ذخیره‌سازی. لطفاً با مدیر سیستم تماس بگیرید.' };
     }
   }
 
-  notifyRealtimeChange(collection, id, 'upsert');
-  return { success: true, id };
+  // 3. If neither database is configured -> Error cleanly
+  console.error(`[Database Error] No database configured for saving collection: "${collection}"`);
+  return {
+    success: false,
+    id: '',
+    error: 'هیچ دیتابیسی تنظیم نشده است. لطفاً Environment Variables را چک کنید.'
+  };
 }
 
 // Server CRUD Handler: Delete Document
 export async function serverDeleteDoc(collection: string, id: string, callerUser?: any): Promise<{ success: boolean; error?: string }> {
   if (!id) return { success: false, error: 'شناسه الزامی است.' };
 
-  // Always update server memory & file cache
-  const memCol = getMemoryCollection(collection);
-  memCol.delete(id);
-  saveCollectionToFile(collection, Array.from(memCol.values()));
-
-  // 1. If MySQL is configured, execute via MySQL Repository
+  // 1. If MySQL is configured: MySQL is the SINGLE source of truth
   if (isMysqlConfigured) {
     try {
       await MysqlRepository.deleteDocument(collection, id);
       notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
     } catch (mErr: any) {
-      console.warn(`[MySQL Delete Doc Error for ${collection}]:`, mErr?.message || mErr);
+      console.error(`[MySQL Delete Fatal Error] Collection: "${collection}", ID: "${id}"`);
+      console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
+      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      return {
+        success: false,
+        error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.'
+      };
     }
   }
 
-  // 2. If Supabase is configured
+  // 2. Exception: Supabase
   if (isServerSupabaseConfigured) {
     try {
       const dedicatedTable = COLLECTION_TABLE_MAP[collection];
@@ -519,34 +483,44 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
         }
       }
 
-      await serverSupabase
+      const { error: appErr } = await serverSupabase
         .from('app_collections')
         .delete()
         .eq('collection_name', collection)
         .eq('id', id);
 
+      if (appErr) {
+        console.error(`[Supabase Delete Error] Collection: "${collection}", ID: "${id}":`, appErr.message);
+        return { success: false, error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.' };
+      }
+
       notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
     } catch (err: any) {
-      console.error(`Server delete error for ${collection}:`, err?.message || err);
+      console.error(`[Supabase Delete Fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err, err?.stack);
+      return { success: false, error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.' };
     }
   }
 
-  notifyRealtimeChange(collection, id, 'delete');
-  return { success: true };
+  // 3. Neither configured
+  console.error(`[Database Error] No database configured for deleting from collection: "${collection}"`);
+  return {
+    success: false,
+    error: 'هیچ دیتابیسی تنظیم نشده است. لطفاً Environment Variables را چک کنید.'
+  };
 }
 
 // Internal helper to retrieve raw collection data without filtering
 async function fetchRawCollectionData(collection: string): Promise<any[]> {
-  // 1. If MySQL is configured, fetch from MySQL
+  // 1. If MySQL is configured, fetch from MySQL only
   if (isMysqlConfigured) {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
-      if (mysqlItems && mysqlItems.length > 0) {
-        return mysqlItems;
-      }
+      return mysqlItems || [];
     } catch (mErr: any) {
-      console.warn(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
+      console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
+      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      return [];
     }
   }
 
@@ -585,12 +559,7 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
     }
   }
 
-  // 3. Fallback to server memory and disk file cache
-  const memCol = getMemoryCollection(collection);
-  if (memCol.size > 0) {
-    return Array.from(memCol.values());
-  }
-
+  // 3. Neither configured -> Return empty array
   return [];
 }
 
@@ -709,9 +678,11 @@ async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promis
   if (isMysqlConfigured) {
     try {
       const mysqlDocs = await MysqlRepository.getDocumentsByIds(collection, ids);
-      if (mysqlDocs && mysqlDocs.length > 0) return mysqlDocs;
+      return mysqlDocs || [];
     } catch (mErr: any) {
-      console.warn(`[MySQL Get Docs Error for ${collection}]:`, mErr?.message || mErr);
+      console.error(`[MySQL Get Docs Fatal Error for ${collection}]:`, mErr?.message || mErr);
+      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      return [];
     }
   }
 

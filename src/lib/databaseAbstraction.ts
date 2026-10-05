@@ -102,46 +102,60 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`app_collections\` (
         \`collection_name\` VARCHAR(100) NOT NULL,
-        \`id\` VARCHAR(150) NOT NULL,
+        \`id\` VARCHAR(100) NOT NULL,
         \`data\` JSON NOT NULL,
         \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (\`collection_name\`, \`id\`),
-        INDEX \`idx_col_name\` (\`collection_name\`),
-        INDEX \`idx_col_updated\` (\`updated_at\`)
+        INDEX \`idx_collection_updated\` (\`collection_name\`, \`updated_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS \`system_users\` (
-        \`id\` VARCHAR(100) NOT NULL,
-        \`username\` VARCHAR(100) NOT NULL,
-        \`password_hash\` VARCHAR(255) NULL,
-        \`name\` VARCHAR(255) NOT NULL,
-        \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
-        \`role_title\` VARCHAR(100) NULL,
-        \`level\` INT NOT NULL DEFAULT 3,
-        \`grade_label\` VARCHAR(100) NULL,
-        \`mentor_id\` VARCHAR(100) NULL,
-        \`student_id\` VARCHAR(100) NULL,
-        \`linked_student_id\` VARCHAR(100) NULL,
-        \`avatar_bg\` VARCHAR(50) NULL,
-        \`allowed_tabs\` JSON NULL,
-        \`editable_tabs\` JSON NULL,
-        \`module_permissions\` JSON NULL,
-        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
-        \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
-        \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
-        \`account_locked_until\` DATETIME NULL,
-        \`last_login\` DATETIME NULL,
-        \`data\` JSON NULL,
-        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        UNIQUE KEY \`uk_username\` (\`username\`),
-        INDEX \`idx_users_role_level\` (\`role\`, \`level\`),
-        INDEX \`idx_users_active\` (\`is_active\`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
+    try {
+      await mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS \`system_users\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`username\` VARCHAR(100) NOT NULL,
+          \`password_hash\` VARCHAR(255) NULL,
+          \`name\` VARCHAR(255) NOT NULL,
+          \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
+          \`role_title\` VARCHAR(100) NULL,
+          \`avatar_url\` VARCHAR(500) NULL,
+          \`level\` INT NOT NULL DEFAULT 3,
+          \`grade_label\` VARCHAR(100) NULL,
+          \`mentor_id\` VARCHAR(100) NULL,
+          \`student_id\` VARCHAR(100) NULL,
+          \`linked_student_id\` VARCHAR(100) NULL,
+          \`avatar_bg\` VARCHAR(50) NULL,
+          \`allowed_tabs\` JSON NULL,
+          \`editable_tabs\` JSON NULL,
+          \`module_permissions\` JSON NULL,
+          \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+          \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
+          \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
+          \`account_locked_until\` DATETIME NULL,
+          \`last_login\` DATETIME NULL,
+          \`data\` JSON NULL,
+          \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          UNIQUE KEY \`uk_username\` (\`username\`),
+          INDEX \`idx_users_role_level\` (\`role\`, \`level\`),
+          INDEX \`idx_users_active\` (\`is_active\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+    } catch (e) {}
+
+    // Ensure system_users columns exist on existing table
+    try {
+      await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS role_title VARCHAR(100) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN role_title VARCHAR(100) NULL`); } catch (err) {}
+    }
+    try {
+      await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
+    }
 
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`students\` (
@@ -556,7 +570,9 @@ export const MysqlRepository = {
   // 5. Save Document to App Collections or Dedicated Table
   async saveDocument(collectionName: string, id: string, data: any): Promise<void> {
     const pool = getMysqlPool();
-    if (!pool) return;
+    if (!pool) {
+      throw new Error('MySQL connection pool is not configured or unavailable.');
+    }
 
     const sql = `
       INSERT INTO app_collections (collection_name, id, data, updated_at)
@@ -571,16 +587,14 @@ export const MysqlRepository = {
   // 6. Delete Document
   async deleteDocument(collectionName: string, id: string): Promise<void> {
     const pool = getMysqlPool();
-    if (!pool) return;
-
-    try {
-      await pool.execute(
-        `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
-        [collectionName, id]
-      );
-    } catch (e) {
-      console.warn('[MySQL Delete App Collection Error]:', e);
+    if (!pool) {
+      throw new Error('MySQL connection pool is not configured or unavailable.');
     }
+
+    await pool.execute(
+      `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
+      [collectionName, id]
+    );
 
     if (collectionName === 'system_users') {
       try {
