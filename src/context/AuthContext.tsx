@@ -916,10 +916,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncWithServer();
     }, 15000);
 
+    // 4. Firestore real-time listener for system_users
+    let unsubscribeFirestore: (() => void) | null = null;
+    try {
+      if (db) {
+        unsubscribeFirestore = onSnapshot(collection(db, 'system_users'), (snapshot) => {
+          const list: Partial<AppUser>[] = [];
+          snapshot.forEach(docSnap => {
+            if (docSnap.exists()) {
+              list.push({ ...(docSnap.data() as any), id: docSnap.id });
+            }
+          });
+          if (list.length > 0) {
+            processIncomingUsers(list);
+          }
+        }, () => {});
+      }
+    } catch (e) {}
+
     return () => { 
       isMounted = false; 
       clearInterval(syncInterval);
       unsubscribeRealtime();
+      if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, []);
 
@@ -1168,6 +1187,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ targetUserId, newPassword })
       });
       const data = await res.json();
+      if (res.ok && data.success) {
+        setUsers(prev => {
+          const updated = prev.map(u => {
+            if (u.id === targetUserId || u.username.toUpperCase() === targetUserId.toUpperCase()) {
+              return { ...u, password: newPassword.trim(), mustChangePassword: false };
+            }
+            return u;
+          });
+          try { localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+      }
       return { success: res.ok && data.success, message: data.message };
     } catch (e: unknown) {
       const errMsg = e instanceof Error ? e.message : 'خطا در بازنشانی رمز عبور.';
@@ -1340,6 +1371,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {}
 
       if (targetUser) {
+        try {
+          const tUname = targetUser.username.toUpperCase();
+          setDoc(doc(db, 'system_users', tUname), {
+            ...targetUser,
+            username: tUname,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(() => {});
+        } catch (e) {}
+
         fetch('/api/auth/update-user', {
           method: 'POST',
           headers,

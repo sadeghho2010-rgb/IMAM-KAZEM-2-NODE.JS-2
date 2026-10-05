@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/AuthService';
 import { LoginInputSchema } from '../lib/validationSchemas';
+import { notifyRealtimeChange } from '../lib/serverDataApi';
 import {
   verifyAccessToken,
   revokeToken,
@@ -156,6 +157,7 @@ export class AuthController {
       };
 
       await saveUserToStorage(userToStore);
+      notifyRealtimeChange('system_users', userToStore.id, 'upsert');
 
       const caller = AuthController.extractCaller(req);
       logServerAudit({
@@ -209,6 +211,7 @@ export class AuthController {
       };
 
       await saveUserToStorage(updatedUser);
+      notifyRealtimeChange('system_users', updatedUser.id, 'upsert');
 
       const caller = AuthController.extractCaller(req);
       logServerAudit({
@@ -240,6 +243,7 @@ export class AuthController {
       }
 
       await deleteUserFromStorage(target);
+      notifyRealtimeChange('system_users', String(target), 'delete');
 
       const caller = AuthController.extractCaller(req);
       logServerAudit({
@@ -283,6 +287,7 @@ export class AuthController {
       existing.accountLockedUntil = undefined;
 
       await saveUserToStorage(existing);
+      notifyRealtimeChange('system_users', existing.id, 'upsert');
 
       return res.status(200).json({
         success: true,
