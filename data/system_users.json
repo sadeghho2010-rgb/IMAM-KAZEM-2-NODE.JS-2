@@ -41,7 +41,7 @@
     ],
     "passwordHash": "$2b$10$ZjLbx/CJcOEs6NtG/K7hB.P8QGfdR60wI1Z9dhHOtpY0hF/3ibw9W",
     "failedLoginAttempts": 0,
-    "lastLogin": "2026-10-05T16:15:19.789Z"
+    "lastLogin": "2026-10-05T20:01:36.518Z"
   },
   {
     "id": "user_rahnama",
@@ -332,5 +332,28 @@
       "finance",
       "user-credentials"
     ]
+  },
+  {
+    "username": "TALABE_TEST_99",
+    "name": "طلبه تستی ۹۹",
+    "password": "password123",
+    "role": "student",
+    "level": 3,
+    "id": "user_1791230267970_dd5p",
+    "fullName": "طلبه تستی ۹۹",
+    "roleTitle": "کاربر سیستم",
+    "scope": "self",
+    "gradeLabel": "",
+    "avatarBg": "bg-emerald-600",
+    "allowedTabs": [
+      "todos",
+      "students"
+    ],
+    "editableTabs": [],
+    "modulePermissions": {},
+    "isActive": true,
+    "passwordHash": "$2b$10$Vr0OkSWS/jTwuRg7XAx3DOJuXeBL8jyY4U.Lyf3UWQ6ylUchywE92",
+    "failedLoginAttempts": 0,
+    "lastLogin": "2026-10-05T19:57:48.079Z"
   }
 ]

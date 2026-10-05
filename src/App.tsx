@@ -59,6 +59,7 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, KeyRound } from 'lucide-react';
@@ -527,7 +528,9 @@ function AppContent() {
               transition={{ duration: 0.2 }}
               className="max-w-7xl mx-auto space-y-4"
             >
-              {renderContent()}
+              <TabErrorBoundary tabName={getActiveTabTitle(activeTab)} onNavigateHome={() => navigateToTab('dashboard')}>
+                {renderContent()}
+              </TabErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </main>

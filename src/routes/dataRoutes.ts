@@ -5,6 +5,7 @@ import {
   serverQueryCollection,
   serverSaveDoc,
   serverDeleteDoc,
+  serverGetDocByCandidateIds,
   authorizeCollectionAccess
 } from '../lib/serverDataApi';
 import { verifyAccessToken, logServerAudit } from '../lib/serverAuth';
@@ -141,6 +142,36 @@ router.get('/data/:collection', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error(`Error querying collection ${collection}:`, err);
     return res.status(500).json({ success: false, message: 'خطا در دریافت اطلاعات از سرور.' });
+  }
+});
+
+// GET /api/data/:collection/:id
+router.get('/data/:collection/:id', async (req: Request, res: Response) => {
+  const { collection, id } = req.params;
+  const token = extractToken(req);
+  let callerUser = null;
+
+  if (token) {
+    const verification = verifyAccessToken(token);
+    if (verification.valid && verification.decoded) {
+      callerUser = verification.decoded;
+    }
+  }
+
+  const authCheck = authorizeCollectionAccess(callerUser, collection, 'read');
+  if (!authCheck.allowed) {
+    return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+  }
+
+  try {
+    const item = await serverGetDocByCandidateIds(collection, [id], callerUser);
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'رکورد مورد نظر یافت نشد.' });
+    }
+    return res.json({ success: true, item });
+  } catch (err) {
+    logger.error(`Error querying document ${id} in ${collection}:`, err);
+    return res.status(500).json({ success: false, message: 'خطا در دریافت رکورد از سرور.' });
   }
 });
 

@@ -157,13 +157,8 @@ export default function DbSaveErrorsView() {
         }
       } catch {}
 
-      // If completely empty, populate seed samples
-      if (logs.length === 0) {
-        logs = getSampleSeedLogs();
-        for (const seed of logs) {
-          await localDb.saveDoc('db_save_errors', seed).catch(() => {});
-        }
-      }
+      // Filter out any fake seed demo logs
+      logs = logs.filter(l => !l.id?.startsWith('dberr_seed_'));
 
       // Filter by RBAC permissions
       if (!isGlobalManager && currentUser) {
@@ -210,7 +205,6 @@ export default function DbSaveErrorsView() {
 
   const handleDeleteLog = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm('آیا از حذف این گزارش خطای دیتابیس اطمینان دارید؟')) return;
     try {
       setErrorLogs(prev => prev.filter(l => l.id !== id));
       await localDb.deleteDoc('db_save_errors', id).catch(() => {});

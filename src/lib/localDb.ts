@@ -6,7 +6,8 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { dispatchDatabaseErrorToast } from './databaseToast';
 import { doc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore';
-import { db } from './firebase';
+import { db as firestoreDb } from './firebase';
+import { realtimeSync } from './realtimeSync';
 
 /**
  * Check if the current logged-in user is authorized to use optional offline storage mode.
@@ -152,19 +153,12 @@ export async function saveToCloudWithTimeout(
        localStorage.getItem('token') || sessionStorage.getItem('token'))
     : null;
 
-  if (!token) {
-    return {
-      success: false,
-      status: 401,
-      isSessionExpired: true,
-      message: 'توکن احراز هویت یافت نشد. لطفاً مجدداً وارد شوید.'
-    };
-  }
-
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
+    'Content-Type': 'application/json'
   };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -645,26 +639,41 @@ class LocalDatabase {
     }
   }
 
-  // Track synced collections in current session
+  // Track synced collections in current session and sync timestamps
   private syncedCollections = new Set<string>();
+  private lastSyncTimestamps = new Map<string, number>();
+  private isRealtimeSubscribed = false;
 
-  // Fetch and sync a collection from Server / Supabase Cloud
-  async syncCollectionFromCloud(collectionName: CollectionName): Promise<any[]> {
+  public getAuthToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+           localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+           localStorage.getItem('token') || sessionStorage.getItem('token');
+  }
+
+  // Fetch and sync a collection from Server / Supabase Cloud / Firestore (Authoritative)
+  async syncCollectionFromCloud(collectionName: CollectionName, force = false): Promise<any[]> {
     if (typeof window === 'undefined') return [];
     const resolvedCol = this.resolveCollection(collectionName as string);
-    try {
-      let cloudDocs: any[] = [];
 
-      // 1. First try secure Server-Side Dedicated Data API (with 2.5s timeout)
+    const now = Date.now();
+    const lastSync = this.lastSyncTimestamps.get(resolvedCol) || 0;
+    if (!force && now - lastSync < 1500) {
+      return this.getLocalStorageDocs(resolvedCol);
+    }
+    this.lastSyncTimestamps.set(resolvedCol, now);
+
+    try {
+      let cloudDocs: any[] | null = null;
+
+      // 1. Authoritative Dedicated Server Data API (with 3.5s timeout)
       try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-                      localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
-                      localStorage.getItem('token') || sessionStorage.getItem('token');
+        const token = this.getAuthToken();
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
 
         const apiRes = await fetch(`/api/data/${resolvedCol}`, {
           method: 'GET',
@@ -676,90 +685,31 @@ class LocalDatabase {
 
         if (apiRes.ok) {
           const json = await apiRes.json();
-          if (json.success && Array.isArray(json.items) && json.items.length > 0) {
+          if (json.success && Array.isArray(json.items)) {
             cloudDocs = json.items.filter((d: any) => d && d.id);
           }
         }
       } catch (apiErr) {
-        // Fall back to direct Supabase if server API is unavailable
+        // Fall back to Firestore or Supabase
       }
 
-      // 2. Direct Supabase Cloud sync (with 2.5s strict timeout)
-      if (cloudDocs.length === 0 && isSupabaseConfigured) {
-        try {
-          const sbPromise = (async () => {
-            // A. Query app_collections (where all client collections are upserted)
-            const { data: appData, error: appErr } = await supabase
-              .from('app_collections')
-              .select('id, data')
-              .eq('collection_name', resolvedCol);
-
-            if (!appErr && Array.isArray(appData) && appData.length > 0) {
-              return appData
-                .filter(row => row && row.id)
-                .map(row => {
-                  if (row.data && typeof row.data === 'object') {
-                    return { ...row.data, id: row.id };
-                  }
-                  return { id: row.id };
-                });
-            }
-
-            // B. If still empty, check dedicated table directly (e.g. students, teachers, programs, enrollments)
-            const { data: tableData, error: tableErr } = await supabase
-              .from(resolvedCol)
-              .select('*');
-
-            if (!tableErr && Array.isArray(tableData) && tableData.length > 0) {
-              return tableData
-                .filter(row => row && row.id)
-                .map(row => {
-                  if (row.data && typeof row.data === 'object') {
-                    return { ...row.data, id: row.id };
-                  }
-                  const mapped: any = { ...row };
-                  if (row.national_id) mapped.nationalId = row.national_id;
-                  if (row.student_code) mapped.studentCode = row.student_code;
-                  if (row.father_name) mapped.fatherName = row.father_name;
-                  if (row.is_active !== undefined) mapped.isActive = row.is_active;
-                  if (row.program_id) mapped.programId = row.program_id;
-                  if (row.student_id) mapped.studentId = row.student_id;
-                  if (row.teacher_name) mapped.teacherName = row.teacher_name;
-                  return mapped;
-                });
-            }
-            return [];
-          })();
-
-          const timeoutSb = new Promise<any[]>((res) => setTimeout(() => res([]), 2500));
-          const sbRes = await Promise.race([sbPromise, timeoutSb]);
-          if (Array.isArray(sbRes) && sbRes.length > 0) {
-            cloudDocs = sbRes;
-          }
-        } catch (sbErr) {
-          console.warn(`Supabase sync exception for ${resolvedCol}:`, sbErr);
-        }
-      }
-
-      // 3. Direct Firestore cloud sync (fast 1.2s timeout)
-      if (cloudDocs.length === 0) {
+      // 2. Direct Firestore cloud sync if Server API was unreachable
+      if (cloudDocs === null) {
         try {
           const fsPromise = (async () => {
-            const snap = await getDocs(collection(db, resolvedCol));
+            const snap = await getDocs(collection(firestoreDb, resolvedCol));
             const list: any[] = [];
-            if (!snap.empty) {
-              snap.forEach(dSnap => {
-                if (dSnap.exists()) {
-                  list.push({ ...dSnap.data(), id: dSnap.id });
-                }
-              });
-            }
+            snap.forEach(dSnap => {
+              if (dSnap.exists()) {
+                list.push({ ...dSnap.data(), id: dSnap.id });
+              }
+            });
             return list;
           })();
 
-          const timeoutFs = new Promise<any[]>((res) => setTimeout(() => res([]), 1200));
+          const timeoutFs = new Promise<any[]>((res) => setTimeout(() => res([]), 2000));
           const fsRes = await Promise.race([fsPromise, timeoutFs]);
-          if (Array.isArray(fsRes) && fsRes.length > 0) {
+          if (Array.isArray(fsRes)) {
             cloudDocs = fsRes;
           }
         } catch (fsErr) {
@@ -767,48 +717,66 @@ class LocalDatabase {
         }
       }
 
-      if (cloudDocs.length > 0) {
-        const db = await this.getDb();
-        if (db.objectStoreNames.contains(resolvedCol)) {
-          const tx = db.transaction(resolvedCol, 'readwrite');
-          const store = tx.objectStore(resolvedCol);
-          
-          // If cloud has genuine data, clear seeded dummy placeholders (like stu_1, stu_2, stu_3)
-          const hasRealData = cloudDocs.some(d => !String(d.id).startsWith('stu_') && !String(d.id).startsWith('prog_'));
-          if (hasRealData && (resolvedCol === 'students' || resolvedCol === 'programs')) {
-            const allKeysReq = store.getAllKeys();
-            allKeysReq.onsuccess = () => {
-              const keys = allKeysReq.result || [];
-              keys.forEach(k => {
-                if (typeof k === 'string' && (k.startsWith('stu_') || k.startsWith('prog_'))) {
-                  store.delete(k);
-                }
-              });
-            };
-          }
+      // 3. Direct Supabase Cloud sync as last resort if configured
+      if (cloudDocs === null && isSupabaseConfigured) {
+        try {
+          const { data: appData, error: appErr } = await supabase
+            .from('app_collections')
+            .select('id, data')
+            .eq('collection_name', resolvedCol);
 
-          for (const doc of cloudDocs) {
-            store.put(doc);
+          if (!appErr && Array.isArray(appData)) {
+            cloudDocs = appData
+              .filter(row => row && row.id)
+              .map(row => (row.data && typeof row.data === 'object' ? { ...row.data, id: row.id } : { id: row.id }));
           }
+        } catch (sbErr) {
+          console.warn(`Supabase sync exception for ${resolvedCol}:`, sbErr);
+        }
+      }
+
+      // If we obtained authoritative records from the cloud/server:
+      if (cloudDocs !== null) {
+        const validDocs = cloudDocs;
+        const cloudDocIds = new Set(validDocs.map((d: any) => String(d.id)));
+        const idb = await this.getDb();
+
+        if (idb.objectStoreNames.contains(resolvedCol)) {
+          await new Promise<void>((resolve) => {
+            try {
+              const tx = idb.transaction(resolvedCol, 'readwrite');
+              const store = tx.objectStore(resolvedCol);
+              const allKeysReq = store.getAllKeys();
+              allKeysReq.onsuccess = () => {
+                const existingKeys = allKeysReq.result || [];
+                // CRITICAL: Prune any local key that was deleted on server or other devices!
+                for (const key of existingKeys) {
+                  if (!cloudDocIds.has(String(key))) {
+                    store.delete(key);
+                  }
+                }
+                // Store authoritative docs
+                for (const doc of validDocs) {
+                  store.put(doc);
+                }
+              };
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => resolve();
+            } catch (e) {
+              resolve();
+            }
+          });
         }
 
-        // Also update localStorage fallback
+        // Overwrite localStorage fallback strictly with authoritative list (never accumulate deleted zombies)
         const key = `fallback_idb_${resolvedCol}`;
-        const currentLS = (this.getLocalStorageDocs(resolvedCol) as any[]) || [];
-        const map = new Map<string, any>();
-        currentLS.forEach(item => {
-          if (!item.id?.startsWith('stu_') && !item.id?.startsWith('prog_')) {
-            map.set(item.id, item);
-          }
-        });
-        cloudDocs.forEach(item => map.set(item.id, item));
         try {
-          localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+          localStorage.setItem(key, JSON.stringify(validDocs));
         } catch (e) {}
 
         this.syncedCollections.add(resolvedCol);
         this.notify();
-        return cloudDocs;
+        return validDocs;
       }
 
       this.syncedCollections.add(resolvedCol);
@@ -818,66 +786,110 @@ class LocalDatabase {
     return [];
   }
 
-  // Realtime Supabase change listener to synchronize changes between devices instantly
-  private realtimeChannel: any = null;
-
+  // Universal Realtime synchronization across all devices and tabs
   public setupRealtimeSync() {
-    if (!isSupabaseConfigured || typeof window === 'undefined' || this.realtimeChannel) return;
+    if (typeof window === 'undefined' || this.isRealtimeSubscribed) return;
+    this.isRealtimeSubscribed = true;
 
-    try {
-      this.realtimeChannel = supabase
-        .channel('app_collections_realtime')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'app_collections' },
-          async (payload: any) => {
-            const { eventType, new: newRecord, old: oldRecord } = payload;
-            const collectionName = newRecord?.collection_name || oldRecord?.collection_name;
-            const id = newRecord?.id || oldRecord?.id;
-            if (!collectionName || !id) return;
+    // 1. Subscribe to Universal Realtime Engine (Server-Sent Events & Polling)
+    realtimeSync.subscribe(async (evt) => {
+      if (!evt || !evt.collection) return;
+      const resolvedCol = this.resolveCollection(evt.collection);
+      const id = evt.id;
 
-            const resolvedCol = this.resolveCollection(collectionName);
-            const db = await this.getDb();
+      if (evt.action === 'delete') {
+        const db = await this.getDb();
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          try {
+            const tx = db.transaction(resolvedCol, 'readwrite');
+            tx.objectStore(resolvedCol).delete(id);
+          } catch (e) {}
+        }
+        this.deleteLocalStorageDoc(resolvedCol, id);
+        this.notify();
+      } else if (evt.action === 'upsert') {
+        try {
+          const token = this.getAuthToken();
+          const headers: Record<string, string> = {};
+          if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            if (eventType === 'DELETE') {
-              if (db.objectStoreNames.contains(resolvedCol)) {
-                try {
-                  const tx = db.transaction(resolvedCol, 'readwrite');
-                  tx.objectStore(resolvedCol).delete(id);
-                } catch (e) {}
-              }
-              const currentLS = this.getLocalStorageDocs(resolvedCol);
-              const filtered = currentLS.filter((x: any) => x.id !== id);
-              try {
-                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(filtered));
-              } catch (e) {}
-            } else if (eventType === 'INSERT' || eventType === 'UPDATE') {
-              const doc = { ...(newRecord.data || {}), id };
+          const res = await fetch(`/api/data/${resolvedCol}/${id}`, {
+            headers,
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.item) {
+              const doc = json.item;
+              const db = await this.getDb();
               if (db.objectStoreNames.contains(resolvedCol)) {
                 try {
                   const tx = db.transaction(resolvedCol, 'readwrite');
                   tx.objectStore(resolvedCol).put(doc);
                 } catch (e) {}
               }
-              const currentLS = this.getLocalStorageDocs(resolvedCol);
-              const map = new Map<string, any>();
-              currentLS.forEach((x: any) => map.set(x.id, x));
-              map.set(id, doc);
-              try {
-                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(Array.from(map.values())));
-              } catch (e) {}
+              this.setLocalStorageDoc(resolvedCol, doc);
+              this.notify();
+              return;
             }
-
-            this.notify();
           }
-        )
-        .subscribe();
-    } catch (e) {
-      console.warn('Realtime channel error:', e);
+        } catch (e) {}
+        // Fallback: sync full collection
+        await this.syncCollectionFromCloud(resolvedCol, true);
+      }
+    });
+
+    // 2. Also listen for browser custom events (e.g. cross-tab notification)
+    window.addEventListener('app_data_change', (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.collection) {
+        this.notify();
+      }
+    });
+
+    // 3. Fallback Supabase realtime channel if configured
+    if (isSupabaseConfigured) {
+      try {
+        supabase
+          .channel('app_collections_realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'app_collections' },
+            async (payload: any) => {
+              const { eventType, new: newRecord, old: oldRecord } = payload;
+              const collectionName = newRecord?.collection_name || oldRecord?.collection_name;
+              const id = newRecord?.id || oldRecord?.id;
+              if (!collectionName || !id) return;
+              const resolvedCol = this.resolveCollection(collectionName);
+              if (eventType === 'DELETE') {
+                const db = await this.getDb();
+                if (db.objectStoreNames.contains(resolvedCol)) {
+                  try {
+                    const tx = db.transaction(resolvedCol, 'readwrite');
+                    tx.objectStore(resolvedCol).delete(id);
+                  } catch (e) {}
+                }
+                this.deleteLocalStorageDoc(resolvedCol, id);
+              } else {
+                const doc = { ...(newRecord.data || {}), id };
+                const db = await this.getDb();
+                if (db.objectStoreNames.contains(resolvedCol)) {
+                  try {
+                    const tx = db.transaction(resolvedCol, 'readwrite');
+                    tx.objectStore(resolvedCol).put(doc);
+                  } catch (e) {}
+                }
+                this.setLocalStorageDoc(resolvedCol, doc);
+              }
+              this.notify();
+            }
+          )
+          .subscribe();
+      } catch (e) {}
     }
   }
 
-  // Get all documents from a collection
+  // Get all documents from a collection (Non-blocking cache with automatic background revalidation)
   async getDocs<T = any>(collectionName: CollectionName): Promise<T[]> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -894,15 +906,11 @@ class LocalDatabase {
 
           request.onsuccess = () => {
             const idbResult = (request.result || []) as T[];
-            const lsResult = this.getLocalStorageDocs<T>(resolvedCol);
-            const idSet = new Set((idbResult as any[]).map(x => x.id));
-            const combined = [...idbResult];
-            for (const item of lsResult as any[]) {
-              if (!idSet.has(item.id)) {
-                combined.push(item);
-              }
+            if (idbResult.length > 0) {
+              resolve(idbResult);
+            } else {
+              resolve(this.getLocalStorageDocs<T>(resolvedCol));
             }
-            resolve(combined as T[]);
           };
           request.onerror = () => {
             resolve(this.getLocalStorageDocs<T>(resolvedCol));
@@ -913,29 +921,8 @@ class LocalDatabase {
       });
     }
 
-    // If local items exist, return them immediately and sync in background
-    if (localItems && localItems.length > 0) {
-      if (!this.syncedCollections.has(resolvedCol)) {
-        // Sync asynchronously without blocking local data rendering
-        this.syncCollectionFromCloud(resolvedCol).catch(() => {});
-      }
-      return localItems;
-    }
-
-    // If local items are empty, try cloud sync with a quick 1200ms timeout race so UI never hangs
-    if (!this.syncedCollections.has(resolvedCol)) {
-      try {
-        const cloudDocs = await Promise.race([
-          this.syncCollectionFromCloud(resolvedCol),
-          new Promise<any[]>((res) => setTimeout(() => res([]), 1200))
-        ]);
-        if (cloudDocs && cloudDocs.length > 0) {
-          return cloudDocs as T[];
-        }
-      } catch (e) {
-        // Ignore timeout / error and fallback to localItems
-      }
-    }
+    // Always trigger background sync to ensure latest server state without blocking UI!
+    this.syncCollectionFromCloud(resolvedCol).catch(() => {});
 
     return localItems;
   }
@@ -1011,6 +998,9 @@ class LocalDatabase {
           store.put(record);
         } catch (e) {}
       }
+      try {
+        setDoc(doc(firestoreDb, resolvedCol, id), sanitizeForCloud(record)).catch(() => {});
+      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       dispatchDatabaseErrorToast('اطلاعات با موفقیت در سرور ذخیره شد.', 'success');
@@ -1064,6 +1054,9 @@ class LocalDatabase {
           store.put(updated);
         } catch (e) {}
       }
+      try {
+        setDoc(doc(firestoreDb, resolvedCol, id), sanitizeForCloud(updated)).catch(() => {});
+      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
       dispatchDatabaseErrorToast('تغییرات با موفقیت در سرور ذخیره شد.', 'success');
@@ -1112,6 +1105,9 @@ class LocalDatabase {
           store.delete(id);
         } catch (e) {}
       }
+      try {
+        deleteDoc(doc(firestoreDb, resolvedCol, id)).catch(() => {});
+      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
       dispatchDatabaseErrorToast('حذف اطلاعات با موفقیت انجام شد.', 'success');

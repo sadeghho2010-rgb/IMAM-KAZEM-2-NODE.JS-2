@@ -116,7 +116,7 @@ export async function recordDatabaseSaveError(params: {
 }): Promise<DbSaveErrorLog> {
   let currentUserObj: any = null;
   try {
-    const savedUser = localStorage.getItem('current_user');
+    const savedUser = localStorage.getItem('system_auth_current_user_v2') || localStorage.getItem('current_user');
     if (savedUser) currentUserObj = JSON.parse(savedUser);
   } catch {}
 
