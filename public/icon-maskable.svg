@@ -1,122 +1,132 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Background Gradient (Full Bleed for Android adaptive mask) -->
+    <!-- Background: Full Bleed for Adaptive Android Icons -->
     <linearGradient id="bgGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#050a18" />
-      <stop offset="35%" stop-color="#0a142c" />
-      <stop offset="70%" stop-color="#0f2042" />
-      <stop offset="100%" stop-color="#142c54" />
+      <stop offset="0%" stop-color="#0c122c" />
+      <stop offset="30%" stop-color="#14183d" />
+      <stop offset="70%" stop-color="#1c1f4e" />
+      <stop offset="100%" stop-color="#090d20" />
     </linearGradient>
 
-    <!-- Imperial Gold Gradient -->
-    <linearGradient id="goldGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fffde7" />
-      <stop offset="25%" stop-color="#fde047" />
-      <stop offset="55%" stop-color="#eab308" />
+    <!-- 24K Polished Metallic Gold -->
+    <linearGradient id="gold24kMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="15%" stop-color="#fffbeb" />
+      <stop offset="35%" stop-color="#fde047" />
+      <stop offset="65%" stop-color="#eab308" />
       <stop offset="85%" stop-color="#ca8a04" />
       <stop offset="100%" stop-color="#854d0e" />
     </linearGradient>
 
-    <radialGradient id="centerAuraMask" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35" />
-      <stop offset="40%" stop-color="#eab308" stop-opacity="0.18" />
-      <stop offset="100%" stop-color="#0a142c" stop-opacity="0" />
+    <linearGradient id="goldReverseMask" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="40%" stop-color="#f59e0b" />
+      <stop offset="80%" stop-color="#b45309" />
+      <stop offset="100%" stop-color="#78350f" />
+    </linearGradient>
+
+    <linearGradient id="emeraldTurquoiseMask" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="45%" stop-color="#2dd4bf" />
+      <stop offset="80%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+
+    <radialGradient id="sunburstGlowMask" cx="50%" cy="46%" r="52%">
+      <stop offset="0%" stop-color="#fde047" stop-opacity="0.32" />
+      <stop offset="25%" stop-color="#38bdf8" stop-opacity="0.18" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#0c122c" stop-opacity="0" />
     </radialGradient>
 
-    <linearGradient id="emeraldGradMask" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6ee7b7" />
-      <stop offset="50%" stop-color="#10b981" />
-      <stop offset="100%" stop-color="#047857" />
-    </linearGradient>
-
-    <linearGradient id="pageGradLeftMask" x1="0%" y1="0%" x2="100%" y2="100%">
+    <radialGradient id="starCoreMask" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="60%" stop-color="#f1f5f9" />
-      <stop offset="100%" stop-color="#cbd5e1" />
-    </linearGradient>
-    <linearGradient id="pageGradRightMask" x1="100%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="60%" stop-color="#f1f5f9" />
-      <stop offset="100%" stop-color="#cbd5e1" />
-    </linearGradient>
+      <stop offset="40%" stop-color="#fef08a" />
+      <stop offset="80%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </radialGradient>
 
-    <filter id="shadowDepthMask" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.6" />
+    <filter id="emblemGlowMask" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5" />
+      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#eab308" flood-opacity="0.45" />
     </filter>
-    <filter id="goldGlowMask" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#fde047" flood-opacity="0.75" />
+
+    <filter id="pureGlowMask" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ffffff" flood-opacity="0.9" />
+      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#38bdf8" flood-opacity="0.6" />
     </filter>
   </defs>
 
-  <!-- Full-bleed background rectangle without rx -->
+  <!-- Full-bleed background rectangle for maskable -->
   <rect width="512" height="512" fill="url(#bgGradMask)" />
-  <circle cx="256" cy="256" r="230" fill="url(#centerAuraMask)" />
+  <circle cx="256" cy="256" r="230" fill="url(#sunburstGlowMask)" />
 
-  <!-- Sacred Geometry Backing -->
-  <g opacity="0.15" stroke="url(#goldGradMask)" stroke-width="1.5" fill="none">
-    <circle cx="256" cy="256" r="160" />
-    <circle cx="256" cy="256" r="115" stroke-dasharray="6,4" />
-    <rect x="166" y="166" width="180" height="180" rx="6" />
-    <rect x="166" y="166" width="180" height="180" rx="6" transform="rotate(45 256 256)" />
+  <!-- Sacred Geometry in Background -->
+  <g opacity="0.18" stroke="url(#gold24kMask)" stroke-width="1.5" fill="none">
+    <circle cx="256" cy="256" r="150" />
+    <circle cx="256" cy="256" r="105" stroke-dasharray="5,4" />
+    <polygon points="256,131 286,226 381,256 286,286 256,381 226,286 131,256 226,226" stroke-width="1" />
   </g>
 
-  <!-- Scaled down 82% to fit perfectly within 75% Android Safe Zone Circle -->
+  <!-- Centered & Scaled to 82% to fit Android safe zone -->
   <g transform="translate(256, 256) scale(0.82) translate(-256, -256)">
-    <!-- Mihrab Arch of Wisdom -->
-    <g filter="url(#shadowDepthMask)">
-      <path d="M 132 396 L 132 230 C 132 140, 256 86, 256 86 C 256 86, 380 140, 380 230 L 380 396 Z"
-            fill="#071026" fill-opacity="0.85" stroke="url(#goldGradMask)" stroke-width="4.5" stroke-linejoin="round" />
-      <path d="M 152 396 L 152 242 C 152 165, 256 115, 256 115 C 256 115, 360 165, 360 242 L 360 396 Z"
-            fill="none" stroke="url(#emeraldGradMask)" stroke-width="2" stroke-opacity="0.6" stroke-dasharray="8,5" />
+    <!-- Grand Golden Dome / Mihrab -->
+    <g filter="url(#emblemGlowMask)">
+      <path d="M 145 375 C 145 240, 205 155, 256 120 C 307 155, 367 240, 367 375 C 345 385, 325 390, 256 390 C 187 390, 167 385, 145 375 Z"
+            fill="#0c1228" fill-opacity="0.75" stroke="url(#gold24kMask)" stroke-width="4.5" stroke-linejoin="round" />
+      <path d="M 165 365 C 165 255, 215 180, 256 150 C 297 180, 347 255, 347 365"
+            fill="none" stroke="url(#emeraldTurquoiseMask)" stroke-width="2.5" stroke-linecap="round" opacity="0.85" />
     </g>
 
-    <!-- Radiant Shamseh Star -->
-    <g transform="translate(256, 126)" filter="url(#goldGlowMask)">
-      <polygon points="0,-26 7,-9 25,-9 11,2 17,20 0,9 -17,20 -11,2 -25,-9 -7,-9" fill="url(#goldGradMask)" />
-      <polygon points="0,-26 7,-9 25,-9 11,2 17,20 0,9 -17,20 -11,2 -25,-9 -7,-9" transform="rotate(22.5)" fill="url(#goldGradMask)" opacity="0.75" />
-      <circle cx="0" cy="0" r="5" fill="#ffffff" />
-    </g>
+    <!-- Soaring Pages of the Book of Knowledge -->
+    <g filter="url(#emblemGlowMask)">
+      <path d="M 256 325 C 220 300, 148 298, 92 316 C 96 235, 172 208, 256 220 Z"
+            fill="url(#gold24kMask)" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.6" />
+      <path d="M 256 325 C 220 306, 156 308, 108 322 C 114 255, 180 230, 256 238 Z"
+            fill="url(#goldReverseMask)" opacity="0.8" />
+      <path d="M 108 322 C 160 270, 210 248, 256 244"
+            fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.85" />
 
-    <!-- Open Book of Wisdom -->
-    <g filter="url(#shadowDepthMask)">
-      <path d="M 256 348 C 210 322, 142 324, 98 340 C 98 340, 110 260, 256 238 C 402 260, 414 340, 414 340 C 370 324, 302 322, 256 348 Z"
-            fill="#0c1735" stroke="url(#goldGradMask)" stroke-width="3" />
+      <path d="M 256 325 C 292 300, 364 298, 420 316 C 416 235, 340 208, 256 220 Z"
+            fill="url(#gold24kMask)" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.6" />
+      <path d="M 256 325 C 292 306, 356 308, 404 322 C 398 255, 332 230, 256 238 Z"
+            fill="url(#goldReverseMask)" opacity="0.8" />
+      <path d="M 404 322 C 352 270, 302 248, 256 244"
+            fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.85" />
 
-      <path d="M 256 342 C 215 316, 150 318, 108 334 C 114 266, 175 244, 256 244 Z"
-            fill="url(#pageGradLeftMask)" stroke="url(#goldGradMask)" stroke-width="2.5" />
-      <path d="M 256 342 C 297 316, 362 318, 404 334 C 398 266, 337 244, 256 244 Z"
-            fill="url(#pageGradRightMask)" stroke="url(#goldGradMask)" stroke-width="2.5" />
+      <line x1="256" y1="220" x2="256" y2="350" stroke="url(#gold24kMask)" stroke-width="5" stroke-linecap="round" />
+      <polygon points="256,340 246,368 256,360 266,368" fill="url(#gold24kMask)" />
 
-      <path d="M 256 336 C 216 312, 158 314, 118 328 C 124 272, 178 252, 256 252 Z" fill="#ffffff" />
-      <path d="M 256 336 C 296 312, 354 314, 394 328 C 388 272, 334 252, 256 252 Z" fill="#ffffff" />
-
-      <path d="M 256 244 L 256 364" stroke="url(#goldGradMask)" stroke-width="4.5" stroke-linecap="round" />
-      <path d="M 256 348 C 256 372, 244 382, 240 398 L 248 398 L 256 388 L 264 398 L 272 398 C 268 382, 256 372, 256 348 Z" fill="url(#goldGradMask)" />
-
-      <!-- Text Lines -->
-      <g stroke="url(#goldGradMask)" stroke-width="2" stroke-linecap="round" opacity="0.75">
-        <line x1="145" y1="288" x2="232" y2="282" />
-        <line x1="140" y1="302" x2="234" y2="296" />
-        <line x1="150" y1="316" x2="228" y2="310" />
-        <line x1="280" y1="282" x2="367" y2="288" />
-        <line x1="278" y1="296" x2="372" y2="302" />
-        <line x1="284" y1="310" x2="362" y2="316" />
+      <!-- Script Lines -->
+      <g stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.7">
+        <line x1="140" y1="274" x2="225" y2="264" />
+        <line x1="135" y1="290" x2="228" y2="280" />
+        <line x1="146" y1="305" x2="222" y2="296" />
+        <line x1="287" y1="264" x2="372" y2="274" />
+        <line x1="284" y1="280" x2="377" y2="290" />
+        <line x1="290" y1="296" x2="366" y2="305" />
       </g>
     </g>
 
-    <!-- Luminous Pen of Light -->
-    <g filter="url(#goldGlowMask)">
-      <path d="M 256 160 C 244 195, 247 218, 256 242 C 265 218, 268 195, 256 160 Z" fill="url(#goldGradMask)" />
-      <path d="M 256 178 C 248 200, 250 216, 256 230 C 262 216, 264 200, 256 178 Z" fill="#ffffff" />
+    <!-- Celestial Torch & Star Core -->
+    <g filter="url(#pureGlowMask)">
+      <line x1="256" y1="125" x2="256" y2="215" stroke="url(#gold24kMask)" stroke-width="3.5" stroke-linecap="round" />
+      <g transform="translate(256, 172)">
+        <polygon points="0,-24 6,-7 23,-7 10,3 15,19 0,9 -15,19 -10,3 -23,-7 -6,-7" fill="url(#starCoreMask)" />
+        <polygon points="0,-24 6,-7 23,-7 10,3 15,19 0,9 -15,19 -10,3 -23,-7 -6,-7" transform="rotate(22.5)" fill="#ffffff" opacity="0.65" />
+        <circle cx="0" cy="0" r="5.5" fill="#ffffff" />
+      </g>
+      <g transform="translate(256, 112)">
+        <polygon points="0,-12 3.5,-3.5 12,0 3.5,3.5 0,12 -3.5,3.5 -12,0 -3.5,-3.5" fill="#ffffff" />
+        <circle cx="0" cy="0" r="3" fill="#fde047" />
+      </g>
     </g>
 
-    <!-- Rehl Wooden Stand -->
-    <g filter="url(#shadowDepthMask)">
-      <path d="M 172 360 L 256 394 L 340 360 L 358 392 L 256 428 L 154 392 Z"
-            fill="url(#goldGradMask)" stroke="#78350f" stroke-width="2" stroke-linejoin="round" />
-      <path d="M 154 392 L 138 416 L 168 418 L 178 398 Z" fill="url(#goldGradMask)" stroke="#78350f" stroke-width="1.5" />
-      <path d="M 358 392 L 374 416 L 344 418 L 334 398 Z" fill="url(#goldGradMask)" stroke="#78350f" stroke-width="1.5" />
-      <circle cx="256" cy="411" r="5" fill="#fef08a" stroke="#854d0e" stroke-width="1.5" />
+    <!-- Rehl Pedestal Stand -->
+    <g filter="url(#emblemGlowMask)">
+      <path d="M 160 380 C 205 365, 235 372, 256 388 C 277 372, 307 365, 352 380 C 362 400, 345 412, 256 415 C 167 412, 150 400, 160 380 Z"
+            fill="url(#gold24kMask)" stroke="#5c2602" stroke-width="1.8" stroke-linejoin="round" />
+      <circle cx="256" cy="398" r="4.5" fill="#2dd4bf" stroke="#ffffff" stroke-width="1.2" />
     </g>
   </g>
 </svg>

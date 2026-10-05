@@ -512,8 +512,12 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         {/* Header: Seminary identity & Logo */}
         <div className="text-center space-y-2.5 mb-5">
           {/* Emblem Icon */}
-          <div className="mx-auto w-18 h-18 rounded-2xl bg-gradient-to-br from-indigo-900 to-indigo-950 border border-amber-400/40 shadow-xl flex items-center justify-center p-2 backdrop-blur-md">
-            <img src="/pwa-192x192.png" alt="سامانه جامع طلاب" className="w-14 h-14 object-contain rounded-xl drop-shadow" />
+          <div className="flex justify-center mb-1">
+            <img 
+              src="/pwa-192x192.png" 
+              alt="سامانه جامع طلاب" 
+              className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl shadow-2xl ring-2 ring-amber-400/40 hover:scale-105 transition-all duration-300 object-cover" 
+            />
           </div>
 
           <div>

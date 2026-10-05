@@ -2,55 +2,58 @@
   <defs>
     <!-- Background Gradient -->
     <linearGradient id="favBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#050a18" />
-      <stop offset="50%" stop-color="#0f2042" />
-      <stop offset="100%" stop-color="#142c54" />
+      <stop offset="0%" stop-color="#0c122c" />
+      <stop offset="45%" stop-color="#1c1f4e" />
+      <stop offset="100%" stop-color="#090d20" />
     </linearGradient>
 
-    <!-- Punchy High-Contrast Gold -->
+    <!-- Punchy High-Contrast 24K Gold -->
     <linearGradient id="favGold" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="25%" stop-color="#fef08a" />
-      <stop offset="65%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#b45309" />
+      <stop offset="25%" stop-color="#fde047" />
+      <stop offset="65%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#92400e" />
     </linearGradient>
 
-    <linearGradient id="favEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#a7f3d0" />
-      <stop offset="100%" stop-color="#059669" />
-    </linearGradient>
+    <radialGradient id="favAura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0c122c" stop-opacity="0" />
+    </radialGradient>
   </defs>
 
-  <!-- Rounded Tile with Soft Corner Radius -->
+  <!-- Squircle Base Tile -->
   <rect width="128" height="128" rx="30" fill="url(#favBg)" />
-  <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="url(#favGold)" stroke-width="2.5" stroke-opacity="0.5" />
+  <circle cx="64" cy="62" r="54" fill="url(#favAura)" />
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="none" stroke="url(#favGold)" stroke-width="2.2" stroke-opacity="0.5" />
 
-  <!-- Mihrab Arch Silhouette -->
-  <path d="M 28 100 L 28 58 C 28 32, 64 18, 64 18 C 64 18, 100 32, 100 58 L 100 100 Z"
-        fill="#071026" stroke="url(#favGold)" stroke-width="3" stroke-linejoin="round" />
+  <!-- Grand Mihrab Arch -->
+  <path d="M 32 96 C 32 60, 48 38, 64 28 C 80 38, 96 60, 96 96 C 88 99, 78 100, 64 100 C 50 100, 40 99, 32 96 Z"
+        fill="#0a0f24" stroke="url(#favGold)" stroke-width="3" stroke-linejoin="round" />
 
-  <!-- Luminous Star at Apex -->
-  <polygon points="64,21 67,27 74,27 68,32 70,39 64,34 58,39 60,32 54,27 61,27" fill="#ffffff" />
-  <circle cx="64" cy="30" r="2.5" fill="#fef08a" />
+  <!-- Inner Turquoise Arch Line -->
+  <path d="M 38 92 C 38 64, 50 45, 64 36 C 78 45, 90 64, 90 92"
+        fill="none" stroke="#2dd4bf" stroke-width="1.8" stroke-linecap="round" opacity="0.8" />
 
-  <!-- Golden Open Manuscript Book -->
+  <!-- Soaring Golden Open Book -->
   <!-- Left Page -->
-  <path d="M 64 85 C 52 76, 32 78, 20 84 C 22 62, 40 54, 64 54 Z"
-        fill="#f8fafc" stroke="url(#favGold)" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 64 82 C 54 75, 34 76, 20 81 C 22 58, 42 51, 64 54 Z"
+        fill="url(#favGold)" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
   <!-- Right Page -->
-  <path d="M 64 85 C 76 76, 96 78, 108 84 C 106 62, 88 54, 64 54 Z"
-        fill="#f8fafc" stroke="url(#favGold)" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 64 82 C 74 75, 94 76, 108 81 C 106 58, 86 51, 64 54 Z"
+        fill="url(#favGold)" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
 
-  <!-- Book Spine & Ribbon -->
-  <line x1="64" y1="54" x2="64" y2="92" stroke="url(#favGold)" stroke-width="3.5" stroke-linecap="round" />
-  <path d="M 64 88 L 60 99 L 64 96 L 68 99 Z" fill="url(#favGold)" />
+  <!-- Book Spine Center -->
+  <line x1="64" y1="52" x2="64" y2="88" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+  <polygon points="64,84 60,93 64,90 68,93" fill="url(#favGold)" />
 
-  <!-- Symbolic Pen of Light / Flame -->
-  <path d="M 64 36 C 60 44, 61 50, 64 54 C 67 50, 68 44, 64 36 Z" fill="url(#favGold)" />
-  <circle cx="64" cy="45" r="2" fill="#ffffff" />
+  <!-- Central Radiant Star of Wisdom -->
+  <g transform="translate(64, 43)">
+    <polygon points="0,-12 3,-3 12,-3 5,2 7,10 0,5 -7,10 -5,2 -12,-3 -3,-3" fill="#ffffff" />
+    <circle cx="0" cy="0" r="3" fill="#fde047" />
+  </g>
 
-  <!-- Golden Rehl Base Feet -->
-  <path d="M 38 90 L 64 100 L 90 90 L 98 102 L 64 112 L 30 102 Z"
-        fill="url(#favGold)" stroke="#78350f" stroke-width="1.5" stroke-linejoin="round" />
-  <circle cx="64" cy="106" r="2" fill="#ffffff" />
+  <!-- Rehl Stand Pedestal Footing -->
+  <path d="M 38 98 C 50 94, 58 96, 64 100 C 70 96, 78 94, 90 98 C 93 103, 86 106, 64 107 C 42 106, 35 103, 38 98 Z"
+        fill="url(#favGold)" stroke="#78350f" stroke-width="1" />
+  <circle cx="64" cy="103" r="1.8" fill="#2dd4bf" />
 </svg>
