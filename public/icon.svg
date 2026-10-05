@@ -1,111 +1,181 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Background Gradient -->
+    <!-- Background Gradient: Deep Royal Midnight & Sapphire -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b" />
-      <stop offset="50%" stop-color="#312e81" />
-      <stop offset="100%" stop-color="#4338ca" />
+      <stop offset="0%" stop-color="#050a18" />
+      <stop offset="35%" stop-color="#0a142c" />
+      <stop offset="70%" stop-color="#0f2042" />
+      <stop offset="100%" stop-color="#142c54" />
     </linearGradient>
 
-    <!-- Gold Accent Gradient -->
+    <!-- Imperial Gold Gradient for Emblem & Arch -->
     <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fef08a" />
-      <stop offset="35%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#d97706" />
+      <stop offset="0%" stop-color="#fffde7" />
+      <stop offset="25%" stop-color="#fde047" />
+      <stop offset="55%" stop-color="#eab308" />
+      <stop offset="85%" stop-color="#ca8a04" />
+      <stop offset="100%" stop-color="#854d0e" />
     </linearGradient>
 
-    <!-- Light Glow Gradient -->
-    <radialGradient id="glowGrad" cx="50%" cy="40%" r="50%">
-      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.45" />
-      <stop offset="100%" stop-color="#312e81" stop-opacity="0" />
+    <!-- Glowing Gold Radial Gradient -->
+    <radialGradient id="centerAura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35" />
+      <stop offset="40%" stop-color="#eab308" stop-opacity="0.18" />
+      <stop offset="70%" stop-color="#38bdf8" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#0a142c" stop-opacity="0" />
     </radialGradient>
 
-    <!-- Emerald Accent Gradient -->
+    <!-- Luminous Emerald/Turquoise Gradient for Spiritual Accent -->
     <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#34d399" />
-      <stop offset="100%" stop-color="#059669" />
+      <stop offset="0%" stop-color="#6ee7b7" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#047857" />
     </linearGradient>
 
-    <!-- Soft Drop Shadow -->
-    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.5" />
+    <!-- Turquoise Celestial Accent -->
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Pure Book Page Gradient -->
+    <linearGradient id="pageGradLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="60%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+    <linearGradient id="pageGradRight" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="60%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+
+    <!-- Soft Drop Shadows for 3D Depth -->
+    <filter id="shadowDepth" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.6" />
     </filter>
-    <filter id="glowShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#fbbf24" flood-opacity="0.6" />
+    <filter id="goldGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#fde047" flood-opacity="0.75" />
+    </filter>
+    <filter id="starGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="#ffffff" flood-opacity="0.9" />
     </filter>
   </defs>
 
-  <!-- Background Base -->
+  <!-- 1. Background Squircle Base Tile -->
   <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
-  <circle cx="256" cy="220" r="180" fill="url(#glowGrad)" />
 
-  <!-- Outer Decorative Golden Ring -->
-  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-opacity="0.35" />
-  <rect x="40" y="40" width="432" height="432" rx="84" fill="none" stroke="url(#goldGrad)" stroke-width="1.5" stroke-opacity="0.6" />
+  <!-- 2. Dual Concentric Ornamental Borders -->
+  <rect x="22" y="22" width="468" height="468" rx="94" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" stroke-opacity="0.45" />
+  <rect x="34" y="34" width="444" height="444" rx="84" fill="none" stroke="url(#cyanGrad)" stroke-width="1.2" stroke-opacity="0.25" stroke-dasharray="10,6" />
 
-  <!-- Corner Ornamental Dots -->
-  <circle cx="56" cy="56" r="4" fill="#fbbf24" opacity="0.8" />
-  <circle cx="456" cy="56" r="4" fill="#fbbf24" opacity="0.8" />
-  <circle cx="56" cy="456" r="4" fill="#fbbf24" opacity="0.8" />
-  <circle cx="456" cy="456" r="4" fill="#fbbf24" opacity="0.8" />
+  <!-- 3. Central Radial Atmosphere Halo -->
+  <circle cx="256" cy="245" r="210" fill="url(#centerAura)" />
 
-  <!-- Central Star of Knowledge / Eight-pointed Motif Backdrop -->
-  <g transform="translate(256, 230) scale(0.95)" opacity="0.25">
-    <rect x="-85" y="-85" width="170" height="170" rx="20" fill="none" stroke="url(#goldGrad)" stroke-width="3" />
-    <rect x="-85" y="-85" width="170" height="170" rx="20" fill="none" stroke="url(#goldGrad)" stroke-width="3" transform="rotate(45)" />
+  <!-- 4. Subtle Sacred Geometry Shamseh Rosette in Background -->
+  <g opacity="0.16" stroke="url(#goldGrad)" stroke-width="1.5" fill="none">
+    <!-- Concentric Circles -->
+    <circle cx="256" cy="245" r="160" />
+    <circle cx="256" cy="245" r="115" stroke-dasharray="6,4" />
+    <circle cx="256" cy="245" r="70" />
+    <!-- 8-Pointed Geometric Star Outlines -->
+    <rect x="156" y="145" width="200" height="200" rx="8" />
+    <rect x="156" y="145" width="200" height="200" rx="8" transform="rotate(45 256 245)" />
   </g>
 
-  <!-- Main Symbol Group (Crest with Open Book and Letter Taa) -->
-  <g filter="url(#dropShadow)">
-    <!-- Mihrab / Dome Arch Background -->
-    <path d="M 180 340 L 180 230 C 180 180, 256 130, 256 130 C 256 130, 332 180, 332 230 L 332 340 Z" 
-          fill="#1e1b4b" fill-opacity="0.6" stroke="url(#goldGrad)" stroke-width="3" stroke-opacity="0.4" />
+  <!-- 5. Grand Architectural Mihrab / Dome Arch of Wisdom -->
+  <g filter="url(#shadowDepth)">
+    <!-- Outer Arch Contour -->
+    <path d="M 132 396 L 132 230 C 132 140, 256 86, 256 86 C 256 86, 380 140, 380 230 L 380 396 Z"
+          fill="#071026" fill-opacity="0.8" stroke="url(#goldGrad)" stroke-width="4.5" stroke-linejoin="round" />
 
-    <!-- Open Book / Holy Quran / Scientific Manuscript Emblem -->
-    <!-- Left Page -->
-    <path d="M 256 360 C 220 335, 170 338, 130 355 C 130 355, 140 280, 256 265 Z" 
-          fill="#ffffff" />
-    <path d="M 256 360 C 220 335, 170 338, 130 355 C 130 355, 140 280, 256 265 Z" 
-          fill="url(#goldGrad)" fill-opacity="0.12" stroke="url(#goldGrad)" stroke-width="3.5" />
-    
-    <!-- Right Page -->
-    <path d="M 256 360 C 292 335, 342 338, 382 355 C 382 355, 372 280, 256 265 Z" 
-          fill="#ffffff" />
-    <path d="M 256 360 C 292 335, 342 338, 382 355 C 382 355, 372 280, 256 265 Z" 
-          fill="url(#goldGrad)" fill-opacity="0.12" stroke="url(#goldGrad)" stroke-width="3.5" />
+    <!-- Inner Arch Contour with Turquoise Glow -->
+    <path d="M 152 396 L 152 242 C 152 165, 256 115, 256 115 C 256 115, 360 165, 360 242 L 360 396 Z"
+          fill="none" stroke="url(#emeraldGrad)" stroke-width="2" stroke-opacity="0.6" stroke-dasharray="8,5" />
+  </g>
 
-    <!-- Book Spine & Binding Details -->
-    <path d="M 256 265 L 256 375" stroke="#d97706" stroke-width="5" stroke-linecap="round" />
-    <!-- Page Lines for Left Page -->
-    <path d="M 165 315 C 195 305, 225 305, 245 310" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
-    <path d="M 160 330 C 190 320, 225 320, 245 325" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
-    <!-- Page Lines for Right Page -->
-    <path d="M 347 315 C 317 305, 287 305, 267 310" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
-    <path d="M 352 330 C 322 320, 287 320, 267 325" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" opacity="0.6" />
+  <!-- 6. Radiant Star of Knowledge (Shamseh 8-Pointed Star) at Arch Apex -->
+  <g transform="translate(256, 126)" filter="url(#goldGlow)">
+    <!-- 8-Pointed Star -->
+    <polygon points="0,-26 7,-9 25,-9 11,2 17,20 0,9 -17,20 -11,2 -25,-9 -7,-9"
+             fill="url(#goldGrad)" />
+    <polygon points="0,-26 7,-9 25,-9 11,2 17,20 0,9 -17,20 -11,2 -25,-9 -7,-9"
+             transform="rotate(22.5)" fill="url(#goldGrad)" opacity="0.75" />
+    <!-- Center Jewel -->
+    <circle cx="0" cy="0" r="5" fill="#ffffff" filter="url(#starGlow)" />
+  </g>
 
-    <!-- Book Wooden Stand / Rehl Base -->
-    <path d="M 190 365 L 256 385 L 322 365 L 340 395 L 256 405 L 172 395 Z" 
-          fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+  <!-- 7. The Golden Open Book of Knowledge (کتاب گشوده علم و معرفت) -->
+  <g filter="url(#shadowDepth)">
+    <!-- Backing Book Cover / Rehl Top Glow -->
+    <path d="M 256 348 C 210 322, 142 324, 98 340 C 98 340, 110 260, 256 238 C 402 260, 414 340, 414 340 C 370 324, 302 322, 256 348 Z"
+          fill="#0c1735" stroke="url(#goldGrad)" stroke-width="3" />
 
-    <!-- Calligraphic Letter "ط" (Symbol of Tolab & Talieh) -->
-    <!-- Vertical Ascender of Taa -->
-    <path d="M 248 105 C 248 95, 264 95, 264 105 L 264 245 C 264 252, 256 256, 248 252 C 244 250, 248 200, 248 105 Z" 
-          fill="url(#goldGrad)" filter="url(#glowShadow)" />
-    <!-- Crown / Light of Knowledge Quill Tip at the Top -->
-    <path d="M 256 80 L 263 96 L 256 104 L 249 96 Z" fill="#fef08a" />
-    <circle cx="256" cy="92" r="6" fill="#fbbf24" opacity="0.9" />
+    <!-- Left Book Page (Layer 1 - Thick parchment base) -->
+    <path d="M 256 342 C 215 316, 150 318, 108 334 C 114 266, 175 244, 256 244 Z"
+          fill="url(#pageGradLeft)" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linejoin="round" />
 
-    <!-- Oval Loop Body of Taa -->
-    <path d="M 210 242 C 180 242, 170 205, 215 195 C 255 186, 310 192, 325 220 C 335 240, 315 252, 280 252 C 240 252, 175 252, 160 252 C 150 252, 145 242, 155 240 C 180 236, 290 236, 305 236 C 315 236, 318 226, 310 216 C 298 202, 255 198, 222 206 C 192 213, 192 232, 215 234 C 235 236, 260 236, 280 236" 
+    <!-- Right Book Page (Layer 1 - Thick parchment base) -->
+    <path d="M 256 342 C 297 316, 362 318, 404 334 C 398 266, 337 244, 256 244 Z"
+          fill="url(#pageGradRight)" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linejoin="round" />
+
+    <!-- Top Floating Left Page (Layer 2 - Curved illuminated page) -->
+    <path d="M 256 336 C 216 312, 158 314, 118 328 C 124 272, 178 252, 256 252 Z"
+          fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" />
+
+    <!-- Top Floating Right Page (Layer 2 - Curved illuminated page) -->
+    <path d="M 256 336 C 296 312, 354 314, 394 328 C 388 272, 334 252, 256 252 Z"
+          fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2" />
+
+    <!-- Center Spine Binding & Ribbon Bookmark (نشانه کتاب زرین) -->
+    <path d="M 256 244 L 256 364" stroke="url(#goldGrad)" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M 256 348 C 256 372, 244 382, 240 398 L 248 398 L 256 388 L 264 398 L 272 398 C 268 382, 256 372, 256 348 Z"
           fill="url(#goldGrad)" />
+
+    <!-- Gold Text Lines on Manuscript (Scribal Wisdom lines) -->
+    <g stroke="url(#goldGrad)" stroke-width="2" stroke-linecap="round" opacity="0.75">
+      <!-- Left Page Lines -->
+      <line x1="145" y1="288" x2="232" y2="282" />
+      <line x1="140" y1="302" x2="234" y2="296" />
+      <line x1="150" y1="316" x2="228" y2="310" />
+      <!-- Right Page Lines -->
+      <line x1="280" y1="282" x2="367" y2="288" />
+      <line x1="278" y1="296" x2="372" y2="302" />
+      <line x1="284" y1="310" x2="362" y2="316" />
+    </g>
+
+    <!-- Ornamental Header Rosettes on Pages -->
+    <circle cx="188" cy="272" r="3" fill="#eab308" />
+    <circle cx="324" cy="272" r="3" fill="#eab308" />
   </g>
 
-  <!-- Elegant Bottom Banner / Subtitle -->
-  <g transform="translate(256, 442)">
-    <!-- Soft Glow Pill -->
-    <rect x="-95" y="-14" width="190" height="28" rx="14" fill="#0f172a" fill-opacity="0.6" stroke="url(#goldGrad)" stroke-width="1.5" stroke-opacity="0.6" />
-    <text x="0" y="5" font-family="'Vazirmatn', 'Segoe UI', Tahoma, sans-serif" font-weight="900" font-size="13" fill="#fef08a" text-anchor="middle" letter-spacing="1">
-      سامانه جامع طلاب
-    </text>
+  <!-- 8. Luminous Flame / Pen of Light (قلم نور و هدایت) Rising from Center -->
+  <g filter="url(#goldGlow)">
+    <!-- Central Pen Nib & Flame -->
+    <path d="M 256 160 C 244 195, 247 218, 256 242 C 265 218, 268 195, 256 160 Z"
+          fill="url(#goldGrad)" />
+    <!-- Inner Radiant Core -->
+    <path d="M 256 178 C 248 200, 250 216, 256 230 C 262 216, 264 200, 256 178 Z"
+          fill="#ffffff" />
+    <!-- Radiating Light Sparks -->
+    <circle cx="236" cy="195" r="2.5" fill="#fde047" />
+    <circle cx="276" cy="195" r="2.5" fill="#fde047" />
+    <circle cx="228" cy="218" r="2" fill="#38bdf8" />
+    <circle cx="284" cy="218" r="2" fill="#38bdf8" />
+  </g>
+
+  <!-- 9. Majestic Wooden / Brass Rehl Stand Base (رحل استادانه) -->
+  <g filter="url(#shadowDepth)">
+    <!-- Interlocking Rehl Legs with Carved Geometric Bevels -->
+    <path d="M 172 360 L 256 394 L 340 360 L 358 392 L 256 428 L 154 392 Z"
+          fill="url(#goldGrad)" stroke="#78350f" stroke-width="2" stroke-linejoin="round" />
+    <!-- Under Rehl Dark Recess Shadow -->
+    <path d="M 194 378 L 256 404 L 318 378 L 304 394 L 256 414 L 208 394 Z"
+          fill="#451a03" opacity="0.6" />
+    <!-- Rehl Feet Floor Anchors -->
+    <path d="M 154 392 L 138 416 L 168 418 L 178 398 Z" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" />
+    <path d="M 358 392 L 374 416 L 344 418 L 334 398 Z" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" />
+    <!-- Central Carved Rehl Rosette -->
+    <circle cx="256" cy="411" r="5" fill="#fef08a" stroke="#854d0e" stroke-width="1.5" />
   </g>
 </svg>

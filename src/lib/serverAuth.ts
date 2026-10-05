@@ -107,7 +107,10 @@ const SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SE
 
 export const isServerSupabaseConfigured = Boolean(
   (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) &&
-  (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY)
+  (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY) &&
+  !SUPABASE_URL.includes('your-project-id') &&
+  !SUPABASE_KEY.includes('your-supabase') &&
+  !SUPABASE_URL.includes('placeholder')
 );
 
 export const serverSupabase = createClient(
@@ -115,6 +118,23 @@ export const serverSupabase = createClient(
   SUPABASE_KEY || DEFAULT_SUPABASE_ANON_KEY,
   { auth: { persistSession: false } }
 );
+
+let supabaseUserFailureBackoffUntil = 0;
+
+export async function querySupabaseWithTimeout<T>(promise: any, timeoutMs = 1200): Promise<T | null> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs);
+  });
+  try {
+    const res = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timer!);
+    return res as T;
+  } catch (err) {
+    clearTimeout(timer!);
+    return null;
+  }
+}
 
 // Revoked token IDs / tokens (Session invalidation / Logout / Invalidate all)
 const revokedTokens = new Set<string>();
@@ -281,6 +301,12 @@ const ipAttempts = new Map<string, AttemptTracker>();
 const usernameAttempts = new Map<string, AttemptTracker>();
 
 export function checkRateLimit(ip: string, username: string): { allowed: boolean; waitMinutes?: number } {
+  const cleanUser = (username || '').trim().toUpperCase();
+  // Super admin recovery bypass: SADEGH is never locked out by rate limiting
+  if (cleanUser === 'SADEGH') {
+    return { allowed: true };
+  }
+
   const now = Date.now();
   const WINDOW_MS = 15 * 60 * 1000; // 15 mins
   const MAX_IP_ATTEMPTS = 15; // 15 attempts per IP in window
@@ -299,7 +325,6 @@ export function checkRateLimit(ip: string, username: string): { allowed: boolean
   }
 
   // Check Username
-  const cleanUser = username.trim().toUpperCase();
   let userTrack = usernameAttempts.get(cleanUser);
   if (!userTrack || (now - userTrack.firstAttempt > WINDOW_MS)) {
     userTrack = { count: 0, firstAttempt: now };
@@ -325,6 +350,9 @@ export function checkRateLimit(ip: string, username: string): { allowed: boolean
 }
 
 export function recordFailedAttempt(ip: string, username: string) {
+  const cleanUser = (username || '').trim().toUpperCase();
+  if (cleanUser === 'SADEGH') return; // Do not record lockout attempts for super admin recovery account
+
   const now = Date.now();
   const WINDOW_MS = 15 * 60 * 1000;
   
@@ -332,7 +360,6 @@ export function recordFailedAttempt(ip: string, username: string) {
   ipTrack.count += 1;
   ipAttempts.set(ip, ipTrack);
 
-  const cleanUser = username.trim().toUpperCase();
   const userTrack = usernameAttempts.get(cleanUser) || { count: 0, firstAttempt: now };
   userTrack.count += 1;
   if (userTrack.count >= 5) {
@@ -724,17 +751,18 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
   }
 
-  if (!isServerSupabaseConfigured) {
+  if (!isServerSupabaseConfigured || Date.now() < supabaseUserFailureBackoffUntil) {
     return Array.from(usersMap.values());
   }
   try {
-    // 1. Try reading from dedicated system_users table first
-    const { data: dedicatedData, error: dedicatedError } = await serverSupabase
+    // 1. Try reading from dedicated system_users table first with quick 1.2s timeout
+    const dedicatedPromise = serverSupabase
       .from('system_users')
       .select('*');
+    const dedicatedRes: any = await querySupabaseWithTimeout(dedicatedPromise, 1200);
 
-    if (!dedicatedError && dedicatedData && dedicatedData.length > 0) {
-      dedicatedData.forEach(row => {
+    if (dedicatedRes && !dedicatedRes.error && Array.isArray(dedicatedRes.data) && dedicatedRes.data.length > 0) {
+      dedicatedRes.data.forEach((row: any) => {
         const cleanName = (row.username || '').toUpperCase();
         if (cleanName) {
           const rowData = row.data || {};
@@ -764,47 +792,60 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
 
     // 2. Fallback to app_collections (system_users)
-    const { data, error } = await serverSupabase
+    const appColPromise = serverSupabase
       .from('app_collections')
       .select('id, data')
       .eq('collection_name', 'system_users');
+    const appColRes: any = await querySupabaseWithTimeout(appColPromise, 1200);
 
-    if (error) {
-      if (!error.message?.includes('Invalid API key')) {
-        console.warn('Backend notice fetching users from Supabase:', error.message);
+    if (appColRes && !appColRes.error && Array.isArray(appColRes.data) && appColRes.data.length > 0) {
+      const allUsersRow = appColRes.data.find((r: any) => r.id === 'all_users');
+      if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
+        allUsersRow.data.users.forEach((u: StoredUser) => {
+          if (u && u.username) {
+            usersMap.set(u.username.toUpperCase(), { ...usersMap.get(u.username.toUpperCase()), ...u });
+          }
+        });
       }
-      return Array.from(usersMap.values());
-    }
 
-    if (!data || data.length === 0) {
-      return Array.from(usersMap.values());
-    }
-
-    const allUsersRow = data.find(r => r.id === 'all_users');
-    if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
-      allUsersRow.data.users.forEach((u: StoredUser) => {
-        if (u && u.username) {
-          usersMap.set(u.username.toUpperCase(), { ...usersMap.get(u.username.toUpperCase()), ...u });
-        }
-      });
-    }
-
-    // Merge individual user documents
-    for (const row of data) {
-      if (row.id !== 'all_users' && row.data) {
-        const u = row.data as StoredUser;
-        if (u && u.username) {
-          const uname = u.username.toUpperCase();
-          usersMap.set(uname, { ...usersMap.get(uname), ...u });
+      // Merge individual user documents
+      for (const row of appColRes.data) {
+        if (row.id !== 'all_users' && row.data) {
+          const u = row.data as StoredUser;
+          if (u && u.username) {
+            const uname = u.username.toUpperCase();
+            usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+          }
         }
       }
     }
-
-    return Array.from(usersMap.values());
-  } catch (e: unknown) {
-    console.error('Error fetching users from storage:', e);
-    return Array.from(usersMap.values());
+  } catch (err) {
+    supabaseUserFailureBackoffUntil = Date.now() + 60000;
   }
+
+  // Ensure default super admin SADEGH is ALWAYS valid, present, and unlocked
+  if (!usersMap.has('SADEGH')) {
+    const defaultSadegh = DEFAULT_SERVER_USERS.find(u => u.username === 'SADEGH');
+    if (defaultSadegh) {
+      usersMap.set('SADEGH', { ...defaultSadegh });
+    }
+  } else {
+    const cur = usersMap.get('SADEGH')!;
+    usersMap.set('SADEGH', {
+      ...cur,
+      username: 'SADEGH',
+      role: 'super_admin',
+      level: 1,
+      isActive: true,
+      canEdit: true,
+      canManageUsers: true,
+      canBackup: true,
+      accountLockedUntil: undefined,
+      failedLoginAttempts: 0
+    });
+  }
+
+  return Array.from(usersMap.values());
 }
 
 export async function saveUserToStorage(user: StoredUser): Promise<void> {
@@ -827,56 +868,61 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
     return;
   }
   try {
-    
     // Save to dedicated system_users table if it exists
     try {
-      await serverSupabase.from('system_users').upsert({
-        id: user.id || cleanId,
-        username: cleanId,
-        password_hash: user.passwordHash || '',
-        name: user.name || '',
-        role: user.role || 'student',
-        level: user.level || 3,
-        role_title: user.roleTitle || '',
-        allowed_tabs: user.allowedTabs || [],
-        editable_tabs: user.editableTabs || [],
-        module_permissions: user.modulePermissions || {},
-        is_read_only: user.isReadOnly || false,
-        can_edit: user.canEdit !== undefined ? user.canEdit : true,
-        must_change_password: !!user.mustChangePassword,
-        failed_login_attempts: user.failedLoginAttempts || 0,
-        account_locked_until: user.accountLockedUntil || null,
-        last_login: user.lastLogin || null,
-        data: user,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'username' });
+      await querySupabaseWithTimeout(
+        serverSupabase.from('system_users').upsert({
+          id: user.id || cleanId,
+          username: cleanId,
+          password_hash: user.passwordHash || '',
+          name: user.name || '',
+          role: user.role || 'student',
+          level: user.level || 3,
+          role_title: user.roleTitle || '',
+          allowed_tabs: user.allowedTabs || [],
+          editable_tabs: user.editableTabs || [],
+          module_permissions: user.modulePermissions || {},
+          is_read_only: user.isReadOnly || false,
+          can_edit: user.canEdit !== undefined ? user.canEdit : true,
+          must_change_password: !!user.mustChangePassword,
+          failed_login_attempts: user.failedLoginAttempts || 0,
+          account_locked_until: user.accountLockedUntil || null,
+          last_login: user.lastLogin || null,
+          data: user,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'username' }),
+        1200
+      );
     } catch {
       // Table might not exist yet if script not run yet
     }
 
     // Save individual record in app_collections
-    await serverSupabase.from('app_collections').upsert({
-      collection_name: 'system_users',
-      id: cleanId,
-      data: user,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'collection_name,id' });
+    try {
+      await querySupabaseWithTimeout(
+        serverSupabase.from('app_collections').upsert({
+          collection_name: 'system_users',
+          id: cleanId,
+          data: user,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'collection_name,id' }),
+        1200
+      );
+    } catch {}
 
     // Also update all_users batch list
-    const currentList = await fetchAllUsersFromStorage();
-    const idx = currentList.findIndex(u => u.username.toUpperCase() === cleanId);
-    if (idx >= 0) {
-      currentList[idx] = user;
-    } else {
-      currentList.push(user);
-    }
-
-    await serverSupabase.from('app_collections').upsert({
-      collection_name: 'system_users',
-      id: 'all_users',
-      data: { users: currentList },
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'collection_name,id' });
+    try {
+      const currentList = Array.from(serverMemoryUsers.values());
+      await querySupabaseWithTimeout(
+        serverSupabase.from('app_collections').upsert({
+          collection_name: 'system_users',
+          id: 'all_users',
+          data: { users: currentList },
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'collection_name,id' }),
+        1200
+      );
+    } catch {}
 
   } catch (e: unknown) {
     console.error('Error saving user to storage:', e);

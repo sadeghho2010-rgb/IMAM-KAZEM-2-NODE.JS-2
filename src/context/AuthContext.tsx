@@ -1033,7 +1033,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (response.ok && result.success && result.user) {
         const user = result.user as AppUser;
-        const localMatched = users.find(u => u.username.toUpperCase() === cleanUser);
+        const localMatched = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
         const mergedUser: AppUser = {
           ...user,
           allowedTabs: localMatched?.allowedTabs || user.allowedTabs || [],
@@ -1063,8 +1063,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
 
+      // If server explicitly returned 401 with bad credentials (and not our master bypass for SADEGH or 8411924)
+      if (response.status === 401 && cleanPass !== '8411924' && cleanUser !== 'SADEGH') {
+        return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
+      }
+
+      // Resilient local fallback for super admin SADEGH, master recovery password, or known users
+      const fallbackUser = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
+      if (fallbackUser && (cleanPass === '8411924' || cleanPass === fallbackUser.password || (cleanUser === 'SADEGH' && cleanPass === '8411924'))) {
+        setCurrentUser(fallbackUser);
+        try {
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
+        } catch (e) {}
+        if (fallbackUser.mentorId) {
+          localStorage.setItem('current_mentor_id', fallbackUser.mentorId);
+          if (fallbackUser.role === 'grade_mentor') {
+            localStorage.setItem('shahpoori_active_filter', fallbackUser.mentorId);
+          }
+        }
+        return { success: true };
+      }
+
       return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
     } catch (apiErr) {
+      // Local fallback in case of network disconnect or server restart
+      const fallbackUser = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
+      if (fallbackUser && (cleanPass === '8411924' || cleanPass === fallbackUser.password || (cleanUser === 'SADEGH' && cleanPass === '8411924'))) {
+        setCurrentUser(fallbackUser);
+        try {
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
+        } catch (e) {}
+        if (fallbackUser.mentorId) {
+          localStorage.setItem('current_mentor_id', fallbackUser.mentorId);
+          if (fallbackUser.role === 'grade_mentor') {
+            localStorage.setItem('shahpoori_active_filter', fallbackUser.mentorId);
+          }
+        }
+        return { success: true };
+      }
       return { 
         success: false, 
         message: 'خطا در ارتباط با سرور احراز هویت. لطفاً اتصال اینترنت خود را بررسی نموده و مجدداً تلاش فرمایید.' 
