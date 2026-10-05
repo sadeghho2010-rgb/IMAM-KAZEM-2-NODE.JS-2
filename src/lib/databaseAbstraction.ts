@@ -72,37 +72,43 @@ export interface AuditLogEntity {
 // Check if MySQL connection credentials are provided
 export function parseMysqlConfig() {
   const env = process.env;
-  let host = env.MYSQL_HOST || env.MYSQLHOST || env.DB_HOST || env.DB_HOSTNAME || '';
+  let host = '';
   let port = Number(env.MYSQL_PORT || env.MYSQLPORT || env.DB_PORT) || 3306;
-  let user = env.MYSQL_USER || env.MYSQLUSER || env.DB_USER || env.DB_USERNAME || 'root';
+  let user = env.MYSQL_USER || env.MYSQLUSER || env.DB_USER || env.DB_USERNAME || '';
   let password = env.MYSQL_PASSWORD || env.MYSQLPASSWORD || env.DB_PASSWORD || env.DB_PASS || '';
   let database = env.MYSQL_DATABASE || env.MYSQLDATABASE || env.DB_DATABASE || env.DB_NAME || '';
 
+  // Priority 1 & 2: DATABASE_URL / MYSQL_URL
   const connectionUrl = env.DATABASE_URL || env.MYSQL_URL || '';
   if (connectionUrl && (connectionUrl.startsWith('mysql://') || connectionUrl.startsWith('mysql2://'))) {
     try {
       const parsed = new URL(connectionUrl);
-      host = parsed.hostname || host;
-      port = Number(parsed.port) || port;
-      user = decodeURIComponent(parsed.username || user);
-      password = decodeURIComponent(parsed.password || password);
-      database = parsed.pathname ? parsed.pathname.replace(/^\//, '') : database;
-    } catch (e) {}
+      host = parsed.hostname || '';
+      if (parsed.port) port = Number(parsed.port) || 3306;
+      if (parsed.username) user = decodeURIComponent(parsed.username);
+      if (parsed.password) password = decodeURIComponent(parsed.password);
+      if (parsed.pathname) database = parsed.pathname.replace(/^\//, '') || database;
+    } catch (e) {
+      console.error('[MySQL Config] Error parsing DATABASE_URL / MYSQL_URL:', e);
+    }
+  }
+
+  // Priority 3 & 4: DB_HOST / MYSQL_HOST
+  if (!host) {
+    host = env.DB_HOST || env.MYSQL_HOST || env.MYSQLHOST || env.DB_HOSTNAME || '';
   }
 
   const isConfigured = Boolean(host && database);
-  return { isConfigured, host: host || '127.0.0.1', port, user, password, database: database || 'madrasah_db' };
+  return { isConfigured, host, port, user, password, database };
 }
 
 export const isMysqlConfigured = Boolean(
+  process.env.DATABASE_URL ||
+  process.env.MYSQL_URL ||
+  process.env.DB_HOST ||
   process.env.MYSQL_HOST ||
   process.env.MYSQLHOST ||
-  process.env.MYSQL_DATABASE ||
-  process.env.MYSQLDATABASE ||
-  process.env.DB_HOST ||
-  process.env.DB_DATABASE ||
-  (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('mysql://') || process.env.DATABASE_URL.startsWith('mysql2://'))) ||
-  (process.env.MYSQL_URL && (process.env.MYSQL_URL.startsWith('mysql://') || process.env.MYSQL_URL.startsWith('mysql2://')))
+  process.env.DB_HOSTNAME
 );
 
 let pool: mysql.Pool | null = null;
@@ -405,10 +411,25 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
 }
 
 export function getMysqlPool(): mysql.Pool | null {
-  if (!isMysqlConfigured) return null;
+  const conf = parseMysqlConfig();
+  if (!conf.isConfigured || !conf.host || !conf.database) {
+    if (isMysqlConfigured) {
+      console.error(`[MySQL Engine Error] Cannot initialize pool: Missing DB host or database in ENV.`);
+      console.error(`[MySQL Connection Targets Log] -> host: "${conf.host || 'EMPTY'}", port: ${conf.port}, database: "${conf.database || 'EMPTY'}", user: "${conf.user || 'EMPTY'}"`);
+    }
+    return null;
+  }
+
   if (!pool) {
     try {
-      const conf = parseMysqlConfig();
+      console.log(`==================================================`);
+      console.log(`[MySQL Engine Initialization] Attempting connection...`);
+      console.log(` - Target DB Host: "${conf.host}"`);
+      console.log(` - Target DB Port: ${conf.port}`);
+      console.log(` - Target DB Name: "${conf.database}"`);
+      console.log(` - Target DB User: "${conf.user}"`);
+      console.log(` - Priority Order Checked: DATABASE_URL -> MYSQL_URL -> DB_HOST -> MYSQL_HOST`);
+      console.log(`==================================================`);
 
       pool = mysql.createPool({
         host: conf.host,
@@ -423,8 +444,10 @@ export function getMysqlPool(): mysql.Pool | null {
         timezone: '+03:30' // Iran Standard Time
       });
 
-      console.log(`[MySQL Engine] Connection pool initialized for database: ${conf.database}@${conf.host}:${conf.port}`);
-      ensurePerformanceIndexes(pool).catch(() => {});
+      console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
+      ensurePerformanceIndexes(pool).catch((err) => {
+        console.warn('[MySQL Index Setup Notice]:', err?.message || err);
+      });
     } catch (err) {
       console.error('[MySQL Engine] Pool initialization error:', err);
       pool = null;
