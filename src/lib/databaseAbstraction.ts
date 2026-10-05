@@ -111,8 +111,104 @@ export const isMysqlConfigured = Boolean(
   process.env.DB_HOSTNAME
 );
 
+// Connection Status and Diagnostic Tracking
 let pool: mysql.Pool | null = null;
 let hasEnsuredIndexes = false;
+let lastConnectionError: string | null = null;
+let isCurrentlyConnected = false;
+
+export function getDbConnectionStatus() {
+  const conf = parseMysqlConfig();
+  return {
+    connected: isCurrentlyConnected,
+    host: conf.host || '',
+    port: conf.port || 3306,
+    database: conf.database || '',
+    user: conf.user || '',
+    lastError: lastConnectionError
+  };
+}
+
+export function translateMysqlError(err: any): string {
+  const code = err?.code || '';
+  const message = err?.message || String(err);
+  
+  if (code === 'ENOTFOUND' || message.includes('ENOTFOUND') || message.includes('getaddrinfo')) {
+    return 'خطا: آدرس دیتابیس پیدا نشد. مقدار DB_HOST را چک کنید.';
+  }
+  if (code === 'ER_ACCESS_DENIED_ERROR' || err?.errno === 1045 || message.includes('Access denied')) {
+    return 'خطا: نام کاربری یا رمز دیتابیس اشتباه است.';
+  }
+  if (code === 'ECONNREFUSED' || message.includes('ECONNREFUSED')) {
+    return 'خطا: دیتابیس در دسترس نیست.';
+  }
+  if (code === 'ETIMEDOUT' || message.includes('ETIMEDOUT') || message.includes('timeout')) {
+    return 'خطا: زمان اتصال به دیتابیس تمام شد.';
+  }
+  
+  return `خطا در ارتباط با دیتابیس MySQL: ${message}`;
+}
+
+export function validateMysqlConfig(): { isValid: boolean; errors: string[] } {
+  const conf = parseMysqlConfig();
+  const errors: string[] = [];
+
+  if (!conf.host) {
+    errors.push('[MySQL Config Error] DB_HOST is empty or invalid');
+  } else {
+    const hostPattern = /^[a-zA-Z0-9.\-_]+$/;
+    if (!hostPattern.test(conf.host)) {
+      errors.push(`[MySQL Config Error] DB_HOST "${conf.host}" contains invalid characters`);
+    }
+  }
+
+  if (!conf.port || isNaN(conf.port) || conf.port < 1 || conf.port > 65535) {
+    errors.push(`[MySQL Config Error] DB_PORT "${conf.port}" is invalid (must be between 1 and 65535)`);
+  }
+
+  if (!conf.database) {
+    errors.push('[MySQL Config Error] DB_DATABASE is not set');
+  }
+
+  if (!conf.user) {
+    errors.push('[MySQL Config Error] DB_USERNAME is not set');
+  }
+
+  if (!conf.password) {
+    errors.push('[MySQL Config Error] DB_PASSWORD is not set');
+  }
+
+  const isValid = errors.length === 0;
+  if (!isValid) {
+    errors.forEach(err => console.error(err));
+  }
+  return { isValid, errors };
+}
+
+export async function testMysqlConnection(): Promise<boolean> {
+  const mysqlPool = getMysqlPool();
+  if (!mysqlPool) {
+    isCurrentlyConnected = false;
+    if (!lastConnectionError) {
+      lastConnectionError = 'MySQL is not configured or configuration validation failed.';
+    }
+    return false;
+  }
+
+  try {
+    const connection = await mysqlPool.getConnection();
+    await connection.ping();
+    connection.release();
+    isCurrentlyConnected = true;
+    lastConnectionError = null;
+    return true;
+  } catch (err: any) {
+    isCurrentlyConnected = false;
+    lastConnectionError = translateMysqlError(err);
+    console.error(`[MySQL Connection Test Failed]: ${lastConnectionError}`);
+    return false;
+  }
+}
 
 export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
   const mysqlPool = p || getMysqlPool();
@@ -411,24 +507,24 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
 }
 
 export function getMysqlPool(): mysql.Pool | null {
-  const conf = parseMysqlConfig();
-  if (!conf.isConfigured || !conf.host || !conf.database) {
-    if (isMysqlConfigured) {
-      console.error(`[MySQL Engine Error] Cannot initialize pool: Missing DB host or database in ENV.`);
-      console.error(`[MySQL Connection Targets Log] -> host: "${conf.host || 'EMPTY'}", port: ${conf.port}, database: "${conf.database || 'EMPTY'}", user: "${conf.user || 'EMPTY'}"`);
-    }
+  const { isValid, errors } = validateMysqlConfig();
+  if (!isValid) {
+    lastConnectionError = errors.join(' | ');
     return null;
   }
+
+  const conf = parseMysqlConfig();
 
   if (!pool) {
     try {
       console.log(`==================================================`);
-      console.log(`[MySQL Engine Initialization] Attempting connection...`);
-      console.log(` - Target DB Host: "${conf.host}"`);
-      console.log(` - Target DB Port: ${conf.port}`);
-      console.log(` - Target DB Name: "${conf.database}"`);
-      console.log(` - Target DB User: "${conf.user}"`);
-      console.log(` - Priority Order Checked: DATABASE_URL -> MYSQL_URL -> DB_HOST -> MYSQL_HOST`);
+      console.log(`[MySQL Connection Attempt]`);
+      console.log(` - Host: "${conf.host}"`);
+      console.log(` - Port: ${conf.port}`);
+      console.log(` - Database: "${conf.database}"`);
+      console.log(` - User: "${conf.user}"`);
+      console.log(` - Password Length: ${conf.password ? conf.password.length : 0} chars`);
+      console.log(` - Source Priority: DATABASE_URL -> MYSQL_URL -> DB_HOST -> MYSQL_HOST`);
       console.log(`==================================================`);
 
       pool = mysql.createPool({
@@ -438,18 +534,17 @@ export function getMysqlPool(): mysql.Pool | null {
         password: conf.password,
         database: conf.database,
         waitForConnections: true,
-        connectionLimit: 5,
-        queueLimit: 50,
+        connectionLimit: 10,
+        queueLimit: 100,
         charset: 'utf8mb4_unicode_ci',
         timezone: '+03:30' // Iran Standard Time
       });
 
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
-      ensurePerformanceIndexes(pool).catch((err) => {
-        console.warn('[MySQL Index Setup Notice]:', err?.message || err);
-      });
-    } catch (err) {
-      console.error('[MySQL Engine] Pool initialization error:', err);
+    } catch (err: any) {
+      const errMsg = translateMysqlError(err);
+      console.error('[MySQL Engine] Pool initialization error:', errMsg, err);
+      lastConnectionError = errMsg;
       pool = null;
     }
   }
@@ -460,9 +555,14 @@ export function getMysqlPool(): mysql.Pool | null {
  * Executes a prepared query safely on MySQL with parameters
  */
 export async function executeMysqlQuery<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  // If connection is not active, try to re-test/re-connect automatically
+  if (!isCurrentlyConnected) {
+    await testMysqlConnection();
+  }
+
   const mysqlPool = getMysqlPool();
   if (!mysqlPool) {
-    throw new Error('دیتابیس MySQL تنظیم نشده است.');
+    throw new Error('خطا: ارتباط با سرور دیتابیس برقرار نشد. لطفاً تنظیمات پایگاه داده را بررسی کنید.');
   }
 
   const startTime = Date.now();
@@ -472,11 +572,19 @@ export async function executeMysqlQuery<T = any>(sql: string, params: any[] = []
     if (duration > 1000) {
       logSlowQuery('MySQL Query', duration, sql);
     }
+    // Connection successful
+    isCurrentlyConnected = true;
     return rows as T[];
   } catch (err: any) {
     logServerError(err.message, err.stack, 'executeMysqlQuery');
     console.error('[MySQL Execution Error]:', err.message, '\nQuery:', sql);
-    throw err;
+    
+    // Check if error is a connection issue to log status
+    const translatedMessage = translateMysqlError(err);
+    isCurrentlyConnected = false;
+    lastConnectionError = translatedMessage;
+    
+    throw new Error(translatedMessage);
   }
 }
 

@@ -131,14 +131,27 @@ async function startServer() {
   // Universal Global Error Handler for API routes
   app.use(globalErrorHandler);
 
-  // Ensure critical database performance indexes before accepting incoming requests
+  // Ensure critical database performance indexes and test connection before accepting incoming requests
   try {
-    const { isMysqlConfigured, ensurePerformanceIndexes } = await import("./src/lib/databaseAbstraction");
+    const { isMysqlConfigured, validateMysqlConfig, testMysqlConnection, ensurePerformanceIndexes } = await import("./src/lib/databaseAbstraction");
     if (isMysqlConfigured) {
-      await ensurePerformanceIndexes();
+      console.log('[Startup] Validating MySQL Configuration...');
+      const validation = validateMysqlConfig();
+      if (validation.isValid) {
+        console.log('[Startup] Testing MySQL Connection...');
+        const isOk = await testMysqlConnection();
+        if (isOk) {
+          console.log('[Startup] MySQL connected successfully! Creating schemas/indexes...');
+          await ensurePerformanceIndexes();
+        } else {
+          console.error('[Startup Error] MySQL database is not reachable right now. Server will start, but db-status endpoint should be checked.');
+        }
+      } else {
+        console.error('[Startup Error] MySQL configuration is invalid. Please check your environment variables.');
+      }
     }
   } catch (idxErr: any) {
-    logger.warn('[Startup] Performance index initialization notice:', idxErr?.message || idxErr);
+    logger.warn('[Startup] Database initialization notice:', idxErr?.message || idxErr);
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {

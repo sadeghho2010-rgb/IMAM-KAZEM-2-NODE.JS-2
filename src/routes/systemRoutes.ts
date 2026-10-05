@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { verifyAccessToken } from '../lib/serverAuth';
 import { getSystemHealthReport, recordMemorySnapshot } from '../lib/systemHealthMonitor';
+import { getDbConnectionStatus, testMysqlConnection } from '../lib/databaseAbstraction';
 
 const router = Router();
 
@@ -61,6 +62,27 @@ router.get('/health', async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'خطا در دریافت وضعیت سلامت سیستم';
     return res.status(500).json({ success: false, message });
   }
+});
+
+/**
+ * GET /api/system/db-status
+ * Public endpoint to quickly check if the server's connection to MySQL is active and healthy.
+ * Helps administrators debug ENV connection variables (Host, Port, DB, User) in real-time.
+ */
+router.get('/db-status', async (_req: Request, res: Response) => {
+  // Try to test the connection dynamically so it retries if previously disconnected
+  await testMysqlConnection();
+  
+  const status = getDbConnectionStatus();
+  return res.json({
+    success: true,
+    connected: status.connected,
+    host: status.host,
+    port: status.port,
+    database: status.database,
+    user: status.user,
+    lastError: status.lastError
+  });
 });
 
 export default router;
