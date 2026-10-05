@@ -1,6 +1,56 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
+
+const COLLECTIONS_DIR = path.join(process.cwd(), 'data', 'collections');
+
+function getCollectionFilePath(collection: string): string {
+  return path.join(COLLECTIONS_DIR, `${collection}.json`);
+}
+
+function loadCollectionFromFile(collection: string): any[] {
+  try {
+    const filePath = getCollectionFilePath(collection);
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn(`Could not read collection ${collection} from file:`, e);
+  }
+  return [];
+}
+
+function saveCollectionToFile(collection: string, items: any[]) {
+  try {
+    if (!fs.existsSync(COLLECTIONS_DIR)) {
+      fs.mkdirSync(COLLECTIONS_DIR, { recursive: true });
+    }
+    fs.writeFileSync(getCollectionFilePath(collection), JSON.stringify(items, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn(`Could not write collection ${collection} to file:`, e);
+  }
+}
+
+// In-memory collection cache on server
+const serverMemoryCollections = new Map<string, Map<string, any>>();
+
+function getMemoryCollection(collection: string): Map<string, any> {
+  let colMap = serverMemoryCollections.get(collection);
+  if (!colMap) {
+    colMap = new Map<string, any>();
+    loadCollectionFromFile(collection).forEach(item => {
+      if (item && item.id) {
+        colMap!.set(item.id, item);
+      }
+    });
+    serverMemoryCollections.set(collection, colMap);
+  }
+  return colMap;
+}
 
 // Real-time synchronization event bus
 type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
@@ -299,6 +349,11 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
   const id = data.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const record = { ...data, id };
 
+  // Always update server memory & file cache
+  const memCol = getMemoryCollection(collection);
+  memCol.set(id, record);
+  saveCollectionToFile(collection, Array.from(memCol.values()));
+
   // 1. If MySQL is configured, execute via MySQL Repository
   if (isMysqlConfigured) {
     try {
@@ -343,7 +398,6 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
       return { success: true, id };
     } catch (err: any) {
       console.error(`Server save error for ${collection}:`, err?.message || err);
-      return { success: false, id, error: err?.message };
     }
   }
 
@@ -354,6 +408,11 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
 // Server CRUD Handler: Delete Document
 export async function serverDeleteDoc(collection: string, id: string, callerUser?: any): Promise<{ success: boolean; error?: string }> {
   if (!id) return { success: false, error: 'شناسه الزامی است.' };
+
+  // Always update server memory & file cache
+  const memCol = getMemoryCollection(collection);
+  memCol.delete(id);
+  saveCollectionToFile(collection, Array.from(memCol.values()));
 
   // 1. If MySQL is configured, execute via MySQL Repository
   if (isMysqlConfigured) {
@@ -391,7 +450,6 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
       return { success: true };
     } catch (err: any) {
       console.error(`Server delete error for ${collection}:`, err?.message || err);
-      return { success: false, error: err?.message };
     }
   }
 
@@ -413,42 +471,48 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
     }
   }
 
-  if (!isServerSupabaseConfigured) return [];
+  // 2. If Supabase is configured
+  if (isServerSupabaseConfigured) {
+    try {
+      const dedicatedTable = COLLECTION_TABLE_MAP[collection];
 
-  try {
-    const dedicatedTable = COLLECTION_TABLE_MAP[collection];
+      // Query from dedicated table if available
+      if (dedicatedTable) {
+        const { data, error } = await serverSupabase
+          .from(dedicatedTable)
+          .select('*');
 
-    // Query from dedicated table if available
-    if (dedicatedTable) {
+        if (!error && data && data.length > 0) {
+          return data.map((item: any) => {
+            if (item.data && typeof item.data === 'object') {
+              return { ...item.data, id: item.id };
+            }
+            return item;
+          });
+        }
+      }
+
+      // Fallback query to app_collections
       const { data, error } = await serverSupabase
-        .from(dedicatedTable)
-        .select('*');
+        .from('app_collections')
+        .select('id, data')
+        .eq('collection_name', collection);
 
       if (!error && data && data.length > 0) {
-        return data.map((item: any) => {
-          if (item.data && typeof item.data === 'object') {
-            return { ...item.data, id: item.id };
-          }
-          return item;
-        });
+        return (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
       }
+    } catch (err) {
+      console.error(`Query raw collection exception ${collection}:`, err);
     }
-
-    // Fallback query to app_collections
-    const { data, error } = await serverSupabase
-      .from('app_collections')
-      .select('id, data')
-      .eq('collection_name', collection);
-
-    if (error) {
-      return [];
-    }
-
-    return (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
-  } catch (err) {
-    console.error(`Query raw collection exception ${collection}:`, err);
-    return [];
   }
+
+  // 3. Fallback to server memory and disk file cache
+  const memCol = getMemoryCollection(collection);
+  if (memCol.size > 0) {
+    return Array.from(memCol.values());
+  }
+
+  return [];
 }
 
 // Get Single Document from Candidate IDs with Strict Role-Based Filtering

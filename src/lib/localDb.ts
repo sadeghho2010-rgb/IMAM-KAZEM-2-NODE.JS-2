@@ -37,7 +37,9 @@ export async function saveToCloudWithTimeout(
 
       // 1. Primary: Server-Side Data API (Authoritative backend connected to MySQL / Host Database)
       try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+                      localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+                      localStorage.getItem('token') || sessionStorage.getItem('token');
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -569,14 +571,16 @@ class LocalDatabase {
     try {
       let cloudDocs: any[] = [];
 
-      // 1. First try secure Server-Side Dedicated Data API (with 1.8s timeout)
+      // 1. First try secure Server-Side Dedicated Data API (with 2.5s timeout)
       try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+                      localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+                      localStorage.getItem('token') || sessionStorage.getItem('token');
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1800);
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
 
         const apiRes = await fetch(`/api/data/${resolvedCol}`, {
           method: 'GET',
@@ -827,19 +831,19 @@ class LocalDatabase {
 
     // If local items exist, return them immediately and sync in background
     if (localItems && localItems.length > 0) {
-      if (!this.syncedCollections.has(resolvedCol) && isSupabaseConfigured) {
+      if (!this.syncedCollections.has(resolvedCol)) {
         // Sync asynchronously without blocking local data rendering
         this.syncCollectionFromCloud(resolvedCol).catch(() => {});
       }
       return localItems;
     }
 
-    // If local items are empty, try cloud sync with a quick 800ms timeout race so UI never hangs
-    if (!this.syncedCollections.has(resolvedCol) && isSupabaseConfigured) {
+    // If local items are empty, try cloud sync with a quick 1200ms timeout race so UI never hangs
+    if (!this.syncedCollections.has(resolvedCol)) {
       try {
         const cloudDocs = await Promise.race([
           this.syncCollectionFromCloud(resolvedCol),
-          new Promise<any[]>((res) => setTimeout(() => res([]), 800))
+          new Promise<any[]>((res) => setTimeout(() => res([]), 1200))
         ]);
         if (cloudDocs && cloudDocs.length > 0) {
           return cloudDocs as T[];
@@ -2889,7 +2893,7 @@ class LocalDatabase {
 
 export const localDb = new LocalDatabase();
 
-if (typeof window !== 'undefined' && isSupabaseConfigured) {
+if (typeof window !== 'undefined') {
   setTimeout(() => {
     localDb.setupRealtimeSync();
     localDb.initCloudSync();

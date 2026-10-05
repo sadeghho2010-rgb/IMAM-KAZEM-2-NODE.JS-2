@@ -53,10 +53,39 @@ export interface AuditLogEntity {
 }
 
 // Check if MySQL connection credentials are provided
+export function parseMysqlConfig() {
+  const env = process.env;
+  let host = env.MYSQL_HOST || env.MYSQLHOST || env.DB_HOST || env.DB_HOSTNAME || '';
+  let port = Number(env.MYSQL_PORT || env.MYSQLPORT || env.DB_PORT) || 3306;
+  let user = env.MYSQL_USER || env.MYSQLUSER || env.DB_USER || env.DB_USERNAME || 'root';
+  let password = env.MYSQL_PASSWORD || env.MYSQLPASSWORD || env.DB_PASSWORD || env.DB_PASS || '';
+  let database = env.MYSQL_DATABASE || env.MYSQLDATABASE || env.DB_DATABASE || env.DB_NAME || '';
+
+  const connectionUrl = env.DATABASE_URL || env.MYSQL_URL || '';
+  if (connectionUrl && (connectionUrl.startsWith('mysql://') || connectionUrl.startsWith('mysql2://'))) {
+    try {
+      const parsed = new URL(connectionUrl);
+      host = parsed.hostname || host;
+      port = Number(parsed.port) || port;
+      user = decodeURIComponent(parsed.username || user);
+      password = decodeURIComponent(parsed.password || password);
+      database = parsed.pathname ? parsed.pathname.replace(/^\//, '') : database;
+    } catch (e) {}
+  }
+
+  const isConfigured = Boolean(host && database);
+  return { isConfigured, host: host || '127.0.0.1', port, user, password, database: database || 'madrasah_db' };
+}
+
 export const isMysqlConfigured = Boolean(
   process.env.MYSQL_HOST ||
+  process.env.MYSQLHOST ||
   process.env.MYSQL_DATABASE ||
-  (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql'))
+  process.env.MYSQLDATABASE ||
+  process.env.DB_HOST ||
+  process.env.DB_DATABASE ||
+  (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('mysql://') || process.env.DATABASE_URL.startsWith('mysql2://'))) ||
+  (process.env.MYSQL_URL && (process.env.MYSQL_URL.startsWith('mysql://') || process.env.MYSQL_URL.startsWith('mysql2://')))
 );
 
 let pool: mysql.Pool | null = null;
@@ -68,7 +97,75 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
   if (hasEnsuredIndexes) return;
   hasEnsuredIndexes = true;
 
-  // فقط ایندکس‌هایی که هم جدول فیزیکی دارند و هم کوئری واقعی در سورس‌کد به آن‌ها متصل است
+  try {
+    // 1. Ensure core tables exist
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`app_collections\` (
+        \`collection_name\` VARCHAR(100) NOT NULL,
+        \`id\` VARCHAR(150) NOT NULL,
+        \`data\` JSON NOT NULL,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`collection_name\`, \`id\`),
+        INDEX \`idx_col_name\` (\`collection_name\`),
+        INDEX \`idx_col_updated\` (\`updated_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`system_users\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`username\` VARCHAR(100) NOT NULL,
+        \`password_hash\` VARCHAR(255) NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`role\` VARCHAR(50) NOT NULL,
+        \`role_title\` VARCHAR(100) NULL,
+        \`level\` INT NOT NULL DEFAULT 3,
+        \`grade_label\` VARCHAR(100) NULL,
+        \`mentor_id\` VARCHAR(100) NULL,
+        \`student_id\` VARCHAR(100) NULL,
+        \`linked_student_id\` VARCHAR(100) NULL,
+        \`avatar_bg\` VARCHAR(50) NULL,
+        \`allowed_tabs\` JSON NULL,
+        \`editable_tabs\` JSON NULL,
+        \`module_permissions\` JSON NULL,
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
+        \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
+        \`account_locked_until\` DATETIME NULL,
+        \`last_login\` DATETIME NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uk_username\` (\`username\`),
+        INDEX \`idx_users_role_level\` (\`role\`, \`level\`),
+        INDEX \`idx_users_active\` (\`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`audit_logs\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`user_id\` VARCHAR(100) NULL,
+        \`username\` VARCHAR(100) NULL,
+        \`user_role\` VARCHAR(50) NULL,
+        \`action\` VARCHAR(100) NOT NULL,
+        \`entity_type\` VARCHAR(100) NULL,
+        \`entity_id\` VARCHAR(100) NULL,
+        \`description\` TEXT NOT NULL,
+        \`ip_address\` VARCHAR(50) NULL,
+        \`user_agent\` TEXT NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_audit_user\` (\`user_id\`, \`username\`),
+        INDEX \`idx_audit_action\` (\`action\`),
+        INDEX \`idx_audit_created\` (\`created_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (schemaErr: any) {
+    console.warn('[MySQL Schema Bootstrap Notice]:', schemaErr?.message || schemaErr);
+  }
+
   const indexes = [
     { table: 'app_collections', name: 'idx_col_name_updated', cols: '`collection_name`, `updated_at`' }
   ];
@@ -102,18 +199,14 @@ export function getMysqlPool(): mysql.Pool | null {
   if (!isMysqlConfigured) return null;
   if (!pool) {
     try {
-      const host = process.env.MYSQL_HOST || '127.0.0.1';
-      const port = Number(process.env.MYSQL_PORT) || 3306;
-      const user = process.env.MYSQL_USER || 'root';
-      const password = process.env.MYSQL_PASSWORD || '';
-      const database = process.env.MYSQL_DATABASE || 'madrasah_db';
+      const conf = parseMysqlConfig();
 
       pool = mysql.createPool({
-        host,
-        port,
-        user,
-        password,
-        database,
+        host: conf.host,
+        port: conf.port,
+        user: conf.user,
+        password: conf.password,
+        database: conf.database,
         waitForConnections: true,
         connectionLimit: 5,
         queueLimit: 50,
@@ -121,7 +214,7 @@ export function getMysqlPool(): mysql.Pool | null {
         timezone: '+03:30' // Iran Standard Time
       });
 
-      console.log(`[MySQL Engine] Connection pool initialized for database: ${database}@${host}:${port}`);
+      console.log(`[MySQL Engine] Connection pool initialized for database: ${conf.database}@${conf.host}:${conf.port}`);
       ensurePerformanceIndexes(pool).catch(() => {});
     } catch (err) {
       console.error('[MySQL Engine] Pool initialization error:', err);
@@ -336,10 +429,42 @@ export const MysqlRepository = {
     const pool = getMysqlPool();
     if (!pool) return;
 
-    await pool.execute(
-      `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
-      [collectionName, id]
-    );
+    try {
+      await pool.execute(
+        `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
+        [collectionName, id]
+      );
+    } catch (e) {
+      console.warn('[MySQL Delete App Collection Error]:', e);
+    }
+
+    if (collectionName === 'system_users') {
+      try {
+        await pool.execute(
+          `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
+          [id, id]
+        );
+      } catch (e) {}
+    }
+  },
+
+  // 6b. Delete User
+  async deleteUser(userIdOrUsername: string): Promise<void> {
+    const pool = getMysqlPool();
+    if (!pool) return;
+
+    try {
+      await pool.execute(
+        `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
+        [userIdOrUsername, userIdOrUsername]
+      );
+      await pool.execute(
+        `DELETE FROM app_collections WHERE collection_name = 'system_users' AND (id = ? OR UPPER(id) = UPPER(?))`,
+        [userIdOrUsername, userIdOrUsername]
+      );
+    } catch (e) {
+      console.warn('[MySQL deleteUser Error]:', e);
+    }
   },
 
   // 7. Get Single Document by Primary Key

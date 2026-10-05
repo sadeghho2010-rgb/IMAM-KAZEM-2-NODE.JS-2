@@ -935,7 +935,7 @@ export async function deleteUserFromStorage(userIdOrUsername: string): Promise<v
 
   if (isMysqlConfigured) {
     try {
-      await MysqlRepository.deleteDocument('system_users', clean);
+      await MysqlRepository.deleteUser(clean);
     } catch (e) {}
   }
 

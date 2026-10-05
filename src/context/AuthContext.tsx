@@ -1369,7 +1369,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ targetUserId: id })
+      body: JSON.stringify({ targetUserId: id, userId: id, username: usernameToDelete })
     }).catch(() => {});
   };
 
@@ -1386,16 +1386,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleUserActive = (id: string) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
-        const updated = { ...u, isActive: u.isActive === false ? true : false };
-        if (currentUser && currentUser.username.toUpperCase() === u.username.toUpperCase()) {
-          setCurrentUser(updated);
+    let targetUpdated: AppUser | undefined;
+    setUsers(prev => {
+      const updatedList = prev.map(u => {
+        if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
+          const updated = { ...u, isActive: u.isActive === false ? true : false, updatedAt: new Date().toISOString() };
+          targetUpdated = updated;
+          if (currentUser && currentUser.username.toUpperCase() === u.username.toUpperCase()) {
+            setCurrentUser(updated);
+            try { localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updated)); } catch (e) {}
+          }
+          return updated;
         }
-        return updated;
-      }
-      return u;
-    }));
+        return u;
+      });
+      try { localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
+    });
+
+    if (targetUpdated) {
+      updateUser(id, { isActive: targetUpdated.isActive });
+    }
   };
 
   /**
