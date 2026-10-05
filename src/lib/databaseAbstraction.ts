@@ -15,6 +15,23 @@ import { logSlowQuery, logServerError } from './systemHealthMonitor';
 
 dotenv.config();
 
+export function sanitizeRecordForDb(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(sanitizeRecordForDb);
+  
+  const copy: any = {};
+  for (const key of Object.keys(data)) {
+    const val = data[key];
+    if (val === undefined) continue;
+    if (typeof val === 'string' && val.startsWith('data:image/') && val.length > 500000) {
+      copy[key] = val.substring(0, 100) + '...[photo_truncated]';
+      continue;
+    }
+    copy[key] = val;
+  }
+  return copy;
+}
+
 export interface SystemUserEntity {
   id: string;
   username: string;
@@ -97,8 +114,8 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
   if (hasEnsuredIndexes) return;
   hasEnsuredIndexes = true;
 
+  // 1. Ensure app_collections table exists
   try {
-    // 1. Ensure core tables exist
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`app_collections\` (
         \`collection_name\` VARCHAR(100) NOT NULL,
@@ -109,54 +126,61 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         INDEX \`idx_collection_updated\` (\`collection_name\`, \`updated_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - app_collections]:', e?.message || e);
+  }
 
-    try {
-      await mysqlPool.query(`
-        CREATE TABLE IF NOT EXISTS \`system_users\` (
-          \`id\` VARCHAR(100) NOT NULL,
-          \`username\` VARCHAR(100) NOT NULL,
-          \`password_hash\` VARCHAR(255) NULL,
-          \`name\` VARCHAR(255) NOT NULL,
-          \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
-          \`role_title\` VARCHAR(100) NULL,
-          \`avatar_url\` VARCHAR(500) NULL,
-          \`level\` INT NOT NULL DEFAULT 3,
-          \`grade_label\` VARCHAR(100) NULL,
-          \`mentor_id\` VARCHAR(100) NULL,
-          \`student_id\` VARCHAR(100) NULL,
-          \`linked_student_id\` VARCHAR(100) NULL,
-          \`avatar_bg\` VARCHAR(50) NULL,
-          \`allowed_tabs\` JSON NULL,
-          \`editable_tabs\` JSON NULL,
-          \`module_permissions\` JSON NULL,
-          \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
-          \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
-          \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
-          \`account_locked_until\` DATETIME NULL,
-          \`last_login\` DATETIME NULL,
-          \`data\` JSON NULL,
-          \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          PRIMARY KEY (\`id\`),
-          UNIQUE KEY \`uk_username\` (\`username\`),
-          INDEX \`idx_users_role_level\` (\`role\`, \`level\`),
-          INDEX \`idx_users_active\` (\`is_active\`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-      `);
-    } catch (e) {}
+  // 2. Ensure system_users table exists
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`system_users\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`username\` VARCHAR(100) NOT NULL,
+        \`password_hash\` VARCHAR(255) NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
+        \`role_title\` VARCHAR(100) NULL,
+        \`avatar_url\` VARCHAR(500) NULL,
+        \`level\` INT NOT NULL DEFAULT 3,
+        \`grade_label\` VARCHAR(100) NULL,
+        \`mentor_id\` VARCHAR(100) NULL,
+        \`student_id\` VARCHAR(100) NULL,
+        \`linked_student_id\` VARCHAR(100) NULL,
+        \`avatar_bg\` VARCHAR(50) NULL,
+        \`allowed_tabs\` JSON NULL,
+        \`editable_tabs\` JSON NULL,
+        \`module_permissions\` JSON NULL,
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
+        \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
+        \`account_locked_until\` DATETIME NULL,
+        \`last_login\` DATETIME NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uk_username\` (\`username\`),
+        INDEX \`idx_users_role_level\` (\`role\`, \`level\`),
+        INDEX \`idx_users_active\` (\`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - system_users]:', e?.message || e);
+  }
 
-    // Ensure system_users columns exist on existing table
-    try {
-      await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS role_title VARCHAR(100) NULL`);
-    } catch (e: any) {
-      try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN role_title VARCHAR(100) NULL`); } catch (err) {}
-    }
-    try {
-      await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
-    } catch (e: any) {
-      try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
-    }
+  try {
+    await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS role_title VARCHAR(100) NULL`);
+  } catch (e: any) {
+    try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN role_title VARCHAR(100) NULL`); } catch (err) {}
+  }
+  try {
+    await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
+  } catch (e: any) {
+    try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
+  }
 
+  // 3. Ensure students table exists
+  try {
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`students\` (
         \`id\` VARCHAR(100) NOT NULL,
@@ -181,6 +205,28 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         INDEX \`idx_student_status\` (\`status\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - students]:', e?.message || e);
+  }
+
+  // 4. Ensure classrooms table exists
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`classrooms\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`title\` VARCHAR(200) NOT NULL,
+        \`grade\` VARCHAR(100) NULL,
+        \`capacity\` INT NOT NULL DEFAULT 20,
+        \`location\` VARCHAR(255) NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - classrooms]:', e?.message || e);
+  }
 
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`teachers\` (
@@ -284,49 +330,54 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS \`audit_logs\` (
-        \`id\` VARCHAR(100) NOT NULL,
-        \`user_id\` VARCHAR(100) NULL,
-        \`username\` VARCHAR(100) NULL,
-        \`user_role\` VARCHAR(50) NULL,
-        \`action\` VARCHAR(100) NOT NULL,
-        \`entity_type\` VARCHAR(100) NULL,
-        \`entity_id\` VARCHAR(100) NULL,
-        \`description\` TEXT NOT NULL,
-        \`ip_address\` VARCHAR(50) NULL,
-        \`user_agent\` TEXT NULL,
-        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`id\`),
-        INDEX \`idx_audit_user\` (\`user_id\`, \`username\`),
-        INDEX \`idx_audit_action\` (\`action\`),
-        INDEX \`idx_audit_created\` (\`created_at\`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
+    try {
+      await mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS \`audit_logs\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`user_id\` VARCHAR(100) NULL,
+          \`username\` VARCHAR(100) NULL,
+          \`user_role\` VARCHAR(50) NULL,
+          \`action\` VARCHAR(100) NOT NULL,
+          \`entity_type\` VARCHAR(100) NULL,
+          \`entity_id\` VARCHAR(100) NULL,
+          \`description\` TEXT NOT NULL,
+          \`ip_address\` VARCHAR(50) NULL,
+          \`user_agent\` TEXT NULL,
+          \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`id\`),
+          INDEX \`idx_audit_user\` (\`user_id\`, \`username\`),
+          INDEX \`idx_audit_action\` (\`action\`),
+          INDEX \`idx_audit_created\` (\`created_at\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+    } catch (e: any) {
+      console.warn('[MySQL Schema Notice - audit_logs]:', e?.message || e);
+    }
 
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS \`audit_chain_logs\` (
-        \`id\` VARCHAR(100) NOT NULL,
-        \`sequence\` BIGINT NOT NULL AUTO_INCREMENT,
-        \`prev_hash\` VARCHAR(255) NOT NULL,
-        \`hash\` VARCHAR(255) NOT NULL,
-        \`action\` VARCHAR(100) NOT NULL,
-        \`user_id\` VARCHAR(100) NULL,
-        \`username\` VARCHAR(100) NULL,
-        \`details\` JSON NULL,
-        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (\`sequence\`),
-        UNIQUE KEY \`uk_chain_id\` (\`id\`),
-        INDEX \`idx_chain_hash\` (\`hash\`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-  } catch (schemaErr: any) {
-    console.warn('[MySQL Schema Bootstrap Notice]:', schemaErr?.message || schemaErr);
-  }
+    try {
+      await mysqlPool.query(`
+        CREATE TABLE IF NOT EXISTS \`audit_chain_logs\` (
+          \`id\` VARCHAR(100) NOT NULL,
+          \`sequence\` BIGINT NOT NULL AUTO_INCREMENT,
+          \`prev_hash\` VARCHAR(255) NOT NULL,
+          \`hash\` VARCHAR(255) NOT NULL,
+          \`action\` VARCHAR(100) NOT NULL,
+          \`user_id\` VARCHAR(100) NULL,
+          \`username\` VARCHAR(100) NULL,
+          \`details\` JSON NULL,
+          \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (\`sequence\`),
+          UNIQUE KEY \`uk_chain_id\` (\`id\`),
+          INDEX \`idx_chain_hash\` (\`hash\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+    } catch (e: any) {
+      console.warn('[MySQL Schema Notice - audit_chain_logs]:', e?.message || e);
+    }
 
-  const indexes = [
-    { table: 'app_collections', name: 'idx_col_name_updated', cols: '`collection_name`, `updated_at`' }
-  ];
+    const indexes = [
+      { table: 'app_collections', name: 'idx_col_name_updated', cols: '`collection_name`, `updated_at`' }
+    ];
 
   for (const idx of indexes) {
     const label = `${idx.table}.${idx.name}`;
@@ -571,17 +622,88 @@ export const MysqlRepository = {
   async saveDocument(collectionName: string, id: string, data: any): Promise<void> {
     const pool = getMysqlPool();
     if (!pool) {
-      throw new Error('MySQL connection pool is not configured or unavailable.');
+      throw new Error('پایگاه داده MySQL پیکربندی نشده یا در دسترس نیست.');
     }
+
+    const cleanData = sanitizeRecordForDb(data);
+    const jsonStr = JSON.stringify(cleanData);
 
     const sql = `
       INSERT INTO app_collections (collection_name, id, data, updated_at)
       VALUES (?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
-        data = VALUES(data),
+        data = ?,
         updated_at = NOW();
     `;
-    await pool.execute(sql, [collectionName, id, JSON.stringify(data)]);
+    await pool.execute(sql, [collectionName, id, jsonStr, jsonStr]);
+  },
+
+  // 5b. Save Document to Dedicated Table if it exists
+  async saveToDedicatedTable(tableName: string, row: any): Promise<void> {
+    const pool = getMysqlPool();
+    if (!pool || !row || !row.id) return;
+
+    try {
+      if (tableName === 'students') {
+        const sql = `
+          INSERT INTO students (id, student_code, national_id, name, father_name, grade, phone, address, status, is_active, entry_year, mentor_id, notes, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_code = VALUES(student_code),
+            national_id = VALUES(national_id),
+            name = VALUES(name),
+            father_name = VALUES(father_name),
+            grade = VALUES(grade),
+            phone = VALUES(phone),
+            address = VALUES(address),
+            status = VALUES(status),
+            is_active = VALUES(is_active),
+            entry_year = VALUES(entry_year),
+            mentor_id = VALUES(mentor_id),
+            notes = VALUES(notes),
+            data = VALUES(data),
+            updated_at = NOW();
+        `;
+        await pool.execute(sql, [
+          row.id,
+          row.student_code || null,
+          row.national_id || null,
+          row.name || 'نامشخص',
+          row.father_name || null,
+          row.grade || 'نامشخص',
+          row.phone || null,
+          row.address || null,
+          row.status || 'active',
+          row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1,
+          row.entry_year || null,
+          row.mentor_id || null,
+          row.notes || null,
+          JSON.stringify(row.data || {})
+        ]);
+      } else if (tableName === 'classrooms') {
+        const sql = `
+          INSERT INTO classrooms (id, title, grade, capacity, location, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            title = VALUES(title),
+            grade = VALUES(grade),
+            capacity = VALUES(capacity),
+            location = VALUES(location),
+            data = VALUES(data),
+            updated_at = NOW();
+        `;
+        await pool.execute(sql, [
+          row.id,
+          row.title || 'کلاس بدون عنوان',
+          row.grade || null,
+          Number(row.capacity) || 20,
+          row.location || null,
+          JSON.stringify(row.data || {})
+        ]);
+      }
+    } catch (e: any) {
+      console.warn(`[MySQL Dedicated Table Notice] ${tableName}:`, e?.message || e);
+    }
   },
 
   // 6. Delete Document

@@ -2990,6 +2990,9 @@ class LocalDatabase {
       'user_todo_categories',
       'workflow_items',
       'workflow_settings',
+      'student_requests',
+      'global_requests_config',
+      'unit_request_settings',
       'settings'
     ];
     try {

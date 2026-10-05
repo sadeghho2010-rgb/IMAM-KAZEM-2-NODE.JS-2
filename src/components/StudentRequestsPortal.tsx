@@ -186,6 +186,24 @@ export default function StudentRequestsPortal() {
 
   useEffect(() => {
     loadData();
+
+    // Real-time synchronization subscription
+    const unsubscribe = localDb.subscribe(() => {
+      loadData();
+    });
+
+    const handleReqUpdate = () => {
+      loadData();
+    };
+
+    window.addEventListener('student_requests_updated', handleReqUpdate);
+    window.addEventListener('app_data_change', handleReqUpdate);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('student_requests_updated', handleReqUpdate);
+      window.removeEventListener('app_data_change', handleReqUpdate);
+    };
   }, []);
 
   const triggerUpdateEvent = () => {
@@ -390,6 +408,9 @@ export default function StudentRequestsPortal() {
       return;
     }
 
+    const unitTitle = selectedRequestForReview.unit === 'education' ? 'واحد آموزش' : selectedRequestForReview.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی و رفاهی';
+    const replierTitle = currentUser?.roleTitle || currentUser?.name || unitTitle;
+
     setIsReplying(true);
     const updated: StudentRequest = {
       ...selectedRequestForReview,
@@ -398,7 +419,7 @@ export default function StudentRequestsPortal() {
       officialReply: officialReply.trim() || selectedRequestForReview.officialReply,
       rejectionReason: finalStatus === 'rejected' ? (rejectionReason.trim() || officialReply.trim()) : undefined,
       repliedBy: currentUser?.id,
-      repliedByName: currentUser?.name || currentUser?.roleTitle,
+      repliedByName: replierTitle,
       repliedAt: new Date().toISOString(),
       isReadByOfficer: true,
       isReadByStudent: false, // Student sees glowing badge
@@ -421,12 +442,21 @@ export default function StudentRequestsPortal() {
 
   // Quick Action directly from card (تیک انجام شد، در حال بررسی، رد درخواست)
   const handleQuickStatusChange = async (req: StudentRequest, newStatus: StudentRequestStatus) => {
+    const unitTitle = req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی و رفاهی';
+    const replierTitle = currentUser?.roleTitle || currentUser?.name || unitTitle;
+    const defaultNote = newStatus === 'resolved' 
+      ? 'درخواست شما بررسی و با موفقیت انجام شد.' 
+      : newStatus === 'in_progress' 
+      ? 'درخواست شما در دست پیگیری و اقدام است.' 
+      : 'درخواست مورد بررسی قرار گرفت اما مورد تأیید واقع نشد.';
+
     const updated: StudentRequest = {
       ...req,
       status: newStatus,
       statusTitle: newStatus === 'resolved' ? 'تکمیل و انجام شد' : newStatus === 'rejected' ? 'رد درخواست' : 'در حال بررسی',
+      officialReply: req.officialReply || defaultNote,
       repliedBy: currentUser?.id,
-      repliedByName: currentUser?.name || currentUser?.roleTitle,
+      repliedByName: replierTitle,
       repliedAt: new Date().toISOString(),
       isReadByOfficer: true,
       isReadByStudent: false,
@@ -457,8 +487,17 @@ export default function StudentRequestsPortal() {
   const filteredRequests = requests.filter(r => {
     if (isStudentUser) {
       // Student only sees their own requests
-      const isMine = r.studentId === (currentUser.studentId || currentUser.id) || 
-                     r.studentName === (currentUser.studentName || currentUser.name);
+      const myId = String(currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '').trim();
+      const myUsername = String(currentUser?.username || '').trim().toUpperCase();
+      const myName = String(currentUser?.name || currentUser?.studentName || currentUser?.fullName || '').trim();
+
+      const reqStudentId = String(r.studentId || (r as any).student_id || '').trim();
+      const reqNat = String(r.nationalCode || (r as any).national_id || '').trim().toUpperCase();
+      const reqName = String(r.studentName || (r as any).student_name || '').trim();
+
+      const isMine = (myId && reqStudentId === myId) ||
+                     (myUsername && (reqNat === myUsername || reqStudentId === myUsername)) ||
+                     (myName && reqName === myName);
       if (!isMine) return false;
     } else {
       // Officer sees requests matching active unit tab (or all for super admin)
@@ -928,31 +967,33 @@ export default function StudentRequestsPortal() {
                 </div>
 
                 {/* Official Officer Reply */}
-                {req.officialReply && (
-                  <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-emerald-900 font-bold text-[11px]">
-                      <span className="flex items-center gap-1.5">
-                        <MessageSquare size={14} className="text-emerald-700" />
-                        پاسخ و توضیحات رسمی مسئول ({req.repliedByName || 'مسئول واحد'}):
+                {(req.officialReply || (req as any).replyText || (req as any).adminNotes || (req as any).notes || (req as any).response) && (
+                  <div className="p-4 bg-emerald-50/95 border-2 border-emerald-300 rounded-2xl text-xs space-y-2 shadow-xs">
+                    <div className="flex items-center justify-between text-emerald-950 font-black text-xs border-b border-emerald-200 pb-2">
+                      <span className="flex items-center gap-2">
+                        <MessageSquare size={16} className="text-emerald-700 shrink-0" />
+                        <span>پاسخ و توضیحات رسمی {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
                       </span>
                       {req.repliedAt && (
-                        <span className="font-mono text-[10px] text-emerald-700">
+                        <span className="font-mono text-[11px] text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded-md font-bold">
                           {new Date(req.repliedAt).toLocaleDateString('fa-IR')}
                         </span>
                       )}
                     </div>
-                    <p className="text-emerald-900 leading-relaxed font-medium">{req.officialReply}</p>
+                    <p className="text-emerald-950 leading-relaxed font-bold text-xs whitespace-pre-line">
+                      {req.officialReply || (req as any).replyText || (req as any).adminNotes || (req as any).notes || (req as any).response}
+                    </p>
                   </div>
                 )}
 
                 {/* Rejection Note */}
-                {req.rejectionReason && (
-                  <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs space-y-1">
-                    <span className="text-rose-900 font-bold text-[11px] flex items-center gap-1">
-                      <XCircle size={13} className="text-rose-600" />
-                      علت عدم تأیید و رد درخواست:
+                {req.rejectionReason && req.rejectionReason !== req.officialReply && (
+                  <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl text-xs space-y-2 shadow-xs">
+                    <span className="text-rose-950 font-black text-xs flex items-center gap-1.5 border-b border-rose-200 pb-2">
+                      <XCircle size={16} className="text-rose-600 shrink-0" />
+                      <span>علت عدم تأیید و رد درخواست توسط {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
                     </span>
-                    <p className="text-rose-800 font-medium">{req.rejectionReason}</p>
+                    <p className="text-rose-900 font-bold leading-relaxed whitespace-pre-line">{req.rejectionReason}</p>
                   </div>
                 )}
 

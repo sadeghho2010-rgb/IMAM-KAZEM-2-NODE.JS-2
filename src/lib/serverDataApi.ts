@@ -48,6 +48,9 @@ export const COLLECTION_TABLE_MAP: Record<string, string> = {
   user_todo_categories: 'user_todo_categories',
   course_selection_periods: 'course_selection_periods',
   course_selection_requests: 'course_selection_requests',
+  student_requests: 'student_requests',
+  global_requests_config: 'global_requests_config',
+  unit_request_settings: 'unit_request_settings',
   student_lockers: 'student_lockers',
   lockers: 'student_lockers',
   audit_logs: 'audit_logs'
@@ -365,6 +368,15 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.history = Array.isArray(data.history) ? data.history : [];
       break;
 
+    case 'student_requests':
+      row.student_id = data.studentId || data.student_id || 'unknown';
+      row.student_name = data.studentName || data.student_name || null;
+      row.title = data.title || 'درخواست بدون عنوان';
+      row.category = data.category || 'educational';
+      row.status = data.status || 'pending';
+      row.description = data.description || null;
+      break;
+
     default:
       break;
   }
@@ -373,15 +385,47 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
 }
 
 // Server CRUD Handler: Save Document (Dedicated Table + App Collections Mirror)
-export async function serverSaveDoc(collection: string, data: any, callerUser?: any): Promise<{ success: boolean; id: string; error?: string }> {
-  if (!data) return { success: false, id: '', error: 'داده‌های ارسالی نامعتبر است.' };
-  const id = String(data.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
-  const record = { ...data, id };
+export async function serverSaveDoc(
+  collection: string,
+  idOrData: any,
+  dataOrCallerUser?: any
+): Promise<{ success: boolean; id: string; error?: string }> {
+  if (!idOrData) return { success: false, id: '', error: 'داده‌های ارسالی نامعتبر است.' };
+
+  let record: any;
+  let callerUser: any = null;
+
+  if (typeof idOrData === 'string') {
+    // Format: serverSaveDoc(collection, id, record)
+    const recordId = idOrData;
+    if (dataOrCallerUser && typeof dataOrCallerUser === 'object') {
+      record = { ...dataOrCallerUser, id: recordId };
+    } else {
+      record = { id: recordId };
+    }
+  } else {
+    // Format: serverSaveDoc(collection, data, callerUser)
+    record = { ...idOrData };
+    callerUser = dataOrCallerUser;
+  }
+
+  const id = String(record.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+  record.id = id;
 
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
+      // Primary: Save to app_collections JSON master
       await MysqlRepository.saveDocument(collection, id, record);
+
+      // Secondary: Try saving to dedicated SQL table if mapped (e.g., students, classrooms)
+      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
+      if (dedicatedTable) {
+        try {
+          await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
+        } catch (dErr) {}
+      }
+
       notifyRealtimeChange(collection, id, 'upsert');
       return { success: true, id };
     } catch (mErr: any) {
@@ -391,7 +435,7 @@ export async function serverSaveDoc(collection: string, data: any, callerUser?: 
       return {
         success: false,
         id: '',
-        error: 'خطا در ذخیره‌سازی. لطفاً با مدیر سیستم تماس بگیرید.'
+        error: `خطا در ذخیره‌سازی در دیتابیس: ${mErr?.message || 'مشکل پایگاه داده'}`
       };
     }
   }
@@ -664,6 +708,27 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     if (user.role === 'student' || user.level === 3) {
       const uId = user.studentId || user.id;
       return doc.studentId === uId || doc.student_id === uId;
+    }
+  }
+
+  // 7. Student Requests (Students see their own requests; Officers & Admins see all/unit requests)
+  if (collection === 'student_requests') {
+    if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager' ||
+        user.role === 'education_manager' || user.role === 'education_officer' ||
+        user.role === 'finance_manager' || user.role === 'financial_officer' ||
+        user.role === 'cultural_officer' || user.role === 'grade_mentor') {
+      return true;
+    }
+    if (user.role === 'student' || user.level === 3) {
+      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uName = String(user.name || user.fullName || '').trim();
+      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
+      const docNat = String(doc.nationalCode || doc.national_id || '').trim().toUpperCase();
+      const docName = String(doc.studentName || doc.student_name || '').trim();
+      return (uStudentId && docStudentId === uStudentId) ||
+             (uUsername && (docNat === uUsername || docStudentId === uUsername)) ||
+             (uName && docName === uName);
     }
   }
 
