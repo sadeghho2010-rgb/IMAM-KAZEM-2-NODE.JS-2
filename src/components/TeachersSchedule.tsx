@@ -280,7 +280,7 @@ export default function TeachersSchedule() {
   };
 
   // Confirm Account Creation
-  const handleConfirmCreateAccount = () => {
+  const handleConfirmCreateAccount = async () => {
     if (!accountTargetTeacher) return;
     const cleanUser = formUsername.trim().toUpperCase();
     const cleanPass = formPassword.trim() || '8411924';
@@ -298,7 +298,7 @@ export default function TeachersSchedule() {
 
     const teacherName = accountTargetTeacher.fullName || accountTargetTeacher.name || cleanUser;
 
-    const res = addUser({
+    const res = await addUser({
       username: cleanUser,
       password: cleanPass,
       name: teacherName,

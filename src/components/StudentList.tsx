@@ -103,7 +103,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     });
   };
 
-  const handleSaveCredentials = (e: React.FormEvent) => {
+  const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentForCredentials) return;
 
@@ -163,7 +163,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         return;
       }
 
-      const result = addUser({
+      const result = await addUser({
         username: cleanUsername,
         password: credPassword.trim(),
         name: selectedStudentForCredentials.name,

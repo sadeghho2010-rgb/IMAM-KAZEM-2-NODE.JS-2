@@ -26,28 +26,10 @@ export function subscribeDatabaseToast(listener: ToastListener): () => void {
 
 export function dispatchDatabaseErrorToast(
   message = 'فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.',
+  type: 'error' | 'warning' | 'success' | 'info' = 'error',
   duration = 6000
 ) {
-  if (toastTimeout) {
-    clearTimeout(toastTimeout);
-    toastTimeout = null;
-  }
-
-  const toast: DatabaseToastState = {
-    id: `db_toast_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    type: 'error',
-    message,
-    duration
-  };
-
-  currentToast = toast;
-  listeners.forEach(l => l(currentToast));
-
-  if (duration > 0) {
-    toastTimeout = setTimeout(() => {
-      dismissDatabaseToast();
-    }, duration);
-  }
+  dispatchDatabaseToast(message, type, duration);
 }
 
 export function dispatchDatabaseToast(

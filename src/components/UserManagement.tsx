@@ -139,7 +139,7 @@ export default function UserManagement() {
     );
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -192,7 +192,7 @@ export default function UserManagement() {
       setEditingUser(null);
     } else {
       // Create
-      const res = addUser({
+      const res = await addUser({
         username: formUsername.trim().toUpperCase(),
         password: formPassword.trim(),
         fullName: formFullName.trim(),

@@ -117,7 +117,7 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         \`username\` VARCHAR(100) NOT NULL,
         \`password_hash\` VARCHAR(255) NULL,
         \`name\` VARCHAR(255) NOT NULL,
-        \`role\` VARCHAR(50) NOT NULL,
+        \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
         \`role_title\` VARCHAR(100) NULL,
         \`level\` INT NOT NULL DEFAULT 3,
         \`grade_label\` VARCHAR(100) NULL,
@@ -144,6 +144,133 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     `);
 
     await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`students\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`student_code\` VARCHAR(50) NULL,
+        \`national_id\` VARCHAR(20) NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`father_name\` VARCHAR(150) NULL,
+        \`grade\` VARCHAR(100) NOT NULL,
+        \`phone\` VARCHAR(50) NULL,
+        \`address\` TEXT NULL,
+        \`status\` VARCHAR(50) NOT NULL DEFAULT 'active',
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`entry_year\` VARCHAR(10) NULL,
+        \`mentor_id\` VARCHAR(100) NULL,
+        \`notes\` TEXT NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_student_national_id\` (\`national_id\`),
+        INDEX \`idx_student_grade\` (\`grade\`),
+        INDEX \`idx_student_status\` (\`status\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`teachers\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`specialty\` VARCHAR(255) NULL,
+        \`phone\` VARCHAR(50) NULL,
+        \`email\` VARCHAR(150) NULL,
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_teacher_active\` (\`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`classrooms\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`title\` VARCHAR(200) NOT NULL,
+        \`grade\` VARCHAR(100) NULL,
+        \`capacity\` INT NOT NULL DEFAULT 20,
+        \`location\` VARCHAR(255) NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`programs\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`title\` VARCHAR(255) NOT NULL,
+        \`grade\` VARCHAR(100) NOT NULL,
+        \`teacher_id\` VARCHAR(100) NULL,
+        \`teacher_name\` VARCHAR(255) NULL,
+        \`classroom_id\` VARCHAR(100) NULL,
+        \`day_of_week\` VARCHAR(50) NULL,
+        \`start_time\` VARCHAR(20) NULL,
+        \`end_time\` VARCHAR(20) NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_programs_grade\` (\`grade\`),
+        INDEX \`idx_programs_teacher\` (\`teacher_id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`enrollments\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`student_id\` VARCHAR(100) NOT NULL,
+        \`program_id\` VARCHAR(100) NOT NULL,
+        \`grade\` VARCHAR(100) NULL,
+        \`status\` VARCHAR(50) NOT NULL DEFAULT 'enrolled',
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_enrollment_program\` (\`program_id\`),
+        INDEX \`idx_enrollment_student\` (\`student_id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`attendance\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`student_id\` VARCHAR(100) NOT NULL,
+        \`date\` VARCHAR(30) NOT NULL,
+        \`program_id\` VARCHAR(100) NULL,
+        \`status\` VARCHAR(30) NOT NULL DEFAULT 'present',
+        \`minutes_late\` INT NOT NULL DEFAULT 0,
+        \`reason\` TEXT NULL,
+        \`recorded_by\` VARCHAR(100) NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_attendance_student_date\` (\`student_id\`, \`date\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`student_requests\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`student_id\` VARCHAR(100) NOT NULL,
+        \`student_name\` VARCHAR(150) NULL,
+        \`title\` VARCHAR(255) NOT NULL,
+        \`category\` VARCHAR(100) NOT NULL DEFAULT 'educational',
+        \`status\` VARCHAR(50) NOT NULL DEFAULT 'pending',
+        \`description\` TEXT NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_request_student\` (\`student_id\`),
+        INDEX \`idx_request_status\` (\`status\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`audit_logs\` (
         \`id\` VARCHAR(100) NOT NULL,
         \`user_id\` VARCHAR(100) NULL,
@@ -160,6 +287,23 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         INDEX \`idx_audit_user\` (\`user_id\`, \`username\`),
         INDEX \`idx_audit_action\` (\`action\`),
         INDEX \`idx_audit_created\` (\`created_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`audit_chain_logs\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`sequence\` BIGINT NOT NULL AUTO_INCREMENT,
+        \`prev_hash\` VARCHAR(255) NOT NULL,
+        \`hash\` VARCHAR(255) NOT NULL,
+        \`action\` VARCHAR(100) NOT NULL,
+        \`user_id\` VARCHAR(100) NULL,
+        \`username\` VARCHAR(100) NULL,
+        \`details\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`sequence\`),
+        UNIQUE KEY \`uk_chain_id\` (\`id\`),
+        INDEX \`idx_chain_hash\` (\`hash\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
   } catch (schemaErr: any) {

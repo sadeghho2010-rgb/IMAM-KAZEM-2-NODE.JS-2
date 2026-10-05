@@ -249,11 +249,11 @@ export default function UserManagementSettings() {
     }));
   };
 
-  const handleSaveCreate = (e: React.FormEvent) => {
+  const handleSaveCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.username.trim() || !formData.name.trim()) return;
 
-    const res = addUser({
+    const res = await addUser({
       username: formData.username.trim().toUpperCase(),
       name: formData.name.trim(),
       password: formData.password.trim(),

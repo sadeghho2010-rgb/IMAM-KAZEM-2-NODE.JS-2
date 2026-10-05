@@ -107,7 +107,7 @@ export default function UserCredentialsSettings() {
   const studentsWithoutAccount = students.filter(s => !getStudentUser(s.id));
 
   // Quick Account Creation logic
-  const handleQuickCreateAccount = (student: Student) => {
+  const handleQuickCreateAccount = async (student: Student) => {
     if (!canModifyCredentials) {
       alert('شما دسترسی ایجاد نام کاربری برای طلاب را ندارید.');
       return;
@@ -136,7 +136,7 @@ export default function UserCredentialsSettings() {
     const confirmMessage = `آیا مایلید کاربری برای «${student.name}» با اطلاعات زیر ایجاد شود؟\n\nنام کاربری: ${usernameProposal} (کد ملی)\nرمز عبور: ${passwordProposal} (شماره تماس)`;
     
     if (window.confirm(confirmMessage)) {
-      const result = addUser({
+      const result = await addUser({
         username: usernameProposal,
         password: passwordProposal,
         name: student.name,
@@ -210,7 +210,7 @@ export default function UserCredentialsSettings() {
     setIsModalOpen(true);
   };
 
-  const handleSaveModal = (e: React.FormEvent) => {
+  const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formUsername.trim() || !formName.trim() || !formPassword.trim()) {
       alert('لطفاً تمامی فیلدهای الزامی را تکمیل کنید.');
@@ -247,7 +247,7 @@ export default function UserCredentialsSettings() {
         return;
       }
 
-      const result = addUser({
+      const result = await addUser({
         username: cleanUsername,
         password: formPassword.trim(),
         name: formName.trim(),

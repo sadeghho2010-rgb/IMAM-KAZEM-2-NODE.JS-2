@@ -613,7 +613,7 @@ interface AuthContextType {
   logoutAllSessions: () => Promise<{ success: boolean; message?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   adminResetPassword: (targetUserId: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
-  addUser: (newUser: Partial<AppUser>) => { success: boolean; error?: string; user?: AppUser };
+  addUser: (newUser: Partial<AppUser>) => Promise<{ success: boolean; error?: string; user?: AppUser }>;
   updateUser: (id: string, updates: Partial<AppUser>) => void;
   deleteUser: (id: string) => void;
   resetDefaultUsers: () => void;
@@ -1072,43 +1072,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
 
-      // Testing Fallback: if master password '8411924' is provided or matches local user
-      const localMatched = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
-      if (localMatched && (cleanPass === '8411924' || cleanPass === localMatched.password)) {
-        console.info('[Auth] Successful client-level fallback login for testing:', cleanUser);
-        setCurrentUser(localMatched);
-        try {
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localMatched));
-          localStorage.setItem('auth_token', 'mock_testing_token_' + Date.now());
-        } catch (e) {}
-        if (localMatched.mentorId) {
-          localStorage.setItem('current_mentor_id', localMatched.mentorId);
-          if (localMatched.role === 'grade_mentor') {
-            localStorage.setItem('shahpoori_active_filter', localMatched.mentorId);
-          }
-        }
-        return { success: true };
-      }
-
       return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
     } catch (apiErr) {
-      console.warn('Backend login connection error, trying local fallback:', apiErr);
-      const localMatched = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
-      if (localMatched && (cleanPass === '8411924' || cleanPass === localMatched.password)) {
-        setCurrentUser(localMatched);
-        try {
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(localMatched));
-          localStorage.setItem('auth_token', 'mock_testing_token_' + Date.now());
-        } catch (e) {}
-        return { success: true };
-      }
       return { 
         success: false, 
         message: 'خطا در ارتباط با سرور احراز هویت. لطفاً اتصال اینترنت خود را بررسی نموده و مجدداً تلاش فرمایید.' 
       };
     }
-
-    return { success: false, message: 'خطای نامشخص در احراز هویت.' };
   };
 
   const logout = () => {
@@ -1175,9 +1145,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addUser = (newUser: Partial<AppUser>): { success: boolean; error?: string; user?: AppUser } => {
+  const addUser = async (newUser: Partial<AppUser>): Promise<{ success: boolean; error?: string; user?: AppUser }> => {
     const username = (newUser.username || '').trim().toUpperCase();
     if (!username) return { success: false, error: 'نام کاربری الزامی است' };
+
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const allowedTabs = newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : ['todos', 'students']);
     const editableTabs = newUser.editableTabs || allowedTabs;
@@ -1217,49 +1191,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: newUser.createdAt || new Date().toISOString(),
     };
 
-    setUsers(prev => {
-      const updated = [...prev.filter(u => u.username.toUpperCase() !== username), user];
-      try {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
-
-    // 1. Direct Firestore write (synchronizes across all devices in real-time)
     try {
-      setDoc(doc(db, 'system_users', username), {
-        ...user,
-        username,
-        updatedAt: new Date().toISOString()
-      }, { merge: true }).catch(err => {
-        console.warn('Firestore user write notice:', err);
+      const response = await fetch('/api/auth/add-user', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ user })
       });
-    } catch (e) {}
 
-    // 2. Direct Server API call
-    fetch('/api/auth/add-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ user })
-    }).catch(() => {});
+      const result = await response.json().catch(() => ({ success: false }));
 
-    return { success: true, user };
+      if (response.status === 401 || response.status === 403) {
+        logout();
+        return { success: false, error: 'نشست کاربری شما منقضی شده است. لطفاً دوباره وارد شوید.' };
+      }
+
+      if (!response.ok || !result.success) {
+        return { success: false, error: result.message || 'خطا در ثبت کاربر در سرور.' };
+      }
+
+      setUsers(prev => {
+        const updated = [...prev.filter(u => u.username.toUpperCase() !== username), user];
+        try {
+          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
+      try {
+        setDoc(doc(db, 'system_users', username), {
+          ...user,
+          username,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(() => {});
+      } catch (e) {}
+
+      return { success: true, user };
+    } catch (e: any) {
+      return { success: false, error: 'خطا در ارتباط با سرور هنگام ثبت کاربر.' };
+    }
   };
 
-  const updateUser = (id: string, updates: Partial<AppUser>) => {
+  const updateUser = async (id: string, updates: Partial<AppUser>) => {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     setUsers(prev => {
       let targetUser: AppUser | undefined;
       const updatedList = prev.map(u => {
         if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
-          // Construct permissions in absolute consistency
           let finalModulePermissions: Record<string, 'none' | 'view' | 'edit'> = {};
           let finalAllowedTabs: string[] = [];
           let finalEditableTabs: string[] = [];
 
           if (updates.modulePermissions && typeof updates.modulePermissions === 'object') {
             finalModulePermissions = { ...updates.modulePermissions };
-            // Ensure any system tabs not in modulePermissions get preserved or set
             ALL_SYSTEM_TABS.forEach(tab => {
               if (!(tab.id in finalModulePermissions)) {
                 const prevPerm = u.modulePermissions?.[tab.id];
@@ -1306,7 +1293,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           targetUser = updated;
 
-          // If updating the currently logged-in user, immediately update currentUser
           if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase() || currentUser.username.toUpperCase() === u.username.toUpperCase())) {
             setCurrentUser(updated);
             try {
@@ -1322,20 +1308,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
       } catch (e) {}
 
-      // Persist to Firestore
-      if (targetUser) {
-        try {
-          setDoc(doc(db, 'system_users', targetUser.username.toUpperCase()), targetUser, { merge: true }).catch(() => {});
-        } catch (e) {}
-      }
-
-      // Persist to backend server API
       if (targetUser) {
         fetch('/api/auth/update-user', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           credentials: 'include',
           body: JSON.stringify({ targetUserId: targetUser.id, updates: targetUser })
+        }).then(res => {
+          if (res.status === 401 || res.status === 403) logout();
         }).catch(err => {
           console.warn('Backend update-user warning:', err);
         });
@@ -1345,7 +1325,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const deleteUser = (id: string) => {
+  const deleteUser = async (id: string) => {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const target = users.find(u => u.id === id || u.username.toUpperCase() === id.toUpperCase());
     const usernameToDelete = target ? target.username.toUpperCase() : id.toUpperCase();
 
@@ -1367,9 +1351,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     fetch('/api/auth/delete-user', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       credentials: 'include',
       body: JSON.stringify({ targetUserId: id, userId: id, username: usernameToDelete })
+    }).then(res => {
+      if (res.status === 401 || res.status === 403) logout();
     }).catch(() => {});
   };
 

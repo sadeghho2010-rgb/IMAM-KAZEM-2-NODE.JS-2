@@ -14,7 +14,7 @@ import { db } from './firebase';
  * For all other users (Level 3 students, teachers, etc.), offline saving is strictly disabled.
  */
 export function isOfflineStorageAllowedForUser(): boolean {
-  return true;
+  return false;
 }
 
 export interface SyncQueueItem {
@@ -69,8 +69,15 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
   const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
                 localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
                 localStorage.getItem('token') || sessionStorage.getItem('token');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  if (!token) {
+    return { synced: 0, failed: queue.length };
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
 
   const remaining: SyncQueueItem[] = [];
   let synced = 0;
@@ -96,18 +103,25 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
 
       if (apiRes.ok) {
         synced++;
+      } else if (apiRes.status === 401 || apiRes.status === 403) {
+        // Session Expired -> DO NOT RETRY! Keep in queue and alert user
+        remaining.push(item);
+        failed++;
+        dispatchDatabaseErrorToast('نشست شما منقضی شده. لطفاً دوباره وارد شوید.', 'warning');
+        break; // Pause remaining sync until re-login
+      } else if (apiRes.status >= 400 && apiRes.status < 500) {
+        // Client Error -> Do not retry indefinitely, keep in queue for manual inspection
+        remaining.push(item);
+        failed++;
       } else {
-        item.attempts += 1;
-        if (item.attempts < 15) {
-          remaining.push(item);
-        }
+        // Server 5xx Error -> Increment attempts but DO NOT DELETE FROM QUEUE after 5 attempts
+        item.attempts = (item.attempts || 0) + 1;
+        remaining.push(item);
         failed++;
       }
     } catch (e) {
-      item.attempts += 1;
-      if (item.attempts < 15) {
-        remaining.push(item);
-      }
+      item.attempts = (item.attempts || 0) + 1;
+      remaining.push(item);
       failed++;
     }
   }
@@ -116,123 +130,108 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
   return { synced, failed };
 }
 
-/**
- * Direct authoritative Cloud Database write with a strict 4-second timeout.
- */
+export interface CloudWriteResult {
+  success: boolean;
+  status?: number;
+  isSessionExpired?: boolean;
+  isClientError?: boolean;
+  isServerError?: boolean;
+  message?: string;
+}
+
 export async function saveToCloudWithTimeout(
   action: 'upsert' | 'delete',
   collectionName: string,
   id: string,
   data?: any,
-  timeoutMs = 4000
-): Promise<void> {
-  const cloudPromise = new Promise<void>(async (resolve, reject) => {
-    try {
-      let isSaved = false;
+  timeoutMs = 5000
+): Promise<CloudWriteResult> {
+  const token = typeof window !== 'undefined'
+    ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+       localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+       localStorage.getItem('token') || sessionStorage.getItem('token'))
+    : null;
 
-      // 1. Primary: Server-Side Data API (Authoritative backend connected to MySQL / Host Database)
-      try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-                      localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
-                      localStorage.getItem('token') || sessionStorage.getItem('token');
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!token) {
+    return {
+      success: false,
+      status: 401,
+      isSessionExpired: true,
+      message: 'توکن احراز هویت یافت نشد. لطفاً مجدداً وارد شوید.'
+    };
+  }
 
-        let apiRes: Response;
-        if (action === 'delete') {
-          apiRes = await fetch(`/api/data/${collectionName}/${id}`, {
-            method: 'DELETE',
-            headers,
-            credentials: 'include'
-          });
-        } else {
-          apiRes = await fetch(`/api/data/${collectionName}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-            body: JSON.stringify({ ...(data || {}), id, _synced: true })
-          });
-        }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
 
-        if (apiRes.ok) {
-          isSaved = true;
-          resolve();
-          return;
-        } else {
-          const errText = await apiRes.text().catch(() => '');
-          console.warn(`[Server Data API] ${action} ${collectionName}/${id} response ${apiRes.status}:`, errText);
-        }
-      } catch (e) {
-        console.warn(`[Server Data API] ${action} ${collectionName}/${id} network notice:`, e);
-      }
-
-      // 2. Legacy Fallback: Direct Supabase write (for local/serverless development)
-      if (isSupabaseConfigured) {
-        if (action === 'delete') {
-          const { error } = await supabase
-            .from('app_collections')
-            .delete()
-            .match({ collection_name: collectionName, id });
-
-          if (!error) isSaved = true;
-        } else {
-          const sanitized = sanitizeForCloud(data);
-          const { error } = await supabase
-            .from('app_collections')
-            .upsert({
-              collection_name: collectionName,
-              id,
-              data: { ...sanitized, _synced: true },
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'collection_name,id' });
-
-          if (!error) isSaved = true;
-        }
-      }
-
-      // 3. Optional fallback: Direct Cloud Firestore write
-      try {
-        if (action === 'delete') {
-          await deleteDoc(doc(db, collectionName, id));
-          isSaved = true;
-        } else {
-          await setDoc(doc(db, collectionName, id), sanitizeForCloud({ ...data, _synced: true }), { merge: true });
-          isSaved = true;
-        }
-      } catch (fsErr) {
-        // Ignore fallback notice
-      }
-
-      if (isSaved) {
-        resolve();
-      } else {
-        // Enqueue into offline sync queue for automatic retry
-        enqueueSync({ action, collectionName, id, data });
-        resolve();
-      }
-    } catch (err) {
-      enqueueSync({ action, collectionName, id, data });
-      resolve();
-    }
-  });
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      // If timeout occurs, enqueue for background retry so user isn't blocked
-      enqueueSync({ action, collectionName, id, data });
-      reject(new Error('مهلت زمانی اتصال به دیتابیس پایان یافت (بیش از ۴ ثانیه). داده‌ها در صف همگام‌سازی قرار گرفتند.'));
-    }, timeoutMs);
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    await Promise.race([cloudPromise, timeoutPromise]);
-  } catch (err: any) {
-    if (isOfflineStorageAllowedForUser()) {
-      console.warn(`[Cloud Write Offline Mode] ${collectionName}/${id}:`, err?.message || err);
+    let apiRes: Response;
+    if (action === 'delete') {
+      apiRes = await fetch(`/api/data/${collectionName}/${id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+        signal: controller.signal
+      });
     } else {
-      console.error(`[Cloud Write Error] ${collectionName}/${id}:`, err);
+      apiRes = await fetch(`/api/data/${collectionName}`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ ...(data || {}), id, _synced: true }),
+        signal: controller.signal
+      });
     }
-    throw new Error('فعلا اتصال مستقیم به پایگاه داده مقدور نیست، اطلاعات در مرورگر ثبت شد و در صف ارسال قرار گرفت.');
+    clearTimeout(timeoutId);
+
+    if (apiRes.ok) {
+      return { success: true, status: apiRes.status };
+    }
+
+    const errJson = await apiRes.json().catch(() => ({}));
+    const errMsg = errJson.message || `خطای کد ${apiRes.status}`;
+
+    if (apiRes.status === 401 || apiRes.status === 403) {
+      return {
+        success: false,
+        status: apiRes.status,
+        isSessionExpired: true,
+        message: 'نشست شما منقضی شده است. لطفاً دوباره وارد شوید.'
+      };
+    }
+
+    if (apiRes.status >= 400 && apiRes.status < 500) {
+      return {
+        success: false,
+        status: apiRes.status,
+        isClientError: true,
+        message: errMsg
+      };
+    }
+
+    // Server Error 5xx -> Enqueue into sync queue
+    enqueueSync({ action, collectionName, id, data });
+    return {
+      success: false,
+      status: apiRes.status,
+      isServerError: true,
+      message: 'خطا در سرور. داده در صف ارسال قرار گرفت.'
+    };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    // Network Error or Timeout -> Enqueue into sync queue
+    enqueueSync({ action, collectionName, id, data });
+    return {
+      success: false,
+      status: 500,
+      isServerError: true,
+      message: 'ارتباط با سرور برقرار نشد. داده در صف همگام‌سازی قرار گرفت.'
+    };
   }
 }
 
@@ -980,7 +979,7 @@ class LocalDatabase {
     return this.setDoc(collectionName, idOrData, optionalData);
   }
 
-  // Add a new document (with optimistic UI, strict 4s online sync & automatic rollback)
+  // Add a new document (Server-First with IndexedDB Read Cache)
   async addDoc(collectionName: CollectionName, data: any): Promise<string> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -988,51 +987,48 @@ class LocalDatabase {
     if (resolvedCol === 'students') {
       record = normalizeStudent(record);
     }
-    const id = record.id || `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const id = record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
 
-    // 1. Optimistic Local Write for instant UI responsiveness
-    this.setLocalStorageDoc(resolvedCol, record);
-    if (db.objectStoreNames.contains(resolvedCol)) {
-      try {
-        const transaction = db.transaction(resolvedCol, 'readwrite');
-        const store = transaction.objectStore(resolvedCol);
-        store.put(record);
-      } catch (e) {
-        console.warn(`Object store ${resolvedCol} write warning:`, e);
-      }
-    }
-    this.notify();
+    // 1. Direct Server Write FIRST
+    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 5000);
 
-    // 2. Direct Cloud Database Write with strict 4-second timeout
-    try {
-      await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 4000);
-      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-      return id;
-    } catch (err: any) {
-      if (isOfflineStorageAllowedForUser()) {
-        console.warn(`[Offline Mode Permitted] Record ${id} in ${resolvedCol} stored locally.`);
-        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-        dispatchDatabaseErrorToast('اطلاعات در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
-        return id;
+    if (res.success) {
+      // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
+      this.setLocalStorageDoc(resolvedCol, record);
+      if (db.objectStoreNames.contains(resolvedCol)) {
+        try {
+          const transaction = db.transaction(resolvedCol, 'readwrite');
+          const store = transaction.objectStore(resolvedCol);
+          store.put(record);
+        } catch (e) {}
       }
-
-      // Strict Rollback: Remove the newly added record
-      try {
-        this.deleteLocalStorageDoc(resolvedCol, id);
-        if (db.objectStoreNames.contains(resolvedCol)) {
-          const rollbackTx = db.transaction(resolvedCol, 'readwrite');
-          rollbackTx.objectStore(resolvedCol).delete(id);
-        }
-      } catch (e) {}
       this.notify();
-
-      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
-      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+      dispatchDatabaseErrorToast('اطلاعات با موفقیت در سرور ذخیره شد.', 'success');
+      return id;
     }
+
+    if (res.isSessionExpired) {
+      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_token');
+      }
+      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
+    }
+
+    if (res.isClientError) {
+      dispatchDatabaseErrorToast(res.message || 'خطا در ثبت اطلاعات در سرور.', 'error');
+      throw new Error(res.message || 'خطا در ثبت اطلاعات در سرور.');
+    }
+
+    // Server 5xx / Network Error -> Item enqueued into sync queue
+    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.', 'warning');
+    throw new Error('ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.');
   }
 
-  // Update existing document (with optimistic UI, strict 4s online sync & automatic rollback)
+  // Update existing document (Server-First with IndexedDB Read Cache)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1047,55 +1043,45 @@ class LocalDatabase {
       updated = normalizeStudent(updated);
     }
 
-    // 1. Optimistic Local Write
-    this.setLocalStorageDoc(resolvedCol, updated);
-    if (db.objectStoreNames.contains(resolvedCol)) {
-      try {
-        const transaction = db.transaction(resolvedCol, 'readwrite');
-        const store = transaction.objectStore(resolvedCol);
-        store.put(updated);
-      } catch (e) {
-        console.warn(`Object store ${resolvedCol} update warning:`, e);
-      }
-    }
-    this.notify();
+    // 1. Direct Server Write FIRST
+    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 5000);
 
-    // 2. Direct Cloud Database Write with strict 4-second timeout
-    try {
-      await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 4000);
-      this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
-    } catch (err: any) {
-      if (isOfflineStorageAllowedForUser()) {
-        console.warn(`[Offline Mode Permitted] Update ${id} in ${resolvedCol} stored locally.`);
-        this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
-        dispatchDatabaseErrorToast('ویرایش در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
-        return;
+    if (res.success) {
+      // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
+      this.setLocalStorageDoc(resolvedCol, updated);
+      if (db.objectStoreNames.contains(resolvedCol)) {
+        try {
+          const transaction = db.transaction(resolvedCol, 'readwrite');
+          const store = transaction.objectStore(resolvedCol);
+          store.put(updated);
+        } catch (e) {}
       }
-
-      // Strict Rollback: Restore previous state
-      try {
-        if (existingDoc) {
-          this.setLocalStorageDoc(resolvedCol, existingDoc);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
-            rollbackTx.objectStore(resolvedCol).put(existingDoc);
-          }
-        } else {
-          this.deleteLocalStorageDoc(resolvedCol, id);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
-            rollbackTx.objectStore(resolvedCol).delete(id);
-          }
-        }
-      } catch (e) {}
       this.notify();
-
-      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
-      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+      dispatchDatabaseErrorToast('تغییرات با موفقیت در سرور ذخیره شد.', 'success');
+      return;
     }
+
+    if (res.isSessionExpired) {
+      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_token');
+      }
+      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
+    }
+
+    if (res.isClientError) {
+      dispatchDatabaseErrorToast(res.message || 'خطا در ویرایش اطلاعات در سرور.', 'error');
+      throw new Error(res.message || 'خطا در ویرایش اطلاعات در سرور.');
+    }
+
+    // Server 5xx / Network Error -> Item enqueued into sync queue
+    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.', 'warning');
+    throw new Error('ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.');
   }
 
-  // Delete a document (with optimistic UI, strict 4s online sync & automatic rollback)
+  // Delete a document (Server-First with IndexedDB Read Cache)
   async deleteDoc(collectionName: CollectionName, id: string): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1105,44 +1091,84 @@ class LocalDatabase {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
 
-    // 1. Optimistic Local Delete
-    this.deleteLocalStorageDoc(resolvedCol, id);
-    if (db.objectStoreNames.contains(resolvedCol)) {
-      try {
-        const transaction = db.transaction(resolvedCol, 'readwrite');
-        const store = transaction.objectStore(resolvedCol);
-        store.delete(id);
-      } catch (e) {}
-    }
-    this.notify();
+    // 1. Direct Server Write FIRST
+    const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 5000);
 
-    // 2. Direct Cloud Database Write with strict 4-second timeout
-    try {
-      await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 4000);
-      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-    } catch (err: any) {
-      if (isOfflineStorageAllowedForUser()) {
-        console.warn(`[Offline Mode Permitted] Deletion ${id} in ${resolvedCol} stored locally.`);
-        this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-        dispatchDatabaseErrorToast('حذف در مرورگر ثبت گردید، اما تا ۴ ثانیه به دیتابیس ابری سرور منتقل نگردید. پس از اتصال مجدد شبکه همگام‌سازی می‌شود.');
-        return;
-      }
-
-      // Strict Rollback: Restore the deleted item
-      if (existingDoc) {
+    if (res.success) {
+      // 2. On 2xx Server Success -> Delete from local IndexedDB / localStorage cache
+      this.deleteLocalStorageDoc(resolvedCol, id);
+      if (db.objectStoreNames.contains(resolvedCol)) {
         try {
-          this.setLocalStorageDoc(resolvedCol, existingDoc);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            const rollbackTx = db.transaction(resolvedCol, 'readwrite');
-            rollbackTx.objectStore(resolvedCol).put(existingDoc);
-          }
+          const transaction = db.transaction(resolvedCol, 'readwrite');
+          const store = transaction.objectStore(resolvedCol);
+          store.delete(id);
         } catch (e) {}
-        this.notify();
       }
-
-      dispatchDatabaseErrorToast('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
-      throw new Error('فعلا اتصال به پایگاه داده مقدور نیست، اطلاعات ثبت نشد. لطفاً مجدداً اقدام کنید.');
+      this.notify();
+      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+      dispatchDatabaseErrorToast('حذف اطلاعات با موفقیت انجام شد.', 'success');
+      return;
     }
+
+    if (res.isSessionExpired) {
+      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        sessionStorage.removeItem('auth_token');
+      }
+      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
+    }
+
+    if (res.isClientError) {
+      dispatchDatabaseErrorToast(res.message || 'خطا در حذف اطلاعات در سرور.', 'error');
+      throw new Error(res.message || 'خطا در حذف اطلاعات در سرور.');
+    }
+
+    // Server 5xx / Network Error -> Item enqueued into sync queue
+    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. درخواست حذف در صف ارسال قرار گرفت.', 'warning');
+    throw new Error('ارتباط با سرور برقرار نشد. درخواست حذف در صف ارسال قرار گرفت.');
+  }
+
+  // Fetch authoritative collections from Server on startup / login and cache in IndexedDB
+  async loadAllCollectionsFromServer(): Promise<{ success: boolean; totalRecords: number }> {
+    if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+                  localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+                  localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!token) return { success: false, totalRecords: 0 };
+
+    const collectionsToLoad: CollectionName[] = [
+      'system_users', 'students', 'teachers', 'classrooms', 'programs',
+      'enrollments', 'attendance', 'study_stats', 'study_periods',
+      'periodic_study_logs', 'discussion_groups', 'research', 'received_articles',
+      'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
+      'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
+      'student_lockers', 'academic_calendar_periods', 'academic_holidays', 'school_events'
+    ];
+
+    let totalRecords = 0;
+    const headers = { 'Authorization': `Bearer ${token}` };
+
+    for (const col of collectionsToLoad) {
+      try {
+        const res = await fetch(`/api/data/${col}`, { headers, credentials: 'include' });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.items)) {
+            await this.clearCollection(col);
+            if (json.items.length > 0) {
+              await this.bulkPut(col, json.items);
+              totalRecords += json.items.length;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[Startup Sync Error] ${col}:`, e);
+      }
+    }
+
+    this.notify();
+    return { success: true, totalRecords };
   }
 
   // Background Non-blocking Real-time Mirror to Server & Supabase

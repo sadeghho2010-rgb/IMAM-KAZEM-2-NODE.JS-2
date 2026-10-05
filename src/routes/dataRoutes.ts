@@ -371,4 +371,40 @@ router.get('/bug-reports', async (req: Request, res: Response) => {
   }
 });
 
+// ===================== REALTIME SSE SYNC ENDPOINTS =====================
+
+// GET /api/sync/events
+router.get('/sync/events', async (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof (res as any).flushHeaders === 'function') {
+    (res as any).flushHeaders();
+  }
+
+  const { registerRealtimeListener } = await import('../lib/serverDataApi');
+  const unsubscribe = registerRealtimeListener((event) => {
+    try {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (e) {}
+  });
+
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+    } catch (e) {}
+  }, 30000);
+
+  req.on('close', () => {
+    unsubscribe();
+    clearInterval(heartbeat);
+  });
+});
+
+// GET /api/sync/changes
+router.get('/sync/changes', async (_req: Request, res: Response) => {
+  return res.json({ success: true, changes: [] });
+});
+
 export default router;

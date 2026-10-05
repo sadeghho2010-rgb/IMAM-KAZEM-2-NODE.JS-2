@@ -168,9 +168,13 @@ function AppContent() {
     currentMentorId 
   } = useMentor();
 
-  // When user logs in or role changes, default to dashboard for all users (including level 3)
+  // When user logs in or role changes, sync server collections into IndexedDB cache and default to dashboard
   useEffect(() => {
     if (currentUser) {
+      import('./lib/localDb').then(({ localDb }) => {
+        localDb.loadAllCollectionsFromServer().catch(() => {});
+      });
+
       if (!activeTab || activeTab === 'todos') {
         setActiveTab('dashboard');
       } else if (!isTabAllowed(activeTab) && activeTab !== 'user-management') {
