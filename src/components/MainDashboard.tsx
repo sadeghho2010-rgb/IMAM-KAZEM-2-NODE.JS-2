@@ -48,6 +48,7 @@ import {
   RefreshCw,
   Terminal,
   Database,
+  HeartPulse,
   CalendarCheck,
   RotateCw,
   EyeOff
@@ -114,6 +115,9 @@ interface MainCategoryDef {
   borderGlow: string;
   accentText: string;
   itemIds: string[];
+  badgeCount?: number;
+  badgeText?: string;
+  highlight?: boolean;
 }
 
 interface MainDashboardProps {
@@ -263,6 +267,73 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   }, []);
 
   const [pendingWorkflowCount, setPendingWorkflowCount] = useState<number>(0);
+  const [systemHealthAlert, setSystemHealthAlert] = useState<{ isHigh: boolean; cpuPercent: number; ramPercent: number; message: string } | null>(null);
+
+  // Poll system health metrics for CPU / RAM high resource alert
+  useEffect(() => {
+    let isMounted = true;
+    const checkHealthAlert = async () => {
+      try {
+        if (!currentUser) return;
+        const isAuthorized = currentUser.level === 1 || 
+                             currentUser.role === 'super_admin' || 
+                             currentUser.role === 'education_manager' || 
+                             currentUser.role === 'finance_manager' || 
+                             currentUser.username?.toUpperCase() === 'SHAH' || 
+                             currentUser.username?.toUpperCase() === 'MALI';
+        if (!isAuthorized) return;
+
+        // Fetch user custom thresholds
+        let cpuLimit = 75;
+        let ramLimit = 80;
+        try {
+          const config = await localDb.getDoc<any>('system_health_config', 'global_config');
+          if (config) {
+            if (typeof config.cpuThreshold === 'number') cpuLimit = config.cpuThreshold;
+            if (typeof config.ramThreshold === 'number') ramLimit = config.ramThreshold;
+          }
+        } catch (e) {}
+
+        const res = await fetch('/api/system/health', { credentials: 'include' }).catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.success && isMounted) {
+            const cpu = data.currentCpu?.percent || 0;
+            const ram = data.currentMemory?.heapUsagePercent || 0;
+            const heapMb = data.currentMemory?.heapUsedMb || 0;
+            const isHigh = cpu >= cpuLimit || ram >= ramLimit || heapMb >= 800;
+            
+            if (isHigh) {
+              setSystemHealthAlert({
+                isHigh: true,
+                cpuPercent: cpu,
+                ramPercent: ram,
+                message: cpu >= cpuLimit && ram >= ramLimit 
+                  ? `مصرف بالای CPU (${cpu}%) و RAM (${ram}%)` 
+                  : cpu >= cpuLimit 
+                    ? `مصرف بالای CPU (${cpu}%)` 
+                    : `مصرف بالای RAM (${ram}%)`
+              });
+            } else {
+              setSystemHealthAlert(null);
+            }
+          }
+        }
+      } catch (e) {}
+    };
+
+    checkHealthAlert();
+    const interval = setInterval(checkHealthAlert, 15000);
+    
+    // Listen for custom threshold updates
+    window.addEventListener('system_health_config_updated', checkHealthAlert);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('system_health_config_updated', checkHealthAlert);
+    };
+  }, [currentUser]);
 
   const showHadithBanner = !isHadithDismissed && (prefsState.showHadithBanner !== false);
 
@@ -947,6 +1018,28 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       highlight: unresolvedAnomaliesCount > 0
     },
     {
+      id: 'system-health',
+      title: 'سامانه پایش سلامت و عملکرد سیستم',
+      subtitle: systemHealthAlert?.isHigh 
+        ? `⚠️ هشدار: ${systemHealthAlert.message}`
+        : 'پایش زنده مصرف سی‌پیو (CPU)، حافظه (RAM)، کوئری‌ها و خطاهای سرور',
+      category: 'system',
+      icon: HeartPulse,
+      iconBg: systemHealthAlert?.isHigh
+        ? 'bg-gradient-to-br from-rose-600 via-red-600 to-rose-700 text-white shadow-lg shadow-rose-600/40 animate-pulse'
+        : 'bg-gradient-to-br from-rose-500 via-pink-600 to-indigo-700 text-white shadow-lg shadow-rose-500/30',
+      cardGradient: systemHealthAlert?.isHigh
+        ? 'from-rose-600/20 via-red-500/10 to-transparent'
+        : 'from-rose-500/10 via-pink-500/5 to-transparent',
+      borderGlow: systemHealthAlert?.isHigh
+        ? 'border-rose-500 hover:border-rose-600 shadow-2xl shadow-rose-500/30 ring-2 ring-rose-500/80 animate-pulse'
+        : 'hover:border-rose-400 hover:shadow-2xl hover:shadow-rose-500/20',
+      accentText: systemHealthAlert?.isHigh ? 'text-rose-600 font-black' : 'text-rose-600',
+      badgeCount: systemHealthAlert?.isHigh ? 1 : undefined,
+      badgeText: systemHealthAlert?.isHigh ? `🚨 ${systemHealthAlert.message}` : undefined,
+      highlight: systemHealthAlert?.isHigh
+    },
+    {
       id: 'db-connection-test',
       title: 'تست اتصال به دیتابیس',
       subtitle: 'بررسی وضعیت سلامت دیتابیس، نرخ پاسخگویی و همگام‌سازی',
@@ -1024,14 +1117,27 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     {
       id: 'system_group',
       title: 'مدیریت و امنیت سایت',
-      subtitle: 'مدیریت کاربران، پشتیبان‌گیری دیتابیس، لاگ‌ها و بازرسی امنیت',
+      subtitle: systemHealthAlert?.isHigh 
+        ? `🚨 هشدار منابع: ${systemHealthAlert.message}`
+        : 'مدیریت کاربران، پشتیبان‌گیری دیتابیس، لاگ‌ها و بازرسی امنیت',
       categoryKey: 'system',
       icon: ShieldAlert,
-      iconBg: 'bg-gradient-to-br from-slate-700 via-slate-800 to-indigo-950 text-white shadow-xl shadow-slate-700/35',
-      cardGradient: 'from-slate-700/15 via-indigo-500/5 to-transparent',
-      borderGlow: 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/25',
-      accentText: 'text-slate-700',
-      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'db-connection-test']
+      iconBg: systemHealthAlert?.isHigh 
+        ? 'bg-gradient-to-br from-rose-600 via-red-700 to-rose-900 text-white shadow-xl shadow-rose-600/40 animate-pulse'
+        : 'bg-gradient-to-br from-slate-700 via-slate-800 to-indigo-950 text-white shadow-xl shadow-slate-700/35',
+      cardGradient: systemHealthAlert?.isHigh 
+        ? 'from-rose-600/20 via-red-500/10 to-transparent'
+        : 'from-slate-700/15 via-indigo-500/5 to-transparent',
+      borderGlow: systemHealthAlert?.isHigh 
+        ? 'border-rose-500 hover:border-rose-600 shadow-2xl shadow-rose-500/30 ring-2 ring-rose-500/80 animate-pulse'
+        : 'hover:border-slate-500 hover:shadow-2xl hover:shadow-slate-700/25',
+      accentText: systemHealthAlert?.isHigh ? 'text-rose-600 font-black' : 'text-slate-700',
+      badgeCount: (unresolvedAnomaliesCount || 0) + (systemHealthAlert?.isHigh ? 1 : 0) || undefined,
+      badgeText: systemHealthAlert?.isHigh 
+        ? `🚨 مصرف بالای CPU/RAM` 
+        : (unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined),
+      highlight: systemHealthAlert?.isHigh || unresolvedAnomaliesCount > 0,
+      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test']
     }
   ];
 
@@ -1048,7 +1154,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       map.set(card.id, card);
     });
     return map;
-  }, [currentUser, isTabAllowed, isEducationManager, isGradeMentor, unreadRequestsCount, unresolvedAnomaliesCount]);
+  }, [currentUser, isTabAllowed, isEducationManager, isGradeMentor, unreadRequestsCount, unresolvedAnomaliesCount, systemHealthAlert]);
 
   // Filter allowed main category cards
   const allowedCategoryCards = useMemo(() => {
@@ -1056,7 +1162,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       const allowedSubCount = cat.itemIds.filter(id => allowedCardsMap.has(id)).length;
       return allowedSubCount > 0;
     });
-  }, [allowedCardsMap]);
+  }, [allowedCardsMap, systemHealthAlert]);
 
   // Ordered Cards List according to user preference in flat mode
   const sortedCards = useMemo(() => {

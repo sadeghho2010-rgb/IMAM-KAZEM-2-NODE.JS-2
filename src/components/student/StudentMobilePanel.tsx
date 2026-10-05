@@ -48,7 +48,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
     return (
       currentUser?.role === 'class_representative' || 
       currentUser?.roleTitle?.includes('نماینده') ||
-      !!currentUser?.managedClassId
+      !!(currentUser as any)?.managedClassId
     );
   }, [currentUser]);
 
@@ -78,9 +78,9 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
         // Grade or enrollment match
         const matchesGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
-        const matchesEnrollment = sId && Array.isArray(p.studentIds) && p.studentIds.includes(sId);
-        const matchesRep = sId && Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.includes(sId);
-        const matchesRepName = cName && Array.isArray(p.representativeNames) && p.representativeNames.some(n => n.toLowerCase().includes(cName));
+        const matchesEnrollment = sId && Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(sId);
+        const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(sId);
+        const matchesRepName = cName && Array.isArray((p as any).representativeNames) && (p as any).representativeNames.some((n: string) => n.toLowerCase().includes(cName));
 
         return matchesGrade || matchesEnrollment || matchesRep || matchesRepName;
       });
@@ -91,7 +91,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       if (Array.isArray(allReqs)) {
         const myReqs = allReqs.filter(r => 
           (r.studentId && r.studentId === sId) || 
-          (r.nationalId && r.nationalId === currentUser?.username)
+          ((r as any).nationalId && (r as any).nationalId === currentUser?.username)
         );
         setMyRequestsCount(myReqs.filter(r => r.status === 'pending').length);
       }

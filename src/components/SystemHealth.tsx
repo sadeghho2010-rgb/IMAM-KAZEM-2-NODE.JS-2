@@ -11,8 +11,12 @@ import {
   Zap, 
   Activity, 
   Play, 
-  Pause 
+  Pause,
+  Sliders,
+  Save,
+  Check
 } from 'lucide-react';
+import { localDb } from '../lib/localDb';
 
 interface MemorySnapshot {
   timestamp: string;
@@ -37,6 +41,13 @@ interface ServerErrorLog {
   source?: string;
 }
 
+interface CpuData {
+  percent: number;
+  cores: number;
+  model: string;
+  loadAvg: number[];
+}
+
 interface HealthData {
   currentMemory: {
     heapUsedMb: number;
@@ -46,6 +57,7 @@ interface HealthData {
     heapUsagePercent: number;
     freeOsMemInfo?: string;
   };
+  currentCpu?: CpuData;
   peakHeap24hMb: number;
   memoryHistory: MemorySnapshot[];
   slowQueries: SlowQueryLog[];
@@ -65,21 +77,70 @@ export default function SystemHealth() {
   const [selectedQuery, setSelectedQuery] = useState<SlowQueryLog | null>(null);
   const [selectedError, setSelectedError] = useState<ServerErrorLog | null>(null);
 
+  // Custom User thresholds state
+  const [cpuThreshold, setCpuThreshold] = useState<number>(75);
+  const [ramThreshold, setRamThreshold] = useState<number>(80);
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  // Load custom health warning thresholds from DB
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const config = await localDb.getDoc<any>('system_health_config', 'global_config');
+        if (config) {
+          if (typeof config.cpuThreshold === 'number') setCpuThreshold(config.cpuThreshold);
+          if (typeof config.ramThreshold === 'number') setRamThreshold(config.ramThreshold);
+        }
+      } catch (e) {
+        console.warn('Failed to load system health config:', e);
+      }
+    };
+    loadConfig();
+  }, []);
+
+  const handleSaveConfig = async () => {
+    setIsSavingConfig(true);
+    setSaveSuccess(false);
+    try {
+      await localDb.saveDoc('system_health_config', {
+        id: 'global_config',
+        cpuThreshold: Number(cpuThreshold),
+        ramThreshold: Number(ramThreshold),
+        lastUpdated: new Date().toISOString()
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      
+      // Notify MainDashboard to update thresholds immediately
+      window.dispatchEvent(new Event('system_health_config_updated'));
+    } catch (e) {
+      console.error('Failed to save system health config:', e);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   const fetchHealthData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token') || localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = {
+        'Accept': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/system/health', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
+        headers,
+        credentials: 'include'
       });
       
       if (!response.ok) {
         if (response.status === 403) {
-          throw new Error('شما مجاز به مشاهده سلامت سیستم نیستید. دسترسی فقط برای مدیران ارشد مجاز است.');
+          throw new Error('شما مجاز به مشاهده سلامت سیستم نیستید. دسترسی فقط برای سوپر ادمین، مسئول آموزش و مسئول مالی مجاز است.');
         }
         throw new Error(`خطای سرور: کد وضعیت ${response.status}`);
       }
@@ -291,13 +352,149 @@ export default function SystemHealth() {
         </div>
       ) : data ? (
         <>
+          {/* Threshold Settings Panel */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Sliders className="text-indigo-600" size={18} />
+              <h3 className="font-black text-slate-800 text-sm">تنظیم اختصاصی آستانه هشدارهای حساس سخت‌افزاری</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* CPU Warning Slider */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black text-slate-700">
+                  <span>آستانه هشدار پردازنده (CPU)</span>
+                  <span className="px-2.5 py-1 bg-purple-50 text-purple-700 rounded-full font-black text-xs">
+                    {cpuThreshold}% مصرف
+                  </span>
+                </div>
+                <input 
+                  type="range" 
+                  min="30" 
+                  max="95" 
+                  value={cpuThreshold} 
+                  onChange={(e) => setCpuThreshold(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold">
+                  <span>۳۰٪ (بسیار حساس)</span>
+                  <span>۹۵٪ (حداکثر ظرفیت)</span>
+                </div>
+              </div>
+
+              {/* RAM Warning Slider */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black text-slate-700">
+                  <span>آستانه هشدار حافظه (RAM)</span>
+                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full font-black text-xs">
+                    {ramThreshold}% ظرفیت Heap
+                  </span>
+                </div>
+                <input 
+                  type="range" 
+                  min="30" 
+                  max="95" 
+                  value={ramThreshold} 
+                  onChange={(e) => setRamThreshold(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold">
+                  <span>۳۰٪ (بسیار حساس)</span>
+                  <span>۹۵٪ (بحرانی)</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              {saveSuccess && (
+                <span className="text-xs font-bold text-emerald-600 flex items-center gap-1.5 animate-bounce">
+                  <Check size={14} />
+                  <span>آستانه‌های انتخابی با موفقیت ثبت و همگام‌سازی شدند.</span>
+                </span>
+              )}
+              <button
+                onClick={handleSaveConfig}
+                disabled={isSavingConfig}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl text-xs font-black transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer disabled:opacity-50"
+              >
+                {isSavingConfig ? <RefreshCw className="animate-spin" size={14} /> : <Save size={14} />}
+                <span>ذخیره تغییرات آستانه</span>
+              </button>
+            </div>
+          </div>
+
+          {/* High Resource Alert Red Banner */}
+          {((data.currentCpu && data.currentCpu.percent >= cpuThreshold) || data.currentMemory.heapUsagePercent >= ramThreshold || data.currentMemory.heapUsedMb >= 800) && (
+            <div className="bg-rose-600 text-white rounded-3xl p-5 shadow-lg shadow-rose-500/25 border-2 border-rose-400 animate-pulse flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+                  <AlertTriangle size={26} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm">🚨 هشدار قرمز سیستمی: مصرف بالای منابع سرور</h3>
+                  <p className="text-xs font-bold text-rose-100 mt-0.5">
+                    {data.currentCpu && data.currentCpu.percent >= cpuThreshold && data.currentMemory.heapUsagePercent >= ramThreshold
+                      ? `میزان مصرف پردازنده (${data.currentCpu.percent}%) و حافظه رم (${data.currentMemory.heapUsagePercent}%) از آستانه‌های تعیین شده شما عبور کرده است.`
+                      : data.currentCpu && data.currentCpu.percent >= cpuThreshold
+                      ? `میزان مصرف پردازنده اصلی (${data.currentCpu.percent}%) بیش از حد آستانه ${cpuThreshold}٪ است.`
+                      : `میزان مصرف حافظه رم Heap (${data.currentMemory.heapUsagePercent}%) بیش از حد آستانه ${ramThreshold}٪ است.`}
+                  </p>
+                </div>
+              </div>
+              <span className="px-3.5 py-1.5 bg-white text-rose-700 rounded-xl text-xs font-black shrink-0 shadow-sm">
+                وضعیت اضطراری
+              </span>
+            </div>
+          )}
+
           {/* Key Resource Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Live CPU Usage Card */}
+            <div className={`bg-white rounded-3xl p-5 border shadow-sm space-y-3 ${
+              data.currentCpu && data.currentCpu.percent >= cpuThreshold
+                ? 'border-rose-300 ring-2 ring-rose-500/40'
+                : 'border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-500">مصرف پردازنده (CPU)</span>
+                <Cpu className={data.currentCpu && data.currentCpu.percent >= cpuThreshold ? 'text-rose-600 animate-pulse' : 'text-purple-600'} size={18} />
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-3xl font-black ${
+                  data.currentCpu && data.currentCpu.percent >= cpuThreshold ? 'text-rose-600' : 'text-slate-900'
+                }`}>
+                  {data.currentCpu?.percent ?? 0}
+                </span>
+                <span className="text-xs text-slate-400 font-bold">%</span>
+              </div>
+              <div>
+                <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1">
+                  <span>تعداد هسته‌ها: {data.currentCpu?.cores ?? 1}</span>
+                  <span>Load: {data.currentCpu?.loadAvg?.[0] ?? 0}</span>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (data.currentCpu?.percent ?? 0) >= cpuThreshold 
+                        ? 'bg-rose-500' 
+                        : (data.currentCpu?.percent ?? 0) >= 50 
+                        ? 'bg-amber-500' 
+                        : 'bg-purple-600'
+                    }`}
+                    style={{ width: `${Math.min(data.currentCpu?.percent ?? 0, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Current Memory Usage */}
-            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+            <div className={`bg-white rounded-3xl p-5 border shadow-sm space-y-3 ${
+              data.currentMemory.heapUsagePercent >= ramThreshold
+                ? 'border-rose-300 ring-2 ring-rose-500/40'
+                : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-500">مصرف زنده رم (Heap)</span>
-                <Cpu className="text-indigo-600" size={18} />
+                <Server className="text-indigo-600" size={18} />
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-black text-slate-900">{data.currentMemory.heapUsedMb.toFixed(1)}</span>
@@ -311,7 +508,7 @@ export default function SystemHealth() {
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                   <div 
                     className={`h-full rounded-full transition-all duration-500 ${
-                      data.currentMemory.heapUsagePercent > 80 
+                      data.currentMemory.heapUsagePercent >= ramThreshold 
                         ? 'bg-rose-500' 
                         : data.currentMemory.heapUsagePercent > 60 
                         ? 'bg-amber-500' 

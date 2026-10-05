@@ -242,8 +242,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
 
     // 0. Direct Link via managedClassId or representativeProgramIds
-    if (currentUser.managedClassId) {
-      const direct = programs.filter(p => p.id === currentUser.managedClassId);
+    if ((currentUser as any).managedClassId) {
+      const direct = programs.filter(p => p.id === (currentUser as any).managedClassId);
       if (direct.length > 0) return direct;
     }
     if (Array.isArray((currentUser as any).representativeProgramIds) && (currentUser as any).representativeProgramIds.length > 0) {

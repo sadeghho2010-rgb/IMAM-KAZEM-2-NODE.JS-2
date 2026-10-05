@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { AppModuleId } from '../types';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
@@ -21,10 +21,12 @@ import {
   RotateCcw,
   Sparkles,
   Save,
-  GraduationCap
+  GraduationCap,
+  CheckSquare
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { SectionPermissionsManager } from './admin/SectionPermissionsManager';
+import { localDb } from '../lib/localDb';
 
 const ALL_MODULES: { id: AppModuleId; label: string; group: string }[] = [
   { id: 'todos', label: 'پیگیری‌ها', group: 'عمومی و اداری' },

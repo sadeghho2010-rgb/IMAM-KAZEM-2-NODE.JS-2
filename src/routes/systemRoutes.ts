@@ -37,10 +37,16 @@ router.get('/health', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'اعتبار جلسه کاربری منقضی شده است.' });
     }
 
-    const user = verification.decoded;
-    const isSuperAdmin = user.role === 'super_admin' || user.level === 1 || user.role === 'school_manager';
-    if (!isSuperAdmin) {
-      return res.status(403).json({ success: false, message: 'دسترسی به پایش سلامت سیستم تنها در انحصار مدیریت ارشد است.' });
+    const user = verification.decoded as any;
+    const usernameUpper = (user.username || '').toUpperCase();
+    const isSuperAdmin = user.role === 'super_admin' || user.level === 1 || user.role === 'school_manager' || usernameUpper === 'SADEGH';
+    const isEducationManager = user.role === 'education_manager' || user.role === 'education_officer' || usernameUpper === 'SHAH' || (user.name && user.name.includes('آموزش'));
+    const isFinanceManager = user.role === 'finance_manager' || user.role === 'finance_officer' || usernameUpper === 'MALI' || (user.name && user.name.includes('مالی'));
+    const hasExplicitTab = Array.isArray(user.allowedTabs) && user.allowedTabs.includes('system-health');
+
+    const isAuthorized = isSuperAdmin || isEducationManager || isFinanceManager || hasExplicitTab;
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, message: 'دسترسی به پایش سلامت سیستم فقط برای سوپر ادمین، مسئول آموزش و مسئول مالی مجاز است.' });
     }
 
     // Capture latest memory snapshot before sending report

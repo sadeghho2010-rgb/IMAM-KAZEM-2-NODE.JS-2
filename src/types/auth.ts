@@ -58,6 +58,7 @@ export interface AppUser {
   canManageUsers?: boolean;
   canBackup?: boolean;
   isActive?: boolean;
+  managedClassId?: string;
   allowedTabs: string[];
   allowedModules?: string[];
   editableTabs?: string[];

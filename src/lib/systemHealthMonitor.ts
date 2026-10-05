@@ -2,6 +2,7 @@ import { logger } from './logger';
 import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface MemorySnapshot {
   timestamp: string;
@@ -10,6 +11,13 @@ export interface MemorySnapshot {
   rssMb: number;
   externalMb: number;
   freeOsMemInfo?: string;
+}
+
+export interface CpuSnapshot {
+  percent: number;
+  cores: number;
+  model: string;
+  loadAvg: number[];
 }
 
 export interface SlowQueryLog {
@@ -34,6 +42,60 @@ const errorLogFile = path.join(logDir, 'error.log');
 // Ensure log directory exists
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
+}
+
+// CPU usage tracking state
+let previousCpus = os.cpus();
+
+export function getCpuUsage(): CpuSnapshot {
+  try {
+    const currentCpus = os.cpus();
+    const cores = currentCpus.length || 1;
+    const model = currentCpus[0]?.model || 'پردازنده اصلی';
+    const rawLoadAvg = os.loadavg() || [0, 0, 0];
+    const loadAvg = rawLoadAvg.map(l => Math.round(l * 100) / 100);
+
+    let totalIdle = 0;
+    let totalTick = 0;
+
+    for (let i = 0; i < cores; i++) {
+      const prev = previousCpus[i] || currentCpus[i];
+      const curr = currentCpus[i];
+      if (!prev || !curr) continue;
+
+      for (const type in curr.times) {
+        totalTick += (curr.times as any)[type] - (prev.times as any)[type];
+      }
+      totalIdle += curr.times.idle - prev.times.idle;
+    }
+
+    previousCpus = currentCpus;
+
+    const idlePercent = totalTick > 0 ? (totalIdle / totalTick) : 1;
+    let percent = Math.round((1 - idlePercent) * 100);
+
+    // Fallback using load average if tick delta was 0
+    if (totalTick === 0 && loadAvg && loadAvg[0] !== undefined && cores > 0) {
+      percent = Math.min(100, Math.round((loadAvg[0] / cores) * 100));
+    }
+
+    if (isNaN(percent) || percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+
+    return {
+      percent,
+      cores,
+      model,
+      loadAvg
+    };
+  } catch (e) {
+    return {
+      percent: 0,
+      cores: os.cpus()?.length || 1,
+      model: 'CPU',
+      loadAvg: [0, 0, 0]
+    };
+  }
 }
 
 // Get free OS memory via free -h if linux available
@@ -196,6 +258,7 @@ export function getSystemHealthReport() {
   }));
 
   const freeOsMemInfo = memoryHistory[memoryHistory.length - 1]?.freeOsMemInfo || 'اطلاعات موجود نیست';
+  const currentCpu = getCpuUsage();
 
   return {
     currentMemory: {
@@ -206,6 +269,7 @@ export function getSystemHealthReport() {
       heapUsagePercent: Math.round((heapUsedMb / heapTotalMb) * 100),
       freeOsMemInfo
     },
+    currentCpu,
     peakHeap24hMb,
     memoryHistory,
     slowQueries,

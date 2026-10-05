@@ -175,6 +175,7 @@ export const DEFAULT_USERS: AppUser[] = [
       'education-financial-report': 'edit',
       'user-credentials': 'edit',
       'backup': 'edit',
+      'system-health': 'edit',
       'audit-logs': 'view',
       'app-logs': 'view',
       'finance-tuition': 'none',
@@ -483,6 +484,7 @@ export const DEFAULT_USERS: AppUser[] = [
       'teacher-transport',
       'finance',
       'backup',
+      'system-health',
       'user-credentials',
       'audit-logs',
       'app-logs'
@@ -502,6 +504,7 @@ export const DEFAULT_USERS: AppUser[] = [
       'teacher-transport',
       'finance',
       'backup',
+      'system-health',
       'user-credentials',
       'audit-logs',
       'app-logs'
@@ -521,6 +524,7 @@ export const DEFAULT_USERS: AppUser[] = [
       'workflow': 'edit',
       'todos': 'edit',
       'backup': 'edit',
+      'system-health': 'edit',
       'user-credentials': 'edit',
       'audit-logs': 'edit',
       'app-logs': 'view',
@@ -609,7 +613,7 @@ interface AuthContextType {
   logoutAllSessions: () => Promise<{ success: boolean; message?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   adminResetPassword: (targetUserId: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
-  addUser: (newUser: Partial<AppUser>) => { success: boolean; error?: string };
+  addUser: (newUser: Partial<AppUser>) => { success: boolean; error?: string; user?: AppUser };
   updateUser: (id: string, updates: Partial<AppUser>) => void;
   deleteUser: (id: string) => void;
   resetDefaultUsers: () => void;
@@ -641,7 +645,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
       'student-requests', 'finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch',
       'finance-claims', 'finance-loans-fund', 'finance-expenses-reports', 'finance',
       'workflow', 'todos', 'academic-calendar', 'students', 'teachers-bank', 'staff-bank',
-      'teacher-transport', 'backup', 'user-credentials', 'audit-logs', 'app-logs'
+      'teacher-transport', 'backup', 'system-health', 'user-credentials', 'audit-logs', 'app-logs'
     ];
     return allowed.includes(tabId);
   }
@@ -745,6 +749,11 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
     return role === 'super_admin' || role === 'education_manager' || role === 'education_officer' || username === 'SHAH' || role === 'finance_manager';
   }
 
+  // System Health: super admin, education manager, and finance manager
+  if (tabId === 'system-health') {
+    return role === 'super_admin' || role === 'education_manager' || role === 'education_officer' || username === 'SHAH' || role === 'finance_manager' || (role as string) === 'finance_officer' || role === 'financial_officer' || username === 'MALI';
+  }
+
   return true;
 }
 
@@ -762,6 +771,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const uname = u.username.toUpperCase();
               const existingDef = userMap.get(uname);
               const isEduOrAdmin = u.role === 'education_manager' || u.role === 'education_officer' || uname === 'SHAH' || u.role === 'super_admin' || u.level === 1;
+              const isFin = u.role === 'finance_manager' || (u.role as string) === 'finance_officer' || u.role === 'financial_officer' || uname === 'MALI' || (u.name && u.name.includes('مالی'));
+              const isHealthAuthorized = isEduOrAdmin || isFin;
               const allowedTabs = Array.isArray(u.allowedTabs) ? [...u.allowedTabs] : (existingDef?.allowedTabs ? [...existingDef.allowedTabs] : ['todos', 'students']);
               const editableTabs = Array.isArray(u.editableTabs) ? [...u.editableTabs] : (existingDef?.editableTabs ? [...existingDef.editableTabs] : []);
               const modulePermissions = { ...(existingDef?.modulePermissions || {}), ...(u.modulePermissions || {}) };
@@ -771,6 +782,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (!editableTabs.includes('lockers')) editableTabs.push('lockers');
                 if (!modulePermissions['lockers'] || modulePermissions['lockers'] === 'none') {
                   modulePermissions['lockers'] = 'edit';
+                }
+              }
+
+              if (isHealthAuthorized) {
+                if (!allowedTabs.includes('system-health')) allowedTabs.push('system-health');
+                if (!editableTabs.includes('system-health')) editableTabs.push('system-health');
+                if (!modulePermissions['system-health'] || modulePermissions['system-health'] === 'none') {
+                  modulePermissions['system-health'] = 'edit';
                 }
               }
 
@@ -803,6 +822,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const uname = parsed.username.toUpperCase();
           const found = DEFAULT_USERS.find(u => u.username.toUpperCase() === uname);
           const isEduOrAdmin = parsed.role === 'education_manager' || parsed.role === 'education_officer' || uname === 'SHAH' || parsed.role === 'super_admin' || parsed.level === 1;
+          const isFin = parsed.role === 'finance_manager' || (parsed.role as string) === 'finance_officer' || parsed.role === 'financial_officer' || uname === 'MALI' || (parsed.name && parsed.name.includes('مالی'));
+          const isHealthAuthorized = isEduOrAdmin || isFin;
           const allowedTabs = Array.isArray(parsed.allowedTabs) 
             ? [...parsed.allowedTabs] 
             : (Array.isArray(parsed.allowedModules) ? [...parsed.allowedModules] : (found?.allowedTabs ? [...found.allowedTabs] : ['todos', 'students']));
@@ -814,6 +835,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!editableTabs.includes('lockers')) editableTabs.push('lockers');
             if (!modulePermissions['lockers'] || modulePermissions['lockers'] === 'none') {
               modulePermissions['lockers'] = 'edit';
+            }
+          }
+
+          if (isHealthAuthorized) {
+            if (!allowedTabs.includes('system-health')) allowedTabs.push('system-health');
+            if (!editableTabs.includes('system-health')) editableTabs.push('system-health');
+            if (!modulePermissions['system-health'] || modulePermissions['system-health'] === 'none') {
+              modulePermissions['system-health'] = 'edit';
             }
           }
 
@@ -1146,7 +1175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const addUser = (newUser: Partial<AppUser>): { success: boolean; error?: string } => {
+  const addUser = (newUser: Partial<AppUser>): { success: boolean; error?: string; user?: AppUser } => {
     const username = (newUser.username || '').trim().toUpperCase();
     if (!username) return { success: false, error: 'نام کاربری الزامی است' };
 
@@ -1215,7 +1244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       body: JSON.stringify({ user })
     }).catch(() => {});
 
-    return { success: true };
+    return { success: true, user };
   };
 
   const updateUser = (id: string, updates: Partial<AppUser>) => {
