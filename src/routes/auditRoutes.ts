@@ -195,4 +195,23 @@ router.post('/cleanup', requireAdminRole, async (_req: Request, res: Response) =
   }
 });
 
+/**
+ * POST /api/audit/revert
+ * Reverts an audit log activity
+ */
+router.post('/revert', requireAdminRole, async (req: Request, res: Response) => {
+  try {
+    const { logId, revertedBy } = req.body || {};
+    const { revertAuditActivity } = await import('../lib/auditLogger');
+    const caller = (req as any).user;
+    const userName = revertedBy || caller?.username || caller?.name || 'مدیر سامانه';
+
+    const result = await revertAuditActivity(logId, userName);
+    return res.json(result);
+  } catch (err: any) {
+    console.error('[AuditRoutes POST /revert error]:', err);
+    return res.status(500).json({ success: false, message: err?.message || 'خطا در بازگردانی عملیات.' });
+  }
+});
+
 export default router;

@@ -27,10 +27,22 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
-import { revertAuditActivity } from '../lib/auditLogger';
 import { AuditLog, AuditActionType, UserLevel } from '../types';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+
+async function revertAuditActivity(logId: string, revertedBy: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch('/api/audit/revert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ logId, revertedBy })
+    });
+    return await response.json();
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'خطا در ارتباط با سرور' };
+  }
+}
 
 export const ALL_SITE_MODULES = [
   { id: 'students', label: 'مدیریت کل طلاب', icon: '👤', color: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
