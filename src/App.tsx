@@ -3,67 +3,67 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
+import StudentList from './components/StudentList';
+import Programs from './components/Programs';
+import StudentSchedule from './components/StudentSchedule';
+import ResearchAndFeedback from './components/ResearchAndFeedback';
+import AttendanceAndStats from './components/AttendanceAndStats';
+import StudyStats from './components/StudyStats';
+import Summary from './components/Summary';
+import BackupAndRestore from './components/BackupAndRestore';
+import SiteAuditLogs from './components/SiteAuditLogs';
+import SystemHealth from './components/SystemHealth';
+import LogViewer from './components/LogViewer';
+
+// Lazy loading SystemLogs component
+const SystemLogs = React.lazy(() => import('./components/SystemLogs'));
+import DbSaveErrorsView from './components/DbSaveErrorsView';
+import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
+import TeacherTransportManagement from './components/education/TeacherTransportManagement';
+import TodoList from './components/TodoList';
+import StudentComments from './components/StudentComments';
+import StudyDiscussion from './components/StudyDiscussion';
+import AcademicCalendar from './components/AcademicCalendar';
+import PresenceHours from './components/PresenceHours';
+import TeachersBank from './components/TeachersBank';
+import StaffBank from './components/finance/StaffBank';
+import TeachersSchedule from './components/TeachersSchedule';
+import MadrasRooms from './components/MadrasRooms';
+import WorkflowManager from './components/WorkflowManager';
+import CounselingClasses from './components/CounselingClasses';
+import CourseSelection from './components/CourseSelection';
+import OralExamsManagement from './components/OralExamsManagement';
+import ArticleEvaluations from './components/ArticleEvaluations';
+import FinanceManagerDashboard from './components/FinanceManagerDashboard';
+import StudentActivityAndTuition from './components/finance/StudentActivityAndTuition';
+import GradeProfessorsCompensation from './components/finance/GradeProfessorsCompensation';
+import TeachersCompensation from './components/finance/TeachersCompensation';
+import LunchManagement from './components/finance/LunchManagement';
+import StudentMealReservationView from './components/finance/StudentMealReservationView';
+import ClaimsManagement from './components/finance/ClaimsManagement';
+import FundAndActiveLoans from './components/finance/FundAndActiveLoans';
+import ExpensesAndReports from './components/finance/ExpensesAndReports';
+import { ConsultationAdvisor } from './components/ConsultationAdvisor';
+import LockersManagement from './components/LockersManagement';
 import LoginPage from './components/auth/LoginPage';
+import UserManagementSettings from './components/admin/UserManagementSettings';
+import UserCredentialsSettings from './components/admin/UserCredentialsSettings';
+import DatabaseConnectionTest from './components/DatabaseConnectionTest';
+import TeacherPortal from './components/TeacherPortal';
+import StudentRequestsPortal from './components/StudentRequestsPortal';
+import AnomalyDetectionView from './components/admin/AnomalyDetectionView';
+import SecurityPinModal from './components/auth/SecurityPinModal';
+import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import MainDashboard from './components/MainDashboard';
 import SettingsModal from './components/SettingsModal';
-import SecurityPinModal from './components/auth/SecurityPinModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { MentorProvider, useMentor } from './context/MentorContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
-
-// Lazy loading all tab components for maximum initial page load speed
-const StudentList = lazy(() => import('./components/StudentList'));
-const Programs = lazy(() => import('./components/Programs'));
-const StudentSchedule = lazy(() => import('./components/StudentSchedule'));
-const ResearchAndFeedback = lazy(() => import('./components/ResearchAndFeedback'));
-const AttendanceAndStats = lazy(() => import('./components/AttendanceAndStats'));
-const StudyStats = lazy(() => import('./components/StudyStats'));
-const Summary = lazy(() => import('./components/Summary'));
-const BackupAndRestore = lazy(() => import('./components/BackupAndRestore'));
-const SiteAuditLogs = lazy(() => import('./components/SiteAuditLogs'));
-const SystemHealth = lazy(() => import('./components/SystemHealth'));
-const LogViewer = lazy(() => import('./components/LogViewer'));
-const SystemLogs = lazy(() => import('./components/SystemLogs'));
-const DbSaveErrorsView = lazy(() => import('./components/DbSaveErrorsView'));
-const EducationFinancialReportSettings = lazy(() => import('./components/education/EducationFinancialReportSettings'));
-const TeacherTransportManagement = lazy(() => import('./components/education/TeacherTransportManagement'));
-const TodoList = lazy(() => import('./components/TodoList'));
-const StudentComments = lazy(() => import('./components/StudentComments'));
-const StudyDiscussion = lazy(() => import('./components/StudyDiscussion'));
-const AcademicCalendar = lazy(() => import('./components/AcademicCalendar'));
-const PresenceHours = lazy(() => import('./components/PresenceHours'));
-const TeachersBank = lazy(() => import('./components/TeachersBank'));
-const StaffBank = lazy(() => import('./components/finance/StaffBank'));
-const TeachersSchedule = lazy(() => import('./components/TeachersSchedule'));
-const MadrasRooms = lazy(() => import('./components/MadrasRooms'));
-const WorkflowManager = lazy(() => import('./components/WorkflowManager'));
-const CounselingClasses = lazy(() => import('./components/CounselingClasses'));
-const CourseSelection = lazy(() => import('./components/CourseSelection'));
-const OralExamsManagement = lazy(() => import('./components/OralExamsManagement'));
-const ArticleEvaluations = lazy(() => import('./components/ArticleEvaluations'));
-const FinanceManagerDashboard = lazy(() => import('./components/FinanceManagerDashboard'));
-const StudentActivityAndTuition = lazy(() => import('./components/finance/StudentActivityAndTuition'));
-const GradeProfessorsCompensation = lazy(() => import('./components/finance/GradeProfessorsCompensation'));
-const TeachersCompensation = lazy(() => import('./components/finance/TeachersCompensation'));
-const LunchManagement = lazy(() => import('./components/finance/LunchManagement'));
-const StudentMealReservationView = lazy(() => import('./components/finance/StudentMealReservationView'));
-const ClaimsManagement = lazy(() => import('./components/finance/ClaimsManagement'));
-const FundAndActiveLoans = lazy(() => import('./components/finance/FundAndActiveLoans'));
-const ExpensesAndReports = lazy(() => import('./components/finance/ExpensesAndReports'));
-const ConsultationAdvisor = lazy(() => import('./components/ConsultationAdvisor').then(m => ({ default: m.ConsultationAdvisor })));
-const LockersManagement = lazy(() => import('./components/LockersManagement'));
-const UserManagementSettings = lazy(() => import('./components/admin/UserManagementSettings'));
-const UserCredentialsSettings = lazy(() => import('./components/admin/UserCredentialsSettings'));
-const DatabaseConnectionTest = lazy(() => import('./components/DatabaseConnectionTest'));
-const TeacherPortal = lazy(() => import('./components/TeacherPortal'));
-const StudentRequestsPortal = lazy(() => import('./components/StudentRequestsPortal'));
-const AnomalyDetectionView = lazy(() => import('./components/admin/AnomalyDetectionView'));
-import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -539,14 +539,7 @@ function AppContent() {
               className="max-w-7xl mx-auto space-y-4"
             >
               <TabErrorBoundary tabName={getActiveTabTitle(activeTab)} onNavigateHome={() => navigateToTab('dashboard')}>
-                <Suspense fallback={
-                  <div className="flex flex-col items-center justify-center p-12 space-y-3 dir-rtl text-slate-600 font-bold bg-white/80 rounded-2xl border border-slate-200/80 shadow-2xs">
-                    <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                    <span>در حال بارگذاری سریع بخش...</span>
-                  </div>
-                }>
-                  {renderContent()}
-                </Suspense>
+                {renderContent()}
               </TabErrorBoundary>
             </motion.div>
           </AnimatePresence>
