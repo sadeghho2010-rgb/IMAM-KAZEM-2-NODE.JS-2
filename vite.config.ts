@@ -52,41 +52,17 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
+              urlPattern: /^\/api\/.*/i,
+              handler: 'NetworkOnly',
             },
             {
-              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-              handler: 'CacheFirst',
+              urlPattern: /\.(?:js|css|woff2|woff|png|svg|ico)$/i,
+              handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'gstatic-fonts-cache',
+                cacheName: 'static-assets-cache',
                 expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'jsdelivr-cdn-cache',
-                expiration: {
-                  maxEntries: 20,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                  maxEntries: 100,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
@@ -115,7 +91,31 @@ export default defineConfig(({ mode }) => {
           'firebase', 'firebase/app', 'firebase/firestore', 'firebase/auth',
           '@firebase/app', '@firebase/firestore',
           'mysql2', 'net', 'tls', 'fs', 'crypto', 'stream', 'buffer'
-        ]
+        ],
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('recharts')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('jspdf') || id.includes('html2pdf') || id.includes('html2canvas') || id.includes('xlsx')) {
+                return 'vendor-pdf-export';
+              }
+              if (id.includes('motion')) {
+                return 'vendor-animation';
+              }
+              if (id.includes('@supabase')) {
+                return 'vendor-supabase';
+              }
+            }
+          }
+        }
       }
     },
     server: {
