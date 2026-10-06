@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { collection, doc, setDoc, deleteDoc, getDoc, getDocs, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { realtimeSync } from '../lib/realtimeSync';
 import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';
 
@@ -916,29 +914,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       syncWithServer();
     }, 15000);
 
-    // 4. Firestore real-time listener for system_users
-    let unsubscribeFirestore: (() => void) | null = null;
-    try {
-      if (db) {
-        unsubscribeFirestore = onSnapshot(collection(db, 'system_users'), (snapshot) => {
-          const list: Partial<AppUser>[] = [];
-          snapshot.forEach(docSnap => {
-            if (docSnap.exists()) {
-              list.push({ ...(docSnap.data() as any), id: docSnap.id });
-            }
-          });
-          if (list.length > 0) {
-            processIncomingUsers(list);
-          }
-        }, () => {});
-      }
-    } catch (e) {}
-
     return () => { 
       isMounted = false; 
       clearInterval(syncInterval);
       unsubscribeRealtime();
-      if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, []);
 
@@ -1279,14 +1258,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return updated;
       });
 
-      try {
-        setDoc(doc(db, 'system_users', username), {
-          ...user,
-          username,
-          updatedAt: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
-      } catch (e) {}
-
       return { success: true, user };
     } catch (e: any) {
       return { success: false, error: 'خطا در ارتباط با سرور هنگام ثبت کاربر.' };
@@ -1371,15 +1342,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {}
 
       if (targetUser) {
-        try {
-          const tUname = targetUser.username.toUpperCase();
-          setDoc(doc(db, 'system_users', tUname), {
-            ...targetUser,
-            username: tUname,
-            updatedAt: new Date().toISOString()
-          }, { merge: true }).catch(() => {});
-        } catch (e) {}
-
         fetch('/api/auth/update-user', {
           method: 'POST',
           headers,
@@ -1415,10 +1377,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
       logout();
     }
-
-    try {
-      deleteDoc(doc(db, 'system_users', usernameToDelete)).catch(() => {});
-    } catch (e) {}
 
     fetch('/api/auth/delete-user', {
       method: 'POST',

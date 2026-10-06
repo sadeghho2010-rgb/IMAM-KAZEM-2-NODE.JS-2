@@ -5,8 +5,6 @@
  */
 import { supabase, isSupabaseConfigured } from './supabase';
 import { dispatchDatabaseErrorToast } from './databaseToast';
-import { doc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore';
-import { db as firestoreDb } from './firebase';
 import { realtimeSync } from './realtimeSync';
 
 /**
@@ -989,9 +987,6 @@ class LocalDatabase {
           store.put(record);
         } catch (e) {}
       }
-      try {
-        setDoc(doc(firestoreDb, resolvedCol, id), sanitizeForCloud(record)).catch(() => {});
-      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       dispatchDatabaseErrorToast('اطلاعات با موفقیت در سرور ذخیره شد.', 'success');
@@ -1046,9 +1041,6 @@ class LocalDatabase {
           store.put(updated);
         } catch (e) {}
       }
-      try {
-        setDoc(doc(firestoreDb, resolvedCol, id), sanitizeForCloud(updated)).catch(() => {});
-      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
       dispatchDatabaseErrorToast('تغییرات با موفقیت در سرور ذخیره شد.', 'success');
@@ -1098,9 +1090,6 @@ class LocalDatabase {
           store.delete(id);
         } catch (e) {}
       }
-      try {
-        deleteDoc(doc(firestoreDb, resolvedCol, id)).catch(() => {});
-      } catch (e) {}
       this.notify();
       this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
       dispatchDatabaseErrorToast('حذف اطلاعات با موفقیت انجام شد.', 'success');
@@ -2492,427 +2481,25 @@ class LocalDatabase {
     };
   }
 
-  // Seed default data if database is empty on first ever installation only
+  // Server-First baseline data initialization: Syncs from Server API if IndexedDB is empty
   private async checkAndSeedDefaultData(db: IDBDatabase) {
     try {
       if (typeof window !== 'undefined' && localStorage.getItem('app_baseline_seeded_v1') === 'true') {
         return;
       }
       if (!db.objectStoreNames.contains('students')) return;
-      const transaction = db.transaction('students', 'readonly');
-      const store = transaction.objectStore('students');
-      const countReq = store.count();
 
-      countReq.onsuccess = async () => {
-        try {
-          if (countReq.result === 0) {
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('app_baseline_seeded_v1', 'true');
-            }
-            console.log('Local Database is empty. Seeding initial baseline data...');
-          const initialStudents = [
-          {
-            id: 'stu_1',
-            name: 'محمد رضایی',
-            grade: 'پایه ۷',
-            nationalId: '0012345678',
-            phoneNumber: '09121111111',
-            isActive: true,
-            maritalStatus: 'مجرد',
-            livingStatus: 'خوابگاه',
-            classicEducation: 'دیپلم ریاضی',
-            howzaEntryYear: '1400',
-            levelOneSchool: 'مدرسه معصومیه',
-            tammomStatus: 'غیر معمم',
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'stu_2',
-            name: 'علی حسینی',
-            grade: 'پایه ۸',
-            nationalId: '0023456789',
-            phoneNumber: '09122222222',
-            isActive: true,
-            maritalStatus: 'متاهل',
-            childrenCount: 1,
-            livingStatus: 'اجاره ای',
-            classicEducation: 'کارشناسی ادبیات',
-            howzaEntryYear: '1399',
-            levelOneSchool: 'مدرسه حقانی',
-            tammomStatus: 'معمم',
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'stu_3',
-            name: 'حسین سلیمانی',
-            grade: 'پایه ۹',
-            nationalId: '0034567890',
-            phoneNumber: '09123333333',
-            isActive: true,
-            maritalStatus: 'مجرد',
-            livingStatus: 'پدری',
-            classicEducation: 'دیپلم علوم انسانی',
-            howzaEntryYear: '1398',
-            levelOneSchool: 'مدرسه شهیدین',
-            tammomStatus: 'غیر معمم',
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        const initialPrograms = [
-          {
-            id: 'prog_1',
-            title: 'درس خارج فقه و اصول',
-            type: 'اصلی',
-            day: 'شنبه تا چهارشنبه',
-            time: '08:00 - 09:30',
-            teacher: 'استاد حسینی'
-          },
-          {
-            id: 'prog_2',
-            title: 'کارگاه روش تحقیق و مقاله‌نویسی',
-            type: 'پژوهش',
-            day: 'پنج‌شنبه',
-            time: '10:00 - 11:30',
-            teacher: 'استاد حیاتی'
-          }
-        ];
-
-        const initialEnrollments = [
-          { id: 'enr_1', studentId: 'stu_1', programId: 'prog_1' },
-          { id: 'enr_2', studentId: 'stu_1', programId: 'prog_2' },
-          { id: 'enr_3', studentId: 'stu_2', programId: 'prog_1' }
-        ];
-
-        const initialStudyPeriods = [
-          {
-            id: 'period_1',
-            title: 'دوره مطالعه آبان و آذر',
-            startDate: '1403/08/01',
-            endDate: '1403/09/30',
-            mandatoryHours: 80,
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        const initialPeriodicLogs = [
-          { id: 'log_1', periodId: 'period_1', studentId: 'stu_1', hours: 75 },
-          { id: 'log_2', periodId: 'period_1', studentId: 'stu_2', hours: 88 },
-          { id: 'log_3', periodId: 'period_1', studentId: 'stu_3', hours: 62 }
-        ];
-
-        const initialComments = [
-          {
-            id: 'com_1',
-            studentId: 'stu_1',
-            authorName: 'استاد حیاتی',
-            category: 'علمی',
-            content: 'پیشرفت بسیار خوبی در مباحث مکاسب داشته است و منظم در کلاس شرکت می‌کند.',
-            priority: 'high',
-            date: '1403/08/15',
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        const initialOralExams = [
-          {
-            id: 'exam_1',
-            studentId: 'stu_1',
-            title: 'فقه پایه ۷ (مکاسب)',
-            subjectType: 'فقه',
-            score: 18.5,
-            examinerName: 'استاد ممتحن فقه',
-            date: '1403/08/10',
-            isRetake: false,
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        const initialTodos = [
-          {
-            id: 'todo_1',
-            studentId: 'stu_1',
-            title: 'بررسی پیش‌نویس مقاله پژوهشی طلبه محمد رضایی',
-            completed: false,
-            dueDate: '1403/09/01',
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        const initialDiscussionGroups = [
-          {
-            id: 'group_1',
-            title: 'گروه مباحثه مکاسب و اصول',
-            subject: 'فقه و اصول',
-            grade: 'پایه ۷',
-            mentorId: 'hayati',
-            memberStudentIds: ['stu_1'],
-            externalMembers: ['طلبه کاظمی (سایر - خارج از مدرسه)'],
-            description: 'مباحثه روزانه کتاب مکاسب بعد از درس اصلی',
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'group_2',
-            title: 'گروه مباحثه رسائل و حلقه ثالثه',
-            subject: 'اصول فقه',
-            grade: 'پایه ۸',
-            mentorId: 'hosseini',
-            memberStudentIds: ['stu_2'],
-            externalMembers: ['طلبه حسینی (سایر)'],
-            description: 'مباحثه تخصصی مباحث الفاظ و حجج',
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        await Promise.all([
-          this.bulkPut('students', initialStudents),
-          this.bulkPut('programs', initialPrograms),
-          this.bulkPut('enrollments', initialEnrollments),
-          this.bulkPut('study_periods', initialStudyPeriods),
-          this.bulkPut('periodic_study_logs', initialPeriodicLogs),
-          this.bulkPut('student_comments', initialComments),
-          this.bulkPut('oral_exams', initialOralExams),
-          this.bulkPut('todos', initialTodos),
-          this.bulkPut('discussion_groups', initialDiscussionGroups)
-        ]);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('app_baseline_seeded_v1', 'true');
       }
 
-      // Check and seed workflow_settings & workflow_items if empty
-      const existingSettings = await this.getDocs('workflow_settings');
-      if (!existingSettings || existingSettings.length === 0) {
-        await this.addDoc('workflow_settings', {
-          id: 'default_workflow_settings',
-          requireEducationApprovalForAttendanceWarning: true,
-          requireEducationApprovalForStudyWarning: true,
-          requireAccountCreationPrompt: true,
-          notifyGradeSupervisorOnWarning: true,
-          notifyOnStudyPeriodOpened: true,
-          notifyOnStudyPeriodClosed: true,
-          updatedAt: new Date().toISOString()
-        });
+      console.log('IndexedDB initialization: Syncing baseline collections from server API...');
+      const collectionsToSync = ['students', 'programs', 'enrollments', 'study_periods', 'workflow_settings', 'workflow_items'];
+      for (const col of collectionsToSync) {
+        this.syncCollectionFromCloud(col).catch(() => {});
       }
-
-      const existingWorkflow = await this.getDocs('workflow_items');
-      if (!existingWorkflow || existingWorkflow.length === 0) {
-        const initialWorkflowItems = [
-          {
-            id: 'wf_1',
-            type: 'report_notice',
-            category: 'study_period',
-            title: 'بازگشایی دوره جدید ثبت مطالعه توسط مسئول آموزش',
-            description: 'دوره جدید ثبت مطالعه برای همه پایه‌ها برای بازه زمانی ۰۱ مهر تا ۱۵ مهر ایجاد شد. طلاب محترم و مسئولین پایه می‌توانند ساعات مطالعه و مباحثات را ثبت نمایند.',
-            status: 'acknowledged',
-            grade: 'همه پایه‌ها',
-            periodTitle: 'دوره اول مهرماه ۱۴۰۳',
-            dateRange: '۱۴۰۳/۰۷/۰۱ تا ۱۴۰۳/۰۷/۱۵',
-            requiresEducationApproval: false,
-            reportAction: {
-              label: 'مشاهده آمار و گزارش مطالعه',
-              tabTarget: 'stats',
-              description: 'بررسی شاخص‌های تفکیکی مطالعه و ساعات مباحثه'
-            },
-            createdAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString()
-          },
-          {
-            id: 'wf_2',
-            type: 'approval',
-            category: 'unexcused_absence_warning',
-            title: 'ثبت اخطار غیبت غیرموجه: طلبه علی موسوی',
-            description: 'طلبه علی موسوی (پایه ۷) دارای ۳ جلسه غیبت غیرموجه در هفته جاری است. بر اساس آئین‌نامه آموزشی، ثبت نهایی اخطار منوط به تایید مسئول آموزش است.',
-            status: 'pending',
-            grade: 'پایه ۷',
-            studentName: 'علی موسوی',
-            details: {
-              unexcusedAbsences: 3,
-              course: 'فقه (مکاسب)',
-              dates: ['۱۴۰۳/۰۷/۰۸', '۱۴۰۳/۰۷/۰۹', '۱۴۰۳/۰۷/۱۰']
-            },
-            requiresEducationApproval: true,
-            reportAction: {
-              label: 'گزارش حضور و غیاب',
-              tabTarget: 'attendance',
-              description: 'مشاهده ریز جزئیات جلسات و غیبت‌های ثبت شده'
-            },
-            createdAt: new Date(Date.now() - 3600000 * 5).toISOString()
-          },
-          {
-            id: 'wf_3',
-            type: 'approval',
-            category: 'study_deficit_warning',
-            title: 'ثبت اخطار ساعت مطالعه و مباحثه: طلبه محمد حسینی',
-            description: 'طلبه محمد حسینی (پایه ۸) به علت ثبت ۱۸ ساعت مطالعه و مباحثه (کسری ۱۲ ساعت از سقف الزامی ۳۰ ساعت) مشمول ثبت اخطار شده است. تایید قطعی منوط به نظر مسئول آموزش می‌باشد.',
-            status: 'pending',
-            grade: 'پایه ۸',
-            studentName: 'محمد حسینی',
-            details: {
-              mandatoryHours: 30,
-              loggedHours: 18,
-              deficitHours: 12,
-              period: 'دوره اول مهرماه ۱۴۰۳'
-            },
-            requiresEducationApproval: true,
-            reportAction: {
-              label: 'کارنامه مطالعه و مباحثه',
-              tabTarget: 'discussion',
-              description: 'مشاهده جزئیات گروه‌های مباحثه و لاگ‌های ثبت‌شده'
-            },
-            createdAt: new Date(Date.now() - 3600000 * 8).toISOString()
-          },
-          {
-            id: 'wf_4',
-            type: 'notice',
-            category: 'study_period',
-            title: 'پایان مهلت و بسته شدن بازه ثبت مطالعه',
-            description: 'مهلت ثبت ساعت مطالعه دوره شهریور ماه پایان یافت و سامانه برای ثبت دیرکرد بسته شد. گزارش تجمیعی در بخش آمار قابل دسترسی است.',
-            status: 'acknowledged',
-            grade: 'همه پایه‌ها',
-            periodTitle: 'دوره شهریور ماه ۱۴۰۳',
-            requiresEducationApproval: false,
-            createdAt: new Date(Date.now() - 3600000 * 24 * 7).toISOString()
-          },
-          {
-            id: 'wf_5',
-            type: 'report_notice',
-            category: 'unexcused_absence_warning',
-            title: 'ابلاغ اخطار غیبت غیرموجه به مسئول پایه: طلبه صادق مرادی',
-            description: 'اخطار غیبت غیرموجه طلبه صادق مرادی (پایه ۹) پس از تایید نهایی مسئول آموزش، به پرونده طلبه الصاق و به مسئول محترم پایه ۹ نیز ابلاغ گردید.',
-            status: 'approved',
-            grade: 'پایه ۹',
-            studentName: 'صادق مرادی',
-            requiresEducationApproval: true,
-            approvedByName: 'مسئول آموزش (استاد شاهپوری)',
-            approvedAt: new Date(Date.now() - 3600000 * 18).toISOString(),
-            reportAction: {
-              label: 'پرونده حضور و غیاب پایه ۹',
-              tabTarget: 'attendance'
-            },
-            createdAt: new Date(Date.now() - 3600000 * 20).toISOString()
-          }
-        ];
-        await this.bulkPut('workflow_items', initialWorkflowItems);
-      }
-
-      // Check and seed default audit_logs if empty
-      const existingAudit = await this.getDocs('audit_logs');
-      if (!existingAudit || existingAudit.length === 0) {
-        const initialAuditLogs = [
-          {
-            id: 'audit_1',
-            timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-            shamsiDate: '1403/08/20',
-            shamsiTime: '10:15:22',
-            userId: 'user_yazdani',
-            userName: 'استاد یزدانی (مسئول پژوهش)',
-            username: 'YAZDANI',
-            userRole: 'research_manager',
-            userRoleTitle: 'مسئول پژوهش',
-            userLevel: 2,
-            actionType: 'update',
-            module: 'research',
-            moduleTitle: 'بخش پژوهش و مقالات',
-            entityType: 'research',
-            entityId: 'res_101',
-            entityName: 'مقاله بررسی تطبیقی درایه الحدیث',
-            description: 'ویرایش وضعیت مقاله علمی طلبه محمد رضایی به مرحله «ارزیابی نهایی استاد»',
-            previousState: { id: 'res_101', status: 'در حال نگارش', score: 14 },
-            newState: { id: 'res_101', status: 'ارزیابی نهایی استاد', score: 18 },
-            isReverted: false
-          },
-          {
-            id: 'audit_2',
-            timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-            shamsiDate: '1403/08/20',
-            shamsiTime: '08:30:10',
-            userId: 'user_shah',
-            userName: 'استاد شاهپوری (مسئول آموزش)',
-            username: 'SHAH',
-            userRole: 'education_manager',
-            userRoleTitle: 'مسئول آموزش',
-            userLevel: 2,
-            actionType: 'delete',
-            module: 'programs',
-            moduleTitle: 'برنامه‌های مدرسه و مدرس‌ها',
-            entityType: 'programs',
-            entityId: 'prog_temp_9',
-            entityName: 'کلاس فوق‌العاده مکاسب پایه ۸',
-            description: 'حذف کلاس درس فوق‌العاده مکاسب پایه ۸ از لیست برنامه درسی مدرس ۱',
-            previousState: { id: 'prog_temp_9', title: 'کلاس فوق‌العاده مکاسب پایه ۸', day: 'پنج‌شنبه', time: '10:00 - 11:30' },
-            isReverted: false
-          },
-          {
-            id: 'audit_3',
-            timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
-            shamsiDate: '1403/08/19',
-            shamsiTime: '16:45:00',
-            userId: 'user_mali',
-            userName: 'مسئول مالی و اداری',
-            username: 'MALI',
-            userRole: 'finance_manager',
-            userRoleTitle: 'مسئول مالی و کارکرد',
-            userLevel: 2,
-            actionType: 'update',
-            module: 'presence-hours',
-            moduleTitle: 'ساعت حضور و کارکرد اساتید',
-            entityType: 'presence_hours',
-            entityId: 'pres_55',
-            entityName: 'کارکرد آبان ماه اساتید',
-            description: 'تأیید و به‌روزرسانی ساعات حضور و کارکرد اساتید پایه ۷ و ۸ در مهر ماه',
-            previousState: { id: 'pres_55', approvedHours: 40 },
-            newState: { id: 'pres_55', approvedHours: 52 },
-            isReverted: false
-          },
-          {
-            id: 'audit_4',
-            timestamp: new Date(Date.now() - 3600000 * 36).toISOString(),
-            shamsiDate: '1403/08/18',
-            shamsiTime: '11:10:05',
-            userId: 'user_isj',
-            userName: 'استاد حیاتی (مسئول پایه ۷)',
-            username: 'ISJ',
-            userRole: 'grade_mentor',
-            userRoleTitle: 'مسئول پایه ۷',
-            userLevel: 2,
-            actionType: 'create',
-            module: 'discussion',
-            moduleTitle: 'گروه‌های بحثی',
-            entityType: 'discussion_groups',
-            entityId: 'group_702',
-            entityName: 'گروه مباحثه النحو الواضح پایه ۷',
-            description: 'ایجاد گروه مباحثه جدید «النحو الواضح» با عضویت طلاب پایه ۷',
-            newState: { id: 'group_702', title: 'گروه مباحثه النحو الواضح پایه ۷', grade: 'پایه ۷' },
-            isReverted: false
-          },
-          {
-            id: 'audit_5',
-            timestamp: new Date(Date.now() - 3600000 * 48).toISOString(),
-            shamsiDate: '1403/08/17',
-            shamsiTime: '14:20:15',
-            userId: 'user_sarlak',
-            userName: 'طلبه سرلک (نماینده کلاس)',
-            username: 'SARLAK',
-            userRole: 'class_representative',
-            userRoleTitle: 'نماینده کلاس',
-            userLevel: 3,
-            actionType: 'update',
-            module: 'attendance',
-            moduleTitle: 'حضور و غیاب طلاب',
-            entityType: 'attendance',
-            entityId: 'att_88',
-            entityName: 'حضور و غیاب کلاس فقه ۲ دوشنبه',
-            description: 'ویرایش و اصلاح لیست حضور و غیاب جلسه دوشنبه درس فقه پایه ۷',
-            previousState: { id: 'att_88', presentCount: 12 },
-            newState: { id: 'att_88', presentCount: 14 },
-            isReverted: false
-          }
-        ];
-        await this.bulkPut('audit_logs', initialAuditLogs);
-      }
-        } catch (innerErr) {
-          console.warn('Initial seeding encountered an error (ignored gracefully):', innerErr);
-        }
-    };
     } catch (e) {
-      console.warn('Seed data check error:', e);
+      console.warn('Initialization sync warning:', e);
     }
   }
 

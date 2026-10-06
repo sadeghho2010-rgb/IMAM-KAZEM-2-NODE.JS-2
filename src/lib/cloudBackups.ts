@@ -1,5 +1,3 @@
-import { db } from './firebase';
-import { collection, addDoc, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { localDb } from './localDb';
 import { supabase, BUCKET_NAME, getFolderForMentor } from './supabase';
 
@@ -219,15 +217,7 @@ export async function uploadBackupToCloud(
     }
   }
 
-  // 3. Try saving metadata to Firestore database
-  try {
-    const docRef = await addDoc(collection(db, 'cloud_backups'), record);
-    record.id = docRef.id;
-  } catch (e) {
-    console.warn('Firestore fallback to local database:', e);
-  }
-
-  // 4. Always store in local IndexedDB store
+  // 3. Always store in local IndexedDB store
   await localDb.addDoc('cloud_backups', record);
 
   return record;
@@ -287,18 +277,6 @@ export async function fetchCloudBackups(
     }
   } catch (e) {
     console.warn('Supabase cloud_backups table fetch fallback:', e);
-  }
-
-  // 2. Fetch from Firestore
-  try {
-    const colRef = collection(db, 'cloud_backups');
-    const snapshot = await getDocs(colRef);
-    snapshot.forEach(docSnap => {
-      const data = docSnap.data() as CloudBackupRecord;
-      allRecordsMap.set(docSnap.id, { ...data, id: docSnap.id });
-    });
-  } catch (e) {
-    console.warn('Firestore fetch fallback:', e);
   }
 
   // 2. Fetch from Local IndexedDB store
@@ -454,13 +432,6 @@ export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promis
     } catch (e) {
       console.warn('Supabase storage delete error:', e);
     }
-  }
-
-  // Delete from Firestore
-  try {
-    await deleteDoc(doc(db, 'cloud_backups', backupRecord.id));
-  } catch (e) {
-    console.warn('Cloud backup delete firestore fallback:', e);
   }
 
   // Delete from Local DB

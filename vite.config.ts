@@ -111,7 +111,11 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       sourcemap: false,
       rollupOptions: {
-        external: ['mysql2', 'net', 'tls', 'fs', 'crypto', 'stream', 'buffer']
+        external: [
+          'firebase', 'firebase/app', 'firebase/firestore', 'firebase/auth',
+          '@firebase/app', '@firebase/firestore',
+          'mysql2', 'net', 'tls', 'fs', 'crypto', 'stream', 'buffer'
+        ]
       }
     },
     server: {
