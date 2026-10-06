@@ -656,6 +656,7 @@ class LocalDatabase {
   public getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+           localStorage.getItem('auth_access_token') || sessionStorage.getItem('auth_access_token') ||
            localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
            localStorage.getItem('token') || sessionStorage.getItem('token');
   }
@@ -674,15 +675,16 @@ class LocalDatabase {
 
     try {
       let cloudDocs: any[] | null = null;
+      let isServerAuthoritativeSuccess = false;
 
-      // 1. Authoritative Dedicated Server Data API (with 3.5s timeout)
+      // 1. Authoritative Dedicated Server Data API (with 6s timeout)
       try {
         const token = this.getAuthToken();
         const headers: Record<string, string> = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
 
         const apiRes = await fetch(`/api/data/${resolvedCol}`, {
           method: 'GET',
@@ -696,38 +698,15 @@ class LocalDatabase {
           const json = await apiRes.json();
           if (json.success && Array.isArray(json.items)) {
             cloudDocs = json.items.filter((d: any) => d && d.id);
+            isServerAuthoritativeSuccess = true;
           }
         }
       } catch (apiErr) {
-        // Fall back to Firestore or Supabase
+        // Server API unreachable or network timeout
       }
 
-      // 2. Direct Firestore cloud sync if Server API was unreachable
-      if (cloudDocs === null) {
-        try {
-          const fsPromise = (async () => {
-            const snap = await getDocs(collection(firestoreDb, resolvedCol));
-            const list: any[] = [];
-            snap.forEach(dSnap => {
-              if (dSnap.exists()) {
-                list.push({ ...dSnap.data(), id: dSnap.id });
-              }
-            });
-            return list;
-          })();
-
-          const timeoutFs = new Promise<any[]>((res) => setTimeout(() => res([]), 2000));
-          const fsRes = await Promise.race([fsPromise, timeoutFs]);
-          if (Array.isArray(fsRes)) {
-            cloudDocs = fsRes;
-          }
-        } catch (fsErr) {
-          // Firestore offline fallback
-        }
-      }
-
-      // 3. Direct Supabase Cloud sync as last resort if configured
-      if (cloudDocs === null && isSupabaseConfigured) {
+      // 2. Fallback to Supabase Cloud ONLY if Server API was not reachable AND Supabase is explicitly configured
+      if (!isServerAuthoritativeSuccess && isSupabaseConfigured) {
         try {
           const { data: appData, error: appErr } = await supabase
             .from('app_collections')
@@ -738,14 +717,15 @@ class LocalDatabase {
             cloudDocs = appData
               .filter(row => row && row.id)
               .map(row => (row.data && typeof row.data === 'object' ? { ...row.data, id: row.id } : { id: row.id }));
+            isServerAuthoritativeSuccess = true;
           }
         } catch (sbErr) {
           console.warn(`Supabase sync exception for ${resolvedCol}:`, sbErr);
         }
       }
 
-      // If we obtained authoritative records from the cloud/server:
-      if (cloudDocs !== null) {
+      // CRITICAL SECURITY FIX: Only prune local IDB/LocalStorage if we got a VERIFIED authoritative response from Server or DB
+      if (isServerAuthoritativeSuccess && cloudDocs !== null) {
         const validDocs = cloudDocs;
         const cloudDocIds = new Set(validDocs.map((d: any) => String(d.id)));
         const idb = await this.getDb();
@@ -758,7 +738,7 @@ class LocalDatabase {
               const allKeysReq = store.getAllKeys();
               allKeysReq.onsuccess = () => {
                 const existingKeys = allKeysReq.result || [];
-                // CRITICAL: Prune any local key that was deleted on server or other devices!
+                // Prune any local key that was explicitly deleted on server
                 for (const key of existingKeys) {
                   if (!cloudDocIds.has(String(key))) {
                     store.delete(key);
@@ -777,7 +757,7 @@ class LocalDatabase {
           });
         }
 
-        // Overwrite localStorage fallback strictly with authoritative list (never accumulate deleted zombies)
+        // Overwrite localStorage fallback strictly with authoritative list
         const key = `fallback_idb_${resolvedCol}`;
         try {
           localStorage.setItem(key, JSON.stringify(validDocs));
@@ -788,11 +768,13 @@ class LocalDatabase {
         return validDocs;
       }
 
+      // If Server was not reached or returned error, preserve local cached data without wiping!
       this.syncedCollections.add(resolvedCol);
+      return this.getLocalStorageDocs(resolvedCol);
     } catch (e) {
       console.warn(`Exception syncing ${resolvedCol} from cloud:`, e);
     }
-    return [];
+    return this.getLocalStorageDocs(resolvedCol);
   }
 
   // Universal Realtime synchronization across all devices and tabs

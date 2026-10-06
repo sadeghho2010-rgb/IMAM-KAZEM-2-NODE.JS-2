@@ -14,8 +14,11 @@ import { logger } from '../lib/logger';
 const router = Router();
 
 const extractToken = (req: Request): string | null => {
-  if (req.cookies && req.cookies.auth_access_token) {
-    return req.cookies.auth_access_token;
+  if (req.cookies) {
+    if (req.cookies.auth_access_token) return req.cookies.auth_access_token;
+    if (req.cookies.auth_token) return req.cookies.auth_token;
+    if (req.cookies.access_token) return req.cookies.access_token;
+    if (req.cookies.token) return req.cookies.token;
   }
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
