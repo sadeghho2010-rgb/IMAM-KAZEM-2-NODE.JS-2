@@ -48,52 +48,37 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          cleanupOutdatedCaches: true,
+          globPatterns: ['**/*.{js,css,html,woff2}'],
+          globIgnores: [
+            '**/vendor-pdf*',
+            '**/vendor-excel*',
+            '**/*.jpg',
+            '**/*.jpeg',
+            '**/*.png',
+            '**/*latin*.woff2',
+            '**/*500*.woff2',
+            '**/*800*.woff2'
+          ],
+          maximumFileSizeToCacheInBytes: 3000000,
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              urlPattern: /\/assets\/(vendor-pdf|vendor-excel).*\.js$/,
               handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
+              options: { 
+                cacheName: 'lazy-vendor',
+                expiration: { maxEntries: 10 }
+              }
             },
             {
-              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              urlPattern: /\.(?:jpg|jpeg|png|webp|svg)$/,
               handler: 'CacheFirst',
-              options: {
-                cacheName: 'gstatic-fonts-cache',
-                expiration: {
-                  maxEntries: 10,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'jsdelivr-cdn-cache',
-                expiration: {
-                  maxEntries: 20,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-          ],
+              options: { 
+                cacheName: 'images',
+                expiration: { maxEntries: 30 }
+              }
+            }
+          ]
         },
         devOptions: {
           enabled: true,
@@ -110,6 +95,14 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
+      modulePreload: {
+        resolveDependencies: (filename, deps) => {
+          return deps.filter(dep => 
+            !dep.includes('vendor-pdf') && 
+            !dep.includes('vendor-excel')
+          );
+        }
+      },
       rollupOptions: {
         external: [
           'firebase', 'firebase/app', 'firebase/firestore', 'firebase/auth',

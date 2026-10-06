@@ -958,6 +958,32 @@ class LocalDatabase {
     return this.addDoc(collectionName, idOrData);
   }
 
+  // Clear IndexedDB caches and seeding flag on user logout / user switch
+  async clearAllLocalDataAndCaches(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.removeItem('app_baseline_seeded_v1');
+      localStorage.removeItem('auth_token');
+      sessionStorage.removeItem('auth_token');
+      localStorage.removeItem('access_token');
+      sessionStorage.removeItem('access_token');
+      localStorage.removeItem('system_auth_current_user_v2');
+      localStorage.removeItem('current_user');
+
+      const db = await this.getDb();
+      const storeNames = Array.from(db.objectStoreNames);
+      if (storeNames.length > 0) {
+        const tx = db.transaction(storeNames, 'readwrite');
+        storeNames.forEach(store => {
+          try { tx.objectStore(store).clear(); } catch (e) {}
+        });
+      }
+      this.notify();
+    } catch (e) {
+      console.warn('Error clearing local IndexedDB caches:', e);
+    }
+  }
+
   // Alias for saving document (supports both saveDoc(col, doc) and saveDoc(col, id, doc))
   async saveDoc(collectionName: CollectionName, idOrData: any, optionalData?: any): Promise<string> {
     return this.setDoc(collectionName, idOrData, optionalData);
@@ -2484,22 +2510,28 @@ class LocalDatabase {
   // Server-First baseline data initialization: Syncs from Server API if IndexedDB is empty
   private async checkAndSeedDefaultData(db: IDBDatabase) {
     try {
+      const token = this.getAuthToken();
+      if (!token) return; // Do not fetch API collections if unauthenticated
+
       if (typeof window !== 'undefined' && localStorage.getItem('app_baseline_seeded_v1') === 'true') {
         return;
       }
       if (!db.objectStoreNames.contains('students')) return;
 
+      console.log('IndexedDB initialization: Syncing baseline collections from server API...');
+      const collectionsToSync = ['students', 'programs', 'enrollments', 'study_periods', 'workflow_settings', 'workflow_items'];
+
+      // Await sync for all collections
+      await Promise.all(
+        collectionsToSync.map(col => this.syncCollectionFromCloud(col))
+      );
+
+      // Set flag ONLY after actual sync success of all collections
       if (typeof window !== 'undefined') {
         localStorage.setItem('app_baseline_seeded_v1', 'true');
       }
-
-      console.log('IndexedDB initialization: Syncing baseline collections from server API...');
-      const collectionsToSync = ['students', 'programs', 'enrollments', 'study_periods', 'workflow_settings', 'workflow_items'];
-      for (const col of collectionsToSync) {
-        this.syncCollectionFromCloud(col).catch(() => {});
-      }
     } catch (e) {
-      console.warn('Initialization sync warning:', e);
+      console.error('Initialization sync failed, flag app_baseline_seeded_v1 not set. Will retry next launch:', e);
     }
   }
 

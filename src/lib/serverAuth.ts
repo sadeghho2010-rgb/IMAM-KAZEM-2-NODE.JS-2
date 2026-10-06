@@ -489,22 +489,37 @@ export function revokeAllUserSessions(userId: string) {
 }
 
 export function sanitizeUser(user: StoredUser | any): SafeUser {
-  const safe = { ...user };
-  delete safe.password;
-  delete safe.passwordHash;
-  delete safe.failedLoginAttempts;
-  delete safe.accountLockedUntil;
-  return safe;
+  // Whitelist approach: only return necessary fields for UI
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    roleTitle: user.roleTitle,
+    level: user.level,
+    isActive: user.isActive,
+    avatarBg: user.avatarBg
+  } as SafeUser;
+}
+
+const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
+
+if (!INITIAL_ADMIN_PASSWORD || INITIAL_ADMIN_PASSWORD.length < 12) {
+  console.error('FATAL ERROR: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters.');
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
 }
 
 export const DEFAULT_SERVER_USERS: StoredUser[] = [
   {
     id: 'user_sadegh',
     username: 'SADEGH',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD || 'TEMPORARY_UNSAFE_PASSWORD', // Will fail production start
     name: 'صادق (سوپر ادمین)',
     level: 1,
     role: 'super_admin',
+    mustChangePassword: true, // Force change on first login
     roleTitle: 'سوپر ادمین (مدیر کل سیستم)',
     scope: 'all',
     gradeLabel: 'کل سیستم',
@@ -523,7 +538,7 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = [
   {
     id: 'user_rahnama',
     username: 'RAHNAMA',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد رهنما (مدیر مدرسه / معاون)',
     level: 1,
     role: 'school_manager',

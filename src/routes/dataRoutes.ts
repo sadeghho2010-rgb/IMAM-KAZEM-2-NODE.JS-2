@@ -339,26 +339,60 @@ router.post('/data/:collection/batch', async (req: Request, res: Response) => {
 
 router.post('/system/save-background-image', async (req: Request, res: Response) => {
   try {
-    const { imageBase64, target } = req.body;
-    if (!imageBase64) {
-      return res.status(400).json({ error: 'تصویری ارسال نشده است.' });
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
     }
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: 'توکن امنیتی معتبر نیست یا منقضی شده است.' });
+    }
+
+    const user = verification.decoded as any;
+    const isSuperAdmin = user.role === 'super_admin' || user.level === 1;
+    if (!isSuperAdmin) {
+      return res.status(403).json({ success: false, message: 'تنها سوپر ادمین (سطح ۱) مجاز به تغییر تصویر پس‌زمینه سیستم است.' });
+    }
+
+    const { imageBase64, target } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ success: false, message: 'تصویری ارسال نشده است.' });
+    }
+
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
+
+    // 1. Max size check: 500 KB (512,000 bytes)
+    if (buffer.length > 500 * 1024) {
+      return res.status(400).json({
+        success: false,
+        message: `حجم تصویر ارسال شده (${(buffer.length / 1024).toFixed(1)}KB) بیش از حد مجاز ۵۰۰ کیلوبایت است.`
+      });
+    }
+
+    // 2. Real WebP Magic Bytes verification (RIFF at 0..3, WEBP at 8..11)
+    if (buffer.length < 12) {
+      return res.status(400).json({ success: false, message: 'فرمت تصویر معتبر نیست.' });
+    }
+    const isRiff = buffer.toString('ascii', 0, 4) === 'RIFF';
+    const isWebp = buffer.toString('ascii', 8, 12) === 'WEBP';
+    if (!isRiff || !isWebp) {
+      return res.status(400).json({ success: false, message: 'فقط تصاویر با فرمت واقعی WebP مجاز می‌باشند.' });
+    }
+
+    // 3. Strict fixed target filename
+    const filename = target === 'mobile' ? '000-mobile.webp' : '000.webp';
     const publicDir = path.join(process.cwd(), 'public');
     if (!fs.existsSync(publicDir)) {
       fs.mkdirSync(publicDir, { recursive: true });
     }
-    if (target === 'mobile') {
-      fs.writeFileSync(path.join(publicDir, '000-mobile.jpg'), buffer);
-    } else {
-      fs.writeFileSync(path.join(publicDir, 'login-bg.jpg'), buffer);
-      fs.writeFileSync(path.join(publicDir, '000.jpg'), buffer);
-    }
-    return res.json({ success: true, message: 'تصویر پس‌زمینه با موفقیت در دیسک ذخیره شد.' });
+
+    fs.writeFileSync(path.join(publicDir, filename), buffer);
+    return res.json({ success: true, message: `تصویر پس‌زمینه (${filename}) با موفقیت ذخیره شد.` });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'خطا در ذخیره تصویر';
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ success: false, message });
   }
 });
 
@@ -409,6 +443,16 @@ router.get('/bug-reports', async (req: Request, res: Response) => {
 
 // GET /api/sync/events
 router.get('/sync/events', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
+  }
+
+  const verification = verifyAccessToken(token);
+  if (!verification.valid) {
+    return res.status(401).json({ success: false, message: 'نشست شما منقضی شده است.' });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -424,11 +468,12 @@ router.get('/sync/events', async (req: Request, res: Response) => {
     } catch (e) {}
   });
 
+  // Heartbeat comment every 20 seconds
   const heartbeat = setInterval(() => {
     try {
       res.write(': heartbeat\n\n');
     } catch (e) {}
-  }, 30000);
+  }, 20000);
 
   req.on('close', () => {
     unsubscribe();

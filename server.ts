@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -51,6 +52,16 @@ async function startServer() {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-TOKEN'],
+  }));
+
+  // Compression Middleware (excluding SSE stream /api/sync/events)
+  app.use(compression({
+    filter: (req, res) => {
+      if (req.headers['accept'] === 'text/event-stream' || req.path.includes('/sync/events')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
   }));
 
   // Standard Body Parsing & Cookie Parser
@@ -124,8 +135,17 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.includes('/assets/')) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('index.html') || filePath.endsWith('sw.js') || filePath.endsWith('manifest.webmanifest')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      }
+    }));
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

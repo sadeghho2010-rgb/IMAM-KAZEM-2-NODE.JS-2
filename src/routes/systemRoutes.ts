@@ -76,12 +76,7 @@ router.get('/db-status', async (_req: Request, res: Response) => {
   const status = getDbConnectionStatus();
   return res.json({
     success: true,
-    connected: status.connected,
-    host: status.host,
-    port: status.port,
-    database: status.database,
-    user: status.user,
-    lastError: status.lastError
+    connected: status.connected
   });
 });
 

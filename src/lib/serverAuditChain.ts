@@ -1,7 +1,15 @@
 import crypto from 'crypto';
 import { HashChainedAuditLog } from '../types';
 
-const PEPPER = process.env.AUDIT_PEPPER || 'madrasah_tamper_evident_audit_salt_2026';
+const PEPPER = process.env.AUDIT_PEPPER;
+
+if (!PEPPER || PEPPER.length < 24) {
+  console.error('FATAL ERROR: AUDIT_PEPPER not set or too short.');
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+}
+const SAFE_PEPPER = PEPPER || 'fallback_for_dev_only_very_long_string_1234567890';
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
 /**

@@ -1,9 +1,21 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { AuthController } from '../controllers/AuthController';
 
 const router = Router();
 
-router.post('/login', AuthController.login);
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per IP/username
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'تعداد دفعات تلاش برای ورود بیش از حد مجاز است. لطفاً ۱۵ دقیقه دیگر مجدداً تلاش فرمایید.'
+  }
+});
+
+router.post('/login', loginLimiter, AuthController.login);
 router.get('/me', AuthController.me);
 router.get('/public-users', AuthController.publicUsers);
 router.get('/users', AuthController.publicUsers);

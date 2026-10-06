@@ -20,24 +20,55 @@ class RealtimeSyncManager {
   private isConnecting = false;
   private reconnectTimer: any = null;
   private pollingTimer: any = null;
+  private backoffDelayMs = 2000;
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      this.init();
-    }
+    // Lazy initialization: Do NOT connect in constructor before authentication
   }
 
-  public init() {
+  /**
+   * Start SSE connection only after user is authenticated
+   */
+  public start() {
     if (typeof window === 'undefined') return;
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+                  localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    if (!token) return;
+
     this.connectSSE();
     this.startFallbackPolling();
   }
 
   /**
-   * Connect to Server-Sent Events stream
+   * Stop SSE connection on logout
+   */
+  public stop() {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+    this.isConnecting = false;
+    this.backoffDelayMs = 2000;
+  }
+
+  /**
+   * Connect to Server-Sent Events stream with exponential backoff
    */
   private connectSSE() {
-    if (this.isConnecting || (this.eventSource && this.eventSource.readyState === EventSource.OPEN)) {
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+         localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
+      : null;
+
+    if (!token || this.isConnecting || (this.eventSource && this.eventSource.readyState === EventSource.OPEN)) {
       return;
     }
 
@@ -47,6 +78,7 @@ class RealtimeSyncManager {
 
       this.eventSource.onopen = () => {
         this.isConnecting = false;
+        this.backoffDelayMs = 2000; // Reset backoff on successful open
       };
 
       const handlePayload = (eventData: string) => {
@@ -75,12 +107,21 @@ class RealtimeSyncManager {
           this.eventSource.close();
           this.eventSource = null;
         }
-        // Reconnect after 4 seconds
+
+        // Exponential backoff reconnect (2s -> 4s -> 8s -> 16s -> 30s max)
         if (!this.reconnectTimer) {
+          const currentDelay = this.backoffDelayMs;
+          this.backoffDelayMs = Math.min(30000, this.backoffDelayMs * 2);
+
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
-            this.connectSSE();
-          }, 4000);
+            const currentToken = typeof window !== 'undefined'
+              ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
+              : null;
+            if (currentToken) {
+              this.connectSSE();
+            }
+          }, currentDelay);
         }
       };
     } catch (e) {
@@ -89,19 +130,30 @@ class RealtimeSyncManager {
   }
 
   /**
-   * Low-frequency heartbeat polling fallback (every 10s) to catch up if SSE is interrupted by proxy
+   * Low-frequency heartbeat polling fallback (every 15s) when authenticated
    */
   private startFallbackPolling() {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
 
     this.pollingTimer = setInterval(async () => {
-      // Only poll if SSE is not active or as safety catchup
+      const token = typeof window !== 'undefined'
+        ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
+        : null;
+      if (!token) {
+        this.stop();
+        return;
+      }
+
       if (this.eventSource && this.eventSource.readyState === EventSource.OPEN) {
         return;
       }
 
       try {
-        const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}`);
+        const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.success && Array.isArray(data.changes)) {
@@ -112,7 +164,7 @@ class RealtimeSyncManager {
           }
         }
       } catch (e) {}
-    }, 10000);
+    }, 15000);
   }
 
   private dispatchChange(change: RealtimeChangeEvent) {

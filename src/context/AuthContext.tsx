@@ -879,12 +879,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // 1. Direct Server API fetch
+    // 1. Direct Server API fetch (only when token exists)
     const syncWithServer = async () => {
       try {
         const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        if (!token) return;
+
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        headers['Authorization'] = `Bearer ${token}`;
 
         const res = await fetch('/api/auth/public-users', {
           method: 'GET',
@@ -900,7 +902,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (e) {}
     };
 
-    syncWithServer();
+    const token = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
+      : null;
+
+    if (token) {
+      syncWithServer();
+      realtimeSync.start();
+    } else {
+      realtimeSync.stop();
+    }
 
     // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus)
     const unsubscribeRealtime = realtimeSync.subscribe((evt) => {
@@ -909,9 +920,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    // 3. Periodic background sync every 15 seconds to guarantee multi-device state synchronization
+    // 3. Periodic background sync every 15 seconds (only when authenticated)
     const syncInterval = setInterval(() => {
-      syncWithServer();
+      const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      if (currentToken) {
+        syncWithServer();
+      }
     }, 15000);
 
     return () => { 
@@ -1113,9 +1127,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem(CURRENT_USER_KEY);
       localStorage.removeItem('auth_token');
       sessionStorage.removeItem('auth_token');
+      localStorage.removeItem('access_token');
+      sessionStorage.removeItem('access_token');
       localStorage.removeItem('current_mentor_id');
       localStorage.removeItem('shahpoori_active_filter');
     } catch (e) {}
+
+    // Clear IndexedDB caches and reset seeding flag
+    localDb.clearAllLocalDataAndCaches().catch(() => {});
+    realtimeSync.stop();
 
     fetch('/api/auth/logout', {
       method: 'POST',

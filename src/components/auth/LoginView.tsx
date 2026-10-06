@@ -87,7 +87,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   }, []);
 
   // Primary Background Images
-  const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.jpg');
+  const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.webp');
   const [customMobileBg, setCustomMobileBg] = useState<string | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isUploadingBg, setIsUploadingBg] = useState(false);
@@ -95,7 +95,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [showBgSettingsModal, setShowBgSettingsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Preload images and load saved backgrounds from localStorage
+  // Preload images asynchronously after initial form render
   useEffect(() => {
     try {
       const savedMobile = localStorage.getItem('custom_mobile_bg');
@@ -105,17 +105,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       if (savedDesktop) setCurrentBgUrl(savedDesktop);
     } catch {}
 
-    const imgDesktop = new Image();
-    imgDesktop.src = '/000.jpg';
-    imgDesktop.onload = () => {
-      setImageLoaded(true);
-    };
-    imgDesktop.onerror = () => {
-      setImageLoaded(true);
-    };
+    const timer = setTimeout(() => {
+      const imgDesktop = new Image();
+      imgDesktop.src = '/000.webp';
+      imgDesktop.onload = () => {
+        setImageLoaded(true);
+      };
+      imgDesktop.onerror = () => {
+        setImageLoaded(true);
+      };
 
-    const imgMobile = new Image();
-    imgMobile.src = '/000-mobile.jpg';
+      const imgMobile = new Image();
+      imgMobile.src = '/000-mobile.webp';
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Cooldown countdown timer
@@ -185,16 +189,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       localStorage.removeItem('custom_login_bg');
       localStorage.removeItem('custom_mobile_bg');
     } catch {}
-    setCurrentBgUrl('/000.jpg');
+    setCurrentBgUrl('/000.webp');
     setCustomMobileBg(null);
     setShowBgSettingsModal(false);
-    setSuccessMessage('تصاویر پس‌زمینه به حالت پیش‌فرض مدرسه (000.jpg و 000-mobile.jpg) بازگردانی شدند.');
+    setSuccessMessage('تصاویر پس‌زمینه به حالت پیش‌فرض مدرسه (000.webp و 000-mobile.webp) بازگردانی شدند.');
     setTimeout(() => setSuccessMessage(null), 4000);
   };
 
   // Determine active background image URL
   const effectiveBgUrl = isMobilePortrait 
-    ? (customMobileBg || '/000-mobile.jpg') 
+    ? (customMobileBg || '/000-mobile.webp') 
     : currentBgUrl;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -852,7 +856,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
               {/* Notice */}
               <div className="p-3 bg-blue-500/15 border border-blue-400/30 rounded-2xl text-[11px] leading-relaxed text-blue-200">
-                در صفحه عمودی موبایل به دلیل کشیدگی تصویر، می‌توانید <strong>عکس عمودی اختصاصی</strong> آپلود کنید یا اجازه دهید سامانه به طور خودکار نسخه متناسب‌سازی شده عمودی (000-mobile.jpg) را نمایش دهد.
+                در صفحه عمودی موبایل به دلیل کشیدگی تصویر، می‌توانید <strong>عکس عمودی اختصاصی</strong> آپلود کنید یا اجازه دهید سامانه به طور خودکار نسخه متناسب‌سازی شده عمودی (000-mobile.webp) را نمایش دهد.
               </div>
 
               {/* Target Selector */}
@@ -871,7 +875,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   >
                     <Monitor size={22} className={uploadTarget === 'desktop' ? 'text-indigo-300' : 'text-white/50'} />
                     <span>عکس دسکتاپ (افقی ۱۶:۹)</span>
-                    <span className="text-[10px] text-white/50">فایل 000.jpg</span>
+                    <span className="text-[10px] text-white/50">فایل 000.webp</span>
                   </button>
 
                   <button
@@ -886,7 +890,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                   >
                     <Smartphone size={22} className={uploadTarget === 'mobile' ? 'text-indigo-300' : 'text-white/50'} />
                     <span>عکس موبایل (عمودی ۹:۱۶)</span>
-                    <span className="text-[10px] text-white/50">فایل 000-mobile.jpg</span>
+                    <span className="text-[10px] text-white/50">فایل 000-mobile.webp</span>
                   </button>
                 </div>
               </div>
