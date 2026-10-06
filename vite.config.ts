@@ -110,6 +110,9 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
+      rollupOptions: {
+        external: ['mysql2', 'net', 'tls', 'fs', 'crypto', 'stream', 'buffer']
+      }
     },
     server: {
       host: '0.0.0.0',
