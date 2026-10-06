@@ -1049,6 +1049,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-cyan-600/10 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-cyan-500 hover:shadow-2xl hover:shadow-cyan-600/20',
       accentText: 'text-cyan-600'
+    },
+    {
+      id: 'system-audit-logs',
+      title: 'لاگ‌ها و پایش فعالیت‌های سیستم',
+      subtitle: 'ثبت و گزارش تمامی تراکنش‌های دیتابیس، ورودها و تغییرات کاربران',
+      category: 'system',
+      icon: Activity,
+      iconBg: 'bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-800 text-white shadow-lg shadow-indigo-600/30',
+      cardGradient: 'from-indigo-600/10 via-blue-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/20',
+      accentText: 'text-indigo-600'
     }
   ];
 
@@ -1137,7 +1148,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         ? `🚨 مصرف بالای CPU/RAM` 
         : (unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined),
       highlight: systemHealthAlert?.isHigh || unresolvedAnomaliesCount > 0,
-      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test']
+      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test', 'system-audit-logs']
     }
   ];
 

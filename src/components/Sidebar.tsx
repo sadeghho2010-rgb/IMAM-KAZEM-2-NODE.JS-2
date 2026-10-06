@@ -3,6 +3,7 @@ import {
   Users, 
   Calendar, 
   CalendarDays,
+  FileText,
   BookOpen, 
   MessageSquare, 
   CheckSquare, 
@@ -197,6 +198,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'db-connection-test', label: 'تست اتصال به دیتا بیس', icon: RefreshCw },
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
   { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
+  { id: 'system-audit-logs', label: 'لاگ‌های سیستم', icon: FileText },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onOpenSettings }: SidebarProps) {

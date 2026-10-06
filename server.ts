@@ -27,6 +27,7 @@ import courseSelectionRoutes from "./src/routes/courseSelectionRoutes";
 import counselingRoutes from "./src/routes/counselingRoutes";
 import dataRoutes from "./src/routes/dataRoutes";
 import systemRoutes from "./src/routes/systemRoutes";
+import auditRoutes from "./src/routes/auditRoutes";
 
 // 2. Cross-cutting Infrastructure
 import { logger, requestLogger } from "./src/lib/logger";
@@ -81,6 +82,7 @@ async function startServer() {
   app.use('/api/course-selection', courseSelectionRoutes);
   app.use('/api/counseling', counselingRoutes);
   app.use('/api/system', systemRoutes);
+  app.use('/api/audit', auditRoutes);
   app.use('/api', dataRoutes);
 
   // System Health Check Endpoint
@@ -166,6 +168,20 @@ async function startServer() {
       mod.initScheduledBackupService();
       logger.info('[System] Automated database backup scheduler initialized.');
     }).catch(() => {});
+
+    // Automated 24-hour audit logs cleanup scheduler (purges logs older than 30 days)
+    setInterval(async () => {
+      try {
+        const { getMysqlPool } = await import('./src/lib/databaseAbstraction');
+        const pool = getMysqlPool();
+        if (pool) {
+          const [res]: any = await pool.execute(`DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)`);
+          logger.info(`[Audit Cron] Automated 30-day cleanup purged ${res?.affectedRows || 0} old audit logs.`);
+        }
+      } catch (e) {
+        logger.warn('[Audit Cron Notice] Automated cleanup notice:', e);
+      }
+    }, 24 * 60 * 60 * 1000);
   });
 
   // Graceful Shutdown Handlers

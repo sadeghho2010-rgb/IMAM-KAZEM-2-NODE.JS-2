@@ -3,6 +3,7 @@
  * Provides seamless interchangeability between MySQL (Primary Production Target)
  * and Supabase/Local JSON (Development Fallback).
  * 
+ * Runflare Deploy Refresh Commit
  * Features:
  * - 100% Parameterized & Prepared Statements (Eliminating SQL Injection risks)
  * - Connection Pooling with auto-reconnect for MySQL 8+
@@ -436,22 +437,37 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       await mysqlPool.query(`
         CREATE TABLE IF NOT EXISTS \`audit_logs\` (
           \`id\` VARCHAR(100) NOT NULL,
+          \`action\` VARCHAR(50) NOT NULL,
+          \`collection_name\` VARCHAR(100) NULL,
+          \`record_id\` VARCHAR(100) NULL,
           \`user_id\` VARCHAR(100) NULL,
-          \`username\` VARCHAR(100) NULL,
-          \`user_role\` VARCHAR(50) NULL,
-          \`action\` VARCHAR(100) NOT NULL,
-          \`entity_type\` VARCHAR(100) NULL,
-          \`entity_id\` VARCHAR(100) NULL,
-          \`description\` TEXT NOT NULL,
-          \`ip_address\` VARCHAR(50) NULL,
-          \`user_agent\` TEXT NULL,
+          \`user_name\` VARCHAR(150) NULL,
+          \`user_role\` VARCHAR(100) NULL,
+          \`details\` JSON NULL,
+          \`ip_address\` VARCHAR(60) NULL,
+          \`status\` VARCHAR(20) NOT NULL DEFAULT 'success',
+          \`error_message\` TEXT NULL,
           \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (\`id\`),
-          INDEX \`idx_audit_user\` (\`user_id\`, \`username\`),
           INDEX \`idx_audit_action\` (\`action\`),
-          INDEX \`idx_audit_created\` (\`created_at\`)
+          INDEX \`idx_audit_collection\` (\`collection_name\`),
+          INDEX \`idx_audit_user\` (\`user_id\`),
+          INDEX \`idx_audit_date\` (\`created_at\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      // Column migrations for existing audit_logs table
+      const alterCols = [
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS collection_name VARCHAR(100) NULL',
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS record_id VARCHAR(100) NULL',
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_name VARCHAR(150) NULL',
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT "success"',
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS error_message TEXT NULL',
+        'ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details JSON NULL'
+      ];
+      for (const colSql of alterCols) {
+        try { await mysqlPool.query(colSql); } catch (e) {}
+      }
     } catch (e: any) {
       console.warn('[MySQL Schema Notice - audit_logs]:', e?.message || e);
     }
@@ -750,7 +766,7 @@ export const MysqlRepository = {
   },
 
   // 5. Save Document to App Collections or Dedicated Table
-  async saveDocument(collectionName: string, id: string, data: any): Promise<void> {
+  async saveDocument(collectionName: string, id: string, data: any): Promise<{ affectedRows: number }> {
     const pool = getMysqlPool();
     if (!pool) {
       throw new Error('پایگاه داده MySQL پیکربندی نشده یا در دسترس نیست.');
@@ -766,7 +782,15 @@ export const MysqlRepository = {
         data = ?,
         updated_at = NOW();
     `;
-    await pool.execute(sql, [collectionName, id, jsonStr, jsonStr]);
+    const [result]: any = await pool.execute(sql, [collectionName, id, jsonStr, jsonStr]);
+    const affectedRows = Number(result?.affectedRows) || 0;
+
+    console.log(`[MySQL Save Log] Collection: "${collectionName}", ID: "${id}", Affected Rows: ${affectedRows}`);
+    if (affectedRows === 0) {
+      console.warn(`[MySQL Save Warning] Collection: "${collectionName}", ID: "${id}" yielded 0 affected rows!`);
+    }
+
+    return { affectedRows };
   },
 
   // 5b. Save Document to Dedicated Table if it exists
@@ -838,16 +862,19 @@ export const MysqlRepository = {
   },
 
   // 6. Delete Document
-  async deleteDocument(collectionName: string, id: string): Promise<void> {
+  async deleteDocument(collectionName: string, id: string): Promise<{ affectedRows: number }> {
     const pool = getMysqlPool();
     if (!pool) {
       throw new Error('MySQL connection pool is not configured or unavailable.');
     }
 
-    await pool.execute(
+    const [result]: any = await pool.execute(
       `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
       [collectionName, id]
     );
+    const affectedRows = Number(result?.affectedRows) || 0;
+
+    console.log(`[MySQL Delete Log] Collection: "${collectionName}", ID: "${id}", Affected Rows: ${affectedRows}`);
 
     if (collectionName === 'system_users') {
       try {
@@ -857,6 +884,8 @@ export const MysqlRepository = {
         );
       } catch (e) {}
     }
+
+    return { affectedRows };
   },
 
   // 6b. Delete User

@@ -1,8 +1,25 @@
 import { logger } from './logger';
-import { exec } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+
+// Browser-safe node module resolution
+const isNode = typeof window === 'undefined' && typeof process !== 'undefined' && process.versions && process.versions.node;
+
+let execFn: any = null;
+let fsModule: any = null;
+let pathModule: any = null;
+let osModule: any = null;
+
+if (isNode) {
+  try {
+    execFn = eval('require')('child_process').exec;
+    fsModule = eval('require')('fs');
+    pathModule = eval('require')('path');
+    osModule = eval('require')('os');
+  } catch (e) {}
+}
+
+const fs: any = fsModule || {};
+const os: any = osModule || {};
+const exec: any = execFn || ((_cmd: string, cb: any) => cb && cb(new Error('not node')));
 
 export interface MemorySnapshot {
   timestamp: string;
@@ -34,26 +51,27 @@ export interface ServerErrorLog {
   source?: string;
 }
 
-const logDir = path.join(process.cwd(), 'logs');
-const memoryLogFile = path.join(logDir, 'memory.log');
-const slowQueryLogFile = path.join(logDir, 'slow_queries.log');
-const errorLogFile = path.join(logDir, 'error.log');
+const logDir = pathModule ? pathModule.join(process.cwd(), 'logs') : '/tmp/logs';
+const memoryLogFile = pathModule ? pathModule.join(logDir, 'memory.log') : '';
+const slowQueryLogFile = pathModule ? pathModule.join(logDir, 'slow_queries.log') : '';
+const errorLogFile = pathModule ? pathModule.join(logDir, 'error.log') : '';
 
 // Ensure log directory exists
-if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true });
+if (fsModule && !fsModule.existsSync(logDir)) {
+  try { fsModule.mkdirSync(logDir, { recursive: true }); } catch (e) {}
 }
 
 // CPU usage tracking state
-let previousCpus = os.cpus();
+let previousCpus = osModule ? osModule.cpus() : [];
 
 export function getCpuUsage(): CpuSnapshot {
   try {
-    const currentCpus = os.cpus();
+    if (!osModule) return { percent: 0, cores: 1, model: 'CPU', loadAvg: [0, 0, 0] };
+    const currentCpus = osModule.cpus();
     const cores = currentCpus.length || 1;
     const model = currentCpus[0]?.model || 'پردازنده اصلی';
-    const rawLoadAvg = os.loadavg() || [0, 0, 0];
-    const loadAvg = rawLoadAvg.map(l => Math.round(l * 100) / 100);
+    const rawLoadAvg = osModule.loadavg() || [0, 0, 0];
+    const loadAvg = rawLoadAvg.map((l: number) => Math.round(l * 100) / 100);
 
     let totalIdle = 0;
     let totalTick = 0;

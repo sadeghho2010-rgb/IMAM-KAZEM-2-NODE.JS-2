@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/AuthService';
 import { LoginInputSchema } from '../lib/validationSchemas';
 import { notifyRealtimeChange } from '../lib/serverDataApi';
+import { logAudit } from '../lib/auditLogger';
 import {
   verifyAccessToken,
   revokeToken,
@@ -38,16 +39,22 @@ export class AuthController {
   }
 
   public static async login(req: Request, res: Response, next: NextFunction) {
+    const ip = AuthController.getClientIp(req);
     try {
       const parsedLogin = LoginInputSchema.safeParse(req.body);
       if (!parsedLogin.success) {
         const errorMsg = parsedLogin.error.issues[0]?.message || 'اطلاعات ورودی نامعتبر است.';
+        await logAudit({
+          action: 'login_failed',
+          userName: req.body?.username || 'unknown',
+          ipAddress: ip,
+          status: 'failed',
+          errorMessage: errorMsg
+        });
         return res.status(400).json({ success: false, message: errorMsg });
       }
 
-      const ip = AuthController.getClientIp(req);
       const result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
-
       const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
 
       res.cookie('auth_access_token', result.token, {
@@ -66,6 +73,16 @@ export class AuthController {
         path: '/'
       });
 
+      await logAudit({
+        action: 'login',
+        userId: result.user.id,
+        userName: result.user.username,
+        userRole: result.user.role,
+        ipAddress: ip,
+        status: 'success',
+        details: { userLevel: result.user.level, name: result.user.name }
+      });
+
       return res.status(200).json({
         success: true,
         message: 'ورود با موفقیت انجام شد.',
@@ -73,7 +90,14 @@ export class AuthController {
         token: result.token,
         refreshToken: result.refreshToken
       });
-    } catch (error) {
+    } catch (error: any) {
+      await logAudit({
+        action: 'login_failed',
+        userName: req.body?.username || 'unknown',
+        ipAddress: ip,
+        status: 'failed',
+        errorMessage: error?.message || 'رمز عبور یا نام کاربری نادرست است'
+      });
       next(error);
     }
   }
@@ -339,11 +363,25 @@ export class AuthController {
 
   public static async logout(req: Request, res: Response, next: NextFunction) {
     try {
+      const caller = AuthController.extractCaller(req);
+      const ip = AuthController.getClientIp(req);
+
       const accessToken = req.cookies?.auth_access_token;
       if (accessToken) revokeToken(accessToken);
 
       res.clearCookie('auth_access_token', { path: '/' });
       res.clearCookie('auth_refresh_token', { path: '/' });
+
+      if (caller) {
+        await logAudit({
+          action: 'logout',
+          userId: String(caller.userId || caller.id || ''),
+          userName: String(caller.username || caller.name || ''),
+          userRole: caller.role,
+          ipAddress: ip,
+          status: 'success'
+        });
+      }
 
       return res.status(200).json({ success: true, message: 'خروج از حساب کاربری انجام شد.' });
     } catch (error) {

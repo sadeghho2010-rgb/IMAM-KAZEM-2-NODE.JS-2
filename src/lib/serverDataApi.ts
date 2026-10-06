@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
+import { logAudit } from './auditLogger';
 
 // Real-time synchronization event bus
 type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
@@ -389,7 +390,7 @@ export async function serverSaveDoc(
   collection: string,
   idOrData: any,
   dataOrCallerUser?: any
-): Promise<{ success: boolean; id: string; error?: string }> {
+): Promise<{ success: boolean; id: string; item?: any; error?: string }> {
   if (!idOrData) return { success: false, id: '', error: 'داده‌های ارسالی نامعتبر است.' };
 
   let record: any;
@@ -416,7 +417,8 @@ export async function serverSaveDoc(
   if (isMysqlConfigured) {
     try {
       // Primary: Save to app_collections JSON master
-      await MysqlRepository.saveDocument(collection, id, record);
+      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
+      const affectedRows = saveRes?.affectedRows || 0;
 
       // Secondary: Try saving to dedicated SQL table if mapped (e.g., students, classrooms)
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
@@ -426,12 +428,43 @@ export async function serverSaveDoc(
         } catch (dErr) {}
       }
 
+      // Write-Then-Read Pattern: Immediately read back written record from MySQL to verify persistence
+      const readDoc = await MysqlRepository.getDocument(collection, id);
+      const finalDoc = readDoc || record;
+
+      console.log(`[Write-Then-Read Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
+
+      // Log Audit Entry
+      await logAudit({
+        action: affectedRows > 1 ? 'update' : 'insert',
+        collectionName: collection,
+        recordId: id,
+        userId: callerUser?.id || callerUser?.userId,
+        userName: callerUser?.username || callerUser?.name,
+        userRole: callerUser?.role,
+        details: finalDoc,
+        status: 'success'
+      });
+
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id };
+      return { success: true, id, item: finalDoc };
     } catch (mErr: any) {
       console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
       console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+
+      // Log Failed Audit Entry
+      await logAudit({
+        action: 'insert',
+        collectionName: collection,
+        recordId: id,
+        userId: callerUser?.id || callerUser?.userId,
+        userName: callerUser?.username || callerUser?.name,
+        userRole: callerUser?.role,
+        status: 'error',
+        errorMessage: mErr?.message || 'مشکل پایگاه داده'
+      });
+
       return {
         success: false,
         id: '',
@@ -498,13 +531,40 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth
   if (isMysqlConfigured) {
     try {
-      await MysqlRepository.deleteDocument(collection, id);
+      const delRes = await MysqlRepository.deleteDocument(collection, id);
+      const affectedRows = delRes?.affectedRows || 0;
+
+      // Log Audit Entry
+      await logAudit({
+        action: 'delete',
+        collectionName: collection,
+        recordId: id,
+        userId: callerUser?.id || callerUser?.userId,
+        userName: callerUser?.username || callerUser?.name,
+        userRole: callerUser?.role,
+        details: { deletedId: id, affectedRows },
+        status: 'success'
+      });
+
       notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
     } catch (mErr: any) {
       console.error(`[MySQL Delete Fatal Error] Collection: "${collection}", ID: "${id}"`);
       console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+
+      // Log Failed Audit Entry
+      await logAudit({
+        action: 'delete',
+        collectionName: collection,
+        recordId: id,
+        userId: callerUser?.id || callerUser?.userId,
+        userName: callerUser?.username || callerUser?.name,
+        userRole: callerUser?.role,
+        status: 'error',
+        errorMessage: mErr?.message || 'خطا در حذف داده'
+      });
+
       return {
         success: false,
         error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.'

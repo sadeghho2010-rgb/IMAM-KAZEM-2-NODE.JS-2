@@ -16,6 +16,9 @@ import BackupAndRestore from './components/BackupAndRestore';
 import SiteAuditLogs from './components/SiteAuditLogs';
 import SystemHealth from './components/SystemHealth';
 import LogViewer from './components/LogViewer';
+
+// Lazy loading SystemLogs component
+const SystemLogs = React.lazy(() => import('./components/SystemLogs'));
 import DbSaveErrorsView from './components/DbSaveErrorsView';
 import EducationFinancialReportSettings from './components/education/EducationFinancialReportSettings';
 import TeacherTransportManagement from './components/education/TeacherTransportManagement';
@@ -284,6 +287,13 @@ function AppContent() {
         return <SiteAuditLogs />;
       case 'system-health':
         return <SystemHealth />;
+      case 'system-audit-logs':
+      case 'system-logs':
+        return (
+          <React.Suspense fallback={<div className="p-12 text-center font-bold text-slate-500 dir-rtl">در حال بارگذاری لاگ‌های سیستم...</div>}>
+            <SystemLogs />
+          </React.Suspense>
+        );
       case 'app-logs':
         return <LogViewer />;
       case 'db-save-errors':
