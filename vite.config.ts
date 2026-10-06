@@ -115,7 +115,17 @@ export default defineConfig(({ mode }) => {
           'firebase', 'firebase/app', 'firebase/firestore', 'firebase/auth',
           '@firebase/app', '@firebase/firestore',
           'mysql2', 'net', 'tls', 'fs', 'crypto', 'stream', 'buffer'
-        ]
+        ],
+        output: {
+          manualChunks(id) {
+            if (id.includes('html2pdf') || id.includes('jspdf') || id.includes('html2canvas')) {
+              return 'vendor-pdf-export';
+            }
+            if (id.includes('xlsx')) {
+              return 'vendor-excel';
+            }
+          }
+        }
       }
     },
     server: {
