@@ -59,13 +59,15 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [selectedLevelTab, setSelectedLevelTab] = useState<1 | 2 | 3>(1);
   const [bankTeachers, setBankTeachers] = useState<Teacher[]>([]);
 
-  // Load teachers from database whenever quick presets drawer is used
+  // Load teachers from database only when quick presets drawer is active and opened
   useEffect(() => {
-    localDb.getDocs<Teacher>('teachers').then(tList => {
-      if (Array.isArray(tList) && tList.length > 0) {
-        setBankTeachers(tList);
-      }
-    }).catch(() => {});
+    if (import.meta.env.VITE_ENABLE_QUICK_LOGIN === 'true' && showQuickPresets) {
+      localDb.getDocs<Teacher>('teachers').then(tList => {
+        if (Array.isArray(tList) && tList.length > 0) {
+          setBankTeachers(tList);
+        }
+      }).catch(() => {});
+    }
   }, [showQuickPresets]);
 
   // Mobile preview mode for viewing background image without form

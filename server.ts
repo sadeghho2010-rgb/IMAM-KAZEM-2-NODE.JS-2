@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled Promise Rejection:', reason);
@@ -157,15 +158,11 @@ async function startServer() {
   // Serve Static Assets (Public Directory)
   app.use(express.static(path.join(process.cwd(), 'public')));
 
-  // Client SPA Serving & Dev Server Integration
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
+  // Client SPA Serving & Static Asset Handling
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (hasDist || process.env.NODE_ENV === "production") {
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
         if (filePath.includes('/assets/')) {
@@ -179,6 +176,16 @@ async function startServer() {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  } else {
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (vErr) {
+      console.warn('[Vite Dev Server Notice]:', vErr);
+    }
   }
 
   // Universal Global Error Handler for API routes

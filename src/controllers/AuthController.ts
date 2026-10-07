@@ -110,20 +110,28 @@ export class AuthController {
         refreshToken: result.refreshToken
       });
     } catch (error: any) {
+      const statusCode = error?.statusCode || (error?.status ? Number(error.status) : 401);
+      const message = error?.message || 'نام کاربری یا رمز عبور اشتباه است.';
+
       await logAudit({
         action: 'login_failed',
         userName: req.body?.username || 'unknown',
         ipAddress: ip,
         status: 'failed',
-        errorMessage: error?.message || 'رمز عبور یا نام کاربری نادرست است'
-      });
+        errorMessage: message
+      }).catch(() => {});
+
       await recordLoginAuditInDb({
         username: req.body?.username || 'unknown',
         success: false,
         ipAddress: ip,
         userAgent: req.headers['user-agent']
+      }).catch(() => {});
+
+      return res.status(statusCode).json({
+        success: false,
+        message
       });
-      next(error);
     }
   }
 
