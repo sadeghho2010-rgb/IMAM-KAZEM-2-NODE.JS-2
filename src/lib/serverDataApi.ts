@@ -934,3 +934,27 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
   // 5. Use the shared canUserReadDoc logic for absolute, bulletproof row-level filtering consistency
   return rawItems.filter(item => canUserReadDoc(user, collection, item, context));
 }
+
+export async function fetchBootstrapData(userLevel: number, userRole: string): Promise<Record<string, any[]>> {
+  const collections = [
+    'students', 'teachers', 'programs', 'enrollments', 'study_periods',
+    'classrooms', 'attendance', 'finance_expenses', 'finance_loans',
+    'tuition_periods', 'tuition_records', 'student_requests',
+    'workflow_items', 'system_users', 'academic_calendar_periods',
+    'academic_holidays', 'article_evaluations', 'received_articles',
+    'student_lockers', 'personal_todos', 'assigned_todos',
+    'evaluation_requests', 'research', 'study_stats',
+    'periodic_study_logs', 'discussion_groups', 'academic_sub_periods'
+  ];
+
+  const result: Record<string, any[]> = {};
+  for (const col of collections) {
+    try {
+      result[col] = await serverQueryCollection(col, userLevel, userRole);
+    } catch (e) {
+      result[col] = [];
+    }
+  }
+
+  return result;
+}

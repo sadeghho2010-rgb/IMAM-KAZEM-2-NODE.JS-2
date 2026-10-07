@@ -1,5 +1,12 @@
 import express from "express";
 import path from "path";
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Promise Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err);
+});
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import compression from "compression";

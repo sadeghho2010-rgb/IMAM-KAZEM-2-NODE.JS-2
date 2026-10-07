@@ -5,6 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function normalizeDigits(input?: string | number | null): string {
+  if (input === undefined || input === null) return '';
+  const str = String(input);
+  return str
+    .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728))
+    .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 1584));
+}
+
 export const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه'];
 
 export function getProgramDays(p: { day?: string; days?: string[] }): string[] {

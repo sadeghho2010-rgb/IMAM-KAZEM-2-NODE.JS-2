@@ -28,7 +28,7 @@ import {
 import { AppUser } from '../../types/auth';
 import { Teacher } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { cn } from '../../lib/utils';
+import { cn, normalizeDigits } from '../../lib/utils';
 import { PWAInstallButton } from '../PWAInstallButton';
 
 interface LoginViewProps {
@@ -209,8 +209,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       return;
     }
 
-    const cleanUser = username.trim();
-    const cleanPass = password.trim();
+    const cleanUser = normalizeDigits(username).trim();
+    const cleanPass = normalizeDigits(password).trim();
 
     if (!cleanUser || !cleanPass) {
       setErrorMessage('لطفاً نام کاربری و رمز عبور را به صورت کامل وارد فرمایید.');

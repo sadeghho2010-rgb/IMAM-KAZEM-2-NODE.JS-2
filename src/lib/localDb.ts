@@ -1141,9 +1141,38 @@ class LocalDatabase {
     throw new Error('ارتباط با سرور برقرار نشد. درخواست حذف در صف ارسال قرار گرفت.');
   }
 
-  // Fetch authoritative collections from Server on startup / login and cache in IndexedDB
+  // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login
   async loadAllCollectionsFromServer(): Promise<{ success: boolean; totalRecords: number }> {
     if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
+
+    let totalRecords = 0;
+    try {
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/data/bootstrap', {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.success && payload.data && typeof payload.data === 'object') {
+          for (const [col, docs] of Object.entries(payload.data)) {
+            if (Array.isArray(docs) && docs.length > 0) {
+              await this.bulkPut(col as CollectionName, docs);
+              totalRecords += docs.length;
+            }
+          }
+          this.notify();
+          return { success: true, totalRecords };
+        }
+      }
+    } catch (e) {
+      console.warn('[Bootstrap fetch notice, attempting fallback]:', e);
+    }
 
     const collectionsToLoad: CollectionName[] = [
       'system_users', 'students', 'teachers', 'classrooms', 'programs',
@@ -1154,7 +1183,6 @@ class LocalDatabase {
       'student_lockers', 'academic_calendar_periods', 'academic_holidays'
     ];
 
-    let totalRecords = 0;
     try {
       const results = await Promise.allSettled(collectionsToLoad.map(col => this.syncCollectionFromCloud(col, true)));
       results.forEach(r => {

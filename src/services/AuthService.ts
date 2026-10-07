@@ -21,7 +21,8 @@ import {
   deleteUserFromStorage,
   logServerAudit,
   StoredUser,
-  SafeUser
+  SafeUser,
+  normalizeDigits
 } from '../lib/serverAuth';
 import { AppError } from '../lib/errorHandler';
 import { logger } from '../lib/logger';
@@ -31,8 +32,8 @@ export class AuthService {
    * Authenticate user with password / master password, rate limiting, and bcrypt verification
    */
   public static async login(usernameInput: string, passwordInput: string, clientIp: string) {
-    const cleanUser = usernameInput.trim().toUpperCase();
-    const cleanPass = passwordInput.trim();
+    const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+    const cleanPass = normalizeDigits(passwordInput).trim();
 
     const userVal = validateUsername(cleanUser);
     if (!userVal.valid) {

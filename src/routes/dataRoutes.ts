@@ -6,7 +6,8 @@ import {
   serverSaveDoc,
   serverDeleteDoc,
   serverGetDocByCandidateIds,
-  authorizeCollectionAccess
+  authorizeCollectionAccess,
+  fetchBootstrapData
 } from '../lib/serverDataApi';
 import { verifyAccessToken, logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
@@ -34,6 +35,36 @@ const getClientIp = (req: Request): string => {
   }
   return req.socket.remoteAddress || '127.0.0.1';
 };
+
+// GET /api/data/bootstrap - Batch fetch all collections in 1 optimized request
+router.get('/data/bootstrap', async (req: Request, res: Response) => {
+  const token = extractToken(req);
+  let userLevel = 3;
+  let userRole = 'guest';
+
+  if (token) {
+    const verification = verifyAccessToken(token);
+    if (verification.valid && verification.decoded) {
+      userLevel = verification.decoded.level;
+      userRole = verification.decoded.role;
+    }
+  }
+
+  try {
+    const data = await fetchBootstrapData(userLevel, userRole);
+    return res.status(200).json({
+      success: true,
+      timestamp: Date.now(),
+      data
+    });
+  } catch (error: any) {
+    logger.error('[Bootstrap Route Error]:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'خطا در بارگذاری همزمان تمام داده‌های سامانه'
+    });
+  }
+});
 
 // ===================== DATABASE SNAPSHOT & BACKUP ENDPOINTS =====================
 

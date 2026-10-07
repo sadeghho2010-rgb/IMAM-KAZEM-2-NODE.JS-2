@@ -370,19 +370,29 @@ export function resetFailedAttempts(ip: string, username: string) {
   usernameAttempts.delete(username.trim().toUpperCase());
 }
 
+export function normalizeDigits(input?: string | number | null): string {
+  if (input === undefined || input === null) return '';
+  const str = String(input);
+  return str
+    .replace(/[۰-۹]/g, d => String.fromCharCode(d.charCodeAt(0) - 1728))
+    .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 1584));
+}
+
 export async function hashPassword(plainText: string): Promise<string> {
+  const normalized = normalizeDigits(plainText);
   const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(plainText, salt);
+  return bcrypt.hash(normalized, salt);
 }
 
 export async function comparePassword(plainText: string, hash: string): Promise<boolean> {
   if (!plainText) return false;
   if (!hash) return false;
+  const normalizedPlain = normalizeDigits(plainText);
   // If database still contains a legacy plain-text password, support comparison and flag for migration
   if (!hash.startsWith('$2a$') && !hash.startsWith('$2b$')) {
-    return plainText === hash;
+    return normalizedPlain === hash || plainText === hash;
   }
-  return bcrypt.compare(plainText, hash);
+  return bcrypt.compare(normalizedPlain, hash);
 }
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {

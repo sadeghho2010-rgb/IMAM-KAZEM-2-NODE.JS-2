@@ -3,6 +3,7 @@ import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { realtimeSync } from '../lib/realtimeSync';
 import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';
+import { normalizeDigits } from '../lib/utils';
 
 export interface SystemTabDef {
   id: string;
@@ -1004,8 +1005,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (usernameInput: string, passwordInput: string, pinInput?: string): Promise<{ success: boolean; message?: string; requirePin?: boolean }> => {
-    const cleanUser = usernameInput.trim().toUpperCase();
-    const cleanPass = passwordInput.trim();
+    const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+    const cleanPass = normalizeDigits(passwordInput).trim();
 
     if (!cleanUser || !cleanPass) {
       return { success: false, message: 'لطفاً نام کاربری و رمز عبور را وارد نمایید.' };

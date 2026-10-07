@@ -5,7 +5,7 @@ import { AuthController } from '../controllers/AuthController';
 const router = Router();
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 3 * 60 * 1000, // 3 minutes
   max: 5, // 5 failed attempts per IP/username combination
   skipSuccessfulRequests: true, // Reset counter on successful login
   keyGenerator: (req) => {
@@ -17,7 +17,7 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: {
     success: false,
-    message: 'تعداد دفعات تلاش ناموفق برای ورود بیش از حد مجاز است (حداکثر ۵ بار). لطفاً ۱۵ دقیقه دیگر مجدداً تلاش فرمایید.'
+    message: 'تعداد دفعات تلاش ناموفق برای ورود بیش از حد مجاز است (حداکثر ۵ بار در ۳ دقیقه). لطفاً ۳ دقیقه دیگر مجدداً تلاش فرمایید.'
   }
 });
 
