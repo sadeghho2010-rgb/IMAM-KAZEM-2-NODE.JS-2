@@ -99,6 +99,21 @@ async function startServer() {
   app.use('/api/audit', auditRoutes);
   app.use('/api', dataRoutes);
 
+  // Unauthenticated diagnostic endpoints for version tracking and container health checks
+  app.get('/api/version', (_req, res) => {
+    res.json({
+      commit: process.env.GIT_COMMIT || process.env.COMMIT_REF || process.env.RAILWAY_GIT_COMMIT_SHA || 'v1.0.1-prod',
+      uptime: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      env: process.env.NODE_ENV || 'production',
+      buildTime: process.env.BUILD_TIME || new Date().toISOString(),
+    });
+  });
+
+  app.get('/api/healthz', (_req, res) => {
+    res.json({ ok: true, uptime: process.uptime() });
+  });
+
   // System Health Check Endpoint
   app.get("/health", (_req, res) => {
     try {
