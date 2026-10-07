@@ -75,6 +75,21 @@ async function startServer() {
   // Structured Logging for all Incoming Requests
   app.use(requestLogger);
 
+  // Unauthenticated diagnostic endpoints for version tracking and container health checks (MOVED TO TOP BEFORE ALL ROUTERS)
+  app.get('/api/version', (_req, res) => {
+    res.json({
+      commit: process.env.GIT_COMMIT || 'unknown',
+      uptime: Math.floor(process.uptime()),
+      nodeVersion: process.version,
+      env: process.env.NODE_ENV || 'production',
+      startTime: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+    });
+  });
+
+  app.get('/api/healthz', (_req, res) => {
+    res.json({ ok: true, uptime: process.uptime() });
+  });
+
   // Mount Modular Application Routers
   app.use('/api/auth', authRoutes);
   app.use('/api/students', studentRoutes);
@@ -98,21 +113,6 @@ async function startServer() {
   app.use('/api/system', systemRoutes);
   app.use('/api/audit', auditRoutes);
   app.use('/api', dataRoutes);
-
-  // Unauthenticated diagnostic endpoints for version tracking and container health checks
-  app.get('/api/version', (_req, res) => {
-    res.json({
-      commit: process.env.GIT_COMMIT || process.env.COMMIT_REF || process.env.RAILWAY_GIT_COMMIT_SHA || 'v1.0.1-prod',
-      uptime: Math.floor(process.uptime()),
-      nodeVersion: process.version,
-      env: process.env.NODE_ENV || 'production',
-      buildTime: process.env.BUILD_TIME || new Date().toISOString(),
-    });
-  });
-
-  app.get('/api/healthz', (_req, res) => {
-    res.json({ ok: true, uptime: process.uptime() });
-  });
 
   // System Health Check Endpoint
   app.get("/health", (_req, res) => {
@@ -193,6 +193,12 @@ async function startServer() {
   } catch (idxErr: any) {
     logger.warn('[Startup] Database initialization notice:', idxErr?.message || idxErr);
   }
+
+  console.log('BOOT', {
+    timestamp: new Date().toISOString(),
+    version: process.env.GIT_COMMIT || 'unknown',
+    nodeVersion: process.version,
+  });
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     logger.info(`[Production Server] running on http://0.0.0.0:${PORT}`);
