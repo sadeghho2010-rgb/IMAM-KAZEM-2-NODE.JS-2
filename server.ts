@@ -35,6 +35,7 @@ import { logger, requestLogger } from "./src/lib/logger";
 import { globalErrorHandler } from "./src/lib/errorHandler";
 import { startMemoryMonitor } from "./src/lib/memoryMonitor";
 import { startSystemHealthMonitor } from "./src/lib/systemHealthMonitor";
+import { BUILD_INFO } from "./src/lib/buildInfo";
 
 dotenv.config();
 
@@ -78,7 +79,9 @@ async function startServer() {
   // Unauthenticated diagnostic endpoints for version tracking and container health checks (MOVED TO TOP BEFORE ALL ROUTERS)
   app.get('/api/version', (_req, res) => {
     res.json({
-      commit: process.env.GIT_COMMIT || 'unknown',
+      commit: BUILD_INFO.version,
+      buildTime: BUILD_INFO.buildTime,
+      features: BUILD_INFO.features,
       uptime: Math.floor(process.uptime()),
       nodeVersion: process.version,
       env: process.env.NODE_ENV || 'production',
