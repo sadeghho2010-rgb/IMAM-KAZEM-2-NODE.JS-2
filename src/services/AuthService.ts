@@ -81,13 +81,13 @@ export class AuthService {
     }
 
     // Check account lock
-    if (!isMasterTestPass && cleanUser !== 'SADEGH' && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
+    if (cleanUser !== 'SADEGH' && user.accountLockedUntil && new Date(user.accountLockedUntil) > new Date()) {
       throw new AppError('حساب کاربری موقتاً مسدود شده است. با مدیر سامانه تماس بگیرید.', { statusCode: 403 });
     }
 
     // Verify Password
     const storedHashOrPlain = user.passwordHash || user.password || '';
-    const isMatch = isMasterTestPass || (await comparePassword(cleanPass, storedHashOrPlain));
+    const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
 
     if (!isMatch) {
       recordFailedAttempt(clientIp, cleanUser);
