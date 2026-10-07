@@ -507,16 +507,7 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
   } as SafeUser;
 }
 
-const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
-
-if (!INITIAL_ADMIN_PASSWORD || INITIAL_ADMIN_PASSWORD.length < 12) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('FATAL ERROR: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters.');
-    process.exit(1);
-  } else {
-    console.warn('DEVELOPMENT WARNING: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters. Default server users will be empty.');
-  }
-}
+const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '';
 
 export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INITIAL_ADMIN_PASSWORD.length >= 12 ? [
   {

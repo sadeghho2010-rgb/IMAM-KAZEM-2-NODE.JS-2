@@ -105,54 +105,6 @@ async function startServer() {
     res.json({ ok: true, uptime: process.uptime() });
   });
 
-  // Test Authentication Diagnostic Endpoint (Temporary for debugging)
-  app.get('/api/test-auth-debug', async (req, res) => {
-    const rawUsername = String(req.query.username || 'SADEGH');
-    const rawPassword = String(req.query.password || '');
-
-    const normUser = normalizeDigits(rawUsername).trim().toUpperCase();
-    const normPass = normalizeDigits(rawPassword).trim();
-
-    let userInDb = null;
-    let bcryptCompareResult = false;
-    let hashStart = null;
-    let errorMsg = null;
-
-    try {
-      const users = await fetchAllUsersFromStorage();
-      const found = users.find(u => u.username?.toUpperCase() === normUser);
-
-      if (found) {
-        userInDb = {
-          id: found.id,
-          username: found.username,
-          role: found.role,
-          mustChangePassword: found.mustChangePassword,
-          hasPasswordHash: Boolean(found.passwordHash),
-          hasPasswordPlain: Boolean(found.password)
-        };
-
-        const hashToTest = found.passwordHash || found.password || '';
-        if (hashToTest) {
-          hashStart = hashToTest.substring(0, 20);
-          bcryptCompareResult = await comparePassword(normPass, hashToTest);
-        }
-      }
-    } catch (err: any) {
-      errorMsg = err?.message || String(err);
-    }
-
-    return res.json({
-      input: { rawUsername, rawPassword },
-      normalized: { normUser, normPass },
-      userFoundInDb: Boolean(userInDb),
-      userRecord: userInDb,
-      hashFirst20Chars: hashStart,
-      bcryptCompareResult,
-      error: errorMsg
-    });
-  });
-
   // Mount Modular Application Routers
   app.use('/api/auth', authRoutes);
   app.use('/api/students', studentRoutes);
