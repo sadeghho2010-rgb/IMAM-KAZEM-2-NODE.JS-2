@@ -282,6 +282,25 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
   }
 
+  // Ensure login_audit_log table exists
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`login_audit_log\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`username\` VARCHAR(150) NOT NULL,
+        \`success\` TINYINT(1) NOT NULL,
+        \`ip_address\` VARCHAR(50) NOT NULL,
+        \`user_agent\` VARCHAR(500) NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_login_username\` (\`username\`),
+        INDEX \`idx_login_created_at\` (\`created_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - login_audit_log]:', e?.message || e);
+  }
+
   // 3. Ensure students table exists
   try {
     await mysqlPool.query(`
@@ -964,3 +983,22 @@ export const MysqlRepository = {
     });
   }
 };
+
+export async function recordLoginAuditInDb(log: {
+  username: string;
+  success: boolean;
+  ipAddress: string;
+  userAgent?: string;
+}): Promise<void> {
+  const pool = getMysqlPool();
+  if (!pool) return;
+  try {
+    const id = `login_log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    await pool.execute(
+      `INSERT INTO login_audit_log (id, username, success, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
+      [id, log.username.trim().toUpperCase(), log.success ? 1 : 0, log.ipAddress, log.userAgent || '']
+    );
+  } catch (err: any) {
+    console.warn('[Login Audit DB Notice]:', err?.message || err);
+  }
+}

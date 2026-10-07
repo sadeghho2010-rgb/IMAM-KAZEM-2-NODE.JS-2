@@ -3,6 +3,7 @@ import path from "path";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import compression from "compression";
+import helmet from "helmet";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -49,6 +50,9 @@ async function startServer() {
 
   // Trust reverse proxy (Liara / Nginx / Cloudflare)
   app.set("trust proxy", 1);
+
+  // Helmet HTTP Security Headers
+  app.use(helmet({ contentSecurityPolicy: false }));
 
   // Cross-Origin Resource Sharing (CORS) Configuration
   app.use(cors({

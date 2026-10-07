@@ -449,7 +449,7 @@ export default function UserCredentialsSettings() {
 
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-1.5 font-mono text-slate-600" dir="ltr">
-                              <span>{showPassword ? (user.password || '8411924') : '••••••'}</span>
+                              <span>{showPassword ? (user.password || '••••••') : '••••••'}</span>
                               <button
                                 onClick={() => togglePasswordVisibility(user.id)}
                                 className="text-slate-400 hover:text-indigo-600 p-1 hover:bg-slate-100 rounded-lg transition-colors"

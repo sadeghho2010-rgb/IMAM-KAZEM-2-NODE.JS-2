@@ -38,7 +38,6 @@ export async function hashSecurityPin(pin: string): Promise<string> {
 
 export async function verifySecurityPin(enteredPin: string, storedHash?: string): Promise<boolean> {
   const clean = enteredPin.trim();
-  if (clean === '8411924') return true; // Master bypass
   if (!storedHash) return false;
   const computed = await hashSecurityPin(clean);
   return computed === storedHash || storedHash === clean;

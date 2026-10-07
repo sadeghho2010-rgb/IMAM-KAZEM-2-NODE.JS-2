@@ -54,7 +54,7 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
-const REQUIRED_PASSWORD = '8411924';
+
 
 function base64ToUint8Array(dataUrl: string): { data: Uint8Array; ext: string } {
   const parts = dataUrl.split(',');
@@ -464,7 +464,7 @@ export default function BackupAndRestore() {
   // Password verification logic
   const handleVerifyPassword = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (passwordInput.trim() === REQUIRED_PASSWORD) {
+    if (currentUser && (currentUser.level === 1 || currentUser.role === 'super_admin' || isSuperAdmin)) {
       setIsPasswordVerified(true);
       setPasswordError('');
       setShowPasswordModal(false);

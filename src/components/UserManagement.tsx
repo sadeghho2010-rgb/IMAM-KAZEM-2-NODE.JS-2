@@ -69,7 +69,7 @@ export default function UserManagement() {
 
   // Form State
   const [formUsername, setFormUsername] = useState('');
-  const [formPassword, setFormPassword] = useState('8411924');
+  const [formPassword, setFormPassword] = useState('');
   const [formFullName, setFormFullName] = useState('');
   const [formLevel, setFormLevel] = useState<UserLevel>(2);
   const [formRole, setFormRole] = useState<UserRole>('education_officer');
@@ -93,7 +93,7 @@ export default function UserManagement() {
 
   const resetForm = () => {
     setFormUsername('');
-    setFormPassword('8411924');
+    setFormPassword('');
     setFormFullName('');
     setFormLevel(2);
     setFormRole('education_officer');

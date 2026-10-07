@@ -38,8 +38,8 @@ interface LoginViewProps {
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const { login, users } = useAuth();
 
-  const [username, setUsername] = useState('SADEGH');
-  const [password, setPassword] = useState('8411924');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -311,14 +311,14 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
   const handleSelectPreset = (user: AppUser) => {
     setUsername(user.username);
-    setPassword(user.password || '8411924');
+    setPassword(user.password || '');
     setErrorMessage(null);
     setShowQuickPresets(false);
   };
 
   const handleDirectLogin = async (user: AppUser) => {
     const uName = user.username;
-    const uPass = user.password || '8411924';
+    const uPass = user.password || '';
     setUsername(uName);
     setPassword(uPass);
     setErrorMessage(null);
@@ -357,7 +357,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           additionalTeacherUsers.push({
             id: t.id,
             username: tUsername,
-            password: '8411924',
+            password: '',
             name: tName,
             fullName: tName,
             level: 3,
@@ -681,119 +681,123 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               )}
             </button>
 
-            {/* Quick 1-Click Master Login for Testing */}
-            <button
-              type="button"
-              onClick={() => {
-                const adminUser = availableUsers.find(u => u.username === 'SADEGH') || DEFAULT_USERS[0];
-                handleDirectLogin(adminUser);
-              }}
-              disabled={isLoading}
-              className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99] cursor-pointer"
-            >
-              <Sparkles size={14} className="text-amber-300 animate-pulse" />
-              <span>⚡ ورود سریع با یک کلیک (حالت آزمایشی - صادق)</span>
-            </button>
+            {/* Quick 1-Click Master Login for Testing (Only when ENABLE_QUICK_LOGIN is true) */}
+            {import.meta.env.VITE_ENABLE_QUICK_LOGIN === 'true' && (
+              <button
+                type="button"
+                onClick={() => {
+                  const adminUser = availableUsers.find(u => u.username === 'SADEGH') || DEFAULT_USERS[0];
+                  handleDirectLogin(adminUser);
+                }}
+                disabled={isLoading}
+                className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99] cursor-pointer"
+              >
+                <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                <span>⚡ ورود سریع با یک کلیک (حالت آزمایشی - صادق)</span>
+              </button>
+            )}
           </div>
         </form>
 
-        {/* Quick Presets Toggle (راهنمای ورود سریع کاربران و مدیران) */}
-        <div className="mt-5 pt-4 border-t border-white/15 text-center">
-          <button
-            type="button"
-            onClick={() => setShowQuickPresets(!showQuickPresets)}
-            className="inline-flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors font-medium py-1.5 px-3 rounded-lg hover:bg-white/10 border border-white/10"
-          >
-            <Users size={14} className="text-blue-300" />
-            <span>انتخاب یا ورود مستقیم با سایر نقش‌ها و اساتید</span>
-            <ChevronDown
-              size={13}
-              className={`transition-transform duration-200 ${showQuickPresets ? 'rotate-180' : ''}`}
-            />
-          </button>
+        {/* Quick Presets Toggle & Drawer (Only when ENABLE_QUICK_LOGIN is true) */}
+        {import.meta.env.VITE_ENABLE_QUICK_LOGIN === 'true' && (
+          <div className="mt-5 pt-4 border-t border-white/15 text-center">
+            <button
+              type="button"
+              onClick={() => setShowQuickPresets(!showQuickPresets)}
+              className="inline-flex items-center gap-1.5 text-xs text-white/80 hover:text-white transition-colors font-medium py-1.5 px-3 rounded-lg hover:bg-white/10 border border-white/10"
+            >
+              <Users size={14} className="text-blue-300" />
+              <span>انتخاب یا ورود مستقیم با سایر نقش‌ها و اساتید</span>
+              <ChevronDown
+                size={13}
+                className={`transition-transform duration-200 ${showQuickPresets ? 'rotate-180' : ''}`}
+              />
+            </button>
 
-          {/* Collapsible Quick Users Drawer */}
-          <AnimatePresence>
-            {showQuickPresets && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.25 }}
-                className="overflow-hidden mt-3 text-right bg-black/40 rounded-xl p-3 border border-white/15 space-y-2.5"
-              >
-                <div className="flex items-center justify-around border-b border-white/10 pb-2 text-[11px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLevelTab(1)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                      selectedLevelTab === 1 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    سطح ۱ (مدیریت کل)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLevelTab(2)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                      selectedLevelTab === 2 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    سطح ۲ (آموزش و مالی)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedLevelTab(3)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                      selectedLevelTab === 3 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    سطح ۳ (اساتید)
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {filteredUsers.map((u) => (
-                    <div
-                      key={u.id || u.username}
-                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/5 transition-all text-xs text-white/90 text-right group"
+            {/* Collapsible Quick Users Drawer */}
+            <AnimatePresence>
+              {showQuickPresets && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden mt-3 text-right bg-black/40 rounded-xl p-3 border border-white/15 space-y-2.5"
+                >
+                  <div className="flex items-center justify-around border-b border-white/10 pb-2 text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLevelTab(1)}
+                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                        selectedLevelTab === 1 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
+                      }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => handleSelectPreset(u)}
-                        className="flex-1 flex items-center gap-2 text-right cursor-pointer"
-                        title="انتخاب نام کاربری و رمز"
-                      >
-                        <span className="w-6 h-6 rounded-md bg-indigo-500/30 text-indigo-200 flex items-center justify-center font-mono text-[10px] font-bold">
-                          {u.username.substring(0, 3)}
-                        </span>
-                        <span className="font-medium group-hover:text-white">{u.name}</span>
-                        {u.roleTitle && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/10 text-white/70">
-                            {u.roleTitle}
-                          </span>
-                        )}
-                      </button>
+                      سطح ۱ (مدیریت کل)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLevelTab(2)}
+                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                        selectedLevelTab === 2 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      سطح ۲ (آموزش و مالی)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLevelTab(3)}
+                      className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                        selectedLevelTab === 3 ? 'bg-indigo-600 text-white' : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      سطح ۳ (اساتید)
+                    </button>
+                  </div>
 
-                      <div className="flex items-center gap-1.5">
+                  <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                    {filteredUsers.map((u) => (
+                      <div
+                        key={u.id || u.username}
+                        className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/15 border border-white/5 transition-all text-xs text-white/90 text-right group"
+                      >
                         <button
                           type="button"
-                          onClick={() => handleDirectLogin(u)}
-                          disabled={isLoading}
-                          className="px-2 py-1 rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all shadow-sm active:scale-95 cursor-pointer flex items-center gap-1"
-                          title="ورود مستقیم و فوری با این کاربر"
+                          onClick={() => handleSelectPreset(u)}
+                          className="flex-1 flex items-center gap-2 text-right cursor-pointer"
+                          title="انتخاب نام کاربری و رمز"
                         >
-                          <LogIn size={11} />
-                          <span>ورود فوری</span>
+                          <span className="w-6 h-6 rounded-md bg-indigo-500/30 text-indigo-200 flex items-center justify-center font-mono text-[10px] font-bold">
+                            {u.username.substring(0, 3)}
+                          </span>
+                          <span className="font-medium group-hover:text-white">{u.name}</span>
+                          {u.roleTitle && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-white/10 text-white/70">
+                              {u.roleTitle}
+                            </span>
+                          )}
                         </button>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDirectLogin(u)}
+                            disabled={isLoading}
+                            className="px-2 py-1 rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all shadow-sm active:scale-95 cursor-pointer flex items-center gap-1"
+                            title="ورود مستقیم و فوری با این کاربر"
+                          >
+                            <LogIn size={11} />
+                            <span>ورود فوری</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Footer credits */}
         <div className="mt-5 text-center text-[11px] text-white/50 flex items-center justify-center gap-1.5">

@@ -72,7 +72,7 @@ export default function UserManagementSettings() {
   }>({
     username: '',
     name: '',
-    password: '8411924',
+    password: '',
     level: 2,
     role: 'custom',
     roleTitle: 'کاربر سیستم',
@@ -147,7 +147,7 @@ export default function UserManagementSettings() {
     setFormData({
       username: '',
       name: '',
-      password: '8411924',
+      password: '',
       level: 2,
       role: 'custom',
       roleTitle: 'کاربر سیستم',
@@ -173,7 +173,7 @@ export default function UserManagementSettings() {
     setFormData({
       username: user.username,
       name: user.name,
-      password: user.password || '8411924',
+      password: user.password || '',
       level: user.level,
       role: user.role,
       roleTitle: user.roleTitle,
@@ -690,7 +690,7 @@ export default function UserManagementSettings() {
                       type="text"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="8411924"
+                      placeholder="حداقل ۱۲ کاراکتر"
                       required
                       dir="ltr"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-500 text-right"

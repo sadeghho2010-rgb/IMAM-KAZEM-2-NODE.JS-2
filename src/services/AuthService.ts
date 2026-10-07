@@ -39,16 +39,13 @@ export class AuthService {
       throw new AppError(userVal.message || 'نام کاربری نامعتبر است.', { statusCode: 400 });
     }
 
-    // Rate Limiting Check (with bypass for master recovery password '8411924' or super admin SADEGH)
-    const isMasterTestPass = cleanPass === '8411924' || (cleanUser === 'SADEGH' && cleanPass === '8411924');
-    if (!isMasterTestPass && cleanUser !== 'SADEGH') {
-      const rateCheck = checkRateLimit(clientIp, cleanUser);
-      if (!rateCheck.allowed) {
-        throw new AppError(
-          `تعداد دفعات تلاش ناموفق بیش از حد مجاز است. لطفاً ${rateCheck.waitMinutes} دقیقه دیگر مجدداً تلاش کنید.`,
-          { statusCode: 429 }
-        );
-      }
+    // Rate Limiting Check
+    const rateCheck = checkRateLimit(clientIp, cleanUser);
+    if (!rateCheck.allowed) {
+      throw new AppError(
+        `تعداد دفعات تلاش ناموفق بیش از حد مجاز است. لطفاً ${rateCheck.waitMinutes} دقیقه دیگر مجدداً تلاش کنید.`,
+        { statusCode: 429 }
+      );
     } else {
       resetFailedAttempts(clientIp, cleanUser);
     }

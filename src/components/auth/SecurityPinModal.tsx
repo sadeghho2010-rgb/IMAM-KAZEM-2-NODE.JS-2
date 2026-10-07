@@ -77,15 +77,6 @@ export default function SecurityPinModal({ onSuccess }: SecurityPinModalProps) {
     setErrorMessage(null);
 
     try {
-      // 1. Master test bypass
-      if (cleanPin === '8411924') {
-        setIsLoading(false);
-        setIsLocked(false);
-        setPin('');
-        setFailedAttempts(0);
-        if (onSuccess) onSuccess();
-        return;
-      }
 
       // 2. Client-side fallback / local hash verification
       let isValid = false;

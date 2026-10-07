@@ -276,14 +276,14 @@ export default function TeachersSchedule() {
       setFormUsername(teacher.fullName.trim().replace(/\s+/g, '_'));
     }
 
-    setFormPassword(phone || nat || '8411924');
+    setFormPassword(phone || nat || '');
   };
 
   // Confirm Account Creation
   const handleConfirmCreateAccount = async () => {
     if (!accountTargetTeacher) return;
     const cleanUser = formUsername.trim().toUpperCase();
-    const cleanPass = formPassword.trim() || '8411924';
+    const cleanPass = formPassword.trim();
 
     if (!cleanUser) {
       alert('لطفاً نام کاربری را وارد نمایید.');
@@ -2279,7 +2279,7 @@ export default function TeachersSchedule() {
                         type="text"
                         value={formPassword}
                         onChange={(e) => setFormPassword(e.target.value)}
-                        placeholder="8411924"
+                        placeholder="حداقل ۱۲ کاراکتر"
                         className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         dir="ltr"
                         required

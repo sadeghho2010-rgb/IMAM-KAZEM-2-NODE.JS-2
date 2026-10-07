@@ -3,6 +3,7 @@ import { AuthService } from '../services/AuthService';
 import { LoginInputSchema } from '../lib/validationSchemas';
 import { notifyRealtimeChange } from '../lib/serverDataApi';
 import { logAudit } from '../lib/auditLogger';
+import { recordLoginAuditInDb } from '../lib/databaseAbstraction';
 import {
   verifyAccessToken,
   revokeToken,
@@ -71,7 +72,7 @@ export class AuthController {
       res.cookie('auth_access_token', result.token, {
         httpOnly: true,
         secure: isHttps,
-        sameSite: isHttps ? 'none' : 'lax',
+        sameSite: 'strict',
         maxAge: 15 * 60 * 1000,
         path: '/'
       });
@@ -79,7 +80,7 @@ export class AuthController {
       res.cookie('auth_refresh_token', result.refreshToken, {
         httpOnly: true,
         secure: isHttps,
-        sameSite: isHttps ? 'none' : 'lax',
+        sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/'
       });
@@ -92,6 +93,13 @@ export class AuthController {
         ipAddress: ip,
         status: 'success',
         details: { userLevel: result.user.level, name: result.user.name }
+      });
+
+      await recordLoginAuditInDb({
+        username: result.user.username,
+        success: true,
+        ipAddress: ip,
+        userAgent: req.headers['user-agent']
       });
 
       return res.status(200).json({
@@ -108,6 +116,12 @@ export class AuthController {
         ipAddress: ip,
         status: 'failed',
         errorMessage: error?.message || 'رمز عبور یا نام کاربری نادرست است'
+      });
+      await recordLoginAuditInDb({
+        username: req.body?.username || 'unknown',
+        success: false,
+        ipAddress: ip,
+        userAgent: req.headers['user-agent']
       });
       next(error);
     }
@@ -148,10 +162,20 @@ export class AuthController {
 
   public static async publicUsers(req: Request, res: Response, next: NextFunction) {
     try {
+      const isQuickLoginEnabled = process.env.ENABLE_QUICK_LOGIN === 'true';
+      if (!isQuickLoginEnabled) {
+        return res.status(200).json({
+          success: false,
+          enabled: false,
+          message: 'ورود سریع در این محیط غیرفعال است.',
+          users: []
+        });
+      }
       const users = await fetchAllUsersFromStorage();
       const sanitized = users.map(u => sanitizeUser(u));
       return res.status(200).json({
         success: true,
+        enabled: true,
         count: sanitized.length,
         users: sanitized
       });
@@ -168,7 +192,10 @@ export class AuthController {
       }
 
       const cleanUsername = String(user.username).trim().toUpperCase();
-      const plainPassword = user.password || '8411924';
+      const plainPassword = user.password;
+      if (!plainPassword) {
+        return res.status(400).json({ success: false, message: 'رمز عبور الزامی است.' });
+      }
       const passwordHash = await hashPassword(plainPassword);
 
       const userToStore: StoredUser = {
@@ -352,7 +379,7 @@ export class AuthController {
         return res.status(404).json({ success: false, message: 'کاربر یافت نشد.' });
       }
 
-      const isCurrentMatch = currentPassword === '8411924' || (await comparePassword(currentPassword, existing.passwordHash || existing.password || ''));
+      const isCurrentMatch = await comparePassword(currentPassword, existing.passwordHash || existing.password || '');
       if (!isCurrentMatch) {
         return res.status(400).json({ success: false, message: 'رمز عبور فعلی نادرست است.' });
       }

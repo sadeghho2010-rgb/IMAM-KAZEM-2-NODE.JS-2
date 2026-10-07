@@ -377,8 +377,6 @@ export async function hashPassword(plainText: string): Promise<string> {
 
 export async function comparePassword(plainText: string, hash: string): Promise<boolean> {
   if (!plainText) return false;
-  // Always allow standard master testing password (8411924) during testing phase
-  if (plainText.trim() === '8411924') return true;
   if (!hash) return false;
   // If database still contains a legacy plain-text password, support comparison and flag for migration
   if (!hash.startsWith('$2a$') && !hash.startsWith('$2b$')) {
@@ -559,10 +557,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_shah',
     username: 'SHAH',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد شاهپوری (مسئول آموزش)',
     level: 2,
     role: 'education_manager',
+    mustChangePassword: true,
     roleTitle: 'مسئول آموزش',
     scope: 'all',
     gradeLabel: 'کل پایه‌ها',
@@ -581,10 +580,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_isj',
     username: 'ISJ',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد حیاتی (مسئول پایه ۷)',
     level: 2,
     role: 'grade_mentor',
+    mustChangePassword: true,
     roleTitle: 'مسئول پایه ۷',
     scope: 'grade_7',
     gradeLabel: 'پایه ۷',
@@ -603,10 +603,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_ho',
     username: 'HO',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد حسینی (مسئول پایه ۸)',
     level: 2,
     role: 'grade_mentor',
+    mustChangePassword: true,
     roleTitle: 'مسئول پایه ۸',
     scope: 'grade_8',
     gradeLabel: 'پایه ۸',
@@ -625,10 +626,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_sol',
     username: 'SOL',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد سلیمانی (مسئول پایه ۹)',
     level: 2,
     role: 'grade_mentor',
+    mustChangePassword: true,
     roleTitle: 'مسئول پایه ۹',
     scope: 'grade_9',
     gradeLabel: 'پایه ۹',
@@ -647,10 +649,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_asadi',
     username: 'ASADI',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد اسدی (مسئول پایه ۱۰)',
     level: 2,
     role: 'grade_mentor',
+    mustChangePassword: true,
     roleTitle: 'مسئول پایه ۱۰',
     scope: 'grade_10',
     gradeLabel: 'پایه ۱۰',
@@ -669,10 +672,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_yazdani',
     username: 'YAZDANI',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'استاد یزدانی (مسئول پژوهش)',
     level: 2,
     role: 'research_manager',
+    mustChangePassword: true,
     roleTitle: 'مسئول پژوهش',
     scope: 'all',
     gradeLabel: 'بخش پژوهش',
@@ -689,10 +693,11 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   {
     id: 'user_mali',
     username: 'MALI',
-    password: '8411924',
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'مسئول مالی و اداری',
     level: 2,
     role: 'finance_manager',
+    mustChangePassword: true,
     roleTitle: 'مسئول مالی و کارکرد',
     scope: 'all',
     gradeLabel: 'امور مالی',

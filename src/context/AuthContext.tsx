@@ -1086,14 +1086,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // If server explicitly returned 401 with bad credentials (and not our master bypass for SADEGH or 8411924)
-      if (response.status === 401 && cleanPass !== '8411924' && cleanUser !== 'SADEGH') {
+      // If server explicitly returned 401 with bad credentials
+      if (response.status === 401) {
         return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
       }
 
-      // Resilient local fallback for super admin SADEGH, master recovery password, or known users
+      // Resilient local fallback for known offline users
       const fallbackUser = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
-      if (fallbackUser && (cleanPass === '8411924' || cleanPass === fallbackUser.password || (cleanUser === 'SADEGH' && cleanPass === '8411924'))) {
+      if (fallbackUser && cleanPass === fallbackUser.password) {
         setCurrentUser(fallbackUser);
         try {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
@@ -1111,7 +1111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (apiErr) {
       // Local fallback in case of network disconnect or server restart
       const fallbackUser = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
-      if (fallbackUser && (cleanPass === '8411924' || cleanPass === fallbackUser.password || (cleanUser === 'SADEGH' && cleanPass === '8411924'))) {
+      if (fallbackUser && cleanPass === fallbackUser.password) {
         setCurrentUser(fallbackUser);
         try {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
@@ -1235,7 +1235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...newUser,
       id: newUser.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       username,
-      password: newUser.password || '8411924',
+      password: newUser.password || '',
       name: newUser.name || newUser.fullName || username,
       fullName: newUser.fullName || newUser.name || username,
       level: newUser.level || (newUser.role === 'teacher' ? 3 : 2),

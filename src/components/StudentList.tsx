@@ -1531,7 +1531,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                       if (studentUser) {
                         setEditingCredUser(studentUser);
                         setCredUsername(studentUser.username);
-                        setCredPassword(studentUser.password || '8411924');
+                        setCredPassword(studentUser.password || '');
                         setCredName(studentUser.name);
                       } else {
                         setEditingCredUser(null);
