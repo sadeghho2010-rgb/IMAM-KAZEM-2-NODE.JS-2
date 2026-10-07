@@ -55,6 +55,17 @@ export class AuthController {
       }
 
       const result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+
+      // Force change password on first login: Do NOT issue tokens
+      if (result.user && result.user.mustChangePassword) {
+        return res.status(200).json({
+          success: true,
+          mustChangePassword: true,
+          message: 'جهت حفظ امنیت سامانه، تغییر رمز عبور در اولین ورود الزامی است.',
+          user: { id: result.user.id, username: result.user.username }
+        });
+      }
+
       const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
 
       res.cookie('auth_access_token', result.token, {

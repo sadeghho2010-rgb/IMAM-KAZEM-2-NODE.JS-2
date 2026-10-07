@@ -99,23 +99,20 @@ if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.trim().len
 const JWT_SECRET = process.env.JWT_SECRET.trim();
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET.trim();
 
-const DEFAULT_SUPABASE_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
-
-const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-const SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
+const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+const SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
 export const isServerSupabaseConfigured = Boolean(
-  (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) &&
-  (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY) &&
+  SUPABASE_URL &&
+  SUPABASE_KEY &&
   !SUPABASE_URL.includes('your-project-id') &&
   !SUPABASE_KEY.includes('your-supabase') &&
   !SUPABASE_URL.includes('placeholder')
 );
 
 export const serverSupabase = createClient(
-  SUPABASE_URL || DEFAULT_SUPABASE_URL,
-  SUPABASE_KEY || DEFAULT_SUPABASE_ANON_KEY,
+  SUPABASE_URL || 'https://none.supabase.co',
+  SUPABASE_KEY || 'none_key',
   { auth: { persistSession: false } }
 );
 
@@ -505,17 +502,19 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
 const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
 
 if (!INITIAL_ADMIN_PASSWORD || INITIAL_ADMIN_PASSWORD.length < 12) {
-  console.error('FATAL ERROR: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters.');
   if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL ERROR: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters.');
     process.exit(1);
+  } else {
+    console.warn('DEVELOPMENT WARNING: DEFAULT_ADMIN_PASSWORD or INITIAL_ADMIN_PASSWORD not set or shorter than 12 characters. Default server users will be empty.');
   }
 }
 
-export const DEFAULT_SERVER_USERS: StoredUser[] = [
+export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INITIAL_ADMIN_PASSWORD.length >= 12 ? [
   {
     id: 'user_sadegh',
     username: 'SADEGH',
-    password: INITIAL_ADMIN_PASSWORD || 'TEMPORARY_UNSAFE_PASSWORD', // Will fail production start
+    password: INITIAL_ADMIN_PASSWORD,
     name: 'صادق (سوپر ادمین)',
     level: 1,
     role: 'super_admin',
@@ -719,7 +718,7 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = [
       'user-credentials'
     ],
   },
-];
+] : [];
 
 // In-memory user store on server for fast fallback & dev environment
 const serverMemoryUsers = new Map<string, StoredUser>();

@@ -38,7 +38,10 @@ import { startSystemHealthMonitor } from "./src/lib/systemHealthMonitor";
 
 dotenv.config();
 
-const PORT = parseInt(process.env.PORT || "3000", 10);
+// Enforce port 3000 for development
+const PORT = process.env.NODE_ENV === 'production' 
+  ? parseInt(process.env.PORT || "8080", 10) 
+  : 3000;
 
 async function startServer() {
   const app = express();

@@ -240,6 +240,12 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       const result = await login(cleanUser, cleanPass);
       setIsLoading(false);
 
+      if (result.mustChangePassword) {
+        setShowChangePasswordModal(true);
+        setErrorMessage('جهت حفظ امنیت سامانه، تغییر رمز عبور در اولین ورود الزامی است.');
+        return;
+      }
+
       if (result.requirePin) {
         setShowPinPrompt(true);
         setPinErrorMessage(null);

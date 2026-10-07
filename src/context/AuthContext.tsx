@@ -1043,8 +1043,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const result = await response.json().catch(() => ({ success: false }));
 
-      if (response.ok && result.success && result.user) {
-        const user = result.user as AppUser;
+      if (response.ok && result.success) {
+        if (result.mustChangePassword) {
+          return {
+            success: false,
+            mustChangePassword: true,
+            message: result.message || 'تغییر رمز عبور در اولین ورود الزامی است.',
+            user: result.user
+          };
+        }
+
+        if (result.user) {
+          const user = result.user as AppUser;
         const localMatched = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
         const mergedUser: AppUser = {
           ...user,
@@ -1073,6 +1083,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         return { success: true };
+        }
       }
 
       // If server explicitly returned 401 with bad credentials (and not our master bypass for SADEGH or 8411924)
