@@ -33,16 +33,41 @@ async function resetAllPasswords() {
     console.log('[Password Reset Script] Connected successfully to MySQL.');
 
     // 1. Update all records in system_users
-    const [userUpdateResult] = await connection.execute(
-      `UPDATE system_users SET password_hash = ?, must_change_password = 1`,
+    const [userUpdateResult]: any = await connection.execute(
+      `UPDATE system_users SET password_hash = ?, must_change_password = 0`,
       [hash]
     );
 
-    const updatedCount = userUpdateResult.affectedRows || 0;
+    let updatedCount = userUpdateResult.affectedRows || 0;
+
+    // Check if SADEGH exists, if not insert
+    const [adminCheck]: any = await connection.execute(
+      `SELECT id FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
+    );
+
+    if (!adminCheck || adminCheck.length === 0) {
+      const allTabsJson = JSON.stringify([
+        'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+        'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+        'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+      ]);
+      await connection.execute(`
+        INSERT INTO system_users (
+          id, username, password_hash, name, role, role_title, level, grade_label,
+          mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
+        ) VALUES (
+          'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
+          1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
+        )
+      `, [hash, allTabsJson, allTabsJson]);
+      updatedCount += 1;
+      console.log(`✨ کاربر سوپر ادمین SADEGH که وجود نداشت با موفقیت ایجاد شد.`);
+    }
+
     console.log(`\n==================================================`);
     console.log(`✅ [SUCCESS] Reset password for ${updatedCount} user(s) in "system_users".`);
     console.log(`   New password set to: "${newPassword}"`);
-    console.log(`   must_change_password flag set to: 1 (true)`);
+    console.log(`   must_change_password flag set to: 0 (direct login enabled)`);
     console.log(`==================================================\n`);
 
     // 2. Invalidate active sessions or refresh tokens if tables exist

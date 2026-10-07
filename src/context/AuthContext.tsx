@@ -1092,6 +1092,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, message: result.message || 'نام کاربری یا رمز عبور اشتباه است.' };
       }
 
+      // If server returned 502 / 503 / 504 Gateway errors (restarting container / reverse proxy cold boot)
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        return {
+          success: false,
+          message: 'سرور در حال راه‌اندازی یا به‌روزرسانی اولیه است (کد ' + response.status + '). لطفاً ۲۰ الی ۳۰ ثانیه دیگر مجدداً دکمه ورود را بزنید.'
+        };
+      }
+
+      // If server returned 500 internal server error
+      if (response.status === 500) {
+        return {
+          success: false,
+          message: result.message || 'خطای موقت در سرور هنگام بررسی ورود (کد ۵۰۰). لطفاً دوباره امتحان کنید.'
+        };
+      }
+
       // Resilient local fallback for known offline users
       const fallbackUser = (users && users.length ? users : DEFAULT_USERS).find(u => u.username.toUpperCase() === cleanUser);
       if (fallbackUser && cleanPass === fallbackUser.password) {

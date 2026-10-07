@@ -11,6 +11,7 @@
  */
 
 import mysql from 'mysql2/promise';
+import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { logSlowQuery, logServerError } from './systemHealthMonitor';
 
@@ -280,6 +281,41 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
   } catch (e: any) {
     try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
+  }
+
+  // 2.1 Auto-seed Super Admin SADEGH if not present or has empty password hash
+  try {
+    const [existingAdmin]: any = await mysqlPool.query(
+      `SELECT id, username, password_hash FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
+    );
+    const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '8411924As';
+    const passwordHash = await bcrypt.hash(targetPassword, 10);
+    const allTabsJson = JSON.stringify([
+      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+    ]);
+
+    if (!existingAdmin || existingAdmin.length === 0) {
+      await mysqlPool.query(`
+        INSERT INTO system_users (
+          id, username, password_hash, name, role, role_title, level, grade_label,
+          mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
+        ) VALUES (
+          'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
+          1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
+        )
+      `, [passwordHash, allTabsJson, allTabsJson]);
+      console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس ساخته شد.`);
+    } else if (!existingAdmin[0].password_hash || existingAdmin[0].password_hash === '') {
+      await mysqlPool.query(
+        `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+        [passwordHash]
+      );
+      console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
+    }
+  } catch (adminSeedErr: any) {
+    console.warn('[MySQL Startup Notice - SADEGH Seed]:', adminSeedErr?.message || adminSeedErr);
   }
 
   // Ensure login_audit_log table exists

@@ -40,8 +40,9 @@
       "audit-logs"
     ],
     "passwordHash": "$2b$10$ZjLbx/CJcOEs6NtG/K7hB.P8QGfdR60wI1Z9dhHOtpY0hF/3ibw9W",
-    "failedLoginAttempts": 0,
-    "lastLogin": "2026-10-05T21:27:48.014Z"
+    "failedLoginAttempts": 7,
+    "lastLogin": "2026-10-07T17:02:32.395Z",
+    "accountLockedUntil": "2026-10-07T22:30:50.808Z"
   },
   {
     "id": "user_rahnama",
