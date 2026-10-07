@@ -48,10 +48,8 @@ import { fetchAllUsersFromStorage, comparePassword, normalizeDigits } from "./sr
 
 dotenv.config();
 
-// Enforce port 3000 for development
-const PORT = process.env.NODE_ENV === 'production' 
-  ? parseInt(process.env.PORT || "8080", 10) 
-  : 3000;
+// Enforce port 3000 as default for Runflare container and development
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 async function startServer() {
   const app = express();
@@ -186,38 +184,41 @@ async function startServer() {
   // Universal Global Error Handler for API routes
   app.use(globalErrorHandler);
 
-  // Ensure critical database performance indexes and test connection before accepting incoming requests
-  try {
-    const { isMysqlConfigured, validateMysqlConfig, testMysqlConnection, ensurePerformanceIndexes } = await import("./src/lib/databaseAbstraction");
-    if (isMysqlConfigured) {
-      console.log('[Startup] Validating MySQL Configuration...');
-      const validation = validateMysqlConfig();
-      if (validation.isValid) {
-        console.log('[Startup] Testing MySQL Connection...');
-        const isOk = await testMysqlConnection();
-        if (isOk) {
-          console.log('[Startup] MySQL connected successfully! Creating schemas/indexes...');
-          await ensurePerformanceIndexes();
-        } else {
-          console.error('[Startup Error] MySQL database is not reachable right now. Server will start, but db-status endpoint should be checked.');
-        }
-      } else {
-        console.error('[Startup Error] MySQL configuration is invalid. Please check your environment variables.');
-      }
-    }
-  } catch (idxErr: any) {
-    logger.warn('[Startup] Database initialization notice:', idxErr?.message || idxErr);
-  }
-
   console.log('BOOT', {
     timestamp: new Date().toISOString(),
     version: process.env.GIT_COMMIT || 'unknown',
     nodeVersion: process.version,
+    port: PORT
   });
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     logger.info(`[Production Server] running on http://0.0.0.0:${PORT}`);
     
+    // Asynchronous database verification and index creation
+    (async () => {
+      try {
+        const { isMysqlConfigured, validateMysqlConfig, testMysqlConnection, ensurePerformanceIndexes } = await import("./src/lib/databaseAbstraction");
+        if (isMysqlConfigured) {
+          console.log('[Startup] Validating MySQL Configuration...');
+          const validation = validateMysqlConfig();
+          if (validation.isValid) {
+            console.log('[Startup] Testing MySQL Connection...');
+            const isOk = await testMysqlConnection();
+            if (isOk) {
+              console.log('[Startup] MySQL connected successfully! Creating schemas/indexes...');
+              await ensurePerformanceIndexes();
+            } else {
+              console.error('[Startup Error] MySQL database is not reachable right now. Server will start, but db-status endpoint should be checked.');
+            }
+          } else {
+            console.error('[Startup Error] MySQL configuration is invalid. Please check your environment variables.');
+          }
+        }
+      } catch (idxErr: any) {
+        logger.warn('[Startup] Database initialization notice:', idxErr?.message || idxErr);
+      }
+    })();
+
     // Automated memory monitoring
     startMemoryMonitor(5 * 60 * 1000, 450);
     startSystemHealthMonitor(10 * 60 * 1000);
