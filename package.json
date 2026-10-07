@@ -8,6 +8,7 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=server-dist/server.cjs",
     "start": "node server-dist/server.cjs",
     "clean": "rm -rf dist server-dist",
+    "clean-install": "npm ci || npm install",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },
@@ -30,6 +31,7 @@
     "cors": "^2.8.6",
     "date-fns": "^4.4.0",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.25.0",
     "express": "^4.21.2",
     "express-rate-limit": "^8.7.1",
     "html2canvas-pro": "^2.3.9",
@@ -49,6 +51,10 @@
     "react-multi-date-picker": "^4.5.2",
     "recharts": "^3.10.1",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3",
+    "vite-plugin-pwa": "^2.0.0",
     "winston": "^3.19.0",
     "xlsx": "^0.18.5",
     "zod": "^4.6.5"
@@ -62,12 +68,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
     "sharp": "^0.35.5",
-    "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3",
-    "vite-plugin-pwa": "^2.0.0"
+    "tailwindcss": "^4.1.14"
   }
 }
