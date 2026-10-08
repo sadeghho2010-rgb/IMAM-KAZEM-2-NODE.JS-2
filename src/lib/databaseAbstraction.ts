@@ -608,7 +608,7 @@ export function getMysqlPool(): mysql.Pool | null {
         connectionLimit: 15,
         queueLimit: 50,
         charset: 'utf8mb4_unicode_ci',
-        timezone: '+03:30' // Iran Standard Time
+        timezone: 'Z'
       });
 
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);

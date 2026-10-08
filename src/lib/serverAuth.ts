@@ -86,12 +86,14 @@ export type CallerUser = SafeUser & {
 };
 
 // Secure fallback mechanism for JWT secrets: use environment secrets if provided, else use resilient fallback
-const JWT_REFRESH_SECRET = (process.env.JWT_REFRESH_SECRET && process.env.JWT_REFRESH_SECRET.trim().length > 0)
-  ? process.env.JWT_REFRESH_SECRET.trim()
+const rawRefreshSecret = (process.env.JWT_REFRESH_SECRET || '').trim();
+const JWT_REFRESH_SECRET = (rawRefreshSecret && !rawRefreshSecret.startsWith('{{'))
+  ? rawRefreshSecret
   : 'hosoon_super_secure_refresh_token_secret_key_2026_default_fallback_node_app';
 
-const JWT_SECRET = (process.env.JWT_SECRET && process.env.JWT_SECRET.trim().length > 0)
-  ? process.env.JWT_SECRET.trim()
+const rawJwtSecret = (process.env.JWT_SECRET || '').trim();
+const JWT_SECRET = (rawJwtSecret && !rawJwtSecret.startsWith('{{'))
+  ? rawJwtSecret
   : (JWT_REFRESH_SECRET + '_access_token_secret');
 
 const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();

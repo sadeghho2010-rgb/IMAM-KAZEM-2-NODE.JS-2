@@ -205,22 +205,6 @@ async function startServer() {
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     logger.info(`[Production Server] running on http://0.0.0.0:${PORT}`);
-
-  // Auxiliary port binding (e.g. 80, 8080, 3000) for seamless reverse proxy compatibility
-  [80, 8080, 3000].forEach((auxPort) => {
-    if (auxPort !== PORT) {
-      try {
-        const auxServer = app.listen(auxPort, "0.0.0.0", () => {
-          logger.info(`[Production Server] Auxiliary listener active on http://0.0.0.0:${auxPort}`);
-        });
-        auxServer.on('error', (err: any) => {
-          if (err.code !== 'EACCES' && err.code !== 'EADDRINUSE') {
-            logger.warn(`[Auxiliary Port ${auxPort}]:`, err?.message || err);
-          }
-        });
-      } catch (e) {}
-    }
-  });
     
     // Asynchronous database verification and index creation
     (async () => {
