@@ -190,6 +190,44 @@
   animation: gradientGlow 60s ease-in-out infinite;
 }
 
+/* Gentle 55s continuous color wave for student feature cards - cycling full spectrum smoothly */
+@keyframes radiantWaveShift {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    filter: hue-rotate(180deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
+.animate-radiant-wave {
+  animation: radiantWaveShift 55s linear infinite;
+  will-change: filter;
+}
+
+.animate-radiant-wave-1 {
+  animation: radiantWaveShift 55s linear infinite;
+  will-change: filter;
+}
+
+.animate-radiant-wave-2 {
+  animation: radiantWaveShift 55s linear infinite -13.75s;
+  will-change: filter;
+}
+
+.animate-radiant-wave-3 {
+  animation: radiantWaveShift 55s linear infinite -27.5s;
+  will-change: filter;
+}
+
+.animate-radiant-wave-4 {
+  animation: radiantWaveShift 55s linear infinite -41.25s;
+  will-change: filter;
+}
+
 html, body {
   margin: 0;
   padding: 0;

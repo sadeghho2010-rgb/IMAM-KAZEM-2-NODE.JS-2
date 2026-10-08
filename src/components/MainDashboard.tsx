@@ -52,7 +52,8 @@ import {
   CalendarCheck,
   RotateCw,
   EyeOff,
-  Wallet
+  Wallet,
+  Send
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1505,190 +1506,252 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             </div>
           </div>
 
-          {/* LEFT SIDE: Standalone Animated Circular Counter (5 seconds slow counter with label underneath) */}
-          <div 
-            className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none"
-            onMouseEnter={() => setIsHoveredOnCounter(true)}
-            onMouseLeave={() => setIsHoveredOnCounter(false)}
-          >
-            {/* The Clean Circle with Label Underneath */}
+          {/* LEFT SIDE: Standalone Animated Circular Counter (For Management/Staff only - students receive a clean streamlined view) */}
+          {currentUser?.level !== 3 ? (
             <div 
-              className="flex flex-col items-center justify-center gap-1.5 cursor-pointer group"
-              title="کلیک برای مشاهده شاخص بعدی"
-              onClick={() => {
-                setActiveStatIndex(prev => (prev + 1) % 4);
-                setCounterKey(Date.now());
-              }}
+              className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none"
+              onMouseEnter={() => setIsHoveredOnCounter(true)}
+              onMouseLeave={() => setIsHoveredOnCounter(false)}
             >
-              {/* Outer Circular Ring & Number */}
-              <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center p-1 shrink-0 transition-transform group-hover:scale-105">
-                {/* Glowing Outer Gradient Ring */}
-                <div className={cn(
-                  "absolute inset-0 rounded-full bg-gradient-to-tr opacity-90 transition-all duration-700 shadow-lg shadow-indigo-500/20",
-                  currentStat.color,
-                  !isAnimationsDisabled && "animate-spin [animation-duration:10s]"
-                )} />
-                {/* Inner Circle Backdrop */}
-                <div className="relative w-full h-full rounded-full bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-center p-0.5 border border-white/20 shadow-inner">
-                  <span className={cn("text-base sm:text-lg font-black tracking-tight", currentStat.textColor)}>
-                    <AnimatedCounter 
-                      key={`${counterKey}-${currentStat.id}`}
-                      value={currentStat.value} 
-                      duration={isCounterAnimDisabled ? 0 : 5000}
-                      className="font-black"
-                    />
-                  </span>
-                  <span className="text-[9px] font-bold text-slate-300 -mt-0.5">
-                    {currentStat.unit}
-                  </span>
+              {/* The Clean Circle with Label Underneath */}
+              <div 
+                className="flex flex-col items-center justify-center gap-1.5 cursor-pointer group"
+                title="کلیک برای مشاهده شاخص بعدی"
+                onClick={() => {
+                  setActiveStatIndex(prev => (prev + 1) % 4);
+                  setCounterKey(Date.now());
+                }}
+              >
+                {/* Outer Circular Ring & Number */}
+                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center p-1 shrink-0 transition-transform group-hover:scale-105">
+                  {/* Glowing Outer Gradient Ring */}
+                  <div className={cn(
+                    "absolute inset-0 rounded-full bg-gradient-to-tr opacity-90 transition-all duration-700 shadow-lg shadow-indigo-500/20",
+                    currentStat.color,
+                    !isAnimationsDisabled && "animate-spin [animation-duration:10s]"
+                  )} />
+                  {/* Inner Circle Backdrop */}
+                  <div className="relative w-full h-full rounded-full bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center text-center p-0.5 border border-white/20 shadow-inner">
+                    <span className={cn("text-base sm:text-lg font-black tracking-tight", currentStat.textColor)}>
+                      <AnimatedCounter 
+                        key={`${counterKey}-${currentStat.id}`}
+                        value={currentStat.value} 
+                        duration={isCounterAnimDisabled ? 0 : 5000}
+                        className="font-black"
+                      />
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-300 -mt-0.5">
+                      {currentStat.unit}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Dynamic Label Underneath the Circle */}
+                <div className="text-center px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-xs border border-white/15 text-[11px] font-black text-white tracking-tight max-w-[150px] truncate shadow-xs">
+                  {currentStat.label}
                 </div>
               </div>
 
-              {/* Dynamic Label Underneath the Circle */}
-              <div className="text-center px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-xs border border-white/15 text-[11px] font-black text-white tracking-tight max-w-[150px] truncate shadow-xs">
-                {currentStat.label}
-              </div>
+              {/* Unread Alert Shortcut if applicable */}
+              {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('student-requests')}
+                  className="px-2.5 py-1.5 bg-rose-500/90 hover:bg-rose-600 text-white rounded-xl text-[10px] font-black shadow-xs flex items-center gap-1.5 transition-all cursor-pointer border border-rose-300/40 shrink-0 self-center"
+                  title="مشاهده درخواست‌های جدید"
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                  </span>
+                  <Inbox size={12} />
+                  <span className="hidden sm:inline">{unreadRequestsCount} درخواست</span>
+                </button>
+              )}
             </div>
-
-            {/* Unread Alert Shortcut if applicable */}
-            {unreadRequestsCount > 0 && isTabAllowed('student-requests') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-requests')}
-                className="px-2.5 py-1.5 bg-rose-500/90 hover:bg-rose-600 text-white rounded-xl text-[10px] font-black shadow-xs flex items-center gap-1.5 transition-all cursor-pointer border border-rose-300/40 shrink-0 self-center"
-                title="مشاهده درخواست‌های جدید"
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-                </span>
-                <Inbox size={12} />
-                <span className="hidden sm:inline">{unreadRequestsCount} درخواست</span>
-              </button>
-            )}
-          </div>
+          ) : (
+            /* Clean Compact Action Badge for Students */
+            <div className="flex items-center gap-2 self-center md:self-auto shrink-0 select-none">
+              {unreadRequestsCount > 0 && isTabAllowed('student-requests') ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('student-requests')}
+                  className="px-3.5 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-xs font-black shadow-md flex items-center gap-2 transition-all cursor-pointer border border-rose-300/40 active:scale-95"
+                  title="مشاهده کارتابل درخواست‌ها"
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+                  </span>
+                  <Inbox size={15} />
+                  <span>{unreadRequestsCount} تقاضای جاری در کارتابل</span>
+                </button>
+              ) : (
+                <div className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md border border-white/15 text-xs text-indigo-100 font-bold flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-amber-300" />
+                  <span>وضعیت تحصیلی: فعال</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* LEVEL 3 QUICK ACTIONS BAR FOR STUDENTS (DESKTOP & LAPTOP TOUCH/CLICK BAR) */}
+      {/* 4 CORE VIBRANT COLORFUL CARDS FOR STUDENTS (DESKTOP & LAPTOP VERSION - اصلاح ۱ و ۲ و ۳) */}
       {currentUser?.level === 3 && (
-        <div className="space-y-2.5">
+        <div className="space-y-3.5">
+          {/* Attendance Banner on Desktop */}
+          {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? (
+            <div 
+              onClick={() => onNavigateTab('attendance')}
+              className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md border border-emerald-400/40 flex items-center justify-between cursor-pointer active:scale-[0.99] hover:shadow-lg transition-all group relative overflow-hidden"
+            >
+              <div className="space-y-0.5 relative z-10 min-w-0 pr-1">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black border border-white/20">
+                    <Sparkles size={11} className="text-amber-300 animate-spin" />
+                    <span>نماینده کلاس</span>
+                  </span>
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">
+                    ثبت سریع حضور و غیاب کلاس درس
+                  </h3>
+                </div>
+                <p className="text-xs text-emerald-100 font-medium truncate">
+                  ثبت حاضر/غایب کلیه اعضای کلاس و دروس با یک کلیک مستقیم
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-white text-emerald-800 flex items-center justify-center font-black shadow-md shrink-0 group-hover:scale-105 transition-transform border border-emerald-100 relative z-10">
+                <CheckSquare size={20} />
+              </div>
+            </div>
+          ) : (
+            <div 
+              onClick={() => onNavigateTab('attendance')}
+              className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white shadow-md border border-indigo-400/40 flex items-center justify-between cursor-pointer active:scale-[0.99] hover:shadow-lg transition-all group relative overflow-hidden"
+            >
+              <div className="space-y-0.5 relative z-10 min-w-0 pr-1">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black border border-white/20">
+                    <ShieldCheck size={11} className="text-emerald-300" />
+                    <span>پرونده انضباطی</span>
+                  </span>
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">
+                    کارنامه و آمار غیبت‌های من
+                  </h3>
+                </div>
+                <p className="text-xs text-indigo-100 font-medium truncate">
+                  مشاهده وضعیت دقیق حضور، تاخیرها، غیبت‌های موجه و غیرموجه و جلسات دروس
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-white text-indigo-800 flex items-center justify-center font-black shadow-md shrink-0 group-hover:scale-105 transition-transform border border-indigo-100 relative z-10">
+                <CheckSquare size={20} />
+              </div>
+            </div>
+          )}
+
+          {/* Section Header */}
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-1.5">
-              <Sparkles size={16} className="text-amber-500" />
-              <span>دسترسی‌های سریع و اختصاصی طلاب</span>
+            <span className="text-sm sm:text-base font-black text-slate-800 flex items-center gap-2">
+              <Sparkles size={18} className="text-indigo-600" />
+              <span>سامانه‌های اصلی و پرکاربرد طلاب</span>
             </span>
-            <span className="text-[11px] text-indigo-600 font-black bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200/60">
+            <span className="text-xs text-indigo-600 font-black bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200/60">
               دسترسی مستقیم ۱ کلیک
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
-            {/* 1. رزرو نهار و شام */}
-            {isTabAllowed('student-meals') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-meals')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-50 hover:from-amber-500/20 hover:to-orange-100/70 border border-amber-300/80 text-amber-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <UtensilsCrossed size={19} />
+          {/* 
+            Grid of 4 Core Cards in Desktop RTL:
+            Row 1: [Right: کارنامه علمی] | [Left: ثبت تقاضا و درخواست]
+            Row 2: [Right: ساعت مطالعه من] | [Left: رزرو نهار و شام] (پایین سمت چپ)
+            With the continuous smooth radiant wave animation shifting color gently over ~55s!
+          */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Card 1 (بالا سمت راست): کارنامه علمی */}
+            <div
+              onClick={() => onNavigateTab('student-portal')}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white shadow-lg shadow-indigo-600/20 border border-indigo-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-1 select-none"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <BrainCircuit size={22} className="text-white" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">رزرو نهار و شام</div>
-                  <div className="text-[10px] text-amber-700/90 font-bold truncate">سلف و وعده‌ها</div>
-                </div>
-              </button>
-            )}
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                  سوابق علمی و تحصیلی
+                </span>
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate">کارنامه علمی</h3>
+                <p className="text-xs text-purple-100 font-medium truncate">مشاهده پرونده تحصیلی، نمرات، وضعیت ترم و دروس</p>
+              </div>
+            </div>
 
-            {/* 2. کارنامه علمی */}
-            {(isTabAllowed('student-portal') || isTabAllowed('summary')) && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-portal')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-indigo-50 hover:from-indigo-500/20 hover:to-purple-100/70 border border-indigo-300/80 text-indigo-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <BrainCircuit size={19} />
+            {/* Card 2 (بالا سمت چپ): ثبت تقاضا و درخواست */}
+            <div
+              onClick={() => onNavigateTab('student-requests')}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-rose-500 via-pink-600 to-red-600 text-white shadow-lg shadow-rose-600/20 border border-rose-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-2 select-none"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <Send size={21} className="text-white" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">کارنامه علمی</div>
-                  <div className="text-[10px] text-indigo-700/90 font-bold truncate">سوابق و نمرات</div>
-                </div>
-              </button>
-            )}
+                {unreadRequestsCount > 0 ? (
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-white text-rose-700 shadow-sm animate-pulse">
+                    {unreadRequestsCount} درخواست جاری
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-rose-100 border border-white/20 backdrop-blur-xs">
+                    کارتابل آنلاین
+                  </span>
+                )}
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate">ثبت تقاضا و درخواست</h3>
+                <p className="text-xs text-rose-100 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
+              </div>
+            </div>
 
-            {/* 3. پنل ثبت درخواست */}
-            {isTabAllowed('student-requests') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-requests')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-rose-500/10 via-pink-500/5 to-rose-50 hover:from-rose-500/20 hover:to-pink-100/70 border border-rose-300/80 text-rose-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <Inbox size={19} />
+            {/* Card 3 (پایین سمت راست): ساعت مطالعه من (جایگزین شده با پرداختی‌ها به دلیل اهمیت بالاتر) */}
+            <div
+              onClick={() => onNavigateTab('stats')}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-purple-600 via-violet-600 to-indigo-700 text-white shadow-lg shadow-purple-600/20 border border-purple-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-3 select-none"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <BookOpen size={22} className="text-white" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">ثبت تقاضا</div>
-                  <div className="text-[10px] text-rose-700/90 font-bold truncate">آموزشی و رفاهی</div>
-                </div>
-              </button>
-            )}
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                  مباحثه و ساعات مطالعه
+                </span>
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate">ساعت مطالعه من</h3>
+                <p className="text-xs text-purple-100 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی</p>
+              </div>
+            </div>
 
-            {/* 4. امور مالی و پرداختی‌ها */}
-            {isTabAllowed('student-payments') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-payments')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-teal-500/10 via-emerald-500/5 to-teal-50 hover:from-teal-500/20 hover:to-emerald-100/70 border border-teal-300/80 text-teal-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <Wallet size={19} />
+            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام (طبق دستور صریح کاربر در پایین سمت چپ قرار دارد) */}
+            <div
+              onClick={() => onNavigateTab('student-meals')}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/20 border border-amber-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-4 select-none"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <UtensilsCrossed size={22} className="text-white" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">پرداختی‌ها و مالی</div>
-                  <div className="text-[10px] text-teal-700/90 font-bold truncate">شهریه و واریزی‌ها</div>
-                </div>
-              </button>
-            )}
-
-            {/* 5. حضور و غیاب */}
-            {isTabAllowed('attendance') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('attendance')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-green-500/5 to-emerald-50 hover:from-emerald-500/20 hover:to-green-100/70 border border-emerald-300/80 text-emerald-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <CheckSquare size={19} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'ثبت سریع حضور و غیاب' : 'کارنامه حضور'}
-                  </div>
-                  <div className="text-[10px] text-emerald-700/90 font-bold truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'کلاس تحت نمایندگی' : 'آمار و غیبت‌ها'}
-                  </div>
-                </div>
-              </button>
-            )}
-
-            {/* 6. ثبت ساعت مطالعه */}
-            {isTabAllowed('stats') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('stats')}
-                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-purple-50 hover:from-purple-500/20 hover:to-indigo-100/70 border border-purple-300/80 text-purple-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                  <BookOpen size={19} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-black truncate">ثبت ساعت مطالعه</div>
-                  <div className="text-[10px] text-purple-700/90 font-bold truncate">مطالعه و مباحثه</div>
-                </div>
-              </button>
-            )}
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-amber-100 border border-white/20 backdrop-blur-xs">
+                  سلف و تغذیه
+                </span>
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate">رزرو نهار و شام</h3>
+                <p className="text-xs text-amber-100 font-medium truncate">انتخاب و سفارش غذا، مشاهده ژتون‌ها و رزروهای هفتگی سلف</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1702,8 +1765,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                 <Grid size={16} />
               </div>
               <div>
-                <h2 className="text-xs sm:text-sm font-black text-slate-800">پیشخوان و سامانه‌های فعال شما</h2>
-                <p className="text-[10px] text-slate-400 font-medium">مشاهده تمامی کارت‌های دسترسی طلاب ({allowedCardsMap.size} بخش)</p>
+                <h2 className="text-xs sm:text-sm font-black text-slate-800">سایر خدمات و سامانه‌های تکمیلی</h2>
+                <p className="text-[10px] text-slate-400 font-medium">امور مالی و پرداختی‌ها، برنامه هفتگی، گروه‌های مباحثه و انتخاب واحد ({allowedCardsMap.size} بخش)</p>
               </div>
             </div>
             <span className="text-[11px] font-black px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200/80 rounded-xl">
