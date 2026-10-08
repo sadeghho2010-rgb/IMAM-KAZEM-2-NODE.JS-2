@@ -470,6 +470,7 @@ export interface Program {
   customRepresentative?: string; // نماینده متفرقه خارج از طلاب
   subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر'; // گرایش/شاخه درسی
   subjectBook?: string; // کتاب درسی (مثلا رسائل، حلقه ثالثه، کفایه، مکاسب، شرح لمعه، بدایه و...)
+  attendanceType?: 'representative' | 'self_reporting'; // نحوه ثبت حضور و غیاب: ثبت توسط نماینده (پیش‌فرض) یا خوداظهاری توسط طلبه
 }
 
 export interface ClassSessionAttendance {

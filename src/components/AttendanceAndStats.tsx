@@ -368,12 +368,36 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     currentUser?.role === 'student' || currentUser?.level === 3 || !currentUser
   );
 
+  // Self-reporting programs for ordinary student
+  const studentSelfReportingPrograms = useMemo(() => {
+    if (!isOrdinaryStudent) return [];
+    
+    const loggedSid = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
+    const loggedUsername = currentUser?.username;
+    
+    return programs.filter(p => {
+      if (p.attendanceType !== 'self_reporting') return false;
+      const inEnroll = enrollments.some(e => String(e.programId) === String(p.id) && (
+        String(e.studentId) === String(loggedSid) ||
+        String(e.studentId) === String(loggedUsername)
+      ));
+      const inArray = Array.isArray(p.studentIds) && (
+        p.studentIds.includes(String(loggedSid)) ||
+        p.studentIds.includes(String(loggedUsername))
+      );
+      const stObj = students.find(s => String(s.id) === String(loggedSid) || s.nationalId === loggedUsername);
+      const matchesGrade = Boolean(stObj?.grade && p.grade && String(stObj.grade).trim() === String(p.grade).trim());
+
+      return inEnroll || inArray || matchesGrade;
+    });
+  }, [isOrdinaryStudent, currentUser, programs, enrollments, students]);
+
   const canManageSettings = isSuperAdmin || isEducationManager || (isGradeSupervisor && settings.allowGradeProfessorSettingsEdit);
   const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
   const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
 
   // Enforce tab access:
-  // - Ordinary students MUST only see 'report' tab
+  // - Ordinary students default to 'report', but if they have self-reporting programs, they can also access 'record' for self-reporting
   // - Representatives MUST default directly to 'record' tab to immediately record attendance
   useEffect(() => {
     if (isRepresentative) {
@@ -381,7 +405,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         setActiveTab('record');
       }
     } else if (isOrdinaryStudent) {
-      if (activeTab !== 'report') {
+      if (activeTab !== 'report' && activeTab !== 'record') {
         setActiveTab('report');
       }
     }
@@ -439,9 +463,31 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     return programs.find(p => p.id === selectedProgramId) || null;
   }, [programs, representativePrograms, selectedProgramId, isRepresentative]);
 
-  // Get students enrolled in current program - ensures ALL members of the class are visible to the representative
+  // Get students enrolled in current program - ensures ALL members of the class are visible to the representative, BUT ordinary students ONLY see themselves
   const enrolledStudents = useMemo(() => {
     if (!selectedProgramId) return [];
+
+    // If ordinary student, strictly return ONLY that logged-in student (cannot see other students or other classes)
+    if (isOrdinaryStudent) {
+      const loggedSid = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
+      const loggedUsername = currentUser?.username;
+      
+      const selfStudent = students.find(s => 
+        String(s.id) === String(loggedSid) || 
+        s.nationalId === loggedUsername || 
+        s.studentCode === loggedUsername ||
+        s.name === currentUser?.fullName ||
+        s.name === currentUser?.name
+      ) || {
+        id: loggedSid || 'self-student',
+        name: currentUser?.fullName || currentUser?.name || 'طلبه محترم',
+        nationalId: loggedUsername || '',
+        grade: currentProgram?.grade || 'عمومی'
+      };
+
+      return [selfStudent];
+    }
+
     if (isRepresentative && !representativePrograms.some(p => p.id === selectedProgramId)) {
       return [];
     }
@@ -824,13 +870,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setIsSavedRecently(true);
       showToast("حضور و غیاب با موفقیت در سیستم ثبت گردید.");
 
-      // Return representative to previous step (class status/list) upon successful save
+      // In representative mode, only notify the user without returning or resetting selection
       if (isRepresentative) {
-        showToast("ثبت حضور و غیاب با موفقیت انجام شد. در حال بازگشت به مرحله قبل...");
-        setTimeout(() => {
-          setSelectedProgramId('');
-          setActiveTab('class_status');
-        }, 800);
+        showToast("ثبت نهایی و ثبت در دیتابیس با موفقیت انجام شد.");
       }
     } catch (err) {
       console.error('Error saving attendance:', err);
@@ -2187,7 +2229,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 onChange={(e) => setSelectedProgramId(e.target.value)}
                 className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
               >
-                {isRepresentative ? (
+                {isOrdinaryStudent ? (
+                  studentSelfReportingPrograms.length === 0 ? (
+                    <option value="" disabled>هیچ کلاس خوداظهاری برای شما فعال نشده است</option>
+                  ) : (
+                    studentSelfReportingPrograms.map(p => {
+                      const titleStr = p.title || p.name || 'کلاس بدون عنوان';
+                      const gradeStr = p.grade ? ` (${p.grade})` : '';
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {titleStr}{gradeStr} (کلاس خوداظهاری)
+                        </option>
+                      );
+                    })
+                  )
+                ) : isRepresentative ? (
                   representativePrograms.length === 0 ? (
                     <option value="" disabled>هیچ کلاسی تحت نمایندگی شما یافت نشد</option>
                   ) : (
@@ -3622,21 +3678,64 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 )}
 
                 <fieldset disabled={isSettingsReadOnly} className="space-y-4">
-                  <div>
-                    <label className="block font-bold text-slate-800 mb-1">
-                      مهلت ثبت و ویرایش توسط نماینده کلاس (روز):
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={settings.representativeEditWindowDays}
-                      onChange={(e) => setSettings({ ...settings, representativeEditWindowDays: parseInt(e.target.value) || 7 })}
-                      className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 font-mono font-bold"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      نماینده کلاس تا این تعداد روز فرصت ثبت و ویرایش دارد. پس از آن تنها مسئول آموزش مجاز خواهد بود.
-                    </p>
+                  {/* 1. Class Representative Settings Section */}
+                  <div className="p-3.5 bg-indigo-50/70 rounded-2xl border border-indigo-100 space-y-2">
+                    <h4 className="font-black text-indigo-950 text-xs flex items-center gap-1.5">
+                      <UserCheck size={15} className="text-indigo-600" />
+                      <span>تنظیمات ثبت حضور و غیاب توسط نماینده کلاس:</span>
+                    </h4>
+                    <div>
+                      <label className="block font-bold text-slate-800 text-[11px] mb-1">
+                        مهلت ثبت و ویرایش توسط نماینده کلاس (روز):
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={settings.representativeEditWindowDays}
+                        onChange={(e) => setSettings({ ...settings, representativeEditWindowDays: parseInt(e.target.value) || 7 })}
+                        className="w-full p-2 border border-indigo-200 rounded-xl bg-white font-mono font-bold text-xs"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        نماینده کلاس تا این تعداد روز فرصت ثبت و ویرایش دارد. پس از آن تنها مسئول آموزش مجاز خواهد بود.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 2. Isolated Student Self-Reporting Settings Section */}
+                  <div className="p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-2.5">
+                    <h4 className="font-black text-emerald-950 text-xs flex items-center gap-1.5">
+                      <CheckCircle2 size={15} className="text-emerald-600" />
+                      <span>تنظیمات حضور و غیاب خوداظهاری طلاب (منفک از نماینده):</span>
+                    </h4>
+                    <div>
+                      <label className="block font-bold text-slate-800 text-[11px] mb-1">
+                        مهلت ثبت خوداظهاری توسط خود طلبه (روز):
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={(settings as any).studentSelfReportingWindowDays || 3}
+                        onChange={(e) => setSettings({ ...settings, studentSelfReportingWindowDays: parseInt(e.target.value) || 3 } as any)}
+                        className="w-full p-2 border border-emerald-200 rounded-xl bg-white font-mono font-bold text-xs"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        طلبه برای کلاس‌های دارای نوع «خوداظهاری» تا این تعداد روز پس از جلسه فرصت اعلام دارد.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-emerald-200/60">
+                      <span className="text-[11px] font-bold text-emerald-900">امکان ویرایش ثبت خوداظهاری طلبه در مهلت مقرر:</span>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={(settings as any).allowStudentSelfReportingEdit ?? true}
+                          onChange={(e) => setSettings({ ...settings, allowStudentSelfReportingEdit: e.target.checked } as any)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                      </label>
+                    </div>
                   </div>
 
                   <div>

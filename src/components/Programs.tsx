@@ -3258,6 +3258,45 @@ export default function Programs() {
                   )}
                 </div>
 
+                {/* Attendance Method Section: Representative vs Self-Reporting */}
+                <div className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-2">
+                  <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck size={14} className="text-indigo-600" />
+                      <span>روش ثبت حضور و غیاب کلاس:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">(قابل تنظیم برای هر درس)</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewProgram({ ...newProgram, attendanceType: 'representative' })}
+                      className={cn(
+                        "p-2.5 rounded-xl border text-xs font-bold transition-all text-right flex flex-col gap-1 cursor-pointer",
+                        (!newProgram.attendanceType || newProgram.attendanceType === 'representative')
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>ثبت توسط نماینده (پیش‌فرض)</span>
+                      <span className="text-[10px] opacity-80 font-normal">نماینده یا استاد حضور و غیاب را ثبت می‌کند</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewProgram({ ...newProgram, attendanceType: 'self_reporting' })}
+                      className={cn(
+                        "p-2.5 rounded-xl border text-xs font-bold transition-all text-right flex flex-col gap-1 cursor-pointer",
+                        newProgram.attendanceType === 'self_reporting'
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>ثبت خوداظهاری توسط طلبه</span>
+                      <span className="text-[10px] opacity-80 font-normal">هر طلبه در پنل خود حضور را ثبت می‌کند</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Class Representative Section */}
                 <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -3771,6 +3810,45 @@ export default function Programs() {
                       </p>
                     </div>
                   )}
+                </div>
+
+                {/* Attendance Method Section for Edit */}
+                <div className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-2">
+                  <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <UserCheck size={14} className="text-indigo-600" />
+                      <span>روش ثبت حضور و غیاب کلاس:</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal">(قابل تنظیم برای هر درس)</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingProgram({ ...editingProgram, attendanceType: 'representative' })}
+                      className={cn(
+                        "p-2.5 rounded-xl border text-xs font-bold transition-all text-right flex flex-col gap-1 cursor-pointer",
+                        (!editingProgram.attendanceType || editingProgram.attendanceType === 'representative')
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>ثبت توسط نماینده (پیش‌فرض)</span>
+                      <span className="text-[10px] opacity-80 font-normal">نماینده یا استاد حضور و غیاب را ثبت می‌کند</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingProgram({ ...editingProgram, attendanceType: 'self_reporting' })}
+                      className={cn(
+                        "p-2.5 rounded-xl border text-xs font-bold transition-all text-right flex flex-col gap-1 cursor-pointer",
+                        editingProgram.attendanceType === 'self_reporting'
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                          : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      <span>ثبت خوداظهاری توسط طلبه</span>
+                      <span className="text-[10px] opacity-80 font-normal">هر طلبه در پنل خود حضور را ثبت می‌کند</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Class Representative Section for Edit */}
