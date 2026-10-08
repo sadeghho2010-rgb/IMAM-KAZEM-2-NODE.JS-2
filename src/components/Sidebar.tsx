@@ -445,7 +445,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
     if (currentUser?.level === 3) {
       if (item.id === 'student-requests') label = 'پنل ثبت درخواست';
       if (item.id === 'student-schedule') label = 'برنامه درسی من';
-      if (item.id === 'attendance') label = (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب من';
+      if (item.id === 'attendance') label = (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) ? 'ثبت حضور و غیاب کلاس' : 'کارنامه حضور و غیاب من';
       if (item.id === 'stats') label = 'ساعات مطالعه من';
       if (item.id === 'research') label = 'پژوهش و مقالات من';
     } else {

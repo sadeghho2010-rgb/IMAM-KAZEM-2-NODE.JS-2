@@ -44,13 +44,16 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   const todayShamsi = useMemo(() => getTodayShamsi(), []);
   const todayDayName = useMemo(() => getShamsiDayOfWeekName(todayShamsi), [todayShamsi]);
 
+  const [hasRepProgram, setHasRepProgram] = useState(false);
+
   const isRepresentative = useMemo(() => {
     return (
       currentUser?.role === 'class_representative' || 
       currentUser?.roleTitle?.includes('نماینده') ||
-      !!(currentUser as any)?.managedClassId
+      !!(currentUser as any)?.managedClassId ||
+      hasRepProgram
     );
-  }, [currentUser]);
+  }, [currentUser, hasRepProgram]);
 
   useEffect(() => {
     loadStudentData();
@@ -84,6 +87,13 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
         return matchesGrade || matchesEnrollment || matchesRep || matchesRepName;
       });
+
+      const isRepInProgs = allProgs.some(p => {
+        const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(sId);
+        const matchesRepName = cName && Array.isArray((p as any).representativeNames) && (p as any).representativeNames.some((n: string) => n.toLowerCase().includes(cName));
+        return matchesRep || matchesRepName;
+      });
+      setHasRepProgram(isRepInProgs);
 
       setTodayPrograms(filteredToday);
 

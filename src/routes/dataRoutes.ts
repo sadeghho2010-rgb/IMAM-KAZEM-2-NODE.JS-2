@@ -42,19 +42,17 @@ const getClientIp = (req: Request): string => {
 // GET /api/data/bootstrap - Batch fetch all collections in 1 optimized request
 router.get('/data/bootstrap', async (req: Request, res: Response) => {
   const token = extractToken(req);
-  let userLevel = 3;
-  let userRole = 'guest';
+  let callerUser: any = { level: 3, role: 'guest' };
 
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      userLevel = verification.decoded.level;
-      userRole = verification.decoded.role;
+      callerUser = verification.decoded;
     }
   }
 
   try {
-    const data = await fetchBootstrapData(userLevel, userRole);
+    const data = await fetchBootstrapData(callerUser);
     return res.status(200).json({
       success: true,
       timestamp: Date.now(),

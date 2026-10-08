@@ -698,6 +698,39 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
       return false; // Fail-closed if teacher context is missing
     }
 
+    // Class Representative: Can view themselves AND all students enrolled in classes they represent
+    if (context?.isRepresentative || user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || Boolean(user.managedClassId)) {
+      const uUsername = String(user.username || '').trim().toUpperCase();
+      const uStudentId = String(user.studentId || user.id || '').trim();
+      const sId = String(doc.id || '').trim();
+      const sCode = String(doc.studentCode || '').trim().toUpperCase();
+      const sNat = String(doc.nationalId || doc.nationalCode || '').trim();
+
+      // 1. Is this the representative themselves?
+      if ((uStudentId && sId === uStudentId) || (uUsername && (sCode === uUsername || sNat === uUsername))) {
+        return true;
+      }
+
+      // 2. Is this student enrolled in one of the representative's classes?
+      if (context?.repEnrolledStudentIds) {
+        if (
+          context.repEnrolledStudentIds.has(sId) ||
+          (sCode && context.repEnrolledStudentIds.has(sCode)) ||
+          (sNat && context.repEnrolledStudentIds.has(sNat))
+        ) {
+          return true;
+        }
+      }
+
+      // 3. If representative is assigned a specific grade
+      const repGrade = user.gradeLabel || user.grade;
+      if (repGrade && String(doc.grade || '').trim() === String(repGrade).trim()) {
+        return true;
+      }
+
+      return false;
+    }
+
     if (user.role === 'student' || user.level === 3) {
       const uUsername = String(user.username || '').trim().toUpperCase();
       const uStudentId = String(user.studentId || user.id || '').trim();
@@ -705,11 +738,6 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
       const sCode = String(doc.studentCode || '').trim().toUpperCase();
       const sNat = String(doc.nationalId || doc.nationalCode || '').trim();
       return (uStudentId && sId === uStudentId) || (uUsername && (sCode === uUsername || sNat === uUsername));
-    }
-
-    if (user.role === 'class_representative') {
-      const repGrade = user.gradeLabel || user.grade;
-      return repGrade ? String(doc.grade || '').trim() === String(repGrade).trim() : false;
     }
 
     return false;
@@ -886,56 +914,153 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
     return rawItems;
   }
 
-  // 4. Precompute Context for Teacher / Students collection if needed to avoid N+1 queries
+  // 4. Precompute Context for Teacher / Class Representative / Students collection if needed to avoid N+1 queries
   let context: any = {};
-  if (collection === 'students' && user.role === 'teacher') {
-    const teacherId = user.teacherId || user.id || user.linkedTeacherId;
-    const teacherName = (user.name || user.fullName || '').trim();
-    const cleanTeacher = cleanTeacherName(teacherName);
+  if (collection === 'students') {
+    if (user.role === 'teacher') {
+      const teacherId = user.teacherId || user.id || user.linkedTeacherId;
+      const teacherName = (user.name || user.fullName || '').trim();
+      const cleanTeacher = cleanTeacherName(teacherName);
 
-    const programs = await fetchRawCollectionData('programs');
-    const teacherPrograms = programs.filter((p: any) => {
-      const pTeacherId = p.teacherId || p.teacher_id;
-      const pTeacherName = p.teacher || p.teacherName || p.teacher_name || '';
-      if (teacherId && pTeacherId && (pTeacherId === teacherId || pTeacherId === user.id)) return true;
-      if (cleanTeacher && pTeacherName && cleanTeacherName(pTeacherName) === cleanTeacher) return true;
-      return false;
-    });
+      const programs = await fetchRawCollectionData('programs');
+      const teacherPrograms = programs.filter((p: any) => {
+        const pTeacherId = p.teacherId || p.teacher_id;
+        const pTeacherName = p.teacher || p.teacherName || p.teacher_name || '';
+        if (teacherId && pTeacherId && (pTeacherId === teacherId || pTeacherId === user.id)) return true;
+        if (cleanTeacher && pTeacherName && cleanTeacherName(pTeacherName) === cleanTeacher) return true;
+        return false;
+      });
 
-    const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
-    const teacherGrades = new Set<string>();
-    teacherPrograms.forEach((p: any) => {
-      if (p.grade) teacherGrades.add(String(p.grade).trim());
-    });
+      const teacherProgramIds = new Set(teacherPrograms.map((p: any) => String(p.id)));
+      const teacherGrades = new Set<string>();
+      teacherPrograms.forEach((p: any) => {
+        if (p.grade) teacherGrades.add(String(p.grade).trim());
+      });
 
-    const schedules = await fetchRawCollectionData('teacher_schedules');
-    schedules.forEach((sch: any) => {
-      const schTeacherId = sch.teacherId || sch.teacher_id;
-      const schTeacherName = sch.teacher_name || sch.teacherName || '';
-      if (
-        (teacherId && schTeacherId === teacherId) ||
-        (cleanTeacher && schTeacherName && cleanTeacherName(schTeacherName) === cleanTeacher)
-      ) {
-        if (sch.grade) teacherGrades.add(String(sch.grade).trim());
+      const schedules = await fetchRawCollectionData('teacher_schedules');
+      schedules.forEach((sch: any) => {
+        const schTeacherId = sch.teacherId || sch.teacher_id;
+        const schTeacherName = sch.teacher_name || sch.teacherName || '';
+        if (
+          (teacherId && schTeacherId === teacherId) ||
+          (cleanTeacher && schTeacherName && cleanTeacherName(schTeacherName) === cleanTeacher)
+        ) {
+          if (sch.grade) teacherGrades.add(String(sch.grade).trim());
+        }
+      });
+
+      const enrollments = await fetchRawCollectionData('enrollments');
+      const enrolledStudentIds = new Set<string>();
+      enrollments.forEach((enr: any) => {
+        if (teacherProgramIds.has(String(enr.programId || enr.program_id))) {
+          enrolledStudentIds.add(String(enr.studentId || enr.student_id));
+        }
+      });
+
+      context = { enrolledStudentIds, teacherGrades };
+    } else if (
+      user.role === 'class_representative' || 
+      user.roleTitle?.includes('نماینده') || 
+      user.managedClassId || 
+      user.level === 3 || 
+      user.role === 'student'
+    ) {
+      // Find represented programs
+      const programs = await fetchRawCollectionData('programs');
+      const enrollments = await fetchRawCollectionData('enrollments');
+
+      const candidateIds = [
+        user.studentId, 
+        user.linkedStudentId, 
+        user.id, 
+        user.userId, 
+        user.username
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      const candidateNames = [
+        user.name, 
+        user.fullName, 
+        user.studentName
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      const managedClassId = user.managedClassId ? String(user.managedClassId).trim() : null;
+      const repProgramIdsFromUser = Array.isArray(user.representativeProgramIds) 
+        ? user.representativeProgramIds.map((x: any) => String(x).trim()) 
+        : [];
+
+      const repPrograms = programs.filter((p: any) => {
+        const pId = String(p.id).trim();
+        if (managedClassId && pId === managedClassId) return true;
+        if (repProgramIdsFromUser.includes(pId)) return true;
+
+        if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
+          if (p.representativeStudentIds.some((id: any) => candidateIds.includes(String(id).toLowerCase().trim()))) {
+            return true;
+          }
+        }
+        if (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) {
+          if (p.representativeNames.some((n: string) => {
+            const norm = String(n).toLowerCase().trim();
+            return candidateNames.some(c => norm.includes(c) || c.includes(norm));
+          })) {
+            return true;
+          }
+        }
+        if (p.customRepresentative) {
+          const norm = String(p.customRepresentative).toLowerCase().trim();
+          if (candidateNames.some(c => norm.includes(c) || c.includes(norm))) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (repPrograms.length > 0 || user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId) {
+        const repProgIds = new Set(repPrograms.map((p: any) => String(p.id).trim()));
+        if (managedClassId) repProgIds.add(managedClassId);
+
+        const repEnrolledStudentIds = new Set<string>();
+        enrollments.forEach((enr: any) => {
+          const pId = String(enr.programId || enr.program_id || '').trim();
+          if (repProgIds.has(pId)) {
+            const sid = String(enr.studentId || enr.student_id || '').trim();
+            if (sid) repEnrolledStudentIds.add(sid);
+          }
+        });
+
+        repPrograms.forEach((p: any) => {
+          if (Array.isArray(p.studentIds)) {
+            p.studentIds.forEach((sid: any) => {
+              if (sid) repEnrolledStudentIds.add(String(sid).trim());
+            });
+          }
+          if (Array.isArray(p.representativeStudentIds)) {
+            p.representativeStudentIds.forEach((sid: any) => {
+              if (sid) repEnrolledStudentIds.add(String(sid).trim());
+            });
+          }
+        });
+
+        candidateIds.forEach(id => repEnrolledStudentIds.add(id));
+
+        context = {
+          isRepresentative: true,
+          repEnrolledStudentIds,
+          repProgramIds: Array.from(repProgIds)
+        };
       }
-    });
-
-    const enrollments = await fetchRawCollectionData('enrollments');
-    const enrolledStudentIds = new Set<string>();
-    enrollments.forEach((enr: any) => {
-      if (teacherProgramIds.has(String(enr.programId || enr.program_id))) {
-        enrolledStudentIds.add(String(enr.studentId || enr.student_id));
-      }
-    });
-
-    context = { enrolledStudentIds, teacherGrades };
+    }
   }
 
   // 5. Use the shared canUserReadDoc logic for absolute, bulletproof row-level filtering consistency
   return rawItems.filter(item => canUserReadDoc(user, collection, item, context));
 }
 
-export async function fetchBootstrapData(userLevel: number, userRole: string): Promise<Record<string, any[]>> {
+export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: string): Promise<Record<string, any[]>> {
+  const callerUser = (typeof callerUserOrLevel === 'object' && callerUserOrLevel !== null)
+    ? callerUserOrLevel
+    : { level: callerUserOrLevel, role: userRole };
+
   const collections = [
     'students', 'teachers', 'programs', 'enrollments', 'study_periods',
     'classrooms', 'attendance', 'finance_expenses', 'finance_loans',
@@ -950,7 +1075,7 @@ export async function fetchBootstrapData(userLevel: number, userRole: string): P
   const result: Record<string, any[]> = {};
   for (const col of collections) {
     try {
-      result[col] = await serverQueryCollection(col, { level: userLevel, role: userRole });
+      result[col] = await serverQueryCollection(col, callerUser);
     } catch (e) {
       result[col] = [];
     }

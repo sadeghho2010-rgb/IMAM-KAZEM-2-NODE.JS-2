@@ -691,8 +691,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     },
     {
       id: 'attendance',
-      title: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب من') : 'حضور و غیاب طلاب',
-      subtitle: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) ? 'ثبت روزانه وضعیت حضور و غیاب کلاس تحت نمایندگی' : 'مشاهده ریز تاخیرها، غیبت‌ها و کارنامه حضور در جلسات درس') : 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
+      title: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) ? 'ثبت سریع حضور و غیاب' : 'کارنامه حضور و غیاب من') : 'حضور و غیاب طلاب',
+      subtitle: currentUser?.level === 3 ? ((currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) ? 'ثبت روزانه وضعیت حضور و غیاب کلاس تحت نمایندگی' : 'مشاهده ریز تاخیرها، غیبت‌ها و کارنامه حضور در جلسات درس') : 'ثبت و پایش روزانه حضور در کلاس‌ها و ساعات آموزشی',
       category: 'students',
       icon: CheckSquare,
       iconBg: 'bg-gradient-to-br from-emerald-500 via-teal-600 to-green-600 text-white shadow-lg shadow-emerald-500/30',
@@ -1630,10 +1630,10 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-black truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') ? 'ثبت حضور و غیاب' : 'کارنامه حضور و غیاب'}
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'ثبت سریع حضور و غیاب' : 'کارنامه حضور و غیاب'}
                   </div>
                   <div className="text-[10px] text-emerald-700/80 truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') ? 'ثبت وضعیت کلاس' : 'آمار و غیبت‌ها'}
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'کلاس تحت نمایندگی شما' : 'آمار و غیبت‌ها'}
                   </div>
                 </div>
               </button>

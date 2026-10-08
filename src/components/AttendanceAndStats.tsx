@@ -345,6 +345,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && (
     currentUser?.role === 'class_representative' || 
     currentUser?.roleTitle?.includes('نماینده') || 
+    Boolean((currentUser as any)?.managedClassId) ||
     representativePrograms.length > 0
   );
 
@@ -358,17 +359,42 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Enforce tab access:
   // - Ordinary students MUST only see 'report' tab
-  // - Representatives MUST default to 'record' tab to immediately record attendance
+  // - Representatives MUST default directly to 'record' tab to immediately record attendance
   useEffect(() => {
-    if (isOrdinaryStudent && activeTab !== 'report') {
-      setActiveTab('report');
-    } else if (isRepresentative && activeTab === 'class_status') {
-      setActiveTab('record');
+    if (isRepresentative) {
+      if (activeTab === 'class_status') {
+        setActiveTab('record');
+      }
+    } else if (isOrdinaryStudent) {
+      if (activeTab !== 'report') {
+        setActiveTab('report');
+      }
     }
   }, [isOrdinaryStudent, isRepresentative, activeTab]);
 
-  // Set default selected program
+  // When representative programs are loaded or user is recognized as representative,
+  // immediately ensure they land on 'record' tab to record attendance directly!
   useEffect(() => {
+    if (isRepresentative && representativePrograms.length > 0) {
+      if (activeTab !== 'record') {
+        setActiveTab('record');
+      }
+    }
+  }, [isRepresentative, representativePrograms.length]);
+
+  // Set default selected program strictly constrained to represented classes for class representatives
+  useEffect(() => {
+    if (isRepresentative) {
+      if (representativePrograms.length > 0) {
+        if (!selectedProgramId || !representativePrograms.some(p => p.id === selectedProgramId)) {
+          setSelectedProgramId(representativePrograms[0].id);
+        }
+      } else {
+        setSelectedProgramId('');
+      }
+      return;
+    }
+
     if (initialStudentId && programs.length > 0) {
       const progWithStudent = programs.find(p => {
         const inEnroll = enrollments.some(e => e.programId === p.id && String(e.studentId) === String(initialStudentId));
@@ -385,39 +411,63 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     }
 
-    if (!selectedProgramId) {
-      if (representativePrograms.length > 0) {
-        setSelectedProgramId(representativePrograms[0].id);
-      } else if (programs.length > 0) {
-        setSelectedProgramId(programs[0].id);
-      }
+    if (!selectedProgramId && programs.length > 0) {
+      setSelectedProgramId(programs[0].id);
     }
-  }, [representativePrograms, programs, selectedProgramId, initialStudentId, enrollments]);
+  }, [isRepresentative, representativePrograms, programs, selectedProgramId, initialStudentId, enrollments]);
 
-  // Get active selected program
+  // Get active selected program - strictly limited to represented classes for representatives
   const currentProgram = useMemo(() => {
+    if (isRepresentative) {
+      return representativePrograms.find(p => p.id === selectedProgramId) || null;
+    }
     return programs.find(p => p.id === selectedProgramId) || null;
-  }, [programs, selectedProgramId]);
+  }, [programs, representativePrograms, selectedProgramId, isRepresentative]);
 
-  // Get students enrolled in current program
+  // Get students enrolled in current program - ensures ALL members of the class are visible to the representative
   const enrolledStudents = useMemo(() => {
     if (!selectedProgramId) return [];
+    if (isRepresentative && !representativePrograms.some(p => p.id === selectedProgramId)) {
+      return [];
+    }
+
     const studentIdSet = new Set<string>();
 
     enrollments.forEach(e => {
-      if (e.programId === selectedProgramId) {
-        studentIdSet.add(e.studentId);
+      const pId = String(e.programId || e.program_id || '').trim();
+      if (pId === String(selectedProgramId).trim()) {
+        const sid = String(e.studentId || e.student_id || '').trim();
+        if (sid) studentIdSet.add(sid);
       }
     });
 
     if (currentProgram && Array.isArray(currentProgram.studentIds)) {
-      currentProgram.studentIds.forEach((sid: string) => studentIdSet.add(sid));
+      currentProgram.studentIds.forEach((sid: any) => {
+        if (sid) studentIdSet.add(String(sid).trim());
+      });
     }
 
-    return students
-      .filter(s => studentIdSet.has(s.id))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-  }, [selectedProgramId, enrollments, currentProgram, students]);
+    // Also include representative themselves if assigned in representativeStudentIds
+    if (currentProgram && Array.isArray(currentProgram.representativeStudentIds)) {
+      currentProgram.representativeStudentIds.forEach((sid: any) => {
+        if (sid) studentIdSet.add(String(sid).trim());
+      });
+    }
+
+    let result = students.filter(s => {
+      const sId = String(s.id || '').trim();
+      const sCode = String(s.studentCode || '').trim();
+      const sNat = String(s.nationalId || s.nationalCode || '').trim();
+      return studentIdSet.has(sId) || (sCode && studentIdSet.has(sCode)) || (sNat && studentIdSet.has(sNat));
+    });
+
+    // Fallback: If no explicit enrollments were recorded in this program yet, match by grade
+    if (result.length === 0 && currentProgram?.grade && currentProgram.grade !== 'همه پایه‌ها') {
+      result = students.filter(s => String(s.grade || '').trim() === String(currentProgram.grade).trim());
+    }
+
+    return result.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+  }, [selectedProgramId, enrollments, currentProgram, students, isRepresentative, representativePrograms]);
 
   // Current Day of Week Name for selected date
   const dayOfWeekName = useMemo(() => {
@@ -1741,29 +1791,134 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </div>
           )}
 
+          {/* Fast-Track Dedicated Representative Header Banner */}
+          {isRepresentative && representativePrograms.length > 0 && (
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white rounded-3xl shadow-md border border-emerald-400/30 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/30 shadow-xs">
+                    <CheckSquare size={22} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/30 text-emerald-100 text-[10px] font-black border border-emerald-300/40">
+                        دسترسی مستقیم نماینده کلاس
+                      </span>
+                      <h3 className="text-sm sm:text-base font-black text-white">
+                        ثبت سریع حضور و غیاب: «{currentProgram?.title || 'کلاس تحت نمایندگی'}»
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-emerald-100/90 font-medium mt-1 flex-wrap">
+                      {currentProgram?.grade && <span>پایه {currentProgram.grade}</span>}
+                      {currentProgram?.teacher && <span>• استاد: {currentProgram.teacher}</span>}
+                      {(currentProgram?.madrasRoom || currentProgram?.classroom) && <span>• مَدرَس: {currentProgram.madrasRoom || currentProgram.classroom}</span>}
+                      <span>• تعداد کل اعضای کلاس: {enrolledStudents.length} نفر</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleMarkAll('present')}
+                    disabled={isCancelled || isDateLockedForRepresentative}
+                    className="px-3.5 py-2 bg-white hover:bg-emerald-50 text-emerald-800 rounded-xl text-xs font-black transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                    title="ثبت حضور کلیه طلاب کلاس با ۱ کلیک"
+                  >
+                    <CheckCircle2 size={15} className="text-emerald-600" />
+                    <span>حضور همه طلاب</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAttendance}
+                    disabled={isSaving || !currentProgram || isDateLockedForRepresentative}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5",
+                      isSavedRecently 
+                        ? "bg-emerald-400 text-emerald-950" 
+                        : "bg-amber-400 hover:bg-amber-300 text-slate-900"
+                    )}
+                  >
+                    <Save size={15} />
+                    <span>{isSaving ? 'در حال ثبت...' : isSavedRecently ? 'ثبت شد ✓' : 'ثبت نهایی'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* If representative manages multiple classes, provide 1-tap quick pills */}
+              {representativePrograms.length > 1 && (
+                <div className="pt-2 border-t border-white/20 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                  <span className="text-[11px] font-bold text-emerald-100 shrink-0">کلاس‌های تحت نمایندگی:</span>
+                  {representativePrograms.map(p => {
+                    const isSelected = p.id === selectedProgramId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedProgramId(p.id)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer",
+                          isSelected 
+                            ? "bg-white text-emerald-900 shadow-xs" 
+                            : "bg-white/15 text-white hover:bg-white/25"
+                        )}
+                      >
+                        {p.title} {p.grade ? `(${p.grade})` : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Top Controls: Program Selector & Date Picker */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* 1. Class Program Selector */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <BookOpen size={15} className="text-indigo-600" />
-                <span>انتخاب کلاس درس:</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <BookOpen size={15} className="text-indigo-600" />
+                  <span>{isRepresentative ? 'کلاس تحت نمایندگی شما:' : 'انتخاب کلاس درس:'}</span>
+                </label>
+                {isRepresentative && (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    منحصراً کلاس‌های تحت نمایندگی ({representativePrograms.length})
+                  </span>
+                )}
+              </div>
               <select
                 value={selectedProgramId}
                 onChange={(e) => setSelectedProgramId(e.target.value)}
                 className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
               >
-                {(isRepresentative ? representativePrograms : programs).map(p => {
-                  const titleStr = p.title || p.name || 'کلاس بدون عنوان';
-                  const gradeStr = p.grade ? ` (${p.grade})` : '';
-                  const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
-                  return (
-                    <option key={p.id} value={p.id}>
-                      {titleStr}{gradeStr}{teacherStr}
-                    </option>
-                  );
-                })}
+                {isRepresentative ? (
+                  representativePrograms.length === 0 ? (
+                    <option value="" disabled>هیچ کلاسی تحت نمایندگی شما یافت نشد</option>
+                  ) : (
+                    representativePrograms.map(p => {
+                      const titleStr = p.title || p.name || 'کلاس بدون عنوان';
+                      const gradeStr = p.grade ? ` (${p.grade})` : '';
+                      const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {titleStr}{gradeStr}{teacherStr}
+                        </option>
+                      );
+                    })
+                  )
+                ) : (
+                  programs.map(p => {
+                    const titleStr = p.title || p.name || 'کلاس بدون عنوان';
+                    const gradeStr = p.grade ? ` (${p.grade})` : '';
+                    const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {titleStr}{gradeStr}{teacherStr}
+                      </option>
+                    );
+                  })
+                )}
               </select>
 
               {currentProgram && (
@@ -2619,10 +2774,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   onChange={(e) => setReportProgramFilter(e.target.value)}
                   className="w-full p-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none"
                 >
-                  <option value="all">همه کلاس‌های درسی</option>
-                  {programs.map(p => (
-                    <option key={p.id} value={p.id}>{p.title} {p.grade ? `(${p.grade})` : ''}</option>
-                  ))}
+                  {isRepresentative ? (
+                    <>
+                      {representativePrograms.length > 1 && <option value="all">همه کلاس‌های تحت نمایندگی شما</option>}
+                      {representativePrograms.map(p => (
+                        <option key={p.id} value={p.id}>{p.title} {p.grade ? `(${p.grade})` : ''}</option>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <option value="all">همه کلاس‌های درسی</option>
+                      {programs.map(p => (
+                        <option key={p.id} value={p.id}>{p.title} {p.grade ? `(${p.grade})` : ''}</option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </div>
 
