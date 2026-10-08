@@ -62,6 +62,7 @@ const UserCredentialsSettings = lazy(() => import('./components/admin/UserCreden
 const DatabaseConnectionTest = lazy(() => import('./components/DatabaseConnectionTest'));
 const TeacherPortal = lazy(() => import('./components/TeacherPortal'));
 const StudentRequestsPortal = lazy(() => import('./components/StudentRequestsPortal'));
+const StudentPaymentsSection = lazy(() => import('./components/finance/StudentPaymentsSection').then(m => ({ default: m.StudentPaymentsSection })));
 const AnomalyDetectionView = lazy(() => import('./components/admin/AnomalyDetectionView'));
 import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import { motion, AnimatePresence } from 'motion/react';
@@ -117,6 +118,7 @@ function AppContent() {
       case 'finance-teachers': return 'حق‌الزحمه اساتید';
       case 'finance-lunch': return 'اطلاعات نهار و شام';
       case 'student-meals': return 'سامانه رزرو وعده‌های غذایی طلاب';
+      case 'student-payments': return 'سامانه پرداختی‌ها و امور مالی طلاب';
       case 'finance-claims': return 'مطالبات و بدهی‌ها';
       case 'finance-loans-fund': return 'صندوق قرض‌الحسنه و وام‌ها';
       case 'finance-expenses-reports': return 'هزینه‌ها و بودجه';
@@ -261,6 +263,8 @@ function AppContent() {
         return <LunchManagement onNavigateTab={handleNavigate} />;
       case 'student-meals':
         return <StudentMealReservationView />;
+      case 'student-payments':
+        return <StudentPaymentsSection onNavigateTab={handleNavigate} />;
       case 'finance-claims':
         return <ClaimsManagement onNavigateTab={handleNavigate} />;
       case 'finance-loans-fund':

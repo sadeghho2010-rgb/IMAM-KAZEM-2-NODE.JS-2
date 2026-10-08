@@ -623,7 +623,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   // Level 3 (Students & class rep)
   if (user.level === 3 || role === 'student' || role === 'class_representative') {
     const allowed = [
-      'dashboard', 'student-requests', 'student-portal', 'student-meals', 'student-schedule', 'academic-calendar',
+      'dashboard', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments', 'student-schedule', 'academic-calendar',
       'discussion', 'research', 'attendance', 'stats', 'course-selection', 'programs', 'classrooms'
     ];
     return allowed.includes(tabId);

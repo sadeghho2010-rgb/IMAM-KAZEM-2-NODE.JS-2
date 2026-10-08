@@ -51,7 +51,8 @@ import {
   HeartPulse,
   CalendarCheck,
   RotateCw,
-  EyeOff
+  EyeOff,
+  Wallet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -848,6 +849,17 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       accentText: 'text-amber-600'
     },
     {
+      id: 'student-payments',
+      title: 'امور مالی و پرداختی‌ها',
+      subtitle: 'مشاهده فیش‌ها، وضعیت تسویه حساب، شهریه و واریزی‌های طلبه',
+      category: 'finance',
+      icon: Wallet,
+      iconBg: 'bg-gradient-to-br from-teal-500 via-emerald-600 to-green-700 text-white shadow-lg shadow-teal-500/30',
+      cardGradient: 'from-teal-500/10 via-emerald-500/5 to-transparent',
+      borderGlow: 'hover:border-teal-400 hover:shadow-2xl hover:shadow-teal-500/20',
+      accentText: 'text-teal-600'
+    },
+    {
       id: 'finance-loans-fund',
       title: 'صندوق قرض‌الحسنه و وام‌ها',
       subtitle: 'تقاضا، اقساط، مانده وام و گردش حساب صندوق',
@@ -1123,7 +1135,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       cardGradient: 'from-emerald-500/15 via-teal-500/5 to-transparent',
       borderGlow: 'hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/25',
       accentText: 'text-emerald-600',
-      itemIds: ['finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch', 'student-meals', 'finance-loans-fund', 'finance-claims', 'finance-expenses-reports', 'presence-hours', 'staff-bank', 'education-financial-report', 'lockers', 'teacher-transport']
+      itemIds: ['finance-tuition', 'finance-grade-mentors', 'finance-teachers', 'finance-lunch', 'student-meals', 'student-payments', 'finance-loans-fund', 'finance-claims', 'finance-expenses-reports', 'presence-hours', 'staff-bank', 'education-financial-report', 'lockers', 'teacher-transport']
     },
     {
       id: 'system_group',
@@ -1558,99 +1570,122 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         </div>
       </div>
 
-      {/* LEVEL 3 MOBILE QUICK ACTIONS TOUCH BAR (90% Mobile Users) */}
+      {/* LEVEL 3 QUICK ACTIONS BAR FOR STUDENTS (DESKTOP & LAPTOP TOUCH/CLICK BAR) */}
       {currentUser?.level === 3 && (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-amber-500" />
-              <span>دسترسی‌های سریع روزانه</span>
+            <span className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-1.5">
+              <Sparkles size={16} className="text-amber-500" />
+              <span>دسترسی‌های سریع و اختصاصی طلاب</span>
             </span>
-            <span className="text-[10px] text-slate-400 font-bold">لمس سریع ویژه موبایل</span>
+            <span className="text-[11px] text-indigo-600 font-black bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200/60">
+              دسترسی مستقیم ۱ کلیک
+            </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-            {/* 1. ثبت ساعت مطالعه و مباحثه (اولین دسترسی سریع طلاب) */}
-            {isTabAllowed('stats') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('stats')}
-                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200/80 text-purple-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
-              >
-                <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <BookOpen size={18} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-black truncate">ثبت ساعت مطالعه</div>
-                  <div className="text-[10px] text-purple-700/80 truncate">مطالعه و مباحثه</div>
-                </div>
-              </button>
-            )}
-
-            {isTabAllowed('student-requests') && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-requests')}
-                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100 border border-rose-200/80 text-rose-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
-              >
-                <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <Inbox size={18} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-black truncate">ثبت تقاضا</div>
-                  <div className="text-[10px] text-rose-700/80 truncate">آموزشی و رفاهی</div>
-                </div>
-              </button>
-            )}
-
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
+            {/* 1. رزرو نهار و شام */}
             {isTabAllowed('student-meals') && (
               <button
                 type="button"
                 onClick={() => onNavigateTab('student-meals')}
-                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200/80 text-amber-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-50 hover:from-amber-500/20 hover:to-orange-100/70 border border-amber-300/80 text-amber-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
               >
-                <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <UtensilsCrossed size={18} />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <UtensilsCrossed size={19} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">رزرو غذا</div>
-                  <div className="text-[10px] text-amber-700/80 truncate">سلف و وعده‌ها</div>
+                  <div className="text-xs sm:text-sm font-black truncate">رزرو نهار و شام</div>
+                  <div className="text-[10px] text-amber-700/90 font-bold truncate">سلف و وعده‌ها</div>
                 </div>
               </button>
             )}
 
+            {/* 2. کارنامه علمی */}
+            {(isTabAllowed('student-portal') || isTabAllowed('summary')) && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-portal')}
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-indigo-50 hover:from-indigo-500/20 hover:to-purple-100/70 border border-indigo-300/80 text-indigo-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <BrainCircuit size={19} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-black truncate">کارنامه علمی</div>
+                  <div className="text-[10px] text-indigo-700/90 font-bold truncate">سوابق و نمرات</div>
+                </div>
+              </button>
+            )}
+
+            {/* 3. پنل ثبت درخواست */}
+            {isTabAllowed('student-requests') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-requests')}
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-rose-500/10 via-pink-500/5 to-rose-50 hover:from-rose-500/20 hover:to-pink-100/70 border border-rose-300/80 text-rose-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <Inbox size={19} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-black truncate">ثبت تقاضا</div>
+                  <div className="text-[10px] text-rose-700/90 font-bold truncate">آموزشی و رفاهی</div>
+                </div>
+              </button>
+            )}
+
+            {/* 4. امور مالی و پرداختی‌ها */}
+            {isTabAllowed('student-payments') && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('student-payments')}
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-teal-500/10 via-emerald-500/5 to-teal-50 hover:from-teal-500/20 hover:to-emerald-100/70 border border-teal-300/80 text-teal-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-600 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <Wallet size={19} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-black truncate">پرداختی‌ها و مالی</div>
+                  <div className="text-[10px] text-teal-700/90 font-bold truncate">شهریه و واریزی‌ها</div>
+                </div>
+              </button>
+            )}
+
+            {/* 5. حضور و غیاب */}
             {isTabAllowed('attendance') && (
               <button
                 type="button"
                 onClick={() => onNavigateTab('attendance')}
-                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border border-emerald-200/80 text-emerald-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-green-500/5 to-emerald-50 hover:from-emerald-500/20 hover:to-green-100/70 border border-emerald-300/80 text-emerald-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
               >
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <CheckSquare size={18} />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <CheckSquare size={19} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'ثبت سریع حضور و غیاب' : 'کارنامه حضور و غیاب'}
+                  <div className="text-xs sm:text-sm font-black truncate">
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'ثبت سریع حضور و غیاب' : 'کارنامه حضور'}
                   </div>
-                  <div className="text-[10px] text-emerald-700/80 truncate">
-                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'کلاس تحت نمایندگی شما' : 'آمار و غیبت‌ها'}
+                  <div className="text-[10px] text-emerald-700/90 font-bold truncate">
+                    {currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length) ? 'کلاس تحت نمایندگی' : 'آمار و غیبت‌ها'}
                   </div>
                 </div>
               </button>
             )}
 
-            {isTabAllowed('student-portal') && (
+            {/* 6. ثبت ساعت مطالعه */}
+            {isTabAllowed('stats') && (
               <button
                 type="button"
-                onClick={() => onNavigateTab('student-portal')}
-                className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 border border-indigo-200/80 text-indigo-950 text-right transition-all cursor-pointer shadow-2xs active:scale-95 group"
+                onClick={() => onNavigateTab('stats')}
+                className="flex items-center gap-2.5 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-br from-purple-500/10 via-indigo-500/5 to-purple-50 hover:from-purple-500/20 hover:to-indigo-100/70 border border-purple-300/80 text-purple-950 text-right transition-all cursor-pointer shadow-2xs hover:shadow-md active:scale-95 group relative overflow-hidden"
               >
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <UserCheck size={18} />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                  <BookOpen size={19} />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">کارنامه و پرونده</div>
-                  <div className="text-[10px] text-indigo-700/80 truncate">سوابق تحصیلی</div>
+                  <div className="text-xs sm:text-sm font-black truncate">ثبت ساعت مطالعه</div>
+                  <div className="text-[10px] text-purple-700/90 font-bold truncate">مطالعه و مباحثه</div>
                 </div>
               </button>
             )}

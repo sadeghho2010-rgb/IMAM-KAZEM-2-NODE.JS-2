@@ -282,6 +282,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       currentStudentId,
       currentUserId,
       matchedStudent?.id,
+      matchedStudent?.studentCode,
+      matchedStudent?.nationalId,
       (currentUser as any).uid
     ].filter(Boolean) as string[];
 
@@ -293,7 +295,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       matchedStudent?.name?.trim().toLowerCase()
     ].filter(Boolean) as string[];
 
+    const managedClassId = (currentUser as any)?.managedClassId;
+    const repProgramIds = Array.isArray((currentUser as any)?.representativeProgramIds) 
+      ? (currentUser as any).representativeProgramIds 
+      : [];
+
     const matchedProgs = programs.filter(p => {
+      // 0. Direct match with managedClassId or representativeProgramIds from user profile
+      if (managedClassId && p.id === managedClassId) return true;
+      if (repProgramIds.includes(p.id)) return true;
+
       // 1. Direct ID match in representativeStudentIds
       if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
         if (p.representativeStudentIds.some(id => candidateIds.includes(id))) {
@@ -454,12 +465,50 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       });
     }
 
-    let result = students.filter(s => {
+    const matchedStudentsMap = new Map<string, any>();
+
+    students.forEach(s => {
       const sId = String(s.id || '').trim();
       const sCode = String(s.studentCode || '').trim();
       const sNat = String(s.nationalId || s.nationalCode || '').trim();
-      return studentIdSet.has(sId) || (sCode && studentIdSet.has(sCode)) || (sNat && studentIdSet.has(sNat));
+
+      let isMatch = studentIdSet.has(sId) || (sCode && studentIdSet.has(sCode)) || (sNat && studentIdSet.has(sNat));
+      if (!isMatch) {
+        const sIdLower = sId.toLowerCase();
+        for (const targetId of studentIdSet) {
+          const tLower = targetId.toLowerCase();
+          if (tLower === sIdLower || (sCode && tLower === sCode.toLowerCase()) || (sNat && tLower === sNat.toLowerCase())) {
+            isMatch = true;
+            break;
+          }
+        }
+      }
+
+      if (isMatch) {
+        matchedStudentsMap.set(sId || sCode || sNat, s);
+      }
     });
+
+    // If an enrolled student ID is in studentIdSet but not yet populated in students list, ensure an entry exists
+    studentIdSet.forEach(sid => {
+      const alreadyMatched = Array.from(matchedStudentsMap.values()).some(s => 
+        String(s.id).toLowerCase() === sid.toLowerCase() || 
+        String(s.studentCode || '').toLowerCase() === sid.toLowerCase() || 
+        String(s.nationalId || '').toLowerCase() === sid.toLowerCase()
+      );
+      if (!alreadyMatched) {
+        const enr = enrollments.find(e => String(e.studentId) === sid && String(e.programId) === String(selectedProgramId));
+        const placeholderName = enr?.studentName || enr?.name || `طلبه (${sid})`;
+        matchedStudentsMap.set(sid, {
+          id: sid,
+          name: placeholderName,
+          grade: currentProgram?.grade || 'پایه ۷',
+          studentCode: sid
+        });
+      }
+    });
+
+    let result = Array.from(matchedStudentsMap.values());
 
     // Fallback: If no explicit enrollments were recorded in this program yet, match by grade
     if (result.length === 0 && currentProgram?.grade && currentProgram.grade !== 'همه پایه‌ها') {

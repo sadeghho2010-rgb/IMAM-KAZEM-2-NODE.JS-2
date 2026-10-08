@@ -720,6 +720,15 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
         ) {
           return true;
         }
+
+        // Case-insensitive / trimmed fallback match
+        const sIdLower = sId.toLowerCase();
+        for (const repSid of context.repEnrolledStudentIds) {
+          const rClean = String(repSid).trim().toLowerCase();
+          if (rClean && (rClean === sIdLower || (sCode && rClean === sCode.toLowerCase()) || (sNat && rClean === sNat.toLowerCase()))) {
+            return true;
+          }
+        }
       }
 
       // 3. If representative is assigned a specific grade
@@ -968,6 +977,7 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
       // Find represented programs
       const programs = await fetchRawCollectionData('programs');
       const enrollments = await fetchRawCollectionData('enrollments');
+      const studentsList = rawItems;
 
       const candidateIds = [
         user.studentId, 
@@ -982,6 +992,30 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
         user.fullName, 
         user.studentName
       ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      // Match student record from students list to gather accurate student ID, studentCode, nationalId
+      const matchedStudent = studentsList.find((s: any) => {
+        const sId = String(s.id || '').toLowerCase().trim();
+        const sCode = String(s.studentCode || '').toLowerCase().trim();
+        const sNat = String(s.nationalId || s.nationalCode || '').toLowerCase().trim();
+        const sName = String(s.name || s.fullName || '').toLowerCase().trim();
+        const uName = String(user.username || '').toLowerCase().trim();
+        const uId = String(user.id || user.userId || '').toLowerCase().trim();
+        const uSid = String(user.studentId || user.linkedStudentId || '').toLowerCase().trim();
+
+        if (uSid && (sId === uSid || sCode === uSid || sNat === uSid)) return true;
+        if (uId && sId === uId) return true;
+        if (uName && (sCode === uName || sNat === uName || sId === uName)) return true;
+        if (candidateNames.length > 0 && candidateNames.some(cn => cn && (sName === cn || sName.includes(cn) || cn.includes(sName)))) return true;
+        return false;
+      });
+
+      if (matchedStudent) {
+        if (matchedStudent.id) candidateIds.push(String(matchedStudent.id).toLowerCase().trim());
+        if (matchedStudent.studentCode) candidateIds.push(String(matchedStudent.studentCode).toLowerCase().trim());
+        if (matchedStudent.nationalId) candidateIds.push(String(matchedStudent.nationalId).toLowerCase().trim());
+        if (matchedStudent.name) candidateNames.push(String(matchedStudent.name).toLowerCase().trim());
+      }
 
       const managedClassId = user.managedClassId ? String(user.managedClassId).trim() : null;
       const repProgramIdsFromUser = Array.isArray(user.representativeProgramIds) 
@@ -1015,6 +1049,23 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
         return false;
       });
 
+      // If user is designated as class_representative but program hasn't stored rep ID yet, match through their enrolled classes
+      if (repPrograms.length === 0 && (user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId)) {
+        const enrolledProgIds = new Set<string>();
+        enrollments.forEach((enr: any) => {
+          const sid = String(enr.studentId || enr.student_id || '').toLowerCase().trim();
+          if (candidateIds.includes(sid)) {
+            enrolledProgIds.add(String(enr.programId || enr.program_id || '').trim());
+          }
+        });
+        programs.forEach((p: any) => {
+          const pid = String(p.id).trim();
+          if (enrolledProgIds.has(pid) || (Array.isArray(p.studentIds) && p.studentIds.some((sid: any) => candidateIds.includes(String(sid).toLowerCase().trim())))) {
+            repPrograms.push(p);
+          }
+        });
+      }
+
       if (repPrograms.length > 0 || user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId) {
         const repProgIds = new Set(repPrograms.map((p: any) => String(p.id).trim()));
         if (managedClassId) repProgIds.add(managedClassId);
@@ -1038,6 +1089,15 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
             p.representativeStudentIds.forEach((sid: any) => {
               if (sid) repEnrolledStudentIds.add(String(sid).trim());
             });
+          }
+        });
+
+        // Also add nationalId and studentCode of enrolled students to ensure bulletproof matching
+        studentsList.forEach((s: any) => {
+          const sid = String(s.id || '').trim();
+          if (repEnrolledStudentIds.has(sid)) {
+            if (s.studentCode) repEnrolledStudentIds.add(String(s.studentCode).trim().toUpperCase());
+            if (s.nationalId) repEnrolledStudentIds.add(String(s.nationalId).trim());
           }
         });
 

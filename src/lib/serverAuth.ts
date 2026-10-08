@@ -409,12 +409,23 @@ export function validatePasswordStrength(password: string): { valid: boolean; me
 
 export function generateTokens(user: SafeUser): { token: string; refreshToken: string } {
   const now = Math.floor(Date.now() / 1000);
+  const uAny = user as any;
   const payload = {
     userId: user.id,
+    id: user.id,
     username: user.username,
+    name: user.name || user.fullName,
+    fullName: user.fullName || user.name,
     role: user.role,
+    roleTitle: user.roleTitle,
     level: user.level,
     scope: user.scope,
+    gradeLabel: user.gradeLabel,
+    grade: uAny.grade || user.gradeLabel,
+    studentId: user.studentId || user.linkedStudentId,
+    linkedStudentId: user.linkedStudentId || user.studentId,
+    managedClassId: uAny.managedClassId,
+    representativeProgramIds: uAny.representativeProgramIds,
     iat: now
   };
 

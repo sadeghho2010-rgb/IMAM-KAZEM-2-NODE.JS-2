@@ -9,10 +9,27 @@ import {
   authorizeCollectionAccess,
   fetchBootstrapData
 } from '../lib/serverDataApi';
-import { verifyAccessToken, logServerAudit } from '../lib/serverAuth';
+import { verifyAccessToken, logServerAudit, fetchAllUsersFromStorage } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
 
 const router = Router();
+
+const getEnrichedCallerUser = async (decoded: any): Promise<any> => {
+  if (!decoded) return null;
+  try {
+    const allUsers = await fetchAllUsersFromStorage();
+    const cleanUser = String(decoded.username || '').toUpperCase();
+    const uId = String(decoded.userId || decoded.id || '');
+    const matched = allUsers.find(u => 
+      (cleanUser && u.username && u.username.toUpperCase() === cleanUser) ||
+      (uId && u.id === uId)
+    );
+    if (matched) {
+      return { ...matched, ...decoded };
+    }
+  } catch (e) {}
+  return decoded;
+};
 
 const extractToken = (req: Request): string | null => {
   if (req.cookies) {
@@ -47,7 +64,7 @@ router.get('/data/bootstrap', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 
@@ -162,7 +179,7 @@ router.get('/data/:collection', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 
@@ -189,7 +206,7 @@ router.get('/data/:collection/:id', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 
@@ -219,7 +236,7 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 

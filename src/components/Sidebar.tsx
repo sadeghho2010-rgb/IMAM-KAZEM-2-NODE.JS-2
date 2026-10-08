@@ -154,6 +154,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'dashboard', label: 'داشبورد اصلی', icon: Sparkles },
   { id: 'student-requests', label: 'پنل رسیدگی به درخواست', icon: Inbox },
   { id: 'student-meals', label: 'رزرو نهار و شام', icon: UtensilsCrossed },
+  { id: 'student-payments', label: 'پرداختی‌ها و مالی', icon: Wallet },
   { id: 'student-portal', label: 'پرتال و ثبت فعالیت من', icon: User },
   { id: 'teacher-portal', label: 'پنل اساتید و ارزیابی', icon: GraduationCap },
   { id: 'todos', label: 'پیگیری‌ها', icon: GraduationCap },
@@ -448,6 +449,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
       if (item.id === 'attendance') label = (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) ? 'ثبت حضور و غیاب کلاس' : 'کارنامه حضور و غیاب من';
       if (item.id === 'stats') label = 'ساعات مطالعه من';
       if (item.id === 'research') label = 'پژوهش و مقالات من';
+      if (item.id === 'student-meals') label = 'رزرو نهار و شام';
+      if (item.id === 'student-payments') label = 'امور مالی و پرداختی‌ها';
+      if (item.id === 'student-portal' || item.id === 'summary') label = 'کارنامه علمی من';
     } else {
       if (item.id === 'student-requests') {
         label = 'پنل رسیدگی به درخواست';
