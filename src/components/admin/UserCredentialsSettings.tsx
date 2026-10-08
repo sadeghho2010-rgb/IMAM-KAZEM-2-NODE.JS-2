@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { AppUser, UserLevel, UserRole } from '../../types/auth';
 import { Student } from '../../types';
@@ -58,22 +58,32 @@ export default function UserCredentialsSettings() {
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
   const canModifyCredentials = isSuperAdmin || isEducationManager;
 
-  const fetchStudents = async () => {
-    setLoadingStudents(true);
+  const isInitialLoadRef = useRef(true);
+
+  const fetchStudents = async (silent = false) => {
+    if (!silent && students.length === 0 && isInitialLoadRef.current) {
+      setLoadingStudents(true);
+    }
     try {
       const data = await localDb.getDocs<Student>('students');
-      setStudents(data);
+      setStudents(prev => {
+        if (prev.length === data.length && JSON.stringify(prev) === JSON.stringify(data)) {
+          return prev;
+        }
+        return data;
+      });
     } catch (e) {
       console.error('Error fetching students for credentials:', e);
     } finally {
+      isInitialLoadRef.current = false;
       setLoadingStudents(false);
     }
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchStudents(false);
     const unsub = localDb.subscribe(() => {
-      fetchStudents();
+      fetchStudents(true);
     });
     return () => unsub();
   }, []);
@@ -509,7 +519,7 @@ export default function UserCredentialsSettings() {
               </p>
             </div>
 
-            {loadingStudents ? (
+            {loadingStudents && students.length === 0 ? (
               <div className="text-center py-6 text-xs text-slate-400">در حال بارگذاری طلاب...</div>
             ) : studentsWithoutAccount.length === 0 ? (
               <div className="text-center py-6 bg-emerald-50 text-emerald-800 rounded-2xl border border-emerald-100 text-xs font-bold flex items-center justify-center gap-2">

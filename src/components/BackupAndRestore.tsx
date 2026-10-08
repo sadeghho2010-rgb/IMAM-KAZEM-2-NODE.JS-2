@@ -464,7 +464,7 @@ export default function BackupAndRestore() {
   // Password verification logic
   const handleVerifyPassword = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (currentUser && (currentUser.level === 1 || currentUser.role === 'super_admin' || isSuperAdmin)) {
+    if (currentUser && (currentUser.level === 1 || currentUser.role === 'super_admin')) {
       setIsPasswordVerified(true);
       setPasswordError('');
       setShowPasswordModal(false);

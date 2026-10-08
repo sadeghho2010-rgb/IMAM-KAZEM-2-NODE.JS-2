@@ -397,8 +397,13 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     }
   };
 
-  const fetchStudents = async () => {
-    setLoading(true);
+  const isInitialLoadRef = useRef(true);
+
+  const fetchStudents = async (silent = false) => {
+    // Only display blocking loader on very first load when there is no data in memory
+    if (!silent && students.length === 0 && isInitialLoadRef.current) {
+      setLoading(true);
+    }
     try {
       const allData = await localDb.getDocs<Student>('students');
       const allProgs = await localDb.getDocs<Program>('programs');
@@ -413,24 +418,41 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         return gradeA.localeCompare(gradeB, 'fa', { numeric: true });
       });
       
-      setStudents(sortedData);
-      setPrograms(allProgs);
-      setEnrollments(allEnrollments);
+      // Only trigger re-render if data has changed
+      setStudents(prev => {
+        if (prev.length === sortedData.length && JSON.stringify(prev) === JSON.stringify(sortedData)) {
+          return prev;
+        }
+        return sortedData;
+      });
+      setPrograms(prev => {
+        if (prev.length === allProgs.length && JSON.stringify(prev) === JSON.stringify(allProgs)) {
+          return prev;
+        }
+        return allProgs;
+      });
+      setEnrollments(prev => {
+        if (prev.length === allEnrollments.length && JSON.stringify(prev) === JSON.stringify(allEnrollments)) {
+          return prev;
+        }
+        return allEnrollments;
+      });
     } catch (error) {
       console.error("Error fetching students:", error);
     } finally {
+      isInitialLoadRef.current = false;
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchStudents(false);
     const unsub = localDb.subscribe(() => {
-      fetchStudents();
+      fetchStudents(true);
     });
 
     const handleDataChange = () => {
-      fetchStudents();
+      fetchStudents(true);
     };
 
     window.addEventListener('app_users_updated', handleDataChange);
@@ -1435,7 +1457,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? (
+            {loading && students.length === 0 ? (
               <tr>
                 <td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-slate-400 text-xs">در حال بارگذاری...</td>
               </tr>

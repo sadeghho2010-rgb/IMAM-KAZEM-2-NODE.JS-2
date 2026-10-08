@@ -950,7 +950,7 @@ export async function fetchBootstrapData(userLevel: number, userRole: string): P
   const result: Record<string, any[]> = {};
   for (const col of collections) {
     try {
-      result[col] = await serverQueryCollection(col, userLevel, userRole);
+      result[col] = await serverQueryCollection(col, { level: userLevel, role: userRole });
     } catch (e) {
       result[col] = [];
     }

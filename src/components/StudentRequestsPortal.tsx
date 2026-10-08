@@ -146,13 +146,20 @@ export default function StudentRequestsPortal() {
   // Officer toggle state form
   const [officerNoteDraft, setOfficerNoteDraft] = useState('');
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent && requests.length === 0) {
+      setIsLoading(true);
+    }
     try {
       // 1. Load Requests
       const reqList = await localDb.getDocs<StudentRequest>('student_requests');
       if (Array.isArray(reqList)) {
-        setRequests(reqList);
+        setRequests(prev => {
+          if (prev.length === reqList.length && JSON.stringify(prev) === JSON.stringify(reqList)) {
+            return prev;
+          }
+          return reqList;
+        });
       }
 
       // 2. Load Global Config
@@ -185,15 +192,15 @@ export default function StudentRequestsPortal() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
 
     // Real-time synchronization subscription
     const unsubscribe = localDb.subscribe(() => {
-      loadData();
+      loadData(true);
     });
 
     const handleReqUpdate = () => {
-      loadData();
+      loadData(true);
     };
 
     window.addEventListener('student_requests_updated', handleReqUpdate);
@@ -625,7 +632,7 @@ export default function StudentRequestsPortal() {
 
           {/* Refresh Data Button */}
           <button
-            onClick={loadData}
+            onClick={() => loadData(false)}
             disabled={isLoading}
             className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
             title="بروزرسانی اطلاعات"
@@ -892,7 +899,7 @@ export default function StudentRequestsPortal() {
 
       {/* ======================= Request Cards List ======================= */}
       <div className="space-y-3.5">
-        {isLoading ? (
+        {isLoading && requests.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center text-slate-400 flex flex-col items-center gap-2 border border-slate-200">
             <Loader2 size={28} className="animate-spin text-indigo-600" />
             <span className="text-xs font-semibold">در حال بارگذاری درخواست‌ها...</span>

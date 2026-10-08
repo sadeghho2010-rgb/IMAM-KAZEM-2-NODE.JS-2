@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { realtimeSync } from '../lib/realtimeSync';
+import { localDb } from '../lib/localDb';
 import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';
 import { normalizeDigits } from '../lib/utils';
 
@@ -540,7 +541,7 @@ export const DEFAULT_USERS: AppUser[] = [
 interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
-  login: (username: string, password: string, pinInput?: string) => Promise<{ success: boolean; message?: string; requirePin?: boolean }>;
+  login: (username: string, password: string, pinInput?: string) => Promise<{ success: boolean; message?: string; requirePin?: boolean; mustChangePassword?: boolean; user?: any }>;
   logout: () => void;
   logoutAllSessions: () => Promise<{ success: boolean; message?: string }>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
@@ -841,13 +842,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         const merged = Array.from(map.values());
+        let hasUsersChanged = false;
         try {
           const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
           const newStr = JSON.stringify(merged);
-          if (oldStr !== newStr || prev.length !== merged.length) {
+          hasUsersChanged = oldStr !== newStr || prev.length !== merged.length;
+          if (hasUsersChanged) {
             localStorage.setItem(USERS_STORAGE_KEY, newStr);
           }
-        } catch (e) {}
+        } catch (e) {
+          hasUsersChanged = true;
+        }
+
+        if (!hasUsersChanged) {
+          // If no user fields changed, retain previous array reference to prevent re-render cascades
+          return prev;
+        }
 
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('app_users_updated', { detail: merged }));
@@ -1030,7 +1040,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { isMounted = false; };
   }, []);
 
-  const login = async (usernameInput: string, passwordInput: string, pinInput?: string): Promise<{ success: boolean; message?: string; requirePin?: boolean }> => {
+  const login = async (usernameInput: string, passwordInput: string, pinInput?: string): Promise<{ success: boolean; message?: string; requirePin?: boolean; mustChangePassword?: boolean; user?: any }> => {
     const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
     const cleanPass = normalizeDigits(passwordInput).trim();
 

@@ -243,8 +243,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       setIsLoading(false);
 
       if (result.mustChangePassword) {
-        setShowChangePasswordModal(true);
-        setErrorMessage('جهت حفظ امنیت سامانه، تغییر رمز عبور در اولین ورود الزامی است.');
+        setErrorMessage(result.message || 'جهت حفظ امنیت سامانه، تغییر رمز عبور در اولین ورود الزامی است.');
         return;
       }
 

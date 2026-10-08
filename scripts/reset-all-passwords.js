@@ -33,7 +33,7 @@ async function resetAllPasswords() {
     console.log('[Password Reset Script] Connected successfully to MySQL.');
 
     // 1. Update all records in system_users
-    const [userUpdateResult]: any = await connection.execute(
+    const [userUpdateResult] = await connection.execute(
       `UPDATE system_users SET password_hash = ?, must_change_password = 0`,
       [hash]
     );
@@ -41,7 +41,7 @@ async function resetAllPasswords() {
     let updatedCount = userUpdateResult.affectedRows || 0;
 
     // Check if SADEGH exists, if not insert
-    const [adminCheck]: any = await connection.execute(
+    const [adminCheck] = await connection.execute(
       `SELECT id FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
     );
 
