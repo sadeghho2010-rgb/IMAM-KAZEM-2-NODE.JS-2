@@ -1627,24 +1627,19 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           ) : (
             <div 
               onClick={() => onNavigateTab('attendance')}
-              className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white shadow-md border border-indigo-400/40 flex items-center justify-between cursor-pointer active:scale-[0.99] hover:shadow-lg transition-all group relative overflow-hidden"
+              className="p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white shadow-xs border border-indigo-500/25 flex items-center justify-between cursor-pointer active:scale-[0.99] hover:border-indigo-400/40 transition-all group relative overflow-hidden -mt-1"
             >
               <div className="space-y-0.5 relative z-10 min-w-0 pr-1">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-black border border-white/20">
-                    <ShieldCheck size={11} className="text-emerald-300" />
-                    <span>پرونده انضباطی</span>
-                  </span>
-                  <h3 className="text-sm sm:text-base font-black text-white truncate">
-                    کارنامه و آمار غیبت‌های من
-                  </h3>
-                </div>
-                <p className="text-xs text-indigo-100 font-medium truncate">
+                <h3 className="text-sm sm:text-base font-black text-white truncate flex items-center gap-2">
+                  <CheckSquare size={16} className="text-emerald-400" />
+                  <span>کارنامه حضور و غیاب من</span>
+                </h3>
+                <p className="text-xs text-indigo-200/80 font-medium truncate">
                   مشاهده وضعیت دقیق حضور، تاخیرها، غیبت‌های موجه و غیرموجه و جلسات دروس
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-white text-indigo-800 flex items-center justify-center font-black shadow-md shrink-0 group-hover:scale-105 transition-transform border border-indigo-100 relative z-10">
-                <CheckSquare size={20} />
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 text-amber-300 flex items-center justify-center font-black shadow-xs shrink-0 group-hover:scale-105 transition-transform border border-white/20 relative z-10">
+                <CheckSquare size={18} />
               </div>
             </div>
           )}

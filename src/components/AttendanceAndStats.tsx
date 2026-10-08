@@ -158,6 +158,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportStartDate, setReportStartDate] = useState<string>('1403/07/01');
   const [reportEndDate, setReportEndDate] = useState<string>(getTodayShamsi());
   const [reportWarningOnlyFilter, setReportWarningOnlyFilter] = useState<boolean>(false);
+  const [reportShowAllStudents, setReportShowAllStudents] = useState<boolean>(false); // default false: show absents only!
+  const [reportSortBy, setReportSortBy] = useState<'absent' | 'class'>('absent');
   const [selectedStudentDrilldown, setSelectedStudentDrilldown] = useState<any | null>(null);
 
   // Check roles
@@ -819,6 +821,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
       setIsSavedRecently(true);
       showToast("حضور و غیاب با موفقیت در سیستم ثبت گردید.");
+
+      // Return representative to previous step (class status/list) upon successful save
+      if (isRepresentative) {
+        showToast("ثبت حضور و غیاب با موفقیت انجام شد. در حال بازگشت به مرحله قبل...");
+        setTimeout(() => {
+          setSelectedProgramId('');
+          setActiveTab('class_status');
+        }, 800);
+      }
     } catch (err) {
       console.error('Error saving attendance:', err);
       alert('خطا در ذخیره حضور و غیاب.');
@@ -996,15 +1007,71 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     });
 
-    const list = Object.values(studentMap).sort((a, b) => b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa'));
+    // Compute program title summary for each student entry
+    Object.values(studentMap).forEach(entry => {
+      const titles = Array.from(new Set(entry.history.map(h => h.programTitle).filter(Boolean)));
+      if (titles.length > 0) {
+        (entry as any).programTitleSummary = titles.join('، ');
+      } else {
+        const stProg = programs.find(p => Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(entry.student.id));
+        (entry as any).programTitleSummary = stProg?.title || entry.student.grade || 'کلاس عمومی';
+      }
+    });
+
+    let list = Object.values(studentMap);
+
+    // Default filter: show ONLY students who have absences ( غایبین ), unless reportShowAllStudents is true or user is viewing single student
+    if (!reportShowAllStudents && !isOrdinaryStudent && list.length > 1) {
+      list = list.filter(item => item.absentCount > 0 || item.excusedCount > 0);
+    }
 
     if (reportWarningOnlyFilter) {
       const threshold = settings.unexcusedWarningThreshold || 3;
-      return list.filter(item => item.absentCount >= threshold || item.warningCount > 0);
+      list = list.filter(item => item.absentCount >= threshold || item.warningCount > 0);
+    }
+
+    if (reportSortBy === 'class') {
+      list.sort((a, b) => {
+        const titleA = (a as any).programTitleSummary || '';
+        const titleB = (b as any).programTitleSummary || '';
+        const comp = titleA.localeCompare(titleB, 'fa');
+        if (comp !== 0) return comp;
+        return b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa');
+      });
+    } else {
+      list.sort((a, b) => b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa'));
     }
 
     return list;
-  }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, settings]);
+  }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportSortBy, settings, programs]);
+
+  // 4 Primary Metrics for Student / Overall Panel
+  const studentMetrics = useMemo(() => {
+    const isLevel3OrStudent = currentUser?.level === 3 || isOrdinaryStudent;
+
+    if (isLevel3OrStudent && studentReportList.length > 0) {
+      const myItem = studentReportList[0];
+      return {
+        heldSessions: myItem.heldSessionsEnrolled,
+        presents: myItem.presentCount,
+        absents: myItem.absentCount,
+        excused: myItem.excusedCount,
+        totalAbsences: myItem.absentCount + myItem.excusedCount,
+        lates: myItem.lateCount,
+        warnings: myItem.warningCount,
+      };
+    }
+
+    return {
+      heldSessions: overallReportMetrics.heldSessions,
+      presents: overallReportMetrics.totalPresents,
+      absents: overallReportMetrics.totalAbsents,
+      excused: overallReportMetrics.totalExcused,
+      totalAbsences: overallReportMetrics.totalAbsents + overallReportMetrics.totalExcused,
+      lates: overallReportMetrics.totalLates,
+      warnings: overallReportMetrics.totalWarnings,
+    };
+  }, [currentUser, isOrdinaryStudent, studentReportList, overallReportMetrics]);
 
   // Handler to issue educational warning
   const handleConfirmIssueWarning = async () => {
@@ -1054,6 +1121,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         'نام و نام خانوادگی طلبه': item.student.name,
         'کد ملی': item.student.nationalId || '',
         'پایه تحصیلی': item.student.grade || '',
+        'کلاس / درس مربوطه': (item as any).programTitleSummary || 'عمومی',
         'تعداد جلسات برگزار شده': item.heldSessionsEnrolled,
         'تعداد حضور': item.presentCount,
         'غیبت غیرموجه': item.absentCount,
@@ -1102,22 +1170,39 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         )}
       </AnimatePresence>
 
-      {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100">
-            <CheckSquare size={24} />
+      {/* Header Banner - Modern, Compact, High-Positioned */}
+      <div className={cn(
+        "rounded-2xl p-2.5 sm:p-3.5 border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all -mt-2 sm:-mt-4 shadow-sm",
+        isOrdinaryStudent
+          ? "bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white border-indigo-500/25 shadow-indigo-950/20"
+          : "bg-white text-slate-900 border-slate-200 shadow-xs"
+      )}>
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center font-black shadow-xs border shrink-0",
+            isOrdinaryStudent
+              ? "bg-white/10 text-amber-300 border-white/20"
+              : "bg-indigo-50 text-indigo-700 border-indigo-100"
+          )}>
+            <CheckSquare size={18} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">
+              <h1 className={cn("text-xs sm:text-sm font-black", isOrdinaryStudent ? "text-white" : "text-slate-900")}>
                 {isRepresentative ? 'ثبت حضور و غیاب کلاس' : isOrdinaryStudent ? 'کارنامه حضور و غیاب من' : 'سامانه حضور و غیاب و آمار کلاس‌ها'}
               </h1>
-              <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black rounded-lg">
-                {isRepresentative ? 'پنل نماینده کلاس' : isOrdinaryStudent ? 'پرونده انضباطی' : 'نسخه هوشمند مدرسه'}
-              </span>
+              {isRepresentative && (
+                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-black rounded-lg">
+                  پنل نماینده کلاس
+                </span>
+              )}
+              {!isOrdinaryStudent && !isRepresentative && (
+                <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black rounded-lg">
+                  نسخه هوشمند مدرسه
+                </span>
+              )}
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className={cn("text-[10.5px] mt-0.5 font-medium", isOrdinaryStudent ? "text-indigo-200/80" : "text-slate-500")}>
               {isRepresentative 
                 ? 'ثبت و ویرایش وضعیت حضور، غیبت و تاخیر طلاب کلاس تحت نمایندگی شما' 
                 : isOrdinaryStudent 
@@ -1127,72 +1212,69 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           </div>
         </div>
 
-        {/* View Switcher & Settings */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Class Status tab - hidden for regular students & representatives (representatives only see their own class) */}
-          {!isOrdinaryStudent && !isRepresentative && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('class_status')}
-              className={cn(
-                "px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 border shadow-sm active:scale-95",
-                activeTab === 'class_status'
-                  ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white border-transparent shadow-md ring-2 ring-emerald-500/30"
-                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
-              )}
-            >
-              <LayoutGrid size={17} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
-              <span className="text-xs sm:text-sm font-black">
-                وضعیت کلاس‌ها
-              </span>
-            </button>
-          )}
+        {/* View Switcher & Settings (Only shown when multiple tabs/options exist) */}
+        {!isOrdinaryStudent && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Class Status tab - hidden for regular students & representatives */}
+            {!isRepresentative && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('class_status')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border shadow-sm active:scale-95",
+                  activeTab === 'class_status'
+                    ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white border-transparent shadow-md ring-2 ring-emerald-500/30"
+                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
+                )}
+              >
+                <LayoutGrid size={15} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
+                <span>وضعیت کلاس‌ها</span>
+              </button>
+            )}
 
-          <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200">
-            {/* Record tab - hidden for regular students; shown for staff & representatives */}
-            {!isOrdinaryStudent && (
+            <div className="p-1 bg-slate-100 rounded-xl flex items-center border border-slate-200">
               <button
                 type="button"
                 onClick={() => setActiveTab('record')}
                 className={cn(
-                  "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                  "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
                   activeTab === 'record'
                     ? "bg-white text-indigo-700 shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 )}
               >
-                <CheckSquare size={15} />
+                <CheckSquare size={14} />
                 <span>{isRepresentative ? 'ثبت حضور و غیاب' : 'ثبت و ویرایش جلسه'}</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('report')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                  activeTab === 'report'
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <FileCheck2 size={14} />
+                <span>{isRepresentative ? 'آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
+              </button>
+            </div>
+
+            {canManageSettings && (
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-2xs hover:border-slate-300 cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                title="تنظیمات مهلت ویرایش و گزارش‌ها"
+              >
+                <SlidersHorizontal size={15} className="text-indigo-600" />
+                <span className="hidden sm:inline">تنظیمات</span>
+              </button>
             )}
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('report')}
-              className={cn(
-                "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                activeTab === 'report'
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <FileCheck2 size={15} />
-              <span>{isRepresentative ? 'آمار غیبت من' : (isOrdinaryStudent || currentUser?.level === 3) ? 'کارنامه و آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
-            </button>
           </div>
-
-          {canManageSettings && (
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-2xl transition-all shadow-2xs hover:border-slate-300 cursor-pointer flex items-center gap-1.5 text-xs font-bold"
-              title="تنظیمات مهلت ویرایش و گزارش‌ها"
-            >
-              <SlidersHorizontal size={16} className="text-indigo-600" />
-              <span className="hidden sm:inline">تنظیمات</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* ===================================================================== */}
@@ -2739,39 +2821,94 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {activeTab === 'report' && (
         <div className="space-y-6">
-          {/* Summary Metric Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-slate-500">کل جلسات</div>
-              <div className="text-lg font-black text-slate-900 font-mono">{overallReportMetrics.totalSessions}</div>
+          {/* Summary Metric Cards - 4 Modern Sleek Boxes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+            {/* 1. Total Held Sessions */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white p-4 rounded-2xl border border-indigo-500/30 shadow-md shadow-indigo-950/20 group hover:border-indigo-400/50 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-indigo-200/90 block">کل جلسات {isOrdinaryStudent ? 'برگزار شده' : 'تشکیل شده'}</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                    <span>{studentMetrics.heldSessions}</span>
+                    <span className="text-[10px] text-indigo-300 font-medium font-vazir">جلسه</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-inner group-hover:scale-105 transition-transform">
+                  <BookOpen size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-indigo-200/70">
+                <span>وضعیت حضور: {studentMetrics.presents} جلسه حاضر</span>
+                <span className="font-mono text-emerald-300 font-bold">
+                  {studentMetrics.heldSessions > 0 ? `${Math.round((studentMetrics.presents / studentMetrics.heldSessions) * 100)}%` : '۱۰۰%'}
+                </span>
+              </div>
             </div>
-            <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-100 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-emerald-800">تشکیل شده</div>
-              <div className="text-lg font-black text-emerald-700 font-mono">{overallReportMetrics.heldSessions}</div>
+
+            {/* 2. Total Absences (Excused & Unexcused) */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-rose-950/90 via-slate-900 to-rose-900/80 text-white p-4 rounded-2xl border border-rose-500/30 shadow-md shadow-rose-950/20 group hover:border-rose-400/50 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-rose-200/90 block">غیبت‌ها (اعم از موجه و غیرموجه)</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                    <span>{studentMetrics.totalAbsences}</span>
+                    <span className="text-[10px] text-rose-300 font-medium font-vazir">جلسه</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-300 shadow-inner group-hover:scale-105 transition-transform">
+                  <UserX size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-rose-200/80">
+                <span>غیرموجه: <strong className="text-rose-300 font-mono">{studentMetrics.absents}</strong></span>
+                <span>موجه: <strong className="text-indigo-300 font-mono">{studentMetrics.excused}</strong></span>
+              </div>
             </div>
-            <div className="bg-rose-50/70 p-3.5 rounded-2xl border border-rose-100 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-rose-800">تشکیل نشده</div>
-              <div className="text-lg font-black text-rose-700 font-mono">{overallReportMetrics.cancelledSessions}</div>
+
+            {/* 3. Total Delays */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-amber-950/90 via-slate-900 to-amber-900/80 text-white p-4 rounded-2xl border border-amber-500/30 shadow-md shadow-amber-950/20 group hover:border-amber-400/50 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-amber-200/90 block">تأخیرها</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                    <span>{studentMetrics.lates}</span>
+                    <span className="text-[10px] text-amber-300 font-medium font-vazir">مورد</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-inner group-hover:scale-105 transition-transform">
+                  <Clock3 size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-amber-200/70">
+                <span>ثبت تاخیر در ورود به کلاس</span>
+                <span className="font-mono text-amber-300 font-bold">{studentMetrics.lates > 0 ? 'موجب کسر انضباط' : 'بدون تاخیر'}</span>
+              </div>
             </div>
-            <div className="bg-emerald-50 p-3.5 rounded-2xl border border-emerald-200 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-emerald-800">کل حضورها</div>
-              <div className="text-lg font-black text-emerald-700 font-mono">{overallReportMetrics.totalPresents}</div>
-            </div>
-            <div className="bg-rose-50 p-3.5 rounded-2xl border border-rose-200 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-rose-800">غیبت غیرموجه</div>
-              <div className="text-lg font-black text-rose-700 font-mono">{overallReportMetrics.totalAbsents}</div>
-            </div>
-            <div className="bg-indigo-50 p-3.5 rounded-2xl border border-indigo-200 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-indigo-800">غیبت موجه</div>
-              <div className="text-lg font-black text-indigo-700 font-mono">{overallReportMetrics.totalExcused}</div>
-            </div>
-            <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-amber-800">کل تاخیرها</div>
-              <div className="text-lg font-black text-amber-700 font-mono">{overallReportMetrics.totalLates}</div>
-            </div>
-            <div className="bg-rose-100/60 p-3.5 rounded-2xl border border-rose-300 shadow-2xs space-y-1">
-              <div className="text-[11px] font-bold text-rose-900">اخطار آموزشی</div>
-              <div className="text-lg font-black text-rose-800 font-mono">{overallReportMetrics.totalWarnings}</div>
+
+            {/* 4. Educational Warnings */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-purple-950/90 via-slate-900 to-rose-950/90 text-white p-4 rounded-2xl border border-purple-500/30 shadow-md shadow-purple-950/20 group hover:border-purple-400/50 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-purple-200/90 block">اخطارهای آموزشی</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                    <span>{studentMetrics.warnings}</span>
+                    <span className="text-[10px] text-purple-300 font-medium font-vazir">اخطار</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-inner group-hover:scale-105 transition-transform">
+                  <AlertTriangle size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-purple-200/80">
+                <span>تنها اخطارهای قطعی ثبت شده</span>
+                <span className={cn("font-bold font-mono", studentMetrics.warnings > 0 ? "text-rose-400" : "text-emerald-400")}>
+                  {studentMetrics.warnings > 0 ? 'نیازمند پیگیری' : 'بدون اخطار'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -2870,6 +3007,35 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </h3>
 
               <div className="flex items-center gap-2 flex-wrap">
+                {/* Default view toggle: Absents only vs All students */}
+                <button
+                  type="button"
+                  onClick={() => setReportShowAllStudents(!reportShowAllStudents)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    reportShowAllStudents
+                      ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
+                      : "bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
+                  )}
+                  title="تغییر حالت نمایش بین فقط غایبین و یا همه طلاب"
+                >
+                  <Users size={14} />
+                  <span>{reportShowAllStudents ? 'نمایش همه طلاب (حاضر، غایب و تاخیر)' : 'نمایش فقط غایبین (پیش‌فرض)'}</span>
+                </button>
+
+                {/* Sort selector */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500">مرتب‌سازی:</span>
+                  <select
+                    value={reportSortBy}
+                    onChange={(e) => setReportSortBy(e.target.value as 'absent' | 'class')}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-800 outline-none cursor-pointer"
+                  >
+                    <option value="absent">بر اساس غیبت</option>
+                    <option value="class">بر اساس نام کلاس / درس</option>
+                  </select>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => setReportWarningOnlyFilter(!reportWarningOnlyFilter)}
@@ -2881,7 +3047,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   )}
                 >
                   <AlertOctagon size={14} />
-                  <span>فقط مشمولین اخطار آموزشی</span>
+                  <span>فقط مشمولین اخطار</span>
                 </button>
                 <button
                   type="button"
@@ -2901,6 +3067,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     <th className="p-3">ردیف</th>
                     <th className="p-3">نام طلبه</th>
                     <th className="p-3">پایه</th>
+                    <th className="p-3">کلاس / درس</th>
                     <th className="p-3 text-center">جلسات مشمول</th>
                     <th className="p-3 text-center text-emerald-800">حاضر</th>
                     <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
@@ -2930,6 +3097,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           </div>
                         </td>
                         <td className="p-3 text-slate-600 font-bold">{item.student.grade || '---'}</td>
+                        <td className="p-3 text-indigo-900 font-bold">
+                          <span className="bg-indigo-50/80 text-indigo-800 px-2 py-0.5 rounded-lg border border-indigo-100 text-[11px]">
+                            {(item as any).programTitleSummary || 'عمومی'}
+                          </span>
+                        </td>
                         <td className="p-3 text-center font-mono font-bold">{item.heldSessionsEnrolled}</td>
                         <td className="p-3 text-center font-mono font-black text-emerald-700">{item.presentCount}</td>
                         <td className="p-3 text-center font-mono font-black text-rose-600">
