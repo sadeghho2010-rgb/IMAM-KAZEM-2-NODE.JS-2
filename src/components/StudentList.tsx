@@ -84,7 +84,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   // Helper to accurately match a student with their user account
   const getStudentAccount = (student: Student, allUsers: AppUser[] = users): AppUser | undefined => {
     if (!student) return undefined;
-    return allUsers.find(u => {
+    const found = allUsers.find(u => {
       // 1. Matched by linkedStudentId
       if (u.linkedStudentId && String(u.linkedStudentId) === String(student.id)) return true;
       // 2. Matched by studentId
@@ -94,13 +94,38 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         const cleanNationalId = student.nationalId.trim().toUpperCase();
         if (u.username.toUpperCase() === cleanNationalId) return true;
       }
-      // 4. Matched by exact name if role is student or level is 3
+      // 4. Matched by student.userAccountUsername
+      if ((student as any).userAccountUsername && u.username.toUpperCase() === String((student as any).userAccountUsername).trim().toUpperCase()) {
+        return true;
+      }
+      // 5. Matched by exact name if role is student or level is 3
       if ((u.role === 'student' || u.level === 3) && u.name && student.name) {
         if (u.name.trim() === student.name.trim()) return true;
         if (u.fullName && u.fullName.trim() === student.name.trim()) return true;
       }
       return false;
     });
+
+    if (found) return found;
+
+    // Fallback: If student has userAccountUsername or hasUserAccount flag saved on student document
+    if ((student as any).hasUserAccount && (student as any).userAccountUsername) {
+      return {
+        id: `user_fallback_${student.id}`,
+        username: (student as any).userAccountUsername,
+        name: student.name,
+        role: 'student',
+        level: 3,
+        roleTitle: 'طلبه',
+        scope: 'self',
+        gradeLabel: student.grade || '',
+        isActive: true,
+        allowedTabs: [],
+        editableTabs: []
+      } as any;
+    }
+
+    return undefined;
   };
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
@@ -125,8 +150,16 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         studentId: selectedStudentForCredentials.id,
         studentName: selectedStudentForCredentials.name,
       });
+
+      // Synchronize student document directly so change emits across all clients
+      await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+        hasUserAccount: true,
+        userAccountUsername: cleanUsername
+      });
+
       alert('مشخصات ورود طلبه با موفقیت ویرایش شد.');
       setSelectedStudentForCredentials(null);
+      fetchStudents();
     } else {
       // Create or re-link
       const existingUserWithUsername = users.find(u => 
@@ -154,8 +187,15 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
             studentId: selectedStudentForCredentials.id,
             studentName: selectedStudentForCredentials.name,
           });
+
+          await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+            hasUserAccount: true,
+            userAccountUsername: cleanUsername
+          });
+
           alert('حساب کاربری با موفقیت به این طلبه متصل و بروزرسانی شد.');
           setSelectedStudentForCredentials(null);
+          fetchStudents();
           return;
         }
 
@@ -182,8 +222,14 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       });
 
       if (result.success) {
+        await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+          hasUserAccount: true,
+          userAccountUsername: cleanUsername
+        });
+
         alert('حساب کاربری با موفقیت برای این طلبه ایجاد شد.');
         setSelectedStudentForCredentials(null);
+        fetchStudents();
       } else {
         alert(`خطا در ایجاد حساب: ${result.error}`);
       }
@@ -382,7 +428,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     const unsub = localDb.subscribe(() => {
       fetchStudents();
     });
-    return () => unsub();
+
+    const handleDataChange = () => {
+      fetchStudents();
+    };
+
+    window.addEventListener('app_users_updated', handleDataChange);
+    window.addEventListener('collection_change_system_users', handleDataChange);
+    window.addEventListener('collection_change_students', handleDataChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_users_updated', handleDataChange);
+      window.removeEventListener('collection_change_system_users', handleDataChange);
+      window.removeEventListener('collection_change_students', handleDataChange);
+    };
   }, [onlyActive]);
 
   const syncStudentUserStatus = (studentId: string, isActive: boolean) => {

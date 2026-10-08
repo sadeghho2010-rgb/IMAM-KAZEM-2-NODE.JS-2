@@ -25,6 +25,9 @@ const extractToken = (req: Request): string | null => {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
+  if (req.query && typeof req.query.token === 'string' && req.query.token.trim()) {
+    return req.query.token.trim();
+  }
   return null;
 };
 

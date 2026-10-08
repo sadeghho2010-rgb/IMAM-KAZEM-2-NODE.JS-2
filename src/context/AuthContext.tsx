@@ -844,11 +844,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
           const newStr = JSON.stringify(merged);
-          if (oldStr === newStr && prev.length === merged.length) {
-            return prev;
+          if (oldStr !== newStr || prev.length !== merged.length) {
+            localStorage.setItem(USERS_STORAGE_KEY, newStr);
           }
-          localStorage.setItem(USERS_STORAGE_KEY, newStr);
         } catch (e) {}
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('app_users_updated', { detail: merged }));
+        }
         return merged;
       });
 
@@ -889,14 +892,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         headers['Authorization'] = `Bearer ${token}`;
 
-        const res = await fetch('/api/auth/public-users', {
+        // Try primary /api/auth/users endpoint
+        let res = await fetch('/api/auth/users', {
           method: 'GET',
           headers,
           credentials: 'include'
         });
+
+        if (!res.ok) {
+          // Fallback to /api/auth/public-users
+          res = await fetch('/api/auth/public-users', {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
+        }
+
         if (res.ok) {
           const result = await res.json();
-          if (result.success && Array.isArray(result.users)) {
+          if (result.success && Array.isArray(result.users) && result.users.length > 0) {
             processIncomingUsers(result.users);
           }
         }
@@ -916,22 +930,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus)
     const unsubscribeRealtime = realtimeSync.subscribe((evt) => {
-      if (evt.collection === 'system_users') {
+      if (evt.collection === 'system_users' || evt.collection === 'users' || evt.collection === 'students') {
         syncWithServer();
       }
     });
 
-    // 3. Periodic background sync every 15 seconds (only when authenticated)
+    const handleFocus = () => {
+      const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      if (currentToken) {
+        syncWithServer();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') handleFocus();
+    });
+
+    // 3. Periodic background sync every 8 seconds (only when authenticated)
     const syncInterval = setInterval(() => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (currentToken) {
         syncWithServer();
       }
-    }, 15000);
+    }, 8000);
 
     return () => { 
       isMounted = false; 
       clearInterval(syncInterval);
+      window.removeEventListener('focus', handleFocus);
       unsubscribeRealtime();
     };
   }, []);

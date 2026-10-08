@@ -168,10 +168,25 @@ export class AuthController {
     }
   }
 
+  public static async getUsers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const users = await fetchAllUsersFromStorage();
+      const sanitized = users.map(u => sanitizeUser(u));
+      return res.status(200).json({
+        success: true,
+        count: sanitized.length,
+        users: sanitized
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async publicUsers(req: Request, res: Response, next: NextFunction) {
     try {
       const isQuickLoginEnabled = process.env.ENABLE_QUICK_LOGIN === 'true';
-      if (!isQuickLoginEnabled) {
+      const caller = AuthController.extractCaller(req);
+      if (!isQuickLoginEnabled && !caller) {
         return res.status(200).json({
           success: false,
           enabled: false,
@@ -183,7 +198,7 @@ export class AuthController {
       const sanitized = users.map(u => sanitizeUser(u));
       return res.status(200).json({
         success: true,
-        enabled: true,
+        enabled: isQuickLoginEnabled || Boolean(caller),
         count: sanitized.length,
         users: sanitized
       });

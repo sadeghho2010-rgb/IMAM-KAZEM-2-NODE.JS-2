@@ -491,16 +491,32 @@ export function revokeAllUserSessions(userId: string) {
 }
 
 export function sanitizeUser(user: StoredUser | any): SafeUser {
-  // Whitelist approach: only return necessary fields for UI
+  // Whitelist approach: return necessary fields for UI, strictly omitting password and passwordHash
   return {
     id: user.id,
     username: user.username,
-    name: user.name,
+    name: user.name || user.fullName || user.username,
+    fullName: user.fullName || user.name || user.username,
     role: user.role,
     roleTitle: user.roleTitle,
     level: user.level,
-    isActive: user.isActive,
-    avatarBg: user.avatarBg
+    scope: user.scope || (user.level === 3 ? 'self' : 'all'),
+    gradeLabel: user.gradeLabel || '',
+    mentorId: user.mentorId,
+    studentId: user.studentId || user.linkedStudentId,
+    studentName: user.studentName || user.name,
+    linkedStudentId: user.linkedStudentId || user.studentId,
+    isReadOnly: Boolean(user.isReadOnly),
+    canEdit: user.canEdit !== undefined ? Boolean(user.canEdit) : true,
+    canManageUsers: Boolean(user.canManageUsers),
+    canBackup: user.canBackup !== undefined ? Boolean(user.canBackup) : true,
+    avatarBg: user.avatarBg,
+    allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : [],
+    editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
+    modulePermissions: user.modulePermissions || {},
+    isActive: user.isActive !== false,
+    lastLogin: user.lastLogin,
+    mustChangePassword: Boolean(user.mustChangePassword)
   } as SafeUser;
 }
 

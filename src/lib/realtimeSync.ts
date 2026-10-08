@@ -74,7 +74,8 @@ class RealtimeSyncManager {
 
     try {
       this.isConnecting = true;
-      this.eventSource = new EventSource('/api/sync/events');
+      const sseUrl = `/api/sync/events?token=${encodeURIComponent(token)}`;
+      this.eventSource = new EventSource(sseUrl);
 
       this.eventSource.onopen = () => {
         this.isConnecting = false;
