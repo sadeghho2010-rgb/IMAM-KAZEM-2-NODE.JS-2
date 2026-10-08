@@ -160,6 +160,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportWarningOnlyFilter, setReportWarningOnlyFilter] = useState<boolean>(false);
   const [reportShowAllStudents, setReportShowAllStudents] = useState<boolean>(false); // default false: show absents only!
   const [reportSortBy, setReportSortBy] = useState<'absent' | 'class'>('absent');
+  const [reportCourseCategory, setReportCourseCategory] = useState<'all' | 'academic' | 'counseling' | 'thursday'>('all');
+  const [reportViewMode, setReportViewMode] = useState<'student' | 'class' | 'summary'>('student');
   const [selectedStudentDrilldown, setSelectedStudentDrilldown] = useState<any | null>(null);
 
   // Check roles
@@ -878,9 +880,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       if (reportProgramFilter !== 'all' && r.programId !== reportProgramFilter) return false;
       if (reportStartDate && r.date < reportStartDate) return false;
       if (reportEndDate && r.date > reportEndDate) return false;
+
+      // Course category filter: academic (دروس اصلی), counseling (دروس مشاوره), thursday (جلسات پنج‌شنبه)
+      if (reportCourseCategory !== 'all') {
+        const prog = programs.find(p => p.id === r.programId);
+        const isCounseling = prog?.isCounseling || prog?.category === 'counseling' || prog?.type === 'counseling' || r.programTitle?.includes('مشاوره') || r.grade?.includes('مشاوره');
+        const isThursday = r.dayOfWeek === 'پنج‌شنبه' || r.date?.includes('پنج‌شنبه') || (prog?.daysOfWeek && prog.daysOfWeek.includes('پنج‌شنبه'));
+
+        if (reportCourseCategory === 'counseling' && !isCounseling) return false;
+        if (reportCourseCategory === 'thursday' && !isThursday) return false;
+        if (reportCourseCategory === 'academic' && (isCounseling || isThursday)) return false;
+      }
+
       return true;
     });
-  }, [attendanceRecords, reportGradeFilter, reportProgramFilter, reportStartDate, reportEndDate]);
+  }, [attendanceRecords, reportGradeFilter, reportProgramFilter, reportStartDate, reportEndDate, reportCourseCategory, programs]);
 
   // Overall Report Metrics
   const overallReportMetrics = useMemo(() => {
@@ -1007,8 +1021,32 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     });
 
-    // Compute program title summary for each student entry
+    // Compute program title summary and course breakdown for each student
     Object.values(studentMap).forEach(entry => {
+      const courseMap: Record<string, { absent: number; excused: number; late: number; present: number }> = {};
+      entry.history.forEach(h => {
+        if (h.isCancelled) return;
+        const pTitle = h.programTitle || 'درس عمومی';
+        if (!courseMap[pTitle]) {
+          courseMap[pTitle] = { absent: 0, excused: 0, late: 0, present: 0 };
+        }
+        if (h.status === 'absent') courseMap[pTitle].absent++;
+        else if (h.status === 'excused') courseMap[pTitle].excused++;
+        else if (h.status === 'late') courseMap[pTitle].late++;
+        else if (h.status === 'present') courseMap[pTitle].present++;
+      });
+
+      (entry as any).courseBreakdown = courseMap;
+
+      // Summary string e.g. "اصول: ۲ غیبت | فقه: ۱ غیبت"
+      const parts: string[] = [];
+      Object.entries(courseMap).forEach(([pTitle, counts]) => {
+        if (counts.absent > 0 || counts.excused > 0) {
+          parts.push(`${pTitle}: ${counts.absent} غیبت${counts.excused > 0 ? ` (+${counts.excused} موجه)` : ''}`);
+        }
+      });
+      (entry as any).compactCourseSummary = parts.length > 0 ? parts.join(' | ') : 'بدون غیبت در دروس';
+
       const titles = Array.from(new Set(entry.history.map(h => h.programTitle).filter(Boolean)));
       if (titles.length > 0) {
         (entry as any).programTitleSummary = titles.join('، ');
@@ -1044,6 +1082,94 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     return list;
   }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportSortBy, settings, programs]);
+
+  // Grouped by Class Report Data (for reportViewMode === 'class')
+  const classGroupedReportList = useMemo(() => {
+    const classMap: Record<string, {
+      programId: string;
+      programTitle: string;
+      teacherName: string;
+      grade: string;
+      studentsMap: Record<string, {
+        student: any;
+        absentCount: number;
+        excusedCount: number;
+        lateCount: number;
+        presentCount: number;
+        warningCount: number;
+        history: any[];
+      }>;
+    }> = {};
+
+    filteredReportRecords.forEach(rec => {
+      if (rec.isCancelled) return;
+      const progKey = rec.programId || rec.programTitle || 'عمومی';
+      if (!classMap[progKey]) {
+        const matchingProg = programs.find(p => p.id === rec.programId);
+        classMap[progKey] = {
+          programId: rec.programId,
+          programTitle: rec.programTitle || 'کلاس درسی',
+          teacherName: matchingProg?.teacher || matchingProg?.teacherName || (rec as any).teacherName || 'استاد محترم',
+          grade: rec.grade || matchingProg?.grade || 'عمومی',
+          studentsMap: {}
+        };
+      }
+
+      const cEntry = classMap[progKey];
+      if (Array.isArray(rec.students)) {
+        rec.students.forEach(stItem => {
+          const stObj = students.find(s => String(s.id) === String(stItem.studentId)) || {
+            id: stItem.studentId,
+            name: stItem.studentName,
+            nationalId: stItem.nationalId,
+            grade: rec.grade
+          };
+
+          if (reportGradeFilter !== 'all' && stObj.grade !== reportGradeFilter) return;
+          if (reportSearchQuery && !stObj.name?.toLowerCase().includes(reportSearchQuery.toLowerCase()) && !stObj.nationalId?.includes(reportSearchQuery)) return;
+
+          if (!cEntry.studentsMap[stItem.studentId]) {
+            cEntry.studentsMap[stItem.studentId] = {
+              student: stObj,
+              absentCount: 0,
+              excusedCount: 0,
+              lateCount: 0,
+              presentCount: 0,
+              warningCount: 0,
+              history: []
+            };
+          }
+
+          const stMapEntry = cEntry.studentsMap[stItem.studentId];
+          if (stItem.status === 'absent') stMapEntry.absentCount++;
+          else if (stItem.status === 'excused') stMapEntry.excusedCount++;
+          else if (stItem.status === 'late') stMapEntry.lateCount++;
+          else if (stItem.status === 'present') stMapEntry.presentCount++;
+
+          if (stItem.hasEducationalWarning) stMapEntry.warningCount++;
+
+          stMapEntry.history.push({
+            date: rec.date,
+            status: stItem.status,
+            note: stItem.note,
+            excuseReason: stItem.excuseReason
+          });
+        });
+      }
+    });
+
+    return Object.values(classMap).map(cGroup => {
+      let stList = Object.values(cGroup.studentsMap);
+      if (!reportShowAllStudents) {
+        stList = stList.filter(s => s.absentCount > 0 || s.excusedCount > 0);
+      }
+      stList.sort((a, b) => b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa'));
+      return {
+        ...cGroup,
+        studentsList: stList
+      };
+    }).filter(cGroup => cGroup.studentsList.length > 0);
+  }, [filteredReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents]);
 
   // 4 Primary Metrics for Student / Overall Panel
   const studentMetrics = useMemo(() => {
@@ -1116,26 +1242,64 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Handler to export report to Excel
   const handleExportReportToExcel = () => {
     try {
-      const rows = studentReportList.map((item, idx) => ({
-        'ردیف': idx + 1,
-        'نام و نام خانوادگی طلبه': item.student.name,
-        'کد ملی': item.student.nationalId || '',
-        'پایه تحصیلی': item.student.grade || '',
-        'کلاس / درس مربوطه': (item as any).programTitleSummary || 'عمومی',
-        'تعداد جلسات برگزار شده': item.heldSessionsEnrolled,
-        'تعداد حضور': item.presentCount,
-        'غیبت غیرموجه': item.absentCount,
-        'غیبت موجه': item.excusedCount,
-        'تاخیر در ورود': item.lateCount,
-        'نامشخص': item.unspecifiedCount,
-        'تعداد اخطارهای آموزشی': item.warningCount,
-        'درصد حضور': item.heldSessionsEnrolled > 0 ? `${Math.round((item.presentCount / item.heldSessionsEnrolled) * 100)}%` : '۰%'
-      }));
+      let rows: any[] = [];
+
+      if (reportViewMode === 'class') {
+        // Export by class groups
+        let rowIdx = 1;
+        classGroupedReportList.forEach(cGroup => {
+          cGroup.studentsList.forEach(stItem => {
+            rows.push({
+              'ردیف': rowIdx++,
+              'نام کلاس / درس': cGroup.programTitle,
+              'استاد مربوطه': cGroup.teacherName,
+              'پایه': cGroup.grade,
+              'نام و نام خانوادگی طلبه': stItem.student.name,
+              'کد ملی': stItem.student.nationalId || '',
+              'غیبت غیرموجه': stItem.absentCount,
+              'غیبت موجه': stItem.excusedCount,
+              'تاخیر': stItem.lateCount,
+              'تعداد اخطارها': stItem.warningCount
+            });
+          });
+        });
+      } else if (reportViewMode === 'summary') {
+        // Export concise aggregated summary per student
+        rows = studentReportList.map((item, idx) => ({
+          'ردیف': idx + 1,
+          'نام و نام خانوادگی طلبه': item.student.name,
+          'کد ملی': item.student.nationalId || '',
+          'پایه تحصیلی': item.student.grade || '',
+          'خلاصه غیبت‌ها به تفکیک دروس': (item as any).compactCourseSummary || 'بدون غیبت',
+          'مجموع غیبت غیرموجه': item.absentCount,
+          'مجموع غیبت موجه': item.excusedCount,
+          'کل تاخیرها': item.lateCount,
+          'تعداد اخطارهای آموزشی': item.warningCount
+        }));
+      } else {
+        // Export full per-student list
+        rows = studentReportList.map((item, idx) => ({
+          'ردیف': idx + 1,
+          'نام و نام خانوادگی طلبه': item.student.name,
+          'کد ملی': item.student.nationalId || '',
+          'پایه تحصیلی': item.student.grade || '',
+          'کلاس / درس مربوطه': (item as any).programTitleSummary || 'عمومی',
+          'تعداد جلسات برگزار شده': item.heldSessionsEnrolled,
+          'تعداد حضور': item.presentCount,
+          'غیبت غیرموجه': item.absentCount,
+          'غیبت موجه': item.excusedCount,
+          'تاخیر در ورود': item.lateCount,
+          'نامشخص': item.unspecifiedCount,
+          'تعداد اخطارهای آموزشی': item.warningCount,
+          'درصد حضور': item.heldSessionsEnrolled > 0 ? `${Math.round((item.presentCount / item.heldSessionsEnrolled) * 100)}%` : '۰%'
+        }));
+      }
 
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'آمار حضور و غیاب');
-      const fileName = `گزارش_حضور_و_غیاب_طلاب_${selectedDate.replace(/\//g, '-')}.xlsx`;
+      const catTag = reportCourseCategory === 'academic' ? 'دروس_اصلی' : reportCourseCategory === 'counseling' ? 'مشاوره' : reportCourseCategory === 'thursday' ? 'پنجشنبه' : 'تجمیعی';
+      const fileName = `گزارش_غیبت_طلاب_${catTag}_${selectedDate.replace(/\//g, '-')}.xlsx`;
       XLSX.writeFile(workbook, fileName);
       showToast('فایل اکسل گزارش با موفقیت دریافت شد.');
     } catch (err) {
@@ -2914,6 +3078,115 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
           {/* Filters Bar */}
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            {/* Top Toolbar: Course Categories & View Mode Selectors for Level 2 Officials */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              {/* Category Selector (اصلی، مشاوره، پنج‌شنبه، تجمیعی) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <span className="text-xs font-black text-slate-800 shrink-0 flex items-center gap-1 ml-1">
+                  <Layers size={14} className="text-indigo-600" />
+                  <span>نوع درس:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReportCourseCategory('all')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border",
+                    reportCourseCategory === 'all'
+                      ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                  )}
+                >
+                  همه دروس (تجمیعی)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportCourseCategory('academic')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border",
+                    reportCourseCategory === 'academic'
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                      : "bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200"
+                  )}
+                >
+                  دروس اصلی (فقه و اصول)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportCourseCategory('counseling')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border",
+                    reportCourseCategory === 'counseling'
+                      ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
+                      : "bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200"
+                  )}
+                >
+                  دروس مشاوره و تهذیب
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportCourseCategory('thursday')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border",
+                    reportCourseCategory === 'thursday'
+                      ? "bg-amber-600 text-white border-amber-600 shadow-2xs"
+                      : "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200"
+                  )}
+                >
+                  جلسات پنج‌شنبه‌ها
+                </button>
+              </div>
+
+              {/* View Mode Selector (بر اساس طلبه، به ترتیب کلاس، تجمیعی خلاصه) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <span className="text-xs font-black text-slate-800 shrink-0 flex items-center gap-1 ml-1">
+                  <SlidersHorizontal size={14} className="text-indigo-600" />
+                  <span>چیدمان:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReportViewMode('student')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border flex items-center gap-1",
+                    reportViewMode === 'student'
+                      ? "bg-indigo-700 text-white border-indigo-700 shadow-2xs"
+                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
+                  )}
+                  title="نمایش غیبت‌های هر طلبه کنار هم"
+                >
+                  <User size={13} />
+                  <span>بر اساس طلبه</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportViewMode('class')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border flex items-center gap-1",
+                    reportViewMode === 'class'
+                      ? "bg-emerald-700 text-white border-emerald-700 shadow-2xs"
+                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
+                  )}
+                  title="به ترتیب کلاس‌ها (مثلاً اول اصول استاد احمدی، سپس فقه و ...)"
+                >
+                  <BookOpen size={13} />
+                  <span>تفکیک به ترتیب کلاس‌ها</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportViewMode('summary')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 border flex items-center gap-1",
+                    reportViewMode === 'summary'
+                      ? "bg-teal-700 text-white border-teal-700 shadow-2xs"
+                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
+                  )}
+                  title="یک سطر برای هر طلبه همراه با خلاصه غیبت در تمامی کلاس‌ها"
+                >
+                  <Layers size={13} />
+                  <span>تجمیعی مختصر</span>
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                 <Filter size={15} className="text-indigo-600" />
@@ -2998,12 +3271,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </div>
           </div>
 
-          {/* Student Analytics Table */}
+          {/* Student Analytics Table / View Modes */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="text-xs font-black text-slate-800 flex items-center gap-2">
                 <Users size={16} className="text-indigo-600" />
-                <span>جدول آماری وضعیت حضور و غیاب طلاب</span>
+                <span>
+                  {reportViewMode === 'class' 
+                    ? 'گزارش غیبت‌ها به تفکیک و به ترتیب کلاس‌ها' 
+                    : reportViewMode === 'summary' 
+                    ? 'جدول تجمیعی خلاصه غیبت طلاب در تمامی کلاس‌ها' 
+                    : 'جدول آماری وضعیت حضور و غیاب طلاب'}
+                </span>
               </h3>
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -3060,68 +3339,136 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                    <th className="p-3">ردیف</th>
-                    <th className="p-3">نام طلبه</th>
-                    <th className="p-3">پایه</th>
-                    <th className="p-3">کلاس / درس</th>
-                    <th className="p-3 text-center">جلسات مشمول</th>
-                    <th className="p-3 text-center text-emerald-800">حاضر</th>
-                    <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
-                    <th className="p-3 text-center text-indigo-700">غیبت موجه</th>
-                    <th className="p-3 text-center text-amber-700">تاخیر</th>
-                    <th className="p-3 text-center text-rose-800">اخطار آموزشی</th>
-                    <th className="p-3 text-center">عملیات و جزئیات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {studentReportList.map((item, idx) => {
-                    const isOverThreshold = item.absentCount >= (settings.unexcusedWarningThreshold || 3);
-                    return (
-                      <tr key={item.student.id} className={cn(
-                        "transition-colors",
-                        isOverThreshold ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50/80"
-                      )}>
-                        <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
-                        <td className="p-3 font-black text-slate-900">
-                          <div className="flex items-center gap-1.5">
-                            <span>{item.student.name}</span>
-                            {isOverThreshold && (
-                              <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black rounded-md border border-rose-200">
-                                مشمول اخطار
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-slate-600 font-bold">{item.student.grade || '---'}</td>
-                        <td className="p-3 text-indigo-900 font-bold">
-                          <span className="bg-indigo-50/80 text-indigo-800 px-2 py-0.5 rounded-lg border border-indigo-100 text-[11px]">
-                            {(item as any).programTitleSummary || 'عمومی'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center font-mono font-bold">{item.heldSessionsEnrolled}</td>
-                        <td className="p-3 text-center font-mono font-black text-emerald-700">{item.presentCount}</td>
-                        <td className="p-3 text-center font-mono font-black text-rose-600">
-                          {item.absentCount > 0 ? (
-                            <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
-                              {item.absentCount}
+            {/* VIEW MODE 1: CLASS GROUPED (به ترتیب کلاس‌ها - مثلاً ابتدا اصول استاد احمدی، سپس فقه و ...) */}
+            {reportViewMode === 'class' ? (
+              <div className="p-4 space-y-6">
+                {classGroupedReportList.length === 0 ? (
+                  <div className="text-center py-10 space-y-2 text-slate-500">
+                    <BookOpen size={32} className="mx-auto text-slate-300" />
+                    <p className="text-xs font-bold">هیچ کلاسی با غایبین طبق فیلترهای انتخابی یافت نشد.</p>
+                  </div>
+                ) : (
+                  classGroupedReportList.map(cGroup => (
+                    <div key={cGroup.programId} className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs bg-white space-y-0">
+                      {/* Class Group Banner Header */}
+                      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <BookOpen size={16} className="text-amber-400 shrink-0" />
+                          <span className="font-black text-xs sm:text-sm">کلاس: «{cGroup.programTitle}»</span>
+                          {cGroup.grade && (
+                            <span className="bg-white/10 text-indigo-200 px-2 py-0.5 rounded-lg text-[10px] font-bold border border-white/10">
+                              پایه {cGroup.grade}
                             </span>
-                          ) : '0'}
-                        </td>
-                        <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
-                        <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
-                        <td className="p-3 text-center font-mono font-black text-rose-800">
-                          {item.warningCount > 0 ? (
-                            <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md">
-                              {item.warningCount}
+                          )}
+                          {cGroup.teacherName && (
+                            <span className="text-[11px] text-slate-300 font-medium">
+                              • استاد: {cGroup.teacherName}
                             </span>
-                          ) : '---'}
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
+                          )}
+                        </div>
+                        <span className="text-[11px] font-bold bg-amber-400/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30 self-start sm:self-auto">
+                          تعداد طلاب: {cGroup.studentsList.length} نفر
+                        </span>
+                      </div>
+
+                      {/* Class Student Sub-table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                              <th className="p-2.5">ردیف</th>
+                              <th className="p-2.5">نام و نام خانوادگی طلبه</th>
+                              <th className="p-2.5 text-center text-rose-700">غیبت غیرموجه</th>
+                              <th className="p-2.5 text-center text-indigo-700">غیبت موجه</th>
+                              <th className="p-2.5 text-center text-amber-700">تاخیر</th>
+                              <th className="p-2.5 text-center text-rose-800">اخطار آموزشی</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {cGroup.studentsList.map((stItem, idx) => (
+                              <tr key={stItem.student.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-2.5 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="p-2.5 font-black text-slate-900">{stItem.student.name}</td>
+                                <td className="p-2.5 text-center font-mono font-black text-rose-600">
+                                  {stItem.absentCount > 0 ? (
+                                    <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
+                                      {stItem.absentCount} جلسه
+                                    </span>
+                                  ) : '0'}
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-bold text-indigo-700">
+                                  {stItem.excusedCount > 0 ? `${stItem.excusedCount} جلسه` : '0'}
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-bold text-amber-700">
+                                  {stItem.lateCount > 0 ? `${stItem.lateCount} مورد` : '0'}
+                                </td>
+                                <td className="p-2.5 text-center font-mono font-black text-rose-800">
+                                  {stItem.warningCount > 0 ? (
+                                    <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md text-[10px]">
+                                      {stItem.warningCount} اخطار
+                                    </span>
+                                  ) : '---'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : reportViewMode === 'summary' ? (
+              /* VIEW MODE 2: AGGREGATED CONCISE SUMMARY (یک سطر برای هر طلبه + ستون خلاصه تفکیک دروس) */
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                      <th className="p-3">ردیف</th>
+                      <th className="p-3">نام طلبه</th>
+                      <th className="p-3">پایه</th>
+                      <th className="p-3">خلاصه غیبت‌ها به تفکیک دروس</th>
+                      <th className="p-3 text-center text-rose-700">کل غیرموجه</th>
+                      <th className="p-3 text-center text-indigo-700">کل موجه</th>
+                      <th className="p-3 text-center text-amber-700">تاخیرها</th>
+                      <th className="p-3 text-center text-rose-800">اخطار آموزشی</th>
+                      <th className="p-3 text-center">جزئیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {studentReportList.map((item, idx) => {
+                      const isOverThreshold = item.absentCount >= (settings.unexcusedWarningThreshold || 3);
+                      return (
+                        <tr key={item.student.id} className={cn(
+                          "transition-colors",
+                          isOverThreshold ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50/80"
+                        )}>
+                          <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="p-3 font-black text-slate-900">{item.student.name}</td>
+                          <td className="p-3 text-slate-600 font-bold">{item.student.grade || '---'}</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {Object.entries((item as any).courseBreakdown || {}).length === 0 ? (
+                                <span className="text-[11px] text-slate-400 font-medium">بدون غیبت</span>
+                              ) : (
+                                Object.entries((item as any).courseBreakdown || {}).map(([pTitle, counts]: [string, any]) => {
+                                  if (counts.absent === 0 && counts.excused === 0) return null;
+                                  return (
+                                    <span key={pTitle} className="px-2 py-1 rounded-lg text-[10.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1">
+                                      <span>{pTitle}:</span>
+                                      <span className="font-mono text-rose-700 font-black">{counts.absent} غیرموجه</span>
+                                      {counts.excused > 0 && <span className="font-mono text-indigo-700 font-bold">(+{counts.excused} موجه)</span>}
+                                    </span>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-center font-mono font-black text-rose-600">{item.absentCount}</td>
+                          <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
+                          <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
+                          <td className="p-3 text-center font-mono font-black text-rose-800">{item.warningCount > 0 ? item.warningCount : '---'}</td>
+                          <td className="p-3 text-center">
                             <button
                               type="button"
                               onClick={() => setSelectedStudentDrilldown(item)}
@@ -3129,33 +3476,112 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             >
                               ریز جلسات
                             </button>
-
-                            {(isEducationManager || isSuperAdmin || isGradeSupervisor) && (
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              /* VIEW MODE 3: DEFAULT PER-STUDENT LIST (بر اساس هر طلبه) */
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                      <th className="p-3">ردیف</th>
+                      <th className="p-3">نام طلبه</th>
+                      <th className="p-3">پایه</th>
+                      <th className="p-3">کلاس / درس</th>
+                      <th className="p-3 text-center">جلسات مشمول</th>
+                      <th className="p-3 text-center text-emerald-800">حاضر</th>
+                      <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
+                      <th className="p-3 text-center text-indigo-700">غیبت موجه</th>
+                      <th className="p-3 text-center text-amber-700">تاخیر</th>
+                      <th className="p-3 text-center text-rose-800">اخطار آموزشی</th>
+                      <th className="p-3 text-center">عملیات و جزئیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {studentReportList.map((item, idx) => {
+                      const isOverThreshold = item.absentCount >= (settings.unexcusedWarningThreshold || 3);
+                      return (
+                        <tr key={item.student.id} className={cn(
+                          "transition-colors",
+                          isOverThreshold ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50/80"
+                        )}>
+                          <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="p-3 font-black text-slate-900">
+                            <div className="flex items-center gap-1.5">
+                              <span>{item.student.name}</span>
+                              {isOverThreshold && (
+                                <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black rounded-md border border-rose-200">
+                                  مشمول اخطار
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-slate-600 font-bold">{item.student.grade || '---'}</td>
+                          <td className="p-3 text-indigo-900 font-bold">
+                            <span className="bg-indigo-50/80 text-indigo-800 px-2 py-0.5 rounded-lg border border-indigo-100 text-[11px]">
+                              {(item as any).programTitleSummary || 'عمومی'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold">{item.heldSessionsEnrolled}</td>
+                          <td className="p-3 text-center font-mono font-black text-emerald-700">{item.presentCount}</td>
+                          <td className="p-3 text-center font-mono font-black text-rose-600">
+                            {item.absentCount > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
+                                {item.absentCount}
+                              </span>
+                            ) : '0'}
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
+                          <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
+                          <td className="p-3 text-center font-mono font-black text-rose-800">
+                            {item.warningCount > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md">
+                                {item.warningCount}
+                              </span>
+                            ) : '---'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setIssuingWarningStudent({
-                                    student: item.student,
-                                    absentCount: item.absentCount,
-                                    programTitle: reportProgramFilter !== 'all' ? programs.find(p => p.id === reportProgramFilter)?.title : 'دروس مدرسه'
-                                  });
-                                  setWarningReasonInput(`اخطار آموزشی به دلیل ${item.absentCount} جلسه غیبت غیرموجه در درس.`);
-                                }}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-[11px] border border-rose-200 transition-colors cursor-pointer flex items-center gap-1"
-                                title="صدور اخطار آموزشی رسمی"
+                                onClick={() => setSelectedStudentDrilldown(item)}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[11px] border border-indigo-200 transition-colors cursor-pointer"
                               >
-                                <AlertTriangle size={11} />
-                                <span>صدور اخطار</span>
+                                ریز جلسات
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+
+                              {(isEducationManager || isSuperAdmin || isGradeSupervisor) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIssuingWarningStudent({
+                                      student: item.student,
+                                      absentCount: item.absentCount,
+                                      programTitle: reportProgramFilter !== 'all' ? programs.find(p => p.id === reportProgramFilter)?.title : 'دروس مدرسه'
+                                    });
+                                    setWarningReasonInput(`اخطار آموزشی به دلیل ${item.absentCount} جلسه غیبت غیرموجه در درس.`);
+                                  }}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-[11px] border border-rose-200 transition-colors cursor-pointer flex items-center gap-1"
+                                  title="صدور اخطار آموزشی رسمی"
+                                >
+                                  <AlertTriangle size={11} />
+                                  <span>صدور اخطار</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
