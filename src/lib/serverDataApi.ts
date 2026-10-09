@@ -1,7 +1,62 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
+
+// Local Server File-based Storage (Fallback when neither MySQL nor Supabase is configured)
+const DATA_DIR = path.join(process.cwd(), 'data');
+const COLLECTIONS_FILE = path.join(DATA_DIR, 'app_collections.json');
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+  }
+}
+
+function loadLocalFileCollections(): Record<string, Record<string, any>> {
+  ensureDataDir();
+  if (!fs.existsSync(COLLECTIONS_FILE)) {
+    return {};
+  }
+  try {
+    const raw = fs.readFileSync(COLLECTIONS_FILE, 'utf-8');
+    return JSON.parse(raw) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveLocalFileCollections(store: Record<string, Record<string, any>>) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(COLLECTIONS_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[FileStore Write Error]:', e);
+  }
+}
+
+function localFileSaveDoc(collection: string, id: string, record: any) {
+  const store = loadLocalFileCollections();
+  if (!store[collection]) store[collection] = {};
+  store[collection][id] = record;
+  saveLocalFileCollections(store);
+}
+
+function localFileDeleteDoc(collection: string, id: string) {
+  const store = loadLocalFileCollections();
+  if (store[collection] && store[collection][id]) {
+    delete store[collection][id];
+    saveLocalFileCollections(store);
+  }
+}
+
+function localFileQueryCollection(collection: string): any[] {
+  const store = loadLocalFileCollections();
+  if (!store[collection]) return [];
+  return Object.values(store[collection]);
+}
 
 // Real-time synchronization event bus
 type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
@@ -517,13 +572,15 @@ export async function serverSaveDoc(
     }
   }
 
-  // 3. If neither database is configured -> Error cleanly
-  console.error(`[Database Error] No database configured for saving collection: "${collection}"`);
-  return {
-    success: false,
-    id: '',
-    error: 'هیچ دیتابیسی تنظیم نشده است. لطفاً Environment Variables را چک کنید.'
-  };
+  // 3. Fallback: Local JSON File Storage
+  try {
+    localFileSaveDoc(collection, id, record);
+    notifyRealtimeChange(collection, id, 'upsert');
+    return { success: true, id };
+  } catch (err: any) {
+    console.error(`[FileStore Save Error] Collection: "${collection}", ID: "${id}":`, err);
+    return { success: false, id: '', error: 'خطا در ذخیره‌سازی فایل محلی.' };
+  }
 }
 
 // Server CRUD Handler: Delete Document
@@ -608,12 +665,15 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
     }
   }
 
-  // 3. Neither configured
-  console.error(`[Database Error] No database configured for deleting from collection: "${collection}"`);
-  return {
-    success: false,
-    error: 'هیچ دیتابیسی تنظیم نشده است. لطفاً Environment Variables را چک کنید.'
-  };
+  // 3. Fallback: Local JSON File Storage
+  try {
+    localFileDeleteDoc(collection, id);
+    notifyRealtimeChange(collection, id, 'delete');
+    return { success: true };
+  } catch (err: any) {
+    console.error(`[FileStore Delete Error] Collection: "${collection}", ID: "${id}":`, err);
+    return { success: false, error: 'خطا در حذف از فایل محلی.' };
+  }
 }
 
 // Internal helper to retrieve raw collection data without filtering
@@ -665,8 +725,8 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
     }
   }
 
-  // 3. Neither configured -> Return empty array
-  return [];
+  // 3. Fallback: Local JSON File Storage
+  return localFileQueryCollection(collection);
 }
 
 // Get Single Document from Candidate IDs with Strict Role-Based Filtering

@@ -724,7 +724,14 @@ class LocalDatabase {
 
       // CRITICAL SECURITY FIX: Only prune local IDB/LocalStorage if we got a VERIFIED authoritative response from Server or DB
       if (isServerAuthoritativeSuccess && cloudDocs !== null) {
-        const validDocs = cloudDocs;
+        const syncQueue = getSyncQueue();
+        const pendingDeleteIds = new Set(
+          syncQueue
+            .filter(q => q.collectionName === resolvedCol && q.action === 'delete')
+            .map(q => String(q.id))
+        );
+
+        const validDocs = cloudDocs.filter((d: any) => !pendingDeleteIds.has(String(d.id)));
         const cloudDocIds = new Set(validDocs.map((d: any) => String(d.id)));
         const idb = await this.getDb();
 
