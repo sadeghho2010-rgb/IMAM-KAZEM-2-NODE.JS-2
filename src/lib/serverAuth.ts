@@ -533,7 +533,7 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
   } as SafeUser;
 }
 
-const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || 'K#9v$Lp2!xZ8_qR4*yN7@mB5';
+const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
 
 export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INITIAL_ADMIN_PASSWORD.length >= 6 ? [
   {
@@ -770,6 +770,8 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     const defaultSadegh = DEFAULT_SERVER_USERS.find(u => u.username === 'SADEGH');
     if (defaultSadegh) {
       usersMap.set('SADEGH', { ...defaultSadegh });
+    } else {
+      throw new Error("Cannot create default super admin SADEGH: INITIAL_ADMIN_PASSWORD environment variable is required for first-time setup.");
     }
   } else {
     const cur = usersMap.get('SADEGH')!;
@@ -788,13 +790,13 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
   }
 
   // --- AUTOMATIC PASSWORD AND ROLE SECURITY MIGRATIONS ---
-  // 1. If SADEGH is using the old weak password '8411924As', upgrade it to 'K#9v$Lp2!xZ8_qR4*yN7@mB5'
+  // 1. If SADEGH is using the old weak password '8411924As', upgrade it to the new secure INITIAL_ADMIN_PASSWORD
   const sadeghUser = usersMap.get('SADEGH');
-  if (sadeghUser && sadeghUser.passwordHash) {
+  if (sadeghUser && sadeghUser.passwordHash && INITIAL_ADMIN_PASSWORD) {
     try {
       const isOldSadegh = await comparePassword('8411924As', sadeghUser.passwordHash);
       if (isOldSadegh) {
-        const newSadeghHash = await hashPassword('K#9v$Lp2!xZ8_qR4*yN7@mB5');
+        const newSadeghHash = await hashPassword(INITIAL_ADMIN_PASSWORD);
         sadeghUser.passwordHash = newSadeghHash;
         if (sadeghUser.password) delete sadeghUser.password;
         await saveUserToStorage(sadeghUser);
@@ -802,23 +804,6 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       }
     } catch (e) {
       console.error('[Security Update Error] SADEGH password migration failed:', e);
-    }
-  }
-
-  // 2. Ensure RAHNAMA has the correct hash for '1111' (using standard bcrypt, no bypass/backdoors)
-  const rahnamaUser = usersMap.get('RAHNAMA');
-  if (rahnamaUser) {
-    try {
-      const isCorrectRahnama = rahnamaUser.passwordHash && (await comparePassword('1111', rahnamaUser.passwordHash));
-      if (!isCorrectRahnama) {
-        const newRahnamaHash = await hashPassword('1111');
-        rahnamaUser.passwordHash = newRahnamaHash;
-        if (rahnamaUser.password) delete rahnamaUser.password;
-        await saveUserToStorage(rahnamaUser);
-        console.log('[Security Update] 🔒 RAHNAMA password hash has been automatically set/migrated to "1111" (bcrypt).');
-      }
-    } catch (e) {
-      console.error('[Security Update Error] RAHNAMA password migration failed:', e);
     }
   }
 

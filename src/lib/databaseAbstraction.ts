@@ -288,15 +288,19 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     const [existingAdmin]: any = await mysqlPool.query(
       `SELECT id, username, password_hash FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
     );
-    const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || 'K#9v$Lp2!xZ8_qR4*yN7@mB5';
-    const passwordHash = await bcrypt.hash(targetPassword, 10);
-    const allTabsJson = JSON.stringify([
-      'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
-      'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
-      'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
-    ]);
+    const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
 
     if (!existingAdmin || existingAdmin.length === 0) {
+      if (!targetPassword) {
+        throw new Error("Cannot create default super admin SADEGH: INITIAL_ADMIN_PASSWORD environment variable is required for first-time setup.");
+      }
+      const passwordHash = await bcrypt.hash(targetPassword, 10);
+      const allTabsJson = JSON.stringify([
+        'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
+        'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
+        'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
+      ]);
+
       await mysqlPool.query(`
         INSERT INTO system_users (
           id, username, password_hash, name, role, role_title, level, grade_label,
@@ -308,26 +312,33 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       `, [passwordHash, allTabsJson, allTabsJson]);
       console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس ساخته شد.`);
     } else {
-      const currentHash = existingAdmin[0].password_hash;
-      if (!currentHash || currentHash === '') {
-        await mysqlPool.query(
-          `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
-          [passwordHash]
-        );
-        console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
-      } else {
-        // Automatically check and upgrade if they had the old '8411924As' password hash
-        const isOldPassword = await bcrypt.compare('8411924As', currentHash);
-        if (isOldPassword) {
+      // existingAdmin exists! If password is provided, perform updates/migrations
+      if (targetPassword) {
+        const passwordHash = await bcrypt.hash(targetPassword, 10);
+        const currentHash = existingAdmin[0].password_hash;
+        if (!currentHash || currentHash === '') {
           await mysqlPool.query(
             `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
             [passwordHash]
           );
-          console.log(`[MySQL Startup] 🔒 رمز قدیمی سوپر ادمین SADEGH تشخیص داده شد و به صورت خودکار به رمز جدید و امن به‌روزرسانی شد.`);
+          console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
+        } else {
+          // Automatically check and upgrade if they had the old '8411924As' password hash
+          const isOldPassword = await bcrypt.compare('8411924As', currentHash);
+          if (isOldPassword) {
+            await mysqlPool.query(
+              `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+              [passwordHash]
+            );
+            console.log(`[MySQL Startup] 🔒 رمز قدیمی سوپر ادمین SADEGH تشخیص داده شد و به صورت خودکار به رمز جدید و امن به‌روزرسانی شد.`);
+          }
         }
       }
     }
   } catch (adminSeedErr: any) {
+    if (adminSeedErr?.message?.includes('Cannot create default super admin SADEGH')) {
+      throw adminSeedErr;
+    }
     console.warn('[MySQL Startup Notice - SADEGH Seed]:', adminSeedErr?.message || adminSeedErr);
   }
 
