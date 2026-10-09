@@ -234,7 +234,46 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     console.warn('[MySQL Schema Notice - app_collections]:', e?.message || e);
   }
 
-  // 2. Ensure system_users table exists
+  // 2. Ensure all_users table exists
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`all_users\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`username\` VARCHAR(100) NOT NULL,
+        \`password_hash\` VARCHAR(255) NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
+        \`role_title\` VARCHAR(100) NULL,
+        \`avatar_url\` VARCHAR(500) NULL,
+        \`level\` INT NOT NULL DEFAULT 3,
+        \`grade_label\` VARCHAR(100) NULL,
+        \`mentor_id\` VARCHAR(100) NULL,
+        \`student_id\` VARCHAR(100) NULL,
+        \`linked_student_id\` VARCHAR(100) NULL,
+        \`avatar_bg\` VARCHAR(50) NULL,
+        \`allowed_tabs\` JSON NULL,
+        \`editable_tabs\` JSON NULL,
+        \`module_permissions\` JSON NULL,
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
+        \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
+        \`account_locked_until\` DATETIME NULL,
+        \`last_login\` DATETIME NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uk_all_users_username\` (\`username\`),
+        INDEX \`idx_all_users_role_level\` (\`role\`, \`level\`),
+        INDEX \`idx_all_users_active\` (\`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    console.log('[MySQL Schema] ✅ جدول all_users در پایگاه داده ایجاد/تأیید شد.');
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - all_users]:', e?.message || e);
+  }
+
+  // 2.1 Ensure system_users table exists (for mirror & compatibility)
   try {
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`system_users\` (
@@ -272,22 +311,50 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     console.warn('[MySQL Schema Notice - system_users]:', e?.message || e);
   }
 
+  // 2.2 Compatibility View: all_user -> all_users
   try {
-    await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS role_title VARCHAR(100) NULL`);
-  } catch (e: any) {
-    try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN role_title VARCHAR(100) NULL`); } catch (err) {}
-  }
-  try {
-    await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
-  } catch (e: any) {
-    try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
+    await mysqlPool.query(`CREATE OR REPLACE VIEW \`all_user\` AS SELECT * FROM \`all_users\``);
+  } catch (viewErr) {
+    // Silently continue if MySQL permissions restrict CREATE VIEW
   }
 
-  // 2.1 Auto-seed Super Admin SADEGH if not present or has empty/old password hash
+  // Ensure column migrations exist on both all_users and system_users
+  for (const tbl of ['all_users', 'system_users']) {
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS role_title VARCHAR(100) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN role_title VARCHAR(100) NULL`); } catch (err) {}
+    }
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
+    }
+  }
+
+  // Bidirectional copy to guarantee zero data loss between system_users and all_users
+  try { await mysqlPool.query(`INSERT IGNORE INTO all_users SELECT * FROM system_users`); } catch (e) {}
+  try { await mysqlPool.query(`INSERT IGNORE INTO system_users SELECT * FROM all_users`); } catch (e) {}
+
+  // 2.3 Auto-seed Super Admin SADEGH if not present or has empty/old password hash
   try {
-    const [existingAdmin]: any = await mysqlPool.query(
-      `SELECT id, username, password_hash FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
-    );
+    let existingAdmin: any = null;
+    try {
+      const [r1]: any = await mysqlPool.query(
+        `SELECT id, username, password_hash FROM all_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
+      );
+      if (r1 && r1.length > 0) existingAdmin = r1;
+    } catch (e) {}
+
+    if (!existingAdmin) {
+      try {
+        const [r2]: any = await mysqlPool.query(
+          `SELECT id, username, password_hash FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
+        );
+        if (r2 && r2.length > 0) existingAdmin = r2;
+      } catch (e) {}
+    }
+
     const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD;
 
     if (!existingAdmin || existingAdmin.length === 0) {
@@ -301,36 +368,42 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-management', 'user-credentials', 'audit-logs'
       ]);
 
-      await mysqlPool.query(`
-        INSERT INTO system_users (
-          id, username, password_hash, name, role, role_title, level, grade_label,
-          mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
-        ) VALUES (
-          'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
-          1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
-        )
-      `, [passwordHash, allTabsJson, allTabsJson]);
-      console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس ساخته شد.`);
+      for (const tbl of ['all_users', 'system_users']) {
+        await mysqlPool.query(`
+          INSERT INTO ${tbl} (
+            id, username, password_hash, name, role, role_title, level, grade_label,
+            mentor_id, avatar_bg, allowed_tabs, editable_tabs, is_active, must_change_password
+          ) VALUES (
+            'user_sadegh', 'SADEGH', ?, 'صادق (سوپر ادمین)', 'super_admin', 'سوپر ادمین (مدیر کل سیستم)',
+            1, 'کل سیستم', 'shahpoori', 'bg-indigo-700', ?, ?, 1, 0
+          ) ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), name = VALUES(name)
+        `, [passwordHash, allTabsJson, allTabsJson]);
+      }
+      console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس (جدول all_users) ساخته شد.`);
     } else {
       // existingAdmin exists! If password is provided, perform updates/migrations
       if (targetPassword) {
         const passwordHash = await bcrypt.hash(targetPassword, 10);
         const currentHash = existingAdmin[0].password_hash;
         if (!currentHash || currentHash === '') {
-          await mysqlPool.query(
-            `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
-            [passwordHash]
-          );
-          console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
-        } else {
-          // Automatically check and upgrade if they had the old '8411924As' password hash
-          const isOldPassword = await bcrypt.compare('8411924As', currentHash);
-          if (isOldPassword) {
+          for (const tbl of ['all_users', 'system_users']) {
             await mysqlPool.query(
-              `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+              `UPDATE ${tbl} SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
               [passwordHash]
             );
-            console.log(`[MySQL Startup] 🔒 رمز قدیمی سوپر ادمین SADEGH تشخیص داده شد و به صورت خودکار به رمز جدید و امن به‌روزرسانی شد.`);
+          }
+          console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
+        } else {
+          // If the administrator explicitly configured a target password via environment variable, apply it if different
+          const isSamePassword = await bcrypt.compare(targetPassword, currentHash);
+          if (!isSamePassword) {
+            for (const tbl of ['all_users', 'system_users']) {
+              await mysqlPool.query(
+                `UPDATE ${tbl} SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+                [passwordHash]
+              );
+            }
+            console.log(`[MySQL Startup] 🔒 رمز عبور سوپر ادمین SADEGH مطابق متغیر محیطی در پایگاه داده به‌روزرسانی شد.`);
           }
         }
       }
@@ -340,6 +413,56 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       throw adminSeedErr;
     }
     console.warn('[MySQL Startup Notice - SADEGH Seed]:', adminSeedErr?.message || adminSeedErr);
+  }
+
+  // 2.4 Auto-sync initial users (e.g. RAHNAMA) from local storage into all_users & system_users
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const localUsersPath = path.join(process.cwd(), 'data', 'system_users.json');
+    if (fs.existsSync(localUsersPath)) {
+      const fileContent = fs.readFileSync(localUsersPath, 'utf8');
+      const localUsers = JSON.parse(fileContent);
+      if (Array.isArray(localUsers)) {
+        for (const u of localUsers) {
+          if (!u || !u.username) continue;
+          const uName = String(u.username).trim().toUpperCase();
+          if (uName === 'SADEGH') continue;
+
+          const uId = u.id || `user_${uName.toLowerCase()}`;
+          const pwdHash = u.passwordHash || null;
+          const allowedTabs = JSON.stringify(u.allowedTabs || []);
+          const editableTabs = JSON.stringify(u.editableTabs || []);
+          const modulePerms = JSON.stringify(u.modulePermissions || {});
+
+          const upsertUserSql = (tbl: string) => `
+            INSERT INTO ${tbl} (
+              id, username, password_hash, name, role, role_title, level, grade_label,
+              mentor_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions,
+              is_active, must_change_password
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
+              name = VALUES(name),
+              role = VALUES(role),
+              role_title = VALUES(role_title),
+              allowed_tabs = VALUES(allowed_tabs),
+              editable_tabs = VALUES(editable_tabs);
+          `;
+
+          const uParams = [
+            uId, uName, pwdHash, u.name || uName, u.role || 'student', u.roleTitle || null,
+            u.level || 3, u.gradeLabel || null, u.mentorId || null, u.avatarBg || null,
+            allowedTabs, editableTabs, modulePerms, u.isActive !== false ? 1 : 0, u.mustChangePassword ? 1 : 0
+          ];
+
+          try { await mysqlPool.query(upsertUserSql('all_users'), uParams); } catch (e) {}
+          try { await mysqlPool.query(upsertUserSql('system_users'), uParams); } catch (e) {}
+        }
+      }
+    }
+  } catch (otherSeedErr: any) {
+    console.warn('[MySQL Startup Notice - User Sync]:', otherSeedErr?.message || otherSeedErr);
   }
 
   // Ensure login_audit_log table exists
@@ -693,7 +816,8 @@ export const MysqlRepository = {
     if (!pool) return null;
 
     try {
-      const [rows]: any = await pool.execute(
+      // 1. Query dedicated all_users table first
+      let [rows]: any = await pool.execute(
         `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
                 level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
                 linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
@@ -701,10 +825,26 @@ export const MysqlRepository = {
                 is_active AS isActive, must_change_password AS mustChangePassword,
                 failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
                 last_login AS lastLogin, data
-         FROM system_users
+         FROM all_users
          WHERE UPPER(username) = UPPER(?) LIMIT 1`,
         [username]
       );
+
+      // 2. Fallback to system_users if not found in all_users
+      if (!rows || rows.length === 0) {
+        [rows] = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data
+           FROM system_users
+           WHERE UPPER(username) = UPPER(?) LIMIT 1`,
+          [username]
+        );
+      }
 
       if (rows && rows.length > 0) {
         const u = rows[0];
@@ -730,7 +870,7 @@ export const MysqlRepository = {
     if (!pool) return [];
 
     try {
-      const [rows]: any = await pool.execute(
+      let [rows]: any = await pool.execute(
         `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
                 level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
                 linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
@@ -738,8 +878,21 @@ export const MysqlRepository = {
                 is_active AS isActive, must_change_password AS mustChangePassword,
                 failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
                 last_login AS lastLogin, data
-         FROM system_users ORDER BY level ASC, name ASC`
+         FROM all_users ORDER BY level ASC, name ASC`
       );
+
+      if (!rows || rows.length === 0) {
+        [rows] = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data
+           FROM system_users ORDER BY level ASC, name ASC`
+        );
+      }
 
       return (rows || []).map((u: any) => ({
         ...u,
@@ -755,13 +908,13 @@ export const MysqlRepository = {
     }
   },
 
-  // 3. Upsert User (Insert or Update with Prepared Statement)
+  // 3. Upsert User (Insert or Update with Prepared Statement into both all_users and system_users)
   async saveUser(user: SystemUserEntity): Promise<void> {
     const pool = getMysqlPool();
     if (!pool) return;
 
-    const sql = `
-      INSERT INTO system_users (
+    const buildSql = (tbl: string) => `
+      INSERT INTO ${tbl} (
         id, username, password_hash, name, role, role_title, level, grade_label,
         mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs,
         editable_tabs, module_permissions, is_active, must_change_password,
@@ -793,7 +946,7 @@ export const MysqlRepository = {
     const params = [
       user.id,
       user.username.toUpperCase(),
-      user.passwordHash || null,
+      user.passwordHash || (user as any).password || null,
       user.name,
       user.role,
       user.roleTitle || null,
@@ -814,7 +967,12 @@ export const MysqlRepository = {
       JSON.stringify(user.data || {})
     ];
 
-    await pool.execute(sql, params);
+    try { await pool.execute(buildSql('all_users'), params); } catch (e1) {
+      console.warn('[MySQL saveUser all_users notice]:', e1);
+    }
+    try { await pool.execute(buildSql('system_users'), params); } catch (e2) {
+      console.warn('[MySQL saveUser system_users notice]:', e2);
+    }
   },
 
   // 4. Record Audit Log
@@ -955,7 +1113,13 @@ export const MysqlRepository = {
 
     console.log(`[MySQL Delete Log] Collection: "${collectionName}", ID: "${id}", Affected Rows: ${affectedRows}`);
 
-    if (collectionName === 'system_users') {
+    if (collectionName === 'system_users' || collectionName === 'all_users') {
+      try {
+        await pool.execute(
+          `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
+          [id, id]
+        );
+      } catch (e) {}
       try {
         await pool.execute(
           `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
@@ -974,11 +1138,15 @@ export const MysqlRepository = {
 
     try {
       await pool.execute(
+        `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
+        [userIdOrUsername, userIdOrUsername]
+      );
+      await pool.execute(
         `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
         [userIdOrUsername, userIdOrUsername]
       );
       await pool.execute(
-        `DELETE FROM app_collections WHERE collection_name = 'system_users' AND (id = ? OR UPPER(id) = UPPER(?))`,
+        `DELETE FROM app_collections WHERE collection_name IN ('all_users', 'system_users') AND (id = ? OR UPPER(id) = UPPER(?))`,
         [userIdOrUsername, userIdOrUsername]
       );
     } catch (e) {

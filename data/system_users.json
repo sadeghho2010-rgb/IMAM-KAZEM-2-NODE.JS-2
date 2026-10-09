@@ -39,7 +39,7 @@
       "user-credentials",
       "audit-logs"
     ],
-    "passwordHash": "$2b$10$11ogj/eie96ATNNUhjPIRe35qQhqtHlmy1UbM5qhFcNT3ZTMm8Mya",
+    "passwordHash": "$2b$10$NNf.Euqu3gV/VzhfAZFZAeWW3/AqqWbm7w.h4dFn7K6PnZeRPQype",
     "failedLoginAttempts": 0,
     "lastLogin": "2026-10-07T17:02:32.395Z",
     "accountLockedUntil": null

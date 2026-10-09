@@ -789,21 +789,21 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     });
   }
 
-  // --- AUTOMATIC PASSWORD AND ROLE SECURITY MIGRATIONS ---
-  // 1. If SADEGH is using the old weak password '8411924As', upgrade it to the new secure INITIAL_ADMIN_PASSWORD
+  // --- ENVIRONMENT PASSWORD SYNCHRONIZATION ---
+  // If INITIAL_ADMIN_PASSWORD is provided in environment variables and differs from SADEGH's current hash, sync it
   const sadeghUser = usersMap.get('SADEGH');
   if (sadeghUser && sadeghUser.passwordHash && INITIAL_ADMIN_PASSWORD) {
     try {
-      const isOldSadegh = await comparePassword('8411924As', sadeghUser.passwordHash);
-      if (isOldSadegh) {
+      const isSame = await comparePassword(INITIAL_ADMIN_PASSWORD, sadeghUser.passwordHash);
+      if (!isSame) {
         const newSadeghHash = await hashPassword(INITIAL_ADMIN_PASSWORD);
         sadeghUser.passwordHash = newSadeghHash;
         if (sadeghUser.password) delete sadeghUser.password;
         await saveUserToStorage(sadeghUser);
-        console.log('[Security Update] 🔒 SADEGH old password hash has been automatically upgraded to the new secure hash.');
+        console.log('[Security Sync] 🔒 رمز سوپر ادمین SADEGH مطابق متغیر محیطی به‌روزرسانی شد.');
       }
     } catch (e) {
-      console.error('[Security Update Error] SADEGH password migration failed:', e);
+      console.error('[Security Sync Error] SADEGH password sync failed:', e);
     }
   }
 

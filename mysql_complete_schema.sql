@@ -7,7 +7,42 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ۱. جدول کاربران سیستم، احراز هویت و مجوزها (System Users)
+-- ۱. جدول جامع کلیه کاربران سیستم (all_users)
+CREATE TABLE IF NOT EXISTS `all_users` (
+    `id` VARCHAR(100) NOT NULL,
+    `username` VARCHAR(100) NOT NULL,
+    `password_hash` VARCHAR(255) NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `role` VARCHAR(50) NOT NULL,
+    `role_title` VARCHAR(100) NULL,
+    `avatar_url` VARCHAR(500) NULL,
+    `level` INT NOT NULL DEFAULT 3,
+    `grade_label` VARCHAR(100) NULL,
+    `mentor_id` VARCHAR(100) NULL,
+    `student_id` VARCHAR(100) NULL,
+    `linked_student_id` VARCHAR(100) NULL,
+    `avatar_bg` VARCHAR(50) NULL,
+    `allowed_tabs` JSON NULL,
+    `editable_tabs` JSON NULL,
+    `module_permissions` JSON NULL,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
+    `failed_login_attempts` INT NOT NULL DEFAULT 0,
+    `account_locked_until` DATETIME NULL,
+    `last_login` DATETIME NULL,
+    `data` JSON NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_all_users_username` (`username`),
+    INDEX `idx_all_users_role_level` (`role`, `level`),
+    INDEX `idx_all_users_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ۱-الف. نمای سازگاری all_user برای هماهنگی کامل
+CREATE OR REPLACE VIEW `all_user` AS SELECT * FROM `all_users`;
+
+-- ۱-ب. جدول کاربران سیستم (system_users) جهت سازگاری و Mirroring
 CREATE TABLE IF NOT EXISTS `system_users` (
     `id` VARCHAR(100) NOT NULL,
     `username` VARCHAR(100) NOT NULL,
