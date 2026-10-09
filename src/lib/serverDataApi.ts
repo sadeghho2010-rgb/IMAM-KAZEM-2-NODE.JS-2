@@ -417,45 +417,39 @@ export async function serverSaveDoc(
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
-      // Primary: Save to app_collections JSON master
-      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
+      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
+
+      const tasks: Promise<any>[] = [
+        MysqlRepository.saveDocument(collection, id, record)
+      ];
+
+      if (dedicatedTable) {
+        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch(() => {}));
+      }
+
+      if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
+        tasks.push(MysqlRepository.saveUser(record).catch(() => {}));
+      }
+
+      const [saveRes] = await Promise.all(tasks);
       const affectedRows = saveRes?.affectedRows || 0;
 
-      // Secondary: Try saving to dedicated SQL table if mapped (e.g., students, classrooms)
-      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
-      if (dedicatedTable) {
-        try {
-          await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
-        } catch (dErr) {}
-      }
+      console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
 
-      // If saving to users collections, also ensure structured row in all_users table
-      if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
-        try {
-          await MysqlRepository.saveUser(record);
-        } catch (uErr) {}
-      }
-
-      // Write-Then-Read Pattern: Immediately read back written record from MySQL to verify persistence
-      const readDoc = await MysqlRepository.getDocument(collection, id);
-      const finalDoc = readDoc || record;
-
-      console.log(`[Write-Then-Read Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
-
-      // Log Audit Entry
-      await logAudit({
+      // Log Audit Entry asynchronously in background (non-blocking)
+      logAudit({
         action: affectedRows > 1 ? 'update' : 'insert',
         collectionName: collection,
         recordId: id,
         userId: callerUser?.id || callerUser?.userId,
         userName: callerUser?.username || callerUser?.name,
         userRole: callerUser?.role,
-        details: finalDoc,
+        details: record,
         status: 'success'
-      });
+      }).catch(() => {});
 
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id, item: finalDoc };
+      return { success: true, id, item: record };
     } catch (mErr: any) {
       console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
       console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
@@ -542,8 +536,8 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
 
-      // Log Audit Entry
-      await logAudit({
+      // Log Audit Entry asynchronously (non-blocking)
+      logAudit({
         action: 'delete',
         collectionName: collection,
         recordId: id,
@@ -552,7 +546,7 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
         userRole: callerUser?.role,
         details: { deletedId: id, affectedRows },
         status: 'success'
-      });
+      }).catch(() => {});
 
       notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
