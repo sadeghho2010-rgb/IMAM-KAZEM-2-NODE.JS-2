@@ -149,7 +149,7 @@ export async function saveToCloudWithTimeout(
   collectionName: string,
   id: string,
   data?: any,
-  timeoutMs = 5000
+  timeoutMs = 12000
 ): Promise<CloudWriteResult> {
   const token = typeof window !== 'undefined'
     ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||

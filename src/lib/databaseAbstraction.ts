@@ -234,13 +234,14 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     console.warn('[MySQL Schema Notice - app_collections]:', e?.message || e);
   }
 
-  // 2. Ensure all_users table exists
+  // 2. Ensure all_users table exists (Comprehensive MySQL 8+ & MariaDB schema compatible with user's table)
   try {
     await mysqlPool.query(`
       CREATE TABLE IF NOT EXISTS \`all_users\` (
         \`id\` VARCHAR(100) NOT NULL,
         \`username\` VARCHAR(100) NOT NULL,
         \`password_hash\` VARCHAR(255) NULL,
+        \`password\` VARCHAR(255) NULL,
         \`name\` VARCHAR(255) NOT NULL,
         \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
         \`role_title\` VARCHAR(100) NULL,
@@ -250,11 +251,14 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         \`mentor_id\` VARCHAR(100) NULL,
         \`student_id\` VARCHAR(100) NULL,
         \`linked_student_id\` VARCHAR(100) NULL,
+        \`teacher_id\` VARCHAR(100) NULL,
         \`avatar_bg\` VARCHAR(50) NULL,
         \`allowed_tabs\` JSON NULL,
         \`editable_tabs\` JSON NULL,
         \`module_permissions\` JSON NULL,
         \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`is_read_only\` TINYINT(1) NOT NULL DEFAULT 0,
+        \`can_edit\` TINYINT(1) NOT NULL DEFAULT 1,
         \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
         \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
         \`account_locked_until\` DATETIME NULL,
@@ -280,6 +284,7 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         \`id\` VARCHAR(100) NOT NULL,
         \`username\` VARCHAR(100) NOT NULL,
         \`password_hash\` VARCHAR(255) NULL,
+        \`password\` VARCHAR(255) NULL,
         \`name\` VARCHAR(255) NOT NULL,
         \`role\` VARCHAR(50) NOT NULL DEFAULT 'student',
         \`role_title\` VARCHAR(100) NULL,
@@ -289,11 +294,14 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         \`mentor_id\` VARCHAR(100) NULL,
         \`student_id\` VARCHAR(100) NULL,
         \`linked_student_id\` VARCHAR(100) NULL,
+        \`teacher_id\` VARCHAR(100) NULL,
         \`avatar_bg\` VARCHAR(50) NULL,
         \`allowed_tabs\` JSON NULL,
         \`editable_tabs\` JSON NULL,
         \`module_permissions\` JSON NULL,
         \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`is_read_only\` TINYINT(1) NOT NULL DEFAULT 0,
+        \`can_edit\` TINYINT(1) NOT NULL DEFAULT 1,
         \`must_change_password\` TINYINT(1) NOT NULL DEFAULT 0,
         \`failed_login_attempts\` INT NOT NULL DEFAULT 0,
         \`account_locked_until\` DATETIME NULL,
@@ -311,7 +319,89 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     console.warn('[MySQL Schema Notice - system_users]:', e?.message || e);
   }
 
-  // 2.2 Compatibility View: all_user -> all_users
+  // 2.2 Ensure students dedicated table exists
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`students\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`student_code\` VARCHAR(50) NULL,
+        \`national_id\` VARCHAR(20) NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`father_name\` VARCHAR(150) NULL,
+        \`grade\` VARCHAR(100) NOT NULL,
+        \`phone\` VARCHAR(50) NULL,
+        \`address\` TEXT NULL,
+        \`status\` VARCHAR(50) NOT NULL DEFAULT 'active',
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`entry_year\` VARCHAR(10) NULL,
+        \`mentor_id\` VARCHAR(100) NULL,
+        \`notes\` TEXT NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        UNIQUE KEY \`uk_student_code\` (\`student_code\`),
+        INDEX \`idx_student_national_id\` (\`national_id\`),
+        INDEX \`idx_student_grade\` (\`grade\`),
+        INDEX \`idx_student_status\` (\`status\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    console.log('[MySQL Schema] ✅ جدول students در پایگاه داده ایجاد/تأیید شد.');
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - students]:', e?.message || e);
+  }
+
+  // 2.3 Ensure teachers, classrooms and audit_logs tables exist
+  try {
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`teachers\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`specialty\` VARCHAR(255) NULL,
+        \`phone\` VARCHAR(50) NULL,
+        \`email\` VARCHAR(150) NULL,
+        \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_teacher_active\` (\`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`classrooms\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`title\` VARCHAR(200) NOT NULL,
+        \`grade\` VARCHAR(100) NULL,
+        \`capacity\` INT NOT NULL DEFAULT 20,
+        \`location\` VARCHAR(255) NULL,
+        \`data\` JSON NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    await mysqlPool.query(`
+      CREATE TABLE IF NOT EXISTS \`audit_logs\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`user_id\` VARCHAR(100) NULL,
+        \`username\` VARCHAR(100) NULL,
+        \`user_role\` VARCHAR(50) NULL,
+        \`action\` VARCHAR(100) NOT NULL,
+        \`entity_type\` VARCHAR(100) NULL,
+        \`entity_id\` VARCHAR(100) NULL,
+        \`description\` TEXT NOT NULL,
+        \`ip_address\` VARCHAR(50) NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_audit_created\` (\`created_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e: any) {
+    console.warn('[MySQL Schema Notice - auxiliary tables]:', e?.message || e);
+  }
+
+  // 2.4 Compatibility View: all_user -> all_users
   try {
     await mysqlPool.query(`CREATE OR REPLACE VIEW \`all_user\` AS SELECT * FROM \`all_users\``);
   } catch (viewErr) {
@@ -330,11 +420,36 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     } catch (e: any) {
       try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
     }
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS password VARCHAR(255) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN password VARCHAR(255) NULL`); } catch (err) {}
+    }
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS is_read_only TINYINT(1) DEFAULT 0`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN is_read_only TINYINT(1) DEFAULT 0`); } catch (err) {}
+    }
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS can_edit TINYINT(1) DEFAULT 1`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN can_edit TINYINT(1) DEFAULT 1`); } catch (err) {}
+    }
+    try {
+      await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS teacher_id VARCHAR(100) NULL`);
+    } catch (e: any) {
+      try { await mysqlPool.query(`ALTER TABLE ${tbl} ADD COLUMN teacher_id VARCHAR(100) NULL`); } catch (err) {}
+    }
   }
 
-  // Bidirectional copy to guarantee zero data loss between system_users and all_users
-  try { await mysqlPool.query(`INSERT IGNORE INTO all_users SELECT * FROM system_users`); } catch (e) {}
-  try { await mysqlPool.query(`INSERT IGNORE INTO system_users SELECT * FROM all_users`); } catch (e) {}
+  // Safe explicit column sync between system_users and all_users
+  try {
+    await mysqlPool.query(`
+      INSERT IGNORE INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions, is_active, must_change_password)
+      SELECT id, username, password_hash, name, role, role_title, level, grade_label, mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions, is_active, must_change_password
+      FROM system_users
+    `);
+  } catch (e) {}
 
   // 2.3 Auto-seed Super Admin SADEGH if not present or has empty/old password hash
   try {
@@ -911,66 +1026,109 @@ export const MysqlRepository = {
     const pool = getMysqlPool();
     if (!pool) return;
 
-    const buildSql = (tbl: string) => `
-      INSERT INTO ${tbl} (
-        id, username, password_hash, name, role, role_title, level, grade_label,
-        mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs,
-        editable_tabs, module_permissions, is_active, must_change_password,
-        failed_login_attempts, account_locked_until, last_login, data
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        name = VALUES(name),
-        password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
-        role = VALUES(role),
-        role_title = VALUES(role_title),
-        level = VALUES(level),
-        grade_label = VALUES(grade_label),
-        mentor_id = VALUES(mentor_id),
-        student_id = VALUES(student_id),
-        linked_student_id = VALUES(linked_student_id),
-        avatar_bg = VALUES(avatar_bg),
-        allowed_tabs = VALUES(allowed_tabs),
-        editable_tabs = VALUES(editable_tabs),
-        module_permissions = VALUES(module_permissions),
-        is_active = VALUES(is_active),
-        must_change_password = VALUES(must_change_password),
-        failed_login_attempts = VALUES(failed_login_attempts),
-        account_locked_until = VALUES(account_locked_until),
-        last_login = VALUES(last_login),
-        data = VALUES(data),
-        updated_at = NOW();
-    `;
+    const uName = (user.username || '').trim().toUpperCase();
+    if (!uName) return;
 
-    const params = [
-      user.id,
-      user.username.toUpperCase(),
-      user.passwordHash || (user as any).password || null,
-      user.name,
-      user.role,
-      user.roleTitle || null,
-      user.level,
-      user.gradeLabel || null,
-      user.mentorId || null,
-      user.studentId || null,
-      user.linkedStudentId || null,
-      user.avatarBg || null,
-      JSON.stringify(user.allowedTabs || []),
-      JSON.stringify(user.editableTabs || []),
-      JSON.stringify(user.modulePermissions || {}),
-      user.isActive !== false ? 1 : 0,
-      user.mustChangePassword ? 1 : 0,
-      user.failedLoginAttempts || 0,
-      user.accountLockedUntil ? new Date(user.accountLockedUntil) : null,
-      user.lastLogin ? new Date(user.lastLogin) : null,
-      JSON.stringify(user.data || {})
-    ];
+    const uId = user.id || `user_${uName.toLowerCase()}`;
+    const pHash = user.passwordHash || (user as any).password || null;
+    const plainPass = (user as any).password || null;
+    const allowedTabs = JSON.stringify(user.allowedTabs || []);
+    const editableTabs = JSON.stringify(user.editableTabs || []);
+    const modulePerms = JSON.stringify(user.modulePermissions || {});
+    const userData = JSON.stringify(user.data || {});
+    const isActive = user.isActive !== false ? 1 : 0;
+    const isReadOnly = (user as any).isReadOnly ? 1 : 0;
+    const canEdit = (user as any).canEdit !== false ? 1 : 0;
+    const mustChange = user.mustChangePassword ? 1 : 0;
+    const failedAttempts = Number(user.failedLoginAttempts) || 0;
+    const lockedUntil = user.accountLockedUntil ? new Date(user.accountLockedUntil) : null;
+    const lastLogin = user.lastLogin ? new Date(user.lastLogin) : null;
 
-    try { await pool.execute(buildSql('all_users'), params); } catch (e1) {
-      console.warn('[MySQL saveUser all_users notice]:', e1);
+    // 1. Direct UPSERT into all_users (supporting both the user's custom schema and standard schema)
+    try {
+      const sqlAllUsers = `
+        INSERT INTO all_users (
+          id, username, password_hash, password, name, role, role_title, level, grade_label,
+          mentor_id, student_id, linked_student_id, teacher_id, avatar_bg, allowed_tabs,
+          editable_tabs, module_permissions, is_active, is_read_only, can_edit, must_change_password,
+          failed_login_attempts, account_locked_until, last_login, data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
+          password = COALESCE(NULLIF(VALUES(password), ''), password),
+          role = VALUES(role),
+          role_title = VALUES(role_title),
+          level = VALUES(level),
+          grade_label = VALUES(grade_label),
+          mentor_id = VALUES(mentor_id),
+          student_id = VALUES(student_id),
+          linked_student_id = VALUES(linked_student_id),
+          teacher_id = VALUES(teacher_id),
+          avatar_bg = VALUES(avatar_bg),
+          allowed_tabs = VALUES(allowed_tabs),
+          editable_tabs = VALUES(editable_tabs),
+          module_permissions = VALUES(module_permissions),
+          is_active = VALUES(is_active),
+          is_read_only = VALUES(is_read_only),
+          can_edit = VALUES(can_edit),
+          must_change_password = VALUES(must_change_password),
+          failed_login_attempts = VALUES(failed_login_attempts),
+          account_locked_until = VALUES(account_locked_until),
+          last_login = VALUES(last_login),
+          data = VALUES(data),
+          updated_at = NOW();
+      `;
+
+      await pool.query(sqlAllUsers, [
+        uId, uName, pHash, plainPass, user.name, user.role, user.roleTitle || null,
+        Number(user.level) || 3, user.gradeLabel || null, user.mentorId || null,
+        user.studentId || null, user.linkedStudentId || null, (user as any).teacherId || null,
+        user.avatarBg || null, allowedTabs, editableTabs, modulePerms, isActive,
+        isReadOnly, canEdit, mustChange, failedAttempts, lockedUntil, lastLogin, userData
+      ]);
+      console.log(`[MySQL saveUser] ✅ کاربر ${uName} با موفقیت در جدول all_users ذخیره شد.`);
+    } catch (e1: any) {
+      console.warn('[MySQL saveUser all_users notice]:', e1?.message || e1);
+      // Fallback with minimal columns if some columns are missing
+      try {
+        await pool.query(`
+          INSERT INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
+            role = VALUES(role),
+            is_active = VALUES(is_active)
+        `, [uId, uName, pHash, user.name, user.role, user.roleTitle || null, Number(user.level) || 3, user.gradeLabel || null, isActive]);
+      } catch (fallbackErr) {}
     }
-    try { await pool.execute(buildSql('system_users'), params); } catch (e2) {
-      console.warn('[MySQL saveUser system_users notice]:', e2);
-    }
+
+    // 2. Mirror into system_users (if table exists)
+    try {
+      await pool.query(`
+        INSERT INTO system_users (
+          id, username, password_hash, name, role, role_title, level, grade_label,
+          mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs,
+          editable_tabs, module_permissions, is_active, must_change_password, data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
+          role = VALUES(role),
+          is_active = VALUES(is_active)
+      `, [
+        uId, uName, pHash, user.name, user.role, user.roleTitle || null,
+        Number(user.level) || 3, user.gradeLabel || null, user.mentorId || null,
+        user.studentId || null, user.linkedStudentId || null, user.avatarBg || null,
+        allowedTabs, editableTabs, modulePerms, isActive, mustChange, userData
+      ]);
+    } catch (e2) {}
+
+    // 3. Mirror into app_collections for unified querying
+    try {
+      await this.saveDocument('all_users', uName, { ...user, id: uId, username: uName });
+    } catch (e3) {}
   },
 
   // 4. Record Audit Log
@@ -980,7 +1138,7 @@ export const MysqlRepository = {
 
     try {
       const id = log.id || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      await pool.execute(
+      await pool.query(
         `INSERT INTO audit_logs (id, user_id, username, user_role, action, entity_type, entity_id, description, ip_address, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
@@ -1014,18 +1172,36 @@ export const MysqlRepository = {
       INSERT INTO app_collections (collection_name, id, data, updated_at)
       VALUES (?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
-        data = ?,
+        data = VALUES(data),
         updated_at = NOW();
     `;
-    const [result]: any = await pool.execute(sql, [collectionName, id, jsonStr, jsonStr]);
-    const affectedRows = Number(result?.affectedRows) || 0;
 
-    console.log(`[MySQL Save Log] Collection: "${collectionName}", ID: "${id}", Affected Rows: ${affectedRows}`);
-    if (affectedRows === 0) {
-      console.warn(`[MySQL Save Warning] Collection: "${collectionName}", ID: "${id}" yielded 0 affected rows!`);
+    try {
+      const [result]: any = await pool.query(sql, [collectionName, id, jsonStr]);
+      const affectedRows = Number(result?.affectedRows) || 0;
+      return { affectedRows };
+    } catch (err: any) {
+      if (err?.code === 'ER_NO_SUCH_TABLE' || err?.message?.includes("doesn't exist")) {
+        try {
+          await pool.query(`
+            CREATE TABLE IF NOT EXISTS \`app_collections\` (
+              \`collection_name\` VARCHAR(100) NOT NULL,
+              \`id\` VARCHAR(150) NOT NULL,
+              \`data\` JSON NOT NULL,
+              \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (\`collection_name\`, \`id\`),
+              INDEX \`idx_col_name\` (\`collection_name\`),
+              INDEX \`idx_col_updated\` (\`updated_at\`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          `);
+          const [retryRes]: any = await pool.query(sql, [collectionName, id, jsonStr]);
+          return { affectedRows: Number(retryRes?.affectedRows) || 0 };
+        } catch (createErr) {
+          throw err;
+        }
+      }
+      throw err;
     }
-
-    return { affectedRows };
   },
 
   // 5b. Save Document to Dedicated Table if it exists
@@ -1054,7 +1230,7 @@ export const MysqlRepository = {
             data = VALUES(data),
             updated_at = NOW();
         `;
-        await pool.execute(sql, [
+        const params = [
           row.id,
           row.student_code || null,
           row.national_id || null,
@@ -1069,7 +1245,39 @@ export const MysqlRepository = {
           row.mentor_id || null,
           row.notes || null,
           JSON.stringify(row.data || {})
-        ]);
+        ];
+        try {
+          await pool.query(sql, params);
+        } catch (sErr: any) {
+          if (sErr?.code === 'ER_NO_SUCH_TABLE' || sErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`students\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_code\` VARCHAR(50) NULL,
+                \`national_id\` VARCHAR(20) NULL,
+                \`name\` VARCHAR(255) NOT NULL,
+                \`father_name\` VARCHAR(150) NULL,
+                \`grade\` VARCHAR(100) NOT NULL,
+                \`phone\` VARCHAR(50) NULL,
+                \`address\` TEXT NULL,
+                \`status\` VARCHAR(50) NOT NULL DEFAULT 'active',
+                \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+                \`entry_year\` VARCHAR(10) NULL,
+                \`mentor_id\` VARCHAR(100) NULL,
+                \`notes\` TEXT NULL,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                UNIQUE KEY \`uk_student_code\` (\`student_code\`),
+                INDEX \`idx_student_national_id\` (\`national_id\`),
+                INDEX \`idx_student_grade\` (\`grade\`),
+                INDEX \`idx_student_status\` (\`status\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          }
+        }
       } else if (tableName === 'classrooms') {
         const sql = `
           INSERT INTO classrooms (id, title, grade, capacity, location, data, updated_at)
@@ -1082,14 +1290,34 @@ export const MysqlRepository = {
             data = VALUES(data),
             updated_at = NOW();
         `;
-        await pool.execute(sql, [
+        const params = [
           row.id,
           row.title || 'کلاس بدون عنوان',
           row.grade || null,
           Number(row.capacity) || 20,
           row.location || null,
           JSON.stringify(row.data || {})
-        ]);
+        ];
+        try {
+          await pool.query(sql, params);
+        } catch (cErr: any) {
+          if (cErr?.code === 'ER_NO_SUCH_TABLE' || cErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`classrooms\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`title\` VARCHAR(200) NOT NULL,
+                \`grade\` VARCHAR(100) NULL,
+                \`capacity\` INT NOT NULL DEFAULT 20,
+                \`location\` VARCHAR(255) NULL,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          }
+        }
       }
     } catch (e: any) {
       console.warn(`[MySQL Dedicated Table Notice] ${tableName}:`, e?.message || e);
@@ -1103,26 +1331,34 @@ export const MysqlRepository = {
       throw new Error('MySQL connection pool is not configured or unavailable.');
     }
 
-    const [result]: any = await pool.execute(
-      `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
-      [collectionName, id]
-    );
-    const affectedRows = Number(result?.affectedRows) || 0;
+    let affectedRows = 0;
+    try {
+      const [result]: any = await pool.query(
+        `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
+        [collectionName, id]
+      );
+      affectedRows = Number(result?.affectedRows) || 0;
+    } catch (e) {}
 
-    console.log(`[MySQL Delete Log] Collection: "${collectionName}", ID: "${id}", Affected Rows: ${affectedRows}`);
-
-    if (collectionName === 'system_users' || collectionName === 'all_users') {
+    // Also delete from dedicated tables if applicable
+    if (collectionName === 'students') {
       try {
-        await pool.execute(
-          `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-          [id, id]
-        );
+        await pool.query(`DELETE FROM students WHERE id = ?`, [id]);
+      } catch (e) {}
+    } else if (collectionName === 'teachers') {
+      try {
+        await pool.query(`DELETE FROM teachers WHERE id = ?`, [id]);
+      } catch (e) {}
+    } else if (collectionName === 'classrooms') {
+      try {
+        await pool.query(`DELETE FROM classrooms WHERE id = ?`, [id]);
+      } catch (e) {}
+    } else if (collectionName === 'system_users' || collectionName === 'all_users') {
+      try {
+        await pool.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
       } catch (e) {}
       try {
-        await pool.execute(
-          `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-          [id, id]
-        );
+        await pool.query(`DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
       } catch (e) {}
     }
 
@@ -1135,15 +1371,15 @@ export const MysqlRepository = {
     if (!pool) return;
 
     try {
-      await pool.execute(
+      await pool.query(
         `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
         [userIdOrUsername, userIdOrUsername]
       );
-      await pool.execute(
+      await pool.query(
         `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
         [userIdOrUsername, userIdOrUsername]
       );
-      await pool.execute(
+      await pool.query(
         `DELETE FROM app_collections WHERE collection_name IN ('all_users', 'system_users') AND (id = ? OR UPPER(id) = UPPER(?))`,
         [userIdOrUsername, userIdOrUsername]
       );
@@ -1157,16 +1393,18 @@ export const MysqlRepository = {
     const pool = getMysqlPool();
     if (!pool) return null;
 
-    const [rows]: any = await pool.execute(
-      `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
-      [collectionName, id]
-    );
+    try {
+      const [rows]: any = await pool.query(
+        `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
+        [collectionName, id]
+      );
 
-    if (rows && rows.length > 0) {
-      const r = rows[0];
-      const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-      return { ...parsed, id };
-    }
+      if (rows && rows.length > 0) {
+        const r = rows[0];
+        const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        return { ...parsed, id };
+      }
+    } catch (e) {}
     return null;
   },
 

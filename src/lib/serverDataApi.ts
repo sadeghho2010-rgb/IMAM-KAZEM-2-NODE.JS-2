@@ -429,6 +429,13 @@ export async function serverSaveDoc(
         } catch (dErr) {}
       }
 
+      // If saving to users collections, also ensure structured row in all_users table
+      if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
+        try {
+          await MysqlRepository.saveUser(record);
+        } catch (uErr) {}
+      }
+
       // Write-Then-Read Pattern: Immediately read back written record from MySQL to verify persistence
       const readDoc = await MysqlRepository.getDocument(collection, id);
       const finalDoc = readDoc || record;

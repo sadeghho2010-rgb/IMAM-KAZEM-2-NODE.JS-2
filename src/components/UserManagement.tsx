@@ -88,6 +88,7 @@ export default function UserManagement() {
     'todos', 'students', 'active-students', 'programs', 'attendance', 'stats', 'discussion'
   ]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   const isAuthorizedToManage = currentUser?.role === 'super_admin' || currentUser?.role === 'education_manager' || currentUser?.username?.toUpperCase() === 'SHAH';
 
@@ -141,6 +142,7 @@ export default function UserManagement() {
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingUser) return;
     setFormError(null);
 
     if (!formUsername.trim()) {
@@ -156,80 +158,85 @@ export default function UserManagement() {
       return;
     }
 
-    if (editingUser) {
-      // Update
-      updateUser(editingUser.id, {
-        username: formUsername.trim().toUpperCase(),
-        password: formPassword.trim(),
-        fullName: formFullName.trim(),
-        level: formLevel,
-        role: formRole,
-        roleTitle: formRoleTitle,
-        scope: formScope,
-        gradeLabel: formGradeLabel,
-        managedGrades: formManagedGrades,
-        managedClassId: formManagedClassId || undefined,
-        isReadOnly: formIsReadOnly,
-        allowedModules: formAllowedModules,
-      });
+    setIsSubmittingUser(true);
+    try {
+      if (editingUser) {
+        // Update
+        updateUser(editingUser.id, {
+          username: formUsername.trim().toUpperCase(),
+          password: formPassword.trim(),
+          fullName: formFullName.trim(),
+          level: formLevel,
+          role: formRole,
+          roleTitle: formRoleTitle,
+          scope: formScope,
+          gradeLabel: formGradeLabel,
+          managedGrades: formManagedGrades,
+          managedClassId: formManagedClassId || undefined,
+          isReadOnly: formIsReadOnly,
+          allowedModules: formAllowedModules,
+        });
 
-      if (formManagedClassId) {
-        localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
-          if (prog) {
-            const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
-            const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
-            if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
-            if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
-            await localDb.updateDoc('programs', formManagedClassId, {
-              representativeNames: repNames,
-              representativeStudentIds: repIds
-            });
-          }
-        }).catch(console.warn);
-      }
+        if (formManagedClassId) {
+          localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
+            if (prog) {
+              const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
+              const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
+              if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+              if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
+              await localDb.updateDoc('programs', formManagedClassId, {
+                representativeNames: repNames,
+                representativeStudentIds: repIds
+              });
+            }
+          }).catch(console.warn);
+        }
 
-      setIsCreateModalOpen(false);
-      setEditingUser(null);
-    } else {
-      // Create
-      const res = await addUser({
-        username: formUsername.trim().toUpperCase(),
-        password: formPassword.trim(),
-        fullName: formFullName.trim(),
-        level: formLevel,
-        role: formRole,
-        roleTitle: formRoleTitle,
-        scope: formScope,
-        gradeLabel: formGradeLabel,
-        managedGrades: formManagedGrades,
-        managedClassId: formManagedClassId || undefined,
-        isReadOnly: formIsReadOnly,
-        isActive: true,
-        allowedModules: formAllowedModules,
-        avatarBg: formLevel === 1 ? 'bg-indigo-600' : formLevel === 2 ? 'bg-emerald-600' : 'bg-cyan-600',
-      });
-
-      if (res.success && res.user && formManagedClassId) {
-        localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
-          if (prog) {
-            const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
-            const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
-            if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
-            if (res.user?.id && !repIds.includes(res.user.id)) repIds.push(res.user.id);
-            await localDb.updateDoc('programs', formManagedClassId, {
-              representativeNames: repNames,
-              representativeStudentIds: repIds
-            });
-          }
-        }).catch(console.warn);
-      }
-
-      if (res.success) {
         setIsCreateModalOpen(false);
-        resetForm();
+        setEditingUser(null);
       } else {
-        setFormError(res.error || 'خطا در ثبت کاربر');
+        // Create
+        const res = await addUser({
+          username: formUsername.trim().toUpperCase(),
+          password: formPassword.trim(),
+          fullName: formFullName.trim(),
+          level: formLevel,
+          role: formRole,
+          roleTitle: formRoleTitle,
+          scope: formScope,
+          gradeLabel: formGradeLabel,
+          managedGrades: formManagedGrades,
+          managedClassId: formManagedClassId || undefined,
+          isReadOnly: formIsReadOnly,
+          isActive: true,
+          allowedModules: formAllowedModules,
+          avatarBg: formLevel === 1 ? 'bg-indigo-600' : formLevel === 2 ? 'bg-emerald-600' : 'bg-cyan-600',
+        });
+
+        if (res.success && res.user && formManagedClassId) {
+          localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
+            if (prog) {
+              const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
+              const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
+              if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+              if (res.user?.id && !repIds.includes(res.user.id)) repIds.push(res.user.id);
+              await localDb.updateDoc('programs', formManagedClassId, {
+                representativeNames: repNames,
+                representativeStudentIds: repIds
+              });
+            }
+          }).catch(console.warn);
+        }
+
+        if (res.success) {
+          setIsCreateModalOpen(false);
+          resetForm();
+        } else {
+          setFormError(res.error || 'خطا در ثبت کاربر');
+        }
       }
+    } finally {
+      setIsSubmittingUser(false);
     }
   };
 
@@ -891,10 +898,11 @@ export default function UserManagement() {
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center gap-1.5"
+                      disabled={isSubmittingUser}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200 flex items-center gap-1.5 cursor-pointer"
                     >
                       <Save size={15} />
-                      <span>{editingUser ? 'ذخیره تغییرات' : 'ایجاد کاربر'}</span>
+                      <span>{isSubmittingUser ? 'در حال ثبت...' : (editingUser ? 'ذخیره تغییرات' : 'ایجاد کاربر')}</span>
                     </button>
                   </>
                 ) : (

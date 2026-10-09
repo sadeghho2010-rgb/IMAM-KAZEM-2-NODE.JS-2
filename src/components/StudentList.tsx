@@ -128,9 +128,13 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     return undefined;
   };
 
+  const [isSavingCreds, setIsSavingCreds] = useState(false);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
+  const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
+
   const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedStudentForCredentials) return;
+    if (!selectedStudentForCredentials || isSavingCreds) return;
 
     if (!credUsername.trim() || !credPassword.trim()) {
       alert('نام کاربری و کلمه عبور نمی‌تواند خالی باشد.');
@@ -138,101 +142,106 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     }
 
     const cleanUsername = credUsername.trim().toUpperCase();
+    setIsSavingCreds(true);
 
-    if (editingCredUser) {
-      // Update
-      updateUser(editingCredUser.id, {
-        username: cleanUsername,
-        password: credPassword.trim(),
-        name: selectedStudentForCredentials.name,
-        fullName: selectedStudentForCredentials.name,
-        linkedStudentId: selectedStudentForCredentials.id,
-        studentId: selectedStudentForCredentials.id,
-        studentName: selectedStudentForCredentials.name,
-      });
+    try {
+      if (editingCredUser) {
+        // Update
+        updateUser(editingCredUser.id, {
+          username: cleanUsername,
+          password: credPassword.trim(),
+          name: selectedStudentForCredentials.name,
+          fullName: selectedStudentForCredentials.name,
+          linkedStudentId: selectedStudentForCredentials.id,
+          studentId: selectedStudentForCredentials.id,
+          studentName: selectedStudentForCredentials.name,
+        });
 
-      // Synchronize student document directly so change emits across all clients
-      await localDb.updateDoc('students', selectedStudentForCredentials.id, {
-        hasUserAccount: true,
-        userAccountUsername: cleanUsername
-      });
-
-      alert('مشخصات ورود طلبه با موفقیت ویرایش شد.');
-      setSelectedStudentForCredentials(null);
-      fetchStudents();
-    } else {
-      // Create or re-link
-      const existingUserWithUsername = users.find(u => 
-        u.username.toUpperCase() === cleanUsername || 
-        (u.linkedStudentId && String(u.linkedStudentId) === String(selectedStudentForCredentials.id)) ||
-        (u.studentId && String(u.studentId) === String(selectedStudentForCredentials.id))
-      );
-
-      if (existingUserWithUsername) {
-        // If this user account belongs to this student (by name or nationalId or previous link), link and update it!
-        const isSameStudent = 
-          existingUserWithUsername.linkedStudentId === selectedStudentForCredentials.id ||
-          existingUserWithUsername.studentId === selectedStudentForCredentials.id ||
-          existingUserWithUsername.name?.trim() === selectedStudentForCredentials.name.trim() ||
-          existingUserWithUsername.fullName?.trim() === selectedStudentForCredentials.name.trim() ||
-          (selectedStudentForCredentials.nationalId && existingUserWithUsername.username.toUpperCase() === selectedStudentForCredentials.nationalId.trim().toUpperCase());
-
-        if (isSameStudent) {
-          updateUser(existingUserWithUsername.id, {
-            username: cleanUsername,
-            password: credPassword.trim(),
-            name: selectedStudentForCredentials.name,
-            fullName: selectedStudentForCredentials.name,
-            linkedStudentId: selectedStudentForCredentials.id,
-            studentId: selectedStudentForCredentials.id,
-            studentName: selectedStudentForCredentials.name,
-          });
-
-          await localDb.updateDoc('students', selectedStudentForCredentials.id, {
-            hasUserAccount: true,
-            userAccountUsername: cleanUsername
-          });
-
-          alert('حساب کاربری با موفقیت به این طلبه متصل و بروزرسانی شد.');
-          setSelectedStudentForCredentials(null);
-          fetchStudents();
-          return;
-        }
-
-        alert('این نام کاربری قبلاً در سامانه برای کاربر دیگری تعریف شده است.');
-        return;
-      }
-
-      const result = await addUser({
-        username: cleanUsername,
-        password: credPassword.trim(),
-        name: selectedStudentForCredentials.name,
-        fullName: selectedStudentForCredentials.name,
-        level: 3,
-        role: 'student',
-        roleTitle: 'طلبه',
-        scope: 'self',
-        gradeLabel: selectedStudentForCredentials.grade || 'طلبه پایه',
-        linkedStudentId: selectedStudentForCredentials.id,
-        studentId: selectedStudentForCredentials.id,
-        studentName: selectedStudentForCredentials.name,
-        isActive: true,
-        avatarBg: 'bg-emerald-600',
-        allowedTabs: ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
-      });
-
-      if (result.success) {
+        // Synchronize student document directly so change emits across all clients
         await localDb.updateDoc('students', selectedStudentForCredentials.id, {
           hasUserAccount: true,
           userAccountUsername: cleanUsername
         });
 
-        alert('حساب کاربری با موفقیت برای این طلبه ایجاد شد.');
+        alert('مشخصات ورود طلبه با موفقیت ویرایش شد.');
         setSelectedStudentForCredentials(null);
         fetchStudents();
       } else {
-        alert(`خطا در ایجاد حساب: ${result.error}`);
+        // Create or re-link
+        const existingUserWithUsername = users.find(u => 
+          u.username.toUpperCase() === cleanUsername || 
+          (u.linkedStudentId && String(u.linkedStudentId) === String(selectedStudentForCredentials.id)) ||
+          (u.studentId && String(u.studentId) === String(selectedStudentForCredentials.id))
+        );
+
+        if (existingUserWithUsername) {
+          // If this user account belongs to this student (by name or nationalId or previous link), link and update it!
+          const isSameStudent = 
+            existingUserWithUsername.linkedStudentId === selectedStudentForCredentials.id ||
+            existingUserWithUsername.studentId === selectedStudentForCredentials.id ||
+            existingUserWithUsername.name?.trim() === selectedStudentForCredentials.name.trim() ||
+            existingUserWithUsername.fullName?.trim() === selectedStudentForCredentials.name.trim() ||
+            (selectedStudentForCredentials.nationalId && existingUserWithUsername.username.toUpperCase() === selectedStudentForCredentials.nationalId.trim().toUpperCase());
+
+          if (isSameStudent) {
+            updateUser(existingUserWithUsername.id, {
+              username: cleanUsername,
+              password: credPassword.trim(),
+              name: selectedStudentForCredentials.name,
+              fullName: selectedStudentForCredentials.name,
+              linkedStudentId: selectedStudentForCredentials.id,
+              studentId: selectedStudentForCredentials.id,
+              studentName: selectedStudentForCredentials.name,
+            });
+
+            await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+              hasUserAccount: true,
+              userAccountUsername: cleanUsername
+            });
+
+            alert('حساب کاربری با موفقیت به این طلبه متصل و بروزرسانی شد.');
+            setSelectedStudentForCredentials(null);
+            fetchStudents();
+            return;
+          }
+
+          alert('این نام کاربری قبلاً در سامانه برای کاربر دیگری تعریف شده است.');
+          return;
+        }
+
+        const result = await addUser({
+          username: cleanUsername,
+          password: credPassword.trim(),
+          name: selectedStudentForCredentials.name,
+          fullName: selectedStudentForCredentials.name,
+          level: 3,
+          role: 'student',
+          roleTitle: 'طلبه',
+          scope: 'self',
+          gradeLabel: selectedStudentForCredentials.grade || 'طلبه پایه',
+          linkedStudentId: selectedStudentForCredentials.id,
+          studentId: selectedStudentForCredentials.id,
+          studentName: selectedStudentForCredentials.name,
+          isActive: true,
+          avatarBg: 'bg-emerald-600',
+          allowedTabs: ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
+        });
+
+        if (result.success) {
+          await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+            hasUserAccount: true,
+            userAccountUsername: cleanUsername
+          });
+
+          alert('حساب کاربری با موفقیت برای این طلبه ایجاد شد.');
+          setSelectedStudentForCredentials(null);
+          fetchStudents();
+        } else {
+          alert(`خطا در ایجاد حساب: ${result.error}`);
+        }
       }
+    } finally {
+      setIsSavingCreds(false);
     }
   };
   const [students, setStudents] = useState<Student[]>([]);
@@ -482,11 +491,12 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name?.trim()) {
-      alert('لطفاً نام و نام خانوادگی را وارد کنید');
+    if (!newStudent.name?.trim() || isSubmittingStudent) {
+      if (!newStudent.name?.trim()) alert('لطفاً نام و نام خانوادگی را وارد کنید');
       return;
     }
     
+    setIsSubmittingStudent(true);
     try {
       const activeState = newStudent.isActive !== undefined ? isStudentActive(newStudent.isActive) : true;
       const studentPayload: any = {
@@ -518,6 +528,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     } catch (error: any) {
       console.error("Error adding/updating student:", error);
       alert('خطا در ثبت اطلاعات: ' + (error.message || 'خطای نامشخص'));
+    } finally {
+      setIsSubmittingStudent(false);
     }
   };
 
@@ -676,7 +688,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   };
 
   const confirmDeleteStudent = async () => {
-    if (!studentToDelete) return;
+    if (!studentToDelete || isDeletingStudent) return;
+    setIsDeletingStudent(true);
     try {
       await localDb.deleteDoc('students', studentToDelete.id);
       if (deleteUser) {
@@ -694,6 +707,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     } catch (error: any) {
       console.error("Error deleting student:", error);
       alert('خطا در حذف: ' + (error.message || 'خطای نامشخص'));
+    } finally {
+      setIsDeletingStudent(false);
     }
   };
 
@@ -2168,14 +2183,15 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                 <div className="flex items-center gap-3 mt-8 pt-4 border-t border-slate-100">
                   <button 
                     type="submit"
-                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+                    disabled={isSubmittingStudent}
+                    className="flex-1 py-3 bg-indigo-600 disabled:bg-indigo-300 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    {editingStudent ? 'بروزرسانی اطلاعات' : 'تایید و ثبت نهایی'}
+                    {isSubmittingStudent ? 'در حال ثبت اطلاعات...' : (editingStudent ? 'بروزرسانی اطلاعات' : 'تایید و ثبت نهایی')}
                   </button>
                   <button 
                     type="button"
                     onClick={() => { setShowAddModal(false); resetForm(); }}
-                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors"
+                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors cursor-pointer"
                   >
                     انصراف
                   </button>
@@ -2209,16 +2225,18 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                 <button
                   type="button"
                   onClick={() => setStudentToDelete(null)}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
+                  disabled={isDeletingStudent}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer"
                 >
                   انصراف
                 </button>
                 <button
                   type="button"
                   onClick={confirmDeleteStudent}
-                  className="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-colors shadow-md shadow-rose-200"
+                  disabled={isDeletingStudent}
+                  className="px-4 py-2 bg-rose-600 disabled:bg-rose-300 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-colors shadow-md shadow-rose-200 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  حذف کاربر
+                  {isDeletingStudent ? 'در حال حذف...' : 'حذف کاربر'}
                 </button>
               </div>
             </motion.div>
@@ -2775,10 +2793,10 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   {isAuthorizedToManage && (
                     <button
                       type="submit"
-                      disabled={!credUsername.trim() || !credPassword.trim()}
+                      disabled={!credUsername.trim() || !credPassword.trim() || isSavingCreds}
                       className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
                     >
-                      {editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری'}
+                      {isSavingCreds ? 'در حال ثبت حساب...' : (editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری')}
                     </button>
                   )}
                 </div>
