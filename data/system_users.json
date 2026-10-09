@@ -47,7 +47,6 @@
   {
     "id": "user_rahnama",
     "username": "RAHNAMA",
-    "password": "8411924",
     "name": "استاد رهنما (مدیر مدرسه / معاون)",
     "level": 1,
     "role": "school_manager",
@@ -83,7 +82,10 @@
       "backup",
       "user-credentials",
       "audit-logs"
-    ]
+    ],
+    "passwordHash": "$2b$10$RZGYv.zv0x52YR1JI9fmkurwcLshjMBC43/5OsI0ApDYcD7G6/1Gm",
+    "failedLoginAttempts": 0,
+    "lastLogin": "2026-10-09T11:21:44.441Z"
   },
   {
     "id": "user_shah",

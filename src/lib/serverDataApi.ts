@@ -21,6 +21,7 @@ export function notifyRealtimeChange(collection: string, id: string, action: 'up
 
 // Mapping between logical collection names and dedicated PostgreSQL/MySQL tables
 export const COLLECTION_TABLE_MAP: Record<string, string> = {
+  all_users: 'all_users',
   system_users: 'system_users',
   users: 'system_users',
   students: 'students',

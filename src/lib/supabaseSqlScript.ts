@@ -20,7 +20,38 @@ ON CONFLICT (id) DO UPDATE SET
   public = true,
   file_size_limit = 52428800;
 
--- ۳. جدول کاربران و سطوح دسترسی (System Users)
+-- ۳. جدول کلیه کاربران به غیر از سوپر ادمین (All Users)
+CREATE TABLE IF NOT EXISTS public.all_users (
+  id TEXT PRIMARY KEY,
+  username VARCHAR(100) UNIQUE NOT NULL,
+  password_hash TEXT,
+  password TEXT,
+  name VARCHAR(200) NOT NULL,
+  role VARCHAR(50) NOT NULL,
+  role_title VARCHAR(100),
+  level INTEGER NOT NULL DEFAULT 3,
+  grade_label VARCHAR(100),
+  mentor_id VARCHAR(100),
+  student_id VARCHAR(100),
+  linked_student_id VARCHAR(100),
+  teacher_id VARCHAR(100),
+  avatar_bg VARCHAR(50),
+  allowed_tabs JSONB DEFAULT '[]'::jsonb,
+  editable_tabs JSONB DEFAULT '[]'::jsonb,
+  module_permissions JSONB DEFAULT '{}'::jsonb,
+  is_active BOOLEAN DEFAULT TRUE,
+  is_read_only BOOLEAN DEFAULT FALSE,
+  can_edit BOOLEAN DEFAULT TRUE,
+  must_change_password BOOLEAN DEFAULT FALSE,
+  failed_login_attempts INTEGER DEFAULT 0,
+  account_locked_until TIMESTAMPTZ,
+  last_login TIMESTAMPTZ,
+  data JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ۴. جدول کاربران و سطوح دسترسی (System Users)
 CREATE TABLE IF NOT EXISTS public.system_users (
   id TEXT PRIMARY KEY,
   username VARCHAR(100) UNIQUE NOT NULL,
@@ -620,6 +651,15 @@ CREATE POLICY "anon_tuition_periods" ON public.tuition_periods FOR ALL TO anon, 
 CREATE POLICY "anon_tuition_records" ON public.tuition_records FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "anon_finance_loans" ON public.finance_loans FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "anon_finance_expenses" ON public.finance_expenses FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- دسترسی به جدول اختصاصی کاربران (all_users و system_users)
+ALTER TABLE public.all_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_all_users" ON public.all_users;
+CREATE POLICY "anon_all_users" ON public.all_users FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE public.system_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "anon_system_users" ON public.system_users;
+CREATE POLICY "anon_system_users" ON public.system_users FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 
 -- دسترسی کامل به کالکشن‌های نرم‌افزار در app_collections برای تمام ماژول‌ها
 DROP POLICY IF EXISTS "app_collections_whitelisted_access" ON public.app_collections;

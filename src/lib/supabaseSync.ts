@@ -28,6 +28,7 @@ export async function testSupabaseConnection(): Promise<ConnectionStatus> {
     const tablesToCheck = [
       { name: 'app_collections', label: 'جدول اصلی داده‌ها (app_collections)' },
       { name: 'cloud_backups', label: 'جدول پشتیبان‌گیری ابری (cloud_backups)' },
+      { name: 'all_users', label: 'جدول کلیه کاربران (all_users)' },
       { name: 'students', label: 'جدول طلاب (students)' },
       { name: 'programs', label: 'جدول برنامه‌های درسی (programs)' },
       { name: 'system_users', label: 'جدول کاربران سیستم (system_users)' }
