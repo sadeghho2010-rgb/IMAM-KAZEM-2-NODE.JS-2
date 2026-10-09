@@ -31,11 +31,13 @@ import {
   Check,
   X,
   PhoneCall,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup } from '../types';
 import { localDb } from '../lib/localDb';
+import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
@@ -553,6 +555,9 @@ export default function Programs() {
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [programToDelete, setProgramToDelete] = useState<Program | null>(null);
+
+  const [isSavingProgram, setIsSavingProgram] = useState(false);
+  const [deletingProgramIds, setDeletingProgramIds] = useState<Set<string>>(new Set());
 
   const [addModalDays, setAddModalDays] = useState<string[]>(DEFAULT_MAIN_DAYS);
   const [editModalDays, setEditModalDays] = useState<string[]>([]);
@@ -1112,9 +1117,11 @@ export default function Programs() {
 
   const handleAddProgram = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingProgram) return;
+
     const title = (newProgram.title || '').trim();
     if (!title) {
-      alert('لطفاً عنوان کلاس / برنامه را وارد نمایید');
+      dispatchDatabaseToast('لطفاً عنوان کلاس / برنامه را وارد نمایید.', 'warning');
       return;
     }
 
@@ -1123,7 +1130,7 @@ export default function Programs() {
     if (targetTeacher && targetTeacher !== '__OTHER__') {
       const conflict = getTeacherConflictDetails(targetTeacher, busyTeachersMapAdd);
       if (conflict) {
-        alert(`امکان ثبت برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» (${conflict.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+        dispatchDatabaseToast(`استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» مشغول تدریس است و تداخل دارد.`, 'error', 6000);
         return;
       }
     }
@@ -1133,27 +1140,28 @@ export default function Programs() {
     if (targetRoom && targetRoom !== '__OTHER__') {
       const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapAdd);
       if (roomConflict) {
-        alert(`امکان ثبت برنامه وجود ندارد: مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» (${roomConflict.grade || 'عمومی'}) رزرو شده است و تداخل مکانی/زمانی دارد.`);
+        dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
         return;
       }
     }
+
+    setIsSavingProgram(true);
 
     try {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
       const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
 
-      if (targetTeacher) {
-        await syncTeacherWithBank(targetTeacher, title);
-      }
-
-      await localDb.addDoc('programs', {
-        ...newProgram,
+      const tempId = `prog_${Date.now()}`;
+      const programPayload: Program = {
+        id: tempId,
         title,
+        type: newProgram.type || 'اصلی',
         days: addModalDays,
         day: dayStr,
         grade: programGrade,
         time: programTime,
+        teacher: newProgram.teacher || '',
         madrasRoom: newProgram.madrasRoom || '',
         classroom: newProgram.madrasRoom || '',
         representativeStudentIds: newProgram.representativeStudentIds || [],
@@ -1161,14 +1169,14 @@ export default function Programs() {
         subjectCategory: newProgram.type === 'اصلی' ? newProgram.subjectCategory : undefined,
         subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
         mentorId: currentMentorId || 'admin'
-      });
+      };
 
-      // Sync representative user roles so student immediately gets class_representative powers
-      if (newProgram.representativeStudentIds && newProgram.representativeStudentIds.length > 0) {
-        await syncRepresentativeUsers(newProgram.representativeStudentIds);
-      }
+      // Optimistic UI Update: update state immediately
+      setPrograms(prev => [programPayload, ...prev]);
 
       setShowAddModal(false);
+      dispatchDatabaseToast(`برنامه آموزشی «${title}» با موفقیت ثبت گردید.`, 'success');
+
       setNewProgram({ 
         title: '', 
         type: 'اصلی', 
@@ -1187,28 +1195,43 @@ export default function Programs() {
       setCustomStartAdd('08:00');
       setCustomEndAdd('09:00');
 
-      // If viewing a different grade tab, switch to the newly added grade so it's directly visible
       if (selectedGradeFilter !== 'all' && selectedGradeFilter !== programGrade) {
         setSelectedGradeFilter(programGrade);
       }
 
-      await fetchData();
+      if (targetTeacher) {
+        await syncTeacherWithBank(targetTeacher, title);
+      }
+
+      await localDb.addDoc('programs', {
+        ...programPayload,
+        id: tempId
+      });
+
+      if (newProgram.representativeStudentIds && newProgram.representativeStudentIds.length > 0) {
+        await syncRepresentativeUsers(newProgram.representativeStudentIds);
+      }
+
+      fetchData();
     } catch (error: any) {
       console.error("Error adding program:", error);
-      alert(error?.message || 'خطا در افزودن برنامه. لطفاً دوباره تلاش فرمایید.');
+      dispatchDatabaseToast(error?.message || 'خطا در افزودن برنامه. در حال بازهمگام‌سازی...', 'error');
+      fetchData();
+    } finally {
+      setIsSavingProgram(false);
     }
   };
 
   const handleEditProgram = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProgram) return;
+    if (!editingProgram || isSavingProgram) return;
 
     // Check teacher conflict
     const targetTeacher = (editingProgram.teacher || '').trim();
     if (targetTeacher && targetTeacher !== '__OTHER__') {
       const conflict = getTeacherConflictDetails(targetTeacher, busyTeachersMapEdit);
       if (conflict) {
-        alert(`امکان بروزرسانی برنامه وجود ندارد: استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» (${conflict.grade || 'عمومی'}) مشغول تدریس هستند و تداخل زمانی دارند.`);
+        dispatchDatabaseToast(`استاد «${targetTeacher}» در روز ${conflict.day} ساعت ${conflict.time} در کلاس «${conflict.programTitle}» مشغول تدریس است و تداخل دارد.`, 'error', 6000);
         return;
       }
     }
@@ -1218,19 +1241,18 @@ export default function Programs() {
     if (targetRoom && targetRoom !== '__OTHER__') {
       const roomConflict = getClassroomConflictDetails(targetRoom, busyRoomsMapEdit);
       if (roomConflict) {
-        alert(`امکان بروزرسانی برنامه وجود ندارد: مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» (${roomConflict.grade || 'عمومی'}) رزرو شده است و تداخل مکانی/زمانی دارد.`);
+        dispatchDatabaseToast(`مَدرَس «${targetRoom}» در روز ${roomConflict.day} ساعت ${roomConflict.time} برای کلاس «${roomConflict.programTitle}» رزرو شده و تداخل دارد.`, 'error', 6000);
         return;
       }
     }
 
+    setIsSavingProgram(true);
+
     try {
       const dayStr = editModalDays.join(' ، ');
 
-      if (editingProgram.teacher) {
-        await syncTeacherWithBank(editingProgram.teacher, editingProgram.title);
-      }
-
-      await localDb.updateDoc('programs', editingProgram.id, {
+      const updatedProgram: Program = {
+        ...editingProgram,
         title: editingProgram.title,
         type: editingProgram.type,
         grade: editingProgram.grade || 'پایه 7',
@@ -1246,28 +1268,61 @@ export default function Programs() {
         parentProgramId: editingProgram.type === 'مشاوره' ? (editingProgram.parentProgramId || '') : '',
         subjectCategory: editingProgram.type === 'اصلی' ? editingProgram.subjectCategory : undefined,
         subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined
-      });
+      };
 
-      // Sync representative user roles so student immediately gets class_representative powers
+      // Optimistic UI update
+      setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updatedProgram : p));
+
+      setEditingProgram(null);
+      dispatchDatabaseToast(`برنامه آموزشی «${editingProgram.title}» با موفقیت بروزرسانی گردید.`, 'success');
+
+      if (editingProgram.teacher) {
+        await syncTeacherWithBank(editingProgram.teacher, editingProgram.title);
+      }
+
+      await localDb.updateDoc('programs', editingProgram.id, updatedProgram);
+
       if (editingProgram.representativeStudentIds && editingProgram.representativeStudentIds.length > 0) {
         await syncRepresentativeUsers(editingProgram.representativeStudentIds);
       }
 
-      setEditingProgram(null);
       fetchData();
     } catch (error: any) {
       console.error("Error editing program:", error);
-      alert(error?.message || 'خطا در بروزرسانی برنامه');
+      dispatchDatabaseToast(error?.message || 'خطا در بروزرسانی برنامه درسی.', 'error');
+      fetchData();
+    } finally {
+      setIsSavingProgram(false);
     }
   };
 
   const deleteProgram = async (id: string) => {
-    if (!confirm('آیا از حذف این برنامه اطمینان دارید؟')) return;
+    const p = programs.find(item => item.id === id);
+    const title = p?.title || 'برنامه';
+
+    if (!confirm(`آیا از حذف برنامه «${title}» اطمینان دارید؟`)) return;
+
+    if (deletingProgramIds.has(id)) return;
+    setDeletingProgramIds(prev => new Set(prev).add(id));
+
+    const originalPrograms = [...programs];
+    setPrograms(prev => prev.filter(item => item.id !== id));
+    dispatchDatabaseToast(`در حال حذف برنامه «${title}»...`, 'info', 2000);
+
     try {
       await localDb.deleteDoc('programs', id);
+      dispatchDatabaseToast(`برنامه «${title}» با موفقیت از سیستم پاک شد.`, 'success');
       fetchData();
     } catch (error) {
       console.error("Error deleting program:", error);
+      setPrograms(originalPrograms);
+      dispatchDatabaseToast(`خطا در حذف برنامه «${title}». اطلاعات بازگردانده شد.`, 'error');
+    } finally {
+      setDeletingProgramIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -3338,9 +3393,20 @@ export default function Programs() {
                 <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
                   <button 
                     type="submit"
-                    className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100"
+                    disabled={isSavingProgram}
+                    className={cn(
+                      "flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2",
+                      isSavingProgram ? "opacity-75 cursor-not-allowed" : "hover:bg-indigo-700 active:scale-98 cursor-pointer"
+                    )}
                   >
-                    ثبت برنامه
+                    {isSavingProgram ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin ml-1 inline" />
+                        <span>در حال ذخیره...</span>
+                      </>
+                    ) : (
+                      <span>ثبت برنامه</span>
+                    )}
                   </button>
                   <button 
                     type="button"
@@ -3892,9 +3958,20 @@ export default function Programs() {
                 <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
                   <button 
                     type="submit"
-                    className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100"
+                    disabled={isSavingProgram}
+                    className={cn(
+                      "flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2",
+                      isSavingProgram ? "opacity-75 cursor-not-allowed" : "hover:bg-indigo-700 active:scale-98 cursor-pointer"
+                    )}
                   >
-                    ذخیره تغییرات
+                    {isSavingProgram ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin ml-1 inline" />
+                        <span>در حال ذخیره...</span>
+                      </>
+                    ) : (
+                      <span>ذخیره تغییرات</span>
+                    )}
                   </button>
                   <button 
                     type="button"
@@ -4237,20 +4314,45 @@ export default function Programs() {
               <div className="flex items-center gap-3 pt-2">
                 <button 
                   type="button"
+                  disabled={Boolean(programToDelete && deletingProgramIds.has(programToDelete.id))}
                   onClick={async () => {
+                    if (!programToDelete || deletingProgramIds.has(programToDelete.id)) return;
                     const id = programToDelete.id;
+                    const title = programToDelete.title;
+                    
+                    setDeletingProgramIds(prev => new Set(prev).add(id));
+                    const originalPrograms = [...programs];
+                    
+                    setPrograms(prev => prev.filter(p => p.id !== id));
                     setProgramToDelete(null);
+                    dispatchDatabaseToast(`در حال حذف برنامه «${title}»...`, 'info', 2000);
+
                     try {
                       await localDb.deleteDoc('programs', id);
+                      dispatchDatabaseToast(`برنامه آموزشی «${title}» با موفقیت حذف گردید.`, 'success');
                       fetchData();
                     } catch (error) {
                       console.error("Error deleting program:", error);
-                      alert('خطا در حذف برنامه');
+                      setPrograms(originalPrograms);
+                      dispatchDatabaseToast(`خطا در حذف برنامه «${title}». اطلاعات بازگردانده شد.`, 'error');
+                    } finally {
+                      setDeletingProgramIds(prev => {
+                        const next = new Set(prev);
+                        next.delete(id);
+                        return next;
+                      });
                     }
                   }}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-bold text-xs transition-colors shadow-sm cursor-pointer"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-bold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  بله، حذف شود
+                  {programToDelete && deletingProgramIds.has(programToDelete.id) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin inline" />
+                      <span>در حال حذف...</span>
+                    </>
+                  ) : (
+                    <span>بله، حذف شود</span>
+                  )}
                 </button>
                 <button 
                   type="button"
