@@ -29,12 +29,14 @@ import {
   Printer,
   PhoneCall,
   ShieldAlert,
-  Building2
+  Building2,
+  Loader2
 } from 'lucide-react';
 import { Teacher, TeacherCategory, TeacherDetailedSpecialties, TeacherBankAccount } from '../types';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
+import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { exportElementToPdf } from '../lib/pdfExport';
@@ -96,6 +98,8 @@ export default function TeachersBank() {
   // Modal State
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   // Form State
   const [fullName, setFullName] = useState<string>('');
@@ -231,11 +235,17 @@ export default function TeachersBank() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim()) return;
+    if (isSaving) return;
+
+    if (!fullName.trim()) {
+      dispatchDatabaseToast('لطفاً نام و نام خانوادگی استاد را وارد نمایید.', 'warning');
+      return;
+    }
+
+    setIsSaving(true);
 
     // Ensure teacherCode always exists even if left blank
     const finalTeacherCode = teacherCode.trim() || generateUniqueTeacherCode();
-
     const primaryAcc = bankAccountsList[0];
 
     const teacherData: Partial<Teacher> = {
@@ -263,30 +273,95 @@ export default function TeachersBank() {
       isExternal: false
     };
 
+    const targetId = editingTeacher ? editingTeacher.id : `t_${Date.now()}`;
+    const fullTeacherObject: Teacher = {
+      id: targetId,
+      fullName: teacherData.fullName || '',
+      nationalId: teacherData.nationalId || '',
+      teacherCode: teacherData.teacherCode || '',
+      phoneNumber: teacherData.phoneNumber || '',
+      photoUrl: teacherData.photoUrl || '',
+      priority: teacherData.priority || 1,
+      isActive: teacherData.isActive !== false,
+      categories: teacherData.categories || [],
+      notes: teacherData.notes || '',
+      experienceHistory: teacherData.experienceHistory || '',
+      bankName: teacherData.bankName || '',
+      bankAccount: teacherData.bankAccount || '',
+      bankSheba: teacherData.bankSheba || '',
+      bankAccounts: teacherData.bankAccounts || [],
+      detailedSpecialties: teacherData.detailedSpecialties,
+      createdAt: editingTeacher?.createdAt || new Date().toISOString(),
+      updatedAt: teacherData.updatedAt,
+      isExternal: false
+    };
+
+    // Optimistic local UI update so user sees change instantly
+    setTeachers(prev => {
+      if (editingTeacher) {
+        return prev.map(t => t.id === editingTeacher.id ? { ...t, ...fullTeacherObject } : t);
+      } else {
+        return [fullTeacherObject, ...prev];
+      }
+    });
+
+    setShowModal(false);
+    dispatchDatabaseToast(
+      editingTeacher ? 'اطلاعات استاد با موفقیت بروزرسانی گردید.' : 'استاد جدید با موفقیت در بانک اساتید ذخیره شد.',
+      'success'
+    );
+
     try {
       if (editingTeacher) {
         await localDb.updateDoc('teachers', editingTeacher.id, teacherData);
       } else {
         await localDb.addDoc('teachers', {
           ...teacherData,
+          id: targetId,
           createdAt: new Date().toISOString()
         });
       }
-      setShowModal(false);
       fetchTeachers();
     } catch (err) {
       console.error('Error saving teacher:', err);
+      dispatchDatabaseToast('خطا در ذخیره‌سازی اطلاعات در سرور. در حال بازهمگام‌سازی...', 'error');
+      fetchTeachers();
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('آیا از حذف این استاد از بانک اساتید اطمینان دارید؟')) {
-      try {
-        await localDb.deleteDoc('teachers', id);
-        fetchTeachers();
-      } catch (err) {
-        console.error('Error deleting teacher:', err);
-      }
+    if (deletingIds.has(id)) return;
+
+    const teacher = teachers.find(t => t.id === id);
+    const teacherName = teacher?.fullName || 'این استاد';
+
+    if (!window.confirm(`آیا از حذف «${teacherName}» از بانک اساتید اطمینان دارید؟`)) {
+      return;
+    }
+
+    setDeletingIds(prev => new Set(prev).add(id));
+    const originalTeachers = [...teachers];
+
+    // Optimistic UI Update: remove from list immediately
+    setTeachers(prev => prev.filter(t => t.id !== id));
+    dispatchDatabaseToast(`در حال حذف «${teacherName}»...`, 'info', 2000);
+
+    try {
+      await localDb.deleteDoc('teachers', id);
+      dispatchDatabaseToast(`«${teacherName}» با موفقیت از بانک اساتید پاک شد.`, 'success');
+      fetchTeachers();
+    } catch (err) {
+      console.error('Error deleting teacher:', err);
+      setTeachers(originalTeachers);
+      dispatchDatabaseToast(`خطا در حذف «${teacherName}». اطلاعات بازگردانده شد.`, 'error');
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -1169,10 +1244,15 @@ export default function TeachersBank() {
                             </button>
                             <button
                               onClick={() => handleDelete(teacher.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              disabled={deletingIds.has(teacher.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                               title="حذف استاد"
                             >
-                              <Trash2 size={16} />
+                              {deletingIds.has(teacher.id) ? (
+                                <Loader2 size={16} className="animate-spin text-rose-600" />
+                              ) : (
+                                <Trash2 size={16} />
+                              )}
                             </button>
                           </div>
                         ) : (
@@ -1332,10 +1412,15 @@ export default function TeachersBank() {
                       </button>
                       <button
                         onClick={() => handleDelete(teacher.id)}
-                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                        disabled={deletingIds.has(teacher.id)}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                         title="حذف"
                       >
-                        <Trash2 size={14} />
+                        {deletingIds.has(teacher.id) ? (
+                          <Loader2 size={14} className="animate-spin text-rose-600" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
                       </button>
                     </div>
                   ) : (
@@ -1866,9 +1951,20 @@ export default function TeachersBank() {
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs transition-all shadow-md active:scale-95"
+                    disabled={isSaving}
+                    className={cn(
+                      "px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2",
+                      isSaving ? "opacity-75 cursor-not-allowed" : "active:scale-95 cursor-pointer"
+                    )}
                   >
-                    {editingTeacher ? 'بروزرسانی اطلاعات استاد' : 'ذخیره استاد جدید'}
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin ml-1 inline" />
+                        <span>در حال ذخیره...</span>
+                      </>
+                    ) : (
+                      <span>{editingTeacher ? 'بروزرسانی اطلاعات استاد' : 'ذخیره استاد جدید'}</span>
+                    )}
                   </button>
                 </div>
 
