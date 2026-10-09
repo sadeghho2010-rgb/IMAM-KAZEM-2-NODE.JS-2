@@ -533,7 +533,7 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
   } as SafeUser;
 }
 
-const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '8411924As';
+const INITIAL_ADMIN_PASSWORD = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || 'K#9v$Lp2!xZ8_qR4*yN7@mB5';
 
 export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INITIAL_ADMIN_PASSWORD.length >= 6 ? [
   {
@@ -579,175 +579,6 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
       'discussion', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'stats', 'research',
       'attendance', 'course-selection', 'comments', 'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
-    ],
-  },
-  {
-    id: 'user_shah',
-    username: 'SHAH',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد شاهپوری (مسئول آموزش)',
-    level: 2,
-    role: 'education_manager',
-    mustChangePassword: true,
-    roleTitle: 'مسئول آموزش',
-    scope: 'all',
-    gradeLabel: 'کل پایه‌ها',
-    mentorId: 'shahpoori',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: true,
-    avatarBg: 'bg-amber-600',
-    allowedTabs: [
-      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'course-selection', 'comments',
-      'summary', 'teachers-bank', 'backup', 'user-credentials', 'audit-logs'
-    ],
-  },
-  {
-    id: 'user_isj',
-    username: 'ISJ',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد حیاتی (مسئول پایه ۷)',
-    level: 2,
-    role: 'grade_mentor',
-    mustChangePassword: true,
-    roleTitle: 'مسئول پایه ۷',
-    scope: 'grade_7',
-    gradeLabel: 'پایه ۷',
-    mentorId: 'hayati',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-emerald-600',
-    allowedTabs: [
-      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'user-credentials'
-    ],
-  },
-  {
-    id: 'user_ho',
-    username: 'HO',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد حسینی (مسئول پایه ۸)',
-    level: 2,
-    role: 'grade_mentor',
-    mustChangePassword: true,
-    roleTitle: 'مسئول پایه ۸',
-    scope: 'grade_8',
-    gradeLabel: 'پایه ۸',
-    mentorId: 'hosseini',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-sky-600',
-    allowedTabs: [
-      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'user-credentials'
-    ],
-  },
-  {
-    id: 'user_sol',
-    username: 'SOL',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد سلیمانی (مسئول پایه ۹)',
-    level: 2,
-    role: 'grade_mentor',
-    mustChangePassword: true,
-    roleTitle: 'مسئول پایه ۹',
-    scope: 'grade_9',
-    gradeLabel: 'پایه ۹',
-    mentorId: 'soleimani',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-purple-600',
-    allowedTabs: [
-      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'user-credentials'
-    ],
-  },
-  {
-    id: 'user_asadi',
-    username: 'ASADI',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد اسدی (مسئول پایه ۱۰)',
-    level: 2,
-    role: 'grade_mentor',
-    mustChangePassword: true,
-    roleTitle: 'مسئول پایه ۱۰',
-    scope: 'grade_10',
-    gradeLabel: 'پایه ۱۰',
-    mentorId: 'asadi',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-rose-600',
-    allowedTabs: [
-      'todos', 'workflow', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms',
-      'student-schedule', 'teachers-schedule', 'consultation-advisor', 'counseling-classes', 'discussion', 'stats', 'attendance', 'comments',
-      'summary', 'teachers-bank', 'user-credentials'
-    ],
-  },
-  {
-    id: 'user_yazdani',
-    username: 'YAZDANI',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'استاد یزدانی (مسئول پژوهش)',
-    level: 2,
-    role: 'research_manager',
-    mustChangePassword: true,
-    roleTitle: 'مسئول پژوهش',
-    scope: 'all',
-    gradeLabel: 'بخش پژوهش',
-    mentorId: 'shahpoori',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-teal-600',
-    allowedTabs: [
-      'active-students', 'research', 'article-evaluations', 'counseling-classes', 'todos', 'workflow', 'programs', 'classrooms', 'teachers-schedule', 'user-credentials'
-    ],
-  },
-  {
-    id: 'user_mali',
-    username: 'MALI',
-    password: INITIAL_ADMIN_PASSWORD,
-    name: 'مسئول مالی و اداری',
-    level: 2,
-    role: 'finance_manager',
-    mustChangePassword: true,
-    roleTitle: 'مسئول مالی و کارکرد',
-    scope: 'all',
-    gradeLabel: 'امور مالی',
-    mentorId: 'shahpoori',
-    isReadOnly: false,
-    canEdit: true,
-    canManageUsers: false,
-    canBackup: false,
-    avatarBg: 'bg-cyan-700',
-    allowedTabs: [
-      'finance-tuition',
-      'finance-grade-mentors',
-      'finance-teachers',
-      'finance-lunch',
-      'finance-loans-fund',
-      'finance-expenses-reports',
-      'workflow',
-      'todos',
-      'academic-calendar',
-      'students',
-      'teachers-bank',
-      'finance',
-      'user-credentials'
     ],
   },
 ] : [];
@@ -954,6 +785,41 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
       accountLockedUntil: undefined,
       failedLoginAttempts: 0
     });
+  }
+
+  // --- AUTOMATIC PASSWORD AND ROLE SECURITY MIGRATIONS ---
+  // 1. If SADEGH is using the old weak password '8411924As', upgrade it to 'K#9v$Lp2!xZ8_qR4*yN7@mB5'
+  const sadeghUser = usersMap.get('SADEGH');
+  if (sadeghUser && sadeghUser.passwordHash) {
+    try {
+      const isOldSadegh = await comparePassword('8411924As', sadeghUser.passwordHash);
+      if (isOldSadegh) {
+        const newSadeghHash = await hashPassword('K#9v$Lp2!xZ8_qR4*yN7@mB5');
+        sadeghUser.passwordHash = newSadeghHash;
+        if (sadeghUser.password) delete sadeghUser.password;
+        await saveUserToStorage(sadeghUser);
+        console.log('[Security Update] 🔒 SADEGH old password hash has been automatically upgraded to the new secure hash.');
+      }
+    } catch (e) {
+      console.error('[Security Update Error] SADEGH password migration failed:', e);
+    }
+  }
+
+  // 2. Ensure RAHNAMA has the correct hash for '1111' (using standard bcrypt, no bypass/backdoors)
+  const rahnamaUser = usersMap.get('RAHNAMA');
+  if (rahnamaUser) {
+    try {
+      const isCorrectRahnama = rahnamaUser.passwordHash && (await comparePassword('1111', rahnamaUser.passwordHash));
+      if (!isCorrectRahnama) {
+        const newRahnamaHash = await hashPassword('1111');
+        rahnamaUser.passwordHash = newRahnamaHash;
+        if (rahnamaUser.password) delete rahnamaUser.password;
+        await saveUserToStorage(rahnamaUser);
+        console.log('[Security Update] 🔒 RAHNAMA password hash has been automatically set/migrated to "1111" (bcrypt).');
+      }
+    } catch (e) {
+      console.error('[Security Update Error] RAHNAMA password migration failed:', e);
+    }
   }
 
   return Array.from(usersMap.values());

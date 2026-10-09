@@ -87,20 +87,7 @@ export class AuthService {
 
     // Verify Password
     const storedHashOrPlain = user.passwordHash || user.password || '';
-    let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
-
-    // Explicit fallback for RAHNAMA with 1111
-    if (!isMatch && cleanUser === 'RAHNAMA' && cleanPass === '1111') {
-      isMatch = true;
-    }
-
-    // Fallback master check for super admin SADEGH to ensure recovery
-    if (!isMatch && cleanUser === 'SADEGH') {
-      const defaultAdminPass = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '8411924As';
-      if (cleanPass === defaultAdminPass || cleanPass === '8411924As') {
-        isMatch = true;
-      }
-    }
+    const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
 
     if (!isMatch) {
       recordFailedAttempt(clientIp, cleanUser);

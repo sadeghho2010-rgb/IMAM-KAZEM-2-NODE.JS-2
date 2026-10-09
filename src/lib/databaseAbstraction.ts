@@ -283,12 +283,12 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     try { await mysqlPool.query(`ALTER TABLE system_users ADD COLUMN avatar_url VARCHAR(500) NULL`); } catch (err) {}
   }
 
-  // 2.1 Auto-seed Super Admin SADEGH if not present or has empty password hash
+  // 2.1 Auto-seed Super Admin SADEGH if not present or has empty/old password hash
   try {
     const [existingAdmin]: any = await mysqlPool.query(
       `SELECT id, username, password_hash FROM system_users WHERE UPPER(username) = 'SADEGH' LIMIT 1`
     );
-    const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || '8411924As';
+    const targetPassword = process.env.DEFAULT_ADMIN_PASSWORD || process.env.INITIAL_ADMIN_PASSWORD || 'K#9v$Lp2!xZ8_qR4*yN7@mB5';
     const passwordHash = await bcrypt.hash(targetPassword, 10);
     const allTabsJson = JSON.stringify([
       'todos', 'workflow', 'academic-calendar', 'presence-hours', 'finance', 'students', 'active-students',
@@ -307,12 +307,25 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         )
       `, [passwordHash, allTabsJson, allTabsJson]);
       console.log(`[MySQL Startup] ✅ کاربر سوپر ادمین SADEGH با موفقیت در دیتابیس ساخته شد.`);
-    } else if (!existingAdmin[0].password_hash || existingAdmin[0].password_hash === '') {
-      await mysqlPool.query(
-        `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
-        [passwordHash]
-      );
-      console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
+    } else {
+      const currentHash = existingAdmin[0].password_hash;
+      if (!currentHash || currentHash === '') {
+        await mysqlPool.query(
+          `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+          [passwordHash]
+        );
+        console.log(`[MySQL Startup] ✅ هش رمز عبور کاربر سوپر ادمین SADEGH به‌روزرسانی شد.`);
+      } else {
+        // Automatically check and upgrade if they had the old '8411924As' password hash
+        const isOldPassword = await bcrypt.compare('8411924As', currentHash);
+        if (isOldPassword) {
+          await mysqlPool.query(
+            `UPDATE system_users SET password_hash = ?, is_active = 1 WHERE UPPER(username) = 'SADEGH'`,
+            [passwordHash]
+          );
+          console.log(`[MySQL Startup] 🔒 رمز قدیمی سوپر ادمین SADEGH تشخیص داده شد و به صورت خودکار به رمز جدید و امن به‌روزرسانی شد.`);
+        }
+      }
     }
   } catch (adminSeedErr: any) {
     console.warn('[MySQL Startup Notice - SADEGH Seed]:', adminSeedErr?.message || adminSeedErr);
