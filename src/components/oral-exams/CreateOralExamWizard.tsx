@@ -50,6 +50,7 @@ import { exportBulletinBoardExcel, exportOralExamA5WordDoc, exportPeriodResultsE
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import ShamsiDatePicker from '../ShamsiDatePicker';
 
 interface CreateOralExamWizardProps {
   students: Student[];
@@ -78,6 +79,16 @@ export default function CreateOralExamWizard({
   const [academicYear, setAcademicYear] = useState<string>(existingPeriod?.academicYear || '۱۴۰۳-۱۴۰۴');
   const [examDate, setExamDate] = useState<string>(existingPeriod?.examDate || new Date().toLocaleDateString('fa-IR'));
   const [targetGrade, setTargetGrade] = useState<string>(existingPeriod?.grade || 'پایه ۹');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+
+  // Flexible grade matching for Persian/English digits and spacing
+  const isGradeMatch = (g1?: string, g2?: string) => {
+    if (!g1 || !g2) return false;
+    const norm = (s: string) => s.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]).trim().toLowerCase();
+    const n1 = norm(g1);
+    const n2 = norm(g2);
+    return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+  };
   const [examType, setExamType] = useState<'both' | 'fiqh' | 'usul' | 'entrance'>(
     existingPeriod?.examType || (targetGrade === 'امتحان ورودی' ? 'entrance' : 'both')
   );
@@ -179,7 +190,7 @@ export default function CreateOralExamWizard({
           setParticipatingStudentIds(entryStudents.map(s => s.id));
         }
       } else if (targetGrade && targetGrade !== 'کل پایه‌ها') {
-        const gradeStudents = students.filter(s => s.grade === targetGrade);
+        const gradeStudents = students.filter(s => isGradeMatch(s.grade, targetGrade));
         if (gradeStudents.length > 0) {
           setParticipatingStudentIds(gradeStudents.map(s => s.id));
         }
@@ -816,12 +827,10 @@ export default function CreateOralExamWizard({
             {/* Exam Date */}
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-700">تاریخ برگزاری (شمسی)</label>
-              <input
-                type="text"
+              <ShamsiDatePicker
                 value={examDate}
-                onChange={(e) => setExamDate(e.target.value)}
-                placeholder="۱۴۰۳/۰۹/۱۵"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800 font-mono"
+                onChange={(d) => setExamDate(d)}
+                placeholder="انتخاب تاریخ برگزاری"
               />
             </div>
 
@@ -832,10 +841,16 @@ export default function CreateOralExamWizard({
                 <select
                   value={targetGrade}
                   onChange={(e) => {
-                    setTargetGrade(e.target.value);
-                    if (e.target.value === 'امتحان ورودی') {
+                    const newGrade = e.target.value;
+                    setTargetGrade(newGrade);
+                    if (newGrade === 'امتحان ورودی') {
                       handleExamTypeChange('entrance');
                       setExamCategory('entrance');
+                    } else if (newGrade && newGrade !== 'کل پایه‌ها') {
+                      const matched = students.filter(s => isGradeMatch(s.grade, newGrade));
+                      if (matched.length > 0) {
+                        setParticipatingStudentIds(matched.map(s => s.id));
+                      }
                     }
                   }}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium cursor-pointer"
@@ -1351,24 +1366,110 @@ export default function CreateOralExamWizard({
                       </select>
                     </div>
 
-                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-200 bg-white rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between text-xs border-b border-slate-200 pb-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allCandidateIds = candidateStudentsToAdd.map(s => s.id);
+                            setSelectedCandidateIds(prev => Array.from(new Set([...prev, ...allCandidateIds])));
+                          }}
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold border border-indigo-200 cursor-pointer"
+                        >
+                          تیک زدن همه موارد این لیست ({candidateStudentsToAdd.length})
+                        </button>
+                        {selectedCandidateIds.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCandidateIds([])}
+                            className="px-2 py-1 text-slate-500 hover:text-slate-700 text-[11px] font-bold cursor-pointer"
+                          >
+                            لغو انتخاب
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-600">
+                        {selectedCandidateIds.length} طلبه انتخاب شده
+                      </span>
+                    </div>
+
+                    <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 bg-white rounded-xl border border-slate-200">
                       {candidateStudentsToAdd.length === 0 ? (
                         <div className="p-4 text-center text-slate-400 text-xs">هیچ طلبه‌ای یافت نشد.</div>
                       ) : (
-                        candidateStudentsToAdd.map(st => (
-                          <div
-                            key={st.id}
-                            onClick={() => handleAddStudentManually(st)}
-                            className="p-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer text-xs"
-                          >
-                            <div>
-                              <span className="font-bold text-slate-900">{st.name}</span>
-                              <span className="text-slate-400 text-[11px] mr-2">({st.grade || 'نامشخص'})</span>
+                        candidateStudentsToAdd.map(st => {
+                          const isChecked = selectedCandidateIds.includes(st.id);
+                          return (
+                            <div
+                              key={st.id}
+                              onClick={() => {
+                                setSelectedCandidateIds(prev => 
+                                  prev.includes(st.id) ? prev.filter(id => id !== st.id) : [...prev, st.id]
+                                );
+                              }}
+                              className={cn(
+                                "p-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer text-xs transition-colors select-none",
+                                isChecked && "bg-indigo-50/60"
+                              )}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-900">{st.name}</span>
+                                  <span className="text-slate-400 text-[11px] mr-2">({st.grade || 'نامشخص'})</span>
+                                </div>
+                              </div>
+                              <span className={cn(
+                                "text-[11px] font-bold px-2 py-0.5 rounded-lg border",
+                                isChecked 
+                                  ? "bg-indigo-100 text-indigo-800 border-indigo-200" 
+                                  : "bg-slate-100 text-slate-600 border-slate-200"
+                              )}>
+                                {isChecked ? 'انتخاب شده ✓' : 'کلیک برای انتخاب'}
+                              </span>
                             </div>
-                            <span className="text-sky-700 font-bold">+ افزودن به لیست</span>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
+                    </div>
+
+                    {/* Batch Add Confirm Button */}
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsStudentSearchOpen(false);
+                          setSelectedCandidateIds([]);
+                        }}
+                        className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        بستن
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedCandidateIds.length === 0}
+                        onClick={() => {
+                          if (selectedCandidateIds.length === 0) return;
+                          setParticipatingStudentIds(prev => Array.from(new Set([...prev, ...selectedCandidateIds])));
+                          setSelectedCandidateIds([]);
+                          setIsStudentSearchOpen(false);
+                          setStudentSearchQuery('');
+                        }}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs",
+                          selectedCandidateIds.length > 0
+                            ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200"
+                            : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        )}
+                      >
+                        <UserPlus size={14} />
+                        <span>تایید و افزودن به آزمون ({selectedCandidateIds.length} طلبه)</span>
+                      </button>
                     </div>
                   </div>
                 )}

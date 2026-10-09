@@ -275,3 +275,5 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
     </div>
   );
 };
+
+export default ShamsiDatePicker;

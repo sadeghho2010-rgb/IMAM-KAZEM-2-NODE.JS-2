@@ -65,6 +65,7 @@ export default function AllPeriodsTable({
   const [cols, setCols] = useState({
     grade: true,
     confirmedWarningsCount: true,
+    belowMandatoryCount: true,
     sumStudy: true,
     sumDisc: true,
     sumTotal: true,
@@ -119,11 +120,12 @@ export default function AllPeriodsTable({
   const { items, globalAvgMinutes, grandTotalStudy, grandTotalDisc, grandTotalAll } = prepareAggregatedData(
     filteredStudents,
     periods,
-    allLogs
+    allLogs,
+    workflowItems
   );
 
   const handleExcelExport = () => {
-    exportAllPeriodsToExcel(filteredStudents, periods, allLogs, currentMentor?.name);
+    exportAllPeriodsToExcel(filteredStudents, periods, allLogs, currentMentor?.name, workflowItems);
   };
 
   return (
@@ -214,6 +216,7 @@ export default function AllPeriodsTable({
                       onClick={() => setCols({
                         grade: true,
                         confirmedWarningsCount: true,
+                        belowMandatoryCount: true,
                         sumStudy: true,
                         sumDisc: true,
                         sumTotal: true,
@@ -270,9 +273,13 @@ export default function AllPeriodsTable({
                       <input type="checkbox" checked={cols.gradeAvg} onChange={() => setCols(p => ({ ...p, gradeAvg: !p.gradeAvg }))} className="rounded text-indigo-600" />
                       <span className="text-purple-700">میانگین کل پایه</span>
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-indigo-600">
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-amber-600">
                       <input type="checkbox" checked={cols.belowAverageCount} onChange={() => setCols(p => ({ ...p, belowAverageCount: !p.belowAverageCount }))} className="rounded text-indigo-600" />
                       <span className="text-amber-700">دفعات زیر میانگین</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-rose-600 bg-rose-50/40 p-1 rounded-lg">
+                      <input type="checkbox" checked={cols.belowMandatoryCount} onChange={() => setCols(p => ({ ...p, belowMandatoryCount: !p.belowMandatoryCount }))} className="rounded text-rose-600" />
+                      <span className="text-rose-800 font-bold">دفعات زیر موظفی</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer hover:text-rose-600 bg-rose-50/50 p-1 rounded-lg">
                       <input type="checkbox" checked={cols.confirmedWarningsCount} onChange={() => setCols(p => ({ ...p, confirmedWarningsCount: !p.confirmedWarningsCount }))} className="rounded text-rose-600" />
@@ -315,6 +322,7 @@ export default function AllPeriodsTable({
               {cols.avgTotal && <th className="px-3 py-3.5 text-center">میانگین کل دوره</th>}
               {cols.gradeAvg && <th className="px-3 py-3.5 text-center bg-purple-50/60 text-purple-800">میانگین کل پایه</th>}
               {cols.belowAverageCount && <th className="px-3 py-3.5 text-center bg-amber-50/60 text-amber-800">تعداد دفعات زیر میانگین</th>}
+              {cols.belowMandatoryCount && <th className="px-3 py-3.5 text-center bg-rose-50/60 text-rose-800 font-extrabold">تعداد دفعات زیر موظفی</th>}
               {cols.confirmedWarningsCount && <th className="px-3 py-3.5 text-center bg-rose-50/70 text-rose-800 font-extrabold">تعداد اخطارهای قطعی</th>}
               {cols.avgStudy && <th className="px-3 py-3.5 text-center">میانگین مطالعه</th>}
               {cols.avgDisc && <th className="px-3 py-3.5 text-center">میانگین مباحثه</th>}
@@ -419,6 +427,19 @@ export default function AllPeriodsTable({
                         </span>
                       ) : (
                         <span className="text-emerald-600 text-[11px] font-bold">۰ (همیشه بالا)</span>
+                      )}
+                    </td>
+                  )}
+
+                  {/* Below Mandatory Count */}
+                  {cols.belowMandatoryCount && (
+                    <td className="px-3 py-3.5 text-center font-black text-rose-700 bg-rose-50/20">
+                      {item.belowMandatoryCount > 0 ? (
+                        <span className="bg-rose-100 text-rose-900 border border-rose-300 px-2 py-0.5 rounded-lg text-[11px] font-black">
+                          {item.belowMandatoryCount} دوره زیر موظفی
+                        </span>
+                      ) : (
+                        <span className="text-emerald-600 text-[11px] font-bold">۰ (تکمیل موظفی)</span>
                       )}
                     </td>
                   )}

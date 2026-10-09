@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, LayoutDashboard } from 'lucide-react';
+import { AlertTriangle, RefreshCw, LayoutDashboard, ChevronRight } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -65,8 +65,8 @@ export class TabErrorBoundary extends Component<Props, State> {
                 onClick={this.props.onNavigateHome}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
-                <LayoutDashboard size={14} />
-                <span>بازگشت به داشبورد</span>
+                <ChevronRight size={14} />
+                <span>بازگشت</span>
               </button>
             )}
           </div>

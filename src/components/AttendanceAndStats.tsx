@@ -97,6 +97,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [classStatusGradeFilter, setClassStatusGradeFilter] = useState<string>('all');
   const [classStatusSearchQuery, setClassStatusSearchQuery] = useState<string>('');
   const [classStatusCategoryTab, setClassStatusCategoryTab] = useState<'all' | 'academic' | 'counseling'>('all');
+  const [classStatusColorFilter, setClassStatusColorFilter] = useState<'all' | 'pending' | 'recorded' | 'substitute' | 'cancelled'>('all');
+
+  // Quick Class Status Card Change Modal
+  const [quickStatusModal, setQuickStatusModal] = useState<{ prog: any; initialMode?: string } | null>(null);
+  const [quickCancelReason, setQuickCancelReason] = useState<string>('تعطیلی با هماهنگی آموزش');
+  const [quickSubTeacherName, setQuickSubTeacherName] = useState<string>('');
+  const [quickSubNotes, setQuickSubNotes] = useState<string>('');
+  const [quickIsSubmitting, setQuickIsSubmitting] = useState(false);
 
   // Representatives tab state
   const [repSearchQuery, setRepSearchQuery] = useState<string>('');
@@ -932,6 +940,149 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     };
   }, [studentsAttendance]);
 
+  // Quick status handlers for Class Status Cards
+  const handleQuickMarkCancelled = async (prog: any, reason: string) => {
+    setQuickIsSubmitting(true);
+    try {
+      const recordId = `${prog.id}_${selectedDate.replace(/\//g, '-')}`;
+      const existing = attendanceRecords.find(r => r.id === recordId);
+      const updatedRecord: AttendanceSessionLog = {
+        ...(existing || {}),
+        id: recordId,
+        programId: prog.id,
+        programTitle: prog.title,
+        grade: prog.grade || '',
+        date: selectedDate,
+        dayOfWeek: dayOfWeekName,
+        isCancelled: true,
+        cancellationReason: reason?.trim() || 'عدم تشکیل جلسه با هماهنگی آموزش',
+        hasSubstituteTeacher: false,
+        substituteTeacherName: undefined,
+        substituteTeacherNotes: undefined,
+        recordedByUserId: currentUser?.id,
+        recordedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش',
+        recordedAt: new Date().toISOString(),
+        students: existing?.students || []
+      };
+      await localDb.setDoc('attendance', updatedRecord);
+      setAttendanceRecords(prev => [updatedRecord, ...prev.filter(r => r.id !== recordId)]);
+      showToast(`وضعیت کلاس «${prog.title}» به تعطیل (کرمی) تغییر یافت.`);
+      setQuickStatusModal(null);
+    } catch (err) {
+      console.error(err);
+      alert('خطا در تغییر وضعیت کلاس.');
+    } finally {
+      setQuickIsSubmitting(false);
+    }
+  };
+
+  const handleQuickMarkAllPresent = async (prog: any) => {
+    setQuickIsSubmitting(true);
+    try {
+      const recordId = `${prog.id}_${selectedDate.replace(/\//g, '-')}`;
+      const existing = attendanceRecords.find(r => r.id === recordId);
+      
+      const pEnrolls = enrollments.filter(e => String(e.programId) === String(prog.id));
+      const sidSet = new Set<string>();
+      pEnrolls.forEach(e => sidSet.add(String(e.studentId)));
+      if (Array.isArray(prog.studentIds)) prog.studentIds.forEach((s: any) => sidSet.add(String(s)));
+      
+      let targetStuds = students.filter(s => sidSet.has(String(s.id)));
+      if (targetStuds.length === 0 && prog.grade) {
+        targetStuds = students.filter(s => s.grade === prog.grade);
+      }
+
+      const studentItems: StudentAttendanceDetail[] = targetStuds.map(s => ({
+        studentId: s.id,
+        studentName: s.name,
+        nationalId: s.nationalId || '',
+        status: 'present',
+        note: ''
+      }));
+
+      const updatedRecord: AttendanceSessionLog = {
+        ...(existing || {}),
+        id: recordId,
+        programId: prog.id,
+        programTitle: prog.title,
+        grade: prog.grade || '',
+        date: selectedDate,
+        dayOfWeek: dayOfWeekName,
+        isCancelled: false,
+        cancellationReason: '',
+        hasSubstituteTeacher: false,
+        recordedByUserId: currentUser?.id,
+        recordedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش',
+        recordedAt: new Date().toISOString(),
+        students: studentItems
+      };
+      await localDb.setDoc('attendance', updatedRecord);
+      setAttendanceRecords(prev => [updatedRecord, ...prev.filter(r => r.id !== recordId)]);
+      showToast(`حضور تمام طلاب در کلاس «${prog.title}» ثبت شد (سبز).`);
+      setQuickStatusModal(null);
+    } catch (err) {
+      console.error(err);
+      alert('خطا در ثبت حضور.');
+    } finally {
+      setQuickIsSubmitting(false);
+    }
+  };
+
+  const handleQuickMarkSubstitute = async (prog: any, subName: string, subNotes: string) => {
+    if (!subName.trim()) {
+      alert('لطفاً نام استاد جایگزین را وارد نمایید.');
+      return;
+    }
+    setQuickIsSubmitting(true);
+    try {
+      const recordId = `${prog.id}_${selectedDate.replace(/\//g, '-')}`;
+      const existing = attendanceRecords.find(r => r.id === recordId);
+      const updatedRecord: AttendanceSessionLog = {
+        ...(existing || {}),
+        id: recordId,
+        programId: prog.id,
+        programTitle: prog.title,
+        grade: prog.grade || '',
+        date: selectedDate,
+        dayOfWeek: dayOfWeekName,
+        isCancelled: false,
+        cancellationReason: '',
+        hasSubstituteTeacher: true,
+        substituteTeacherName: subName.trim(),
+        substituteTeacherNotes: subNotes.trim() || undefined,
+        recordedByUserId: currentUser?.id,
+        recordedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش',
+        recordedAt: new Date().toISOString(),
+        students: existing?.students || []
+      };
+      await localDb.setDoc('attendance', updatedRecord);
+      setAttendanceRecords(prev => [updatedRecord, ...prev.filter(r => r.id !== recordId)]);
+      showToast(`استاد جایگزین برای کلاس «${prog.title}» با موفقیت ثبت شد (آبی).`);
+      setQuickStatusModal(null);
+    } catch (err) {
+      console.error(err);
+      alert('خطا در ثبت استاد جایگزین.');
+    } finally {
+      setQuickIsSubmitting(false);
+    }
+  };
+
+  const handleQuickResetStatus = async (prog: any) => {
+    setQuickIsSubmitting(true);
+    try {
+      const recordId = `${prog.id}_${selectedDate.replace(/\//g, '-')}`;
+      await localDb.deleteDoc('attendance', recordId);
+      setAttendanceRecords(prev => prev.filter(r => r.id !== recordId));
+      showToast(`وضعیت کلاس «${prog.title}» بازنشانی شد و به حالت ثبت‌نشده (قرمز) برگشت.`);
+      setQuickStatusModal(null);
+    } catch (err) {
+      console.error(err);
+      alert('خطا در بازنشانی وضعیت کلاس.');
+    } finally {
+      setQuickIsSubmitting(false);
+    }
+  };
+
   // =========================================================================
   // Report Analytics & Missing Attendance Detection
   // =========================================================================
@@ -1736,38 +1887,6 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           return currentDayName !== 'جمعه' && currentDayName !== 'پنج‌شنبه';
         });
 
-        // Filter by grade and search query
-        const filteredPrograms = scheduledOnDate.filter(p => {
-          if (classStatusGradeFilter !== 'all' && !matchesGradeFilter(p.grade, classStatusGradeFilter)) {
-            return false;
-          }
-          if (classStatusSearchQuery.trim()) {
-            const q = classStatusSearchQuery.toLowerCase().trim();
-            const matchTitle = p.title?.toLowerCase().includes(q);
-            const matchTeacher = p.teacherName?.toLowerCase().includes(q);
-            const matchRoom = p.classroomTitle?.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q);
-            if (!matchTitle && !matchTeacher && !matchRoom) return false;
-          }
-          return true;
-        });
-
-        // Separate Academic and Counseling programs
-        const academicProgs = filteredPrograms.filter(p => 
-          !p.isCounseling && 
-          p.category !== 'counseling' && 
-          p.type !== 'counseling' && 
-          !p.title?.includes('مشاوره') && 
-          !p.grade?.includes('مشاوره')
-        );
-
-        const counselingProgs = filteredPrograms.filter(p => 
-          p.isCounseling || 
-          p.category === 'counseling' || 
-          p.type === 'counseling' || 
-          p.title?.includes('مشاوره') || 
-          p.grade?.includes('مشاوره')
-        );
-
         // Card Helper Status Function
         const getStatusCardData = (prog: any) => {
           const hol = getHolidayForDate(selectedDate);
@@ -1852,19 +1971,62 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           };
         };
 
-        // Stats metrics
+        // Base scheduled programs on this date filtered by grade and search query (before color filter)
+        const basePrograms = scheduledOnDate.filter(p => {
+          if (classStatusGradeFilter !== 'all' && !matchesGradeFilter(p.grade, classStatusGradeFilter)) {
+            return false;
+          }
+          if (classStatusSearchQuery.trim()) {
+            const q = classStatusSearchQuery.toLowerCase().trim();
+            const matchTitle = p.title?.toLowerCase().includes(q);
+            const matchTeacher = p.teacherName?.toLowerCase().includes(q);
+            const matchRoom = p.classroomTitle?.toLowerCase().includes(q) || p.location?.toLowerCase().includes(q);
+            if (!matchTitle && !matchTeacher && !matchRoom) return false;
+          }
+          return true;
+        });
+
+        // Accurate stats metrics calculated across all matching classes in this day
         let totalRec = 0;
         let totalSub = 0;
         let totalCanc = 0;
         let totalPend = 0;
 
-        filteredPrograms.forEach(p => {
+        basePrograms.forEach(p => {
           const st = getStatusCardData(p);
           if (st.statusKey === 'recorded') totalRec++;
           else if (st.statusKey === 'substitute') totalSub++;
           else if (st.statusKey === 'cancelled' || st.statusKey === 'holiday') totalCanc++;
           else if (st.statusKey === 'pending') totalPend++;
         });
+
+        // Apply Card Color / Status Filter
+        const filteredPrograms = basePrograms.filter(p => {
+          if (classStatusColorFilter === 'all') return true;
+          const st = getStatusCardData(p);
+          if (classStatusColorFilter === 'recorded') return st.statusKey === 'recorded';
+          if (classStatusColorFilter === 'substitute') return st.statusKey === 'substitute';
+          if (classStatusColorFilter === 'cancelled') return st.statusKey === 'cancelled' || st.statusKey === 'holiday';
+          if (classStatusColorFilter === 'pending') return st.statusKey === 'pending';
+          return true;
+        });
+
+        // Separate Academic and Counseling programs
+        const academicProgs = filteredPrograms.filter(p => 
+          !p.isCounseling && 
+          p.category !== 'counseling' && 
+          p.type !== 'counseling' && 
+          !p.title?.includes('مشاوره') && 
+          !p.grade?.includes('مشاوره')
+        );
+
+        const counselingProgs = filteredPrograms.filter(p => 
+          p.isCounseling || 
+          p.category === 'counseling' || 
+          p.type === 'counseling' || 
+          p.title?.includes('مشاوره') || 
+          p.grade?.includes('مشاوره')
+        );
 
         // Grade options extracted dynamically
         const gradeOptions = Array.from(new Set(programs.map(p => p.grade).filter(Boolean))).sort();
@@ -1970,21 +2132,79 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </div>
 
                 <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-bold shrink-0">
-                  <span className="px-2.5 py-1 bg-white/10 rounded-lg text-white border border-white/15">
-                    کل کلاس‌ها: {filteredPrograms.length}
-                  </span>
-                  <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-lg border border-emerald-500/30">
-                    ثبت‌شده (سبز): {totalRec}
-                  </span>
-                  <span className="px-2.5 py-1 bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
-                    استاد جایگزین (آبی): {totalSub}
-                  </span>
-                  <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30">
-                    تعطیل‌شده (کرمی): {totalCanc}
-                  </span>
-                  <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded-lg border border-rose-500/30">
-                    انجام‌نشده (قرمز): {totalPend}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusColorFilter('all')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
+                      classStatusColorFilter === 'all'
+                        ? "bg-white text-slate-900 border-white shadow-xs font-black ring-2 ring-white/60"
+                        : "bg-white/10 hover:bg-white/20 text-white border-white/15"
+                    )}
+                    title="نمایش تمامی کلاس‌ها بدون محدودیت وضعیت یا رنگ"
+                  >
+                    <span>کل کلاس‌ها: {basePrograms.length}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusColorFilter(classStatusColorFilter === 'recorded' ? 'all' : 'recorded')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
+                      classStatusColorFilter === 'recorded'
+                        ? "bg-emerald-500 text-white border-emerald-400 shadow-xs font-black ring-2 ring-emerald-300"
+                        : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/30"
+                    )}
+                    title="فیلتر فقط کارت‌های ثبت‌شده (سبز) - کلیک مجدد برای لغو"
+                  >
+                    <CheckCircle2 size={12} />
+                    <span>ثبت‌شده (سبز): {totalRec}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusColorFilter(classStatusColorFilter === 'substitute' ? 'all' : 'substitute')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
+                      classStatusColorFilter === 'substitute'
+                        ? "bg-blue-600 text-white border-blue-400 shadow-xs font-black ring-2 ring-blue-300"
+                        : "bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-blue-500/30"
+                    )}
+                    title="فیلتر فقط کارت‌های دارای استاد جایگزین (آبی) - کلیک مجدد برای لغو"
+                  >
+                    <UserCheck2 size={12} />
+                    <span>استاد جایگزین (آبی): {totalSub}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusColorFilter(classStatusColorFilter === 'cancelled' ? 'all' : 'cancelled')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
+                      classStatusColorFilter === 'cancelled'
+                        ? "bg-amber-600 text-white border-amber-400 shadow-xs font-black ring-2 ring-amber-300"
+                        : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30"
+                    )}
+                    title="فیلتر فقط کارت‌های تعطیل‌شده (کرمی) - کلیک مجدد برای لغو"
+                  >
+                    <XCircle size={12} />
+                    <span>تعطیل‌شده (کرمی): {totalCanc}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusColorFilter(classStatusColorFilter === 'pending' ? 'all' : 'pending')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
+                      classStatusColorFilter === 'pending'
+                        ? "bg-rose-600 text-white border-rose-400 shadow-xs font-black ring-2 ring-rose-300 animate-pulse"
+                        : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/30"
+                    )}
+                    title="فیلتر فقط کارت‌های انجام‌نشده (قرمز) - کلیک مجدد برای لغو"
+                  >
+                    <AlertCircle size={12} />
+                    <span>انجام‌نشده (قرمز): {totalPend}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1993,7 +2213,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap flex-1">
                 {/* Search */}
-                <div className="relative min-w-[220px] flex-1">
+                <div className="relative min-w-[200px] flex-1">
                   <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
@@ -2010,7 +2230,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </div>
 
                 {/* Grade Filter */}
-                <div className="min-w-[160px]">
+                <div className="min-w-[150px]">
                   <select
                     value={classStatusGradeFilter}
                     onChange={(e) => setClassStatusGradeFilter(e.target.value)}
@@ -2020,6 +2240,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     {gradeOptions.map(g => (
                       <option key={g} value={g}>{g}</option>
                     ))}
+                  </select>
+                </div>
+
+                {/* Card Status / Color Filter Dropdown */}
+                <div className="min-w-[170px]">
+                  <select
+                    value={classStatusColorFilter}
+                    onChange={(e) => setClassStatusColorFilter(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">همه وضعیت‌ها (همه رنگ‌ها)</option>
+                    <option value="pending">🔴 فقط انجام‌نشده / معوق (قرمز)</option>
+                    <option value="recorded">🟢 فقط ثبت‌شده (سبز)</option>
+                    <option value="substitute">🔵 فقط استاد جایگزین (آبی)</option>
+                    <option value="cancelled">🟡 فقط تعطیل‌شده (کرمی)</option>
                   </select>
                 </div>
               </div>
@@ -2187,18 +2422,33 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           </div>
                         )}
 
-                        {/* Quick Action Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedProgramId(prog.id);
-                            setActiveTab('record');
-                          }}
-                          className={cn("w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
-                        >
-                          <CheckSquare size={13} className="shrink-0" />
-                          <span>ثبت و ویرایش حضور و غیاب</span>
-                        </button>
+                        {/* Card Action Buttons: Full Record & Quick Status Change */}
+                        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProgramId(prog.id);
+                              setActiveTab('record');
+                            }}
+                            className={cn("col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
+                            title="ورود به فرم کامل ثبت و ویرایش حضور و غیاب این کلاس"
+                          >
+                            <CheckSquare size={12} className="shrink-0" />
+                            <span className="truncate">ثبت و ویرایش</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickStatusModal({ prog, initialMode: st.statusKey });
+                            }}
+                            className="col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs bg-black/25 hover:bg-black/35 text-white border border-white/20 hover:border-white/40 backdrop-blur-xs"
+                            title="تغییر سریع وضعیت کارت (تعطیلی، استاد جایگزین، حضور کامل یا بازنشانی)"
+                          >
+                            <SlidersHorizontal size={12} className="shrink-0" />
+                            <span className="truncate">تغییر وضعیت</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -2321,18 +2571,33 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           </div>
                         )}
 
-                        {/* Quick Action Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedProgramId(prog.id);
-                            setActiveTab('record');
-                          }}
-                          className={cn("w-full py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
-                        >
-                          <CheckSquare size={13} className="shrink-0" />
-                          <span>ثبت و ویرایش حضور و غیاب</span>
-                        </button>
+                        {/* Card Action Buttons: Full Record & Quick Status Change */}
+                        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProgramId(prog.id);
+                              setActiveTab('record');
+                            }}
+                            className={cn("col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
+                            title="ورود به فرم کامل ثبت و ویرایش حضور و غیاب این جلسه مشاوره"
+                          >
+                            <CheckSquare size={12} className="shrink-0" />
+                            <span className="truncate">ثبت و ویرایش</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickStatusModal({ prog, initialMode: st.statusKey });
+                            }}
+                            className="col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs bg-black/25 hover:bg-black/35 text-white border border-white/20 hover:border-white/40 backdrop-blur-xs"
+                            title="تغییر سریع وضعیت کارت (تعطیلی، مشاور جایگزین، حضور کامل یا بازنشانی)"
+                          >
+                            <SlidersHorizontal size={12} className="shrink-0" />
+                            <span className="truncate">تغییر وضعیت</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -4759,6 +5024,178 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     <span>ثبت و تایید استاد جایگزین</span>
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* Modal 6: Quick Class Status Change Modal (پایش کارتی و تغییر مستقیم وضعیت کارت) */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {quickStatusModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs font-vazir" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                    <SlidersHorizontal size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      تغییر وضعیت کارت: {quickStatusModal.prog.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      تاریخ جلسه: {selectedDate} • پایه: {quickStatusModal.prog.grade || 'عمومی'} • استاد: {quickStatusModal.prog.teacherName || quickStatusModal.prog.teacher || 'مشخص‌نشده'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickStatusModal(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-xl cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Status Action Options */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-slate-700">
+                  یکی از وضعیت‌های زیر را برای کارت این کلاس در تاریخ امروز اعمال کنید:
+                </p>
+
+                {/* Option 1: Mark Cancelled (Brown/Cream) */}
+                <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/50 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-[#5C4027] flex items-center gap-1.5">
+                      <XCircle size={15} />
+                      <span>اعلام عدم تشکیل / تعطیلی جلسه (کارت کرمی)</span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={quickIsSubmitting}
+                      onClick={() => handleQuickMarkCancelled(quickStatusModal.prog, quickCancelReason)}
+                      className="px-3.5 py-1.5 bg-[#5C4027] hover:bg-[#47311D] text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      ثبت تعطیلی
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={quickCancelReason}
+                    onChange={(e) => setQuickCancelReason(e.target.value)}
+                    placeholder="علت عدم تشکیل (مثلاً کسالت استاد، تعطیلی رسمی، هماهنگی قبلی)..."
+                    className="w-full px-3 py-2 text-xs border border-amber-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                  />
+                </div>
+
+                {/* Option 2: Mark All Present (Green) */}
+                <div className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 size={15} className="text-emerald-600" />
+                      <span>ثبت سریع حضور کامل تمام طلاب (کارت سبز)</span>
+                    </span>
+                    <p className="text-[10.5px] text-emerald-700 font-medium mt-0.5">
+                      ثبت حضور ۱۰۰٪ برای کلیه طلاب کلاس بدون نیاز به علامت‌زدن تک‌تک
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={quickIsSubmitting}
+                    onClick={() => handleQuickMarkAllPresent(quickStatusModal.prog)}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                  >
+                    ثبت حضور همه
+                  </button>
+                </div>
+
+                {/* Option 3: Substitute Teacher (Blue) */}
+                <div className="p-3.5 rounded-2xl border border-blue-200 bg-blue-50/50 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-blue-900 flex items-center gap-1.5">
+                      <UserCheck2 size={15} className="text-blue-600" />
+                      <span>ثبت استاد جایگزین (کارت آبی)</span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={quickIsSubmitting}
+                      onClick={() => handleQuickMarkSubstitute(quickStatusModal.prog, quickSubTeacherName, quickSubNotes)}
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      ثبت جایگزین
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={quickSubTeacherName}
+                      onChange={(e) => setQuickSubTeacherName(e.target.value)}
+                      placeholder="نام استاد جایگزین..."
+                      className="w-full px-3 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                    />
+                    <input
+                      type="text"
+                      value={quickSubNotes}
+                      onChange={(e) => setQuickSubNotes(e.target.value)}
+                      placeholder="توضیحات (اختیاری)..."
+                      className="w-full px-3 py-1.5 text-xs border border-blue-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Option 4: Reset back to Pending (Red) */}
+                <div className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/50 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+                      <AlertCircle size={15} className="text-rose-600" />
+                      <span>بازنشانی به حالت انجام‌نشده (کارت قرمز)</span>
+                    </span>
+                    <p className="text-[10.5px] text-rose-700 font-medium mt-0.5">
+                      پاکسازی اطلاعات ثبت‌شده امروز و بازگرداندن کارت به وضعیت معوق
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={quickIsSubmitting}
+                    onClick={() => handleQuickResetStatus(quickStatusModal.prog)}
+                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
+                  >
+                    بازنشانی به قرمز
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const progId = quickStatusModal.prog.id;
+                    setQuickStatusModal(null);
+                    setSelectedProgramId(progId);
+                    setActiveTab('record');
+                  }}
+                  className="text-xs font-black text-indigo-700 hover:text-indigo-900 flex items-center gap-1 cursor-pointer"
+                >
+                  <CheckSquare size={13} />
+                  <span>ورود به فرم کامل حضور و غیاب دستی</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setQuickStatusModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  بستن
+                </button>
               </div>
             </motion.div>
           </div>

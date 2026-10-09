@@ -18,13 +18,16 @@ export interface AggregatedStudentData {
   gradeAvg: number;
   belowAverageCount: number;
   aboveAverageCount: number;
+  belowMandatoryCount: number;
+  confirmedWarningsCount: number;
   statusAvg: string;
 }
 
 export function prepareAggregatedData(
   students: Student[] = [],
   periods: StudyPeriod[] = [],
-  allLogs: PeriodicStudyLog[] = []
+  allLogs: PeriodicStudyLog[] = [],
+  workflowItems: any[] = []
 ): { 
   items: AggregatedStudentData[]; 
   globalAvgMinutes: number; 
@@ -108,13 +111,15 @@ export function prepareAggregatedData(
     const studentGrade = student.grade || 'نامشخص';
     const gradeAvg = gradeAverages[studentGrade] || globalAvgMinutes;
 
-    // Count below and above average across all periods
+    // Count below and above average and below mandatory across all periods
     let belowAverageCount = 0;
     let aboveAverageCount = 0;
+    let belowMandatoryCount = 0;
 
     safePeriods.forEach(p => {
       if (!p || !p.id) return;
       const pAvg = periodAveragesMap.get(p.id) || 0;
+      const mandMin = Math.round((p.mandatoryHours || 0) * 60);
       const log = studentLogs.find(l => l && l.periodId === p.id);
       const metrics = log ? getLogMetrics(log) : { totalMinutes: 0 };
 
@@ -123,7 +128,17 @@ export function prepareAggregatedData(
       } else {
         aboveAverageCount += 1;
       }
+
+      if (mandMin > 0 && metrics.totalMinutes < mandMin) {
+        belowMandatoryCount += 1;
+      }
     });
+
+    const confirmedWarningsCount = (workflowItems || []).filter((w: any) => 
+      w.category === 'study_deficit_warning' && 
+      w.studentId === student.id && 
+      w.status === 'approved'
+    ).length;
 
     let statusAvg = "بدون ثبت";
     if (avgTotal > 0) {
@@ -146,6 +161,8 @@ export function prepareAggregatedData(
       gradeAvg,
       belowAverageCount,
       aboveAverageCount,
+      belowMandatoryCount,
+      confirmedWarningsCount,
       statusAvg
     };
   });
@@ -195,14 +212,15 @@ export function exportAllPeriodsToExcel(
   students: Student[],
   periods: StudyPeriod[],
   allLogs: PeriodicStudyLog[],
-  mentorName?: string
+  mentorName?: string,
+  workflowItems: any[] = []
 ) {
   if (!students || students.length === 0) {
     alert("هیچ داده‌ای برای خروجی اکسل وجود ندارد.");
     return;
   }
 
-  const { items, globalAvgMinutes, grandTotalStudy, grandTotalDisc, grandTotalAll } = prepareAggregatedData(students, periods, allLogs);
+  const { items, globalAvgMinutes, grandTotalStudy, grandTotalDisc, grandTotalAll } = prepareAggregatedData(students, periods, allLogs, workflowItems);
 
   const formatHoursMinutes = (min: number) => {
     const h = Math.floor(min / 60);
@@ -233,6 +251,8 @@ export function exportAllPeriodsToExcel(
     'میانگین کل پایه (ساعت)': formatHoursMinutes(item.gradeAvg),
     'تعداد دفعات زیر میانگین': item.belowAverageCount,
     'تعداد دفعات بالای میانگین': item.aboveAverageCount,
+    'تعداد دفعات زیر موظفی': item.belowMandatoryCount,
+    'تعداد اخطارهای قطعی': item.confirmedWarningsCount,
     'میانگین مطالعه دوره (دقیقه)': item.avgStudy,
     'میانگین مباحثه دوره (دقیقه)': item.avgDisc,
     'وضعیت نسبت به میانگین کل': item.statusAvg
@@ -260,6 +280,8 @@ export function exportAllPeriodsToExcel(
     'میانگین کل پایه (ساعت)': '-',
     'تعداد دفعات زیر میانگین': 0,
     'تعداد دفعات بالای میانگین': 0,
+    'تعداد دفعات زیر موظفی': 0,
+    'تعداد اخطارهای قطعی': 0,
     'میانگین مطالعه دوره (دقیقه)': 0,
     'میانگین مباحثه دوره (دقیقه)': 0,
     'وضعیت نسبت به میانگین کل': '-'

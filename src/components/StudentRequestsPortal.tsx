@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   StudentRequest, 
   RequestTargetUnit, 
   StudentRequestStatus, 
   UnitRequestSettings,
-  GlobalRequestsConfig 
+  GlobalRequestsConfig,
+  RequestMessage 
 } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
@@ -417,6 +418,19 @@ export default function StudentRequestsPortal() {
 
     const unitTitle = selectedRequestForReview.unit === 'education' ? 'واحد آموزش' : selectedRequestForReview.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی و رفاهی';
     const replierTitle = currentUser?.roleTitle || currentUser?.name || unitTitle;
+    const replyText = officialReply.trim() || rejectionReason.trim() || '';
+
+    const newOfficerMsg: RequestMessage | null = replyText ? {
+      id: `msg-${Date.now()}`,
+      senderId: currentUser?.id || 'officer',
+      senderName: replierTitle,
+      senderRole: 'officer',
+      content: replyText,
+      createdAt: new Date().toISOString()
+    } : null;
+
+    const existingMessages = selectedRequestForReview.messages || [];
+    const updatedMessages = newOfficerMsg ? [...existingMessages, newOfficerMsg] : existingMessages;
 
     setIsReplying(true);
     const updated: StudentRequest = {
@@ -430,6 +444,7 @@ export default function StudentRequestsPortal() {
       repliedAt: new Date().toISOString(),
       isReadByOfficer: true,
       isReadByStudent: false, // Student sees glowing badge
+      messages: updatedMessages,
       updatedAt: new Date().toISOString()
     };
 
@@ -444,6 +459,94 @@ export default function StudentRequestsPortal() {
       alert('خطا در ذخیره پاسخ: ' + (err?.message || ''));
     } finally {
       setIsReplying(false);
+    }
+  };
+
+  // Followup conversation drafts & handlers (اصلاح ۱ و ۲ کارتابل درخواست)
+  const [followupDrafts, setFollowupDrafts] = useState<Record<string, string>>({});
+  const [isSendingFollowup, setIsSendingFollowup] = useState(false);
+
+  // Send conversational reply (Student ↔ Officer)
+  const handleSendFollowup = async (req: StudentRequest) => {
+    const text = (followupDrafts[req.id] || '').trim();
+    if (!text) return;
+    if (req.isTerminated) {
+      alert('این درخواست توسط مسئول مربوطه مختومه اعلام شده است و امکان ادامه گفتگو وجود ندارد.');
+      return;
+    }
+
+    setIsSendingFollowup(true);
+    try {
+      const isSenderStudent = isStudentUser;
+      const senderRole: 'student' | 'officer' = isSenderStudent ? 'student' : 'officer';
+      const senderName = isSenderStudent 
+        ? (currentUser?.fullName || currentUser?.name || 'طلبه')
+        : (currentUser?.roleTitle || currentUser?.name || 'مسئول مربوطه');
+
+      const newMsg: RequestMessage = {
+        id: `msg-${Date.now()}`,
+        senderId: currentUser?.id || 'user',
+        senderName,
+        senderRole,
+        content: text,
+        createdAt: new Date().toISOString()
+      };
+
+      const updated: StudentRequest = {
+        ...req,
+        status: isSenderStudent ? 'in_progress' : req.status,
+        statusTitle: isSenderStudent ? 'در حال بررسی (پاسخ جدید طلبه)' : req.statusTitle,
+        isReadByOfficer: !isSenderStudent,
+        isReadByStudent: isSenderStudent,
+        messages: [...(req.messages || []), newMsg],
+        updatedAt: new Date().toISOString()
+      };
+
+      await localDb.saveDoc('student_requests', updated.id, updated);
+      setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+      setFollowupDrafts(prev => ({ ...prev, [req.id]: '' }));
+      triggerUpdateEvent();
+    } catch (err: any) {
+      alert('خطا در ارسال پیام: ' + (err?.message || ''));
+    } finally {
+      setIsSendingFollowup(false);
+    }
+  };
+
+  // Terminate request (ختم رسیدگی توسط مسئول مربوطه)
+  const handleTerminateRequest = async (req: StudentRequest) => {
+    if (!confirm('آیا از اعلام «ختم رسیدگی» به این پرونده اطمینان دارید؟\nپس از ختم رسیدگی، پرونده به وضعیت مختومه رفته و امکان ارسال پیام و ادامه گفتگو برای طلبه بسته خواهد شد.')) return;
+    try {
+      const replierTitle = currentUser?.roleTitle || currentUser?.name || 'مسئول مربوطه';
+      const termMsg: RequestMessage = {
+        id: `msg-${Date.now()}`,
+        senderId: currentUser?.id || 'officer',
+        senderName: replierTitle,
+        senderRole: 'officer',
+        content: '⚖️ ختم رسیدگی به این درخواست توسط مسئول مربوطه صادر گردید و پرونده مختومه شد.',
+        createdAt: new Date().toISOString()
+      };
+
+      const updated: StudentRequest = {
+        ...req,
+        status: 'resolved',
+        statusTitle: 'مختومه (ختم رسیدگی)',
+        isTerminated: true,
+        terminatedAt: new Date().toISOString(),
+        terminatedBy: replierTitle,
+        isReadByStudent: false,
+        messages: [...(req.messages || []), termMsg],
+        updatedAt: new Date().toISOString()
+      };
+
+      await localDb.saveDoc('student_requests', updated.id, updated);
+      setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+      if (selectedRequestForReview?.id === req.id) {
+        setSelectedRequestForReview(null);
+      }
+      triggerUpdateEvent();
+    } catch (e) {
+      alert('خطا در ثبت ختم رسیدگی.');
     }
   };
 
@@ -525,6 +628,17 @@ export default function StudentRequestsPortal() {
 
     return true;
   });
+
+  // Sort requests: Active/Pending/In-Progress first; Terminated/Resolved/Rejected moved to the bottom
+  const sortedFilteredRequests = useMemo(() => {
+    return [...filteredRequests].sort((a, b) => {
+      const aClosed = a.isTerminated || a.status === 'resolved' || a.status === 'rejected';
+      const bClosed = b.isTerminated || b.status === 'resolved' || b.status === 'rejected';
+      if (aClosed && !bClosed) return 1;
+      if (!aClosed && bClosed) return -1;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+  }, [filteredRequests]);
 
   const getStatusBadge = (status: StudentRequestStatus) => {
     switch (status) {
@@ -904,7 +1018,7 @@ export default function StudentRequestsPortal() {
             <Loader2 size={28} className="animate-spin text-indigo-600" />
             <span className="text-xs font-semibold">در حال بارگذاری درخواست‌ها...</span>
           </div>
-        ) : filteredRequests.length === 0 ? (
+        ) : sortedFilteredRequests.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center text-slate-400 border border-slate-200 flex flex-col items-center gap-2">
             <Inbox size={40} className="text-slate-300" />
             <p className="text-sm font-bold text-slate-700">هیچ درخواستی در این بخش یافت نشد.</p>
@@ -915,7 +1029,7 @@ export default function StudentRequestsPortal() {
             </p>
           </div>
         ) : (
-          filteredRequests.map((req) => {
+          sortedFilteredRequests.map((req) => {
             const isUnreadForOfficer = !isStudentUser && (req.status === 'pending' || req.isReadByOfficer === false);
             const isUnreadForStudent = isStudentUser && req.isReadByStudent === false;
 

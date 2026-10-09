@@ -51,6 +51,7 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [customSchedules, setCustomSchedules] = useState<CustomStudentSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
 
   // Modal for adding manual custom schedule for a student
   const [showAddCustomModal, setShowAddCustomModal] = useState<boolean>(false);
@@ -651,18 +652,48 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
 
               {/* WEEKLY TIMETABLE MATRIX GRID */}
               <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-5 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-2">
                     <span className="p-2 bg-indigo-100 text-indigo-800 rounded-xl">
                       <Calendar size={20} />
                     </span>
                     <h3 className="text-lg font-black text-slate-900">جدول زمان‌بندی هفته (Weekly Timetable)</h3>
                   </div>
-                  <span className="text-xs text-slate-500 font-bold">برنامه کلاس‌ها در طول روزهای هفته</span>
+                  
+                  {/* Day Pills Bar for Mobile & Quick Filter */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full scrollbar-thin">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDayFilter('all')}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border",
+                        selectedDayFilter === 'all'
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200"
+                      )}
+                    >
+                      همه روزها
+                    </button>
+                    {WEEK_DAYS.map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setSelectedDayFilter(d)}
+                        className={cn(
+                          "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer border",
+                          selectedDayFilter === d
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                            : "bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200"
+                        )}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {WEEK_DAYS.map(dayName => {
+                  {WEEK_DAYS.filter(dayName => selectedDayFilter === 'all' || selectedDayFilter === dayName).map(dayName => {
                     const dayProgs = getProgramsForDay(dayName);
                     const dayCustoms = getCustomSchedulesForDay(dayName);
                     const totalDayItems = dayProgs.length + dayCustoms.length;

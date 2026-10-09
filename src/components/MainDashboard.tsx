@@ -53,7 +53,9 @@ import {
   RotateCw,
   EyeOff,
   Wallet,
-  Send
+  Send,
+  Zap,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1225,6 +1227,31 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
     return MAIN_CATEGORY_CARDS.find(c => c.id === activeCategoryGroup) || null;
   }, [activeCategoryGroup]);
 
+  // Quick Access Cards State (Persisted in LocalStorage - Max 5)
+  const [quickAccessCardIds, setQuickAccessCardIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('dashboard_quick_access_cards');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 5);
+      }
+    } catch (e) {}
+    return ['attendance', 'student-requests', 'student-schedule', 'stats', 'finance-tuition'];
+  });
+  const [isQuickAccessModalOpen, setIsQuickAccessModalOpen] = useState(false);
+
+  const saveQuickAccessIds = (ids: string[]) => {
+    const valid = ids.slice(0, 5);
+    setQuickAccessCardIds(valid);
+    localStorage.setItem('dashboard_quick_access_cards', JSON.stringify(valid));
+  };
+
+  const quickAccessCards = useMemo(() => {
+    return quickAccessCardIds
+      .map(id => allowedCardsMap.get(id))
+      .filter((c): c is DashboardCardDef => Boolean(c));
+  }, [quickAccessCardIds, allowedCardsMap]);
+
   // Handle Drag and Drop logic
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -1865,8 +1892,19 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           </button>
         </div>
 
-        {/* Flat Mode Controls / Breadcrumb */}
+        {/* Flat Mode & Display Controls / Breadcrumb */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          {/* Quick Access Customization Button (Always visible) */}
+          <button
+            type="button"
+            onClick={() => setIsQuickAccessModalOpen(true)}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+            title="انتخاب و ویرایش حداکثر ۵ کارت دسترسی سریع"
+          >
+            <Sparkles size={14} className="text-amber-100 animate-pulse" />
+            <span>افزودن دسترسی‌های سریع</span>
+          </button>
+
           {displayMode === 'grouped' && activeCategoryGroup && (
             <button
               type="button"
@@ -1959,6 +1997,68 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* DEDICATED EYE-CATCHING QUICK ACCESS BANNER (Available in both grouped & flat modes) */}
+      {quickAccessCards.length > 0 && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-500/20 space-y-3">
+          <div className="flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <Zap size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                  <span>میانبر دسترسی‌های سریع شما</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {quickAccessCards.length} کارت پرکاربرد
+                  </span>
+                </h3>
+                <p className="text-[10px] sm:text-[11px] text-slate-300 font-medium">
+                  دسترسی مستقیم و پرسرعت به ابزارها و بخش‌های کلیدی حوزه علمیه
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsQuickAccessModalOpen(true)}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/30 flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Settings size={13} />
+              <span className="hidden sm:inline">مدیریت کارت‌ها</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {quickAccessCards.map((card) => {
+              const IconComp = card.icon;
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => onNavigateTab(card.id)}
+                  className="group p-3 bg-white/5 hover:bg-white/15 border border-white/10 hover:border-amber-400/50 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2 relative overflow-hidden active:scale-95 shadow-2xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md shrink-0", card.iconBg)}>
+                      <IconComp size={18} />
+                    </div>
+                    <ChevronLeft size={15} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1 transition-all" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate">
+                      {card.title}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                      {card.subtitle}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 3. MAIN CARDS CONTAINER WITH SMOOTH ANIMATED TRANSITIONS */}
       <AnimatePresence mode="wait">
@@ -2335,6 +2435,118 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       </AnimatePresence>
         </>
       )}
+
+      {/* QUICK ACCESS CUSTOMIZATION MODAL */}
+      <AnimatePresence>
+        {isQuickAccessModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[80] flex items-center justify-center p-4 lg:p-8" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-md shadow-amber-200">
+                    <Zap size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">تنظیم دسترسی‌های سریع روی داشبورد</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      حداکثر ۵ کارت پرکاربرد خود را انتخاب فرمایید تا در بالای داشبورد برای دسترسی سریع قرار گیرند
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAccessModalOpen(false)}
+                  className="p-2 hover:bg-slate-200/80 rounded-2xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200/80 p-3 rounded-2xl text-xs font-bold text-amber-950">
+                  <span>تعداد کارت‌های انتخاب‌شده:</span>
+                  <span className="px-3 py-1 bg-amber-500 text-white rounded-xl font-black">
+                    {quickAccessCardIds.length} از ۵ کارت
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {Array.from(allowedCardsMap.values()).map(card => {
+                    const isSelected = quickAccessCardIds.includes(card.id);
+                    const IconComp = card.icon;
+
+                    return (
+                      <div
+                        key={card.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            saveQuickAccessIds(quickAccessCardIds.filter(id => id !== card.id));
+                          } else {
+                            if (quickAccessCardIds.length >= 5) {
+                              alert('سقف ۵ کارت دسترسی سریع تکمیل شده است. ابتدا یکی از کارت‌های فعلی را از حالت انتخاب خارج فرمایید.');
+                              return;
+                            }
+                            saveQuickAccessIds([...quickAccessCardIds, card.id]);
+                          }
+                        }}
+                        className={cn(
+                          "p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer select-none",
+                          isSelected 
+                            ? "bg-amber-50/60 border-amber-300 ring-2 ring-amber-400/40" 
+                            : "bg-white hover:bg-slate-50 border-slate-200 hover:border-amber-200"
+                        )}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer pointer-events-none shrink-0"
+                          />
+                          <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs", card.iconBg)}>
+                            <IconComp size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-black text-slate-900 truncate">{card.title}</h4>
+                            <p className="text-[10px] text-slate-500 font-medium truncate">{card.subtitle}</p>
+                          </div>
+                        </div>
+
+                        <span className={cn(
+                          "text-[10px] font-bold px-2.5 py-1 rounded-xl border shrink-0 mr-2",
+                          isSelected 
+                            ? "bg-amber-500 text-white border-amber-500 font-black shadow-xs" 
+                            : "bg-slate-100 text-slate-600 border-slate-200"
+                        )}>
+                          {isSelected ? 'انتخاب شده ✓' : 'انتخاب'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAccessModalOpen(false)}
+                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md"
+                >
+                  تایید و بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

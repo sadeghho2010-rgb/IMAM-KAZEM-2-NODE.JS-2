@@ -66,7 +66,7 @@ const StudentPaymentsSection = lazy(() => import('./components/finance/StudentPa
 const AnomalyDetectionView = lazy(() => import('./components/admin/AnomalyDetectionView'));
 import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, KeyRound } from 'lucide-react';
+import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, ChevronRight, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -390,16 +390,16 @@ function AppContent() {
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
 
-              {/* Universal Header Return to Dashboard Button */}
+              {/* Universal Header Back Button */}
               {activeTab !== 'dashboard' && (
                 <button
                   type="button"
-                  onClick={() => navigateToTab('dashboard')}
+                  onClick={handleBack}
                   className="flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 border border-indigo-200/90 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs shrink-0 group active:scale-95"
-                  title="بازگشت به داشبورد اصلی"
+                  title="بازگشت به یک مرحله قبل"
                 >
-                  <LayoutDashboard size={14} className="text-indigo-600 group-hover:scale-110 transition-transform shrink-0" />
-                  <span className="hidden xs:inline">بازگشت به داشبورد</span>
+                  <ChevronRight size={15} className="text-indigo-600 group-hover:-translate-x-0.5 transition-transform shrink-0" />
+                  <span className="hidden xs:inline">بازگشت</span>
                 </button>
               )}
 

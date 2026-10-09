@@ -2064,6 +2064,15 @@ export interface HashChainedAuditLog {
 export type RequestTargetUnit = 'education' | 'finance' | 'cultural_welfare';
 export type StudentRequestStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected';
 
+export interface RequestMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'student' | 'officer';
+  content: string;
+  createdAt: string;
+}
+
 export interface StudentRequest {
   id: string;
   studentId: string;
@@ -2084,6 +2093,10 @@ export interface StudentRequest {
   rejectionReason?: string;
   isReadByOfficer?: boolean;
   isReadByStudent?: boolean;
+  isTerminated?: boolean; // ختم رسیدگی توسط مسئول مربوطه
+  terminatedAt?: string;
+  terminatedBy?: string;
+  messages?: RequestMessage[]; // تاریخچه پیام‌های متقابل طلبه و مسئول
   createdAt: string;
   updatedAt?: string;
 }

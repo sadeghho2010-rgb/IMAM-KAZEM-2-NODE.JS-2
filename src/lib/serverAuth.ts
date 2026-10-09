@@ -781,6 +781,7 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
         level: 1,
         scope: 'all',
         roleTitle: 'سوپر ادمین (مدیر کل سیستم)',
+        gradeLabel: 'عمومی',
         canEdit: true,
         canManageUsers: true,
         canBackup: true,

@@ -607,30 +607,26 @@ export default function StudyEntryModal({
   };
 
   const handleSavePeriod = async () => {
-    if (!periodTitle.trim() || !startDate || !endDate || mandatoryHours <= 0) {
-      alert('لطفاً تمامی مشخصات دوره را به دقت وارد کنید (میزان موظفی به دقیقه باید بزرگتر از صفر باشد).');
-      return;
-    }
-
-    if (targetGrades.length === 0) {
-      alert('لطفاً حداقل یک پایه را برای دوره انتخاب کنید.');
-      return;
-    }
+    const finalTitle = periodTitle.trim() || `دوره مطالعاتی ${new Date().toLocaleDateString('fa-IR')}`;
+    const finalStartDate = startDate || new Date().toISOString();
+    const finalEndDate = endDate || new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    const finalMandatoryHours = mandatoryHours > 0 ? mandatoryHours : 1200; // Default 20 hours (1200 mins) if unspecified
+    const finalTargetGrades = targetGrades.length > 0 ? targetGrades : ALL_SYSTEM_GRADES;
 
     try {
-      const mandatoryInHours = mandatoryHours / 60;
+      const mandatoryInHours = finalMandatoryHours / 60;
       let effectivePeriodId = editingPeriod?.id || '';
 
       if (editingPeriod) {
         // Update existing period
         await localDb.updateDoc('study_periods', editingPeriod.id, {
-          title: periodTitle.trim(),
-          startDate,
-          endDate,
+          title: finalTitle,
+          startDate: finalStartDate,
+          endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
-          targetGrades: targetGrades,
+          targetGrades: finalTargetGrades,
           warningRule: warningRule,
           updatedAt: new Date().toISOString()
         });
@@ -671,13 +667,13 @@ export default function StudyEntryModal({
       } else {
         // Create new period
         const periodId = await localDb.addDoc('study_periods', {
-          title: periodTitle.trim(),
-          startDate,
-          endDate,
+          title: finalTitle,
+          startDate: finalStartDate,
+          endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
-          targetGrades: targetGrades,
+          targetGrades: finalTargetGrades,
           warningRule: warningRule,
           mentorId: currentMentorId,
           createdAt: new Date().toISOString()
