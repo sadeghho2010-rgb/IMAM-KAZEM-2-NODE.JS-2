@@ -34,7 +34,6 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup } from '../types';
 import { localDb } from '../lib/localDb';
 import { dispatchDatabaseToast } from '../lib/databaseToast';
@@ -1426,7 +1425,8 @@ export default function Programs() {
   }, [activeMainPrograms]);
 
   // Excel Export for a single program
-  const exportProgramToExcel = (program: Program) => {
+  const exportProgramToExcel = async (program: Program) => {
+    const XLSX = await import('xlsx');
     const pStudents = getProgramStudents(program.id);
     const parentProg = program.parentProgramId ? programs.find(p => p.id === program.parentProgramId) : null;
 
@@ -1462,13 +1462,14 @@ export default function Programs() {
   };
 
   // Excel Export for ALL programs in a single workbook
-  const exportAllProgramsToExcel = () => {
-    const wb = XLSX.utils.book_new();
-
+  const exportAllProgramsToExcel = async () => {
     if (programs.length === 0) {
       alert('هیچ برنامه‌ای برای خروجی وجود ندارد.');
       return;
     }
+
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
 
     // Sheet 1: Summary of all classes
     const summaryData = [

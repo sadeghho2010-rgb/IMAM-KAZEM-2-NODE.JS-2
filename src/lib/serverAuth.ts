@@ -431,7 +431,7 @@ export function generateTokens(user: SafeUser): { token: string; refreshToken: s
     iat: now
   };
 
-  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
   const refreshToken = jwt.sign({ userId: user.id, username: user.username, iat: now }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
 
   return { token, refreshToken };

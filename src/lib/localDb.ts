@@ -682,7 +682,7 @@ class LocalDatabase {
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const apiRes = await fetch(`/api/data/${resolvedCol}`, {
           method: 'GET',
@@ -1000,8 +1000,8 @@ class LocalDatabase {
     const id = record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
 
-    // 1. Direct Server Write FIRST
-    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 5000);
+    // 1. Direct Server Write FIRST with 20s timeout
+    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 20000);
 
     if (res.success) {
       // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
@@ -1033,10 +1033,18 @@ class LocalDatabase {
       throw new Error(res.message || 'خطا در ثبت اطلاعات در سرور.');
     }
 
-    // Server 5xx / Network Error -> Item enqueued into sync queue
-    const msg = res.message || 'ارتباط با سرور برقرار نشد. اطلاعات در صف ارسال قرار گرفت.';
-    dispatchDatabaseErrorToast(msg, 'warning');
-    throw new Error(msg);
+    // Server 5xx / Network Error -> Save locally and enqueue into sync queue
+    this.setLocalStorageDoc(resolvedCol, record);
+    if (db.objectStoreNames.contains(resolvedCol)) {
+      try {
+        const transaction = db.transaction(resolvedCol, 'readwrite');
+        const store = transaction.objectStore(resolvedCol);
+        store.put(record);
+      } catch (e) {}
+    }
+    this.notify();
+    dispatchDatabaseErrorToast('اطلاعات به صورت محلی ثبت شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
+    return id;
   }
 
   // Update existing document (Server-First with IndexedDB Read Cache)
@@ -1054,8 +1062,8 @@ class LocalDatabase {
       updated = normalizeStudent(updated);
     }
 
-    // 1. Direct Server Write FIRST
-    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 5000);
+    // 1. Direct Server Write FIRST with 20s timeout
+    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 20000);
 
     if (res.success) {
       // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
@@ -1087,10 +1095,18 @@ class LocalDatabase {
       throw new Error(res.message || 'خطا در ویرایش اطلاعات در سرور.');
     }
 
-    // Server 5xx / Network Error -> Item enqueued into sync queue
-    const msg = res.message || 'ارتباط با سرور برقرار نشد. ویرایش در صف ارسال قرار گرفت.';
-    dispatchDatabaseErrorToast(msg, 'warning');
-    throw new Error(msg);
+    // Server 5xx / Network Error -> Save locally and enqueue into sync queue
+    this.setLocalStorageDoc(resolvedCol, updated);
+    if (db.objectStoreNames.contains(resolvedCol)) {
+      try {
+        const transaction = db.transaction(resolvedCol, 'readwrite');
+        const store = transaction.objectStore(resolvedCol);
+        store.put(updated);
+      } catch (e) {}
+    }
+    this.notify();
+    dispatchDatabaseErrorToast('ویرایش به صورت محلی اعمال شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
+    return;
   }
 
   // Delete a document (Server-First with IndexedDB Read Cache)
@@ -1103,8 +1119,8 @@ class LocalDatabase {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
 
-    // 1. Direct Server Write FIRST
-    const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 5000);
+    // 1. Direct Server Write FIRST with 20s timeout
+    const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 20000);
 
     if (res.success) {
       // 2. On 2xx Server Success -> Delete from local IndexedDB / localStorage cache
@@ -1136,9 +1152,18 @@ class LocalDatabase {
       throw new Error(res.message || 'خطا در حذف اطلاعات در سرور.');
     }
 
-    // Server 5xx / Network Error -> Item enqueued into sync queue
-    dispatchDatabaseErrorToast('ارتباط با سرور برقرار نشد. درخواست حذف در صف ارسال قرار گرفت.', 'warning');
-    throw new Error('ارتباط با سرور برقرار نشد. درخواست حذف در صف ارسال قرار گرفت.');
+    // Server 5xx / Network Error -> Delete locally and enqueue into sync queue
+    this.deleteLocalStorageDoc(resolvedCol, id);
+    if (db.objectStoreNames.contains(resolvedCol)) {
+      try {
+        const transaction = db.transaction(resolvedCol, 'readwrite');
+        const store = transaction.objectStore(resolvedCol);
+        store.delete(id);
+      } catch (e) {}
+    }
+    this.notify();
+    dispatchDatabaseErrorToast('حذف به صورت محلی انجام شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
+    return;
   }
 
   // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login

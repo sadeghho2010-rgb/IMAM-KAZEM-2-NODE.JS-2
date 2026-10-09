@@ -38,7 +38,6 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { motion, AnimatePresence } from 'motion/react';
-import * as XLSX from 'xlsx';
 import { exportElementToPdf } from '../lib/pdfExport';
 
 const ALL_CATEGORIES: TeacherCategory[] = [
@@ -451,11 +450,13 @@ export default function TeachersBank() {
   });
 
   // Export to Excel
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredTeachers.length === 0) {
       alert('هیچ استادی جهت خروجی در فیلتر فعلی وجود ندارد.');
       return;
     }
+
+    const XLSX = await import('xlsx');
 
     const exportData = filteredTeachers.map((t, idx) => {
       const specList: string[] = [];
@@ -567,6 +568,7 @@ export default function TeachersBank() {
           }
         }
       } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+        const XLSX = await import('xlsx');
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];

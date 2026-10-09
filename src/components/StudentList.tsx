@@ -42,7 +42,6 @@ import {
   Calendar,
   FileText
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { localDb, isStudentActive, DuplicateGroup, MergeResult } from '../lib/localDb';
 import { Student, Program, Enrollment, StudentDeactivationReason } from '../types';
 import { useMentor } from '../context/MentorContext';
@@ -726,11 +725,13 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     }
   };
 
-  const handleExcelExport = () => {
+  const handleExcelExport = async () => {
     if (students.length === 0) {
       alert('لیستی برای خروجی وجود ندارد');
       return;
     }
+
+    const XLSX = await import('xlsx');
 
     const exportData = students.map((s, index) => ({
       'ردیف': index + 1,
@@ -778,6 +779,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     reader.onload = async (evt) => {
       try {
         const buffer = evt.target?.result;
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(buffer, { type: 'array' });
         const wsname = wb.SheetNames[0];
         if (!wsname) {
