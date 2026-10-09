@@ -190,42 +190,100 @@
   animation: gradientGlow 60s ease-in-out infinite;
 }
 
-/* Gentle 55s continuous color wave for student feature cards - cycling full spectrum smoothly */
-@keyframes radiantWaveShift {
-  0% {
-    filter: hue-rotate(0deg);
-  }
-  50% {
-    filter: hue-rotate(180deg);
-  }
-  100% {
-    filter: hue-rotate(360deg);
-  }
+/* Independent smooth multi-stop gradient flow for student feature cards (styled like welcome card) */
+@keyframes cardGradientGlow1 {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes cardGradientGlow2 {
+  0% { background-position: 50% 0%; }
+  50% { background-position: 50% 100%; }
+  100% { background-position: 50% 0%; }
+}
+
+@keyframes cardGradientGlow3 {
+  0% { background-position: 100% 50%; }
+  50% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+@keyframes cardGradientGlow4 {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+.animate-card-glow-1,
+.animate-radiant-wave-1 {
+  background: linear-gradient(
+    -45deg,
+    #0f172a,
+    #1e1b4b,
+    #1e3a8a,
+    #0f4c5c,
+    #1d4ed8,
+    #312e81,
+    #172554,
+    #0284c7,
+    #0f172a
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: cardGradientGlow1 28s ease-in-out infinite !important;
+}
+
+.animate-card-glow-2,
+.animate-radiant-wave-2 {
+  background: linear-gradient(
+    135deg,
+    #1e1b4b,
+    #03045e,
+    #0077b6,
+    #023047,
+    #1d4ed8,
+    #0284c7,
+    #0f172a,
+    #1e1b4b
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: cardGradientGlow2 34s ease-in-out infinite !important;
+}
+
+.animate-card-glow-3,
+.animate-radiant-wave-3 {
+  background: linear-gradient(
+    -60deg,
+    #0f172a,
+    #312e81,
+    #451a03,
+    #1e293b,
+    #1e1b4b,
+    #78350f,
+    #0f172a
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: cardGradientGlow3 32s ease-in-out infinite !important;
+}
+
+.animate-card-glow-4,
+.animate-radiant-wave-4 {
+  background: linear-gradient(
+    45deg,
+    #1e1b4b,
+    #451a03,
+    #0f172a,
+    #78350f,
+    #1e3a8a,
+    #312e81,
+    #1e1b4b
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: cardGradientGlow4 38s ease-in-out infinite !important;
 }
 
 .animate-radiant-wave {
-  animation: radiantWaveShift 55s linear infinite;
-  will-change: filter;
-}
-
-.animate-radiant-wave-1 {
-  animation: radiantWaveShift 55s linear infinite;
-  will-change: filter;
-}
-
-.animate-radiant-wave-2 {
-  animation: radiantWaveShift 55s linear infinite -13.75s;
-  will-change: filter;
-}
-
-.animate-radiant-wave-3 {
-  animation: radiantWaveShift 55s linear infinite -27.5s;
-  will-change: filter;
-}
-
-.animate-radiant-wave-4 {
-  animation: radiantWaveShift 55s linear infinite -41.25s;
-  will-change: filter;
+  animation: cardGradientGlow1 30s ease-in-out infinite !important;
 }
 
 html, body {

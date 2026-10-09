@@ -168,6 +168,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   const isTitleGradientDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.titleGradientAnimation === false;
   const isCounterAnimDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.counterAnimation === false;
   const isAmbientOrbsDisabled = isGeneralDisabled || prefsState.disableAnimations || prefsState.ambientOrbs === false;
+  const isQuickAccessEnabled = prefsState.showQuickAccessPanel !== false;
 
   // Today's formatted Shamsi Date (e.g. "یکشنبه، ۱۳ مهر")
   const todayFormatted = useMemo(() => {
@@ -1692,86 +1693,86 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             {/* Card 1 (بالا سمت راست): کارنامه علمی */}
             <div
               onClick={() => onNavigateTab('student-portal')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white shadow-lg shadow-indigo-600/20 border border-indigo-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-1 select-none"
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-indigo-950/30 border border-indigo-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-1"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <BrainCircuit size={22} className="text-white" />
+                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
+                  <BrainCircuit size={22} />
                 </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   سوابق علمی و تحصیلی
                 </span>
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate">کارنامه علمی</h3>
-                <p className="text-xs text-purple-100 font-medium truncate">مشاهده پرونده تحصیلی، نمرات، وضعیت ترم و دروس</p>
+                <p className="text-xs text-indigo-100/90 font-medium truncate">مشاهده پرونده تحصیلی، نمرات، وضعیت ترم و دروس</p>
               </div>
             </div>
 
             {/* Card 2 (بالا سمت چپ): ثبت تقاضا و درخواست */}
             <div
               onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-rose-500 via-pink-600 to-red-600 text-white shadow-lg shadow-rose-600/20 border border-rose-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-2 select-none"
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-indigo-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-2"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <Send size={21} className="text-white" />
+                <div className="w-11 h-11 rounded-xl bg-indigo-500/20 text-indigo-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-indigo-400/30 group-hover:scale-110 transition-transform">
+                  <Send size={21} />
                 </div>
                 {unreadRequestsCount > 0 ? (
-                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-white text-rose-700 shadow-sm animate-pulse">
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-indigo-950 shadow-sm animate-pulse">
                     {unreadRequestsCount} درخواست جاری
                   </span>
                 ) : (
-                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-rose-100 border border-white/20 backdrop-blur-xs">
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 backdrop-blur-xs">
                     کارتابل آنلاین
                   </span>
                 )}
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate">ثبت تقاضا و درخواست</h3>
-                <p className="text-xs text-rose-100 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
+                <p className="text-xs text-indigo-100/90 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
               </div>
             </div>
 
-            {/* Card 3 (پایین سمت راست): ساعت مطالعه من (جایگزین شده با پرداختی‌ها به دلیل اهمیت بالاتر) */}
+            {/* Card 3 (پایین سمت راست): ساعت مطالعه من */}
             <div
               onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-purple-600 via-violet-600 to-indigo-700 text-white shadow-lg shadow-purple-600/20 border border-purple-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-3 select-none"
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-900/30 border border-amber-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-3"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <BookOpen size={22} className="text-white" />
+                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
+                  <BookOpen size={22} />
                 </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   مباحثه و ساعات مطالعه
                 </span>
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate">ساعت مطالعه من</h3>
-                <p className="text-xs text-purple-100 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی</p>
+                <p className="text-xs text-indigo-100/90 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی</p>
               </div>
             </div>
 
-            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام (طبق دستور صریح کاربر در پایین سمت چپ قرار دارد) */}
+            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام */}
             <div
               onClick={() => onNavigateTab('student-meals')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/20 border border-amber-300/40 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] animate-radiant-wave-4 select-none"
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-indigo-950/30 border border-amber-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-4"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-white/20 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <UtensilsCrossed size={22} className="text-white" />
+                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
+                  <UtensilsCrossed size={22} />
                 </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-black/20 text-amber-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   سلف و تغذیه
                 </span>
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate">رزرو نهار و شام</h3>
-                <p className="text-xs text-amber-100 font-medium truncate">انتخاب و سفارش غذا، مشاهده ژتون‌ها و رزروهای هفتگی سلف</p>
+                <p className="text-xs text-amber-100/90 font-medium truncate">انتخاب و سفارش غذا، مشاهده ژتون‌ها و رزروهای هفتگی سلف</p>
               </div>
             </div>
           </div>
@@ -1894,16 +1895,18 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
 
         {/* Flat Mode & Display Controls / Breadcrumb */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-          {/* Quick Access Customization Button (Always visible) */}
-          <button
-            type="button"
-            onClick={() => setIsQuickAccessModalOpen(true)}
-            className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-            title="انتخاب و ویرایش حداکثر ۵ کارت دسترسی سریع"
-          >
-            <Sparkles size={14} className="text-amber-100 animate-pulse" />
-            <span>افزودن دسترسی‌های سریع</span>
-          </button>
+          {/* Quick Access Customization Button (Only if Quick Access is enabled) */}
+          {isQuickAccessEnabled && (
+            <button
+              type="button"
+              onClick={() => setIsQuickAccessModalOpen(true)}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+              title="انتخاب و ویرایش حداکثر ۵ کارت دسترسی سریع"
+            >
+              <Sparkles size={14} className="text-amber-100 animate-pulse" />
+              <span>افزودن دسترسی‌های سریع</span>
+            </button>
+          )}
 
           {displayMode === 'grouped' && activeCategoryGroup && (
             <button
@@ -1998,8 +2001,8 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         )}
       </AnimatePresence>
 
-      {/* DEDICATED EYE-CATCHING QUICK ACCESS BANNER (Available in both grouped & flat modes) */}
-      {quickAccessCards.length > 0 && (
+      {/* DEDICATED EYE-CATCHING QUICK ACCESS BANNER (Available in both grouped & flat modes when enabled) */}
+      {isQuickAccessEnabled && quickAccessCards.length > 0 && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-500/20 space-y-3">
           <div className="flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-2.5">
             <div className="flex items-center gap-2.5">

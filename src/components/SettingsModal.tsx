@@ -35,6 +35,7 @@ export interface AppPreferences {
   counterAnimation: boolean;
   ambientOrbs: boolean;
   showHadithBanner: boolean;
+  showQuickAccessPanel: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -47,7 +48,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   titleGradientAnimation: true,
   counterAnimation: true,
   ambientOrbs: true,
-  showHadithBanner: true
+  showHadithBanner: true,
+  showQuickAccessPanel: true
 };
 
 interface SettingsModalProps {
@@ -387,6 +389,35 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   )} />
                 </button>
               </div>
+
+              {/* Quick Access Panel Toggle for Officials (Level 1 & Level 2) */}
+              {((currentUser?.level && currentUser.level <= 2) || currentUser?.role === 'super_admin') && (
+                <div className="pt-3 border-t border-slate-200/80 flex items-start justify-between gap-4 bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 font-black text-slate-900">
+                      <Zap size={16} className="text-amber-600" />
+                      <span>فعال‌سازی پنل دسترسی‌های سریع و کارت‌های میانبر (مخصوص مسئولین سطح ۱ و ۲)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                      در صورت «فعال» بودن، بنر و کارت‌های دسترسی سریع در بالای صفحه نمایش داده می‌شوند. در صورت «غیرفعال» شدن، کلاً این پنل از سایت حذف گردیده و مثل حالتی می‌شود که وجود نداشته است.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => updatePreference('showQuickAccessPanel', prefs.showQuickAccessPanel === false)}
+                    className={cn(
+                      "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 mt-1",
+                      prefs.showQuickAccessPanel !== false ? "bg-amber-600" : "bg-slate-300"
+                    )}
+                  >
+                    <span className={cn(
+                      "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-xs",
+                      prefs.showQuickAccessPanel !== false ? "right-1" : "right-6"
+                    )} />
+                  </button>
+                </div>
+              )}
 
               {/* Account Security Level PIN Banner */}
               <div className="pt-3 border-t border-slate-200/80 bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3">

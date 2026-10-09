@@ -258,86 +258,86 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             {/* Card 1 (بالا سمت راست): کارنامه علمی */}
             <div
               onClick={() => onNavigateTab('student-portal')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 text-white shadow-md shadow-indigo-600/25 border border-indigo-300/40 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-radiant-wave-1"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-indigo-950/25 border border-indigo-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-card-glow-1"
             >
-              <div className="absolute -top-6 -right-6 w-14 h-14 bg-white/20 rounded-full blur-md pointer-events-none" />
+              <div className="absolute -top-6 -right-6 w-14 h-14 bg-indigo-500/10 rounded-full blur-md pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <BrainCircuit size={17} className="text-white" />
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-amber-400/30 group-hover:scale-105 transition-transform">
+                  <BrainCircuit size={17} />
                 </div>
-                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   سوابق علمی
                 </span>
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate">کارنامه علمی</h3>
-                <p className="text-[8.5px] text-purple-100 font-medium truncate">پرونده و نمرات تحصیلی</p>
+                <p className="text-[8.5px] text-indigo-100/90 font-medium truncate">پرونده و نمرات تحصیلی</p>
               </div>
             </div>
 
             {/* Card 2 (بالا سمت چپ): پنل ثبت درخواست */}
             <div
               onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 bg-gradient-to-br from-rose-500 via-pink-600 to-red-600 text-white shadow-md shadow-rose-600/25 border border-rose-300/40 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-radiant-wave-2"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-indigo-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-card-glow-2"
             >
-              <div className="absolute -top-6 -right-6 w-14 h-14 bg-white/20 rounded-full blur-md pointer-events-none" />
+              <div className="absolute -top-6 -right-6 w-14 h-14 bg-indigo-500/10 rounded-full blur-md pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <Send size={16} className="text-white" />
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-indigo-400/30 group-hover:scale-105 transition-transform">
+                  <Send size={16} />
                 </div>
                 {myRequestsCount > 0 ? (
-                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-white text-rose-700 shadow-2xs">
+                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-indigo-950 shadow-2xs">
                     {myRequestsCount} جاری
                   </span>
                 ) : (
-                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-black/20 text-rose-100 border border-white/20 backdrop-blur-xs">
+                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 backdrop-blur-xs">
                     کارتابل
                   </span>
                 )}
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate">ثبت تقاضا و درخواست</h3>
-                <p className="text-[8.5px] text-rose-100 font-medium truncate">مرخصی، گواهی و رفاهی</p>
+                <p className="text-[8.5px] text-indigo-100/90 font-medium truncate">مرخصی، گواهی و رفاهی</p>
               </div>
             </div>
 
-            {/* Card 3 (پایین سمت راست): ساعت مطالعه من (جایگزین شده با پرداختی‌ها به دلیل اولویت و اهمیت بالاتر) */}
+            {/* Card 3 (پایین سمت راست): ساعت مطالعه من */}
             <div
               onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 bg-gradient-to-br from-purple-600 via-violet-600 to-indigo-700 text-white shadow-md shadow-purple-600/25 border border-purple-300/40 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-radiant-wave-3"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-900/25 border border-amber-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-card-glow-3"
             >
-              <div className="absolute -top-6 -right-6 w-14 h-14 bg-white/20 rounded-full blur-md pointer-events-none" />
+              <div className="absolute -top-6 -right-6 w-14 h-14 bg-amber-500/10 rounded-full blur-md pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <BookOpen size={17} className="text-white" />
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-amber-400/30 group-hover:scale-105 transition-transform">
+                  <BookOpen size={17} />
                 </div>
-                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-black/20 text-purple-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   مباحثه و مطالعه
                 </span>
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate">ساعت مطالعه من</h3>
-                <p className="text-[8.5px] text-purple-100 font-medium truncate">ثبت کارکرد و گزارش ساعات</p>
+                <p className="text-[8.5px] text-indigo-100/90 font-medium truncate">ثبت کارکرد و گزارش ساعات</p>
               </div>
             </div>
 
-            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام (طبق درخواست صریح کاربر در قسمت پایین سمت چپ قرار دارد) */}
+            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام */}
             <div
               onClick={() => onNavigateTab('student-meals')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/25 border border-amber-300/40 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-radiant-wave-4"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-indigo-950/25 border border-amber-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[96px] sm:min-h-[106px] animate-card-glow-4"
             >
-              <div className="absolute -top-6 -right-6 w-14 h-14 bg-white/20 rounded-full blur-md pointer-events-none" />
+              <div className="absolute -top-6 -right-6 w-14 h-14 bg-amber-500/10 rounded-full blur-md pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <UtensilsCrossed size={17} className="text-white" />
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-amber-400/30 group-hover:scale-105 transition-transform">
+                  <UtensilsCrossed size={17} />
                 </div>
-                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-black/20 text-amber-100 border border-white/20 backdrop-blur-xs">
+                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
                   سلف غذا
                 </span>
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate">رزرو نهار و شام</h3>
-                <p className="text-[8.5px] text-amber-100 font-medium truncate">سفارش و وعده‌های سلف</p>
+                <p className="text-[8.5px] text-amber-100/90 font-medium truncate">سفارش و وعده‌های سلف</p>
               </div>
             </div>
           </div>
