@@ -42,7 +42,10 @@ import {
   User,
   LayoutGrid,
   Layers,
-  Building2
+  Building2,
+  Copy,
+  Phone,
+  PhoneCall
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn, getProgramDays, matchesGradeFilter } from '../lib/utils';
@@ -66,7 +69,8 @@ import {
   WorkflowItem,
   AcademicHolidayItem,
   AcademicCalendarPeriod,
-  Teacher
+  Teacher,
+  Program
 } from '../types';
 
 export type AttendanceRecord = AttendanceSessionLog;
@@ -79,7 +83,7 @@ interface AttendanceAndStatsProps {
 export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status'>(() => {
+  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status' | 'representatives_list'>(() => {
     if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || (currentUser as any)?.managedClassId) {
       return 'record';
     }
@@ -93,6 +97,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [classStatusGradeFilter, setClassStatusGradeFilter] = useState<string>('all');
   const [classStatusSearchQuery, setClassStatusSearchQuery] = useState<string>('');
   const [classStatusCategoryTab, setClassStatusCategoryTab] = useState<'all' | 'academic' | 'counseling'>('all');
+
+  // Representatives tab state
+  const [repSearchQuery, setRepSearchQuery] = useState<string>('');
+  const [repNotesMap, setRepNotesMap] = useState<Record<string, string>>({});
+  const [users, setUsers] = useState<any[]>([]);
 
   // Data states
   const [programs, setPrograms] = useState<any[]>([]);
@@ -190,7 +199,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [progs, studs, teaList, enrolls, atts, settList, hols, periods] = await Promise.all([
+      const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList] = await Promise.all([
         localDb.getDocs('programs'),
         localDb.getDocs('students'),
         localDb.getDocs<Teacher>('teachers'),
@@ -198,7 +207,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         localDb.getDocs<AttendanceSessionLog>('attendance'),
         localDb.getDocs<AttendanceSettings>('attendance_settings'),
         localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
-        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods')
+        localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods'),
+        localDb.getDocs('users'),
+        localDb.getDocs('representative_notes')
       ]);
       setPrograms(progs || []);
       setStudents(studs || []);
@@ -207,6 +218,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setAttendanceRecords(atts || []);
       setAcademicHolidays(hols || []);
       setAcademicPeriods(periods || []);
+      setUsers(userList || []);
+
+      const notesMap: Record<string, string> = {};
+      if (Array.isArray(notesList)) {
+        notesList.forEach((n: any) => {
+          if (n.repId) notesMap[n.repId] = n.noteText || n.note || '';
+        });
+      }
+      setRepNotesMap(notesMap);
+
       if (settList && settList.length > 0) {
         setSettings(settList[0]);
       }
@@ -1213,6 +1234,173 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }).filter(cGroup => cGroup.studentsList.length > 0);
   }, [filteredReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents]);
 
+  // Aggregated Representatives List for Education Manager (اصلاح 8)
+  const representativesList = useMemo(() => {
+    const repMap = new Map<string, {
+      id: string;
+      name: string;
+      studentCode?: string;
+      nationalId?: string;
+      mobile?: string;
+      grade?: string;
+      managedClasses: Program[];
+      totalSessionsExpected: number;
+      recordedSessionsCount: number;
+      commitmentPercent: number;
+    }>();
+
+    programs.forEach(p => {
+      // 1. representativeStudentIds
+      if (Array.isArray(p.representativeStudentIds)) {
+        p.representativeStudentIds.forEach(sid => {
+          if (!sid) return;
+          const st = students.find(s => String(s.id) === String(sid) || s.studentCode === sid || s.nationalId === sid);
+          const repId = st?.id || String(sid);
+          const repName = st?.name || `نماینده (${sid})`;
+          const repMobile = st?.fatherMobile || st?.mobile || st?.phone || (st as any)?.fatherPhone || (st as any)?.parentMobile || '';
+
+          if (!repMap.has(repId)) {
+            repMap.set(repId, {
+              id: repId,
+              name: repName,
+              studentCode: st?.studentCode,
+              nationalId: st?.nationalId,
+              mobile: repMobile,
+              grade: st?.grade || p.grade,
+              managedClasses: [p],
+              totalSessionsExpected: 0,
+              recordedSessionsCount: 0,
+              commitmentPercent: 100
+            });
+          } else {
+            const item = repMap.get(repId)!;
+            if (!item.managedClasses.some(cp => cp.id === p.id)) {
+              item.managedClasses.push(p);
+            }
+            if (!item.mobile && repMobile) item.mobile = repMobile;
+          }
+        });
+      }
+
+      // 2. representativeNames
+      if (Array.isArray(p.representativeNames)) {
+        p.representativeNames.forEach(rName => {
+          if (!rName || !rName.trim()) return;
+          const cleanName = rName.trim();
+          const st = students.find(s => s.name?.trim() === cleanName);
+          const repId = st?.id || `rep_name_${cleanName}`;
+          const repMobile = st?.fatherMobile || st?.mobile || st?.phone || (st as any)?.fatherPhone || (st as any)?.parentMobile || '';
+
+          if (!repMap.has(repId)) {
+            repMap.set(repId, {
+              id: repId,
+              name: st?.name || cleanName,
+              studentCode: st?.studentCode,
+              nationalId: st?.nationalId,
+              mobile: repMobile,
+              grade: st?.grade || p.grade,
+              managedClasses: [p],
+              totalSessionsExpected: 0,
+              recordedSessionsCount: 0,
+              commitmentPercent: 100
+            });
+          } else {
+            const item = repMap.get(repId)!;
+            if (!item.managedClasses.some(cp => cp.id === p.id)) {
+              item.managedClasses.push(p);
+            }
+            if (!item.mobile && repMobile) item.mobile = repMobile;
+          }
+        });
+      }
+    });
+
+    // Also check users with class_representative role
+    users.forEach(u => {
+      if (u.role === 'class_representative' || u.roleTitle?.includes('نماینده')) {
+        const uId = u.studentId || u.linkedStudentId || u.id;
+        const st = students.find(s => String(s.id) === String(uId) || s.nationalId === u.username);
+        const repId = st?.id || uId;
+        const repName = st?.name || u.fullName || u.name || u.username;
+        const repMobile = u.phone || u.mobile || st?.fatherMobile || st?.mobile || '';
+
+        if (!repMap.has(repId)) {
+          const userProgs = programs.filter(p => 
+            p.representativeStudentIds?.includes(repId) ||
+            p.representativeStudentIds?.includes(u.studentId) ||
+            p.representativeNames?.includes(repName) ||
+            p.id === u.managedClassId
+          );
+
+          if (userProgs.length > 0) {
+            repMap.set(repId, {
+              id: repId,
+              name: repName,
+              studentCode: st?.studentCode,
+              nationalId: st?.nationalId || u.username,
+              mobile: repMobile,
+              grade: st?.grade,
+              managedClasses: userProgs,
+              totalSessionsExpected: 0,
+              recordedSessionsCount: 0,
+              commitmentPercent: 100
+            });
+          }
+        } else {
+          const item = repMap.get(repId)!;
+          if (!item.mobile && repMobile) item.mobile = repMobile;
+        }
+      }
+    });
+
+    // Calculate commitment metrics for each rep
+    const list = Array.from(repMap.values());
+    list.forEach(rep => {
+      let expected = 0;
+      let recorded = 0;
+
+      rep.managedClasses.forEach(p => {
+        const classAtts = attendanceRecords.filter(r => r.programId === p.id);
+        recorded += classAtts.length;
+        expected += Math.max(classAtts.length, 1);
+      });
+
+      rep.totalSessionsExpected = expected;
+      rep.recordedSessionsCount = recorded;
+      rep.commitmentPercent = expected > 0 ? Math.min(100, Math.round((recorded / expected) * 100)) : 100;
+    });
+
+    // Filter by repSearchQuery if provided
+    if (repSearchQuery.trim()) {
+      const q = repSearchQuery.toLowerCase().trim();
+      return list.filter(r => 
+        r.name.toLowerCase().includes(q) || 
+        r.mobile?.includes(q) || 
+        r.nationalId?.includes(q) ||
+        r.managedClasses.some(p => p.title.toLowerCase().includes(q))
+      );
+    }
+
+    return list.sort((a, b) => b.commitmentPercent - a.commitmentPercent || a.name.localeCompare(b.name, 'fa'));
+  }, [programs, students, users, attendanceRecords, repSearchQuery]);
+
+  // Handler to save Education Manager note for a representative
+  const handleSaveRepNote = async (repId: string, text: string) => {
+    setRepNotesMap(prev => ({ ...prev, [repId]: text }));
+    try {
+      const existing = await localDb.getDocs<any>('representative_notes');
+      const match = existing.find(n => n.repId === repId || n.id === repId);
+      if (match) {
+        await localDb.updateDoc('representative_notes', match.id, { noteText: text, updatedAt: new Date().toISOString() });
+      } else {
+        await localDb.addDoc('representative_notes', { id: repId, repId, noteText: text, updatedAt: new Date().toISOString() });
+      }
+      showToast('توضیحات مسئول آموزش با موفقیت در دیتابیس ثبت گردید.');
+    } catch (err) {
+      console.warn('Error saving representative note:', err);
+    }
+  };
+
   // 4 Primary Metrics for Student / Overall Panel
   const studentMetrics = useMemo(() => {
     const isLevel3OrStudent = currentUser?.level === 3 || isOrdinaryStudent;
@@ -1466,6 +1654,22 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 <FileCheck2 size={14} />
                 <span>{isRepresentative ? 'آمار غیبت من' : 'گزارش‌ها و آمار غیبت'}</span>
               </button>
+
+              {!isOrdinaryStudent && !isRepresentative && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('representatives_list')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                    activeTab === 'representatives_list'
+                      ? "bg-white text-indigo-700 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <Users size={14} />
+                  <span>لیست نمایندگان</span>
+                </button>
+              )}
             </div>
 
             {canManageSettings && (
@@ -1488,6 +1692,17 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {activeTab === 'class_status' && !isOrdinaryStudent && !isRepresentative && (() => {
         // Date helpers
+        const getOffsetShamsiDate = (offsetDays: number) => {
+          try {
+            const todayStr = getTodayShamsi();
+            const dt = shamsiToDate(todayStr);
+            dt.setDate(dt.getDate() + offsetDays);
+            return dateToShamsi(dt);
+          } catch {
+            return getTodayShamsi();
+          }
+        };
+
         const handlePrevDay = () => {
           try {
             const dt = shamsiToDate(selectedDate);
@@ -1715,6 +1930,36 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     امروز
                   </button>
                 </div>
+              </div>
+
+              {/* Quick Date Pills for Past Days */}
+              <div className="pt-2 border-t border-white/10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <span className="text-[11px] font-bold text-slate-300 shrink-0 ml-1">دسترسی سریع به روزهای قبل:</span>
+                {[
+                  { label: 'امروز', date: getTodayShamsi() },
+                  { label: 'دیروز', date: getOffsetShamsiDate(-1) },
+                  { label: 'پریروز', date: getOffsetShamsiDate(-2) },
+                  { label: '۳ روز قبل', date: getOffsetShamsiDate(-3) },
+                  { label: '۴ روز قبل', date: getOffsetShamsiDate(-4) },
+                  { label: '۱ هفته قبل', date: getOffsetShamsiDate(-7) }
+                ].map(item => {
+                  const isSel = item.date === selectedDate;
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => setSelectedDate(item.date)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 cursor-pointer border",
+                        isSel
+                          ? "bg-emerald-500 text-white border-emerald-400 shadow-xs"
+                          : "bg-white/10 hover:bg-white/20 text-slate-200 border-white/15"
+                      )}
+                    >
+                      {item.label} ({item.date.split('/')[2]})
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Day Notice & Stats Counter Strip */}
@@ -3642,6 +3887,230 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         </div>
       )}
 
+      {/* ===================================================================== */}
+      {/* TAB 4: REPRESENTATIVES LIST (لیست نمایندگان کلاس‌ها) */}
+      {/* ===================================================================== */}
+      {activeTab === 'representatives_list' && !isOrdinaryStudent && !isRepresentative && (
+        <div className="space-y-6 font-vazir">
+          {/* Summary Metric Cards Header */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl border border-indigo-500/30 shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-indigo-200/90 block">تعداد کل نمایندگان فعال</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1">
+                    {representativesList.length} <span className="text-xs font-vazir text-indigo-300">نفر</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                  <Users size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-indigo-200/70">
+                <span>دارای دسترسی ثبت حضور و غیاب کلاس‌ها</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-900 text-white rounded-2xl border border-emerald-500/30 shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-emerald-200/90 block">نمایندگان با تعهد بالای ۹۰٪</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1">
+                    {representativesList.filter(r => r.commitmentPercent >= 90).length} <span className="text-xs font-vazir text-emerald-300">نفر</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                  <CheckCircle2 size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-emerald-200/70">
+                <span>ثبت به‌موقع حضور و غیاب در مهلت مقرر</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-gradient-to-br from-purple-950 via-slate-900 to-slate-900 text-white rounded-2xl border border-purple-500/30 shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-purple-200/90 block">میانگین شاخص تعهد کل نمایندگان</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1">
+                    {representativesList.length > 0 
+                      ? `${Math.round(representativesList.reduce((acc, r) => acc + r.commitmentPercent, 0) / representativesList.length)}٪`
+                      : '۱۰۰٪'}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
+                  <Award size={20} />
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-purple-200/70">
+                <span>نسبت جلسات ثبت‌شده به جلسات برگزار شده</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Toolbar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search size={15} className="absolute right-3 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder="جستجوی نام نماینده، شماره همراه یا عنوان کلاس..."
+                value={repSearchQuery}
+                onChange={(e) => setRepSearchQuery(e.target.value)}
+                className="w-full pr-9 pl-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
+              />
+            </div>
+            <span className="text-xs text-slate-500 font-bold self-end sm:self-center">
+              نمایش {representativesList.length} نماینده کلاس
+            </span>
+          </div>
+
+          {/* Representatives Cards / Table List */}
+          {representativesList.length === 0 ? (
+            <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-3">
+              <Users size={48} className="mx-auto text-slate-300" />
+              <h3 className="text-base font-black text-slate-800">هیچ نماینده‌ای یافت نشد</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                می‌توانید در بخش «برنامه‌های درسی»، با ویرایش مشخصات هر کلاس، نماینده کلاس مربوطه را تعیین نمایید.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {representativesList.map(rep => {
+                const noteVal = repNotesMap[rep.id] || '';
+                return (
+                  <div key={rep.id} className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4 hover:border-indigo-200 transition-all">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                      {/* Rep Info & Phone Number with Copy Button */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center font-black text-indigo-700 text-sm shrink-0">
+                          <UserCheck size={22} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-black text-slate-900">{rep.name}</h3>
+                            {rep.grade && (
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-lg border border-slate-200">
+                                {rep.grade}
+                              </span>
+                            )}
+                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">
+                              نماینده کلاس
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-1 flex-wrap">
+                            {rep.nationalId && <span>کد ملی / شناسه: <strong className="font-mono text-slate-700">{rep.nationalId}</strong></span>}
+                            {/* Copyable Phone Button */}
+                            {rep.mobile ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(rep.mobile || '');
+                                  showToast(`شماره همراه ${rep.name} (${rep.mobile}) کپی گردید.`);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                                title="کلیک کنید تا شماره همراه کپی شود"
+                              >
+                                <PhoneCall size={12} className="text-emerald-600" />
+                                <span className="font-mono dir-ltr">{rep.mobile}</span>
+                                <Copy size={12} className="text-emerald-600 shrink-0 ml-0.5" />
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 italic text-[11px]">بدون شماره همراه ثبت‌شده</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Commitment Rating Badge */}
+                      <div className="flex items-center gap-3 self-start lg:self-center bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-500 block">میزان تعهد نماینده به ثبت:</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={cn(
+                              "px-2.5 py-0.5 rounded-lg text-xs font-black border font-mono",
+                              rep.commitmentPercent >= 90 
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                : rep.commitmentPercent >= 70
+                                ? "bg-amber-100 text-amber-900 border-amber-300"
+                                : "bg-rose-100 text-rose-800 border-rose-300"
+                            )}>
+                              {rep.commitmentPercent}٪ تعهد
+                            </span>
+                            <span className="text-[11px] text-slate-600 font-bold font-mono">
+                              ({rep.recordedSessionsCount} از {rep.totalSessionsExpected} جلسه)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Side-by-side Managed Classes List */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <BookOpen size={14} className="text-indigo-600" />
+                        <span>کلاس‌های تحت مدیریت این نماینده ({rep.managedClasses.length} کلاس):</span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {rep.managedClasses.map(p => (
+                          <div
+                            key={p.id}
+                            className="p-2 px-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs font-bold flex items-center gap-2 shadow-2xs"
+                          >
+                            <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                            <span>{p.title}</span>
+                            {p.grade && (
+                              <span className="px-1.5 py-0.5 bg-indigo-200/80 text-indigo-900 text-[10px] font-extrabold rounded-md">
+                                {p.grade}
+                              </span>
+                            )}
+                            {(p.teacher || (p as any).teacherName) && (
+                              <span className="text-[10px] text-indigo-700 font-medium">
+                                (استاد {p.teacher || (p as any).teacherName})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Education Manager Editable Notes Area (Saved to DB) */}
+                    <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          <FileText size={13} className="text-indigo-600" />
+                          <span>توضیحات و یادداشت مسئول آموزش درباره این نماینده:</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          (ذخیره‌سازی در دیتابیس)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <textarea
+                          rows={2}
+                          placeholder="توضیحات انضباطی، تذکرات، نحوه عملکرد یا پیگیری‌های انجام‌شده برای این نماینده را بنویسید..."
+                          className="flex-1 p-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/60 focus:bg-white transition-all font-medium text-slate-800 leading-relaxed resize-y"
+                          value={noteVal}
+                          onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer flex items-center gap-1 shrink-0 self-end"
+                        >
+                          <Save size={14} />
+                          <span>ثبت توضیحات</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* Modal 1: Attendance Settings Modal */}
       {/* ========================================================================= */}
@@ -3735,6 +4204,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                         />
                         <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
                       </label>
+                    </div>
+
+                    <div className="pt-2 border-t border-emerald-200/60">
+                      <label className="block font-bold text-emerald-950 text-[11px] mb-1">
+                        نحوه محاسبه «عدم ثبت خوداظهاری» توسط طلبه در آمار (منفک از نماینده):
+                      </label>
+                      <select
+                        value={settings.unrecordedSelfReportingAs || 'absent'}
+                        onChange={(e) => setSettings({ ...settings, unrecordedSelfReportingAs: e.target.value as any })}
+                        className="w-full p-2 border border-emerald-200 rounded-xl bg-white font-bold text-xs"
+                      >
+                        <option value="absent">به عنوان «غیبت غیرموجه» محاسبه شود (پیش‌فرض)</option>
+                        <option value="present">به عنوان «حضور» محاسبه شود</option>
+                        <option value="unspecified">به عنوان «وضعیت نامشخص» درج شود</option>
+                        <option value="late">به عنوان «تاخیر» محاسبه شود</option>
+                      </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        چنانچه طلبه در مهلت خوداظهاری وضعیتی اعلام نکند، سیستم این حالت را ثبت می‌کند.
+                      </p>
                     </div>
                   </div>
 

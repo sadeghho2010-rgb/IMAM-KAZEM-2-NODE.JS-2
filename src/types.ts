@@ -103,6 +103,9 @@ export interface AttendanceSettings {
   unexcusedWarningThreshold?: number; // حد نصاب اخطار آموزشی غیبت (پیش‌فرض: ۳ جلسه)
   allowGradeProfessorSettingsEdit?: boolean; // آیا اساتید پایه می‌توانند تنظیمات حضور غیاب را تغییر دهند؟
   allowGradeProfessorAttendanceEdit?: boolean; // تعیین توسط مسئول آموزش: آیا اساتید پایه می‌توانند حضور و غیاب را ویرایش کنند یا فقط ببینند؟
+  studentSelfReportingWindowDays?: number; // مهلت ثبت خوداظهاری توسط خود طلبه (روز)
+  allowStudentSelfReportingEdit?: boolean; // امکان ویرایش خوداظهاری توسط طلبه در مهلت مقرر
+  unrecordedSelfReportingAs?: 'absent' | 'present' | 'unspecified' | 'late'; // نحوه محاسبه «عدم ثبت خوداظهاری» توسط طلبه در آمار (منفک از نماینده)
   updatedAt?: string;
   updatedBy?: string;
 }
