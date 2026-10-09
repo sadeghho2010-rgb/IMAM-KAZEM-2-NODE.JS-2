@@ -30,6 +30,7 @@
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.6",
         "date-fns": "^4.4.0",
+        "dexie": "^4.4.6",
         "dotenv": "^17.2.3",
         "esbuild": "^0.25.0",
         "express": "^4.21.2",
@@ -670,6 +671,8 @@
     "destroy": ["destroy@1.2.0", "", {}, ""],
 
     "detect-libc": ["detect-libc@2.1.2", "", {}, ""],
+
+    "dexie": ["dexie@4.4.6", "", {}, "sha512-hJP/BO6mjB+tX6hToIO1kmxYLNmun90wYbfcoAoLpKEyDYal/k33dg0TAfoUe2TDsbbLoVIzljJ3BN2UbR5EOg=="],
 
     "dompurify": ["dompurify@3.4.16", "", { "optionalDependencies": { "@types/trusted-types": "^2.0.7" } }, ""],
 
