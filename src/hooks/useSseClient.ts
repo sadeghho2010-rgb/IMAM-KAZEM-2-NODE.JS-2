@@ -11,7 +11,6 @@ export function useSseClient() {
     let active = true;
 
     async function initSse() {
-      // Get last applied sequence from metadata
       const meta = await localDb.sync_metadata.get('last_applied_seq');
       const startSeq = meta?.value || 0;
       setLastSeq(startSeq);
@@ -19,7 +18,6 @@ export function useSseClient() {
       function connect() {
         if (!active) return;
 
-        // Build SSE URL with sequence query fallback if header not sent by EventSource
         const sseUrl = `/api/v1/events?since=${startSeq}`;
         const es = new EventSource(sseUrl, { withCredentials: true });
         eventSourceRef.current = es;
@@ -33,7 +31,6 @@ export function useSseClient() {
             const eventData = JSON.parse(e.data);
             const { seq, entity, entityId, op, payload } = eventData;
 
-            // Idempotency check: ignore if seq <= lastSeq
             const currentMeta = await localDb.sync_metadata.get('last_applied_seq');
             const currentSeq = currentMeta?.value || 0;
 
@@ -52,12 +49,11 @@ export function useSseClient() {
               }
             }
 
-            // Save new sequence position
             await localDb.sync_metadata.put({ key: 'last_applied_seq', value: seq });
             setLastSeq(seq);
 
           } catch (err) {
-            console.error('[SSE Event Processing Error]', err);
+            console.error('[Fastify SSE Event Processing Error]', err);
           }
         });
 
@@ -65,7 +61,6 @@ export function useSseClient() {
           if (active) {
             setIsConnected(false);
             es.close();
-            // Reconnect after 3 seconds backoff
             retryTimeoutRef.current = setTimeout(connect, 3000);
           }
         };

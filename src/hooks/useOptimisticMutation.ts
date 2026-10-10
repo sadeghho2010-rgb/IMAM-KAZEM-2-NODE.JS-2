@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { localDb, PendingMutation } from '../lib/dexieDb';
+import { useCsrfToken } from './useCsrfToken';
 import axios from 'axios';
 
 export interface ConflictState {
@@ -16,6 +17,7 @@ export function useOptimisticMutation(entityName: string) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
+  const csrfToken = useCsrfToken();
 
   // Update pending queue count
   const updatePendingCount = useCallback(async () => {
@@ -55,7 +57,7 @@ export function useOptimisticMutation(entityName: string) {
           }, {
             headers: {
               'Idempotency-Key': item.idempotencyKey,
-              'X-CSRF-Token': (window as any).__CSRF_TOKEN__ || ''
+              'X-CSRF-Token': csrfToken || (window as any).__CSRF_TOKEN__ || ''
             }
           });
 
