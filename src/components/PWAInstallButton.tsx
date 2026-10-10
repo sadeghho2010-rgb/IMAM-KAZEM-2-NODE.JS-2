@@ -134,7 +134,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 shadow-2xs">
-                  <img src="/pwa-192x192.png" alt="سامانه طلاب" className="w-9 h-9 rounded-xl object-contain" />
+                  <Smartphone size={22} className="text-indigo-600" />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900">نصب برنامه روی آیفون و آیپد</h3>

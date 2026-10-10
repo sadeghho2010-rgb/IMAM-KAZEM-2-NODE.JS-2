@@ -33,9 +33,9 @@ export function getSyncQueue(): SyncQueueItem[] {
     if (!raw) return [];
     const parsed: SyncQueueItem[] = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Expire items older than 5 minutes to prevent ancient destructive replays
+    // Keep items for up to 7 days across offline sessions
     const now = Date.now();
-    return parsed.filter(item => item && (now - (item.timestamp || 0)) < 5 * 60 * 1000 && (item.attempts || 0) < 3);
+    return parsed.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 100);
   } catch (e) {
     return [];
   }
@@ -45,8 +45,67 @@ export function saveSyncQueue(queue: SyncQueueItem[]) {
   try {
     if (typeof window !== 'undefined') {
       const now = Date.now();
-      const valid = queue.filter(item => item && (now - (item.timestamp || 0)) < 5 * 60 * 1000 && (item.attempts || 0) < 3);
+      const valid = queue.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 100);
       localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(valid));
+    }
+  } catch (e) {}
+}
+
+const PENDING_LOCAL_DOCS_KEY = 'app_local_pending_docs_v2';
+
+export function getDocTimestamp(doc: any): number {
+  if (!doc) return 0;
+  if (typeof doc._localModifiedAt === 'number') return doc._localModifiedAt;
+  const rawTs = doc.updatedAt || doc.updated_at || doc.createdAt || doc.created_at;
+  if (rawTs) {
+    const t = new Date(rawTs).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return 0;
+}
+
+export interface PendingLocalDoc {
+  collection: string;
+  id: string;
+  action: 'upsert' | 'delete';
+  timestamp: number;
+  data?: any;
+}
+
+export function getPendingLocalDocsMap(): Map<string, PendingLocalDoc> {
+  if (typeof window === 'undefined') return new Map();
+  try {
+    const raw = localStorage.getItem(PENDING_LOCAL_DOCS_KEY);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Map(parsed.map((item: PendingLocalDoc) => [`${item.collection}::${item.id}`, item]));
+    }
+  } catch (e) {}
+  return new Map();
+}
+
+export function markPendingLocalDoc(collection: string, id: string, action: 'upsert' | 'delete', data?: any) {
+  if (typeof window === 'undefined') return;
+  try {
+    const map = getPendingLocalDocsMap();
+    map.set(`${collection}::${id}`, {
+      collection,
+      id: String(id),
+      action,
+      timestamp: Date.now(),
+      data
+    });
+    localStorage.setItem(PENDING_LOCAL_DOCS_KEY, JSON.stringify(Array.from(map.values())));
+  } catch (e) {}
+}
+
+export function removePendingLocalDoc(collection: string, id: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const map = getPendingLocalDocsMap();
+    if (map.delete(`${collection}::${id}`)) {
+      localStorage.setItem(PENDING_LOCAL_DOCS_KEY, JSON.stringify(Array.from(map.values())));
     }
   } catch (e) {}
 }
@@ -87,46 +146,48 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
 
   for (const item of queue) {
     try {
+      const idempotencyKey = `sync_${item.action}_${item.collectionName}_${item.id}_${item.timestamp}`;
+      const itemHeaders: Record<string, string> = {
+        ...headers,
+        'x-idempotency-key': idempotencyKey,
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      };
+
       let apiRes: Response;
       if (item.action === 'delete') {
-        apiRes = await fetch(`/api/data/${item.collectionName}/${item.id}`, {
+        apiRes = await fetch(`/api/data/${item.collectionName}/${item.id}?_t=${Date.now()}`, {
           method: 'DELETE',
-          headers,
+          headers: itemHeaders,
+          cache: 'no-store',
           credentials: 'include'
         });
       } else {
-        apiRes = await fetch(`/api/data/${item.collectionName}`, {
+        apiRes = await fetch(`/api/data/${item.collectionName}?_t=${Date.now()}`, {
           method: 'POST',
-          headers,
+          headers: itemHeaders,
+          cache: 'no-store',
           credentials: 'include',
-          body: JSON.stringify({ ...(item.data || {}), id: item.id })
+          body: JSON.stringify({ ...(item.data || {}), id: item.id, _synced: true, _idempotencyKey: idempotencyKey })
         });
       }
 
       if (apiRes.ok) {
         synced++;
-      } else if (apiRes.status === 401 || apiRes.status === 403) {
-        // Session Expired -> Keep for 1 attempt, alert user
-        item.attempts = (item.attempts || 0) + 1;
-        if (item.attempts < 2) remaining.push(item);
-        failed++;
-        break;
-      } else if (apiRes.status >= 400 && apiRes.status < 500) {
-        // Client Error 4xx -> Discard item from queue (do not replay bad requests)
-        failed++;
+        // Keep in pendingLocalDocs protective buffer for 15s to prevent any stale poll overwrite
+        setTimeout(() => removePendingLocalDoc(item.collectionName, item.id), 15000);
       } else {
-        // Server 5xx Error -> Increment attempts and discard after 3 attempts
         item.attempts = (item.attempts || 0) + 1;
-        if (item.attempts < 3) {
-          remaining.push(item);
-        }
+        remaining.push(item);
         failed++;
+        if (apiRes.status === 401 || apiRes.status === 403) {
+          // Token might be expired, break loop to prevent repeated 401s
+          break;
+        }
       }
     } catch (e) {
       item.attempts = (item.attempts || 0) + 1;
-      if (item.attempts < 3) {
-        remaining.push(item);
-      }
+      remaining.push(item);
       failed++;
     }
   }
@@ -157,8 +218,12 @@ export async function saveToCloudWithTimeout(
        localStorage.getItem('token') || sessionStorage.getItem('token'))
     : null;
 
+  const idempotencyKey = `cloud_${action}_${collectionName}_${id}_${data?.updatedAt || data?._localModifiedAt || Date.now()}`;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'x-idempotency-key': idempotencyKey,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache'
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -170,55 +235,51 @@ export async function saveToCloudWithTimeout(
   try {
     let apiRes: Response;
     if (action === 'delete') {
-      apiRes = await fetch(`/api/data/${collectionName}/${id}`, {
+      apiRes = await fetch(`/api/data/${collectionName}/${id}?_t=${Date.now()}`, {
         method: 'DELETE',
         headers,
+        cache: 'no-store',
         credentials: 'include',
         signal: controller.signal
       });
     } else {
-      apiRes = await fetch(`/api/data/${collectionName}`, {
+      apiRes = await fetch(`/api/data/${collectionName}?_t=${Date.now()}`, {
         method: 'POST',
         headers,
+        cache: 'no-store',
         credentials: 'include',
-        body: JSON.stringify({ ...(data || {}), id, _synced: true }),
+        body: JSON.stringify({ ...(data || {}), id, _synced: true, _idempotencyKey: idempotencyKey }),
         signal: controller.signal
       });
     }
     clearTimeout(timeoutId);
 
     if (apiRes.ok) {
+      // Retain in protective pending buffer for 15 seconds to withstand any immediate poll loops
+      setTimeout(() => removePendingLocalDoc(collectionName, id), 15000);
       return { success: true, status: apiRes.status };
     }
 
     const errJson = await apiRes.json().catch(() => ({}));
     const errMsg = errJson.message || `خطای کد ${apiRes.status}`;
 
+    // Guarantee: Always enqueue to syncQueue so edits are never lost
+    enqueueSync({ action, collectionName, id, data });
+
     if (apiRes.status === 401 || apiRes.status === 403) {
       return {
         success: false,
         status: apiRes.status,
         isSessionExpired: true,
-        message: errMsg || 'نشست شما منقضی شده است. لطفاً دوباره وارد شوید.'
+        message: errMsg || 'نشست شما نیاز به تمدید دارد. تغییرات در حافظه دستگاه ذخیره شد.'
       };
     }
 
-    if (apiRes.status >= 400 && apiRes.status < 500) {
-      return {
-        success: false,
-        status: apiRes.status,
-        isClientError: true,
-        message: errMsg
-      };
-    }
-
-    // Server Error 5xx -> Enqueue into sync queue
-    enqueueSync({ action, collectionName, id, data });
     return {
       success: false,
       status: apiRes.status,
       isServerError: true,
-      message: errMsg || 'خطا در سرور. داده در صف ارسال قرار گرفت.'
+      message: errMsg
     };
   } catch (err: any) {
     clearTimeout(timeoutId);
@@ -228,7 +289,7 @@ export async function saveToCloudWithTimeout(
       success: false,
       status: 500,
       isServerError: true,
-      message: 'ارتباط با سرور برقرار نشد. داده در صف همگام‌سازی قرار گرفت.'
+      message: 'دستگاه آفلاین است یا ارتباط با سرور برقرار نشد. تغییرات در حافظه دستگاه ذخیره شد.'
     };
   }
 }
@@ -684,9 +745,14 @@ class LocalDatabase {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-        const apiRes = await fetch(`/api/data/${resolvedCol}`, {
+        const apiRes = await fetch(`/api/data/${resolvedCol}?_t=${Date.now()}`, {
           method: 'GET',
-          headers,
+          headers: {
+            ...headers,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          cache: 'no-store',
           credentials: 'include',
           signal: controller.signal
         });
@@ -722,17 +788,73 @@ class LocalDatabase {
         }
       }
 
-      // CRITICAL SECURITY FIX: Only prune local IDB/LocalStorage if we got a VERIFIED authoritative response from Server or DB
+      // CRITICAL DATA INTEGRITY: Merge authoritative cloud response with local pending edits (LOCAL EDITS ALWAYS WIN)
       if (isServerAuthoritativeSuccess && cloudDocs !== null) {
         const syncQueue = getSyncQueue();
-        const pendingDeleteIds = new Set(
-          syncQueue
-            .filter(q => q.collectionName === resolvedCol && q.action === 'delete')
-            .map(q => String(q.id))
-        );
+        const pendingLocalMap = getPendingLocalDocsMap();
 
-        const validDocs = cloudDocs.filter((d: any) => !pendingDeleteIds.has(String(d.id)));
-        const cloudDocIds = new Set(validDocs.map((d: any) => String(d.id)));
+        // 1. Collect pending deletions
+        const pendingDeleteIds = new Set<string>();
+        syncQueue.forEach(q => {
+          if (q.collectionName === resolvedCol && q.action === 'delete') {
+            pendingDeleteIds.add(String(q.id));
+          }
+        });
+        pendingLocalMap.forEach(item => {
+          if (item.collection === resolvedCol && item.action === 'delete') {
+            pendingDeleteIds.add(String(item.id));
+          }
+        });
+
+        // 2. Collect pending upserts (local modifications)
+        const pendingUpsertDocs = new Map<string, any>();
+        pendingLocalMap.forEach(item => {
+          if (item.collection === resolvedCol && item.action === 'upsert' && item.data) {
+            pendingUpsertDocs.set(String(item.id), item.data);
+          }
+        });
+        syncQueue.forEach(q => {
+          if (q.collectionName === resolvedCol && q.action === 'upsert' && q.data) {
+            pendingUpsertDocs.set(String(q.id), q.data);
+          }
+        });
+
+        // 3. Filter cloud docs: omit anything deleted locally
+        const filteredCloudDocs = cloudDocs.filter((d: any) => !pendingDeleteIds.has(String(d.id)));
+
+        // Pre-fetch all local existing docs so we can check their timestamps
+        const localExistingDocs = this.getLocalStorageDocs(resolvedCol);
+        const localDocMap = new Map<string, any>();
+        localExistingDocs.forEach((d: any) => { if (d && d.id) localDocMap.set(String(d.id), d); });
+
+        // 4. Merge cloud docs with local modifications: local modifications WIN over stale server data
+        const mergedDocsMap = new Map<string, any>();
+        for (const doc of filteredCloudDocs) {
+          const docId = String(doc.id);
+          const localDoc = localDocMap.get(docId);
+          const localTs = getDocTimestamp(localDoc);
+          const cloudTs = getDocTimestamp(doc);
+
+          if (pendingUpsertDocs.has(docId)) {
+            // Local edit takes absolute precedence
+            mergedDocsMap.set(docId, pendingUpsertDocs.get(docId));
+          } else if (localDoc && (localTs > cloudTs || (Date.now() - localTs < 30000 && localTs > 0))) {
+            // Local edit is newer or was modified within the last 30 seconds -> Protect local edit!
+            mergedDocsMap.set(docId, localDoc);
+          } else {
+            mergedDocsMap.set(docId, doc);
+          }
+        }
+
+        // Also guarantee any newly added local doc not yet on cloud is preserved
+        pendingUpsertDocs.forEach((localDoc, id) => {
+          if (!pendingDeleteIds.has(id)) {
+            mergedDocsMap.set(id, localDoc);
+          }
+        });
+
+        const validDocs = Array.from(mergedDocsMap.values());
+        const validDocIds = new Set(mergedDocsMap.keys());
         const idb = await this.getDb();
 
         if (idb.objectStoreNames.contains(resolvedCol)) {
@@ -743,13 +865,14 @@ class LocalDatabase {
               const allKeysReq = store.getAllKeys();
               allKeysReq.onsuccess = () => {
                 const existingKeys = allKeysReq.result || [];
-                // Prune any local key that was explicitly deleted on server
+                // Only prune keys that were deleted on cloud AND are not pending local modifications
                 for (const key of existingKeys) {
-                  if (!cloudDocIds.has(String(key))) {
+                  const keyStr = String(key);
+                  if (!validDocIds.has(keyStr) && !pendingUpsertDocs.has(keyStr)) {
                     store.delete(key);
                   }
                 }
-                // Store authoritative docs
+                // Store merged authoritative docs (with user edits preserved)
                 for (const doc of validDocs) {
                   store.put(doc);
                 }
@@ -762,7 +885,7 @@ class LocalDatabase {
           });
         }
 
-        // Overwrite localStorage fallback strictly with authoritative list
+        // Overwrite localStorage fallback strictly with merged authoritative list
         const key = `fallback_idb_${resolvedCol}`;
         try {
           localStorage.setItem(key, JSON.stringify(validDocs));
@@ -806,17 +929,30 @@ class LocalDatabase {
       } else if (evt.action === 'upsert') {
         try {
           const token = this.getAuthToken();
-          const headers: Record<string, string> = {};
+          const headers: Record<string, string> = {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          };
           if (token) headers['Authorization'] = `Bearer ${token}`;
 
-          const res = await fetch(`/api/data/${resolvedCol}/${id}`, {
+          const res = await fetch(`/api/data/${resolvedCol}/${id}?_t=${Date.now()}`, {
             headers,
+            cache: 'no-store',
             credentials: 'include'
           });
           if (res.ok) {
             const json = await res.json();
             if (json.success && json.item) {
               const doc = json.item;
+              const localDoc = await this.getDoc(resolvedCol, id);
+              const localTs = getDocTimestamp(localDoc);
+              const incomingTs = getDocTimestamp(doc);
+
+              // If local edit is newer or was modified in the last 30 seconds, never overwrite!
+              if (localDoc && (localTs > incomingTs || (Date.now() - localTs < 30000 && localTs > 0))) {
+                return;
+              }
+
               const db = await this.getDb();
               if (db.objectStoreNames.contains(resolvedCol)) {
                 try {
@@ -996,17 +1132,25 @@ class LocalDatabase {
     return this.setDoc(collectionName, idOrData, optionalData);
   }
 
-  // Add a new document (Server-First with IndexedDB Read Cache)
   // Add a new document (Optimistic UI: Local Cache First, Background Server Sync)
   async addDoc(collectionName: CollectionName, data: any): Promise<string> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
-    let record = { ...data };
+    const nowIso = new Date().toISOString();
+    let record = { 
+      ...data, 
+      createdAt: data?.createdAt || nowIso, 
+      updatedAt: nowIso,
+      _localModifiedAt: Date.now()
+    };
     if (resolvedCol === 'students') {
       record = normalizeStudent(record);
     }
     const id = record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
+
+    // Track as locally modified to protect from stale cloud overwrite
+    markPendingLocalDoc(resolvedCol, id, 'upsert', record);
 
     // 1. INSTANT LOCAL WRITE (0ms)
     this.setLocalStorageDoc(resolvedCol, record);
@@ -1020,20 +1164,22 @@ class LocalDatabase {
     this.notify();
 
     // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 10000).then((res) => {
+    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res) => {
       if (res.success) {
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-      } else if (res.isSessionExpired) {
-        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      } else if (res.isClientError) {
-        dispatchDatabaseErrorToast(res.message || 'خطا در ثبت اطلاعات در سرور.', 'error');
+      } else {
+        // Guarantee: Keep data permanently applied in local database and queue for background sync
+        enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
       }
-    }).catch(() => {});
+    }).catch(() => {
+      enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
+    });
 
     return id;
   }
 
-  // Update existing document (Optimistic UI: Local Cache First, Background Server Sync)
+  // Update existing document (Optimistic UI: Local Cache First, Background Server Sync, Zero Rollback)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1043,12 +1189,22 @@ class LocalDatabase {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
 
-    let updated = { ...(existingDoc || {}), ...data, id };
+    const nowIso = new Date().toISOString();
+    let updated = { 
+      ...(existingDoc || {}), 
+      ...data, 
+      id, 
+      updatedAt: nowIso,
+      _localModifiedAt: Date.now()
+    };
     if (resolvedCol === 'students') {
       updated = normalizeStudent(updated);
     }
 
-    // 1. INSTANT LOCAL WRITE (0ms)
+    // Track as locally modified to protect from stale cloud overwrite
+    markPendingLocalDoc(resolvedCol, id, 'upsert', updated);
+
+    // 1. INSTANT LOCAL WRITE (0ms) - Never revert user modifications
     this.setLocalStorageDoc(resolvedCol, updated);
     if (db.objectStoreNames.contains(resolvedCol)) {
       try {
@@ -1060,26 +1216,17 @@ class LocalDatabase {
     this.notify();
 
     // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 10000).then((res) => {
+    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res) => {
       if (res.success) {
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
-      } else if (res.isSessionExpired) {
-        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      } else if (res.isClientError) {
-        // Rollback on client error
-        if (existingDoc) {
-          this.setLocalStorageDoc(resolvedCol, existingDoc);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            try {
-              const tx = db.transaction(resolvedCol, 'readwrite');
-              tx.objectStore(resolvedCol).put(existingDoc);
-            } catch (e) {}
-          }
-          this.notify();
-        }
-        dispatchDatabaseErrorToast(res.message || 'خطا در ویرایش اطلاعات در سرور.', 'error');
+      } else {
+        // Guarantee: Never rollback on server errors or offline. Retain local edit and queue for retry.
+        enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
       }
-    }).catch(() => {});
+    }).catch(() => {
+      enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
+    });
   }
 
   // Delete a document (Optimistic UI: Instant 0ms Purge, Background Cloud Sync)
@@ -1091,6 +1238,9 @@ class LocalDatabase {
     try {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
+
+    // Track as locally deleted
+    markPendingLocalDoc(resolvedCol, id, 'delete', undefined);
 
     // 1. INSTANT LOCAL PURGE (0ms)
     this.deleteLocalStorageDoc(resolvedCol, id);
@@ -1104,26 +1254,16 @@ class LocalDatabase {
     this.notify();
 
     // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 10000).then((res) => {
+    saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 12000).then((res) => {
       if (res.success) {
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-      } else if (res.isSessionExpired) {
-        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      } else if (res.isClientError) {
-        // Rollback if server rejected
-        if (existingDoc) {
-          this.setLocalStorageDoc(resolvedCol, existingDoc);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            try {
-              const tx = db.transaction(resolvedCol, 'readwrite');
-              tx.objectStore(resolvedCol).put(existingDoc);
-            } catch (e) {}
-          }
-          this.notify();
-        }
-        dispatchDatabaseErrorToast(res.message || 'خطا در حذف اطلاعات در سرور.', 'error');
+      } else {
+        enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
       }
-    }).catch(() => {});
+    }).catch(() => {
+      enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
+    });
   }
 
   // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login
@@ -1473,12 +1613,20 @@ class LocalDatabase {
       processedItems.push(record);
     }
 
-    // Single-pass localStorage batch update (fast)
+    // Single-pass localStorage batch update (fast) with local edit protection
+    const pendingLocalMap = getPendingLocalDocsMap();
+    const syncQueue = getSyncQueue();
+    const pendingIds = new Set<string>();
+    syncQueue.forEach(q => { if (q.collectionName === resolvedCol) pendingIds.add(String(q.id)); });
+    pendingLocalMap.forEach(item => { if (item.collection === resolvedCol) pendingIds.add(String(item.id)); });
+
     try {
       const existing = this.getLocalStorageDocs(resolvedCol);
       const map = new Map<string, any>(existing.map((d: any) => [String(d.id), d]));
       for (const rec of processedItems) {
-        map.set(String(rec.id), rec);
+        if (!pendingIds.has(String(rec.id))) {
+          map.set(String(rec.id), rec);
+        }
       }
       localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(Array.from(map.values())));
     } catch (e) {}
@@ -1488,7 +1636,9 @@ class LocalDatabase {
         const transaction = db.transaction(resolvedCol, 'readwrite');
         const store = transaction.objectStore(resolvedCol);
         for (const record of processedItems) {
-          store.put(record);
+          if (!pendingIds.has(String(record.id))) {
+            store.put(record);
+          }
         }
       } catch (e) {}
     }

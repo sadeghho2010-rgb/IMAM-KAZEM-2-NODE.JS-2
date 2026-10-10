@@ -99,8 +99,24 @@ const JWT_SECRET = (rawJwtSecret && !rawJwtSecret.startsWith('{{'))
 const DEFAULT_SUPABASE_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
 
-const SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-const SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_KEY).trim();
+function resolveServerSupabaseUrl(): string {
+  const envUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  if (envUrl && !envUrl.includes('your-project-id') && !envUrl.includes('placeholder') && envUrl.startsWith('http')) {
+    return envUrl;
+  }
+  return DEFAULT_SUPABASE_URL;
+}
+
+function resolveServerSupabaseKey(): string {
+  const envKey = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+  if (envKey && !envKey.includes('placeholder') && !envKey.includes('your-supabase') && envKey.length > 10) {
+    return envKey;
+  }
+  return DEFAULT_SUPABASE_KEY;
+}
+
+export const SUPABASE_URL = resolveServerSupabaseUrl();
+export const SUPABASE_KEY = resolveServerSupabaseKey();
 
 export const isServerSupabaseConfigured = Boolean(
   SUPABASE_URL &&
@@ -110,8 +126,8 @@ export const isServerSupabaseConfigured = Boolean(
 );
 
 export const serverSupabase = createClient(
-  SUPABASE_URL || DEFAULT_SUPABASE_URL,
-  SUPABASE_KEY || DEFAULT_SUPABASE_KEY,
+  SUPABASE_URL,
+  SUPABASE_KEY,
   { auth: { persistSession: false } }
 );
 

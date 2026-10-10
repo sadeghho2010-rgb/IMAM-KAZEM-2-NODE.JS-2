@@ -531,7 +531,13 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       if (editingStudent) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id, createdAt, ...updateData } = studentPayload as Student;
-        const updatedStudent = { ...editingStudent, ...updateData, isActive: activeState };
+        const nowIso = new Date().toISOString();
+        const updatedStudent = { 
+          ...editingStudent, 
+          ...updateData, 
+          isActive: activeState,
+          updatedAt: nowIso 
+        };
 
         // Instant Optimistic UI (0ms modal close and state update)
         setStudents(prev => prev.map(s => s.id === editingStudent.id ? (updatedStudent as Student) : s));
@@ -540,7 +546,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
         await localDb.updateDoc('students', editingStudent.id, {
           ...updateData,
-          isActive: activeState
+          isActive: activeState,
+          updatedAt: nowIso
         });
         syncStudentUserStatus(editingStudent.id, activeState);
       } else {

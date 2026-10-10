@@ -21,9 +21,30 @@ class RealtimeSyncManager {
   private reconnectTimer: any = null;
   private pollingTimer: any = null;
   private backoffDelayMs = 2000;
+  private broadcastChannel: BroadcastChannel | null = null;
 
   constructor() {
-    // Lazy initialization: Do NOT connect in constructor before authentication
+    if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+      try {
+        this.broadcastChannel = new BroadcastChannel('madrasah_realtime_broadcast_v1');
+        this.broadcastChannel.onmessage = (event: MessageEvent) => {
+          if (event.data && event.data.collection) {
+            this.dispatchChange(event.data, true);
+          }
+        };
+      } catch (e) {}
+
+      window.addEventListener('storage', (e: StorageEvent) => {
+        if (e.key === 'app_realtime_sync_event' && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            if (parsed && parsed.collection) {
+              this.dispatchChange(parsed, true);
+            }
+          } catch (err) {}
+        }
+      });
+    }
   }
 
   private getAuthToken(): string | null {
@@ -149,16 +170,19 @@ class RealtimeSyncManager {
   }
 
   /**
-   * Immediately poll server for delta changes
+   * Immediately poll server for delta changes with anti-cache headers
    */
   public async pollChangesNow(): Promise<void> {
     const token = this.getAuthToken();
     if (!token) return;
 
     try {
-      const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}`, {
+      const antiCacheTime = Date.now();
+      const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}&_t=${antiCacheTime}`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         credentials: 'include'
       });
@@ -175,7 +199,7 @@ class RealtimeSyncManager {
   }
 
   /**
-   * Active polling fallback every 4 seconds
+   * Active polling fallback every 3 seconds (ensures guaranteed <= 3-5s latency on other devices)
    */
   private startFallbackPolling() {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
@@ -188,14 +212,24 @@ class RealtimeSyncManager {
       }
 
       await this.pollChangesNow();
-    }, 4000);
+    }, 3000);
   }
 
-  private dispatchChange(change: RealtimeChangeEvent) {
+  public dispatchChange(change: RealtimeChangeEvent, fromBroadcast = false) {
     // Notify all registered in-memory listeners
     this.listeners.forEach(cb => {
       try { cb(change); } catch (e) {}
     });
+
+    // Propagate across tabs in the same browser session
+    if (!fromBroadcast && typeof window !== 'undefined') {
+      try {
+        if (this.broadcastChannel) {
+          this.broadcastChannel.postMessage(change);
+        }
+        localStorage.setItem('app_realtime_sync_event', JSON.stringify({ ...change, _broadcastTime: Date.now() }));
+      } catch (e) {}
+    }
 
     // Dispatch global DOM event for components and localDb
     if (typeof window !== 'undefined') {

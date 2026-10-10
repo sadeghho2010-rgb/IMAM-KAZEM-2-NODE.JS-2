@@ -319,15 +319,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/15 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />
 
-        {/* Header: Seminary identity & Logo */}
+        {/* Header: Seminary identity */}
         <div className="text-center space-y-2.5 mb-5">
-          {/* Emblem Icon */}
+          {/* Emblem Vector Icon Badge */}
           <div className="flex justify-center mb-1">
-            <img 
-              src="/pwa-192x192.png" 
-              alt="سامانه جامع طلاب" 
-              className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl shadow-2xl ring-2 ring-amber-400/40 hover:scale-105 transition-all duration-300 object-cover" 
-            />
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-tr from-blue-600/30 via-indigo-500/25 to-cyan-400/25 border border-white/25 shadow-xl flex items-center justify-center ring-2 ring-white/10 backdrop-blur-md">
+              <BookOpen size={28} className="text-cyan-300 drop-shadow-md" />
+            </div>
           </div>
 
           <div>

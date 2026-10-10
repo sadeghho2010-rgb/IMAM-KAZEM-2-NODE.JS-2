@@ -14,6 +14,26 @@ import { logger } from '../lib/logger';
 
 const router = Router();
 
+// Anti-stale cache headers across all data endpoints to prevent stale browser/proxy caching
+router.use((req: Request, res: Response, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
+// Idempotency cache to deduplicate retried writes and prevent double insertions
+const processedIdempotencyKeys = new Map<string, { timestamp: number; result: any }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of processedIdempotencyKeys.entries()) {
+    if (now - val.timestamp > 120000) { // 2 minutes TTL
+      processedIdempotencyKeys.delete(key);
+    }
+  }
+}, 60000);
+
 const getEnrichedCallerUser = async (decoded: any): Promise<any> => {
   if (!decoded) return null;
   try {
@@ -172,6 +192,10 @@ router.get('/audit-logs/verify-chain', async (req: Request, res: Response) => {
 
 // GET /api/data/:collection
 router.get('/data/:collection', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   const { collection } = req.params;
   const token = extractToken(req);
   let callerUser = null;
@@ -199,6 +223,10 @@ router.get('/data/:collection', async (req: Request, res: Response) => {
 
 // GET /api/data/:collection/:id
 router.get('/data/:collection/:id', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   const { collection, id } = req.params;
   const token = extractToken(req);
   let callerUser = null;
@@ -241,6 +269,11 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
   }
 
   const data = req.body;
+  const idempotencyKey = String(req.headers['x-idempotency-key'] || data?._idempotencyKey || '').trim();
+  if (idempotencyKey && processedIdempotencyKeys.has(idempotencyKey)) {
+    return res.json(processedIdempotencyKeys.get(idempotencyKey)!.result);
+  }
+
   const recordOwnerId = data?.userId || data?.studentId;
   const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
   if (!authCheck.allowed) {
@@ -251,6 +284,11 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
     const saveRes = await serverSaveDoc(collection, data, callerUser);
     if (!saveRes.success) {
       return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
+    }
+
+    const resPayload = { success: true, id: saveRes.id, timestamp: Date.now() };
+    if (idempotencyKey) {
+      processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }
 
     if (callerUser) {
@@ -266,7 +304,7 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
       }).catch(() => {});
     }
 
-    return res.json({ success: true, id: saveRes.id });
+    return res.json(resPayload);
   } catch (err) {
     logger.error(`Error writing to collection ${collection}:`, err);
     return res.status(500).json({ success: false, message: 'خطا در ذخیره اطلاعات در سرور.' });
@@ -282,11 +320,16 @@ router.put('/data/:collection/:id', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 
   const data = { ...req.body, id };
+  const idempotencyKey = String(req.headers['x-idempotency-key'] || data?._idempotencyKey || '').trim();
+  if (idempotencyKey && processedIdempotencyKeys.has(idempotencyKey)) {
+    return res.json(processedIdempotencyKeys.get(idempotencyKey)!.result);
+  }
+
   const recordOwnerId = data?.userId || data?.studentId;
   const authCheck = authorizeCollectionAccess(callerUser, collection, 'write', recordOwnerId);
   if (!authCheck.allowed) {
@@ -299,7 +342,12 @@ router.put('/data/:collection/:id', async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ویرایش داده' });
     }
 
-    return res.json({ success: true, id: saveRes.id });
+    const resPayload = { success: true, id: saveRes.id, timestamp: Date.now() };
+    if (idempotencyKey) {
+      processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
+    }
+
+    return res.json(resPayload);
   } catch (err) {
     logger.error(`Error updating collection ${collection}:`, err);
     return res.status(500).json({ success: false, message: 'خطا در ویرایش اطلاعات در سرور.' });

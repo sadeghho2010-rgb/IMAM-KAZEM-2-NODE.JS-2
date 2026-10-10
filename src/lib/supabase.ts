@@ -12,8 +12,15 @@ export function getSupabaseCredentials(): { url: string; anonKey: string } {
   const localUrl = typeof window !== 'undefined' ? (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL')) : '';
   const localKey = typeof window !== 'undefined' ? (localStorage.getItem('supabase_anon_key') || localStorage.getItem('VITE_SUPABASE_ANON_KEY')) : '';
 
-  const url = (localUrl || env.VITE_SUPABASE_URL || DEFAULT_URL || '').trim();
-  const anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY || '').trim();
+  let url = (localUrl || env.VITE_SUPABASE_URL || DEFAULT_URL || '').trim();
+  let anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY || '').trim();
+
+  if (!url || url.includes('your-project-id') || url.includes('placeholder') || !url.startsWith('http')) {
+    url = DEFAULT_URL;
+  }
+  if (!anonKey || anonKey.includes('placeholder') || anonKey.includes('your-supabase') || anonKey.length < 10) {
+    anonKey = DEFAULT_ANON_KEY;
+  }
 
   return { url, anonKey };
 }
@@ -48,21 +55,19 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-export const isSupabaseConfigured = Boolean(
-  typeof window !== 'undefined' &&
-  (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL') || env.VITE_SUPABASE_URL)
-);
-
 export function checkIsSupabaseConfigured(): boolean {
   const { url, anonKey } = getSupabaseCredentials();
   return Boolean(
     url &&
     anonKey &&
-    url !== 'https://placeholder.supabase.co' &&
-    anonKey !== 'placeholder' &&
+    !url.includes('your-project-id') &&
+    !url.includes('placeholder') &&
+    !anonKey.includes('your-supabase') &&
     anonKey.length > 10
   );
 }
+
+export const isSupabaseConfigured = checkIsSupabaseConfigured();
 
 /**
  * Maps mentor ID to Supabase Storage folder path
