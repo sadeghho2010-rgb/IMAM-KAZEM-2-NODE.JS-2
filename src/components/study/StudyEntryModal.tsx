@@ -251,9 +251,9 @@ export default function StudyEntryModal({
     const num = parseFloat(str);
     if (isNaN(num) || num <= 0) return 0;
 
-    // If <= 24 (e.g. 1.5 hours, 2 hours, 0.5 hours), convert hours to minutes (* 60)
-    // If > 24 (e.g. 90 minutes, 120 minutes), treat directly as minutes
-    if (num <= 24) {
+    // If <= 40 (e.g. 1.5 hours, 20 hours, 40 hours), convert hours to minutes (* 60)
+    // If > 40 (e.g. 90 minutes, 120 minutes), treat directly as minutes
+    if (num <= 40) {
       return Math.round(num * 60);
     }
     return Math.round(num);

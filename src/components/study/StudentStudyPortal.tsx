@@ -174,12 +174,16 @@ export default function StudentStudyPortal({
     setDiscussionHoursInput(newVal.toString());
   };
 
-  // Handle Cumulative Submission (اصلاح ۱ و ۲)
+  // Handle Cumulative Submission (اصلاح ۱ و ۲ و ۹)
   const handleSaveHours = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPeriod || isReadOnlyForUser) return;
     if (parsedStudyHours <= 0 && parsedDiscussionHours <= 0) {
       alert('لطفاً حداقل مقدار برای مطالعه یا مباحثه وارد نمایید.');
+      return;
+    }
+    if (parsedStudyHours > 40 || parsedDiscussionHours > 40) {
+      alert('سقف مقدار قابل ثبت در هر باکس حداکثر ۴۰ ساعت می‌باشد.');
       return;
     }
 
@@ -593,7 +597,7 @@ export default function StudentStudyPortal({
                         type="number"
                         step="0.1"
                         min="0"
-                        max="24"
+                        max="40"
                         disabled={isReadOnlyForUser}
                         value={studyHoursInput}
                         onChange={(e) => setStudyHoursInput(e.target.value)}
@@ -651,7 +655,7 @@ export default function StudentStudyPortal({
                         type="number"
                         step="0.1"
                         min="0"
-                        max="24"
+                        max="40"
                         disabled={isReadOnlyForUser}
                         value={discussionHoursInput}
                         onChange={(e) => setDiscussionHoursInput(e.target.value)}
