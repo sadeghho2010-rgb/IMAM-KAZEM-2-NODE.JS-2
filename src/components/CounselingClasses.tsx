@@ -363,33 +363,52 @@ export default function CounselingClasses() {
       const now = new Date().toISOString();
       const currentUserName = currentUser?.name || currentUser?.username || 'مسئول پژوهش';
       const currentUserRole = currentUser?.roleTitle || 'مسئول واحد پژوهش';
+      const sessionDate = batchSessionDate.trim() || new Date().toLocaleDateString('fa-IR');
+      const courseTitle = batchCourseTitle.trim() || 'کلاس مشاوره';
+      const teacherName = batchTeacherName.trim() || 'استاد مشاور';
 
-      const promises = batchStudentsList.map(row => {
-        const payload: Partial<CounselingSessionGrade> = {
+      // Get fresh list of grades to find and overwrite/delete any existing evaluation for the same student on this session date
+      const allExistingGrades = await localDb.getDocs<CounselingSessionGrade>('counseling_session_grades');
+
+      for (const row of batchStudentsList) {
+        const matchingDocs = allExistingGrades.filter(g => 
+          g.studentId === row.studentId &&
+          g.sessionDate === sessionDate &&
+          (g.courseTitle === courseTitle || !g.courseTitle || g.counselorTeacherName === teacherName)
+        );
+
+        // Delete all old/previous evaluation records for this student on this session date
+        for (const oldDoc of matchingDocs) {
+          await localDb.deleteDoc('counseling_session_grades', oldDoc.id);
+        }
+
+        const docId = matchingDocs[0]?.id || `csg-${row.studentId}-${sessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+        const payload: CounselingSessionGrade = {
+          id: docId,
           studentId: row.studentId,
           studentName: row.studentName,
           grade: row.grade,
-          counselorTeacherName: batchTeacherName.trim() || 'استاد مشاور',
-          courseTitle: batchCourseTitle.trim() || 'کلاس مشاوره',
-          sessionDate: batchSessionDate.trim() || new Date().toLocaleDateString('fa-IR'),
+          counselorTeacherName: teacherName,
+          courseTitle: courseTitle,
+          sessionDate: sessionDate,
           sessionNumber: batchSessionNumber.trim() || 'جلسه ۱',
           participationScore: row.participationScore,
           researchScore: row.researchScore,
           counselorFeedback: row.counselorFeedback.trim() || (batchSessionTopic ? `موضوع: ${batchSessionTopic}` : ''),
           createdByName: currentUserName,
           createdByRole: currentUserRole,
-          createdAt: now,
+          createdAt: matchingDocs[0]?.createdAt || now,
           updatedAt: now
         };
-        return localDb.addDoc('counseling_session_grades', payload);
-      });
 
-      await Promise.all(promises);
+        await localDb.setDoc('counseling_session_grades', payload);
+      }
 
       // Audit Log
       await localDb.addDoc('audit_logs', {
         action: 'ثبت گروهی ارزیابی کلاس مشاوره',
-        details: `ثبت ارزیابی کلاسی جلسه مشاوره ${batchCourseTitle} (استاد ${batchTeacherName}) برای ${batchStudentsList.length} طلبه`,
+        details: `ثبت ارزیابی کلاسی جلسه مشاوره ${courseTitle} (استاد ${teacherName}) برای ${batchStudentsList.length} طلبه`,
         userId: currentUser?.id || 'sys',
         userName: currentUserName,
         createdAt: now
@@ -401,7 +420,7 @@ export default function CounselingClasses() {
 
       setIsClassBatchModalOpen(false);
       await fetchData();
-      alert(`ارزیابی جلسه مشاوره برای ${batchStudentsList.length} طلبه با موفقیت ثبت گردید.`);
+      alert(`ارزیابی جلسه مشاوره برای ${batchStudentsList.length} طلبه با موفقیت بروزرسانی و ثبت گردید.`);
     } catch (err) {
       console.error('Error saving batch evaluation:', err);
       alert('خطا در ثبت گروهی ارزیابی کلاس مشاوره.');

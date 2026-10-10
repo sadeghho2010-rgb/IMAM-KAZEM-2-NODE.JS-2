@@ -592,16 +592,29 @@ export default function TeacherPortal() {
     if (!activeCounselingCourse || !selectedSessionDate) return new Map<string, CounselingSessionGrade>();
 
     const map = new Map<string, CounselingSessionGrade>();
-    grades.forEach(g => {
+    const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name;
+
+    // Sort grades by newest updatedAt/createdAt first
+    const sortedGrades = [...grades].sort((a, b) => 
+      new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime()
+    );
+
+    sortedGrades.forEach(g => {
       if (
         g.sessionDate === selectedSessionDate &&
-        (g.courseTitle === activeCounselingCourse.title || !g.courseTitle)
+        (
+          g.courseTitle === activeCounselingCourse.title || 
+          !g.courseTitle ||
+          (teacherName && g.counselorTeacherName === teacherName)
+        )
       ) {
-        map.set(g.studentId, g);
+        if (!map.has(g.studentId)) {
+          map.set(g.studentId, g);
+        }
       }
     });
     return map;
-  }, [grades, activeCounselingCourse, selectedSessionDate]);
+  }, [grades, activeCounselingCourse, selectedSessionDate, currentTeacherObj]);
 
   // Grade completion status for each held session date
   const sessionGradingStats = useMemo(() => {
@@ -654,21 +667,40 @@ export default function TeacherPortal() {
 
     try {
       const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
-      const existing = sessionGradesMap.get(student.id);
+      
+      // Find ALL matching existing records for this student on this session date
+      const matchingExisting = grades.filter(g => 
+        g.studentId === student.id &&
+        g.sessionDate === selectedSessionDate &&
+        (
+          g.courseTitle === activeCounselingCourse.title || 
+          !g.courseTitle || 
+          g.counselorTeacherName === teacherName
+        )
+      );
+
+      const existingPrimary = matchingExisting[0] || null;
+
+      // Delete any extra duplicate old records if multiple exist
+      if (matchingExisting.length > 1) {
+        for (let i = 1; i < matchingExisting.length; i++) {
+          await localDb.deleteDoc('counseling_session_grades', matchingExisting[i].id);
+        }
+      }
 
       const feedback = teacherNotesMap[student.id] !== undefined 
         ? teacherNotesMap[student.id] 
-        : (existing?.counselorFeedback || '');
+        : (existingPrimary?.counselorFeedback || '');
 
-      const docId = existing?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}`;
+      const docId = existingPrimary?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}`;
 
       const updatedParticipation = factor === 'participation' 
         ? score 
-        : existing?.participationScore;
+        : existingPrimary?.participationScore;
 
       const updatedResearch = factor === 'research' 
         ? score 
-        : existing?.researchScore;
+        : existingPrimary?.researchScore;
 
       const gradeDoc: CounselingSessionGrade = {
         id: docId,
@@ -682,14 +714,17 @@ export default function TeacherPortal() {
         participationScore: updatedParticipation as CounselingScore,
         researchScore: updatedResearch as CounselingScore,
         counselorFeedback: feedback.trim() || undefined,
-        createdAt: existing?.createdAt || new Date().toISOString(),
+        createdAt: existingPrimary?.createdAt || new Date().toISOString(),
         createdByName: currentUser?.name || teacherName,
         createdByRole: 'استاد',
         updatedAt: new Date().toISOString()
       };
 
       await localDb.setDoc('counseling_session_grades', gradeDoc);
-      setGrades(prev => [...prev.filter(g => g.id !== docId), gradeDoc]);
+
+      const removedIds = new Set(matchingExisting.map(m => m.id));
+      setGrades(prev => [...prev.filter(g => !removedIds.has(g.id) && g.id !== docId), gradeDoc]);
+
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
       }
@@ -723,14 +758,35 @@ export default function TeacherPortal() {
       const sessionLabel = `جلسه ${sessionInfo?.sessionNumber || 1}`;
 
       const updates: CounselingSessionGrade[] = [];
+      const allRemovedIds: string[] = [];
 
       for (const student of enrolledStudents) {
-        const existing = sessionGradesMap.get(student.id);
-        const pendingNote = teacherNotesMap[student.id];
-        const feedback = pendingNote !== undefined ? pendingNote.trim() : (existing?.counselorFeedback || '');
+        const matchingExisting = grades.filter(g => 
+          g.studentId === student.id &&
+          g.sessionDate === selectedSessionDate &&
+          (
+            g.courseTitle === activeCounselingCourse.title || 
+            !g.courseTitle || 
+            g.counselorTeacherName === teacherName
+          )
+        );
 
-        if (existing || pendingNote !== undefined) {
-          const docId = existing?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+        const existingPrimary = matchingExisting[0] || null;
+        const pendingNote = teacherNotesMap[student.id];
+        const feedback = pendingNote !== undefined ? pendingNote.trim() : (existingPrimary?.counselorFeedback || '');
+
+        if (existingPrimary || pendingNote !== undefined || existingPrimary?.participationScore || existingPrimary?.researchScore) {
+          if (matchingExisting.length > 1) {
+            for (let i = 1; i < matchingExisting.length; i++) {
+              await localDb.deleteDoc('counseling_session_grades', matchingExisting[i].id);
+              allRemovedIds.push(matchingExisting[i].id);
+            }
+          }
+          if (existingPrimary) {
+            allRemovedIds.push(existingPrimary.id);
+          }
+
+          const docId = existingPrimary?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
           const gradeDoc: CounselingSessionGrade = {
             id: docId,
             studentId: student.id,
@@ -740,10 +796,10 @@ export default function TeacherPortal() {
             courseTitle: activeCounselingCourse.title,
             sessionDate: selectedSessionDate,
             sessionNumber: sessionLabel,
-            participationScore: existing?.participationScore as CounselingScore,
-            researchScore: existing?.researchScore as CounselingScore,
+            participationScore: existingPrimary?.participationScore as CounselingScore,
+            researchScore: existingPrimary?.researchScore as CounselingScore,
             counselorFeedback: feedback || undefined,
-            createdAt: existing?.createdAt || new Date().toISOString(),
+            createdAt: existingPrimary?.createdAt || new Date().toISOString(),
             createdByName: currentUser?.name || teacherName,
             createdByRole: 'استاد',
             updatedAt: new Date().toISOString()
@@ -754,9 +810,10 @@ export default function TeacherPortal() {
       }
 
       if (updates.length > 0) {
+        const removedSet = new Set(allRemovedIds);
         setGrades(prev => {
-          const idSet = new Set(updates.map(u => u.id));
-          return [...prev.filter(g => !idSet.has(g.id)), ...updates];
+          const newUpdatesSet = new Set(updates.map(u => u.id));
+          return [...prev.filter(g => !removedSet.has(g.id) && !newUpdatesSet.has(g.id)), ...updates];
         });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
