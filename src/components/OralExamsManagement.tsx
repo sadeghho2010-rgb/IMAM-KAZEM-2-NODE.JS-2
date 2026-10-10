@@ -184,7 +184,6 @@ export default function OralExamsManagement() {
           {/* Section 1: ایجاد امتحان شفاهی */}
           <button
             onClick={() => {
-              setEditingPeriodInWizard(null);
               setActiveMainSection('create');
             }}
             className={cn(
@@ -267,7 +266,7 @@ export default function OralExamsManagement() {
           {/* ========================================================================= */}
           {/* 1. ایجاد امتحان شفاهی (WIZARD: STEP 1, 2, 3)                              */}
           {/* ========================================================================= */}
-          {activeMainSection === 'create' && (
+          <div className={activeMainSection === 'create' ? 'block' : 'hidden'}>
             <CreateOralExamWizard
               students={students}
               teachers={teachers}
@@ -276,7 +275,7 @@ export default function OralExamsManagement() {
               onFinishPeriod={handleFinishPeriod}
               onCancel={handleCancelWizard}
             />
-          )}
+          </div>
 
           {/* ========================================================================= */}
           {/* 2. سوابق امتحان شفاهی (HISTORY & MULTI-FACETED REPORTS)                    */}

@@ -1006,14 +1006,20 @@ export default function MadrasRooms() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">طبقه مَدرَس *</label>
-                  <input
-                    type="text"
+                  <select
                     required
                     value={roomFormFloor}
                     onChange={(e) => setRoomFormFloor(e.target.value)}
-                    placeholder="مثلاً: طبقه همکف، طبقه اول، طبقه دوم..."
-                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                  />
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white"
+                  >
+                    <option value="طبقه همکف">طبقه همکف</option>
+                    <option value="طبقه اول">طبقه اول</option>
+                    <option value="طبقه دوم">طبقه دوم</option>
+                    <option value="طبقه سوم">طبقه سوم</option>
+                    <option value="طبقه چهارم">طبقه چهارم</option>
+                    <option value="طبقه زیرزمین (منفی ۱)">طبقه زیرزمین (منفی ۱)</option>
+                    <option value="خارج از مجموعه (مجازی / سایر)">خارج از مجموعه (مجازی / سایر)</option>
+                  </select>
                 </div>
 
                 <div>

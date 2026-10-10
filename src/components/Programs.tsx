@@ -3209,7 +3209,25 @@ export default function Programs() {
                       )}
                     </>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <select
+                        className="w-full sm:w-1/3 px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        onChange={(e) => {
+                          const fl = e.target.value;
+                          if (fl) {
+                            const cur = (newProgram.madrasRoom || '').replace(/^(طبقه (همکف|اول|دوم|سوم|چهارم|زیرزمین))\s*-\s*/, '');
+                            setNewProgram({...newProgram, madrasRoom: `${fl} - ${cur}`});
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب طبقه --</option>
+                        <option value="طبقه همکف">طبقه همکف</option>
+                        <option value="طبقه اول">طبقه اول</option>
+                        <option value="طبقه دوم">طبقه دوم</option>
+                        <option value="طبقه سوم">طبقه سوم</option>
+                        <option value="طبقه چهارم">طبقه چهارم</option>
+                        <option value="طبقه زیرزمین">طبقه زیرزمین</option>
+                      </select>
                       <input 
                         type="text" 
                         placeholder="شماره یا عنوان مَدرَس را بنویسید..."
@@ -3220,7 +3238,7 @@ export default function Programs() {
                       <button
                         type="button"
                         onClick={() => setIsCustomRoomAdd(false)}
-                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold"
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold shrink-0"
                       >
                         لیست
                       </button>
@@ -3770,7 +3788,30 @@ export default function Programs() {
                       )}
                     </>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <select
+                        className="w-full sm:w-1/3 px-3 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                        onChange={(e) => {
+                          const fl = e.target.value;
+                          if (fl) {
+                            const cur = (editingProgram.madrasRoom || editingProgram.classroom || '').replace(/^(طبقه (همکف|اول|دوم|سوم|چهارم|زیرزمین))\s*-\s*/, '');
+                            const newVal = `${fl} - ${cur}`;
+                            setEditingProgram({
+                              ...editingProgram,
+                              madrasRoom: newVal,
+                              classroom: newVal
+                            });
+                          }
+                        }}
+                      >
+                        <option value="">-- انتخاب طبقه --</option>
+                        <option value="طبقه همکف">طبقه همکف</option>
+                        <option value="طبقه اول">طبقه اول</option>
+                        <option value="طبقه دوم">طبقه دوم</option>
+                        <option value="طبقه سوم">طبقه سوم</option>
+                        <option value="طبقه چهارم">طبقه چهارم</option>
+                        <option value="طبقه زیرزمین">طبقه زیرزمین</option>
+                      </select>
                       <input 
                         type="text" 
                         placeholder="شماره یا عنوان مَدرَس را بنویسید..."
@@ -3785,7 +3826,7 @@ export default function Programs() {
                       <button
                         type="button"
                         onClick={() => setIsCustomRoomEdit(false)}
-                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold"
+                        className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold shrink-0"
                       >
                         لیست
                       </button>

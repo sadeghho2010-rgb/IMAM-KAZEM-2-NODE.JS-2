@@ -523,12 +523,12 @@ function AppContent() {
               </div>
               <button
                 type="button"
-                onClick={() => navigateToTab('dashboard')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 shrink-0"
-                title="بازگشت سریع به صفحه اصلی"
+                onClick={handleBack}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95 shrink-0 border border-amber-400/40"
+                title="بازگشت به مرحله یا صفحه قبلی"
               >
-                <ArrowRight size={13} />
-                <span>بازگشت به داشبورد</span>
+                <ArrowRight size={16} className="text-white animate-pulse" />
+                <span>بازگشت</span>
               </button>
             </div>
           )}

@@ -181,6 +181,82 @@ export default function CreateOralExamWizard({
     }
   }, [targetGrade]);
 
+  const DRAFT_KEY = 'oral_exam_wizard_draft_v3';
+
+  // Load draft from localStorage on initial render if no existingPeriod is provided
+  useEffect(() => {
+    if (!existingPeriod) {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft.periodTitle) setPeriodTitle(draft.periodTitle);
+          if (draft.academicYear) setAcademicYear(draft.academicYear);
+          if (draft.examDate) setExamDate(draft.examDate);
+          if (draft.targetGrade) setTargetGrade(draft.targetGrade);
+          if (draft.examType) setExamType(draft.examType);
+          if (typeof draft.hasFiqh === 'boolean') setHasFiqh(draft.hasFiqh);
+          if (draft.fiqhBooks) setFiqhBooks(draft.fiqhBooks);
+          if (typeof draft.hasUsul === 'boolean') setHasUsul(draft.hasUsul);
+          if (draft.usulBooks) setUsulBooks(draft.usulBooks);
+          if (draft.participatingStudentIds?.length) setParticipatingStudentIds(draft.participatingStudentIds);
+          if (draft.examiners?.length) setExaminers(draft.examiners);
+          if (draft.recordsMap && Object.keys(draft.recordsMap).length > 0) setRecordsMap(draft.recordsMap);
+          if (draft.currentStep) setCurrentStep(draft.currentStep);
+          if (draft.timeIntervalStep) setTimeIntervalStep(draft.timeIntervalStep);
+          if (draft.autoStartTime) setAutoStartTime(draft.autoStartTime);
+        }
+      } catch (e) {
+        console.error('Error loading draft:', e);
+      }
+    }
+  }, [existingPeriod]);
+
+  // Save draft whenever state changes
+  useEffect(() => {
+    if (!existingPeriod) {
+      const draft = {
+        currentStep,
+        periodTitle,
+        academicYear,
+        examDate,
+        targetGrade,
+        examType,
+        hasFiqh,
+        fiqhBooks,
+        hasUsul,
+        usulBooks,
+        participatingStudentIds,
+        examiners,
+        recordsMap,
+        timeIntervalStep,
+        autoStartTime
+      };
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch (e) {
+        // Ignore storage quota error
+      }
+    }
+  }, [
+    existingPeriod,
+    currentStep,
+    periodTitle,
+    academicYear,
+    examDate,
+    targetGrade,
+    examType,
+    hasFiqh,
+    fiqhBooks,
+    hasUsul,
+    usulBooks,
+    participatingStudentIds,
+    examiners,
+    recordsMap,
+    timeIntervalStep,
+    autoStartTime
+  ]);
+
   // Auto-populate students when target grade changes (اصلاح ۳)
   useEffect(() => {
     if (!existingPeriod) {
@@ -548,6 +624,9 @@ export default function CreateOralExamWizard({
 
     // 1. Save Period
     await localDb.saveDoc('oral_exam_periods', periodData);
+    try {
+      localStorage.removeItem('oral_exam_wizard_draft_v3');
+    } catch (e) {}
 
     // 2. Save Records
     const recordsList = Object.values(recordsMap).map(r => ({

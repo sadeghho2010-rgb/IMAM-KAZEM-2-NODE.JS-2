@@ -121,6 +121,28 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
       statusText: string;
       status: 'more' | 'less' | 'equal';
     };
+    attendanceSummary?: {
+      totalSessionsCount: number;
+      presentCount: number;
+      justifiedAbsenceCount: number;
+      unexcusedAbsenceCount: number;
+      lateCount: number;
+      totalAbsences: number;
+      absencePercentage: number;
+      courseBreakdown: Array<{ programTitle: string; present: number; justified: number; unexcused: number; total: number }>;
+      studyWarnings: {
+        confirmedCount: number;
+        pendingCount: number;
+        items: any[];
+      };
+      absenceWarnings: {
+        confirmedCount: number;
+        pendingCount: number;
+        threshold: number;
+        isThresholdExceeded: boolean;
+        items: any[];
+      };
+    };
   } | null>(null);
 
   // AI Chat Panel State
@@ -298,7 +320,10 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
         allResearch,
         allEnrollments,
         allPrograms,
-        allDiscussionGroups
+        allDiscussionGroups,
+        allAttendanceRaw,
+        allWorkflowItemsRaw,
+        allAttendanceSettingsRaw
       ] = await Promise.all([
         localDb.getDocs<PeriodicStudyLog>('periodic_study_logs'),
         localDb.getDocs<StudyPeriod>('study_periods'),
@@ -308,7 +333,10 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
         localDb.getDocs<ResearchRecord>('research_records'),
         localDb.getDocs<Enrollment>('enrollments'),
         localDb.getDocs<Program>('programs'),
-        localDb.getDocs<DiscussionGroup>('discussion_groups')
+        localDb.getDocs<DiscussionGroup>('discussion_groups'),
+        localDb.getDocs<any>('attendance'),
+        localDb.getDocs<any>('workflow_items'),
+        localDb.getDocs<any>('attendance_settings')
       ]);
 
       // Filter study periods to match active periods in Study Statistics
@@ -423,6 +451,120 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
         status
       };
 
+      // Calculate Attendance & Absences Summary
+      let totalSessionsCount = 0;
+      let presentCount = 0;
+      let justifiedAbsenceCount = 0;
+      let unexcusedAbsenceCount = 0;
+      let lateCount = 0;
+      const courseAbsenceMap: Record<string, { programTitle: string; present: number; justified: number; unexcused: number; total: number }> = {};
+
+      (allAttendanceRaw || []).forEach((attLog: any) => {
+        if (attLog.students && Array.isArray(attLog.students)) {
+          const studentDetail = attLog.students.find((s: any) => s.studentId === studentId);
+          if (studentDetail) {
+            totalSessionsCount++;
+            const pTitle = attLog.programTitle || 'درس کلاسی';
+            if (!courseAbsenceMap[pTitle]) {
+              courseAbsenceMap[pTitle] = { programTitle: pTitle, present: 0, justified: 0, unexcused: 0, total: 0 };
+            }
+            courseAbsenceMap[pTitle].total++;
+
+            if (studentDetail.status === 'present' || studentDetail.status === 'حاضر') {
+              presentCount++;
+              courseAbsenceMap[pTitle].present++;
+            } else if (studentDetail.status === 'absent' || studentDetail.status === 'غایب' || studentDetail.status === 'غیبت') {
+              if (studentDetail.isExcused || studentDetail.status === 'excused') {
+                justifiedAbsenceCount++;
+                courseAbsenceMap[pTitle].justified++;
+              } else {
+                unexcusedAbsenceCount++;
+                courseAbsenceMap[pTitle].unexcused++;
+              }
+            } else if (studentDetail.status === 'late' || studentDetail.status === 'تأخیر') {
+              lateCount++;
+              presentCount++;
+              courseAbsenceMap[pTitle].present++;
+            }
+          }
+        } else if (attLog.studentId === studentId) {
+          totalSessionsCount++;
+          const pTitle = attLog.programTitle || 'درس کلاسی';
+          if (!courseAbsenceMap[pTitle]) {
+            courseAbsenceMap[pTitle] = { programTitle: pTitle, present: 0, justified: 0, unexcused: 0, total: 0 };
+          }
+          courseAbsenceMap[pTitle].total++;
+
+          if (attLog.status === 'present' || attLog.status === 'حاضر') {
+            presentCount++;
+            courseAbsenceMap[pTitle].present++;
+          } else if (attLog.status === 'absent' || attLog.status === 'غایب' || attLog.status === 'غیبت') {
+            if (attLog.isExcused || attLog.status === 'excused') {
+              justifiedAbsenceCount++;
+              courseAbsenceMap[pTitle].justified++;
+            } else {
+              unexcusedAbsenceCount++;
+              courseAbsenceMap[pTitle].unexcused++;
+            }
+          } else if (attLog.status === 'late' || attLog.status === 'تأخیر') {
+            lateCount++;
+            presentCount++;
+            courseAbsenceMap[pTitle].present++;
+          }
+        }
+      });
+
+      const totalAbsences = justifiedAbsenceCount + unexcusedAbsenceCount;
+      const absencePercentage = totalSessionsCount > 0 ? Math.round((totalAbsences / totalSessionsCount) * 100) : 0;
+
+      // Warnings Calculation (Study Deficit Warnings & Absence Warnings)
+      const studentWorkflows = (allWorkflowItemsRaw || []).filter((w: any) => 
+        w.studentId === studentId || 
+        (w.description && w.description.includes(student.name))
+      );
+
+      const studyWarningsList = studentWorkflows.filter((w: any) => 
+        (w.title && (w.title.includes('مطالعه') || w.title.includes('کسری') || w.title.includes('خوداظهاری'))) ||
+        (w.description && (w.description.includes('مطالعه') || w.description.includes('کسری')))
+      );
+
+      const absenceWarningsList = studentWorkflows.filter((w: any) => 
+        (w.title && (w.title.includes('غیبت') || w.title.includes('حضور'))) ||
+        (w.description && (w.description.includes('غیبت') || w.description.includes('حد نصاب')))
+      );
+
+      const threshold = allAttendanceSettingsRaw?.[0]?.unexcusedWarningThreshold || 3;
+      const autoAbsenceWarningTriggered = unexcusedAbsenceCount >= threshold;
+
+      const confirmedStudyWarningsCount = studyWarningsList.filter((w: any) => w.status === 'approved' || w.status === 'confirmed').length;
+      const pendingStudyWarningsCount = studyWarningsList.filter((w: any) => w.status === 'pending').length;
+
+      const confirmedAbsenceWarningsCount = absenceWarningsList.filter((w: any) => w.status === 'approved' || w.status === 'confirmed').length + (autoAbsenceWarningTriggered ? 1 : 0);
+      const pendingAbsenceWarningsCount = absenceWarningsList.filter((w: any) => w.status === 'pending').length;
+
+      const attendanceSummary = {
+        totalSessionsCount,
+        presentCount,
+        justifiedAbsenceCount,
+        unexcusedAbsenceCount,
+        lateCount,
+        totalAbsences,
+        absencePercentage,
+        courseBreakdown: Object.values(courseAbsenceMap),
+        studyWarnings: {
+          confirmedCount: confirmedStudyWarningsCount,
+          pendingCount: pendingStudyWarningsCount,
+          items: studyWarningsList
+        },
+        absenceWarnings: {
+          confirmedCount: confirmedAbsenceWarningsCount,
+          pendingCount: pendingAbsenceWarningsCount,
+          threshold,
+          isThresholdExceeded: autoAbsenceWarningTriggered,
+          items: absenceWarningsList
+        }
+      };
+
       setStudentDetails({
         info: student,
         periodicLogs,
@@ -435,7 +577,8 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
         oralExams,
         research,
         enrolledPrograms,
-        discussionSummary
+        discussionSummary,
+        attendanceSummary
       });
 
       setChatMessages([]);
@@ -1122,8 +1265,8 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
             )}
           </div>
 
-          {/* 4 Main Analytical Cards Grid: 4 columns side-by-side on large screens */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* 5 Main Analytical Cards Grid: 5 columns side-by-side on large screens */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
 
             {/* Column 1: خلاصه آمار مطالعه و وضعیت مقایسه‌ای (به دقیقه) */}
             <div 
@@ -1423,6 +1566,82 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
 
               <div className="pt-3 border-t border-slate-100 mt-4 flex items-center justify-between text-[11px] font-bold text-indigo-600">
                 <span>مدیریت گروه‌های مباحثه</span>
+                <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+              </div>
+            </div>
+
+            {/* Column 5: وضعیت حضور، غیبت‌ها و اخطارها (اصلاح ۱ و ۲ کارنامه) */}
+            <div 
+              onClick={() => onNavigate?.('attendance', selectedStudentId)}
+              className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between cursor-pointer hover:border-indigo-400 transition-all group h-full"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <CalendarCheck size={18} className="text-indigo-600" />
+                    <h3 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">غیبت‌ها و اخطارها</h3>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-bold text-indigo-600">
+                    <span>{studentDetails.attendanceSummary?.totalSessionsCount || 0} جلسه</span>
+                    <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  {/* Absences Stats Breakdown */}
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">حضور موفق:</span>
+                      <span className="font-bold text-emerald-700">{studentDetails.attendanceSummary?.presentCount || 0} جلسه</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">غیبت موجه:</span>
+                      <span className="font-bold text-amber-700">{studentDetails.attendanceSummary?.justifiedAbsenceCount || 0} جلسه</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">غیبت غیرموجه:</span>
+                      <span className={cn(
+                        "font-black",
+                        (studentDetails.attendanceSummary?.unexcusedAbsenceCount || 0) > 0 ? "text-rose-600" : "text-slate-700"
+                      )}>
+                        {studentDetails.attendanceSummary?.unexcusedAbsenceCount || 0} جلسه
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                      <span className="text-slate-700 font-bold">درصد غیبت کل:</span>
+                      <span className={cn(
+                        "font-black dir-ltr",
+                        (studentDetails.attendanceSummary?.absencePercentage || 0) > 15 ? "text-rose-600" : "text-emerald-700"
+                      )}>
+                        {studentDetails.attendanceSummary?.absencePercentage || 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Warnings Summary */}
+                  <div className="p-3 rounded-xl border bg-amber-50/50 border-amber-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="text-amber-900 flex items-center gap-1">
+                        <AlertCircle size={13} className="text-amber-600" /> اخطار کسری مطالعه:
+                      </span>
+                      <span className="text-amber-950 font-black">
+                        {studentDetails.attendanceSummary?.studyWarnings?.confirmedCount || 0} قطعی
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="text-amber-900 flex items-center gap-1">
+                        <XCircle size={13} className="text-rose-600" /> اخطار غیبت کلاسی:
+                      </span>
+                      <span className="text-rose-900 font-black">
+                        {studentDetails.attendanceSummary?.absenceWarnings?.confirmedCount || 0} قطعی
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 mt-4 flex items-center justify-between text-[11px] font-bold text-indigo-600">
+                <span>مشاهده کامل پرونده حضور و غیبت</span>
                 <ChevronLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
               </div>
             </div>
