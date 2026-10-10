@@ -25,6 +25,16 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export default function DatabaseConnectionTest() {
   const { currentUser } = useAuth();
+  const [mysqlStatus, setMysqlStatus] = useState<{
+    isMysqlConfigured: boolean;
+    connected: boolean;
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+    lastError: string | null;
+    engine: string;
+  } | null>(null);
   const [supabaseStatus, setSupabaseStatus] = useState<ConnectionStatus | null>(null);
   const [serverStatus, setServerStatus] = useState<{ connected: boolean; message: string; latency?: number } | null>(null);
   const [localStatus, setLocalStatus] = useState<{ connected: boolean; message: string; totalRecords: number; idbSupport: boolean } | null>(null);
@@ -33,16 +43,59 @@ export default function DatabaseConnectionTest() {
   const [logs, setLogs] = useState<string[]>([]);
   const [latency, setLatency] = useState<number | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [copiedEnv, setCopiedEnv] = useState(false);
 
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString('fa-IR');
     setLogs(prev => [...prev, `[${time}] ${msg}`]);
   };
 
+  const copyMysqlEnvSample = () => {
+    const sample = `# تنظیمات اتصال به دیتابیس MySQL در سرور
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=madrasah_db
+DB_USERNAME=root
+DB_PASSWORD=your_password_here`;
+    navigator.clipboard.writeText(sample);
+    setCopiedEnv(true);
+    setTimeout(() => setCopiedEnv(false), 2000);
+  };
+
   const runAllDiagnostics = async () => {
     setLoading(true);
     setLogs([]);
     addLog('شروع فرایند عیب‌یابی و تست اتصال به پایگاه‌های داده...');
+
+    // 1. Diagnostics for MySQL Database (Primary Production Target)
+    addLog('در حال بررسی و سنجش اتصال به پایگاه داده اصلی MySQL...');
+    try {
+      const mysqlRes = await fetch(`/api/system/db-status?_t=${Date.now()}`, {
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+      });
+      if (mysqlRes.ok) {
+        const data = await mysqlRes.json();
+        setMysqlStatus({
+          isMysqlConfigured: Boolean(data.isMysqlConfigured),
+          connected: Boolean(data.connected),
+          host: data.host || '',
+          port: data.port || 3306,
+          database: data.database || '',
+          user: data.user || '',
+          lastError: data.lastError || null,
+          engine: data.engine || 'MySQL'
+        });
+        if (data.connected) {
+          addLog(`✅ پایگاه داده MySQL متصل است! دیتابیس: ${data.database} روی سرور ${data.host}`);
+        } else if (data.isMysqlConfigured) {
+          addLog(`⚠️ متغیرهای اتصال MySQL موجود است اما اتصال برقرار نشد: ${data.lastError || 'خطای اتصال'}`);
+        } else {
+          addLog('ℹ️ متغیرهای اتصال MySQL در محیط اجرا هنوز ثبت نشده‌اند. در هاستینگ خود متغیرهای DB_HOST، DB_DATABASE و ... را ست کنید.');
+        }
+      }
+    } catch (e: any) {
+      addLog(`خطا در درخواست بررسی وضعیت MySQL: ${e?.message || e}`);
+    }
 
     // 1. Diagnostics for Local IndexedDB
     addLog('در حال بررسی وضعیت پایگاه داده محلی (IndexedDB/Laptop)...');
@@ -191,6 +244,135 @@ export default function DatabaseConnectionTest() {
       </div>
 
       {/* Main Grid for Diagnostics */}
+      {/* 0. Primary MySQL Database Section */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border shadow-2xs",
+              mysqlStatus?.connected 
+                ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
+                : mysqlStatus?.isMysqlConfigured 
+                  ? "bg-rose-50 text-rose-600 border-rose-100" 
+                  : "bg-amber-50 text-amber-600 border-amber-100"
+            )}>
+              <Database size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-black text-slate-900">پایگاه داده اصلی سرور: MySQL</h2>
+                <span className="text-[10px] bg-indigo-50 text-indigo-700 font-black px-2 py-0.5 rounded-full border border-indigo-100">
+                  موتور اصلی تولید (Production Target)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                پایگاه داده رابطه‌ای سازگار با MySQL 8+ و MariaDB برای نگهداری مطمئن، سریع و ماندگار تمامی اطلاعات
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {mysqlStatus?.connected ? (
+              <span className="text-xs bg-emerald-100 text-emerald-800 font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                متصل و فعال (MySQL Online)
+              </span>
+            ) : mysqlStatus?.isMysqlConfigured ? (
+              <span className="text-xs bg-rose-100 text-rose-800 font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 bg-rose-500 rounded-full"></span>
+                خطا در اتصال به MySQL
+              </span>
+            ) : (
+              <span className="text-xs bg-amber-100 text-amber-800 font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                در انتظار متغیرهای محیطی در هاست
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* MySQL Technical Details */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <span className="text-[11px] text-slate-400 block font-medium">وضعیت کانفیگ سرور:</span>
+            <span className={cn("text-xs font-black mt-0.5 block", mysqlStatus?.isMysqlConfigured ? "text-emerald-700" : "text-amber-700")}>
+              {mysqlStatus?.isMysqlConfigured ? "تنظیم شده در سرور" : "فاقد متغیر محیطی (فال‌بک فعال)"}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <span className="text-[11px] text-slate-400 block font-medium">سرور دیتابیس (Host):</span>
+            <span className="text-xs font-mono font-bold text-slate-800 mt-0.5 block truncate" dir="ltr">
+              {mysqlStatus?.host || "تنظیم نشده (پیش‌فرض: localhost)"}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <span className="text-[11px] text-slate-400 block font-medium">نام دیتابیس (Database):</span>
+            <span className="text-xs font-mono font-bold text-slate-800 mt-0.5 block truncate" dir="ltr">
+              {mysqlStatus?.database || "تنظیم نشده"}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+            <span className="text-[11px] text-slate-400 block font-medium">پورت اتصال (Port):</span>
+            <span className="text-xs font-mono font-bold text-slate-800 mt-0.5 block" dir="ltr">
+              {mysqlStatus?.port || 3306}
+            </span>
+          </div>
+        </div>
+
+        {/* Status description alert */}
+        {mysqlStatus?.connected ? (
+          <div className="bg-emerald-50 border border-emerald-200/80 p-3.5 rounded-2xl text-xs text-emerald-900 flex items-start gap-2.5">
+            <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+            <div className="leading-relaxed font-semibold">
+              ارتباط سرور با دیتابیس MySQL شما با موفقیت برقرار است. تمامی عملیات‌های ثبت، ویرایش و حذف طلاب و کاربران مستقیماً در جداول MySQL ذخیره شده و هیچ داده‌ای از دست نخواهد رفت.
+            </div>
+          </div>
+        ) : mysqlStatus?.isMysqlConfigured ? (
+          <div className="bg-rose-50 border border-rose-200 p-3.5 rounded-2xl text-xs text-rose-900 space-y-1.5">
+            <div className="flex items-center gap-2 font-black">
+              <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+              <span>خطای ارتباط با سرور MySQL:</span>
+            </div>
+            <p className="text-[11px] font-mono leading-relaxed bg-white/70 p-2 rounded-xl text-rose-800">
+              {mysqlStatus.lastError || "امکان اتصال به سرور دیتابیس با مقادیر داده شده وجود ندارد. لطفاً صحت Host، Port، Username و Password را بررسی فرمایید."}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-indigo-50/60 border border-indigo-100 p-4 rounded-2xl text-xs text-slate-700 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-black text-indigo-950">
+                <Info size={16} className="text-indigo-600 shrink-0" />
+                <span>راهنمای فعال‌سازی دیتابیس MySQL در سرور و پنل هاستینگ:</span>
+              </div>
+              <button
+                type="button"
+                onClick={copyMysqlEnvSample}
+                className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 bg-white px-2.5 py-1 rounded-xl border border-indigo-200 hover:bg-indigo-50 transition cursor-pointer shadow-2xs"
+              >
+                <Copy size={12} />
+                <span>{copiedEnv ? "کپی شد!" : "کپی متغیرهای نمونه"}</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+              نرم‌افزار به صورت ۱۰۰٪ آماده اتصال به MySQL است. برای اینکه سرور برنامه به دیتابیس MySQL شما وصل شود، کافیست در پنل هاستینگ خود (مانند لیارا Liara، ران‌فلر Runflare، سی‌پنل cPanel یا فایل <span className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200">.env</span> سرور) متغیرهای زیر را تنظیم نمایید:
+            </p>
+            <div className="font-mono text-[11px] bg-slate-900 text-indigo-200 p-3 rounded-xl space-y-1 text-left" dir="ltr">
+              <div>DB_HOST=localhost (یا آدرس سرور MySQL شما)</div>
+              <div>DB_PORT=3306</div>
+              <div>DB_DATABASE=نام_دیتابیس_شما</div>
+              <div>DB_USERNAME=نام_کاربری_دیتابیس</div>
+              <div>DB_PASSWORD=رمز_عبور_دیتابیس</div>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              💡 نکته: به محض تنظیم این متغیرها در سرور، جدول‌های سیستم (<span className="font-mono">students</span>، <span className="font-mono">all_users</span>، <span className="font-mono">app_collections</span> و ...) به صورت کاملاً خودکار ایجاد و ایندکس‌گذاری می‌شوند.
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* 1. Local IndexedDB Database Card */}

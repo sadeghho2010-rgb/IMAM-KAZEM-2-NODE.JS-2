@@ -66,17 +66,34 @@ router.get('/health', async (req: Request, res: Response) => {
 
 /**
  * GET /api/system/db-status
- * Public endpoint to quickly check if the server's connection to MySQL is active and healthy.
+ * Endpoint to quickly check if the server's connection to MySQL is active and healthy.
  * Helps administrators debug ENV connection variables (Host, Port, DB, User) in real-time.
  */
 router.get('/db-status', async (_req: Request, res: Response) => {
-  // Try to test the connection dynamically so it retries if previously disconnected
-  await testMysqlConnection();
-  
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+  const { parseMysqlConfig, ensurePerformanceIndexes } = await import('../lib/databaseAbstraction');
+  const conf = parseMysqlConfig();
+  let connected = false;
+
+  if (conf.isConfigured) {
+    connected = await testMysqlConnection();
+    if (connected) {
+      await ensurePerformanceIndexes().catch(() => {});
+    }
+  }
+
   const status = getDbConnectionStatus();
   return res.json({
     success: true,
-    connected: status.connected
+    isMysqlConfigured: conf.isConfigured,
+    connected,
+    host: conf.host || '',
+    port: conf.port || 3306,
+    database: conf.database || '',
+    user: conf.user || '',
+    lastError: status.lastError,
+    engine: 'MySQL'
   });
 });
 
