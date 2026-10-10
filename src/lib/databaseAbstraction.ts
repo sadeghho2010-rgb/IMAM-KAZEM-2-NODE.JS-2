@@ -1506,13 +1506,35 @@ export async function recordLoginAuditInDb(log: {
 }): Promise<void> {
   const pool = getMysqlPool();
   if (!pool) return;
+
+  const id = `login_log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const sql = `INSERT INTO login_audit_log (id, username, success, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`;
+  const params = [id, log.username.trim().toUpperCase(), log.success ? 1 : 0, log.ipAddress, log.userAgent || ''];
+
   try {
-    const id = `login_log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    await pool.execute(
-      `INSERT INTO login_audit_log (id, username, success, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
-      [id, log.username.trim().toUpperCase(), log.success ? 1 : 0, log.ipAddress, log.userAgent || '']
-    );
+    await pool.execute(sql, params);
   } catch (err: any) {
-    console.warn('[Login Audit DB Notice]:', err?.message || err);
+    if (err?.code === 'ER_NO_SUCH_TABLE' || err?.message?.includes("doesn't exist")) {
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS \`login_audit_log\` (
+            \`id\` VARCHAR(100) NOT NULL,
+            \`username\` VARCHAR(150) NOT NULL,
+            \`success\` TINYINT(1) NOT NULL DEFAULT 0,
+            \`ip_address\` VARCHAR(50) NULL,
+            \`user_agent\` TEXT NULL,
+            \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (\`id\`),
+            INDEX \`idx_login_username\` (\`username\`),
+            INDEX \`idx_login_created_at\` (\`created_at\`)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+        await pool.execute(sql, params);
+      } catch (retryErr: any) {
+        console.warn('[Login Audit DB Notice Retry Fail]:', retryErr?.message || retryErr);
+      }
+    } else {
+      console.warn('[Login Audit DB Notice]:', err?.message || err);
+    }
   }
 }
