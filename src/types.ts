@@ -776,6 +776,21 @@ export interface PeriodicStudyLog {
   lastModifiedAt?: string;
 }
 
+export interface StudyDailyEntry {
+  id: string;
+  periodId: string;
+  studentId: string;
+  studyHours: number;
+  discussionHours: number;
+  totalHours: number;
+  entryDate?: string;
+  entryTime?: string;
+  createdAt: string;
+  updatedAt?: string;
+  submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer' | string;
+  note?: string;
+}
+
 export type CommentPriority = 'high' | 'medium' | 'low' | 'info';
 
 export type OralExamSubjectType = 'فقه' | 'اصول' | 'امتحان ورودی' | 'سایر';

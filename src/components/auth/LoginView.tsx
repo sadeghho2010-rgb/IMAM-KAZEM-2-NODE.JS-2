@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth, DEFAULT_USERS } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
@@ -109,22 +108,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setIsLoading(true);
 
     try {
-      // 1. Supabase Auth check if email is provided
-      if (cleanUser.includes('@')) {
-        try {
-          const { error: sbError } = await supabase.auth.signInWithPassword({
-            email: cleanUser,
-            password: cleanPass
-          });
-          if (sbError) {
-            console.warn('Supabase auth notice:', sbError.message);
-          }
-        } catch (sbErr) {
-          console.warn('Supabase auth call skipped or error:', sbErr);
-        }
-      }
-
-      // 2. Perform robust application login
+      // Perform robust application login
       const result = await login(cleanUser, cleanPass);
       setIsLoading(false);
 

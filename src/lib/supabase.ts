@@ -1,81 +1,51 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-
-const env = (import.meta as any).env || {};
-
-// Default Supabase project credentials (Public Publishable/Anon Key is safe for client applications)
-const DEFAULT_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const DEFAULT_ANON_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
+/**
+ * Supabase Integration - DEACTIVATED / CUT OFF
+ * Primary Database is strictly MySQL 8 on Runflare.
+ * All client/server communications with Supabase have been disconnected.
+ */
 
 export const BUCKET_NAME = 'backups';
 
 export function getSupabaseCredentials(): { url: string; anonKey: string } {
-  const localUrl = typeof window !== 'undefined' ? (localStorage.getItem('supabase_url') || localStorage.getItem('VITE_SUPABASE_URL')) : '';
-  const localKey = typeof window !== 'undefined' ? (localStorage.getItem('supabase_anon_key') || localStorage.getItem('VITE_SUPABASE_ANON_KEY')) : '';
-
-  let url = (localUrl || env.VITE_SUPABASE_URL || DEFAULT_URL || '').trim();
-  let anonKey = (localKey || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY || '').trim();
-
-  if (!url || url.includes('your-project-id') || url.includes('placeholder') || !url.startsWith('http')) {
-    url = DEFAULT_URL;
-  }
-  if (!anonKey || anonKey.includes('placeholder') || anonKey.includes('your-supabase') || anonKey.length < 10) {
-    anonKey = DEFAULT_ANON_KEY;
-  }
-
-  return { url, anonKey };
+  return { url: '', anonKey: '' };
 }
 
-export function saveSupabaseCredentials(url: string, anonKey: string) {
-  if (typeof window !== 'undefined') {
-    if (url) localStorage.setItem('supabase_url', url.trim());
-    if (anonKey) localStorage.setItem('supabase_anon_key', anonKey.trim());
-    _cachedClient = null; // Reset cached client
-  }
+export function saveSupabaseCredentials(_url: string, _anonKey: string) {
+  // No-op
 }
 
-let _cachedClient: SupabaseClient | null = null;
-
-export function getSupabaseClient(): SupabaseClient {
-  const { url, anonKey } = getSupabaseCredentials();
-  if (!_cachedClient) {
-    _cachedClient = createClient(
-      url || DEFAULT_URL,
-      anonKey || DEFAULT_ANON_KEY
-    );
-  }
-  return _cachedClient;
+export function getSupabaseClient(): any {
+  // Safe dummy proxy that returns empty promises/results for any chained call
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (prop === 'auth') {
+        return {
+          signInWithPassword: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
+          signOut: async () => ({ error: null }),
+          getSession: async () => ({ data: { session: null }, error: null }),
+        };
+      }
+      if (prop === 'from') {
+        return () => ({
+          select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }), limit: () => Promise.resolve({ data: [], error: null }) }),
+          insert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
+          upsert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
+          delete: async () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+        });
+      }
+      return () => Promise.resolve({ data: null, error: new Error('Supabase is disconnected.') });
+    }
+  });
 }
 
-// Proxy wrapper for backward compatibility
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(_target, prop) {
-    const client = getSupabaseClient();
-    const value = (client as any)[prop];
-    return typeof value === 'function' ? value.bind(client) : value;
-  }
-});
+export const supabase = getSupabaseClient();
 
 export function checkIsSupabaseConfigured(): boolean {
-  const { url, anonKey } = getSupabaseCredentials();
-  return Boolean(
-    url &&
-    anonKey &&
-    !url.includes('your-project-id') &&
-    !url.includes('placeholder') &&
-    !anonKey.includes('your-supabase') &&
-    anonKey.length > 10
-  );
+  return false;
 }
 
-export const isSupabaseConfigured = checkIsSupabaseConfigured();
+export const isSupabaseConfigured = false;
 
-/**
- * Maps mentor ID to Supabase Storage folder path
- * - Hosseini -> 'hosseini'
- * - Hayati -> 'hayati'
- * - Soleimani -> 'soleymani'
- * - Shahpoori / Manager -> 'boss'
- */
 export function getFolderForMentor(mentorId: string): string {
   switch (mentorId) {
     case 'hosseini':
@@ -94,3 +64,4 @@ export function getFolderForMentor(mentorId: string): string {
       return 'boss';
   }
 }
+

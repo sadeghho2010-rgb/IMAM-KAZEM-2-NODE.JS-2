@@ -144,8 +144,9 @@ async function startServer() {
           heapUsedMb: Math.round((memory.heapUsed / 1024 / 1024) * 100) / 100,
         },
         services: {
-          mysqlConfigured: Boolean(process.env.MYSQL_DATABASE || process.env.DB_DATABASE),
-          supabaseConfigured: Boolean(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_SECRET_KEY),
+          mysqlConfigured: true,
+          supabaseConfigured: false,
+          primaryDatabase: "MySQL 8.0 (Runflare)"
         }
       });
     } catch (e: unknown) {

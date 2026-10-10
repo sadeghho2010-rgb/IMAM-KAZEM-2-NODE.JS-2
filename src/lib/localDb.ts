@@ -3,7 +3,7 @@
  * Uses IndexedDB with automatic schema migration and fallback.
  * All photos are stored directly in the local database as Base64 data URLs.
  */
-import { supabase, isSupabaseConfigured } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import { dispatchDatabaseErrorToast } from './databaseToast';
 import { realtimeSync } from './realtimeSync';
 

@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -96,57 +95,28 @@ const JWT_SECRET = (rawJwtSecret && !rawJwtSecret.startsWith('{{'))
   ? rawJwtSecret
   : (JWT_REFRESH_SECRET + '_access_token_secret');
 
-const DEFAULT_SUPABASE_URL = 'https://jqfgkkpbdojzjttoziwl.supabase.co';
-const DEFAULT_SUPABASE_KEY = 'sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq';
+export const SUPABASE_URL = '';
+export const SUPABASE_KEY = '';
 
-function resolveServerSupabaseUrl(): string {
-  const envUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-  if (envUrl && !envUrl.includes('your-project-id') && !envUrl.includes('placeholder') && envUrl.startsWith('http')) {
-    return envUrl;
+export const isServerSupabaseConfigured = false;
+
+export const serverSupabase: any = new Proxy({}, {
+  get() {
+    return () => ({
+      select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }), limit: () => Promise.resolve({ data: [], error: null }) }),
+      insert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
+      upsert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
+      delete: async () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
+    });
   }
-  return DEFAULT_SUPABASE_URL;
-}
-
-function resolveServerSupabaseKey(): string {
-  const envKey = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
-  if (envKey && !envKey.includes('placeholder') && !envKey.includes('your-supabase') && envKey.length > 10) {
-    return envKey;
-  }
-  return DEFAULT_SUPABASE_KEY;
-}
-
-export const SUPABASE_URL = resolveServerSupabaseUrl();
-export const SUPABASE_KEY = resolveServerSupabaseKey();
-
-export const isServerSupabaseConfigured = Boolean(
-  SUPABASE_URL &&
-  SUPABASE_KEY &&
-  !SUPABASE_URL.includes('your-project-id') &&
-  !SUPABASE_KEY.includes('placeholder')
-);
-
-export const serverSupabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_KEY,
-  { auth: { persistSession: false } }
-);
+});
 
 let supabaseUserFailureBackoffUntil = 0;
 
-export async function querySupabaseWithTimeout<T>(promise: any, timeoutMs = 1200): Promise<T | null> {
-  let timer: NodeJS.Timeout;
-  const timeoutPromise = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs);
-  });
-  try {
-    const res = await Promise.race([promise, timeoutPromise]);
-    clearTimeout(timer!);
-    return res as T;
-  } catch (err) {
-    clearTimeout(timer!);
-    return null;
-  }
+export async function querySupabaseWithTimeout<T>(_promise: any, _timeoutMs = 1200): Promise<T | null> {
+  return null;
 }
+
 
 // Revoked token IDs / tokens (Session invalidation / Logout / Invalidate all)
 const revokedTokens = new Set<string>();

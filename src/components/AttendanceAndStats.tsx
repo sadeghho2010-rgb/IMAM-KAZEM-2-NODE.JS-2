@@ -98,6 +98,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [classStatusSearchQuery, setClassStatusSearchQuery] = useState<string>('');
   const [classStatusCategoryTab, setClassStatusCategoryTab] = useState<'all' | 'academic' | 'counseling'>('all');
   const [classStatusColorFilter, setClassStatusColorFilter] = useState<'all' | 'pending' | 'recorded' | 'substitute' | 'cancelled'>('all');
+  const [attendanceMethodFilter, setAttendanceMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
+  const [isQuickAttendanceOpen, setIsQuickAttendanceOpen] = useState<boolean>(false);
 
   // Quick Class Status Card Change Modal
   const [quickStatusModal, setQuickStatusModal] = useState<{ prog: any; initialMode?: string } | null>(null);
@@ -201,6 +203,44 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // Helper to resolve teacher name for cards and headers
+  const getProgramTeacherName = (p: any): string => {
+    if (!p) return 'تعیین نشده';
+    if (p.teacherName && p.teacherName !== 'مشخص نشده' && p.teacherName.trim()) return p.teacherName.trim();
+    if (p.teacher && p.teacher !== 'مشخص نشده' && p.teacher.trim()) {
+      const matched = teachers.find(t => String(t.id) === String(p.teacher) || String(t.name).trim() === String(p.teacher).trim());
+      if (matched && matched.name) return matched.name;
+      return p.teacher.trim();
+    }
+    return 'تعیین نشده';
+  };
+
+  // Helper to resolve class representative name for cards and headers
+  const getProgramRepName = (p: any): string => {
+    if (!p) return 'تعیین نشده';
+    if (Array.isArray(p.representativeNames) && p.representativeNames.filter(Boolean).length > 0) {
+      return p.representativeNames.filter(Boolean).join('، ');
+    }
+    if (p.customRepresentative && p.customRepresentative.trim()) {
+      return p.customRepresentative.trim();
+    }
+    if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
+      const matchedNames = p.representativeStudentIds
+        .map((sid: string) => {
+          const st = students.find(s => String(s.id) === String(sid) || s.studentCode === sid || s.nationalId === sid);
+          return st ? st.name : null;
+        })
+        .filter(Boolean);
+      if (matchedNames.length > 0) {
+        return matchedNames.join('، ');
+      }
+    }
+    if (p.representativeName && p.representativeName.trim()) {
+      return p.representativeName.trim();
+    }
+    return 'بدون نماینده';
   };
 
   // Load all initial data from localDb
@@ -1385,7 +1425,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }).filter(cGroup => cGroup.studentsList.length > 0);
   }, [filteredReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents]);
 
-  // Aggregated Representatives List for Education Manager (اصلاح 8)
+  // Aggregated Representatives List for Education Manager (اصلاح ۵ و ۸)
   const representativesList = useMemo(() => {
     const repMap = new Map<string, {
       id: string;
@@ -1464,42 +1504,75 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           }
         });
       }
+
+      // 3. customRepresentative / single representative field
+      const singleRep = p.customRepresentative || (p as any).representative || (p as any).representativeName;
+      if (singleRep && typeof singleRep === 'string' && singleRep.trim()) {
+        const cleanName = singleRep.trim();
+        const st = students.find(s => s.name?.trim() === cleanName || String(s.id) === cleanName);
+        const repId = st?.id || `rep_custom_${cleanName}`;
+        const repMobile = st?.fatherMobile || st?.mobile || st?.phone || '';
+
+        if (!repMap.has(repId)) {
+          repMap.set(repId, {
+            id: repId,
+            name: st?.name || cleanName,
+            studentCode: st?.studentCode,
+            nationalId: st?.nationalId,
+            mobile: repMobile,
+            grade: st?.grade || p.grade,
+            managedClasses: [p],
+            totalSessionsExpected: 0,
+            recordedSessionsCount: 0,
+            commitmentPercent: 100
+          });
+        } else {
+          const item = repMap.get(repId)!;
+          if (!item.managedClasses.some(cp => cp.id === p.id)) {
+            item.managedClasses.push(p);
+          }
+        }
+      }
     });
 
-    // Also check users with class_representative role
+    // Also check users with class_representative role or title
     users.forEach(u => {
-      if (u.role === 'class_representative' || u.roleTitle?.includes('نماینده')) {
+      if (u.role === 'class_representative' || u.roleTitle?.includes('نماینده') || (u as any).isRepresentative) {
         const uId = u.studentId || u.linkedStudentId || u.id;
         const st = students.find(s => String(s.id) === String(uId) || s.nationalId === u.username);
         const repId = st?.id || uId;
         const repName = st?.name || u.fullName || u.name || u.username;
         const repMobile = u.phone || u.mobile || st?.fatherMobile || st?.mobile || '';
 
-        if (!repMap.has(repId)) {
-          const userProgs = programs.filter(p => 
-            p.representativeStudentIds?.includes(repId) ||
-            p.representativeStudentIds?.includes(u.studentId) ||
-            p.representativeNames?.includes(repName) ||
-            p.id === u.managedClassId
-          );
+        const userProgs = programs.filter(p => 
+          p.representativeStudentIds?.includes(repId) ||
+          p.representativeStudentIds?.includes(u.studentId) ||
+          p.representativeNames?.includes(repName) ||
+          p.id === u.managedClassId ||
+          p.grade === st?.grade
+        );
 
-          if (userProgs.length > 0) {
-            repMap.set(repId, {
-              id: repId,
-              name: repName,
-              studentCode: st?.studentCode,
-              nationalId: st?.nationalId || u.username,
-              mobile: repMobile,
-              grade: st?.grade,
-              managedClasses: userProgs,
-              totalSessionsExpected: 0,
-              recordedSessionsCount: 0,
-              commitmentPercent: 100
-            });
-          }
+        if (!repMap.has(repId)) {
+          repMap.set(repId, {
+            id: repId,
+            name: repName,
+            studentCode: st?.studentCode,
+            nationalId: st?.nationalId || u.username,
+            mobile: repMobile,
+            grade: st?.grade,
+            managedClasses: userProgs,
+            totalSessionsExpected: 0,
+            recordedSessionsCount: 0,
+            commitmentPercent: 100
+          });
         } else {
           const item = repMap.get(repId)!;
           if (!item.mobile && repMobile) item.mobile = repMobile;
+          userProgs.forEach(p => {
+            if (!item.managedClasses.some(cp => cp.id === p.id)) {
+              item.managedClasses.push(p);
+            }
+          });
         }
       }
     });
@@ -1760,6 +1833,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         {/* View Switcher & Settings (Only shown when multiple tabs/options exist) */}
         {!isOrdinaryStudent && (
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Quick Attendance Button for Class Representatives */}
+            {isRepresentative && (
+              <button
+                type="button"
+                onClick={() => setIsQuickAttendanceOpen(true)}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 border border-emerald-400/30"
+              >
+                <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                <span>ثبت سریع حضور و غیاب (۱ کلیک)</span>
+              </button>
+            )}
+
             {/* Class Status tab - hidden for regular students & representatives */}
             {!isRepresentative && (
               <button
@@ -2000,8 +2085,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           else if (st.statusKey === 'pending') totalPend++;
         });
 
-        // Apply Card Color / Status Filter
+        // Apply Card Color / Status Filter & Attendance Method Filter
         const filteredPrograms = basePrograms.filter(p => {
+          if (attendanceMethodFilter === 'self_reporting' && p.attendanceType !== 'self_reporting') {
+            return false;
+          }
+          if (attendanceMethodFilter === 'representative' && p.attendanceType === 'self_reporting') {
+            return false;
+          }
+
           if (classStatusColorFilter === 'all') return true;
           const st = getStatusCardData(p);
           if (classStatusColorFilter === 'recorded') return st.statusKey === 'recorded';
@@ -2257,6 +2349,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     <option value="cancelled">🟡 فقط تعطیل‌شده (کرمی)</option>
                   </select>
                 </div>
+
+                {/* Attendance Method Filter Dropdown (اصلاح ۴: تفکیک کلاس‌های خوداظهاری از دارای نماینده) */}
+                <div className="min-w-[160px]">
+                  <select
+                    value={attendanceMethodFilter}
+                    onChange={(e) => setAttendanceMethodFilter(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">همه روش‌های ثبت (کل کلاس‌ها)</option>
+                    <option value="representative">👥 فقط کلاس‌های دارای نماینده</option>
+                    <option value="self_reporting">✍️ فقط کلاس‌های خود اظهاری</option>
+                  </select>
+                </div>
               </div>
 
               {/* Category Tab Toggle (All / Academic / Counseling) */}
@@ -2357,20 +2462,35 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           </div>
                         </div>
 
-                        {/* Title & Teacher & Schedule Meta */}
+                        {/* Title & Teacher & Rep & Schedule Meta */}
                         <div className="space-y-1.5 flex-1">
                           <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
                             {prog.title}
                           </h4>
                           <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
                             <User size={13} className="shrink-0 opacity-80" />
-                            <span className="truncate">استاد: {prog.teacherName || 'مشخص نشده'}</span>
+                            <span className="truncate">استاد: {getProgramTeacherName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
-                            {(prog.classroomTitle || prog.location) && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold opacity-90">
+                            <UserCheck size={12} className="shrink-0 text-emerald-300" />
+                            <span className="truncate">نماینده: {getProgramRepName(prog)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {prog.attendanceType === 'self_reporting' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1">
+                                <UserCheck size={10} />
+                                <span>خود اظهاری</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 flex items-center gap-1">
+                                <Users size={10} />
+                                <span>با نماینده</span>
+                              </span>
+                            )}
+                            {(prog.classroomTitle || prog.location || prog.madrasRoom || prog.classroom) && (
                               <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
                                 <DoorOpen size={11} className="shrink-0" />
-                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location}</span>
+                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location || prog.madrasRoom || prog.classroom}</span>
                               </div>
                             )}
                             {prog.timeSlot && (
@@ -2506,16 +2626,31 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           </div>
                         </div>
 
-                        {/* Title & Teacher & Schedule Meta */}
+                        {/* Title & Teacher & Rep & Schedule Meta */}
                         <div className="space-y-1.5 flex-1">
                           <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
                             {prog.title}
                           </h4>
                           <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
                             <User size={13} className="shrink-0 opacity-80" />
-                            <span className="truncate">مشاور: {prog.teacherName || 'مشخص نشده'}</span>
+                            <span className="truncate">مشاور/استاد: {getProgramTeacherName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold opacity-90">
+                            <UserCheck size={12} className="shrink-0 text-emerald-300" />
+                            <span className="truncate">نماینده: {getProgramRepName(prog)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            {prog.attendanceType === 'self_reporting' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1">
+                                <UserCheck size={10} />
+                                <span>خود اظهاری</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 flex items-center gap-1">
+                                <Users size={10} />
+                                <span>با نماینده</span>
+                              </span>
+                            )}
                             {(prog.classroomTitle || prog.location) && (
                               <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
                                 <DoorOpen size={11} className="shrink-0" />
@@ -2611,7 +2746,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {/* TAB 1: RECORD ATTENDANCE (ثبت و ویرایش جلسه) */}
       {/* ===================================================================== */}
-      {activeTab === 'record' && !isOrdinaryStudent && (
+      {activeTab === 'record' && (
         <div className="space-y-6">
           {/* Notice if representative has no linked class */}
           {isRepresentative && representativePrograms.length === 0 && (
@@ -3554,88 +3689,88 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           {/* Summary Metric Cards - 4 Modern Sleek Boxes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             {/* 1. Total Held Sessions */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white p-4 rounded-2xl border border-indigo-500/30 shadow-md shadow-indigo-950/20 group hover:border-indigo-400/50 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 text-white p-4 rounded-2xl border border-indigo-400/40 shadow-lg shadow-indigo-600/20 group hover:border-indigo-300 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-indigo-200/90 block">کل جلسات {isOrdinaryStudent ? 'برگزار شده' : 'تشکیل شده'}</span>
+                  <span className="text-[11px] font-bold text-indigo-100 block">کل جلسات {isOrdinaryStudent ? 'برگزار شده' : 'تشکیل شده'}</span>
                   <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
                     <span>{studentMetrics.heldSessions}</span>
-                    <span className="text-[10px] text-indigo-300 font-medium font-vazir">جلسه</span>
+                    <span className="text-[10px] text-indigo-200 font-medium font-vazir">جلسه</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-inner group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
                   <BookOpen size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-indigo-200/70">
+              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-indigo-100">
                 <span>وضعیت حضور: {studentMetrics.presents} جلسه حاضر</span>
-                <span className="font-mono text-emerald-300 font-bold">
+                <span className="font-mono text-emerald-200 font-bold">
                   {studentMetrics.heldSessions > 0 ? `${Math.round((studentMetrics.presents / studentMetrics.heldSessions) * 100)}%` : '۱۰۰%'}
                 </span>
               </div>
             </div>
 
             {/* 2. Total Absences (Excused & Unexcused) */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-rose-950/90 via-slate-900 to-rose-900/80 text-white p-4 rounded-2xl border border-rose-500/30 shadow-md shadow-rose-950/20 group hover:border-rose-400/50 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative overflow-hidden bg-gradient-to-br from-rose-500 via-rose-600 to-red-600 text-white p-4 rounded-2xl border border-rose-400/40 shadow-lg shadow-rose-600/20 group hover:border-rose-300 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-rose-200/90 block">غیبت‌ها (اعم از موجه و غیرموجه)</span>
+                  <span className="text-[11px] font-bold text-rose-100 block">غیبت‌ها (اعم از موجه و غیرموجه)</span>
                   <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
                     <span>{studentMetrics.totalAbsences}</span>
-                    <span className="text-[10px] text-rose-300 font-medium font-vazir">جلسه</span>
+                    <span className="text-[10px] text-rose-200 font-medium font-vazir">جلسه</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-300 shadow-inner group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
                   <UserX size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-rose-200/80">
-                <span>غیرموجه: <strong className="text-rose-300 font-mono">{studentMetrics.absents}</strong></span>
-                <span>موجه: <strong className="text-indigo-300 font-mono">{studentMetrics.excused}</strong></span>
+              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-rose-100">
+                <span>غیرموجه: <strong className="text-white font-mono">{studentMetrics.absents}</strong></span>
+                <span>موجه: <strong className="text-rose-100 font-mono">{studentMetrics.excused}</strong></span>
               </div>
             </div>
 
             {/* 3. Total Delays */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-amber-950/90 via-slate-900 to-amber-900/80 text-white p-4 rounded-2xl border border-amber-500/30 shadow-md shadow-amber-950/20 group hover:border-amber-400/50 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative overflow-hidden bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-white p-4 rounded-2xl border border-amber-400/40 shadow-lg shadow-amber-600/20 group hover:border-amber-300 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-amber-200/90 block">تأخیرها</span>
+                  <span className="text-[11px] font-bold text-amber-100 block">تأخیرها</span>
                   <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
                     <span>{studentMetrics.lates}</span>
-                    <span className="text-[10px] text-amber-300 font-medium font-vazir">مورد</span>
+                    <span className="text-[10px] text-amber-200 font-medium font-vazir">مورد</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-inner group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
                   <Clock3 size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-amber-200/70">
+              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-amber-100">
                 <span>ثبت تاخیر در ورود به کلاس</span>
-                <span className="font-mono text-amber-300 font-bold">{studentMetrics.lates > 0 ? 'موجب کسر انضباط' : 'بدون تاخیر'}</span>
+                <span className="font-mono text-white font-bold">{studentMetrics.lates > 0 ? 'موجب کسر انضباط' : 'بدون تاخیر'}</span>
               </div>
             </div>
 
             {/* 4. Educational Warnings */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-purple-950/90 via-slate-900 to-rose-950/90 text-white p-4 rounded-2xl border border-purple-500/30 shadow-md shadow-purple-950/20 group hover:border-purple-400/50 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-purple-700 to-violet-700 text-white p-4 rounded-2xl border border-purple-400/40 shadow-lg shadow-purple-600/20 group hover:border-purple-300 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-purple-200/90 block">اخطارهای آموزشی</span>
+                  <span className="text-[11px] font-bold text-purple-100 block">اخطارهای آموزشی</span>
                   <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
                     <span>{studentMetrics.warnings}</span>
-                    <span className="text-[10px] text-purple-300 font-medium font-vazir">اخطار</span>
+                    <span className="text-[10px] text-purple-200 font-medium font-vazir">اخطار</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shadow-inner group-hover:scale-105 transition-transform">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
                   <AlertTriangle size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[10px] text-purple-200/80">
+              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-purple-100">
                 <span>تنها اخطارهای قطعی ثبت شده</span>
-                <span className={cn("font-bold font-mono", studentMetrics.warnings > 0 ? "text-rose-400" : "text-emerald-400")}>
+                <span className={cn("font-bold font-mono", studentMetrics.warnings > 0 ? "text-amber-300" : "text-emerald-200")}>
                   {studentMetrics.warnings > 0 ? 'نیازمند پیگیری' : 'بدون اخطار'}
                 </span>
               </div>
@@ -3917,7 +4052,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   classGroupedReportList.map(cGroup => (
                     <div key={cGroup.programId} className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs bg-white space-y-0">
                       {/* Class Group Banner Header */}
-                      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-700 text-white p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
                         <div className="flex items-center gap-2 flex-wrap">
                           <BookOpen size={16} className="text-amber-400 shrink-0" />
                           <span className="font-black text-xs sm:text-sm">کلاس: «{cGroup.programTitle}»</span>
@@ -4159,55 +4294,55 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         <div className="space-y-6 font-vazir">
           {/* Summary Metric Cards Header */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 bg-gradient-to-br from-indigo-950 via-slate-900 to-indigo-900 text-white rounded-2xl border border-indigo-500/30 shadow-md">
+            <div className="p-4 bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 text-white rounded-2xl border border-indigo-400/40 shadow-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-indigo-200/90 block">تعداد کل نمایندگان فعال</span>
+                  <span className="text-[11px] font-bold text-indigo-100 block">تعداد کل نمایندگان فعال</span>
                   <div className="text-2xl font-black font-mono text-white mt-1">
-                    {representativesList.length} <span className="text-xs font-vazir text-indigo-300">نفر</span>
+                    {representativesList.length} <span className="text-xs font-vazir text-indigo-200">نفر</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white">
                   <Users size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-indigo-200/70">
+              <div className="mt-2 pt-2 border-t border-white/20 text-[10.5px] text-indigo-100">
                 <span>دارای دسترسی ثبت حضور و غیاب کلاس‌ها</span>
               </div>
             </div>
 
-            <div className="p-4 bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-900 text-white rounded-2xl border border-emerald-500/30 shadow-md">
+            <div className="p-4 bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-700 text-white rounded-2xl border border-emerald-400/40 shadow-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-emerald-200/90 block">نمایندگان با تعهد بالای ۹۰٪</span>
+                  <span className="text-[11px] font-bold text-emerald-100 block">نمایندگان با تعهد بالای ۹۰٪</span>
                   <div className="text-2xl font-black font-mono text-white mt-1">
-                    {representativesList.filter(r => r.commitmentPercent >= 90).length} <span className="text-xs font-vazir text-emerald-300">نفر</span>
+                    {representativesList.filter(r => r.commitmentPercent >= 90).length} <span className="text-xs font-vazir text-emerald-200">نفر</span>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white">
                   <CheckCircle2 size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-emerald-200/70">
+              <div className="mt-2 pt-2 border-t border-white/20 text-[10.5px] text-emerald-100">
                 <span>ثبت به‌موقع حضور و غیاب در مهلت مقرر</span>
               </div>
             </div>
 
-            <div className="p-4 bg-gradient-to-br from-purple-950 via-slate-900 to-slate-900 text-white rounded-2xl border border-purple-500/30 shadow-md">
+            <div className="p-4 bg-gradient-to-br from-purple-600 via-purple-700 to-violet-700 text-white rounded-2xl border border-purple-400/40 shadow-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-[11px] font-bold text-purple-200/90 block">میانگین شاخص تعهد کل نمایندگان</span>
+                  <span className="text-[11px] font-bold text-purple-100 block">میانگین شاخص تعهد کل نمایندگان</span>
                   <div className="text-2xl font-black font-mono text-white mt-1">
                     {representativesList.length > 0 
                       ? `${Math.round(representativesList.reduce((acc, r) => acc + r.commitmentPercent, 0) / representativesList.length)}٪`
                       : '۱۰۰٪'}
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
+                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white">
                   <Award size={20} />
                 </div>
               </div>
-              <div className="mt-2 pt-2 border-t border-white/10 text-[10.5px] text-purple-200/70">
+              <div className="mt-2 pt-2 border-t border-white/20 text-[10.5px] text-purple-100">
                 <span>نسبت جلسات ثبت‌شده به جلسات برگزار شده</span>
               </div>
             </div>
@@ -5052,7 +5187,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       تغییر وضعیت کارت: {quickStatusModal.prog.title}
                     </h3>
                     <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                      تاریخ جلسه: {selectedDate} • پایه: {quickStatusModal.prog.grade || 'عمومی'} • استاد: {quickStatusModal.prog.teacherName || quickStatusModal.prog.teacher || 'مشخص‌نشده'}
+                      تاریخ جلسه: {selectedDate} • پایه: {quickStatusModal.prog.grade || 'عمومی'} • استاد: {getProgramTeacherName(quickStatusModal.prog)}
                     </p>
                   </div>
                 </div>
@@ -5195,6 +5330,172 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* Modal 7: Quick Representative Attendance Modal (اصلاح ۱ - دسترسی سریع نماینده) */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {isQuickAttendanceOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs font-vazir" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 flex items-center justify-center font-bold">
+                    <Sparkles size={20} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      ثبت سریع حضور و غیاب (پنل نماینده کلاس)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      ثبت سریع و مستقیم آمار جلسه با ۱ لمس برای کلاس‌های تحت نمایندگی شما
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAttendanceOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-xl cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Class & Date Selector */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">تاریخ جلسه:</label>
+                  <input
+                    type="text"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">کلاس تحت نمایندگی شما:</label>
+                  <select
+                    value={selectedProgramId}
+                    onChange={(e) => setSelectedProgramId(e.target.value)}
+                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-pointer"
+                  >
+                    {representativePrograms.length === 0 ? (
+                      <option value="" disabled>هیچ کلاسی تحت نمایندگی شما نیست</option>
+                    ) : (
+                      representativePrograms.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({p.grade || 'عمومی'}) - استاد: {getProgramTeacherName(p)}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* Quick action bar */}
+              <div className="flex items-center justify-between gap-2 shrink-0 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-100">
+                <span className="text-xs font-bold text-indigo-950">
+                  تعداد طلاب عضو این کلاس: <b className="text-indigo-700">{enrolledStudents.length} نفر</b>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allPres: Record<string, AttendanceStatus> = {};
+                    enrolledStudents.forEach(s => { allPres[s.id] = 'present'; });
+                    setStudentsAttendance(allPres);
+                  }}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-extrabold shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <CheckSquare size={13} />
+                  <span>تعیین همه به‌عنوان حاضر</span>
+                </button>
+              </div>
+
+              {/* Students List for Representative */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[340px]">
+                {enrolledStudents.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500 font-medium">
+                    هیچ طلابی برای این کلاس ثبت نشده است.
+                  </div>
+                ) : (
+                  enrolledStudents.map((st, idx) => {
+                    const curStatus = studentsAttendance[st.id] || 'present';
+                    return (
+                      <div key={st.id} className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 hover:bg-slate-50/80 transition-all shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] font-bold text-slate-400 w-5 text-center">{idx + 1}</span>
+                          <span className="text-xs font-bold text-slate-800 truncate">{st.name}</span>
+                          {st.studentCode && <span className="text-[10px] text-slate-400 font-mono">({st.studentCode})</span>}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentStatus(st.id, 'present')}
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                              curStatus === 'present' ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            )}
+                          >
+                            حاضر
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentStatus(st.id, 'absent')}
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                              curStatus === 'absent' ? "bg-rose-600 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            )}
+                          >
+                            غایب
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetStudentStatus(st.id, 'late')}
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                              curStatus === 'late' ? "bg-amber-500 text-white shadow-xs" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            )}
+                          >
+                            تاخیر
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Submit Footer */}
+              <div className="pt-3 border-t border-slate-100 shrink-0 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAttendanceOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSaveAttendance();
+                    setIsQuickAttendanceOpen(false);
+                  }}
+                  disabled={isSaving || !currentProgram}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer flex items-center gap-2 active:scale-95"
+                >
+                  <CheckSquare size={16} />
+                  <span>ثبت نهایی آمار جلسه (۱ کلیک)</span>
                 </button>
               </div>
             </motion.div>

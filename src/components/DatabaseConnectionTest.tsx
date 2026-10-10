@@ -177,35 +177,12 @@ DB_PASSWORD=your_password_here`;
       });
     }
 
-    // 3. Diagnostics for Cloud Database (Supabase)
-    addLog('در حال اتصال به دیتابیس آنلاین Supabase...');
-    const cloudStartTime = Date.now();
-    try {
-      const creds = getSupabaseCredentials();
-      addLog(`آدرس اتصال کلاد: ${creds.url || 'پیش‌فرض'}`);
-      
-      const status = await testSupabaseConnection();
-      const cloudLatency = Date.now() - cloudStartTime;
-      setLatency(cloudLatency);
-
-      if (status.connected) {
-        addLog(`پایگاه داده آنلاین متصل شد! زمان پینگ دیتابیس: ${cloudLatency} میلی‌ثانیه.`);
-        if (status.tablesFound && status.tablesFound.length > 0) {
-          addLog(`تعداد ${status.tablesFound.length} جدول کلیدی در دیتابیس کلاد با موفقیت شناسایی و تایید شد.`);
-        }
-        setSupabaseStatus(status);
-      } else {
-        addLog(`عدم موفقیت در تایید ارتباط کلاد: ${status.message}`);
-        setSupabaseStatus(status);
-      }
-    } catch (err: any) {
-      const cloudLatency = Date.now() - cloudStartTime;
-      addLog(`خطای بحرانی در پینگ کلاد دیتابیس: ${err?.message || err}`);
-      setSupabaseStatus({
-        connected: false,
-        message: `خطا در برقراری ارتباط با پایگاه داده ابری: ${err?.message || 'قطع اتصال شبکه'}`
-      });
-    }
+    // 3. Status of Supabase (Disconnected by configuration)
+    addLog('بررسی وضعیت Supabase: قطع شده طبق پیکربندی.');
+    setSupabaseStatus({
+      connected: false,
+      message: 'ارتباط با Supabase قطع شده است. پایگاه داده اصلی فقط MySQL 8 روی رانفلر (Runflare) می‌باشد.'
+    });
 
     addLog('عملیات عیب‌یابی به پایان رسید.');
     setLoading(false);

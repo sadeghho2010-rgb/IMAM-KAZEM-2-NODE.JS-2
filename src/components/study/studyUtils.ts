@@ -183,3 +183,100 @@ export function exportStudyStatsCSV(periods: StudyPeriod[], allLogs: PeriodicStu
   link.click();
   document.body.removeChild(link);
 }
+
+// -------------------------------------------------------------
+// Daily Granular Study Log Entries Helpers & Sync
+// -------------------------------------------------------------
+import { localDb } from '../../lib/localDb';
+import { getTodayShamsi } from '../../lib/jalali';
+import { StudyDailyEntry } from '../../types';
+
+export async function addStudyDailyEntry(entry: {
+  periodId: string;
+  studentId: string;
+  studyHours: number;
+  discussionHours: number;
+  submittedBy?: string;
+  note?: string;
+}) {
+  const totalHours = Math.round((entry.studyHours + entry.discussionHours) * 100) / 100;
+  const now = new Date();
+  const todayShamsi = getTodayShamsi();
+  const timeStr = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+  const newDoc = await localDb.addDoc('study_daily_entries', {
+    periodId: entry.periodId,
+    studentId: entry.studentId,
+    studyHours: entry.studyHours,
+    discussionHours: entry.discussionHours,
+    totalHours,
+    entryDate: todayShamsi,
+    entryTime: timeStr,
+    createdAt: now.toISOString(),
+    submittedBy: entry.submittedBy || 'student',
+    note: entry.note || ''
+  });
+
+  await syncAggregatePeriodicStudyLog(entry.periodId, entry.studentId, entry.submittedBy);
+  return newDoc;
+}
+
+export async function updateStudyDailyEntry(
+  entryId: string, 
+  updated: { studyHours: number; discussionHours: number; note?: string },
+  periodId: string,
+  studentId: string,
+  submittedBy?: string
+) {
+  const totalHours = Math.round((updated.studyHours + updated.discussionHours) * 100) / 100;
+  const now = new Date();
+
+  await localDb.updateDoc('study_daily_entries', entryId, {
+    studyHours: updated.studyHours,
+    discussionHours: updated.discussionHours,
+    totalHours,
+    note: updated.note || '',
+    updatedAt: now.toISOString()
+  });
+
+  await syncAggregatePeriodicStudyLog(periodId, studentId, submittedBy);
+}
+
+export async function deleteStudyDailyEntry(entryId: string, periodId: string, studentId: string, submittedBy?: string) {
+  await localDb.deleteDoc('study_daily_entries', entryId);
+  await syncAggregatePeriodicStudyLog(periodId, studentId, submittedBy);
+}
+
+export async function syncAggregatePeriodicStudyLog(periodId: string, studentId: string, submittedBy?: string) {
+  const allEntries = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
+  const studentEntries = allEntries.filter(e => e.periodId === periodId && e.studentId === studentId);
+
+  const totalStudy = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.studyHours) || 0), 0) * 100) / 100;
+  const totalDisc = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.discussionHours) || 0), 0) * 100) / 100;
+  const totalSum = Math.round((totalStudy + totalDisc) * 100) / 100;
+
+  const existingLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
+  const existingLog = existingLogs.find(l => l.periodId === periodId && l.studentId === studentId);
+
+  if (existingLog) {
+    if (studentEntries.length > 0) {
+      await localDb.updateDoc('periodic_study_logs', existingLog.id, {
+        hours: totalSum,
+        studyHours: totalStudy,
+        discussionHours: totalDisc,
+        submittedBy: submittedBy || existingLog.submittedBy || 'student',
+        lastModifiedAt: new Date().toISOString()
+      });
+    }
+  } else if (studentEntries.length > 0) {
+    await localDb.addDoc('periodic_study_logs', {
+      periodId,
+      studentId,
+      hours: totalSum,
+      studyHours: totalStudy,
+      discussionHours: totalDisc,
+      submittedBy: submittedBy || 'student',
+      lastModifiedAt: new Date().toISOString()
+    });
+  }
+}

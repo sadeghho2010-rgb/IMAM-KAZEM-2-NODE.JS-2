@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppUser, UserLevel, UserRole, UserScope } from '../types/auth';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { realtimeSync } from '../lib/realtimeSync';
 import { localDb } from '../lib/localDb';
 import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';

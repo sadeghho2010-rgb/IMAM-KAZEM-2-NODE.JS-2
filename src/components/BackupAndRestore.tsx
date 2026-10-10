@@ -1157,7 +1157,7 @@ export default function BackupAndRestore() {
         </div>
       </div>
 
-      {/* SUPABASE DATABASE SETUP & SCHEMA CARD */}
+      {/* MYSQL 8 RUNFLARE DATABASE STATUS CARD */}
       <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg border border-slate-800 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
           <div className="flex items-center gap-3">
@@ -1166,34 +1166,15 @@ export default function BackupAndRestore() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-black text-white">پیکربندی و ساخت جدول‌های دیتابیس ابری (Supabase)</h2>
-                <span className="text-[11px] px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 rounded-full font-bold">
-                  PostgreSQL
+                <h2 className="text-lg font-black text-white">پایگاه داده اصلی سیستم (MySQL 8 روی رانفلر - Runflare)</h2>
+                <span className="text-[11px] px-2.5 py-0.5 bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 rounded-full font-bold">
+                  MySQL 8.0 Active
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                تولید ساختار کامل جدول‌ها، باکت ذخیره‌سازی backups و دسترسی‌های RLS برای اتصال کامل سامانه به پایگاه داده
+                طبق دستور شما، دیتابیس Supabase به طور کامل قطع گردیده و تمامی تراکنش‌ها فقط روی دیتابیس MySQL 8 رانفلر ذخیره می‌شوند.
               </p>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setShowCredentialsForm(!showCredentialsForm)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
-            >
-              <KeyRound size={15} className="text-amber-400" />
-              <span>{showCredentialsForm ? 'بستن تنظیمات اتصال' : 'تنظیمات آدرس و کلید دیتابیس'}</span>
-            </button>
-
-            <button
-              onClick={handleTestDatabase}
-              disabled={isTestingDb}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-50"
-            >
-              {isTestingDb ? <RefreshCw size={15} className="animate-spin text-white" /> : <Server size={15} className="text-white" />}
-              <span>تست اتصال و سلامت جدول‌ها</span>
-            </button>
           </div>
         </div>
 

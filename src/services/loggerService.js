@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+// Logger Service for application monitoring
 
 const SENSITIVE_KEYS = [
   'password',
@@ -96,7 +96,7 @@ class LoggerService {
   }
 
   /**
-   * Directly sends log to Supabase app_logs table (No queue)
+   * Log entry (Console and Server API)
    */
   async log({ level = 'error', message, stackTrace = null, context = null, traceId = null, userId = null, path = null } = {}) {
     // 1. Level validation
@@ -121,25 +121,25 @@ class LoggerService {
       console.log(`%c[${safeLevel.toUpperCase()}] [${activeTraceId}] ${safeMessage}`, color, sanitizedContext || '');
     }
 
+    // Server audit stream
     try {
-      const { error } = await supabase.from('app_logs').insert([
-        {
-          trace_id: activeTraceId,
-          user_id: userId,
-          level: safeLevel,
-          message: safeMessage,
-          stack_trace: stackTrace ? String(stackTrace) : null,
-          context: sanitizedContext,
-          path: activePath
-        }
-      ]);
-
-      if (error) {
-        console.error('[LoggerService] Failed to insert log to app_logs:', error.message);
+      if (typeof window !== 'undefined' && safeLevel === 'error') {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        fetch('/api/audit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            action: 'CLIENT_ERROR',
+            description: safeMessage,
+            details: { traceId: activeTraceId, path: activePath, stackTrace, context: sanitizedContext }
+          })
+        }).catch(() => {});
       }
     } catch (err) {
       // Golden Rule: Logging must never crash the main application
-      console.error('[LoggerService] Unexpected error while sending log:', err?.message || err);
     }
   }
 
