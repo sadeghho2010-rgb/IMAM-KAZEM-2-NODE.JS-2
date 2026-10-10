@@ -832,10 +832,68 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
   return Array.from(usersMap.values());
 }
 
+// In-Memory User Cache with sliding TTL (5 minutes) for instant O(1) logins
+interface CachedUserEntry {
+  user: StoredUser;
+  cachedAt: number;
+}
+const userCache = new Map<string, CachedUserEntry>();
+const USER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export async function fetchUserByUsername(usernameInput: string): Promise<StoredUser | null> {
+  const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+  if (!cleanUser) return null;
+
+  const now = Date.now();
+  const cached = userCache.get(cleanUser);
+  if (cached && (now - cached.cachedAt) < USER_CACHE_TTL_MS) {
+    return { ...cached.user };
+  }
+
+  // 1. Check in-memory store
+  let user = serverMemoryUsers.get(cleanUser);
+
+  // 2. Query MySQL directly for single-record index lookup if available
+  if (!user && isMysqlConfigured) {
+    try {
+      const mysqlUser = await MysqlRepository.getUserByUsername(cleanUser);
+      if (mysqlUser) {
+        user = {
+          ...mysqlUser,
+          username: cleanUser
+        } as StoredUser;
+        serverMemoryUsers.set(cleanUser, user);
+      }
+    } catch (e) {
+      console.warn('[MySQL fetchUserByUsername notice]:', e);
+    }
+  }
+
+  // 3. Fallback to full storage if not found
+  if (!user) {
+    const allUsers = await fetchAllUsersFromStorage();
+    user = allUsers.find(u => u.username?.toUpperCase() === cleanUser);
+  }
+
+  if (user) {
+    userCache.set(cleanUser, { user: { ...user }, cachedAt: now });
+  }
+
+  return user || null;
+}
+
+export function invalidateUserCache(usernameInput: string) {
+  const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+  if (cleanUser) {
+    userCache.delete(cleanUser);
+  }
+}
+
 export async function saveUserToStorage(user: StoredUser): Promise<void> {
   const cleanId = (user.username || '').trim().toUpperCase();
   if (cleanId) {
     serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
+    userCache.set(cleanId, { user: { ...user, username: cleanId }, cachedAt: Date.now() });
     saveUsersToFile(Array.from(serverMemoryUsers.values()));
   }
 
@@ -955,9 +1013,11 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
 export async function deleteUserFromStorage(userIdOrUsername: string): Promise<void> {
   const clean = userIdOrUsername.trim().toUpperCase();
   serverMemoryUsers.delete(clean);
+  invalidateUserCache(clean);
   for (const [uname, u] of serverMemoryUsers.entries()) {
     if (u.id === userIdOrUsername) {
       serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
     }
   }
   saveUsersToFile(Array.from(serverMemoryUsers.values()));

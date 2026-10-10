@@ -9,6 +9,7 @@ import {
   revokeToken,
   revokeAllUserSessions,
   fetchAllUsersFromStorage,
+  fetchUserByUsername,
   saveUserToStorage,
   deleteUserFromStorage,
   sanitizeUser,
@@ -85,7 +86,8 @@ export class AuthController {
         path: '/'
       });
 
-      await logAudit({
+      // Execute audit logs in background without delaying HTTP response to user
+      void logAudit({
         action: 'login',
         userId: result.user.id,
         userName: result.user.username,
@@ -93,14 +95,14 @@ export class AuthController {
         ipAddress: ip,
         status: 'success',
         details: { userLevel: result.user.level, name: result.user.name }
-      });
+      }).catch(() => {});
 
-      await recordLoginAuditInDb({
+      void recordLoginAuditInDb({
         username: result.user.username,
         success: true,
         ipAddress: ip,
         userAgent: req.headers['user-agent']
-      });
+      }).catch(() => {});
 
       return res.status(200).json({
         success: true,
@@ -113,7 +115,7 @@ export class AuthController {
       const statusCode = error?.statusCode || (error?.status ? Number(error.status) : 401);
       const message = error?.message || 'نام کاربری یا رمز عبور اشتباه است.';
 
-      await logAudit({
+      void logAudit({
         action: 'login_failed',
         userName: req.body?.username || 'unknown',
         ipAddress: ip,
@@ -121,7 +123,7 @@ export class AuthController {
         errorMessage: message
       }).catch(() => {});
 
-      await recordLoginAuditInDb({
+      void recordLoginAuditInDb({
         username: req.body?.username || 'unknown',
         success: false,
         ipAddress: ip,
@@ -152,8 +154,15 @@ export class AuthController {
       }
 
       const userId = verified.decoded.userId || verified.decoded.id;
-      const users = await fetchAllUsersFromStorage();
-      const user = users.find(u => u.id === userId || u.username.toUpperCase() === (verified.decoded?.username || '').toUpperCase());
+      const username = verified.decoded.username;
+      let user: StoredUser | null = null;
+      if (username) {
+        user = await fetchUserByUsername(username);
+      }
+      if (!user) {
+        const users = await fetchAllUsersFromStorage();
+        user = users.find(u => u.id === userId || u.username.toUpperCase() === (username || '').toUpperCase()) || null;
+      }
 
       if (!user || user.isActive === false) {
         return res.status(401).json({ authenticated: false, message: 'کاربر یافت نشد یا مسدود است.' });

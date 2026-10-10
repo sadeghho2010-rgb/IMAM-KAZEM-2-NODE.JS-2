@@ -17,6 +17,7 @@ import {
   revokeAllUserSessions,
   sanitizeUser,
   fetchAllUsersFromStorage,
+  fetchUserByUsername,
   saveUserToStorage,
   deleteUserFromStorage,
   logServerAudit,
@@ -51,9 +52,8 @@ export class AuthService {
       resetFailedAttempts(clientIp, cleanUser);
     }
 
-    // Fetch user
-    const users = await fetchAllUsersFromStorage();
-    let user = users.find(u => u.username?.toUpperCase() === cleanUser);
+    // High performance targeted user lookup O(1)
+    let user = await fetchUserByUsername(cleanUser);
 
     if (!user) {
       // Check default server users fallback
@@ -69,14 +69,15 @@ export class AuthService {
       await dummyPasswordCheck(cleanPass);
       recordFailedAttempt(clientIp, cleanUser);
       trackSecurityIncident(clientIp, undefined, 'LOGIN_FAILED');
-      await logServerAudit({
+      // Fire-and-forget background audit log
+      void logServerAudit({
         username: cleanUser,
         action: 'LOGIN_FAILED',
         entityType: 'auth',
         entityId: cleanUser,
         description: 'تلاش ناموفق برای ورود: نام کاربری یا رمز عبور نامعتبر است.',
         ipAddress: clientIp
-      });
+      }).catch(() => {});
       throw new AppError('نام کاربری یا رمز عبور اشتباه است.', { statusCode: 401 });
     }
 
@@ -105,7 +106,8 @@ export class AuthService {
       }
       await saveUserToStorage(user);
 
-      await logServerAudit({
+      // Fire-and-forget background audit log
+      void logServerAudit({
         userId: user.id,
         username: user.username,
         userRole: user.role,
@@ -114,7 +116,7 @@ export class AuthService {
         entityId: user.id,
         description: `تلاش ناموفق برای ورود: رمز عبور نادرست برای ${user.username}`,
         ipAddress: clientIp
-      });
+      }).catch(() => {});
 
       throw new AppError('نام کاربری یا رمز عبور اشتباه است.', { statusCode: 401 });
     }
@@ -140,13 +142,16 @@ export class AuthService {
     user.failedLoginAttempts = 0;
     user.accountLockedUntil = undefined;
     user.lastLogin = new Date().toISOString();
+    
+    // Save user update asynchronously or await fast memory sync
     await saveUserToStorage(user);
     updateLastActivity(user.id);
 
     const safeUser = sanitizeUser(user);
     const { token, refreshToken } = generateTokens(safeUser);
 
-    await logServerAudit({
+    // Non-blocking background audit log execution
+    void logServerAudit({
       userId: user.id,
       username: user.username,
       userRole: user.role,
@@ -155,7 +160,7 @@ export class AuthService {
       entityId: user.id,
       description: `ورود موفق به سامانه با نقش ${user.roleTitle || user.role}`,
       ipAddress: clientIp
-    });
+    }).catch(() => {});
 
     return { user: safeUser, token, refreshToken };
   }
@@ -170,10 +175,17 @@ export class AuthService {
     }
 
     const userId = verified.decoded.userId || verified.decoded.id;
-    const users = await fetchAllUsersFromStorage();
-    const user = users.find(u => u.id === userId && u.isActive !== false);
-
+    const username = verified.decoded.username;
+    let user: StoredUser | null = null;
+    if (username) {
+      user = await fetchUserByUsername(username);
+    }
     if (!user) {
+      const users = await fetchAllUsersFromStorage();
+      user = users.find(u => u.id === userId && u.isActive !== false) || null;
+    }
+
+    if (!user || user.isActive === false) {
       throw new AppError('کاربر یافت نشد یا حساب کاربری غیرفعال است.', { statusCode: 401 });
     }
 

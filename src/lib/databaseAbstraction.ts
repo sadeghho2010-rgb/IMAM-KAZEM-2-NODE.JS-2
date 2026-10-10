@@ -1021,6 +1021,56 @@ export const MysqlRepository = {
     }
   },
 
+  // 2b. Fetch Single User By Username (Fast O(1) Index Lookup)
+  async getUserByUsername(username: string): Promise<SystemUserEntity | null> {
+    const pool = getMysqlPool();
+    if (!pool || !username) return null;
+    const cleanUser = username.trim().toUpperCase();
+
+    try {
+      let [rows]: any = await pool.execute(
+        `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                last_login AS lastLogin, data
+         FROM all_users WHERE UPPER(username) = ? LIMIT 1`,
+        [cleanUser]
+      );
+
+      if (!rows || rows.length === 0) {
+        [rows] = await pool.execute(
+          `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data
+           FROM system_users WHERE UPPER(username) = ? LIMIT 1`,
+          [cleanUser]
+        );
+      }
+
+      if (!rows || rows.length === 0) return null;
+
+      const u = rows[0];
+      return {
+        ...u,
+        allowedTabs: typeof u.allowedTabs === 'string' ? JSON.parse(u.allowedTabs) : u.allowedTabs || [],
+        editableTabs: typeof u.editableTabs === 'string' ? JSON.parse(u.editableTabs) : u.editableTabs || [],
+        modulePermissions: typeof u.modulePermissions === 'string' ? JSON.parse(u.modulePermissions) : u.modulePermissions || {},
+        isActive: Boolean(u.isActive),
+        mustChangePassword: Boolean(u.mustChangePassword)
+      };
+    } catch (e) {
+      console.warn('[MySQL getUserByUsername Error]:', e);
+      return null;
+    }
+  },
+
   // 3. Upsert User (Insert or Update with Prepared Statement into both all_users and system_users)
   async saveUser(user: SystemUserEntity): Promise<void> {
     const pool = getMysqlPool();
