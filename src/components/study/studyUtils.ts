@@ -248,15 +248,22 @@ export async function deleteStudyDailyEntry(entryId: string, periodId: string, s
 }
 
 export async function syncAggregatePeriodicStudyLog(periodId: string, studentId: string, submittedBy?: string) {
+  const targetStudentId = String(studentId || '').trim();
   const allEntries = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
-  const studentEntries = allEntries.filter(e => e.periodId === periodId && (e.studentId === studentId || (e as any).student_id === studentId));
+  const studentEntries = allEntries.filter(e => 
+    e.periodId === periodId && 
+    String(e.studentId || (e as any).student_id || '').trim() === targetStudentId
+  );
 
   const totalStudy = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.studyHours) || 0), 0) * 100) / 100;
   const totalDisc = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.discussionHours) || 0), 0) * 100) / 100;
   const totalSum = Math.round((totalStudy + totalDisc) * 100) / 100;
 
   const existingLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
-  const existingLog = existingLogs.find(l => l.periodId === periodId && (l.studentId === studentId || (l as any).student_id === studentId));
+  const existingLog = existingLogs.find(l => 
+    l.periodId === periodId && 
+    String(l.studentId || (l as any).student_id || '').trim() === targetStudentId
+  );
 
   if (existingLog) {
     await localDb.updateDoc('periodic_study_logs', existingLog.id, {
@@ -280,6 +287,7 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
 
   // Broadcast change event to trigger localDb listeners and active UI subscribers
   if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
     window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
   }
 }

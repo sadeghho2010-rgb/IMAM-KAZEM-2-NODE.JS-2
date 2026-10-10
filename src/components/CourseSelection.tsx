@@ -31,8 +31,32 @@ import {
   UserPlus,
   SlidersHorizontal,
   CheckSquare,
-  MinusCircle
+  MinusCircle,
+  Trash2,
+  Power,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
+
+function isMatchingGrade(itemGrade: string | undefined | null, targetGrade: string): boolean {
+  if (!targetGrade || targetGrade === 'all' || targetGrade === 'همه پایه‌ها') return true;
+  if (!itemGrade) return false;
+
+  const toPersianDigits = (str: string) => str.replace(/[0-9]/g, c => '۰۱۲۳۴۵۶۷۸۹'[parseInt(c)]);
+  const cleanItem = toPersianDigits(itemGrade.toString()).trim();
+  const cleanTarget = toPersianDigits(targetGrade.toString()).trim();
+
+  if (cleanItem === cleanTarget) return true;
+
+  const digits = ['۷', '۸', '۹', '۱۰', '۱۱', '۱۲'];
+  for (const d of digits) {
+    if (cleanTarget.includes(d) && cleanItem.includes(d)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -440,11 +464,37 @@ export default function CourseSelection() {
     }
   };
 
+  // Admin Toggle Period Active / Inactive
+  const handleTogglePeriodActive = async (p: CourseSelectionPeriod) => {
+    try {
+      await localDb.updateDoc('course_selection_periods', p.id, {
+        isActive: !p.isActive,
+        updatedAt: new Date().toISOString()
+      });
+      fetchData();
+    } catch (err) {
+      console.error('Error toggling period status:', err);
+      alert('خطا در تغییر وضعیت دوره انتخاب واحد.');
+    }
+  };
+
+  // Admin Delete Period
+  const handleDeletePeriod = async (p: CourseSelectionPeriod) => {
+    if (!window.confirm(`آیا از حذف دوره انتخاب واحد «${p.title}» اطمینان دارید؟`)) return;
+    try {
+      await localDb.deleteDoc('course_selection_periods', p.id);
+      fetchData();
+    } catch (err) {
+      console.error('Error deleting period:', err);
+      alert('خطا در حذف دوره انتخاب واحد.');
+    }
+  };
+
   // Filter requests list
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-      if (filterGrade !== 'all' && r.studentGrade !== filterGrade) return false;
+      if (filterGrade !== 'all' && !isMatchingGrade(r.studentGrade, filterGrade)) return false;
       if (filterPeriodId !== 'all' && r.periodId !== filterPeriodId) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -754,6 +804,51 @@ export default function CourseSelection() {
       {activeTab === 'requests' ? (
         /* REQUESTS LIST & FILTERS */
         <div className="space-y-4">
+          {/* Active Period Info Banner */}
+          {activePeriod ? (
+            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-black">
+                  <CheckCircle2 size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-emerald-950 text-sm">دوره فعال انتخاب واحد: {activePeriod.title}</span>
+                    <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                      هم‌اکنون در حال دریافت درخواست
+                    </span>
+                  </div>
+                  <p className="text-slate-600 font-medium mt-0.5">
+                    سال: {activePeriod.academicYear || '۱۴۰۳-۱۴۰۴'} | ترم: {activePeriod.term || 'نیم‌سال اول'} | پایه‌های مجاز: {activePeriod.allowedGrades?.join('، ') || 'همه'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleTogglePeriodActive(activePeriod)}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Power size={14} />
+                <span>بستن و غیرفعال‌سازی دوره</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <AlertCircle size={20} className="text-amber-600" />
+                <span className="font-bold text-amber-900">هیچ دوره انتخاب واحدی هم‌اکنون فعال نیست.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('periods')}
+                className="px-3 py-1 bg-amber-600 text-white rounded-xl font-bold text-xs hover:bg-amber-700 transition-colors cursor-pointer"
+              >
+                مدیریت و فعال‌سازی دوره‌ها
+              </button>
+            </div>
+          )}
+
           {/* Filters Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 flex-1">
@@ -914,13 +1009,35 @@ export default function CourseSelection() {
                     <h4 className="font-black text-sm text-slate-900 mt-1">{p.title}</h4>
                   </div>
 
-                  <button
-                    onClick={() => handleOpenPeriodModal(p)}
-                    className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    title="ویرایش دوره"
-                  >
-                    <Edit size={16} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePeriodActive(p)}
+                      className={cn(
+                        "p-1.5 rounded-lg transition-colors cursor-pointer text-xs font-bold flex items-center gap-1",
+                        p.isActive ? "text-rose-600 hover:bg-rose-50" : "text-emerald-600 hover:bg-emerald-50"
+                      )}
+                      title={p.isActive ? 'غیرفعال‌سازی دوره' : 'فعال‌سازی دوره'}
+                    >
+                      <Power size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPeriodModal(p)}
+                      className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                      title="ویرایش دوره"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePeriod(p)}
+                      className="p-1.5 text-rose-500 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                      title="حذف دوره"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="text-xs text-slate-600 space-y-1.5 font-bold">
@@ -1092,30 +1209,6 @@ export default function CourseSelection() {
                             <option key={opt} value={opt}>{opt}</option>
                           ))}
                         </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label>تاریخ شروع (شمسی):</label>
-                        <input
-                          type="text"
-                          required
-                          value={periodStartDate}
-                          onChange={(e) => setPeriodStartDate(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label>تاریخ پایان (شمسی):</label>
-                        <input
-                          type="text"
-                          required
-                          value={periodEndDate}
-                          onChange={(e) => setPeriodEndDate(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
                       </div>
                     </div>
 
@@ -1433,12 +1526,15 @@ export default function CourseSelection() {
                     >
                       انصراف
                     </button>
-                    <button
-                      type="submit"
-                      className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-xs cursor-pointer"
-                    >
-                      ذخیره دوره انتخاب واحد
-                    </button>
+                    {modalTab === 'courses' && (
+                      <button
+                        type="submit"
+                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-xs cursor-pointer flex items-center gap-2"
+                      >
+                        <CheckCircle2 size={16} />
+                        <span>ذخیره دوره انتخاب واحد</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </form>

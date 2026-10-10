@@ -1303,7 +1303,7 @@ class LocalDatabase {
     const collectionsToLoad: CollectionName[] = [
       'system_users', 'students', 'teachers', 'classrooms', 'programs',
       'enrollments', 'attendance', 'study_stats', 'study_periods',
-      'periodic_study_logs', 'discussion_groups', 'research', 'received_articles',
+      'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'research', 'received_articles',
       'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
       'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
       'student_lockers', 'academic_calendar_periods', 'academic_holidays'

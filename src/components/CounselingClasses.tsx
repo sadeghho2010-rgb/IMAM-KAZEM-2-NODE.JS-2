@@ -59,6 +59,26 @@ const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string;
   'غیبت': { label: 'غیبت در جلسه', badgeClass: 'bg-slate-200 text-slate-700 border-slate-300 font-black', bg: 'bg-slate-100' }
 };
 
+function isMatchingGrade(itemGrade: string | undefined | null, targetGrade: string): boolean {
+  if (!targetGrade || targetGrade === 'all') return true;
+  if (!itemGrade) return false;
+
+  const toPersianDigits = (str: string) => str.replace(/[0-9]/g, c => '۰۱۲۳۴۵۶۷۸۹'[parseInt(c)]);
+  const cleanItem = toPersianDigits(itemGrade.toString()).trim();
+  const cleanTarget = toPersianDigits(targetGrade.toString()).trim();
+
+  if (cleanItem === cleanTarget) return true;
+
+  const digits = ['۷', '۸', '۹', '۱۰'];
+  for (const d of digits) {
+    if (cleanTarget.includes(d) && cleanItem.includes(d)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const DEFAULT_COURSES = [
   'مشاوره اصول',
   'مشاوره فقه',
@@ -111,12 +131,39 @@ export default function CounselingClasses() {
   const [selectedCourse, setSelectedCourse] = useState<string>('all');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
 
-  // Filters for Status Monitoring view (Date range)
+  // Filters for Status Monitoring view (Date range) - Default to Current Date / Current Month (اصلاح ۳)
   const [statusFilterMode, setStatusFilterMode] = useState<'all' | 'evaluated' | 'not_evaluated'>('all');
   const [statusDisplayLayout, setStatusDisplayLayout] = useState<'two_column' | 'single_list'>('two_column');
   const [statusDatePreset, setStatusDatePreset] = useState<'current_month' | 'last_month' | 'all_year' | 'custom'>('current_month');
-  const [statusStartDate, setStatusStartDate] = useState<string>('1403/07/01');
-  const [statusEndDate, setStatusEndDate] = useState<string>('1403/12/29');
+  
+  const todayShamsi = useMemo(() => new Date().toLocaleDateString('fa-IR'), []);
+  const startOfCurrentMonthShamsi = useMemo(() => {
+    const parts = todayShamsi.split('/');
+    if (parts.length === 3) {
+      return `${parts[0]}/${parts[1]}/01`;
+    }
+    return todayShamsi;
+  }, [todayShamsi]);
+
+  const [statusStartDate, setStatusStartDate] = useState<string>(startOfCurrentMonthShamsi);
+  const [statusEndDate, setStatusEndDate] = useState<string>(todayShamsi);
+
+  // Modal for Correction 1: Selected Evaluated Class Details
+  const [selectedEvaluatedClassModal, setSelectedEvaluatedClassModal] = useState<{
+    program: Program;
+    gradesCount: number;
+    studentsCount: number;
+    dates: string[];
+    teachers: string[];
+    gradesList: CounselingSessionGrade[];
+  } | null>(null);
+
+  // Filters for Student Summary View (اصلاح ۶)
+  const [summaryGrade, setSummaryGrade] = useState<string>('all');
+  const [summaryTeacher, setSummaryTeacher] = useState<string>('all');
+  const [summaryCourse, setSummaryCourse] = useState<string>('all');
+  const [summarySearch, setSummarySearch] = useState<string>('');
+  const [selectedStudentReportCard, setSelectedStudentReportCard] = useState<Student | null>(null);
 
   // Modal 1: Batch Class Evaluation Modal State
   const [isClassBatchModalOpen, setIsClassBatchModalOpen] = useState(false);
@@ -171,8 +218,26 @@ export default function CounselingClasses() {
     }
   };
 
+  // Real-time synchronization (اصلاح ۲)
   useEffect(() => {
     fetchData();
+
+    const unsub = localDb.subscribe(() => {
+      fetchData();
+    });
+
+    const handleDataChange = (e: any) => {
+      if (!e.detail || e.detail.collection === 'counseling_session_grades' || e.detail.collection === 'all') {
+        fetchData();
+      }
+    };
+
+    window.addEventListener('app_data_change', handleDataChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+    };
   }, []);
 
   // Filtered Counseling Programs (Classes) in the System
@@ -330,6 +395,10 @@ export default function CounselingClasses() {
         createdAt: now
       });
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+      }
+
       setIsClassBatchModalOpen(false);
       await fetchData();
       alert(`ارزیابی جلسه مشاوره برای ${batchStudentsList.length} طلبه با موفقیت ثبت گردید.`);
@@ -357,6 +426,7 @@ export default function CounselingClasses() {
       dates: string[];
       teachers: string[];
       avgScores: { excellent: number; good: number; medium: number; weak: number; absent: number };
+      gradesList: CounselingSessionGrade[];
     }>();
 
     // Populate evaluated classes
@@ -377,12 +447,14 @@ export default function CounselingClasses() {
           studentsCount: 0,
           dates: [],
           teachers: [],
-          avgScores: { excellent: 0, good: 0, medium: 0, weak: 0, absent: 0 }
+          avgScores: { excellent: 0, good: 0, medium: 0, weak: 0, absent: 0 },
+          gradesList: []
         });
       }
 
       const item = evaluatedClassesMap.get(key)!;
       item.gradesCount++;
+      item.gradesList.push(g);
       if (g.sessionDate && !item.dates.includes(g.sessionDate)) item.dates.push(g.sessionDate);
       if (g.counselorTeacherName && !item.teachers.includes(g.counselorTeacherName)) item.teachers.push(g.counselorTeacherName);
 
@@ -519,6 +591,9 @@ export default function CounselingClasses() {
 
     try {
       await localDb.deleteDoc('counseling_session_grades', id);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+      }
       await fetchData();
     } catch (err) {
       console.error('Error deleting counseling grade:', err);
@@ -529,7 +604,7 @@ export default function CounselingClasses() {
   // Filtered Sessions List
   const filteredSessions = useMemo(() => {
     return grades.filter(g => {
-      if (selectedGrade !== 'all' && g.grade !== selectedGrade) return false;
+      if (selectedGrade !== 'all' && !isMatchingGrade(g.grade, selectedGrade)) return false;
       if (selectedCourse !== 'all' && g.courseTitle !== selectedCourse) return false;
       if (selectedTeacher !== 'all' && g.counselorTeacherName !== selectedTeacher) return false;
 
@@ -679,36 +754,36 @@ export default function CounselingClasses() {
                     type="button"
                     onClick={() => {
                       setStatusDatePreset('current_month');
-                      setStatusStartDate('1403/07/01');
-                      setStatusEndDate('1403/07/30');
+                      setStatusStartDate(startOfCurrentMonthShamsi);
+                      setStatusEndDate(todayShamsi);
                     }}
                     className={cn(
                       "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
                       statusDatePreset === 'current_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     )}
                   >
-                    ماه جاری (مهر)
+                    ماه جاری
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setStatusDatePreset('last_month');
-                      setStatusStartDate('1403/08/01');
-                      setStatusEndDate('1403/08/30');
+                      setStatusStartDate('1403/06/01');
+                      setStatusEndDate('1403/06/31');
                     }}
                     className={cn(
                       "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
                       statusDatePreset === 'last_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     )}
                   >
-                    ماه گذشته (آبان)
+                    ماه گذشته
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       setStatusDatePreset('all_year');
                       setStatusStartDate('1403/07/01');
-                      setStatusEndDate('1403/12/29');
+                      setStatusEndDate(todayShamsi);
                     }}
                     className={cn(
                       "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
@@ -782,33 +857,27 @@ export default function CounselingClasses() {
               </div>
             </div>
 
-            {/* Custom Dates bar */}
-            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-xs">
-              <span className="text-slate-500 font-bold">بازه دقیق:</span>
-              <div className="flex items-center gap-2">
-                <span>از تاریخ:</span>
-                <input 
-                  type="text" 
-                  value={statusStartDate} 
-                  onChange={(e) => {
-                    setStatusStartDate(e.target.value);
+            {/* Custom Dates bar using ShamsiDatePicker (اصلاح ۳ و ۴) */}
+            <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-100 text-xs">
+              <span className="text-slate-600 font-black">انتخاب دقیق بازه (شمسی):</span>
+              <div className="w-44">
+                <ShamsiDatePicker
+                  label="از تاریخ:"
+                  value={statusStartDate}
+                  onChange={(val) => {
+                    setStatusStartDate(val);
                     setStatusDatePreset('custom');
                   }}
-                  placeholder="1403/07/01" 
-                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold w-28 text-center"
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <span>تا تاریخ:</span>
-                <input 
-                  type="text" 
-                  value={statusEndDate} 
-                  onChange={(e) => {
-                    setStatusEndDate(e.target.value);
+              <div className="w-44">
+                <ShamsiDatePicker
+                  label="تا تاریخ:"
+                  value={statusEndDate}
+                  onChange={(val) => {
+                    setStatusEndDate(val);
                     setStatusDatePreset('custom');
                   }}
-                  placeholder="1403/12/29" 
-                  className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-bold w-28 text-center"
                 />
               </div>
             </div>
@@ -875,11 +944,15 @@ export default function CounselingClasses() {
                   </div>
                 ) : (
                   statusAnalysis.evaluatedList.map(item => (
-                    <div key={item.program.id} className="bg-white p-4 sm:p-5 rounded-3xl border border-emerald-100 shadow-xs hover:border-emerald-300 transition-all space-y-3">
+                    <div 
+                      key={item.program.id} 
+                      onClick={() => setSelectedEvaluatedClassModal(item)}
+                      className="bg-white p-4 sm:p-5 rounded-3xl border border-emerald-100 shadow-xs hover:border-emerald-400 hover:shadow-md transition-all space-y-3 cursor-pointer group"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-black text-slate-900">{item.program.title}</h4>
+                            <h4 className="text-sm font-black text-slate-900 group-hover:text-emerald-800 transition-colors">{item.program.title}</h4>
                             <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200 font-bold">
                               {item.program.grade || 'پایه ۷'}
                             </span>
@@ -890,8 +963,9 @@ export default function CounselingClasses() {
                           </p>
                         </div>
 
-                        <span className="text-xs font-black px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 shrink-0">
-                          {item.gradesCount} ارزیابی طلبه
+                        <span className="text-xs font-black px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 shrink-0 flex items-center gap-1">
+                          <Eye size={13} />
+                          <span>{item.gradesCount} ارزیابی</span>
                         </span>
                       </div>
 
@@ -910,6 +984,13 @@ export default function CounselingClasses() {
                             <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded border border-rose-200">د: {item.avgScores.weak}</span>
                           )}
                         </div>
+                      </div>
+
+                      <div className="pt-2 flex justify-end">
+                        <span className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1">
+                          <span>مشاهده تفکیک جلسات و نمرات طلاب</span>
+                          <ArrowRight size={12} className="rotate-180" />
+                        </span>
                       </div>
                     </div>
                   ))
@@ -1262,41 +1343,202 @@ export default function CounselingClasses() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: STUDENT SUMMARY (کارنامه و خلاصه عملکرد طلاب) */}
+      {/* TAB 4: STUDENT SUMMARY (کارنامه و خلاصه عملکرد طلاب - اصلاح ۶) */}
       {/* ========================================================================= */}
       {activeView === 'student_summary' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {students.map(s => {
-              const studentGrades = grades.filter(g => g.studentId === s.id);
-              const totalSessions = studentGrades.length;
-              const excellentCount = studentGrades.filter(g => g.participationScore === 'الف' || g.researchScore === 'الف').length;
+          {/* Filters Bar for Student Summary */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Filter size={16} className="text-amber-600" />
+              <h3 className="text-xs font-black text-slate-800">فیلترهای کارنامه و خلاصه عملکرد طلاب:</h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="relative">
+                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={summarySearch}
+                  onChange={(e) => setSummarySearch(e.target.value)}
+                  placeholder="جستجوی نام، کد طلبی یا کد ملی..."
+                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
 
-              return (
-                <div key={s.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 font-black flex items-center justify-center text-sm">
-                        {s.name[0]}
+              <select
+                value={summaryGrade}
+                onChange={(e) => setSummaryGrade(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+              >
+                <option value="all">همه پایه‌ها</option>
+                <option value="پایه ۷">پایه ۷</option>
+                <option value="پایه ۸">پایه ۸</option>
+                <option value="پایه ۹">پایه ۹</option>
+                <option value="پایه ۱۰">پایه ۱۰</option>
+              </select>
+
+              <select
+                value={summaryTeacher}
+                onChange={(e) => setSummaryTeacher(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+              >
+                <option value="all">همه اساتید مشاور</option>
+                {Array.from(new Set(grades.map(g => g.counselorTeacherName).filter(Boolean))).map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+
+              <select
+                value={summaryCourse}
+                onChange={(e) => setSummaryCourse(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+              >
+                <option value="all">همه کلاس‌های مشاوره</option>
+                {Array.from(new Set(grades.map(g => g.courseTitle).filter(Boolean))).map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Students List & Detailed Scores Table */}
+          <div className="space-y-4">
+            {students.filter(s => {
+              if (summaryGrade !== 'all' && !isMatchingGrade(s.grade, summaryGrade)) return false;
+              if (summarySearch.trim()) {
+                const q = summarySearch.toLowerCase().trim();
+                const m = s.name.toLowerCase().includes(q) || (s.studentCode && s.studentCode.includes(q)) || (s.nationalId && s.nationalId.includes(q));
+                if (!m) return false;
+              }
+              if (summaryTeacher !== 'all' || summaryCourse !== 'all') {
+                const hasGrade = grades.some(g =>
+                  g.studentId === s.id &&
+                  (summaryTeacher === 'all' || g.counselorTeacherName === summaryTeacher) &&
+                  (summaryCourse === 'all' || g.courseTitle === summaryCourse)
+                );
+                if (!hasGrade) return false;
+              }
+              return true;
+            }).length === 0 ? (
+              <div className="p-10 text-center bg-white rounded-3xl border border-dashed border-slate-300 text-xs text-slate-400">
+                هیچ طلبی با این مشخصات و فیلترها یافت نشد.
+              </div>
+            ) : (
+              students.filter(s => {
+                if (summaryGrade !== 'all' && !isMatchingGrade(s.grade, summaryGrade)) return false;
+                if (summarySearch.trim()) {
+                  const q = summarySearch.toLowerCase().trim();
+                  const m = s.name.toLowerCase().includes(q) || (s.studentCode && s.studentCode.includes(q)) || (s.nationalId && s.nationalId.includes(q));
+                  if (!m) return false;
+                }
+                if (summaryTeacher !== 'all' || summaryCourse !== 'all') {
+                  const hasGrade = grades.some(g =>
+                    g.studentId === s.id &&
+                    (summaryTeacher === 'all' || g.counselorTeacherName === summaryTeacher) &&
+                    (summaryCourse === 'all' || g.courseTitle === summaryCourse)
+                  );
+                  if (!hasGrade) return false;
+                }
+                return true;
+              }).map(s => {
+                const studentGrades = grades.filter(g =>
+                  g.studentId === s.id &&
+                  (summaryTeacher === 'all' || g.counselorTeacherName === summaryTeacher) &&
+                  (summaryCourse === 'all' || g.courseTitle === summaryCourse)
+                );
+
+                const totalSessions = studentGrades.length;
+                const alfCount = studentGrades.filter(g => g.participationScore === 'الف' || g.researchScore === 'الف').length;
+                const behCount = studentGrades.filter(g => g.participationScore === 'ب' || g.researchScore === 'ب').length;
+                const jimCount = studentGrades.filter(g => g.participationScore === 'ج' || g.researchScore === 'ج').length;
+                const dalCount = studentGrades.filter(g => g.participationScore === 'د' || g.researchScore === 'د').length;
+
+                return (
+                  <div key={s.id} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-800 font-black flex items-center justify-center text-base border border-amber-200">
+                          {s.name[0]}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-black text-slate-900">{s.name}</h4>
+                            <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200 font-bold">
+                              {s.grade || 'پایه ۷'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            کد طلبی: {s.studentCode || s.nationalId || '—'} • کل ارزیابی‌های دریافتی: {totalSessions} جلسه
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-xs font-black text-slate-900">{s.name}</h4>
-                        <span className="text-[10px] text-slate-400">{s.grade || 'پایه ۷'}</span>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1 text-[11px] font-black">
+                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200">الف: {alfCount}</span>
+                          <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">ب: {behCount}</span>
+                          <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-lg border border-amber-200">ج: {jimCount}</span>
+                          {dalCount > 0 && (
+                            <span className="px-2 py-1 bg-rose-50 text-rose-700 rounded-lg border border-rose-200">د: {dalCount}</span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStudentReportCard(s)}
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1 border border-indigo-200"
+                        >
+                          <FileText size={14} />
+                          <span>چاپ کارنامه جامع</span>
+                        </button>
                       </div>
                     </div>
 
-                    <span className="text-xs font-black px-2 py-0.5 bg-amber-50 text-amber-800 rounded-md border border-amber-200">
-                      {totalSessions} جلسه
-                    </span>
+                    {/* Table of all recorded grades for this student */}
+                    {studentGrades.length === 0 ? (
+                      <p className="text-xs text-slate-400 p-3 text-center bg-slate-50 rounded-2xl">
+                        هنوز هیچ ارزیابی برای این طلبه در این فیلترها ثبت نشده است.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto bg-slate-50/50 rounded-2xl border border-slate-200/80">
+                        <table className="w-full text-right text-xs">
+                          <thead>
+                            <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-black">
+                              <th className="p-3">تاریخ و جلسه</th>
+                              <th className="p-3">عنوان کلاس مشاوره</th>
+                              <th className="p-3">استاد مشاور</th>
+                              <th className="p-3 text-center">نمره مشارکت</th>
+                              <th className="p-3 text-center">نمره پژوهش/تقریر</th>
+                              <th className="p-3">بازخورد و نکات استاد</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200/60 font-medium">
+                            {studentGrades.map(g => (
+                              <tr key={g.id} className="hover:bg-white transition-colors">
+                                <td className="p-3 font-bold text-slate-800">{g.sessionDate} ({g.sessionNumber})</td>
+                                <td className="p-3 text-amber-900 font-bold">{g.courseTitle}</td>
+                                <td className="p-3 text-slate-600">{g.counselorTeacherName}</td>
+                                <td className="p-3 text-center">
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
+                                    {g.participationScore}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
+                                    {g.researchScore}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-slate-600 text-[11px]">{g.counselorFeedback || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-
-                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-[11px] font-bold">
-                    <span className="text-slate-500">عملکرد کیفی:</span>
-                    <span className="text-emerald-700 font-black">{excellentCount} نمره الف</span>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -1593,6 +1835,207 @@ export default function CounselingClasses() {
                       </div>
                     </div>
                   ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL FOR CORRECTION 1: EVALUATED CLASS SESSION & STUDENT BREAKDOWN */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {selectedEvaluatedClassModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-4xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-100 my-8 max-h-[90vh] flex flex-col"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black">
+                    <CheckCircle2 size={22} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900">{selectedEvaluatedClassModal.program.title}</h3>
+                      <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200 font-bold">
+                        {selectedEvaluatedClassModal.program.grade || 'عمومی'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      استاد مشاور: {selectedEvaluatedClassModal.teachers.join('، ') || selectedEvaluatedClassModal.program.teacher || 'مشخص نشده'} • کل ارزیابی‌های ثبت‌شده: {selectedEvaluatedClassModal.gradesCount} مورد
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvaluatedClassModal(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Sessions & Students breakdown */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pr-1">
+                {selectedEvaluatedClassModal.dates.length === 0 ? (
+                  <p className="text-xs text-slate-400 p-8 text-center">هیچ جلسه‌ای در این بازه ثبت نشده است.</p>
+                ) : (
+                  selectedEvaluatedClassModal.dates.map(dateStr => {
+                    const sessionGrades = selectedEvaluatedClassModal.gradesList.filter(g => g.sessionDate === dateStr);
+                    const sessionNumber = sessionGrades[0]?.sessionNumber || 'جلسه ارزیابی';
+
+                    return (
+                      <div key={dateStr} className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                          <div className="flex items-center gap-2">
+                            <Calendar size={16} className="text-amber-600" />
+                            <span className="text-xs font-black text-slate-900">تاریخ جلسه: {dateStr} ({sessionNumber})</span>
+                          </div>
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-lg">
+                            {sessionGrades.length} طلبه ارزیابی‌شده
+                          </span>
+                        </div>
+
+                        {/* Table of evaluated students in this session */}
+                        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-2xs">
+                          <table className="w-full text-right text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-black">
+                                <th className="p-2.5">نام طلبه</th>
+                                <th className="p-2.5">پایه</th>
+                                <th className="p-2.5 text-center">نمره مشارکت</th>
+                                <th className="p-2.5 text-center">نمره پژوهش/تقریر</th>
+                                <th className="p-2.5">بازخورد و نکات استاد مشاور</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium">
+                              {sessionGrades.map(sg => (
+                                <tr key={sg.id} className="hover:bg-slate-50 transition-colors">
+                                  <td className="p-2.5 font-bold text-slate-900">{sg.studentName}</td>
+                                  <td className="p-2.5 text-slate-500">{sg.grade || 'پایه ۷'}</td>
+                                  <td className="p-2.5 text-center">
+                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[sg.participationScore]?.badgeClass)}>
+                                      {sg.participationScore}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[sg.researchScore]?.badgeClass)}>
+                                      {sg.researchScore}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-slate-600 text-[11px]">{sg.counselorFeedback || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MODAL FOR CORRECTION 6: PRINTABLE STUDENT COUNSELING REPORT CARD */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {selectedStudentReportCard && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-100 my-8 max-h-[90vh] flex flex-col"
+              dir="rtl"
+              id="student-counseling-report-card"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-black border border-amber-200">
+                    <Award size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">کارنامه رسمی ارزیابی و عملکرد مشاوره</h3>
+                    <p className="text-xs text-slate-500">
+                      نام طلبه: <strong className="text-slate-900">{selectedStudentReportCard.name}</strong> • پایه: <strong className="text-slate-900">{selectedStudentReportCard.grade || 'پایه ۷'}</strong> • کد طلبی: {selectedStudentReportCard.studentCode || selectedStudentReportCard.nationalId || '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById('student-counseling-report-card');
+                      if (el) {
+                        exportElementToPdf({ element: el, filename: `کارنامه_مشاوره_${selectedStudentReportCard.name.replace(/\s+/g, '_')}` });
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Printer size={14} />
+                    <span>چاپ / خروجی PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStudentReportCard(null)}
+                    className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Detailed Grades for this student */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1">
+                {grades.filter(g => g.studentId === selectedStudentReportCard.id).length === 0 ? (
+                  <p className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl">هیچ نمره ارزیابی مشاوره برای این طلبه ثبت نشده است.</p>
+                ) : (
+                  <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-black">
+                          <th className="p-3">تاریخ و جلسه</th>
+                          <th className="p-3">عنوان کلاس مشاوره</th>
+                          <th className="p-3">استاد مشاور</th>
+                          <th className="p-3 text-center">نمره مشارکت</th>
+                          <th className="p-3 text-center">نمره پژوهش/تقریر</th>
+                          <th className="p-3">بازخورد و ملاحظات استاد</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {grades.filter(g => g.studentId === selectedStudentReportCard.id).map(g => (
+                          <tr key={g.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold text-slate-900">{g.sessionDate} ({g.sessionNumber})</td>
+                            <td className="p-3 font-bold text-amber-900">{g.courseTitle}</td>
+                            <td className="p-3 text-slate-600">{g.counselorTeacherName}</td>
+                            <td className="p-3 text-center">
+                              <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
+                                {g.participationScore}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={cn("px-2 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
+                                {g.researchScore}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-600 text-[11px]">{g.counselorFeedback || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </motion.div>

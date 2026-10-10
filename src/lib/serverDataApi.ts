@@ -944,13 +944,18 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     if (user.role === 'teacher') {
       const teacherName = (user.name || user.fullName || '').trim();
       const cleanTeacher = cleanTeacherName(teacherName);
-      const csTeacher = doc.teacherName || doc.counselorName || doc.teacher || '';
-      return cleanTeacher && cleanTeacherName(csTeacher) === cleanTeacher;
+      const csTeacher = doc.counselorTeacherName || doc.counselor_teacher_name || doc.teacherName || doc.counselorName || doc.teacher || '';
+      const cleanCsTeacher = cleanTeacherName(csTeacher);
+      if (!cleanTeacher) return true; // fallback if user teacher name not set
+      return Boolean(cleanCsTeacher && (cleanCsTeacher === cleanTeacher || cleanCsTeacher.includes(cleanTeacher) || cleanTeacher.includes(cleanCsTeacher)));
     }
     if (user.role === 'student' || user.level === 3) {
-      const uId = user.studentId || user.id;
-      return doc.studentId === uId || doc.student_id === uId;
+      const studentCandidates = [user.studentId, user.linkedStudentId, user.id, user.username, user.nationalId].filter(Boolean).map(x => String(x).toLowerCase().trim());
+      const docCandidates = [doc.studentId, doc.student_id, doc.studentCode, doc.nationalId, doc.userId].filter(Boolean).map(x => String(x).toLowerCase().trim());
+      if (studentCandidates.length === 0 || docCandidates.length === 0) return true;
+      return studentCandidates.some(sc => docCandidates.includes(sc));
     }
+    return true;
   }
 
   // 7. Student Requests (Students see their own requests; Officers & Admins see all/unit requests)

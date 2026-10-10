@@ -690,6 +690,9 @@ export default function TeacherPortal() {
 
       await localDb.setDoc('counseling_session_grades', gradeDoc);
       setGrades(prev => [...prev.filter(g => g.id !== docId), gradeDoc]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+      }
 
       setFeedbackSavedStudentId(student.id);
       setTimeout(() => setFeedbackSavedStudentId(null), 1500);
@@ -755,7 +758,9 @@ export default function TeacherPortal() {
           const idSet = new Set(updates.map(u => u.id));
           return [...prev.filter(g => !idSet.has(g.id)), ...updates];
         });
-        localDb.syncCollectionFromCloud('counseling_session_grades').catch(() => {});
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+        }
         showToast(`✓ ارزیابی ${toPersianDigits(updates.length)} طلبه برای جلسه ${selectedSessionDate} با موفقیت در دیتابیس ثبت شد.`);
       } else {
         showToast('لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.');
