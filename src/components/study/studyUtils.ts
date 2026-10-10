@@ -249,25 +249,23 @@ export async function deleteStudyDailyEntry(entryId: string, periodId: string, s
 
 export async function syncAggregatePeriodicStudyLog(periodId: string, studentId: string, submittedBy?: string) {
   const allEntries = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
-  const studentEntries = allEntries.filter(e => e.periodId === periodId && e.studentId === studentId);
+  const studentEntries = allEntries.filter(e => e.periodId === periodId && (e.studentId === studentId || (e as any).student_id === studentId));
 
   const totalStudy = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.studyHours) || 0), 0) * 100) / 100;
   const totalDisc = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.discussionHours) || 0), 0) * 100) / 100;
   const totalSum = Math.round((totalStudy + totalDisc) * 100) / 100;
 
   const existingLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
-  const existingLog = existingLogs.find(l => l.periodId === periodId && l.studentId === studentId);
+  const existingLog = existingLogs.find(l => l.periodId === periodId && (l.studentId === studentId || (l as any).student_id === studentId));
 
   if (existingLog) {
-    if (studentEntries.length > 0) {
-      await localDb.updateDoc('periodic_study_logs', existingLog.id, {
-        hours: totalSum,
-        studyHours: totalStudy,
-        discussionHours: totalDisc,
-        submittedBy: submittedBy || existingLog.submittedBy || 'student',
-        lastModifiedAt: new Date().toISOString()
-      });
-    }
+    await localDb.updateDoc('periodic_study_logs', existingLog.id, {
+      hours: totalSum,
+      studyHours: totalStudy,
+      discussionHours: totalDisc,
+      submittedBy: submittedBy || existingLog.submittedBy || 'student',
+      lastModifiedAt: new Date().toISOString()
+    });
   } else if (studentEntries.length > 0) {
     await localDb.addDoc('periodic_study_logs', {
       periodId,
@@ -278,5 +276,10 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
       submittedBy: submittedBy || 'student',
       lastModifiedAt: new Date().toISOString()
     });
+  }
+
+  // Broadcast change event to trigger localDb listeners and active UI subscribers
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
   }
 }

@@ -124,6 +124,7 @@ export const COLLECTION_TABLE_MAP: Record<string, string> = {
   study_periods: 'study_periods',
   study_stats: 'study_stats',
   periodic_study_logs: 'periodic_study_logs',
+  study_daily_entries: 'study_daily_entries',
   discussion_groups: 'discussion_groups',
   research: 'research',
   research_records: 'research',
@@ -880,17 +881,33 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
     return false;
   }
 
-  // 2. periodic_study_logs
-  if (collection === 'periodic_study_logs') {
+  // 2. periodic_study_logs & study_daily_entries
+  if (collection === 'periodic_study_logs' || collection === 'study_daily_entries') {
     if (user.role === 'student' || user.level === 3) {
-      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').trim();
-      const docStudentId = String(doc.studentId || doc.student_id || '').trim();
-      
-      // Requirement 3: Fail-closed check
-      if (!uStudentId || !docStudentId) {
+      const studentCandidates = [
+        user.studentId,
+        user.linkedStudentId,
+        user.id,
+        user.username,
+        user.nationalId
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      const docCandidates = [
+        doc.studentId,
+        doc.student_id,
+        doc.studentCode,
+        doc.student_code,
+        doc.nationalId,
+        doc.nationalCode,
+        doc.userId,
+        doc.user_id
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      if (studentCandidates.length === 0 || docCandidates.length === 0) {
         return false;
       }
-      return uStudentId === docStudentId;
+
+      return studentCandidates.some(sc => docCandidates.includes(sc));
     }
     // Teachers, mentors, class representatives, and other managers can view study logs
     return true;
@@ -1270,7 +1287,7 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'academic_holidays', 'article_evaluations', 'received_articles',
     'student_lockers', 'personal_todos', 'assigned_todos',
     'evaluation_requests', 'research', 'study_stats',
-    'periodic_study_logs', 'discussion_groups', 'academic_sub_periods'
+    'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods'
   ];
 
   const results = await Promise.all(
