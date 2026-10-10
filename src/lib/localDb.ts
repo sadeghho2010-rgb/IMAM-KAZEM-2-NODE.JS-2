@@ -997,6 +997,7 @@ class LocalDatabase {
   }
 
   // Add a new document (Server-First with IndexedDB Read Cache)
+  // Add a new document (Optimistic UI: Local Cache First, Background Server Sync)
   async addDoc(collectionName: CollectionName, data: any): Promise<string> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1007,40 +1008,7 @@ class LocalDatabase {
     const id = record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
 
-    // 1. Direct Server Write FIRST with 20s timeout
-    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 20000);
-
-    if (res.success) {
-      // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
-      this.setLocalStorageDoc(resolvedCol, record);
-      if (db.objectStoreNames.contains(resolvedCol)) {
-        try {
-          const transaction = db.transaction(resolvedCol, 'readwrite');
-          const store = transaction.objectStore(resolvedCol);
-          store.put(record);
-        } catch (e) {}
-      }
-      this.notify();
-      this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
-      dispatchDatabaseErrorToast('اطلاعات با موفقیت در سرور ذخیره شد.', 'success');
-      return id;
-    }
-
-    if (res.isSessionExpired) {
-      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_token');
-      }
-      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
-    }
-
-    if (res.isClientError) {
-      dispatchDatabaseErrorToast(res.message || 'خطا در ثبت اطلاعات در سرور.', 'error');
-      throw new Error(res.message || 'خطا در ثبت اطلاعات در سرور.');
-    }
-
-    // Server 5xx / Network Error -> Save locally and enqueue into sync queue
+    // 1. INSTANT LOCAL WRITE (0ms)
     this.setLocalStorageDoc(resolvedCol, record);
     if (db.objectStoreNames.contains(resolvedCol)) {
       try {
@@ -1050,11 +1018,22 @@ class LocalDatabase {
       } catch (e) {}
     }
     this.notify();
-    dispatchDatabaseErrorToast('اطلاعات به صورت محلی ثبت شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
+
+    // 2. Non-blocking Background Server Write
+    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 10000).then((res) => {
+      if (res.success) {
+        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+      } else if (res.isSessionExpired) {
+        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      } else if (res.isClientError) {
+        dispatchDatabaseErrorToast(res.message || 'خطا در ثبت اطلاعات در سرور.', 'error');
+      }
+    }).catch(() => {});
+
     return id;
   }
 
-  // Update existing document (Server-First with IndexedDB Read Cache)
+  // Update existing document (Optimistic UI: Local Cache First, Background Server Sync)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1069,40 +1048,7 @@ class LocalDatabase {
       updated = normalizeStudent(updated);
     }
 
-    // 1. Direct Server Write FIRST with 20s timeout
-    const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 20000);
-
-    if (res.success) {
-      // 2. On 2xx Server Success -> Update local IndexedDB / localStorage cache
-      this.setLocalStorageDoc(resolvedCol, updated);
-      if (db.objectStoreNames.contains(resolvedCol)) {
-        try {
-          const transaction = db.transaction(resolvedCol, 'readwrite');
-          const store = transaction.objectStore(resolvedCol);
-          store.put(updated);
-        } catch (e) {}
-      }
-      this.notify();
-      this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
-      dispatchDatabaseErrorToast('تغییرات با موفقیت در سرور ذخیره شد.', 'success');
-      return;
-    }
-
-    if (res.isSessionExpired) {
-      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_token');
-      }
-      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
-    }
-
-    if (res.isClientError) {
-      dispatchDatabaseErrorToast(res.message || 'خطا در ویرایش اطلاعات در سرور.', 'error');
-      throw new Error(res.message || 'خطا در ویرایش اطلاعات در سرور.');
-    }
-
-    // Server 5xx / Network Error -> Save locally and enqueue into sync queue
+    // 1. INSTANT LOCAL WRITE (0ms)
     this.setLocalStorageDoc(resolvedCol, updated);
     if (db.objectStoreNames.contains(resolvedCol)) {
       try {
@@ -1112,11 +1058,31 @@ class LocalDatabase {
       } catch (e) {}
     }
     this.notify();
-    dispatchDatabaseErrorToast('ویرایش به صورت محلی اعمال شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
-    return;
+
+    // 2. Non-blocking Background Server Write
+    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 10000).then((res) => {
+      if (res.success) {
+        this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+      } else if (res.isSessionExpired) {
+        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      } else if (res.isClientError) {
+        // Rollback on client error
+        if (existingDoc) {
+          this.setLocalStorageDoc(resolvedCol, existingDoc);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            try {
+              const tx = db.transaction(resolvedCol, 'readwrite');
+              tx.objectStore(resolvedCol).put(existingDoc);
+            } catch (e) {}
+          }
+          this.notify();
+        }
+        dispatchDatabaseErrorToast(res.message || 'خطا در ویرایش اطلاعات در سرور.', 'error');
+      }
+    }).catch(() => {});
   }
 
-  // Delete a document (Server-First with IndexedDB Read Cache)
+  // Delete a document (Optimistic UI: Instant 0ms Purge, Background Cloud Sync)
   async deleteDoc(collectionName: CollectionName, id: string): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1126,40 +1092,7 @@ class LocalDatabase {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
 
-    // 1. Direct Server Write FIRST with 20s timeout
-    const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 20000);
-
-    if (res.success) {
-      // 2. On 2xx Server Success -> Delete from local IndexedDB / localStorage cache
-      this.deleteLocalStorageDoc(resolvedCol, id);
-      if (db.objectStoreNames.contains(resolvedCol)) {
-        try {
-          const transaction = db.transaction(resolvedCol, 'readwrite');
-          const store = transaction.objectStore(resolvedCol);
-          store.delete(id);
-        } catch (e) {}
-      }
-      this.notify();
-      this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
-      dispatchDatabaseErrorToast('حذف اطلاعات با موفقیت انجام شد.', 'success');
-      return;
-    }
-
-    if (res.isSessionExpired) {
-      dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        sessionStorage.removeItem('auth_token');
-      }
-      throw new Error('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.');
-    }
-
-    if (res.isClientError) {
-      dispatchDatabaseErrorToast(res.message || 'خطا در حذف اطلاعات در سرور.', 'error');
-      throw new Error(res.message || 'خطا در حذف اطلاعات در سرور.');
-    }
-
-    // Server 5xx / Network Error -> Delete locally and enqueue into sync queue
+    // 1. INSTANT LOCAL PURGE (0ms)
     this.deleteLocalStorageDoc(resolvedCol, id);
     if (db.objectStoreNames.contains(resolvedCol)) {
       try {
@@ -1169,8 +1102,28 @@ class LocalDatabase {
       } catch (e) {}
     }
     this.notify();
-    dispatchDatabaseErrorToast('حذف به صورت محلی انجام شد و پس از اتصال به سرور همگام می‌شود.', 'warning');
-    return;
+
+    // 2. Non-blocking Background Server Write
+    saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 10000).then((res) => {
+      if (res.success) {
+        this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
+      } else if (res.isSessionExpired) {
+        dispatchDatabaseErrorToast('نشست شما منقضی شده است. لطفاً دوباره وارد شوید.', 'error');
+      } else if (res.isClientError) {
+        // Rollback if server rejected
+        if (existingDoc) {
+          this.setLocalStorageDoc(resolvedCol, existingDoc);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            try {
+              const tx = db.transaction(resolvedCol, 'readwrite');
+              tx.objectStore(resolvedCol).put(existingDoc);
+            } catch (e) {}
+          }
+          this.notify();
+        }
+        dispatchDatabaseErrorToast(res.message || 'خطا در حذف اطلاعات در سرور.', 'error');
+      }
+    }).catch(() => {});
   }
 
   // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login
@@ -1518,8 +1471,17 @@ class LocalDatabase {
         record.id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       }
       processedItems.push(record);
-      this.setLocalStorageDoc(resolvedCol, record);
     }
+
+    // Single-pass localStorage batch update (fast)
+    try {
+      const existing = this.getLocalStorageDocs(resolvedCol);
+      const map = new Map<string, any>(existing.map((d: any) => [String(d.id), d]));
+      for (const rec of processedItems) {
+        map.set(String(rec.id), rec);
+      }
+      localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(Array.from(map.values())));
+    } catch (e) {}
 
     if (db.objectStoreNames.contains(resolvedCol)) {
       try {
@@ -2567,31 +2529,27 @@ class LocalDatabase {
     };
   }
 
-  // Server-First baseline data initialization: Syncs from Server API if IndexedDB is empty
+  // Server-First baseline data initialization: Syncs from Server API
   private async checkAndSeedDefaultData(db: IDBDatabase) {
     try {
       const token = this.getAuthToken();
       if (!token) return; // Do not fetch API collections if unauthenticated
 
       if (typeof window !== 'undefined' && localStorage.getItem('app_baseline_seeded_v1') === 'true') {
+        // Trigger non-blocking background bootstrap refresh to ensure latest state across all devices
+        this.loadAllCollectionsFromServer().catch(() => {});
         return;
       }
       if (!db.objectStoreNames.contains('students')) return;
 
-      console.log('IndexedDB initialization: Syncing baseline collections from server API...');
-      const collectionsToSync = ['students', 'programs', 'enrollments', 'study_periods', 'workflow_settings', 'workflow_items'];
+      console.log('IndexedDB initialization: Syncing baseline collections via optimized bootstrap API...');
+      await this.loadAllCollectionsFromServer();
 
-      // Await sync for all collections
-      await Promise.all(
-        collectionsToSync.map(col => this.syncCollectionFromCloud(col))
-      );
-
-      // Set flag ONLY after actual sync success of all collections
       if (typeof window !== 'undefined') {
         localStorage.setItem('app_baseline_seeded_v1', 'true');
       }
     } catch (e) {
-      console.error('Initialization sync failed, flag app_baseline_seeded_v1 not set. Will retry next launch:', e);
+      console.error('Initialization sync notice:', e);
     }
   }
 

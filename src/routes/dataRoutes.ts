@@ -510,6 +510,9 @@ router.get('/sync/events', async (req: Request, res: Response) => {
     (res as any).flushHeaders();
   }
 
+  // Send immediate connected handshake to keep client healthy
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', time: Date.now() })}\n\n`);
+
   const { registerRealtimeListener } = await import('../lib/serverDataApi');
   const unsubscribe = registerRealtimeListener((event) => {
     try {
@@ -517,12 +520,12 @@ router.get('/sync/events', async (req: Request, res: Response) => {
     } catch (e) {}
   });
 
-  // Heartbeat comment every 20 seconds
+  // Heartbeat comment every 15 seconds
   const heartbeat = setInterval(() => {
     try {
       res.write(': heartbeat\n\n');
     } catch (e) {}
-  }, 20000);
+  }, 15000);
 
   req.on('close', () => {
     unsubscribe();
@@ -530,9 +533,12 @@ router.get('/sync/events', async (req: Request, res: Response) => {
   });
 });
 
-// GET /api/sync/changes
-router.get('/sync/changes', async (_req: Request, res: Response) => {
-  return res.json({ success: true, changes: [] });
+// GET /api/sync/changes - High-efficiency delta polling endpoint
+router.get('/sync/changes', async (req: Request, res: Response) => {
+  const { getRecentChangesSince } = await import('../lib/serverDataApi');
+  const since = Number(req.query.since) || 0;
+  const changes = getRecentChangesSince(since);
+  return res.json({ success: true, changes, serverTime: Date.now() });
 });
 
 export default router;

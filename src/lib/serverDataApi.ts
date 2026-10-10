@@ -58,9 +58,39 @@ function localFileQueryCollection(collection: string): any[] {
   return Object.values(store[collection]);
 }
 
-// Real-time synchronization event bus
-type RealtimeListener = (event: { collection: string; id: string; action: 'upsert' | 'delete'; timestamp: number }) => void;
+// Real-time synchronization event bus & change log buffer
+export interface ServerChangeEvent {
+  collection: string;
+  id: string;
+  action: 'upsert' | 'delete';
+  timestamp: number;
+}
+
+type RealtimeListener = (event: ServerChangeEvent) => void;
 const realtimeListeners = new Set<RealtimeListener>();
+const recentChangesBuffer: ServerChangeEvent[] = [];
+const MAX_RECENT_CHANGES = 500;
+
+// High-performance L1 In-Memory Cache with instant invalidation on writes
+interface CacheEntry {
+  data: any[];
+  timestamp: number;
+}
+const rawCollectionCache = new Map<string, CacheEntry>();
+const RAW_CACHE_TTL_MS = 25 * 1000; // 25s TTL
+
+export function invalidateCollectionCache(collection?: string) {
+  if (collection) {
+    rawCollectionCache.delete(collection);
+  } else {
+    rawCollectionCache.clear();
+  }
+}
+
+export function getRecentChangesSince(timestamp: number): ServerChangeEvent[] {
+  const ts = Number(timestamp) || 0;
+  return recentChangesBuffer.filter(c => c.timestamp > ts);
+}
 
 export function registerRealtimeListener(listener: RealtimeListener): () => void {
   realtimeListeners.add(listener);
@@ -68,7 +98,12 @@ export function registerRealtimeListener(listener: RealtimeListener): () => void
 }
 
 export function notifyRealtimeChange(collection: string, id: string, action: 'upsert' | 'delete') {
-  const evt = { collection, id, action, timestamp: Date.now() };
+  invalidateCollectionCache(collection);
+  const evt: ServerChangeEvent = { collection, id, action, timestamp: Date.now() };
+  recentChangesBuffer.push(evt);
+  if (recentChangesBuffer.length > MAX_RECENT_CHANGES) {
+    recentChangesBuffer.shift();
+  }
   realtimeListeners.forEach(fn => {
     try { fn(evt); } catch (e) {}
   });
@@ -678,20 +713,26 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
 
 // Internal helper to retrieve raw collection data without filtering
 async function fetchRawCollectionData(collection: string): Promise<any[]> {
+  const now = Date.now();
+  const cached = rawCollectionCache.get(collection);
+  if (cached && (now - cached.timestamp < RAW_CACHE_TTL_MS)) {
+    return cached.data;
+  }
+
+  let items: any[] = [];
+
   // 1. If MySQL is configured, fetch from MySQL only
   if (isMysqlConfigured) {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
-      return mysqlItems || [];
+      items = mysqlItems || [];
     } catch (mErr: any) {
       console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
-      return [];
+      items = [];
     }
-  }
-
-  // 2. If Supabase is configured
-  if (isServerSupabaseConfigured) {
+  } else if (isServerSupabaseConfigured) {
+    // 2. If Supabase is configured
     try {
       const dedicatedTable = COLLECTION_TABLE_MAP[collection];
 
@@ -702,7 +743,7 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
           .select('*');
 
         if (!error && data && data.length > 0) {
-          return data.map((item: any) => {
+          items = data.map((item: any) => {
             if (item.data && typeof item.data === 'object') {
               return { ...item.data, id: item.id };
             }
@@ -712,21 +753,26 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
       }
 
       // Fallback query to app_collections
-      const { data, error } = await serverSupabase
-        .from('app_collections')
-        .select('id, data')
-        .eq('collection_name', collection);
+      if (items.length === 0) {
+        const { data, error } = await serverSupabase
+          .from('app_collections')
+          .select('id, data')
+          .eq('collection_name', collection);
 
-      if (!error && data && data.length > 0) {
-        return (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
+        if (!error && data && data.length > 0) {
+          items = (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
+        }
       }
     } catch (err) {
       console.error(`Query raw collection exception ${collection}:`, err);
     }
+  } else {
+    // 3. Fallback: Local JSON File Storage
+    items = localFileQueryCollection(collection);
   }
 
-  // 3. Fallback: Local JSON File Storage
-  return localFileQueryCollection(collection);
+  rawCollectionCache.set(collection, { data: items, timestamp: now });
+  return items;
 }
 
 // Get Single Document from Candidate IDs with Strict Role-Based Filtering
@@ -1194,14 +1240,20 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'periodic_study_logs', 'discussion_groups', 'academic_sub_periods'
   ];
 
-  const result: Record<string, any[]> = {};
-  for (const col of collections) {
-    try {
-      result[col] = await serverQueryCollection(col, callerUser);
-    } catch (e) {
-      result[col] = [];
-    }
-  }
+  const results = await Promise.all(
+    collections.map(async (col) => {
+      try {
+        const items = await serverQueryCollection(col, callerUser);
+        return { col, items };
+      } catch (e) {
+        return { col, items: [] };
+      }
+    })
+  );
 
+  const result: Record<string, any[]> = {};
+  for (const { col, items } of results) {
+    result[col] = items;
+  }
   return result;
 }

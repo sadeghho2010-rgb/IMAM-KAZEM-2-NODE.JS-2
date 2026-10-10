@@ -26,18 +26,38 @@ class RealtimeSyncManager {
     // Lazy initialization: Do NOT connect in constructor before authentication
   }
 
+  private getAuthToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+           localStorage.getItem('auth_access_token') || sessionStorage.getItem('auth_access_token') ||
+           localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+           localStorage.getItem('token') || sessionStorage.getItem('token');
+  }
+
   /**
    * Start SSE connection only after user is authenticated
    */
   public start() {
     if (typeof window === 'undefined') return;
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-                  localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    const token = this.getAuthToken();
     if (!token) return;
 
     this.connectSSE();
     this.startFallbackPolling();
+    this.pollChangesNow();
+
+    window.addEventListener('focus', this.handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', this.handleVisibilityOrFocus);
   }
+
+  private handleVisibilityOrFocus = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      this.pollChangesNow();
+      if (!this.eventSource || this.eventSource.readyState !== EventSource.OPEN) {
+        this.connectSSE();
+      }
+    }
+  };
 
   /**
    * Stop SSE connection on logout
@@ -55,27 +75,27 @@ class RealtimeSyncManager {
       clearInterval(this.pollingTimer);
       this.pollingTimer = null;
     }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', this.handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', this.handleVisibilityOrFocus);
+    }
     this.isConnecting = false;
     this.backoffDelayMs = 2000;
   }
 
   /**
-   * Connect to Server-Sent Events stream with exponential backoff
+   * Connect to Server-Sent Events stream with token query parameter and credentials
    */
   private connectSSE() {
-    const token = typeof window !== 'undefined'
-      ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-         localStorage.getItem('access_token') || sessionStorage.getItem('access_token'))
-      : null;
-
+    const token = this.getAuthToken();
     if (!token || this.isConnecting || (this.eventSource && this.eventSource.readyState === EventSource.OPEN)) {
       return;
     }
 
     try {
       this.isConnecting = true;
-      const sseUrl = '/api/sync/events';
-      this.eventSource = new EventSource(sseUrl);
+      const sseUrl = `/api/sync/events?token=${encodeURIComponent(token)}`;
+      this.eventSource = new EventSource(sseUrl, { withCredentials: true });
 
       this.eventSource.onopen = () => {
         this.isConnecting = false;
@@ -116,9 +136,7 @@ class RealtimeSyncManager {
 
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
-            const currentToken = typeof window !== 'undefined'
-              ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
-              : null;
+            const currentToken = this.getAuthToken();
             if (currentToken) {
               this.connectSSE();
             }
@@ -131,41 +149,46 @@ class RealtimeSyncManager {
   }
 
   /**
-   * Low-frequency heartbeat polling fallback (every 15s) when authenticated
+   * Immediately poll server for delta changes
+   */
+  public async pollChangesNow(): Promise<void> {
+    const token = this.getAuthToken();
+    if (!token) return;
+
+    try {
+      const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.changes) && data.changes.length > 0) {
+          data.changes.forEach((change: RealtimeChangeEvent) => {
+            this.lastTimestamp = Math.max(this.lastTimestamp, change.timestamp);
+            this.dispatchChange(change);
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  /**
+   * Active polling fallback every 4 seconds
    */
   private startFallbackPolling() {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
 
     this.pollingTimer = setInterval(async () => {
-      const token = typeof window !== 'undefined'
-        ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
-        : null;
+      const token = this.getAuthToken();
       if (!token) {
         this.stop();
         return;
       }
 
-      if (this.eventSource && this.eventSource.readyState === EventSource.OPEN) {
-        return;
-      }
-
-      try {
-        const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.changes)) {
-            data.changes.forEach((change: RealtimeChangeEvent) => {
-              this.lastTimestamp = Math.max(this.lastTimestamp, change.timestamp);
-              this.dispatchChange(change);
-            });
-          }
-        }
-      } catch (e) {}
-    }, 15000);
+      await this.pollChangesNow();
+    }, 4000);
   }
 
   private dispatchChange(change: RealtimeChangeEvent) {

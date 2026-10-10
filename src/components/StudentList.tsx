@@ -463,15 +463,39 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       fetchStudents(true);
     };
 
+    // 1. Cross-Tab & Cross-Component Custom Events
     window.addEventListener('app_users_updated', handleDataChange);
     window.addEventListener('collection_change_system_users', handleDataChange);
     window.addEventListener('collection_change_students', handleDataChange);
+
+    // 2. Tab Focus & Window Visibility revalidation (vital when switching between Maryam's and other browsers)
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStudents(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    // 3. Direct Realtime Engine subscription for instant cross-device reaction
+    const unsubRealtime = import('../lib/realtimeSync').then(({ realtimeSync }) => {
+      return realtimeSync.subscribe((evt) => {
+        if (evt.collection === 'students' || evt.collection === 'system_users') {
+          fetchStudents(true);
+        }
+      });
+    });
 
     return () => {
       unsub();
       window.removeEventListener('app_users_updated', handleDataChange);
       window.removeEventListener('collection_change_system_users', handleDataChange);
       window.removeEventListener('collection_change_students', handleDataChange);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      unsubRealtime.then(cleanup => {
+        if (typeof cleanup === 'function') cleanup();
+      });
     };
   }, [onlyActive]);
 
@@ -507,26 +531,33 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       if (editingStudent) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id, createdAt, ...updateData } = studentPayload as Student;
-        
+        const updatedStudent = { ...editingStudent, ...updateData, isActive: activeState };
+
+        // Instant Optimistic UI (0ms modal close and state update)
+        setStudents(prev => prev.map(s => s.id === editingStudent.id ? (updatedStudent as Student) : s));
+        resetForm();
+        setShowAddModal(false);
+
         await localDb.updateDoc('students', editingStudent.id, {
           ...updateData,
           isActive: activeState
         });
         syncStudentUserStatus(editingStudent.id, activeState);
-        alert('اطلاعات با موفقیت بروزرسانی شد');
       } else {
-        await localDb.addDoc('students', {
-          ...studentPayload,
-          createdAt: new Date().toISOString()
-        });
-        alert('طلبه جدید با موفقیت ثبت شد');
+        const tempId = `stu_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const newRecord = { ...studentPayload, id: tempId, createdAt: new Date().toISOString() };
+
+        // Instant Optimistic UI (0ms modal close and state update)
+        setStudents(prev => [newRecord as Student, ...prev]);
+        resetForm();
+        setShowAddModal(false);
+
+        await localDb.addDoc('students', newRecord);
       }
-      resetForm();
-      setShowAddModal(false);
-      fetchStudents();
     } catch (error: any) {
       console.error("Error adding/updating student:", error);
       alert('خطا در ثبت اطلاعات: ' + (error.message || 'خطای نامشخص'));
+      fetchStudents(true);
     } finally {
       setIsSubmittingStudent(false);
     }
@@ -651,14 +682,14 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           return;
         }
       } else {
-        // If inactive -> reactivate as present student
+        // Optimistic UI for reactivation
+        setStudents(prev => prev.map(s => s.id === id ? { ...s, isActive: true, deactivationReason: undefined } : s));
         await localDb.updateDoc('students', id, { 
           isActive: true, 
           deactivationReason: undefined,
           deactivationDate: undefined 
         });
         syncStudentUserStatus(id, true);
-        fetchStudents();
       }
     } catch (error) {
       console.error("Error updating student:", error);
@@ -667,16 +698,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   const handleConfirmDeactivation = async (reason: StudentDeactivationReason, date: string, notes?: string) => {
     if (!studentToDeactivate) return;
+    const target = studentToDeactivate;
+
+    // Optimistic UI: close modal instantly and update status in state
+    setShowDeactivationModal(false);
+    setStudentToDeactivate(null);
+    setStudents(prev => prev.map(s => s.id === target.id ? { ...s, isActive: false, deactivationReason: reason } : s));
+
     try {
-      await localDb.updateDoc('students', studentToDeactivate.id, {
+      await localDb.updateDoc('students', target.id, {
         isActive: false,
         deactivationReason: reason,
         deactivationDate: date,
         deactivationNotes: notes
       });
-      syncStudentUserStatus(studentToDeactivate.id, false);
-      setStudentToDeactivate(null);
-      fetchStudents();
+      syncStudentUserStatus(target.id, false);
     } catch (err) {
       console.error('Error deactivating student:', err);
     }
@@ -688,24 +724,30 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   const confirmDeleteStudent = async () => {
     if (!studentToDelete || isDeletingStudent) return;
+    const targetStudent = studentToDelete;
+
+    // 1. INSTANT OPTIMISTIC UI CLOSE & PURGE (0ms)
+    // Box closes instantly and row vanishes without waiting for network!
+    setStudentToDelete(null);
+    setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
+
     setIsDeletingStudent(true);
     try {
-      await localDb.deleteDoc('students', studentToDelete.id);
+      await localDb.deleteDoc('students', targetStudent.id);
       if (deleteUser) {
-        const linkedAcc = getStudentAccount(studentToDelete);
+        const linkedAcc = getStudentAccount(targetStudent);
         if (linkedAcc) {
           deleteUser(linkedAcc.id);
         } else {
-          deleteUser(studentToDelete.id);
-          if (studentToDelete.nationalId) deleteUser(studentToDelete.nationalId);
-          if (studentToDelete.studentCode) deleteUser(studentToDelete.studentCode);
+          deleteUser(targetStudent.id);
+          if (targetStudent.nationalId) deleteUser(targetStudent.nationalId);
+          if (targetStudent.studentCode) deleteUser(targetStudent.studentCode);
         }
       }
-      setStudentToDelete(null);
-      fetchStudents();
     } catch (error: any) {
       console.error("Error deleting student:", error);
       alert('خطا در حذف: ' + (error.message || 'خطای نامشخص'));
+      fetchStudents(true);
     } finally {
       setIsDeletingStudent(false);
     }

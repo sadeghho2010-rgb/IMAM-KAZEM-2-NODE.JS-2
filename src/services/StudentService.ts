@@ -71,7 +71,7 @@ export class StudentService {
 
     await serverSaveDoc('students', fullRecord, callerUser);
 
-    await logServerAudit({
+    logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || 'system',
       userRole: callerUser?.role,
@@ -80,7 +80,7 @@ export class StudentService {
       entityId: id,
       description: `ثبت یا ویرایش اطلاعات طلبه: ${fullRecord.name} (${fullRecord.grade})`,
       newState: fullRecord
-    });
+    }).catch(() => {});
 
     logger.info(`[StudentService] Saved student ${id} (${fullRecord.name}) by ${callerUser?.username || 'system'}`);
     return fullRecord;
@@ -97,7 +97,7 @@ export class StudentService {
 
     await serverDeleteDoc('students', id, callerUser);
 
-    await logServerAudit({
+    logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || 'system',
       userRole: callerUser?.role,
@@ -105,7 +105,7 @@ export class StudentService {
       entityType: 'student',
       entityId: id,
       description: `حذف پرونده طلبه با شناسه ${id}`
-    });
+    }).catch(() => {});
 
     logger.warn(`[StudentService] Deleted student ${id} by ${callerUser?.username || 'system'}`);
     return true;
