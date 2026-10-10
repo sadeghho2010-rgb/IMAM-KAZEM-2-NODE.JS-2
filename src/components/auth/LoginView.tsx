@@ -87,15 +87,15 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Primary Background Image for Desktop / Laptop
+  // Primary Official School Image for Desktop / Laptop
   const [currentBgUrl, setCurrentBgUrl] = useState<string>('/000.webp');
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // Preload desktop background image asynchronously
+  // Preload desktop background image asynchronously and clean any stale localStorage
   useEffect(() => {
     try {
-      const savedDesktop = localStorage.getItem('custom_login_bg');
-      if (savedDesktop) setCurrentBgUrl(savedDesktop);
+      localStorage.removeItem('custom_login_bg');
+      localStorage.removeItem('custom_mobile_bg');
     } catch {}
 
     const timer = setTimeout(() => {
@@ -105,7 +105,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         setImageLoaded(true);
       };
       imgDesktop.onerror = () => {
-        // Fallback to /000-mobile.webp if /000.webp fails
         const fallbackImg = new Image();
         fallbackImg.src = '/000-mobile.webp';
         fallbackImg.onload = () => {
@@ -324,83 +323,98 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     <div
       id="login-page-root"
       dir="rtl"
-      className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden font-vazir bg-slate-950 select-none"
+      className="relative min-h-screen w-full flex items-center justify-center p-3 sm:p-6 overflow-hidden font-vazir bg-slate-950 select-none"
       onClick={() => {
         if (hideFormForPreview) {
           setHideFormForPreview(false);
         }
       }}
     >
-      {/* 1. Desktop / Laptop: Full Screen Background Seminary Image (Only on desktop/laptop) */}
-      {!isMobile && (
+      {/* 1. Desktop / Laptop: Full-Screen Background Image (100% Uncropped, 100% Complete) */}
+      <div className="hidden md:block absolute inset-0 w-full h-full pointer-events-none overflow-hidden bg-slate-950">
+        {/* Ambient blurred backdrop covering the widescreen edges */}
         <div
-          id="login-bg-container"
-          className="absolute inset-0 w-full h-full bg-slate-950 transition-opacity duration-700 ease-out"
+          className="absolute inset-0 w-full h-full bg-cover bg-center filter blur-3xl scale-110 opacity-35"
+          style={{ backgroundImage: `url('/000.webp')` }}
+        />
+
+        {/* Crisp, 100% Complete Uncropped Photo showcasing the school and both scholars */}
+        <div
+          className="absolute inset-0 w-full h-full bg-contain bg-center md:bg-[position:22%_center] bg-no-repeat transition-all duration-700"
           style={{
-            backgroundImage: `url(${currentBgUrl})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center center',
-            backgroundRepeat: 'no-repeat',
+            backgroundImage: `url('/000.webp')`,
             opacity: imageLoaded ? 1 : 0
           }}
         />
-      )}
 
-      {/* 2. Desktop Semi-transparent Dark Overlay */}
-      {!isMobile && (
-        <div
-          id="login-bg-overlay"
-          className={cn(
-            "absolute inset-0 transition-all duration-500 pointer-events-none",
-            hideFormForPreview 
-              ? "bg-black/15 backdrop-brightness-[0.95]" 
-              : "bg-slate-950/65 backdrop-blur-[1px] backdrop-brightness-[0.85] backdrop-saturate-[1.1]"
-          )}
-        />
-      )}
-
-      {/* 3. Atmospheric ambient lighting effects (Active on both Desktop and Mobile dark theme) */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-10 right-10 w-80 h-80 sm:w-96 sm:h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-10 left-10 w-80 h-80 sm:w-96 sm:h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+        {/* Vignette gradient towards right side where the login card lives */}
+        <div className="absolute inset-0 bg-gradient-to-l from-slate-950/85 via-slate-950/25 to-transparent pointer-events-none" />
       </div>
 
-      {/* 4. Desktop-only discrete full image preview toggle */}
-      {!isMobile && (
-        <div className="absolute top-4 left-4 z-20">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setHideFormForPreview(!hideFormForPreview);
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95 cursor-pointer"
-            title={hideFormForPreview ? 'بازگشت به فرم ورود' : 'مشاهده تمام‌صفحه تصویر مدرسه'}
-          >
-            <Eye size={14} className="text-emerald-300" />
-            <span>{hideFormForPreview ? 'بازگشت به فرم ورود' : 'مشاهده تصویر کامل'}</span>
-          </button>
-        </div>
-      )}
+      {/* 2. Atmospheric ambient lighting effects */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+      </div>
 
-      {/* 5. Glassmorphic Login Window (Center aligned) */}
-      <motion.div
-        id="login-glass-card"
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ 
-          opacity: hideFormForPreview ? 0 : 1, 
-          scale: hideFormForPreview ? 0.90 : 1, 
-          y: hideFormForPreview ? 30 : 0,
-          pointerEvents: hideFormForPreview ? 'none' : 'auto'
-        }}
-        transition={{ duration: 0.4, ease: 'easeInOut' }}
-        className={cn(
-          "relative z-10 w-full max-w-md rounded-3xl bg-slate-900/70 sm:bg-white/15 backdrop-blur-xl border border-white/15 sm:border-white/30 shadow-2xl p-5 sm:p-8 text-white transition-all duration-300",
-          isMobile ? "my-auto mx-auto max-h-[92vh] overflow-y-auto" : "my-auto mx-4"
-        )}
-      >
-        {/* Top subtle highlight reflection */}
-        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-white/50 to-transparent rounded-t-2xl pointer-events-none" />
+      {/* 3. Desktop-only discrete full image preview toggle */}
+      <div className="hidden md:block absolute top-4 left-4 z-20">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setHideFormForPreview(!hideFormForPreview);
+          }}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/45 hover:bg-black/65 text-white/80 hover:text-white border border-white/20 backdrop-blur-md text-xs font-medium transition-all shadow-lg active:scale-95 cursor-pointer"
+          title={hideFormForPreview ? 'بازگشت به فرم ورود' : 'مشاهده تصویر تمام‌صفحه'}
+        >
+          <Eye size={14} className="text-emerald-300" />
+          <span>{hideFormForPreview ? 'بازگشت به فرم ورود' : 'مشاهده تصویر تمام‌صفحه'}</span>
+        </button>
+      </div>
+
+      {/* 4. Main Responsive Content: Positioned on the right on widescreen so the photo on the left is 100% visible */}
+      <div className="relative z-10 w-full max-w-7xl mx-auto min-h-screen flex items-center justify-center md:justify-end px-4 sm:px-8 lg:px-20 py-8">
+        {/* Glow halo & Illuminated Outer Neon Border around the login box */}
+        <div className="relative group/card w-full max-w-md my-auto">
+          {/* Animated Neon/Cyan-Indigo Glow Aura around the card */}
+          <div className="absolute -inset-1.5 rounded-[32px] bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-400 opacity-70 blur-xl animate-border-glow group-hover/card:opacity-100 group-hover/card:blur-2xl transition-all duration-700 pointer-events-none" />
+
+          {/* Secondary crystal gradient line border */}
+          <div className="absolute -inset-[1px] rounded-[28px] bg-gradient-to-r from-blue-400/80 via-indigo-400/60 to-cyan-400/80 opacity-80 pointer-events-none" />
+
+          {/* The Login Glassmorphic Window */}
+          <motion.div
+            id="login-glass-card"
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ 
+              opacity: hideFormForPreview ? 0 : 1, 
+              scale: hideFormForPreview ? 0.90 : 1, 
+              y: hideFormForPreview ? 30 : 0,
+              pointerEvents: hideFormForPreview ? 'none' : 'auto'
+            }}
+            whileHover={{
+              scale: 1.025,
+              y: -6,
+              transition: { type: "spring", stiffness: 350, damping: 20 }
+            }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            className={cn(
+              "relative z-10 w-full rounded-[26px] bg-slate-950/85 sm:bg-slate-900/85 backdrop-blur-2xl border border-white/20 p-5 sm:p-8 text-white shadow-2xl overflow-hidden transition-all duration-300",
+              isMobile ? "my-auto mx-auto max-h-[92vh] overflow-y-auto" : "my-auto"
+            )}
+          >
+            {/* Sweeping Shimmer Sheen across the entire card */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[26px]">
+              <div className="absolute top-0 bottom-0 left-0 w-48 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-25deg] animate-card-shine pointer-events-none" />
+            </div>
+
+            {/* Top Edge Prism Reflection with breathing pulse */}
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-300 to-transparent pointer-events-none animate-pulse" />
+
+            {/* Subtle Corner Ambient Accents */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/15 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none" />
 
         {/* Header: Seminary identity & Logo */}
         <div className="text-center space-y-2.5 mb-5">
@@ -497,7 +511,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="مثال: SADEGH یا SHAH"
+                placeholder="نام کاربری یا شناسه سازمانی"
                 autoComplete="username"
                 dir="ltr"
                 disabled={isLoading || cooldownSeconds > 0}
@@ -544,22 +558,30 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               id="login-submit-button"
               type="submit"
               disabled={isLoading || cooldownSeconds > 0}
-              className="w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.99] shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="relative overflow-hidden w-full py-3.5 px-4 rounded-xl font-bold text-white text-sm bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.99] shadow-lg shadow-indigo-600/35 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer group"
             >
+              {/* Sweeping dynamic shimmer beam that travels periodically across button */}
+              <span className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden rounded-xl">
+                <span className="absolute top-0 bottom-0 left-0 w-32 bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-[-20deg] animate-login-shine pointer-events-none" />
+              </span>
+
+              {/* Gentle breathing glow border */}
+              <span className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/30 group-hover:ring-white/50 transition-all pointer-events-none" />
+
               {isLoading ? (
                 <>
-                  <Loader2 size={18} className="animate-spin text-white" />
-                  <span>در حال احراز هویت و ورود...</span>
+                  <Loader2 size={18} className="animate-spin text-white relative z-10" />
+                  <span className="relative z-10">در حال احراز هویت و ورود...</span>
                 </>
               ) : cooldownSeconds > 0 ? (
                 <>
-                  <Lock size={16} />
-                  <span>صبر فرمایید ({cooldownSeconds} ثانیه)...</span>
+                  <Lock size={16} className="relative z-10" />
+                  <span className="relative z-10">صبر فرمایید ({cooldownSeconds} ثانیه)...</span>
                 </>
               ) : (
                 <>
-                  <LogIn size={18} />
-                  <span>ورود به سامانه مدیریت</span>
+                  <LogIn size={18} className="relative z-10" />
+                  <span className="relative z-10">ورود به سامانه مدیریت</span>
                 </>
               )}
             </button>
@@ -688,6 +710,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
           <span>نسخه ۵.۲.۰ • ارتباط امن و رمزنگاری داده‌ها</span>
         </div>
       </motion.div>
+    </div>
+  </div>
 
       {/* Gentle helper message in preview mode */}
       <AnimatePresence>

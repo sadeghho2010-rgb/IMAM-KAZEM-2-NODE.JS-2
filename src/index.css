@@ -58,6 +58,47 @@
   transition-delay: 0s !important;
 }
 
+@keyframes loginShine {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  45%, 100% {
+    transform: translateX(350%) skewX(-20deg);
+  }
+}
+
+.animate-login-shine {
+  animation: loginShine 3.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes cardShine {
+  0% {
+    transform: translateX(-150%) skewX(-25deg);
+  }
+  30%, 100% {
+    transform: translateX(450%) skewX(-25deg);
+  }
+}
+
+.animate-card-shine {
+  animation: cardShine 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes borderGlowPulse {
+  0%, 100% {
+    opacity: 0.55;
+    filter: blur(14px);
+  }
+  50% {
+    opacity: 0.95;
+    filter: blur(20px);
+  }
+}
+
+.animate-border-glow {
+  animation: borderGlowPulse 3.5s ease-in-out infinite;
+}
+
 @theme {
   --font-vazir: "Vazirmatn", "Vazirmatn FD", "Vazir", "Tahoma", sans-serif;
   --font-sans: "Vazirmatn", "Vazirmatn FD", "Vazir", "Tahoma", system-ui, sans-serif;
