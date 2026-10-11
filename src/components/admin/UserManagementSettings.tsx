@@ -173,7 +173,7 @@ export default function UserManagementSettings() {
     setFormData({
       username: user.username,
       name: user.name,
-      password: user.password || '',
+      password: user.password || user.nationalId || user.username || '',
       level: user.level,
       role: user.role,
       roleTitle: user.roleTitle,
@@ -253,8 +253,21 @@ export default function UserManagementSettings() {
     e.preventDefault();
     if (!formData.username.trim() || !formData.name.trim()) return;
 
+    const cleanUsername = formData.username.trim().toUpperCase();
+
+    // Check for duplicate username or national ID
+    const duplicateUser = users.find(u => 
+      u.username.toUpperCase() === cleanUsername || 
+      (u.nationalId && cleanUsername && u.nationalId.trim() === cleanUsername)
+    );
+
+    if (duplicateUser) {
+      alert(`⚠️ هشدار: کاربر یا کد ملی «${cleanUsername}» قبلاً برای «${duplicateUser.name}» ثبت گردیده است. امکان تعریف حساب تکراری وجود ندارد.`);
+      return;
+    }
+
     const res = await addUser({
-      username: formData.username.trim().toUpperCase(),
+      username: cleanUsername,
       name: formData.name.trim(),
       password: formData.password.trim(),
       level: formData.level,
@@ -273,6 +286,8 @@ export default function UserManagementSettings() {
     if (res.success) {
       setIsCreateModalOpen(false);
       showToast(`کاربر جدید «${formData.name}» با دسترسی‌های تعیین‌شده ایجاد گردید.`);
+    } else {
+      alert(res.error || 'خطا در ثبت کاربر تکراری.');
     }
   };
 
@@ -280,10 +295,25 @@ export default function UserManagementSettings() {
     e.preventDefault();
     if (!selectedUser) return;
 
+    const cleanUsername = formData.username.trim().toUpperCase();
+
+    // Check for duplicate username or national ID on another user
+    const duplicateOther = users.find(u => 
+      u.id !== selectedUser.id && (
+        u.username.toUpperCase() === cleanUsername || 
+        (u.nationalId && cleanUsername && u.nationalId.trim() === cleanUsername)
+      )
+    );
+
+    if (duplicateOther) {
+      alert(`⚠️ هشدار: نام کاربری یا کد ملی «${cleanUsername}» قبلاً متعلق به کاربر «${duplicateOther.name}» می‌باشد.`);
+      return;
+    }
+
     updateUser(selectedUser.id, {
-      username: formData.username.trim().toUpperCase(),
+      username: cleanUsername,
       name: formData.name.trim(),
-      password: formData.password.trim(),
+      password: formData.password.trim() || selectedUser.password || '',
       level: formData.level,
       role: formData.role,
       roleTitle: formData.roleTitle,
@@ -528,8 +558,8 @@ export default function UserManagementSettings() {
                       {user.username}
                     </td>
 
-                    <td className="py-3.5 px-4 font-mono text-slate-600" dir="ltr">
-                      {user.password || '••••••'}
+                    <td className="py-3.5 px-4 font-mono text-slate-700 font-bold" dir="ltr">
+                      {user.password || '---'}
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -684,14 +714,14 @@ export default function UserManagementSettings() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      رمز عبور
+                      رمز عبور {isEditModalOpen && <span className="text-[10px] text-slate-400 font-normal">(رمز عبور فعلی کاربر پیش‌فرض پر شده است)</span>}
                     </label>
                     <input
                       type="text"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="حداقل ۱۲ کاراکتر"
-                      required
+                      placeholder="رمز عبور کاربر"
+                      required={isCreateModalOpen}
                       dir="ltr"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-500 text-right"
                     />

@@ -127,9 +127,16 @@ interface MainCategoryDef {
 interface MainDashboardProps {
   onNavigateTab: (tabId: string, studentId?: string) => void;
   onOpenSettings?: () => void;
+  initialCategoryGroup?: string | null;
+  onCategoryGroupChange?: (group: string | null) => void;
 }
 
-export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
+export default function MainDashboard({ 
+  onNavigateTab, 
+  onOpenSettings,
+  initialCategoryGroup,
+  onCategoryGroupChange
+}: MainDashboardProps) {
   const { currentUser, isSuperAdmin, isTabAllowed } = useAuth();
 
   const [unreadRequestsCount, setUnreadRequestsCount] = useState(0);
@@ -216,7 +223,13 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
   });
 
   // Selected Category when in 'grouped' Mode
-  const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(null);
+  const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(initialCategoryGroup || null);
+
+  useEffect(() => {
+    if (initialCategoryGroup !== undefined) {
+      setActiveCategoryGroup(initialCategoryGroup);
+    }
+  }, [initialCategoryGroup]);
 
   // Edit / Drag & Drop Mode State (for flat mode or ordering)
   const [isEditMode, setIsEditMode] = useState(false);
@@ -1503,21 +1516,52 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
         )}
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* RIGHT SIDE: Greeting & User Role Info & Calendar directly under welcome */}
-          <div className="space-y-1.5 min-w-0 max-w-md">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
-                <Sparkles size={12} className="text-amber-300" />
-                <span>{currentUser?.level === 3 ? 'پرتال اختصاصی طلاب' : 'داشبورد اختصاصی'}</span>
-              </span>
-              <span className="text-[11px] text-indigo-200/80 font-medium">
-                سطح {currentUser?.level || 2}: {currentUser?.roleTitle || (currentUser?.level === 3 ? 'طلبه / دانش‌پژوه' : 'مسئول سازمانی')}
-              </span>
+          {/* RIGHT SIDE: Red Leader Photo (above سلام و احترام) & Greeting & User Role Info & Calendar */}
+          <div className="space-y-2 min-w-0 max-w-lg">
+            {/* Top row with Red Background Leader Portrait right above سلام و احترام */}
+            <div className="flex items-center gap-3">
+              {/* Red Background Photo (حضرت آیت‌الله خامنه‌ای - بالای کلمه احترام و زیر هشدار کارتابل) */}
+              <motion.div
+                initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
+                animate={!isAnimationsDisabled ? { 
+                  opacity: 1, 
+                  scale: 1, 
+                  y: [0, -6, 0] 
+                } : { opacity: 1, scale: 1, y: 0 }}
+                transition={{
+                  y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
+                  opacity: { duration: 0.5 },
+                  scale: { duration: 0.5 }
+                }}
+                whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: 1.5 } : undefined}
+                className="relative group shrink-0 select-none cursor-pointer"
+                title="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
+              >
+                <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-rose-400/80 shadow-lg shadow-rose-500/40 ring-2 ring-rose-500/50 bg-gradient-to-b from-rose-950/60 to-black/70 p-0.5 backdrop-blur-md">
+                  <img
+                    src="/leader_red.png"
+                    alt="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
+                    className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
+                  />
+                </div>
+              </motion.div>
+
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
+                    <Sparkles size={12} className="text-amber-300" />
+                    <span>{currentUser?.level === 3 ? 'پرتال اختصاصی طلاب' : 'داشبورد اختصاصی'}</span>
+                  </span>
+                  <span className="text-[11px] text-indigo-200/80 font-medium">
+                    سطح {currentUser?.level || 2}: {currentUser?.roleTitle || (currentUser?.level === 3 ? 'طلبه / دانش‌پژوه' : 'مسئول سازمانی')}
+                  </span>
+                </div>
+                <h1 className="text-base sm:text-lg lg:text-xl font-black text-white tracking-tight">
+                  سلام و احترام، {currentUser?.level === 3 ? (currentUser?.studentName || currentUser?.name || currentUser?.fullName || currentUser?.username) : (currentUser?.name || currentUser?.fullName || currentUser?.username)}
+                </h1>
+              </div>
             </div>
 
-            <h1 className="text-base sm:text-lg lg:text-xl font-black text-white tracking-tight">
-              سلام و احترام، {currentUser?.level === 3 ? (currentUser?.studentName || currentUser?.name || currentUser?.fullName || currentUser?.username) : (currentUser?.name || currentUser?.fullName || currentUser?.username)}
-            </h1>
             <p className="text-xs text-indigo-100/85 font-medium leading-normal">
               {currentUser?.level === 3
                 ? 'به سامانه جامع خدمات طلاب خوش آمدید. کارت‌های آموزشی و رفاهی شما در دسترس هستند.'
@@ -1534,13 +1578,41 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             </div>
           </div>
 
-          {/* LEFT SIDE: Standalone Animated Circular Counter (For Management/Staff only - students receive a clean streamlined view) */}
-          {currentUser?.level !== 3 ? (
-            <div 
-              className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none"
-              onMouseEnter={() => setIsHoveredOnCounter(true)}
-              onMouseLeave={() => setIsHoveredOnCounter(false)}
+          {/* LEFT SIDE: Green Leader Photo (سمت چپ و قرینه عکس دوم) & Circular Counter */}
+          <div className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none">
+            {/* Green Background Leader Photo (قرینه سمت چپ) */}
+            <motion.div
+              initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
+              animate={!isAnimationsDisabled ? { 
+                opacity: 1, 
+                scale: 1, 
+                y: [0, -6, 0] 
+              } : { opacity: 1, scale: 1, y: 0 }}
+              transition={{
+                y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.4 },
+                opacity: { duration: 0.5 },
+                scale: { duration: 0.5 }
+              }}
+              whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: -1.5 } : undefined}
+              className="relative group shrink-0 select-none cursor-pointer"
+              title="حضرت آیت‌الله خامنه‌ای"
             >
+              <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-emerald-400/80 shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-500/50 bg-gradient-to-b from-emerald-950/60 to-black/70 p-0.5 backdrop-blur-md">
+                <img
+                  src="/leader_green.png"
+                  alt="حضرت آیت‌الله خامنه‌ای"
+                  className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
+                />
+              </div>
+            </motion.div>
+
+            {/* Standalone Animated Circular Counter (For Management/Staff only) */}
+            {currentUser?.level !== 3 ? (
+              <div 
+                className="flex items-center gap-3 shrink-0 select-none"
+                onMouseEnter={() => setIsHoveredOnCounter(true)}
+                onMouseLeave={() => setIsHoveredOnCounter(false)}
+              >
               {/* The Clean Circle with Label Underneath */}
               <div 
                 className="flex flex-col items-center justify-center gap-1.5 cursor-pointer group"
@@ -1624,6 +1696,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
           )}
         </div>
       </div>
+    </div>
 
       {/* 4 CORE VIBRANT COLORFUL CARDS FOR STUDENTS (DESKTOP & LAPTOP VERSION - اصلاح ۱ و ۲ و ۳) */}
       {currentUser?.level === 3 && (
@@ -2011,33 +2084,22 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
             y: 0 
           } : { opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden animate-banner-glow"
+          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden"
         >
-          {/* Animated Radiant Neon Outer Glow Aura (matching login page with lightning sheen) */}
-          <div className="absolute -inset-1.5 rounded-[36px] bg-gradient-to-r from-amber-500 via-indigo-600 via-cyan-400 to-amber-500 opacity-75 blur-2xl animate-border-glow group-hover/quick-banner:opacity-100 group-hover/quick-banner:blur-3xl transition-all duration-700 pointer-events-none" />
+          {/* Dark border outline */}
+          <div className="absolute inset-0 rounded-3xl bg-slate-900 pointer-events-none border border-slate-800" />
 
-          {/* Secondary crystal gradient line border */}
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-amber-400 via-indigo-400 to-cyan-400 pointer-events-none opacity-90" />
-
-          {/* Banner inner container with glassmorphic depth & sweep shimmer */}
-          <div className="relative z-10 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 rounded-[23px] p-5 text-white shadow-2xl space-y-4 overflow-hidden border border-white/20 backdrop-blur-xl">
-            {/* Continuous Sweeping Lightning / Electric Sheen (برق که میاد و میره دقیقا مثل صفحه لاگین) */}
+          {/* Banner inner container with 15% darker black background & single sweeping sheen */}
+          <div className="relative z-10 bg-black rounded-[23px] p-5 text-white shadow-2xl space-y-4 overflow-hidden border border-white/10 backdrop-blur-xl">
+            {/* Continuous Sweeping Lightning / Electric Sheen (تک درخشش روان که میاد و میره) */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[23px]">
-              {/* Main wide electric lightning wave */}
-              <div className="absolute top-0 bottom-0 left-0 w-72 bg-gradient-to-r from-transparent via-cyan-300/35 via-white/25 to-transparent skew-x-[-22deg] animate-card-shine pointer-events-none" />
-              {/* Secondary swift golden lightning beam */}
-              <div className="absolute top-0 bottom-0 left-0 w-48 bg-gradient-to-r from-transparent via-amber-300/30 to-transparent skew-x-[-22deg] animate-login-shine pointer-events-none" />
-              {/* Electric sweep lightning effect */}
-              <div className="absolute top-0 bottom-0 left-0 w-36 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-[-22deg] animate-electric-sweep pointer-events-none" />
+              {/* Single Electric sweep lightning sheen that sweeps completely across */}
+              <div className="absolute top-0 bottom-0 left-0 w-44 bg-gradient-to-r from-transparent via-cyan-300/35 via-white/25 to-transparent skew-x-[-22deg] animate-electric-sweep pointer-events-none" />
             </div>
 
-            {/* Top & Bottom Edge Radiant Pulsing Lines */}
-            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 via-cyan-300 to-transparent pointer-events-none animate-pulse" />
-            <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-indigo-400 via-cyan-400 to-transparent pointer-events-none opacity-60" />
-
-            {/* Subtle Corner Ambient Lights */}
-            <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-            <div className="absolute bottom-0 left-0 w-44 h-44 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none" />
+            {/* Top & Bottom Subtle Border Accents */}
+            <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent pointer-events-none opacity-50" />
+            <div className="absolute bottom-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700 to-transparent pointer-events-none opacity-40" />
 
             <div className="relative z-10 flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-3">
               <div className="flex items-center gap-2.5">

@@ -72,31 +72,68 @@ import { cn } from './lib/utils';
 
 const BACK_BUTTON_GRADIENTS = [
   {
-    bg: 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700',
-    shadow: 'shadow-amber-500/40 hover:shadow-amber-500/60 ring-amber-400/30',
-    border: 'border-amber-300/50'
+    bg: 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800',
+    shadow: 'shadow-emerald-600/40 hover:shadow-emerald-600/60 ring-emerald-400/30',
+    border: 'border-emerald-400/50'
   },
   {
-    bg: 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-700',
-    shadow: 'shadow-emerald-500/40 hover:shadow-emerald-500/60 ring-emerald-400/30',
-    border: 'border-emerald-300/50'
+    bg: 'bg-gradient-to-r from-emerald-500 via-green-600 to-teal-600 hover:from-emerald-600 hover:to-green-700',
+    shadow: 'shadow-green-500/40 hover:shadow-green-500/60 ring-emerald-400/30',
+    border: 'border-green-300/50'
   },
   {
-    bg: 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-800',
+    bg: 'bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-700 hover:to-blue-800',
     shadow: 'shadow-indigo-500/40 hover:shadow-indigo-500/60 ring-indigo-400/30',
     border: 'border-indigo-300/50'
   },
   {
-    bg: 'bg-gradient-to-r from-rose-500 via-pink-600 to-rose-600 hover:from-rose-600 hover:to-pink-700',
-    shadow: 'shadow-rose-500/40 hover:shadow-rose-500/60 ring-rose-400/30',
-    border: 'border-rose-300/50'
-  },
-  {
-    bg: 'bg-gradient-to-r from-cyan-500 via-blue-600 to-cyan-600 hover:from-cyan-600 hover:to-blue-700',
+    bg: 'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-700 hover:from-cyan-700 hover:to-teal-800',
     shadow: 'shadow-cyan-500/40 hover:shadow-cyan-500/60 ring-cyan-400/30',
     border: 'border-cyan-300/50'
   }
 ];
+
+const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
+  'programs': 'education_group',
+  'classrooms': 'education_group',
+  'student-schedule': 'education_group',
+  'teachers-schedule': 'education_group',
+  'course-selection': 'education_group',
+  'passed-courses': 'education_group',
+  'oral-exams': 'education_group',
+  'academic-calendar': 'education_group',
+  'teachers-bank': 'education_group',
+
+  'student-requests': 'requests_group',
+  'workflow': 'requests_group',
+  'todos': 'requests_group',
+
+  'students': 'students_group',
+  'active-students': 'students_group',
+  'comments': 'students_group',
+  'stats': 'students_group',
+  'lockers': 'students_group',
+  'discussion': 'students_group',
+  'counseling-classes': 'students_group',
+
+  'finance-tuition': 'finance_group',
+  'finance-teachers': 'finance_group',
+  'finance-lunch': 'finance_group',
+  'student-meals': 'finance_group',
+  'finance-claims': 'finance_group',
+  'finance-loans-fund': 'finance_group',
+  'finance-expenses-reports': 'finance_group',
+
+  'research': 'research_group',
+  'article-evaluations': 'research_group',
+  'summary': 'research_group',
+
+  'user-management': 'security_group',
+  'user-credentials': 'security_group',
+  'anomaly-detection': 'security_group',
+  'backup': 'security_group',
+  'audit-logs': 'security_group',
+};
 
 function AppContent() {
   const { currentUser, logout, isTabAllowed, isSuperAdmin } = useAuth();
@@ -146,6 +183,8 @@ function AppContent() {
 
   const currentBackTheme = BACK_BUTTON_GRADIENTS[backColorIndex];
 
+  const [dashboardCategoryGroup, setDashboardCategoryGroup] = useState<string | null>(null);
+
   const navigateToTab = (tab: string, studentId?: string) => {
     if (studentId) {
       setSelectedStudentIdForTab(studentId);
@@ -154,21 +193,24 @@ function AppContent() {
       if (prev[prev.length - 1] === tab) return prev;
       return [...prev, tab];
     });
+    if (tab === 'dashboard') {
+      setDashboardCategoryGroup(null);
+    }
     setActiveTab(tab);
   };
 
   const handleBack = () => {
-    setNavigationHistory(prev => {
-      if (prev.length > 1) {
-        const nextHistory = prev.slice(0, prev.length - 1);
-        const targetTab = nextHistory[nextHistory.length - 1] || 'dashboard';
-        setActiveTab(targetTab);
-        return nextHistory;
-      } else {
-        setActiveTab('dashboard');
+    if (activeTab !== 'dashboard') {
+      const parentCat = TAB_PARENT_CATEGORY_MAP[activeTab] || null;
+      setDashboardCategoryGroup(parentCat);
+      setActiveTab('dashboard');
+      setNavigationHistory(prev => {
+        if (prev.length > 1) return prev.slice(0, prev.length - 1);
         return ['dashboard'];
-      }
-    });
+      });
+    } else if (dashboardCategoryGroup !== null) {
+      setDashboardCategoryGroup(null);
+    }
   };
 
   const getActiveTabTitle = (tab: string) => {
@@ -273,7 +315,14 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <MainDashboard onNavigateTab={handleNavigate} onOpenSettings={() => setIsSettingsModalOpen(true)} />;
+        return (
+          <MainDashboard 
+            onNavigateTab={handleNavigate} 
+            onOpenSettings={() => setIsSettingsModalOpen(true)}
+            initialCategoryGroup={dashboardCategoryGroup}
+            onCategoryGroupChange={setDashboardCategoryGroup}
+          />
+        );
       case 'students':
         return <StudentList initialStudentId={selectedStudentIdForTab} />;
       case 'active-students':
@@ -456,7 +505,7 @@ function AppContent() {
               </button>
 
               {/* Universal Header Back Button */}
-              {activeTab !== 'dashboard' && (
+              {(activeTab !== 'dashboard' || dashboardCategoryGroup !== null) && (
                 <button
                   type="button"
                   onClick={handleBack}
@@ -468,7 +517,6 @@ function AppContent() {
                   )}
                   title="بازگشت به مرحله یا صفحه قبلی"
                 >
-                  <div className="absolute inset-0 w-1/2 h-full bg-white/30 skew-x-12 -translate-x-full group-hover:translate-x-[350%] transition-transform duration-1000 pointer-events-none" />
                   <ChevronRight size={18} className="text-white group-hover:-translate-x-1 transition-transform shrink-0 drop-shadow" />
                   <span className="drop-shadow-sm font-black">بازگشت</span>
                 </button>
@@ -599,7 +647,7 @@ function AppContent() {
           <SecurityPinModal />
 
           {/* Universal Sticky / Prominent Back to Dashboard Banner for all sections */}
-          {activeTab !== 'dashboard' && (
+          {(activeTab !== 'dashboard' || dashboardCategoryGroup !== null) && (
             <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 px-3.5 sm:px-4 py-2.5 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xs mb-4">
               <div className="flex items-center gap-2 text-xs min-w-0">
                 <button
@@ -611,7 +659,9 @@ function AppContent() {
                   <span>داشبورد اصلی</span>
                 </button>
                 <ChevronLeft size={13} className="text-slate-400 shrink-0" />
-                <span className="font-bold text-slate-800 truncate">{getActiveTabTitle(activeTab)}</span>
+                <span className="font-bold text-slate-800 truncate">
+                  {activeTab !== 'dashboard' ? getActiveTabTitle(activeTab) : 'دسته‌بندی‌ها'}
+                </span>
               </div>
               <button
                 type="button"
@@ -624,8 +674,6 @@ function AppContent() {
                 )}
                 title="بازگشت به مرحله یا صفحه قبلی"
               >
-                {/* Glowing light shimmer effect */}
-                <div className="absolute inset-0 w-1/2 h-full bg-white/30 skew-x-12 -translate-x-full group-hover:translate-x-[350%] transition-transform duration-1000 pointer-events-none" />
                 <ArrowRight size={20} className="text-white group-hover:-translate-x-1.5 transition-transform shrink-0 drop-shadow" />
                 <span className="drop-shadow-sm font-black">بازگشت</span>
               </button>

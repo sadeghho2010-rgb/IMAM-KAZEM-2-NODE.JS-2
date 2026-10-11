@@ -523,6 +523,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       return;
     }
     
+    const cleanNatId = (newStudent.nationalId || '').trim();
+
+    // Check for duplicate national ID
+    if (cleanNatId) {
+      const duplicateStudent = students.find(s => 
+        s.nationalId && 
+        s.nationalId.trim() === cleanNatId && 
+        (!editingStudent || s.id !== editingStudent.id)
+      );
+      if (duplicateStudent) {
+        alert(`⚠️ هشدار: کد ملی «${cleanNatId}» قبلاً در سیستم برای «${duplicateStudent.name}» ثبت گردیده است. امکان ثبت سابقه تکراری با کد ملی یکسان وجود ندارد.`);
+        return;
+      }
+    }
+
     setIsSubmittingStudent(true);
     try {
       const activeState = newStudent.isActive !== undefined ? isStudentActive(newStudent.isActive) : true;
