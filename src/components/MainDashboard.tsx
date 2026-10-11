@@ -385,13 +385,6 @@ export default function MainDashboard({
     }, 120);
   };
 
-  // Save display mode
-  const handleToggleDisplayMode = (mode: 'grouped' | 'flat') => {
-    setDisplayMode(mode);
-    setActiveCategoryGroup(null);
-    localStorage.setItem('dashboard_display_mode_v2', mode);
-  };
-
   // Load quick live stats
   useEffect(() => {
     const loadStats = async () => {
@@ -1909,7 +1902,7 @@ export default function MainDashboard({
           </div>
         </div>
       ) : (
-        <>
+        <div className="space-y-4">
           {/* 2. ELEGANT COMPACT SOFTWARE SEARCH BAR */}
           <div className="bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 border border-slate-200/90 shadow-md space-y-3 font-vazir">
             <div className="relative flex items-center">
@@ -2085,8 +2078,8 @@ export default function MainDashboard({
           </motion.div>
         )}
 
-        {/* MODE 2 - SUB-LEVEL CARDS VIEW (When a category is selected) */}
-        {displayMode === 'grouped' && activeCategoryGroup && (
+        {/* SUB-LEVEL CARDS VIEW (When a category is selected) */}
+        {activeCategoryGroup && (
           <motion.div
             key={`category-subitems-${activeCategoryGroup}`}
             initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
@@ -2196,167 +2189,9 @@ export default function MainDashboard({
             </div>
           </motion.div>
         )}
-
-        {/* MODE 1: FLAT VIEW (ALL CARDS IN ONE GRID WITH DRAG & DROP) */}
-        {displayMode === 'flat' && (
-          <motion.div
-            key="flat-cards-grid"
-            initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
-            transition={transitionConfig}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 auto-rows-fr"
-          >
-            {sortedCards.map((card, index) => {
-              const Icon = card.icon;
-
-              // Determine Card Sizing
-              const customSize = customCardSizes[card.id];
-              const isRow1Featured = isFirstRowFeatured && index < 3;
-              const isLarge = customSize === 'large' || (customSize === undefined && isRow1Featured);
-
-              const spanClass = isLarge
-                ? "col-span-1 md:col-span-2 lg:col-span-4/3 xl:col-span-4/3 min-h-[160px]"
-                : "col-span-1 min-h-[145px]";
-
-              const isBeingDragged = draggedIndex === index;
-              const isBeingDraggedOver = dragOverIndex === index;
-
-              return (
-                <motion.div
-                  key={card.id}
-                  layout={!isAnimationsDisabled}
-                  draggable={isEditMode}
-                  onDragStart={(e) => handleDragStart(e as any, index)}
-                  onDragOver={(e) => handleDragOver(e as any, index)}
-                  onDrop={(e) => handleDrop(e as any, index)}
-                  whileHover={!isAnimationsDisabled && !isEditMode ? { 
-                    scale: 1.025, 
-                    y: -6,
-                    rotateX: -1.5,
-                    rotateY: 2,
-                    transition: { duration: 0.22, ease: 'easeOut' }
-                  } : undefined}
-                  whileTap={!isAnimationsDisabled && !isEditMode ? { scale: 0.97 } : undefined}
-                  onClick={(e) => handleCardClick(e as any, card.id)}
-                  className={cn(
-                    "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 flex flex-col justify-between shadow-sm select-none backdrop-blur-md",
-                    spanClass,
-                    card.highlight ? "border-rose-300 ring-2 ring-rose-500/30" : "border-slate-200/90",
-                    card.borderGlow,
-                    isEditMode ? "cursor-grab active:cursor-grabbing ring-2 ring-indigo-400/40 border-indigo-300 shadow-md" : "cursor-pointer",
-                    isBeingDragged && "opacity-40 scale-95 border-dashed border-indigo-500",
-                    isBeingDraggedOver && "ring-4 ring-emerald-500/50 scale-102 border-emerald-500 shadow-xl"
-                  )}
-                >
-                  {/* Background Morphing Gradient On Hover */}
-                  <div className={cn(
-                    "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-                    card.cardGradient
-                  )} />
-
-                  {/* Shimmer Light Reflection Sweep */}
-                  {!isAnimationsDisabled && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
-                  )}
-
-                  {/* Circular Ripple Wave */}
-                  {ripples.map(r => (
-                    <span
-                      key={r.id}
-                      className="absolute bg-indigo-500/30 rounded-full pointer-events-none animate-ping"
-                      style={{
-                        left: r.x - 20,
-                        top: r.y - 20,
-                        width: 40,
-                        height: 40
-                      }}
-                    />
-                  ))}
-
-                  {/* Drag Handle & Edit Overlay Controls */}
-                  {isEditMode && (
-                    <div className="absolute top-2.5 left-2.5 z-30 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1 rounded-xl text-white shadow-lg">
-                      <div className="p-1 text-slate-400 hover:text-white cursor-grab" title="برای جابه‌جایی بکشید">
-                        <GripVertical size={16} />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => toggleCardSize(card.id, e)}
-                        className="p-1 hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-amber-300"
-                        title={isLarge ? "کوچک‌سازی کارت" : "بزرگ‌سازی کارت"}
-                      >
-                        {isLarge ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="relative z-10 space-y-3.5">
-                    {/* Card Icon & Glowing Badge */}
-                    <div className="flex items-center justify-between">
-                      <div className={cn(
-                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
-                        card.iconBg
-                      )}>
-                        <Icon size={24} />
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {/* Size Indicator in Edit Mode */}
-                        {isEditMode && (
-                          <span className={cn(
-                            "text-[9px] px-2 py-0.5 rounded-full font-black border",
-                            isLarge ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"
-                          )}>
-                            {isLarge ? 'سایز بزرگ' : 'عادی'}
-                          </span>
-                        )}
-
-                        {/* Live Badge */}
-                        {card.badgeText && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
-                            {card.badgeText}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Card Titles & Descriptions */}
-                    <div className="space-y-1">
-                      <h3 className={cn(
-                        "font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight",
-                        isLarge ? "text-base sm:text-lg" : "text-sm sm:text-base"
-                      )}>
-                        {card.title}
-                      </h3>
-                      <p className={cn(
-                        "text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2 transition-colors",
-                        isLarge ? "text-xs sm:text-sm" : "text-[11px]"
-                      )}>
-                        {card.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Footer Action Link with Hover Arrow */}
-                  <div className="relative z-10 pt-3.5 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                    <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
-                    <div className={cn(
-                      "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
-                      card.accentText
-                    )}>
-                      <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        )}
-
-          </AnimatePresence>
-        </>
+      </AnimatePresence>
+        </div>
       )}
-    </div>
-  );
+      </div>
+    );
 }
