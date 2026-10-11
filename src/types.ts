@@ -2092,6 +2092,24 @@ export interface RequestMessage {
   createdAt: string;
 }
 
+export interface LeaveRequestedClass {
+  programId: string;
+  programTitle: string;
+  dateShamsi: string; // e.g. "1405/07/15"
+  dayOfWeek: string;  // e.g. "شنبه"
+  time?: string;
+  teacherName?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  officerNote?: string;
+}
+
+export interface LeaveRequestDetails {
+  weekStartShamsi: string;
+  weekEndShamsi: string;
+  absenceReason: string;
+  selectedClasses: LeaveRequestedClass[];
+}
+
 export interface StudentRequest {
   id: string;
   studentId: string;
@@ -2099,7 +2117,7 @@ export interface StudentRequest {
   nationalCode?: string;
   grade?: string;
   unit: RequestTargetUnit;
-  category: string; // e.g., 'گواهی اشتغال به تحصیل', 'وام قرض‌الحسنه', 'تخصیص کمد', etc.
+  category: string; // e.g., 'گواهی اشتغال به تحصیل', 'وام قرض‌الحسنه', 'درخواست مرخصی', etc.
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -2116,6 +2134,8 @@ export interface StudentRequest {
   terminatedAt?: string;
   terminatedBy?: string;
   messages?: RequestMessage[]; // تاریخچه پیام‌های متقابل طلبه و مسئول
+  isLeaveRequest?: boolean;
+  leaveDetails?: LeaveRequestDetails;
   createdAt: string;
   updatedAt?: string;
 }

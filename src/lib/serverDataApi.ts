@@ -484,6 +484,7 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.category = data.category || 'educational';
       row.status = data.status || 'pending';
       row.description = data.description || null;
+      row.data = data;
       break;
 
     default:

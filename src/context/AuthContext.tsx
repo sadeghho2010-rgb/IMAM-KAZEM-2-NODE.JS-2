@@ -190,7 +190,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   if (role.startsWith('grade_supervisor') || role === 'grade_mentor' || ['ISJ', 'HO', 'SOL', 'ASADI'].includes(username)) {
     const allowed = [
       'student-requests', 'todos', 'workflow', 'academic-calendar', 'presence-hours', 'students', 'active-students',
-      'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'consultation-advisor',
+      'passed-courses', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'consultation-advisor',
       'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ];

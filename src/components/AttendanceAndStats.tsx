@@ -70,7 +70,8 @@ import {
   AcademicHolidayItem,
   AcademicCalendarPeriod,
   Teacher,
-  Program
+  Program,
+  StudentRequest
 } from '../types';
 
 export type AttendanceRecord = AttendanceSessionLog;
@@ -83,7 +84,7 @@ interface AttendanceAndStatsProps {
 export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status' | 'representatives_list'>(() => {
+  const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status' | 'representatives_list' | 'leave_requests'>(() => {
     if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || (currentUser as any)?.managedClassId) {
       return 'record';
     }
@@ -92,6 +93,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
     return 'class_status';
   });
+
+  // Leave Requests state for Attendance tab
+  const [leaveRequestsList, setLeaveRequestsList] = useState<StudentRequest[]>([]);
+  const [leaveTabSearchQuery, setLeaveTabSearchQuery] = useState<string>('');
+  const [leaveTabStatusFilter, setLeaveTabStatusFilter] = useState<string>('all');
 
   // Class Status Overview filters
   const [classStatusGradeFilter, setClassStatusGradeFilter] = useState<string>('all');
@@ -342,7 +348,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setIsLoading(true);
     }
     try {
-      const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList] = await Promise.all([
+      const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList, reqList] = await Promise.all([
         localDb.getDocs('programs'),
         localDb.getDocs('students'),
         localDb.getDocs<Teacher>('teachers'),
@@ -352,7 +358,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         localDb.getDocs<AcademicHolidayItem>('academic_holidays'),
         localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods'),
         localDb.getDocs('users'),
-        localDb.getDocs('representative_notes')
+        localDb.getDocs('representative_notes'),
+        localDb.getDocs<StudentRequest>('student_requests')
       ]);
       setPrograms(progs || []);
       setStudents(studs || []);
@@ -362,6 +369,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setAcademicHolidays(hols || []);
       setAcademicPeriods(periods || []);
       setUsers(userList || []);
+
+      if (Array.isArray(reqList)) {
+        const leaves = reqList.filter(r => r.isLeaveRequest || r.category === 'درخواست مرخصی');
+        setLeaveRequestsList(leaves);
+      }
 
       const notesMap: Record<string, string> = {};
       if (Array.isArray(notesList)) {
@@ -2003,6 +2015,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <span>لیست نمایندگان</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('leave_requests')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 border",
+                  activeTab === 'leave_requests'
+                    ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                    : "bg-amber-50 text-amber-900 border-amber-200/80 hover:bg-amber-100"
+                )}
+              >
+                <CalendarCheck size={14} className={activeTab === 'leave_requests' ? "text-white" : "text-amber-700"} />
+                <span>درخواست‌های مرخصی</span>
+                {leaveRequestsList.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white">
+                    {leaveRequestsList.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
             </div>
 
             {canManageSettings && (
@@ -4698,6 +4729,173 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 5: LEAVE REQUESTS (درخواست‌های مرخصی) */}
+      {/* ===================================================================== */}
+      {activeTab === 'leave_requests' && (
+        <div className="space-y-6 font-vazir">
+          {/* Header Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-gradient-to-br from-amber-600 via-orange-600 to-amber-700 text-white rounded-2xl border border-amber-400/40 shadow-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-amber-100 block">کل درخواست‌های مرخصی</span>
+                  <div className="text-2xl font-black font-mono text-white mt-1">
+                    {leaveRequestsList.length} <span className="text-xs font-vazir text-amber-200">مورد</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                  <CalendarCheck size={20} className="text-white" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 block">در انتظار بررسی آموزش</span>
+                  <div className="text-2xl font-black font-mono text-amber-600 mt-1">
+                    {leaveRequestsList.filter(r => r.status === 'pending').length} <span className="text-xs font-vazir text-slate-400">مورد</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
+                  <Clock size={20} />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 block">تأییدشده و ثبت موجه</span>
+                  <div className="text-2xl font-black font-mono text-emerald-600 mt-1">
+                    {leaveRequestsList.filter(r => r.status === 'resolved').length} <span className="text-xs font-vazir text-slate-400">مورد</span>
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200">
+                  <CheckCircle2 size={20} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search size={16} className="absolute right-3.5 top-3 text-slate-400" />
+              <input
+                type="text"
+                value={leaveTabSearchQuery}
+                onChange={(e) => setLeaveTabSearchQuery(e.target.value)}
+                placeholder="جستجوی نام طلبه، پایه، یا علت مرخصی..."
+                className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 outline-none"
+              />
+            </div>
+
+            <select
+              value={leaveTabStatusFilter}
+              onChange={(e) => setLeaveTabStatusFilter(e.target.value)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="all">همه وضعیت‌ها</option>
+              <option value="pending">🟡 در انتظار بررسی آموزش</option>
+              <option value="resolved">🟢 تأییدشده (موجه)</option>
+              <option value="rejected">🔴 مخالفت‌شده (غیرموجه)</option>
+            </select>
+          </div>
+
+          {/* Leave Requests Cards */}
+          {leaveRequestsList.length === 0 ? (
+            <div className="bg-white rounded-3xl p-16 text-center text-slate-400 border border-slate-200 flex flex-col items-center gap-2">
+              <CalendarCheck size={40} className="text-slate-300" />
+              <p className="text-sm font-bold text-slate-700">هیچ درخواست مرخصی ثبت نشده است.</p>
+              <p className="text-xs text-slate-400">طلاب می‌توانند از پنل درخواست‌ها، فرم مرخصی هفتگی را تکمیل نمایند.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {leaveRequestsList
+                .filter(r => {
+                  if (leaveTabStatusFilter !== 'all' && r.status !== leaveTabStatusFilter) return false;
+                  if (leaveTabSearchQuery.trim()) {
+                    const q = leaveTabSearchQuery.toLowerCase();
+                    return (r.studentName || '').toLowerCase().includes(q) ||
+                           (r.grade || '').toLowerCase().includes(q) ||
+                           (r.description || '').toLowerCase().includes(q);
+                  }
+                  return true;
+                })
+                .map((leaveReq) => (
+                  <div key={leaveReq.id} className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs shrink-0">
+                          <CalendarCheck size={18} />
+                        </span>
+                        <div>
+                          <h3 className="text-sm font-black text-slate-900">{leaveReq.studentName} ({leaveReq.grade || 'نامشخص'})</h3>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            تاریخ ثبت: {new Date(leaveReq.createdAt).toLocaleDateString('fa-IR')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-full text-xs font-black flex items-center gap-1.5",
+                          leaveReq.status === 'resolved' ? "bg-emerald-100 text-emerald-800 border border-emerald-300" :
+                          leaveReq.status === 'rejected' ? "bg-rose-100 text-rose-800 border border-rose-300" :
+                          "bg-amber-100 text-amber-800 border border-amber-300"
+                        )}>
+                          {leaveReq.status === 'resolved' ? <CheckCircle2 size={13} /> : leaveReq.status === 'rejected' ? <XCircle size={13} /> : <Clock size={13} />}
+                          <span>{leaveReq.status === 'resolved' ? 'تأییدشده و ثبت موجه' : leaveReq.status === 'rejected' ? 'مخالفت‌شده (غیرموجه)' : 'در انتظار بررسی آموزش'}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-slate-700 bg-amber-50/50 p-3 rounded-xl border border-amber-100 leading-relaxed">
+                      <strong className="text-amber-950 block mb-1">علت غیبت:</strong>
+                      <p className="whitespace-pre-line">{leaveReq.leaveDetails?.absenceReason || leaveReq.description}</p>
+                    </div>
+
+                    {/* Classes requested for leave breakdown */}
+                    {leaveReq.leaveDetails?.selectedClasses && (
+                      <div className="space-y-2 pt-1">
+                        <span className="text-xs font-bold text-slate-800 block">ریز جلسات کلاس‌های انتخابی جهت مرخصی:</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                          {leaveReq.leaveDetails.selectedClasses.map((cls, cIdx) => (
+                            <div
+                              key={cIdx}
+                              className={cn(
+                                "p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2",
+                                cls.status === 'approved' ? "bg-emerald-50 border-emerald-300 text-emerald-950" :
+                                cls.status === 'rejected' ? "bg-rose-50 border-rose-300 text-rose-950" :
+                                "bg-slate-50 border-slate-200 text-slate-800"
+                              )}
+                            >
+                              <div>
+                                <span className="font-bold block">{cls.dayOfWeek} ({cls.dateShamsi})</span>
+                                <span className="text-[10px] text-slate-500">{cls.programTitle}</span>
+                              </div>
+                              <span className={cn(
+                                "text-[10px] font-black px-2 py-0.5 rounded shrink-0",
+                                cls.status === 'approved' ? "bg-emerald-200 text-emerald-900" :
+                                cls.status === 'rejected' ? "bg-rose-200 text-rose-900" :
+                                "bg-amber-100 text-amber-900"
+                              )}>
+                                {cls.status === 'approved' ? '🟢 قبول (موجه)' : cls.status === 'rejected' ? '🔴 رد (غیرموجه)' : '🟡 در انتظار بررسی'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
             </div>
           )}
         </div>

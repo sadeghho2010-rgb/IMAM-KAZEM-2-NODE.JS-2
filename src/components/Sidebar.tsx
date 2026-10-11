@@ -86,6 +86,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'student-schedule',
       'teachers-schedule',
       'course-selection',
+      'passed-courses',
       'oral-exams',
       'academic-calendar',
       'teachers-bank'

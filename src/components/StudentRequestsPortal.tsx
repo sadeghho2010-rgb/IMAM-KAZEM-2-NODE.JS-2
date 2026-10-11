@@ -5,10 +5,24 @@ import {
   StudentRequestStatus, 
   UnitRequestSettings,
   GlobalRequestsConfig,
-  RequestMessage 
+  RequestMessage,
+  LeaveRequestedClass,
+  LeaveRequestDetails,
+  Program,
+  AttendanceSessionLog,
+  StudentAttendanceDetail
 } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
+import { 
+  getTodayShamsi,
+  shamsiToDate,
+  dateToShamsi,
+  getShamsiDayOfWeek,
+  SHAMSI_WEEKDAY_NAMES,
+  formatShamsiDate,
+  parseShamsiDate
+} from '../lib/jalali';
 import { 
   Inbox, 
   PlusCircle, 
@@ -42,15 +56,22 @@ import {
   HeartHandshake,
   CheckSquare,
   Settings,
-  Trash2
+  Trash2,
+  Calendar,
+  ChevronRight,
+  ChevronLeft,
+  CalendarCheck,
+  CheckSquare2,
+  UserX,
+  FileCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 export const DEFAULT_GLOBAL_REQUESTS_CONFIG: GlobalRequestsConfig = {
   id: 'global_requests_config',
-  isGlobalVisibleForStudents: true, // سوپرادمین: آیا در منوی طلاب نمایش داده شود؟
-  isGlobalEnabled: true,           // سوپرادمین: آیا ثبت درخواست فعال است؟
+  isGlobalVisibleForStudents: true,
+  isGlobalEnabled: true,
   officersStatus: {
     education: {
       isAccepting: true,
@@ -103,6 +124,7 @@ const DEFAULT_UNIT_SETTINGS: Record<RequestTargetUnit, UnitRequestSettings> = {
 export default function StudentRequestsPortal() {
   const { currentUser, isSuperAdmin } = useAuth();
   const [requests, setRequests] = useState<StudentRequest[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [globalConfig, setGlobalConfig] = useState<GlobalRequestsConfig>(DEFAULT_GLOBAL_REQUESTS_CONFIG);
   const [unitSettings, setUnitSettings] = useState<Record<RequestTargetUnit, UnitRequestSettings>>(DEFAULT_UNIT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,12 +139,13 @@ export default function StudentRequestsPortal() {
 
   // Initial unit tab for officers
   const defaultOfficerUnit: RequestTargetUnit = isEduOfficer ? 'education' : isFinOfficer ? 'finance' : isCulturalOfficer ? 'cultural_welfare' : 'education';
-  const [activeUnitTab, setActiveUnitTab] = useState<RequestTargetUnit | 'all'>(isSuperAdmin ? 'all' : defaultOfficerUnit);
+  const [activeUnitTab, setActiveUnitTab] = useState<RequestTargetUnit | 'all' | 'leave_requests'>(isSuperAdmin ? 'all' : defaultOfficerUnit);
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals & Drawers
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
+  const [showLeaveRequestModal, setShowLeaveRequestModal] = useState(false);
   const [selectedRequestForReview, setSelectedRequestForReview] = useState<StudentRequest | null>(null);
   const [showSuperAdminSettingsModal, setShowSuperAdminSettingsModal] = useState(false);
   const [showOfficerToggleStatusModal, setShowOfficerToggleStatusModal] = useState(false);
@@ -130,7 +153,7 @@ export default function StudentRequestsPortal() {
   const [subjectSettingUnit, setSubjectSettingUnit] = useState<RequestTargetUnit>('education');
   const [newSubjectInput, setNewSubjectInput] = useState('');
 
-  // New Request Form State
+  // New Standard Request Form State
   const [newUnit, setNewUnit] = useState<RequestTargetUnit>('education');
   const [newCategory, setNewCategory] = useState<string>('');
   const [newTitle, setNewTitle] = useState('');
@@ -138,11 +161,21 @@ export default function StudentRequestsPortal() {
   const [newPriority, setNewPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Officer Reply Form State
+  // Leave Request Form State (درخواست مرخصی)
+  const [weekOffset, setWeekOffset] = useState<number>(0); // 0 = current week, -7 = last week, +7 = next week
+  const [leaveAbsenceReason, setLeaveAbsenceReason] = useState('');
+  const [selectedClassesForLeave, setSelectedClassesForLeave] = useState<LeaveRequestedClass[]>([]);
+
+  // Officer Review / Leave Approval State
   const [replyStatus, setReplyStatus] = useState<StudentRequestStatus>('in_progress');
   const [officialReply, setOfficialReply] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [isReplying, setIsReplying] = useState(false);
+  const [leaveClassStatuses, setLeaveClassStatuses] = useState<Record<string, 'approved' | 'rejected'>>({});
+
+  // Followup conversational drafts
+  const [followupDrafts, setFollowupDrafts] = useState<Record<string, string>>({});
+  const [isSendingFollowup, setIsSendingFollowup] = useState(false);
 
   // Officer toggle state form
   const [officerNoteDraft, setOfficerNoteDraft] = useState('');
@@ -152,16 +185,50 @@ export default function StudentRequestsPortal() {
       setIsLoading(true);
     }
     try {
-      // 1. Load Requests
-      const reqList = await localDb.getDocs<StudentRequest>('student_requests');
-      if (Array.isArray(reqList)) {
-        setRequests(prev => {
-          if (prev.length === reqList.length && JSON.stringify(prev) === JSON.stringify(reqList)) {
-            return prev;
-          }
-          return reqList;
-        });
+      // 1. Load Requests from localDb + Server Direct Fetch
+      const [reqList, progsList] = await Promise.all([
+        localDb.getDocs<StudentRequest>('student_requests'),
+        localDb.getDocs<Program>('programs')
+      ]);
+
+      if (Array.isArray(progsList)) {
+        setPrograms(progsList);
       }
+
+      let freshRequests = Array.isArray(reqList) ? reqList : [];
+
+      // Direct server query when online to guarantee instant sync across browsers
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const apiRes = await fetch(`/api/data/student_requests?_t=${Date.now()}`, {
+          method: 'GET',
+          headers: {
+            ...headers,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          cache: 'no-store'
+        });
+
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && Array.isArray(json.items)) {
+            freshRequests = json.items;
+            // Mirror server fresh requests into local storage cache
+            (localDb as any).setLocalStorageDocs('student_requests', freshRequests);
+          }
+        }
+      } catch (srvErr) {}
+
+      setRequests(prev => {
+        if (prev.length === freshRequests.length && JSON.stringify(prev) === JSON.stringify(freshRequests)) {
+          return prev;
+        }
+        return freshRequests;
+      });
 
       // 2. Load Global Config
       const configDoc = await localDb.getDoc<GlobalRequestsConfig>('global_requests_config', 'global_requests_config');
@@ -195,6 +262,11 @@ export default function StudentRequestsPortal() {
   useEffect(() => {
     loadData(false);
 
+    // Active polling interval every 4 seconds to guarantee real-time updates across browsers
+    const pollTimer = setInterval(() => {
+      loadData(true);
+    }, 4000);
+
     // Real-time synchronization subscription
     const unsubscribe = localDb.subscribe(() => {
       loadData(true);
@@ -208,6 +280,7 @@ export default function StudentRequestsPortal() {
     window.addEventListener('app_data_change', handleReqUpdate);
 
     return () => {
+      clearInterval(pollTimer);
       unsubscribe();
       window.removeEventListener('student_requests_updated', handleReqUpdate);
       window.removeEventListener('app_data_change', handleReqUpdate);
@@ -216,6 +289,7 @@ export default function StudentRequestsPortal() {
 
   const triggerUpdateEvent = () => {
     window.dispatchEvent(new CustomEvent('student_requests_updated'));
+    window.dispatchEvent(new CustomEvent('app_data_change'));
   };
 
   // Determine which unit this logged-in officer belongs to
@@ -225,9 +299,54 @@ export default function StudentRequestsPortal() {
     ? 'finance' 
     : isCulturalOfficer 
     ? 'cultural_welfare' 
-    : (activeUnitTab !== 'all' ? activeUnitTab : 'education');
+    : (activeUnitTab !== 'all' && activeUnitTab !== 'leave_requests' ? activeUnitTab : 'education');
 
   const isCurrentOfficerAccepting = globalConfig.officersStatus[currentOfficerUnit]?.isAccepting ?? true;
+
+  // Compute active week dates for Leave Request Modal (Saturday to Thursday)
+  const activeWeekInfo = useMemo(() => {
+    const todayShamsi = getTodayShamsi();
+    const refDate = shamsiToDate(todayShamsi);
+    const dayOfWeekIdx = getShamsiDayOfWeek(todayShamsi); // 0 = Saturday, ..., 5 = Thursday, 6 = Friday
+
+    // Calculate Saturday of current week
+    const saturdayDate = new Date(refDate);
+    saturdayDate.setDate(refDate.getDate() - dayOfWeekIdx + weekOffset);
+
+    // Generate Saturday..Thursday days
+    const weekDays: { dayOfWeek: string; dateShamsi: string; dateObj: Date }[] = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(saturdayDate);
+      d.setDate(saturdayDate.getDate() + i);
+      const dayShamsi = dateToShamsi(d);
+      const dayName = SHAMSI_WEEKDAY_NAMES[i] || 'شنبه';
+      weekDays.push({ dayOfWeek: dayName, dateShamsi: dayShamsi, dateObj: d });
+    }
+
+    const satShamsi = weekDays[0].dateShamsi;
+    const thuShamsi = weekDays[5].dateShamsi;
+
+    return {
+      satShamsi,
+      thuShamsi,
+      weekDays
+    };
+  }, [weekOffset]);
+
+  // Student's enrolled programs
+  const studentPrograms = useMemo(() => {
+    const studentGrade = currentUser?.gradeLabel || 'پایه ۷';
+    const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
+    const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
+    const uName = (currentUser?.username || '').trim().toLowerCase();
+
+    return programs.filter(p => {
+      const matchesGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
+      const matchesEnrollment = sId && Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(sId);
+      const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(sId);
+      return matchesGrade || matchesEnrollment || matchesRep;
+    });
+  }, [programs, currentUser]);
 
   // Toggle Officer Response State (مسئول آموزش، مالی، فرهنگی)
   const handleToggleOfficerStatus = async (unitToToggle: RequestTargetUnit, newStatus: boolean, note?: string) => {
@@ -246,7 +365,6 @@ export default function StudentRequestsPortal() {
       updatedBy: currentUser?.name || currentUser?.username
     };
 
-    // Also sync with unit_request_settings
     const currentUnitSet = unitSettings[unitToToggle];
     const updatedUnitSet: UnitRequestSettings = {
       ...currentUnitSet,
@@ -298,59 +416,42 @@ export default function StudentRequestsPortal() {
       return;
     }
     
-    const updatedCategories = [...currentUnitSettings.allowedCategories, newSubjectInput.trim()];
-    const updatedSettings: UnitRequestSettings = {
+    const updatedUnitSet: UnitRequestSettings = {
       ...currentUnitSettings,
-      allowedCategories: updatedCategories,
+      allowedCategories: [...currentUnitSettings.allowedCategories, newSubjectInput.trim()],
       updatedAt: new Date().toISOString(),
-      updatedBy: currentUser?.name || currentUser?.username || 'system'
+      updatedBy: currentUser?.username
     };
 
     try {
-      await localDb.saveDoc('unit_request_settings', updatedSettings.id, updatedSettings);
-      setUnitSettings(prev => ({
-        ...prev,
-        [subjectSettingUnit]: updatedSettings
-      }));
+      await localDb.saveDoc('unit_request_settings', updatedUnitSet.id, updatedUnitSet);
+      setUnitSettings(prev => ({ ...prev, [subjectSettingUnit]: updatedUnitSet }));
       setNewSubjectInput('');
       triggerUpdateEvent();
-    } catch (e) {
-      console.error('Error saving new subject:', e);
-      alert('خطا در ذخیره‌سازی موضوع جدید در پایگاه داده.');
+    } catch (e: any) {
+      alert('خطا در افزودن موضوع: ' + (e?.message || ''));
     }
   };
 
-  // Delete a category/subject from the selected unit
-  const handleDeleteSubject = async (subjectToDelete: string) => {
+  const handleRemoveSubject = async (catToRemove: string) => {
     const currentUnitSettings = unitSettings[subjectSettingUnit];
-    if (currentUnitSettings.allowedCategories.length <= 1) {
-      alert('هر واحد باید حداقل دارای یک موضوع معتبر باشد.');
-      return;
-    }
-    if (!window.confirm(`آیا مایل به حذف موضوع «${subjectToDelete}» هستید؟`)) return;
-
-    const updatedCategories = currentUnitSettings.allowedCategories.filter(cat => cat !== subjectToDelete);
-    const updatedSettings: UnitRequestSettings = {
+    const updatedUnitSet: UnitRequestSettings = {
       ...currentUnitSettings,
-      allowedCategories: updatedCategories,
+      allowedCategories: currentUnitSettings.allowedCategories.filter(c => c !== catToRemove),
       updatedAt: new Date().toISOString(),
-      updatedBy: currentUser?.name || currentUser?.username || 'system'
+      updatedBy: currentUser?.username
     };
 
     try {
-      await localDb.saveDoc('unit_request_settings', updatedSettings.id, updatedSettings);
-      setUnitSettings(prev => ({
-        ...prev,
-        [subjectSettingUnit]: updatedSettings
-      }));
+      await localDb.saveDoc('unit_request_settings', updatedUnitSet.id, updatedUnitSet);
+      setUnitSettings(prev => ({ ...prev, [subjectSettingUnit]: updatedUnitSet }));
       triggerUpdateEvent();
-    } catch (e) {
-      console.error('Error deleting subject:', e);
-      alert('خطا در حذف موضوع از پایگاه داده.');
+    } catch (e: any) {
+      alert('خطا در حذف موضوع: ' + (e?.message || ''));
     }
   };
 
-  // Submit New Request by Student
+  // Submit Standard Request by Student
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDescription.trim()) {
@@ -371,11 +472,15 @@ export default function StudentRequestsPortal() {
 
     setIsSubmitting(true);
     const newReqId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const stdId = currentUser?.studentId || (currentUser as any)?.linkedStudentId || currentUser?.id || 'std_unknown';
+    const natCode = currentUser?.nationalCode || (currentUser as any)?.nationalId || currentUser?.username || '';
+    const stdName = currentUser?.studentName || currentUser?.name || currentUser?.fullName || 'طلبه گرامی';
+
     const newRecord: StudentRequest = {
       id: newReqId,
-      studentId: currentUser?.studentId || currentUser?.id || 'std_unknown',
-      studentName: currentUser?.studentName || currentUser?.name || currentUser?.fullName || 'طلبه گرامی',
-      nationalCode: currentUser?.nationalCode,
+      studentId: stdId,
+      studentName: stdName,
+      nationalCode: natCode,
       grade: currentUser?.gradeLabel,
       unit: newUnit,
       category: newCategory || unitSettings[newUnit]?.allowedCategories[0] || 'درخواست عمومی',
@@ -386,6 +491,14 @@ export default function StudentRequestsPortal() {
       statusTitle: 'در انتظار بررسی',
       isReadByOfficer: false,
       isReadByStudent: true,
+      messages: [{
+        id: `msg-${Date.now()}`,
+        senderId: currentUser?.id || stdId,
+        senderName: stdName,
+        senderRole: 'student',
+        content: newDescription.trim(),
+        createdAt: new Date().toISOString()
+      }],
       createdAt: new Date().toISOString()
     };
 
@@ -404,7 +517,78 @@ export default function StudentRequestsPortal() {
     }
   };
 
-  // Submit Officer Review / Quick Status / Full Reply
+  // Submit Leave Request (درخواست مرخصی)
+  const handleCreateLeaveRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedClassesForLeave.length === 0) {
+      alert('لطفاً حداقل یک کلاس/جلسه را برای ثبت غیبت و درخواست مرخصی انتخاب نمایید.');
+      return;
+    }
+    if (!leaveAbsenceReason.trim()) {
+      alert('لطفاً علت غیبت و دلیل موجه خود را بیان فرمایید.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const newReqId = 'req_leave_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    
+    const leaveDetails: LeaveRequestDetails = {
+      weekStartShamsi: activeWeekInfo.satShamsi,
+      weekEndShamsi: activeWeekInfo.thuShamsi,
+      absenceReason: leaveAbsenceReason.trim(),
+      selectedClasses: selectedClassesForLeave.map(c => ({ ...c, status: 'pending' }))
+    };
+
+    const classSummaryText = selectedClassesForLeave.map(c => `- ${c.dayOfWeek} ${c.dateShamsi}: ${c.programTitle} (${c.teacherName || 'استاد'})`).join('\n');
+    
+    const stdId = currentUser?.studentId || (currentUser as any)?.linkedStudentId || currentUser?.id || 'std_unknown';
+    const natCode = currentUser?.nationalCode || (currentUser as any)?.nationalId || currentUser?.username || '';
+    const stdName = currentUser?.studentName || currentUser?.name || currentUser?.fullName || 'طلبه گرامی';
+
+    const newRecord: StudentRequest = {
+      id: newReqId,
+      studentId: stdId,
+      studentName: stdName,
+      nationalCode: natCode,
+      grade: currentUser?.gradeLabel,
+      unit: 'education',
+      category: 'درخواست مرخصی',
+      title: `درخواست مرخصی (${selectedClassesForLeave.length} جلسه کلاس)`,
+      description: `علت غیبت: ${leaveAbsenceReason.trim()}\n\nکلاس‌های انتخابی جهت مرخصی:\n${classSummaryText}`,
+      priority: 'medium',
+      status: 'pending',
+      statusTitle: 'در انتظار بررسی آموزش',
+      isReadByOfficer: false,
+      isReadByStudent: true,
+      isLeaveRequest: true,
+      leaveDetails,
+      messages: [{
+        id: `msg-${Date.now()}`,
+        senderId: currentUser?.id || stdId,
+        senderName: stdName,
+        senderRole: 'student',
+        content: `ثبت درخواست مرخصی برای ${selectedClassesForLeave.length} جلسه کلاس.\nعلت غیبت: ${leaveAbsenceReason.trim()}`,
+        createdAt: new Date().toISOString()
+      }],
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      await localDb.saveDoc('student_requests', newReqId, newRecord);
+      setRequests(prev => [newRecord, ...prev]);
+      setShowLeaveRequestModal(false);
+      setLeaveAbsenceReason('');
+      setSelectedClassesForLeave([]);
+      triggerUpdateEvent();
+      alert('✅ درخواست مرخصی شما با موفقیت برای مسئول آموزش ارسال گردید.');
+    } catch (err: any) {
+      alert('خطا در ثبت درخواست مرخصی: ' + (err?.message || ''));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Submit Officer Review / Quick Status / Full Reply & Automatic Attendance Sync
   const handleSaveOfficerReply = async (e?: React.FormEvent, overrideStatus?: StudentRequestStatus) => {
     if (e) e.preventDefault();
     if (!selectedRequestForReview) return;
@@ -433,6 +617,88 @@ export default function StudentRequestsPortal() {
     const updatedMessages = newOfficerMsg ? [...existingMessages, newOfficerMsg] : existingMessages;
 
     setIsReplying(true);
+
+    // Leave request specific processing & Automatic Attendance Sync
+    let updatedLeaveDetails = selectedRequestForReview.leaveDetails;
+    if (selectedRequestForReview.isLeaveRequest && selectedRequestForReview.leaveDetails) {
+      const updatedClasses = selectedRequestForReview.leaveDetails.selectedClasses.map(c => {
+        const key = `${c.programId}_${c.dateShamsi}`;
+        const newClassStatus = leaveClassStatuses[key] || c.status;
+        return {
+          ...c,
+          status: newClassStatus
+        };
+      });
+
+      updatedLeaveDetails = {
+        ...selectedRequestForReview.leaveDetails,
+        selectedClasses: updatedClasses
+      };
+
+      // AUTOMATIC ATTENDANCE SYNC IN attendanceRecords
+      try {
+        const attendanceLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
+        
+        for (const cls of updatedClasses) {
+          const logId = `${cls.programId}_${cls.dateShamsi}`;
+          let existingLog = attendanceLogs.find(l => l.id === logId || (l.programId === cls.programId && l.date === cls.dateShamsi));
+
+          const studentEntry: StudentAttendanceDetail = {
+            studentId: selectedRequestForReview.studentId,
+            studentName: selectedRequestForReview.studentName,
+            nationalId: selectedRequestForReview.nationalCode,
+            status: cls.status === 'approved' ? 'excused' : 'absent',
+            isExcused: cls.status === 'approved',
+            excuseReason: cls.status === 'approved' ? 'قبول سیستمی درخواست مرخصی' : 'رد درخواست مرخصی',
+            note: cls.status === 'approved' ? 'قبول سیستمی درخواست مرخصی' : 'رد درخواست مرخصی توسط آموزش'
+          };
+
+          if (existingLog) {
+            const updatedStudents = [...(existingLog.students || [])];
+            const sIdx = updatedStudents.findIndex(s => 
+              s.studentId === studentEntry.studentId || 
+              (s.nationalId && s.nationalId === studentEntry.nationalId) ||
+              s.studentName === studentEntry.studentName
+            );
+
+            if (sIdx >= 0) {
+              updatedStudents[sIdx] = {
+                ...updatedStudents[sIdx],
+                ...studentEntry
+              };
+            } else {
+              updatedStudents.push(studentEntry);
+            }
+
+            const updatedLog: AttendanceSessionLog = {
+              ...existingLog,
+              students: updatedStudents
+            };
+
+            await localDb.saveDoc('attendance', updatedLog.id, updatedLog);
+          } else {
+            // Create new session log for that date and class
+            const newLog: AttendanceSessionLog = {
+              id: logId,
+              programId: cls.programId,
+              programTitle: cls.programTitle,
+              date: cls.dateShamsi,
+              dayOfWeek: cls.dayOfWeek,
+              isCancelled: false,
+              notes: 'ثبت خودکار سیستمی بر اساس مرخصی آموزش',
+              recordedByName: replierTitle,
+              recordedAt: new Date().toISOString(),
+              students: [studentEntry]
+            };
+
+            await localDb.saveDoc('attendance', newLog.id, newLog);
+          }
+        }
+      } catch (attErr) {
+        console.warn('Error syncing leave decision into attendance:', attErr);
+      }
+    }
+
     const updated: StudentRequest = {
       ...selectedRequestForReview,
       status: finalStatus,
@@ -444,6 +710,7 @@ export default function StudentRequestsPortal() {
       repliedAt: new Date().toISOString(),
       isReadByOfficer: true,
       isReadByStudent: false, // Student sees glowing badge
+      leaveDetails: updatedLeaveDetails,
       messages: updatedMessages,
       updatedAt: new Date().toISOString()
     };
@@ -455,16 +722,13 @@ export default function StudentRequestsPortal() {
       setOfficialReply('');
       setRejectionReason('');
       triggerUpdateEvent();
+      alert('✅ پاسخ و وضعیت درخواست ثبت شد و تغییرات مرخصی به صورت اتوماتیک در سیستم حضور و غیاب اعمال گردید.');
     } catch (err: any) {
       alert('خطا در ذخیره پاسخ: ' + (err?.message || ''));
     } finally {
       setIsReplying(false);
     }
   };
-
-  // Followup conversation drafts & handlers (اصلاح ۱ و ۲ کارتابل درخواست)
-  const [followupDrafts, setFollowupDrafts] = useState<Record<string, string>>({});
-  const [isSendingFollowup, setIsSendingFollowup] = useState(false);
 
   // Send conversational reply (Student ↔ Officer)
   const handleSendFollowup = async (req: StudentRequest) => {
@@ -545,6 +809,7 @@ export default function StudentRequestsPortal() {
         setSelectedRequestForReview(null);
       }
       triggerUpdateEvent();
+      alert('✅ پرونده با موفقیت مختومه شد و ختم رسیدگی ثبت گردید.');
     } catch (e) {
       alert('خطا در ثبت ختم رسیدگی.');
     }
@@ -611,7 +876,11 @@ export default function StudentRequestsPortal() {
       if (!isMine) return false;
     } else {
       // Officer sees requests matching active unit tab (or all for super admin)
-      if (activeUnitTab !== 'all' && r.unit !== activeUnitTab) return false;
+      if (activeUnitTab === 'leave_requests') {
+        if (!r.isLeaveRequest && r.category !== 'درخواست مرخصی') return false;
+      } else if (activeUnitTab !== 'all' && r.unit !== activeUnitTab) {
+        return false;
+      }
     }
 
     if (activeStatusFilter !== 'all' && r.status !== activeStatusFilter) return false;
@@ -640,7 +909,15 @@ export default function StudentRequestsPortal() {
     });
   }, [filteredRequests]);
 
-  const getStatusBadge = (status: StudentRequestStatus) => {
+  const getStatusBadge = (status: StudentRequestStatus, isTerminated?: boolean) => {
+    if (isTerminated) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-xs font-black bg-slate-200 text-slate-800 border border-slate-300 flex items-center gap-1.5 shadow-xs">
+          <ShieldCheck size={13} className="text-slate-700" />
+          <span>مختومه (ختم رسیدگی)</span>
+        </span>
+      );
+    }
     switch (status) {
       case 'resolved':
         return (
@@ -695,52 +972,69 @@ export default function StudentRequestsPortal() {
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {isStudentUser 
-                ? 'ارسال آنلاین درخواست به مسئول آموزش، مالی یا فرهنگی و پیگیری وضعیت پاسخ‌ها'
-                : 'بررسی، تعیین وضعیت (انجام شد / در حال بررسی / رد) و صدور پاسخ رسمی به مراجعین'}
+                ? 'ارسال آنلاین درخواست، ثبت مرخصی برنامه‌ای و پیگیری دوطرفه گفتگوها تا ختم رسیدگی'
+                : 'بررسی درخواست‌ها، ثبت مرخصی با اعمال خودکار در حضور و غیاب و صدور پاسخ رسمی'}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Action: New Request (Available ONLY for Level 3 Students) */}
+          {/* Actions for Level 3 Students */}
           {isStudentUser && (
-            <button
-              onClick={() => {
-                setNewUnit(activeUnitTab !== 'all' ? activeUnitTab : 'education');
-                setNewCategory(unitSettings[activeUnitTab !== 'all' ? activeUnitTab : 'education']?.allowedCategories[0] || '');
-                setShowNewRequestModal(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
-            >
-              <PlusCircle size={16} />
-              <span>ثبت درخواست جدید</span>
-            </button>
+            <>
+              {/* Submit Leave Request Button (ثبت درخواست مرخصی) */}
+              <button
+                onClick={() => {
+                  setWeekOffset(0);
+                  setSelectedClassesForLeave([]);
+                  setLeaveAbsenceReason('');
+                  setShowLeaveRequestModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/20 active:scale-95 cursor-pointer"
+              >
+                <CalendarCheck size={16} />
+                <span>ثبت درخواست مرخصی</span>
+              </button>
+
+              {/* Standard Request Button */}
+              <button
+                onClick={() => {
+                  setNewUnit('education');
+                  setNewCategory(unitSettings['education']?.allowedCategories[0] || '');
+                  setShowNewRequestModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+              >
+                <PlusCircle size={16} />
+                <span>ثبت درخواست جدید</span>
+              </button>
+            </>
           )}
 
-          {/* Super Admin Control Modal Button */}
+          {/* Super Admin Control Button */}
           {isSuperAdmin && (
             <button
               onClick={() => setShowSuperAdminSettingsModal(true)}
               className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-              title="کنترل دسترسی سوپرادمین: نمایش در منوی طلاب و فعال/غیرفعال بودن سراسری"
+              title="کنترل دسترسی سوپرادمین"
             >
               <Sliders size={15} />
-              <span>کنترل سراسری (سوپر ادمین)</span>
+              <span>کنترل سراسری</span>
             </button>
           )}
 
-          {/* Manage Request Subjects Button (Super Admin & Education Manager) */}
+          {/* Manage Subjects Button */}
           {(isSuperAdmin || isEduOfficer) && (
             <button
               onClick={() => {
-                setSubjectSettingUnit(isEduOfficer ? 'education' : 'education');
+                setSubjectSettingUnit('education');
                 setShowSubjectSettingsModal(true);
               }}
               className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-              title="مدیریت و افزودن موضوعات درخواست‌ها"
+              title="مدیریت موضوعات درخواست‌ها"
             >
               <Settings size={15} />
-              <span>مدیریت موضوعات درخواست‌ها</span>
+              <span>موضوعات درخواست‌ها</span>
             </button>
           )}
 
@@ -756,28 +1050,88 @@ export default function StudentRequestsPortal() {
         </div>
       </div>
 
-      {/* ======================= Super Admin Global Status Notice ======================= */}
+      {/* Officer Department Tabs & Leave Requests Tab */}
+      {!isStudentUser && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+          <button
+            onClick={() => setActiveUnitTab('all')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+              activeUnitTab === 'all' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+            )}
+          >
+            <Inbox size={14} />
+            <span>همه درخواست‌ها</span>
+          </button>
+
+          <button
+            onClick={() => setActiveUnitTab('education')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+              activeUnitTab === 'education' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+            )}
+          >
+            <GraduationCap size={14} />
+            <span>امور آموزشی</span>
+          </button>
+
+          <button
+            onClick={() => setActiveUnitTab('finance')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+              activeUnitTab === 'finance' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+            )}
+          >
+            <Coins size={14} />
+            <span>امور مالی و وام</span>
+          </button>
+
+          <button
+            onClick={() => setActiveUnitTab('cultural_welfare')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+              activeUnitTab === 'cultural_welfare' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+            )}
+          >
+            <Building2 size={14} />
+            <span>امور فرهنگی و رفاهی</span>
+          </button>
+
+          {/* DEDICATED LEAVE REQUESTS TAB FOR OFFICERS */}
+          <button
+            onClick={() => setActiveUnitTab('leave_requests')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border",
+              activeUnitTab === 'leave_requests'
+                ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/20"
+                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+            )}
+          >
+            <CalendarCheck size={14} className={activeUnitTab === 'leave_requests' ? "text-white" : "text-amber-700"} />
+            <span>درخواست‌های مرخصی</span>
+            {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white mr-1">
+                {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Global Disability Notice */}
       {!globalConfig.isGlobalEnabled && (
         <div className="p-4 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 text-xs font-bold flex items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-2">
             <AlertCircle size={18} className="text-rose-600 shrink-0" />
             <span>
-              <strong>هشدار سراسری:</strong> ثبت درخواست‌ها در حال حاضر توسط سوپرادمین به طور کلی <strong>غیرفعال</strong> شده است.
+              <strong>هشدار سراسری:</strong> ثبت درخواست‌ها در حال حاضر توسط مدیریت کل سیستم <strong>غیرفعال</strong> شده است.
             </span>
           </div>
-          {isSuperAdmin && (
-            <button
-              onClick={() => handleSaveSuperAdminConfig(globalConfig.isGlobalVisibleForStudents, true)}
-              className="px-3 py-1 bg-rose-600 text-white rounded-lg text-[11px] font-bold shrink-0 hover:bg-rose-700 cursor-pointer"
-            >
-              فعال‌سازی سراسری
-            </button>
-          )}
         </div>
       )}
 
-      {/* ======================= Officer Dedicated Availability Switcher ======================= */}
-      {!isStudentUser && (
+      {/* Officer dedicated status switcher */}
+      {!isStudentUser && activeUnitTab !== 'all' && activeUnitTab !== 'leave_requests' && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className={cn(
@@ -798,192 +1152,22 @@ export default function StudentRequestsPortal() {
                   {isCurrentOfficerAccepting ? '● آماده دریافت و پاسخگویی' : '○ عدم پاسخگویی (خاموش)'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {isCurrentOfficerAccepting 
-                  ? 'طلبه‌ها می‌توانند برای واحد شما درخواست ارسال کنند.' 
-                  : (globalConfig.officersStatus[currentOfficerUnit]?.statusNote || 'پذیرش درخواست برای واحد شما غیرفعال است.')}
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                setOfficerNoteDraft(globalConfig.officersStatus[currentOfficerUnit]?.statusNote || '');
-                setShowOfficerToggleStatusModal(true);
-              }}
-              className={cn(
-                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs",
-                isCurrentOfficerAccepting
-                  ? "bg-rose-600 hover:bg-rose-700 text-white"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
-              )}
-            >
-              {isCurrentOfficerAccepting ? (
-                <>
-                  <ToggleRight size={16} />
-                  <span>تغییر به عدم پاسخگویی (خاموش)</span>
-                </>
-              ) : (
-                <>
-                  <ToggleLeft size={16} />
-                  <span>فعال‌سازی حالت پاسخگویی (روشن)</span>
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setOfficerNoteDraft(globalConfig.officersStatus[currentOfficerUnit]?.statusNote || '');
+              setShowOfficerToggleStatusModal(true);
+            }}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 shrink-0 cursor-pointer"
+          >
+            تغییر وضعیت پاسخگویی
+          </button>
         </div>
       )}
 
-      {/* ======================= Student View: 3 Officers Status Cards ======================= */}
-      {isStudentUser && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-              <Building2 size={16} className="text-indigo-600" />
-              <span>وضعیت پاسخگویی مسئولین واحدها:</span>
-            </h2>
-            <span className="text-[11px] text-slate-400">
-              {globalConfig.isGlobalEnabled ? 'سامانه فعال است' : 'سامانه موقتاً غیرفعال است'}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            {(['education', 'finance', 'cultural_welfare'] as RequestTargetUnit[]).map((u) => {
-              const statusInfo = globalConfig.officersStatus[u];
-              const isAccepting = statusInfo?.isAccepting && globalConfig.isGlobalEnabled;
-              const setting = unitSettings[u];
-
-              return (
-                <div
-                  key={u}
-                  className={cn(
-                    "p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 shadow-xs",
-                    isAccepting 
-                      ? "bg-white border-emerald-200/80 hover:border-emerald-300" 
-                      : "bg-slate-50/80 border-slate-200 opacity-90"
-                  )}
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900">{statusInfo?.officerTitle}</span>
-                      <span className={cn(
-                        "text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1",
-                        isAccepting 
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300" 
-                          : "bg-rose-100 text-rose-800 border border-rose-300"
-                      )}>
-                        {isAccepting ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-                        {isAccepting ? 'پاسخگو' : 'عدم پاسخگویی'}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      {isAccepting 
-                        ? (statusInfo?.statusNote || 'آماده دریافت و بررسی درخواست‌های متقاضیان') 
-                        : (statusInfo?.statusNote || setting?.disabledNoticeMessage || 'در حال حاضر دریافت درخواست غیرفعال است.')}
-                    </p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">
-                      مسئول: {statusInfo?.officerName || 'مسئول مربوطه'}
-                    </span>
-
-                    {isAccepting ? (
-                      <button
-                        onClick={() => {
-                          setNewUnit(u);
-                          setNewCategory(setting?.allowedCategories[0] || '');
-                          setShowNewRequestModal(true);
-                        }}
-                        className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                      >
-                        <Send size={11} />
-                        <span>ارسال به این واحد</span>
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-rose-600 font-bold">
-                        غیرقابل ارسال
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ======================= Officer Unit Tabs (Education / Finance / Cultural / All) ======================= */}
-      {!isStudentUser && (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          {isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setActiveUnitTab('all')}
-              className={cn(
-                "p-3.5 rounded-2xl border text-right transition-all cursor-pointer",
-                activeUnitTab === 'all'
-                  ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                  : "bg-white border-slate-200 hover:bg-slate-50 text-slate-800"
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black">همه واحدها (کل مراجعین)</span>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-black",
-                  activeUnitTab === 'all' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"
-                )}>
-                  {requests.length}
-                </span>
-              </div>
-              <p className={cn("text-[10px] mt-1", activeUnitTab === 'all' ? "text-indigo-100" : "text-slate-400")}>
-                مشاهده تجمیعی کل درخواست‌ها
-              </p>
-            </button>
-          )}
-
-          {(['education', 'finance', 'cultural_welfare'] as RequestTargetUnit[]).map((u) => {
-            const countPending = requests.filter(r => r.unit === u && (r.status === 'pending' || r.isReadByOfficer === false)).length;
-            const statusInfo = globalConfig.officersStatus[u];
-            const isActive = activeUnitTab === u;
-
-            return (
-              <button
-                key={u}
-                type="button"
-                onClick={() => setActiveUnitTab(u)}
-                className={cn(
-                  "p-3.5 rounded-2xl border text-right transition-all cursor-pointer relative overflow-hidden",
-                  isActive 
-                    ? "bg-indigo-50/90 border-indigo-400 shadow-sm" 
-                    : "bg-white border-slate-200/80 hover:bg-slate-50"
-                )}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-black text-slate-900">{statusInfo?.officerTitle}</span>
-                  {countPending > 0 && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse flex items-center gap-1 shadow-xs">
-                      <span>🔥 {countPending}</span>
-                      <span className="hidden sm:inline">جدید</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-slate-500">
-                  <span>وضعیت:</span>
-                  <span className={cn("font-bold text-[10px]", statusInfo?.isAccepting ? "text-emerald-600" : "text-rose-600")}>
-                    {statusInfo?.isAccepting ? '● پاسخگو' : '○ عدم پاسخگویی'}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ======================= Search & Filter Bar ======================= */}
+      {/* Search & Filter Bar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center gap-3">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute right-3.5 top-3 text-slate-400" />
@@ -991,7 +1175,7 @@ export default function StudentRequestsPortal() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجو در عنوان، نام متقاضی، موضوع، شرح یا پاسخ رسمی..."
+            placeholder="جستجو در عنوان، متقاضی، موضوع، متن یا پاسخ..."
             className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-400 outline-none transition-all"
           />
         </div>
@@ -1005,14 +1189,14 @@ export default function StudentRequestsPortal() {
             <option value="all">همه وضعیت‌ها</option>
             <option value="pending">⏳ در انتظار بررسی</option>
             <option value="in_progress">🔄 در حال بررسی و اقدام</option>
-            <option value="resolved">✅ انجام شد و تکمیل گردید</option>
+            <option value="resolved">✅ انجام شد / تکمیل گردید</option>
             <option value="rejected">❌ رد درخواست</option>
           </select>
         </div>
       </div>
 
-      {/* ======================= Request Cards List ======================= */}
-      <div className="space-y-3.5">
+      {/* Request Cards List */}
+      <div className="space-y-4">
         {isLoading && requests.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center text-slate-400 flex flex-col items-center gap-2 border border-slate-200">
             <Loader2 size={28} className="animate-spin text-indigo-600" />
@@ -1024,7 +1208,7 @@ export default function StudentRequestsPortal() {
             <p className="text-sm font-bold text-slate-700">هیچ درخواستی در این بخش یافت نشد.</p>
             <p className="text-xs text-slate-400">
               {isStudentUser 
-                ? 'با کلیک بر روی «ثبت درخواست جدید» می‌توانید فرم ارسال نمایید.' 
+                ? 'با کلیک بر روی «ثبت درخواست جدید» یا «ثبت درخواست مرخصی» می‌توانید فرم ارسال نمایید.' 
                 : 'درخواست‌های جدید ارسالی از سوی طلاب در این کارتابل نمایش داده خواهند شد.'}
             </p>
           </div>
@@ -1040,17 +1224,20 @@ export default function StudentRequestsPortal() {
                   if (isStudentUser) handleMarkAsReadByStudent(req);
                 }}
                 className={cn(
-                  "bg-white rounded-2xl p-5 border transition-all shadow-xs space-y-3.5 relative",
+                  "bg-white rounded-2xl p-5 border transition-all shadow-xs space-y-4 relative",
                   isUnreadForOfficer ? "border-amber-300 bg-amber-50/15 ring-1 ring-amber-200" :
                   isUnreadForStudent ? "border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-200" :
                   req.status === 'resolved' ? "border-emerald-200/80" :
                   req.status === 'rejected' ? "border-rose-200/80" : "border-slate-200/80"
                 )}
               >
-                {/* Header line of card */}
+                {/* Header line */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold border",
+                      req.isLeaveRequest ? "bg-amber-100 text-amber-900 border-amber-300" : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                    )}>
                       {req.category}
                     </span>
 
@@ -1074,26 +1261,67 @@ export default function StudentRequestsPortal() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {getStatusBadge(req.status)}
+                    {getStatusBadge(req.status, req.isTerminated)}
                     <span className="text-[11px] text-slate-400 font-mono">
                       {new Date(req.createdAt).toLocaleDateString('fa-IR')}
                     </span>
                   </div>
                 </div>
 
-                {/* Body / Student Request Description */}
+                {/* Body Description */}
                 <div className="text-xs text-slate-700 leading-relaxed bg-slate-50/70 p-3.5 rounded-xl border border-slate-100">
                   <span className="block font-bold text-slate-900 mb-1 text-[11px]">متن درخواست طلبه:</span>
-                  {req.description}
+                  <p className="whitespace-pre-line">{req.description}</p>
                 </div>
 
-                {/* Official Officer Reply */}
-                {(req.officialReply || (req as any).replyText || (req as any).adminNotes || (req as any).notes || (req as any).response) && (
+                {/* LEAVE REQUEST DETAILS BREAKDOWN (اگر درخواست مرخصی باشد) */}
+                {req.isLeaveRequest && req.leaveDetails && (
+                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between text-amber-900 font-black text-xs border-b border-amber-200/80 pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <CalendarCheck size={16} className="text-amber-700" />
+                        <span>جلسات کلاس انتخاب‌شده جهت مرخصی (بازه: {req.leaveDetails.weekStartShamsi} تا {req.leaveDetails.weekEndShamsi}):</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {req.leaveDetails.selectedClasses.map((cls, idx) => (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-xs flex flex-col justify-between gap-1.5",
+                            cls.status === 'approved' ? "bg-emerald-50 border-emerald-300 text-emerald-950" :
+                            cls.status === 'rejected' ? "bg-rose-50 border-rose-300 text-rose-950" :
+                            "bg-white border-amber-300 text-slate-800"
+                          )}
+                        >
+                          <div className="font-bold flex items-center justify-between">
+                            <span>{cls.dayOfWeek} ({cls.dateShamsi})</span>
+                            <span className={cn(
+                              "text-[10px] font-black px-1.5 py-0.5 rounded",
+                              cls.status === 'approved' ? "bg-emerald-200 text-emerald-900" :
+                              cls.status === 'rejected' ? "bg-rose-200 text-rose-900" :
+                              "bg-amber-100 text-amber-900"
+                            )}>
+                              {cls.status === 'approved' ? '🟢 مرخصی موجه' : cls.status === 'rejected' ? '🔴 رد (غیرموجه)' : '🟡 در انتظار بررسی'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] opacity-90 font-medium">
+                            {cls.programTitle} {cls.teacherName ? `(${cls.teacherName})` : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* OFFICIAL REPLY AREA */}
+                {(req.officialReply || req.rejectionReason) && (
                   <div className="p-4 bg-emerald-50/95 border-2 border-emerald-300 rounded-2xl text-xs space-y-2 shadow-xs">
                     <div className="flex items-center justify-between text-emerald-950 font-black text-xs border-b border-emerald-200 pb-2">
                       <span className="flex items-center gap-2">
                         <MessageSquare size={16} className="text-emerald-700 shrink-0" />
-                        <span>پاسخ و توضیحات رسمی {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
+                        <span>پاسخ رسمی {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
                       </span>
                       {req.repliedAt && (
                         <span className="font-mono text-[11px] text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded-md font-bold">
@@ -1102,23 +1330,75 @@ export default function StudentRequestsPortal() {
                       )}
                     </div>
                     <p className="text-emerald-950 leading-relaxed font-bold text-xs whitespace-pre-line">
-                      {req.officialReply || (req as any).replyText || (req as any).adminNotes || (req as any).notes || (req as any).response}
+                      {req.officialReply || req.rejectionReason}
                     </p>
                   </div>
                 )}
 
-                {/* Rejection Note */}
-                {req.rejectionReason && req.rejectionReason !== req.officialReply && (
-                  <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl text-xs space-y-2 shadow-xs">
-                    <span className="text-rose-950 font-black text-xs flex items-center gap-1.5 border-b border-rose-200 pb-2">
-                      <XCircle size={16} className="text-rose-600 shrink-0" />
-                      <span>علت عدم تأیید و رد درخواست توسط {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
+                {/* CONVERSATION THREAD (پیام‌های متقابل بین طلبه و مسئول) */}
+                {Array.isArray(req.messages) && req.messages.length > 0 && (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                    <span className="font-black text-xs text-slate-800 flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                      <MessageSquare size={15} className="text-indigo-600" />
+                      <span>تاریخچه گفتگو و پیام‌های متقابل ({req.messages.length} پیام):</span>
                     </span>
-                    <p className="text-rose-900 font-bold leading-relaxed whitespace-pre-line">{req.rejectionReason}</p>
+
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {req.messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={cn(
+                            "p-3 rounded-2xl text-xs space-y-1 max-w-[88%]",
+                            msg.senderRole === 'student'
+                              ? "bg-indigo-50 border border-indigo-200 text-indigo-950 mr-auto"
+                              : "bg-emerald-50 border border-emerald-200 text-emerald-950 ml-auto"
+                          )}
+                        >
+                          <div className="flex items-center justify-between font-bold text-[11px] opacity-80 border-b border-black/5 pb-1">
+                            <span>{msg.senderName} ({msg.senderRole === 'student' ? 'طلبه' : 'مسئول مربوطه'})</span>
+                            <span className="font-mono text-[10px]">
+                              {new Date(msg.createdAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} - {new Date(msg.createdAt).toLocaleDateString('fa-IR')}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-line leading-relaxed font-medium">{msg.content}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {/* Footer Bar: Student info & Quick Action Checkboxes for Officer */}
+                {/* STUDENT CONVERSATIONAL REPLY FIELD (اگر پرونده مختومه نشده باشد) */}
+                {isStudentUser && (
+                  <div className="pt-2">
+                    {!req.isTerminated ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={followupDrafts[req.id] || ''}
+                          onChange={(e) => setFollowupDrafts(prev => ({ ...prev, [req.id]: e.target.value }))}
+                          placeholder="نگارش و ارسال پاسخ جدید به مسئول مربوطه..."
+                          className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSendFollowup(req)}
+                          disabled={isSendingFollowup || !followupDrafts[req.id]?.trim()}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                        >
+                          <Send size={14} />
+                          <span>ارسال پاسخ</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] font-bold flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-amber-700 shrink-0" />
+                        <span>⚖️ این پرونده توسط مسئول مربوطه ختم رسیدگی شده است. جهت تقاضای جدید از دکمه «ثبت درخواست جدید» استفاده فرمایید.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer Bar: Student details & Officer Actions */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 text-[11px] text-slate-500 border-t border-slate-100/80">
                   <div className="flex flex-wrap items-center gap-3">
                     <span>
@@ -1134,10 +1414,9 @@ export default function StudentRequestsPortal() {
                     </span>
                   </div>
 
-                  {/* Officer Actions: Quick Status Ticks + Full Reply Modal */}
+                  {/* Officer Actions */}
                   {!isStudentUser && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* Quick Status Buttons */}
                       <button
                         type="button"
                         onClick={() => handleQuickStatusChange(req, 'resolved')}
@@ -1183,7 +1462,7 @@ export default function StudentRequestsPortal() {
                         <span>رد درخواست</span>
                       </button>
 
-                      {/* Open Full Review & Official Reply Modal */}
+                      {/* Open Full Review & Reply Modal */}
                       <button
                         type="button"
                         onClick={() => {
@@ -1191,12 +1470,32 @@ export default function StudentRequestsPortal() {
                           setReplyStatus(req.status);
                           setOfficialReply(req.officialReply || '');
                           setRejectionReason(req.rejectionReason || '');
+                          if (req.isLeaveRequest && req.leaveDetails) {
+                            const initMap: Record<string, 'approved' | 'rejected'> = {};
+                            req.leaveDetails.selectedClasses.forEach(c => {
+                              initMap[`${c.programId}_${c.dateShamsi}`] = c.status === 'rejected' ? 'rejected' : 'approved';
+                            });
+                            setLeaveClassStatuses(initMap);
+                          }
                         }}
                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                       >
                         <Send size={12} />
-                        <span>نگارش پاسخ رسمی و جزئیات</span>
+                        <span>رسیدگی و پاسخ رسمی</span>
                       </button>
+
+                      {/* Terminate Request Button (ختم رسیدگی) */}
+                      {!req.isTerminated && (
+                        <button
+                          type="button"
+                          onClick={() => handleTerminateRequest(req)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                          title="ختم رسیدگی و بستن پرونده"
+                        >
+                          <ShieldCheck size={12} />
+                          <span>ختم رسیدگی</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1206,7 +1505,7 @@ export default function StudentRequestsPortal() {
         )}
       </div>
 
-      {/* ======================= Modal: New Request Form ======================= */}
+      {/* ======================= Modal: New Standard Request ======================= */}
       <AnimatePresence>
         {showNewRequestModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -1219,7 +1518,7 @@ export default function StudentRequestsPortal() {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <PlusCircle size={20} className="text-emerald-600" />
-                  <h3 className="text-sm font-black text-slate-900">ثبت تقاضا و درخواست اداری / رفاهی</h3>
+                  <h3 className="text-sm font-black text-slate-900">ثبت تقاضا و درخواست جدید</h3>
                 </div>
                 <button onClick={() => setShowNewRequestModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X size={18} />
@@ -1248,16 +1547,10 @@ export default function StudentRequestsPortal() {
                       واحد فرهنگی، رفاهی و کمدها {globalConfig.officersStatus.cultural_welfare?.isAccepting ? '(پاسخگو)' : '(عدم پاسخگویی)'}
                     </option>
                   </select>
-
-                  {!globalConfig.officersStatus[newUnit]?.isAccepting && (
-                    <p className="text-[11px] text-rose-600 font-bold mt-1">
-                      ⚠️ مسئول این واحد در حال حاضر در وضعیت عدم پاسخگویی قرار دارد.
-                    </p>
-                  )}
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">موضوع / دسته‌بندی تقاضا:</label>
+                  <label className="block font-bold text-slate-700 mb-1">موضوع تقاضا:</label>
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
@@ -1270,35 +1563,35 @@ export default function StudentRequestsPortal() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">عنوان خلاصه تقاضا:</label>
+                  <label className="block font-bold text-slate-700 mb-1">عنوان درخواست:</label>
                   <input
                     type="text"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="مثال: درخواست صدور گواهی اشتغال به تحصیل یا وام قرض‌الحسنه..."
+                    placeholder="عنوان خلاصه تقاضا..."
                     required
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-indigo-400 outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">شرح و توضیحات کامل تقاضا:</label>
+                  <label className="block font-bold text-slate-700 mb-1">شرح درخواست:</label>
                   <textarea
                     rows={4}
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="لطفاً جزئیات تقاضا، علت و اطلاعات تکمیلی خود را به طور کامل قید فرمایید..."
+                    placeholder="جزئیات و شرح تقاضای خود را به طور کامل بنویسید..."
                     required
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-indigo-400 outline-none resize-none leading-relaxed"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">میزان اولویت و فوریت:</label>
+                  <label className="block font-bold text-slate-700 mb-1">اولویت:</label>
                   <select
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as any)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
                   >
                     <option value="low">عادی</option>
                     <option value="medium">متوسط</option>
@@ -1307,21 +1600,20 @@ export default function StudentRequestsPortal() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setShowNewRequestModal(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200"
                   >
                     انصراف
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md shadow-emerald-600/20"
                   >
-                    {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    <span>ارسال نهایی درخواست</span>
+                    {isSubmitting ? 'در حال ثبت...' : 'ثبت و ارسال درخواست'}
                   </button>
                 </div>
               </form>
@@ -1330,9 +1622,470 @@ export default function StudentRequestsPortal() {
         )}
       </AnimatePresence>
 
-      {/* ======================= Modal: Officer Full Review & Reply Form ======================= */}
+      {/* ======================= Modal: Leave Request Form (ثبت درخواست مرخصی) ======================= */}
+      <AnimatePresence>
+        {showLeaveRequestModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-3xl border border-slate-200 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <CalendarCheck size={22} className="text-amber-600" />
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">فرم اختصاصی ثبت درخواست مرخصی</h3>
+                    <p className="text-xs text-slate-500">انتخاب جلسات کلاس‌های هفته جاری یا هفته‌های دیگر جهت ثبت غیبت موجه</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowLeaveRequestModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Week Navigation Header */}
+              <div className="p-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white rounded-2xl flex items-center justify-between shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(prev => prev - 7)}
+                  className="p-2 bg-white/20 hover:bg-white/30 rounded-xl text-white font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronRight size={18} />
+                  <span className="text-xs">هفته قبل</span>
+                </button>
+
+                <div className="text-center space-y-0.5">
+                  <span className="text-xs font-black text-amber-100 block">برنامه درسی هفته انتخابی</span>
+                  <span className="text-sm font-black text-white font-mono">
+                    شنبه {activeWeekInfo.satShamsi} تا پنج‌شنبه {activeWeekInfo.thuShamsi}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setWeekOffset(prev => prev + 7)}
+                  className="p-2 bg-white/20 hover:bg-white/30 rounded-xl text-white font-bold transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="text-xs">هفته بعد</span>
+                  <ChevronLeft size={18} />
+                </button>
+              </div>
+
+              {/* Weekly Classes Selection Grid */}
+              <div className="space-y-3">
+                <span className="text-xs font-bold text-slate-800 block">
+                  کلاس‌های دایر در این هفته (با کلیک بر روی هر کلاس، آن را برای غیبت/مرخصی علامت بزنید):
+                </span>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {activeWeekInfo.weekDays.map((dayItem) => {
+                    // Filter student's programs running on this weekday
+                    const dayProgs = studentPrograms.filter(p => {
+                      if (Array.isArray(p.days)) return p.days.includes(dayItem.dayOfWeek);
+                      if (p.day) return p.day.includes(dayItem.dayOfWeek);
+                      return true; // fallback
+                    });
+
+                    return (
+                      <div key={dayItem.dayOfWeek} className="p-3 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 font-black text-xs text-slate-800">
+                          <span>{dayItem.dayOfWeek}</span>
+                          <span className="font-mono text-slate-500 text-[11px]">{dayItem.dateShamsi}</span>
+                        </div>
+
+                        {dayProgs.length === 0 ? (
+                          <span className="text-[11px] text-slate-400 italic block py-2 text-center">کلاسی در این روز ثبت نشده</span>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {dayProgs.map((prog) => {
+                              const isSelected = selectedClassesForLeave.some(
+                                c => c.programId === prog.id && c.dateShamsi === dayItem.dateShamsi
+                              );
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={prog.id}
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setSelectedClassesForLeave(prev => prev.filter(c => !(c.programId === prog.id && c.dateShamsi === dayItem.dateShamsi)));
+                                    } else {
+                                      const newCls: LeaveRequestedClass = {
+                                        programId: prog.id,
+                                        programTitle: prog.title,
+                                        dateShamsi: dayItem.dateShamsi,
+                                        dayOfWeek: dayItem.dayOfWeek,
+                                        time: prog.time || (prog.startTime ? `${prog.startTime} - ${prog.endTime || ''}` : ''),
+                                        teacherName: prog.teacher,
+                                        status: 'pending'
+                                      };
+                                      setSelectedClassesForLeave(prev => [...prev, newCls]);
+                                    }
+                                  }}
+                                  className={cn(
+                                    "w-full text-right p-2.5 rounded-xl border text-xs transition-all cursor-pointer flex items-center justify-between gap-2",
+                                    isSelected 
+                                      ? "bg-amber-100/90 border-amber-400 text-amber-950 font-black shadow-xs ring-1 ring-amber-400" 
+                                      : "bg-white border-slate-200 text-slate-800 hover:border-amber-300"
+                                  )}
+                                >
+                                  <div>
+                                    <span className="block text-xs font-bold">{prog.title}</span>
+                                    <span className="text-[10px] text-slate-500">{prog.teacher || 'استاد'}</span>
+                                  </div>
+                                  <div>
+                                    {isSelected ? (
+                                      <span className="px-2 py-0.5 rounded-md bg-amber-600 text-white text-[10px] font-black shrink-0 flex items-center gap-1">
+                                        <Check size={12} />
+                                        <span>مرخصی</span>
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] shrink-0">
+                                        انتخاب
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Selected Count Summary */}
+              {selectedClassesForLeave.length > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-bold flex items-center justify-between">
+                  <span>مجموع جلسات انتخابی جهت ثبت مرخصی:</span>
+                  <span className="px-2.5 py-0.5 rounded-lg bg-amber-200 text-amber-950 font-mono font-black text-sm">
+                    {selectedClassesForLeave.length} جلسه کلاس
+                  </span>
+                </div>
+              )}
+
+              {/* Reason for Absence Input */}
+              <form onSubmit={handleCreateLeaveRequest} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">علت غیبت و دلیل موجه:</label>
+                  <textarea
+                    rows={3}
+                    value={leaveAbsenceReason}
+                    onChange={(e) => setLeaveAbsenceReason(e.target.value)}
+                    placeholder="لطفاً علت غیبت و دلیل موجه خود را جهت بررسی مسئول آموزش قید فرمایید..."
+                    required
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-amber-500 outline-none resize-none leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowLeaveRequestModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || selectedClassesForLeave.length === 0}
+                    className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Send size={15} />
+                    <span>{isSubmitting ? 'در حال ارسال...' : 'ارسال درخواست مرخصی به مسئول آموزش'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================= Modal: Officer Review & Full Reply ======================= */}
       <AnimatePresence>
         {selectedRequestForReview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-2xl border border-slate-200 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {selectedRequestForReview.isLeaveRequest ? 'رسیدگی ویژه به درخواست مرخصی' : 'رسیدگی و نگارش پاسخ رسمی'}
+                  </h3>
+                  <p className="text-xs text-slate-500">متقاضی: {selectedRequestForReview.studentName} ({selectedRequestForReview.grade})</p>
+                </div>
+                <button onClick={() => setSelectedRequestForReview(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                <span className="font-bold block text-slate-900">متن درخواست:</span>
+                <p className="text-slate-700 whitespace-pre-line leading-relaxed">{selectedRequestForReview.description}</p>
+              </div>
+
+              {/* LEAVE REQUEST CLASS APPROVAL TABLE FOR OFFICER */}
+              {selectedRequestForReview.isLeaveRequest && selectedRequestForReview.leaveDetails && (
+                <div className="space-y-3 p-4 bg-amber-50/80 border border-amber-200 rounded-2xl">
+                  <div className="flex items-center justify-between font-black text-xs text-amber-950 border-b border-amber-200 pb-2">
+                    <span>جدول آموزشی کلاس‌های مرخصی طلبه جهت موافقت یا مخالفت:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allAppr: Record<string, 'approved' | 'rejected'> = {};
+                          selectedRequestForReview.leaveDetails?.selectedClasses.forEach(c => {
+                            allAppr[`${c.programId}_${c.dateShamsi}`] = 'approved';
+                          });
+                          setLeaveClassStatuses(allAppr);
+                        }}
+                        className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold"
+                      >
+                        موافقت با تمام کلاس‌ها
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allRej: Record<string, 'approved' | 'rejected'> = {};
+                          selectedRequestForReview.leaveDetails?.selectedClasses.forEach(c => {
+                            allRej[`${c.programId}_${c.dateShamsi}`] = 'rejected';
+                          });
+                          setLeaveClassStatuses(allRej);
+                        }}
+                        className="px-2 py-1 bg-rose-600 text-white rounded text-[11px] font-bold"
+                      >
+                        مخالفت با تمام کلاس‌ها
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {selectedRequestForReview.leaveDetails.selectedClasses.map((cls, idx) => {
+                      const key = `${cls.programId}_${cls.dateShamsi}`;
+                      const currentSt = leaveClassStatuses[key] || cls.status;
+
+                      return (
+                        <div key={idx} className="p-3 bg-white border border-amber-200 rounded-xl flex items-center justify-between text-xs gap-3">
+                          <div>
+                            <span className="font-bold text-slate-900 block">{cls.dayOfWeek} ({cls.dateShamsi}) - {cls.programTitle}</span>
+                            <span className="text-[11px] text-slate-500">{cls.teacherName || 'استاد'}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'approved' }))}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                currentSt === 'approved' ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              )}
+                            >
+                              <Check size={14} />
+                              <span>موافقت (موجه)</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'rejected' }))}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                                currentSt === 'rejected' ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700 border border-rose-200"
+                              )}
+                            >
+                              <X size={14} />
+                              <span>مخالفت (غیرموجه)</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={(e) => handleSaveOfficerReply(e)} className="space-y-3.5 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">تعیین وضعیت درخواست:</label>
+                  <select
+                    value={replyStatus}
+                    onChange={(e) => setReplyStatus(e.target.value as StudentRequestStatus)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
+                  >
+                    <option value="in_progress">🔄 در حال بررسی و اقدام</option>
+                    <option value="resolved">✅ تکمیل و انجام شد</option>
+                    <option value="rejected">❌ رد درخواست</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">متن پاسخ رسمی مسئول مربوطه:</label>
+                  <textarea
+                    rows={4}
+                    value={officialReply}
+                    onChange={(e) => setOfficialReply(e.target.value)}
+                    placeholder="متن پاسخ و دستور رسمی به متقاضی را بنویسید..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-indigo-400 outline-none resize-none leading-relaxed"
+                  />
+                </div>
+
+                {replyStatus === 'rejected' && (
+                  <div>
+                    <label className="block font-bold text-rose-700 mb-1">علت رد درخواست (الزامی):</label>
+                    <textarea
+                      rows={2}
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      placeholder="علت عدم تأیید تقاضا را برای اطلاع متقاضی بنویسید..."
+                      className="w-full p-2.5 bg-rose-50/50 border border-rose-200 rounded-xl font-medium focus:bg-white outline-none resize-none"
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRequestForReview(null)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isReplying}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-indigo-600/20 cursor-pointer"
+                  >
+                    {isReplying ? 'در حال ثبت...' : 'ذخیره پاسخ و اعمال خودکار'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================= Modal: Officer Availability Toggle ======================= */}
+      <AnimatePresence>
+        {showOfficerToggleStatusModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-md border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900">تنظیم وضعیت پاسخگویی بخش</h3>
+                <button onClick={() => setShowOfficerToggleStatusModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <p className="text-slate-600 leading-relaxed">
+                  در صورت فعال‌سازی حالت «عدم پاسخگویی»، امکان ثبت درخواست جدید در این بخش برای طلاب غیرفعال شده و پیام راهنما نمایش داده می‌شود.
+                </p>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">پیام یا دلیل عدم پاسخگویی (اختیاری):</label>
+                  <textarea
+                    rows={3}
+                    value={officerNoteDraft}
+                    onChange={(e) => setOfficerNoteDraft(e.target.value)}
+                    placeholder="مثال: به دلیل بازه امتحانات یا محاسبه شهریه، پذیرش درخواست‌ها تا پایان هفته غیرفعال است."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOfficerStatus(currentOfficerUnit, true, officerNoteDraft)}
+                    className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>فعال (پاسخگو)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOfficerStatus(currentOfficerUnit, false, officerNoteDraft)}
+                    className="py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold cursor-pointer flex items-center justify-center gap-1"
+                  >
+                    <XCircle size={16} />
+                    <span>خاموش (عدم پاسخگویی)</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================= Modal: Super Admin Settings ======================= */}
+      <AnimatePresence>
+        {showSuperAdminSettingsModal && isSuperAdmin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 w-full max-w-md border border-slate-200 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900">تنظیمات سراسری سوپر ادمین</h3>
+                <button onClick={() => setShowSuperAdminSettingsModal(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-3 bg-slate-50 rounded-2xl space-y-2 border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">۱. فعال بودن کلی سامانه ثبت درخواست:</span>
+                    <button
+                      onClick={() => handleSaveSuperAdminConfig(globalConfig.isGlobalVisibleForStudents, !globalConfig.isGlobalEnabled)}
+                      className={cn(
+                        "px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                        globalConfig.isGlobalEnabled ? "bg-emerald-600 text-white" : "bg-rose-600 text-white"
+                      )}
+                    >
+                      {globalConfig.isGlobalEnabled ? 'فعال' : 'غیرفعال'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">در صورت غیرفعال بودن، ثبت هرگونه درخواست برای تمام طلاب مسدود می‌شود.</p>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-2xl space-y-2 border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">۲. نمایش در منوی طلاب (سطح ۳):</span>
+                    <button
+                      onClick={() => handleSaveSuperAdminConfig(!globalConfig.isGlobalVisibleForStudents, globalConfig.isGlobalEnabled)}
+                      className={cn(
+                        "px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                        globalConfig.isGlobalVisibleForStudents ? "bg-emerald-600 text-white" : "bg-slate-600 text-white"
+                      )}
+                    >
+                      {globalConfig.isGlobalVisibleForStudents ? 'نمایش داده شود' : 'مخفی شود'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">تعیین می‌کند که آیا آیکون ثبت درخواست در پنل طلاب نمایش داده شود یا خیر.</p>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ======================= Modal: Subject Management ======================= */}
+      <AnimatePresence>
+        {showSubjectSettingsModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -1341,494 +2094,64 @@ export default function StudentRequestsPortal() {
               className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <MessageSquare size={20} className="text-indigo-600" />
-                  <h3 className="text-sm font-black text-slate-900">بررسی و نگارش پاسخ رسمی به طلبه</h3>
-                </div>
-                <button onClick={() => setSelectedRequestForReview(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Stepped Progress Bar: ۱. ثبت طلبه ➔ ۲. بررسی معاونت ➔ ۳. صدور پاسخ */}
-              <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/80 shadow-2xs">
-                <div className="flex items-center justify-between relative px-2">
-                  {/* Background Track Line */}
-                  <div className="absolute top-3.5 right-8 left-8 h-1 bg-slate-200 -z-0" />
-                  {/* Active Highlight Line */}
-                  <div 
-                    className={cn(
-                      "absolute top-3.5 right-8 h-1 transition-all duration-500 -z-0",
-                      selectedRequestForReview.status === 'pending'
-                        ? "w-1/2 bg-blue-500"
-                        : "w-[calc(100%-4rem)] bg-emerald-500"
-                    )} 
-                  />
-
-                  {/* Step 1: ثبت طلبه */}
-                  <div className="flex flex-col items-center gap-1 z-10 select-none">
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs shadow-md shadow-emerald-500/25 ring-2 ring-emerald-100">
-                      <Check size={14} />
-                    </div>
-                    <span className="text-[10px] font-black text-slate-800">۱. ثبت طلبه</span>
-                  </div>
-
-                  {/* Step 2: بررسی معاونت */}
-                  <div className="flex flex-col items-center gap-1 z-10 select-none">
-                    <div className={cn(
-                      "w-7 h-7 rounded-full flex items-center justify-center text-xs shadow-md transition-all ring-2",
-                      selectedRequestForReview.status === 'pending'
-                        ? "bg-blue-600 text-white animate-pulse shadow-blue-500/25 ring-blue-100"
-                        : "bg-emerald-600 text-white shadow-emerald-500/25 ring-emerald-100"
-                    )}>
-                      {selectedRequestForReview.status === 'pending' ? <Clock size={13} /> : <Check size={14} />}
-                    </div>
-                    <span className="text-[10px] font-black text-slate-800">۲. بررسی معاونت</span>
-                  </div>
-
-                  {/* Step 3: صدور پاسخ */}
-                  <div className="flex flex-col items-center gap-1 z-10 select-none">
-                    <div className={cn(
-                      "w-7 h-7 rounded-full flex items-center justify-center text-xs shadow-md transition-all ring-2",
-                      selectedRequestForReview.status === 'resolved'
-                        ? "bg-emerald-600 text-white shadow-emerald-500/25 ring-emerald-100"
-                        : selectedRequestForReview.status === 'rejected'
-                        ? "bg-rose-600 text-white shadow-rose-500/25 ring-rose-100"
-                        : "bg-slate-200 text-slate-500 border border-slate-300 ring-slate-100"
-                    )}>
-                      {selectedRequestForReview.status === 'resolved' ? (
-                        <CheckCircle2 size={14} />
-                      ) : selectedRequestForReview.status === 'rejected' ? (
-                        <XCircle size={14} />
-                      ) : (
-                        <span className="text-[10px] font-black">۳</span>
-                      )}
-                    </div>
-                    <span className={cn(
-                      "text-[10px] font-black",
-                      selectedRequestForReview.status === 'resolved' ? "text-emerald-700" :
-                      selectedRequestForReview.status === 'rejected' ? "text-rose-700" : "text-slate-500"
-                    )}>
-                      ۳. نتیجه نهایی
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Student Details Summary Box */}
-              <div className="p-3.5 bg-slate-50 rounded-2xl space-y-1.5 text-xs border border-slate-100">
-                <div className="flex items-center justify-between font-bold text-slate-800">
-                  <span>متقاضی: {selectedRequestForReview.studentName} ({selectedRequestForReview.category})</span>
-                  <span className="font-mono text-slate-400">{new Date(selectedRequestForReview.createdAt).toLocaleDateString('fa-IR')}</span>
-                </div>
-                <div className="text-slate-700 leading-relaxed font-medium bg-white p-2.5 rounded-xl border border-slate-200/60">
-                  {selectedRequestForReview.description}
-                </div>
-              </div>
-
-              <form onSubmit={(e) => handleSaveOfficerReply(e)} className="space-y-3.5 text-xs">
-                {/* 3 Status Buttons Selection */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-2">تعیین وضعیت درخواست:</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setReplyStatus('resolved')}
-                      className={cn(
-                        "py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer",
-                        replyStatus === 'resolved' 
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" 
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700"
-                      )}
-                    >
-                      <CheckCircle2 size={13} />
-                      <span>انجام شد</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setReplyStatus('in_progress')}
-                      className={cn(
-                        "py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer",
-                        replyStatus === 'in_progress' 
-                          ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-700"
-                      )}
-                    >
-                      <Clock size={13} />
-                      <span>در حال بررسی</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setReplyStatus('rejected')}
-                      className={cn(
-                        "py-2 px-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer",
-                        replyStatus === 'rejected' 
-                          ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700"
-                      )}
-                    >
-                      <XCircle size={13} />
-                      <span>رد درخواست</span>
-                    </button>
-                  </div>
-                </div>
-
-                {replyStatus === 'rejected' ? (
-                  <div>
-                    <label className="block font-bold text-rose-700 mb-1">دلیل رسمی رد درخواست (الزامی جهت اطلاع طلبه):</label>
-                    <textarea
-                      rows={3}
-                      value={rejectionReason}
-                      onChange={(e) => setRejectionReason(e.target.value)}
-                      placeholder="لطفاً علت عدم موافقت یا شرایط لازم را برای طلبه شرح دهید..."
-                      required
-                      className="w-full p-2.5 bg-rose-50/60 border border-rose-200 rounded-xl font-medium outline-none resize-none leading-relaxed text-rose-950"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">متن توضیحات و پاسخ کامل رسمی مسئول:</label>
-                    <textarea
-                      rows={3}
-                      value={officialReply}
-                      onChange={(e) => setOfficialReply(e.target.value)}
-                      placeholder="متن دستور، شماره گواهی، زمان تحویل، تاریخ واریز وام یا راهنمایی لازم برای متقاضی..."
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none resize-none leading-relaxed"
-                    />
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRequestForReview(null)}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
-                  >
-                    بستن
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isReplying}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
-                  >
-                    {isReplying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                    <span>ثبت پاسخ و ابلاغ به طلبه</span>
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ======================= Modal: Super Admin Master Controls ======================= */}
-      <AnimatePresence>
-        {showSuperAdminSettingsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Sliders size={20} className="text-indigo-600" />
-                  <h3 className="text-sm font-black text-slate-900">کنترل سراسری سامانه درخواست‌ها (سوپر ادمین)</h3>
-                </div>
-                <button onClick={() => setShowSuperAdminSettingsModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                <h3 className="text-sm font-black text-slate-900">مدیریت موضوعات و دسته‌بندی درخواست‌ها</h3>
+                <button onClick={() => setShowSubjectSettingsModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X size={18} />
                 </button>
               </div>
 
               <div className="space-y-4 text-xs">
-                {/* Switch 1: Visible in Student Menu */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="font-bold text-slate-900">نمایش پنل درخواست در منوی طلاب (سطح ۳)</h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      در صورت خاموش بودن، این بخش کلاً از منو و سایدبار طلاب مخفی می‌شود.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSaveSuperAdminConfig(!globalConfig.isGlobalVisibleForStudents, globalConfig.isGlobalEnabled)}
-                    className={cn(
-                      "px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1",
-                      globalConfig.isGlobalVisibleForStudents
-                        ? "bg-emerald-600 text-white"
-                        : "bg-slate-200 text-slate-700"
-                    )}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">انتخاب واحد:</label>
+                  <select
+                    value={subjectSettingUnit}
+                    onChange={(e) => setSubjectSettingUnit(e.target.value as RequestTargetUnit)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
                   >
-                    {globalConfig.isGlobalVisibleForStudents ? <Eye size={14} /> : <EyeOff size={14} />}
-                    <span>{globalConfig.isGlobalVisibleForStudents ? 'نمایش داده شود' : 'مخفی باشد'}</span>
-                  </button>
+                    <option value="education">واحد آموزش و امتحانات</option>
+                    <option value="finance">واحد مالی و شهریه</option>
+                    <option value="cultural_welfare">واحد فرهنگی و رفاهی</option>
+                  </select>
                 </div>
 
-                {/* Switch 2: Global Enabled */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="font-bold text-slate-900">فعال بودن سراسری ثبت درخواست‌ها</h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      در صورت خاموش بودن، ارسال درخواست در سراسر سیستم قفل می‌شود.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleSaveSuperAdminConfig(globalConfig.isGlobalVisibleForStudents, !globalConfig.isGlobalEnabled)}
-                    className={cn(
-                      "px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1",
-                      globalConfig.isGlobalEnabled
-                        ? "bg-emerald-600 text-white"
-                        : "bg-rose-600 text-white"
-                    )}
-                  >
-                    {globalConfig.isGlobalEnabled ? <Check size={14} /> : <X size={14} />}
-                    <span>{globalConfig.isGlobalEnabled ? 'سامانه فعال است' : 'سامانه غیرفعال است'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowSuperAdminSettingsModal(false)}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  بستن و ذخیره
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ======================= Modal: Officer Toggle Status Modal ======================= */}
-      <AnimatePresence>
-        {showOfficerToggleStatusModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={20} className="text-indigo-600" />
-                  <h3 className="text-sm font-black text-slate-900">
-                    تنظیم وضعیت پاسخگویی واحد ({globalConfig.officersStatus[currentOfficerUnit]?.officerTitle})
-                  </h3>
-                </div>
-                <button onClick={() => setShowOfficerToggleStatusModal(false)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-3.5 text-xs">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">وضعیت پذیرش درخواست:</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleOfficerStatus(currentOfficerUnit, true, officerNoteDraft)}
-                      className={cn(
-                        "py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                        isCurrentOfficerAccepting 
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" 
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50"
-                      )}
-                    >
-                      <CheckCircle2 size={14} />
-                      <span>حالت پاسخگویی (فعال و روشن)</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleToggleOfficerStatus(currentOfficerUnit, false, officerNoteDraft)}
-                      className={cn(
-                        "py-2.5 px-3 rounded-xl font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                        !isCurrentOfficerAccepting 
-                          ? "bg-rose-600 text-white border-rose-600 shadow-sm" 
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-rose-50"
-                      )}
-                    >
-                      <XCircle size={14} />
-                      <span>عدم پاسخگویی (خاموش)</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    پیام یا دلیل عدم پاسخگویی (نمایش برای طلاب در صورت خاموش بودن):
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={officerNoteDraft}
-                    onChange={(e) => setOfficerNoteDraft(e.target.value)}
-                    placeholder="مثال: به دلیل بازه امتحانات یا محاسبه شهریه، پذیرش درخواست‌ها موقتاً مقدور نمی‌باشد..."
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none resize-none leading-relaxed"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowOfficerToggleStatusModal(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-                >
-                  انصراف
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleToggleOfficerStatus(currentOfficerUnit, !isCurrentOfficerAccepting, officerNoteDraft)}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer shadow-xs"
-                >
-                  ذخیره وضعیت جدید
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ======================= Modal: Manage Request Subjects (Super Admin & Education Manager) ======================= */}
-      <AnimatePresence>
-        {showSubjectSettingsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-lg border border-slate-200 shadow-2xl space-y-4"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Settings size={20} className="text-indigo-600 animate-spin-slow" />
-                  <h3 className="text-sm font-black text-slate-900">مدیریت موضوعات درخواست‌های طلاب</h3>
-                </div>
-                <button 
-                  onClick={() => {
-                    setShowSubjectSettingsModal(false);
-                    setNewSubjectInput('');
-                  }} 
-                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                {/* Unit Selector Tabs */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1.5">انتخاب واحد جهت مدیریت موضوعات:</label>
-                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => setSubjectSettingUnit('education')}
-                      className={cn(
-                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
-                        subjectSettingUnit === 'education'
-                          ? "bg-white text-indigo-900 shadow-xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      )}
-                    >
-                      واحد آموزش
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSubjectSettingUnit('finance')}
-                      className={cn(
-                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
-                        subjectSettingUnit === 'finance'
-                          ? "bg-white text-indigo-900 shadow-xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      )}
-                    >
-                      واحد مالی
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSubjectSettingUnit('cultural_welfare')}
-                      className={cn(
-                        "py-2 rounded-lg font-bold text-[11px] transition-all cursor-pointer",
-                        subjectSettingUnit === 'cultural_welfare'
-                          ? "bg-white text-indigo-900 shadow-xs"
-                          : "text-slate-500 hover:text-slate-800"
-                      )}
-                    >
-                      واحد فرهنگی و رفاهی
-                    </button>
-                  </div>
-                </div>
-
-                {/* Categories List */}
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">موضوعات فعال فعلی:</label>
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
-                    {((unitSettings[subjectSettingUnit]?.allowedCategories) || []).map((cat) => (
-                      <div 
-                        key={cat} 
-                        className="flex items-center justify-between gap-2 p-2 bg-white rounded-xl border border-slate-100 shadow-3xs hover:border-slate-300 transition-colors"
-                      >
-                        <span className="font-bold text-slate-800">{cat}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSubject(cat)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                          title="حذف این موضوع"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Add New Category Form */}
-                <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                  <label className="block font-bold text-slate-700">افزودن موضوع جدید به این واحد:</label>
-                  <div className="flex gap-2">
+                <div className="space-y-2">
+                  <span className="font-bold text-slate-800 block">افزودن موضوع جدید:</span>
+                  <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={newSubjectInput}
                       onChange={(e) => setNewSubjectInput(e.target.value)}
-                      placeholder="مثال: درخواست تأییدیه مدارک یا تسویه..."
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddSubject();
-                        }
-                      }}
-                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:border-indigo-400 outline-none"
+                      placeholder="عنوان موضوع جدید (مثلاً درخواست گواهی اشتغال)..."
+                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none"
                     />
                     <button
                       type="button"
                       onClick={handleAddSubject}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shrink-0 cursor-pointer"
                     >
-                      <PlusCircle size={14} />
-                      <span>افزودن</span>
+                      افزودن
                     </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSubjectSettingsModal(false);
-                    setNewSubjectInput('');
-                  }}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-200"
-                >
-                  بستن پنجره
-                </button>
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <span className="font-bold text-slate-800 block">موضوعات موجود در این واحد:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {(unitSettings[subjectSettingUnit]?.allowedCategories || []).map((cat) => (
+                      <span key={cat} className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-xl font-bold border border-slate-200 flex items-center gap-2">
+                        <span>{cat}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSubject(cat)}
+                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                          title="حذف موضوع"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </motion.div>
           </div>

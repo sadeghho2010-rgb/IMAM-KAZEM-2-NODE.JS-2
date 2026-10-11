@@ -849,12 +849,16 @@ class LocalDatabase {
           const cloudTs = getDocTimestamp(doc);
 
           if (pendingUpsertDocs.has(docId)) {
-            // Local edit takes absolute precedence
-            mergedDocsMap.set(docId, pendingUpsertDocs.get(docId));
-          } else if (localDoc && (localTs > cloudTs || (Date.now() - localTs < 30000 && localTs > 0))) {
-            // Local edit is newer or was modified within the last 30 seconds -> Protect local edit!
-            mergedDocsMap.set(docId, localDoc);
+            const pendingDoc = pendingUpsertDocs.get(docId);
+            const pendingTs = getDocTimestamp(pendingDoc);
+            if (cloudTs >= pendingTs && cloudTs > 0) {
+              mergedDocsMap.set(docId, doc);
+              removePendingLocalDoc(resolvedCol, docId);
+            } else {
+              mergedDocsMap.set(docId, pendingDoc);
+            }
           } else {
+            // When no pending un-synced edit exists, cloud document from server is authoritative
             mergedDocsMap.set(docId, doc);
           }
         }
@@ -961,8 +965,8 @@ class LocalDatabase {
               const localTs = getDocTimestamp(localDoc);
               const incomingTs = getDocTimestamp(doc);
 
-              // If local edit is newer or was modified in the last 30 seconds, never overwrite!
-              if (localDoc && (localTs > incomingTs || (Date.now() - localTs < 30000 && localTs > 0))) {
+              // Only ignore if local edit has an un-synced newer timestamp
+              if (localDoc && localTs > incomingTs && incomingTs > 0) {
                 return;
               }
 
