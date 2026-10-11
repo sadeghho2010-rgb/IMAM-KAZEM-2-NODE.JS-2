@@ -2005,40 +2005,49 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
       {isQuickAccessEnabled && quickAccessCards.length > 0 && (
         <motion.div
           initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.96, y: -10 } : { opacity: 1, scale: 1, y: 0 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: 'easeOut' }}
-          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden"
+          animate={!isAnimationsDisabled ? { 
+            opacity: 1, 
+            scale: 1, 
+            y: 0 
+          } : { opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden animate-banner-glow"
         >
-          {/* Animated Radiant Neon Outer Glow Aura (matching login page) */}
-          <div className="absolute -inset-1 rounded-[34px] bg-gradient-to-r from-amber-500 via-indigo-600 to-cyan-400 opacity-60 blur-xl animate-border-glow group-hover/quick-banner:opacity-100 group-hover/quick-banner:blur-2xl transition-all duration-700 pointer-events-none" />
+          {/* Animated Radiant Neon Outer Glow Aura (matching login page with lightning sheen) */}
+          <div className="absolute -inset-1.5 rounded-[36px] bg-gradient-to-r from-amber-500 via-indigo-600 via-cyan-400 to-amber-500 opacity-75 blur-2xl animate-border-glow group-hover/quick-banner:opacity-100 group-hover/quick-banner:blur-3xl transition-all duration-700 pointer-events-none" />
 
           {/* Secondary crystal gradient line border */}
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-amber-400/80 via-indigo-400/70 to-cyan-400/80 pointer-events-none opacity-80" />
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-amber-400 via-indigo-400 to-cyan-400 pointer-events-none opacity-90" />
 
           {/* Banner inner container with glassmorphic depth & sweep shimmer */}
-          <div className="relative z-10 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-[23px] p-5 text-white shadow-xl space-y-4 overflow-hidden border border-white/10">
-            {/* Continuous Sweeping Lightning / Electric Sheen (برق که میاد و میره) */}
+          <div className="relative z-10 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 rounded-[23px] p-5 text-white shadow-2xl space-y-4 overflow-hidden border border-white/20 backdrop-blur-xl">
+            {/* Continuous Sweeping Lightning / Electric Sheen (برق که میاد و میره دقیقا مثل صفحه لاگین) */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[23px]">
-              <div className="absolute top-0 bottom-0 left-0 w-64 bg-gradient-to-r from-transparent via-cyan-300/25 to-transparent skew-x-[-25deg] animate-card-shine pointer-events-none" />
-              <div className="absolute top-0 bottom-0 left-0 w-40 bg-gradient-to-r from-transparent via-amber-300/20 to-transparent skew-x-[-25deg] animate-login-shine pointer-events-none" />
+              {/* Main wide electric lightning wave */}
+              <div className="absolute top-0 bottom-0 left-0 w-72 bg-gradient-to-r from-transparent via-cyan-300/35 via-white/25 to-transparent skew-x-[-22deg] animate-card-shine pointer-events-none" />
+              {/* Secondary swift golden lightning beam */}
+              <div className="absolute top-0 bottom-0 left-0 w-48 bg-gradient-to-r from-transparent via-amber-300/30 to-transparent skew-x-[-22deg] animate-login-shine pointer-events-none" />
+              {/* Electric sweep lightning effect */}
+              <div className="absolute top-0 bottom-0 left-0 w-36 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-[-22deg] animate-electric-sweep pointer-events-none" />
             </div>
 
-            {/* Top Edge Prism Pulsing Reflection */}
+            {/* Top & Bottom Edge Radiant Pulsing Lines */}
             <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 via-cyan-300 to-transparent pointer-events-none animate-pulse" />
+            <div className="absolute bottom-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-indigo-400 via-cyan-400 to-transparent pointer-events-none opacity-60" />
 
             {/* Subtle Corner Ambient Lights */}
-            <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-36 h-36 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+            <div className="absolute bottom-0 left-0 w-44 h-44 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400/30 via-amber-500/20 to-indigo-600/30 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/20">
-                  <Zap size={20} className="animate-pulse text-amber-300 drop-shadow" />
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400/40 via-amber-500/25 to-indigo-600/40 text-amber-300 border border-amber-300/60 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/30">
+                  <Zap size={22} className="animate-pulse text-amber-300 drop-shadow-md" />
                 </div>
                 <div>
                   <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                    <span className="drop-shadow-sm">میانبر دسترسی‌های سریع شما</span>
-                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-400/40 shadow-xs">
+                    <span className="drop-shadow-md">میانبر دسترسی‌های سریع شما</span>
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/30 text-amber-300 border border-amber-400/50 shadow-sm animate-pulse">
                       {quickAccessCards.length} کارت پرکاربرد
                     </span>
                   </h3>
@@ -2051,7 +2060,7 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
               <button
                 type="button"
                 onClick={() => setIsQuickAccessModalOpen(true)}
-                className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/40 hover:border-amber-300 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm hover:shadow-md"
+                className="px-3.5 py-1.5 bg-white/10 hover:bg-white/25 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/50 hover:border-amber-300 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm hover:shadow-lg hover:scale-105 active:scale-95"
               >
                 <Settings size={13} />
                 <span className="hidden sm:inline">مدیریت کارت‌ها</span>
@@ -2065,32 +2074,36 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
                   <motion.button
                     key={card.id}
                     type="button"
-                    initial={!isAnimationsDisabled ? { opacity: 0, y: 10 } : { opacity: 1, y: 0 }}
+                    initial={!isAnimationsDisabled ? { opacity: 0, y: 14 } : { opacity: 1, y: 0 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.04, duration: 0.3 }}
+                    transition={{ delay: idx * 0.045, duration: 0.35, ease: 'easeOut' }}
                     whileHover={!isAnimationsDisabled ? {
-                      scale: 1.045,
-                      y: -3,
-                      transition: { type: 'spring', stiffness: 400, damping: 22 }
+                      scale: 1.055,
+                      y: -4,
+                      boxShadow: '0 15px 30px -5px rgba(245, 158, 11, 0.35), 0 0 15px rgba(255, 255, 255, 0.2)',
+                      transition: { type: 'spring', stiffness: 450, damping: 20 }
                     } : undefined}
-                    whileTap={!isAnimationsDisabled ? { scale: 0.96 } : undefined}
+                    whileTap={!isAnimationsDisabled ? { scale: 0.95 } : undefined}
                     onClick={() => onNavigateTab(card.id)}
-                    className="group relative p-3.5 bg-white/5 hover:bg-white/15 border border-white/15 hover:border-amber-400/70 hover:shadow-xl hover:shadow-amber-500/20 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2.5 overflow-hidden backdrop-blur-md"
+                    className="group relative p-3.5 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-amber-300/80 hover:shadow-2xl hover:shadow-amber-500/25 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2.5 overflow-hidden backdrop-blur-lg"
                   >
-                    {/* Hover inner light sweep per card */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[-20deg] -translate-x-[200%] group-hover:translate-x-[300%] transition-transform duration-700 pointer-events-none" />
+                    {/* Continuous subtle inner sheen on card */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-20deg] animate-electric-sweep pointer-events-none opacity-40 group-hover:opacity-100" />
 
-                    <div className="flex items-center justify-between">
-                      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 transition-transform duration-300 group-hover:scale-110", card.iconBg)}>
+                    {/* Interactive hover instant light sweep per card */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-[-20deg] -translate-x-[200%] group-hover:translate-x-[300%] transition-transform duration-700 pointer-events-none" />
+
+                    <div className="flex items-center justify-between relative z-10">
+                      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 transition-transform duration-300 group-hover:scale-115 group-hover:rotate-3", card.iconBg)}>
                         <IconComp size={18} />
                       </div>
-                      <ChevronLeft size={16} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1.5 transition-all" />
+                      <ChevronLeft size={16} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1.5 transition-all drop-shadow-sm" />
                     </div>
-                    <div>
-                      <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate drop-shadow-xs">
+                    <div className="relative z-10">
+                      <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate drop-shadow-sm">
                         {card.title}
                       </h4>
-                      <p className="text-[10px] text-slate-300/80 group-hover:text-slate-200 font-medium truncate mt-0.5">
+                      <p className="text-[10px] text-slate-300/90 group-hover:text-slate-100 font-medium truncate mt-0.5">
                         {card.subtitle}
                       </p>
                     </div>

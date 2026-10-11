@@ -7,6 +7,12 @@ import { cn } from '../lib/utils';
 interface BugReportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialValues?: {
+    title?: string;
+    description?: string;
+    trackingCode?: string;
+    sectionName?: string;
+  };
 }
 
 export function detectSystemInfo() {
@@ -37,10 +43,10 @@ export function detectSystemInfo() {
   };
 }
 
-export default function BugReportModal({ isOpen, onClose }: BugReportModalProps) {
+export default function BugReportModal({ isOpen, onClose, initialValues }: BugReportModalProps) {
   const { currentUser } = useAuth();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(initialValues?.title || '');
+  const [description, setDescription] = useState(initialValues?.description || '');
   const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -50,8 +56,15 @@ export default function BugReportModal({ isOpen, onClose }: BugReportModalProps)
     if (isOpen) {
       setSystemInfo(detectSystemInfo());
       setSuccess(false);
+      if (initialValues) {
+        if (initialValues.title) setTitle(initialValues.title);
+        if (initialValues.description) setDescription(initialValues.description);
+        else if (initialValues.trackingCode) {
+          setDescription(`کد پیگیری خطا: ${initialValues.trackingCode}\nبخش: ${initialValues.sectionName || '-'}`);
+        }
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialValues]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

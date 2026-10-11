@@ -46,6 +46,7 @@ const CounselingClasses = lazy(() => import('./components/CounselingClasses'));
 const CourseSelection = lazy(() => import('./components/CourseSelection'));
 const OralExamsManagement = lazy(() => import('./components/OralExamsManagement'));
 const ArticleEvaluations = lazy(() => import('./components/ArticleEvaluations'));
+const PassedCoursesManagement = lazy(() => import('./components/PassedCoursesManagement'));
 const FinanceManagerDashboard = lazy(() => import('./components/FinanceManagerDashboard'));
 const StudentActivityAndTuition = lazy(() => import('./components/finance/StudentActivityAndTuition'));
 const GradeProfessorsCompensation = lazy(() => import('./components/finance/GradeProfessorsCompensation'));
@@ -106,7 +107,33 @@ function AppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Closed by default
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
+  const [bugModalInitialValues, setBugModalInitialValues] = useState<{
+    title?: string;
+    description?: string;
+    trackingCode?: string;
+    sectionName?: string;
+  } | undefined>(undefined);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Listen for global 'open-bug-report-modal' events from ErrorBoundary or user clicks
+  useEffect(() => {
+    const handleOpenBugModal = (e: any) => {
+      if (e.detail) {
+        setBugModalInitialValues({
+          title: e.detail.title || (e.detail.trackingCode ? `بروز خطا (کد پیگیری: ${e.detail.trackingCode})` : 'گزارش اشکال در سامانه'),
+          description: e.detail.errorMessage ? `شرح خطا: ${e.detail.errorMessage}\nکد پیگیری: ${e.detail.trackingCode || '-'}\nبخش: ${e.detail.sectionName || '-'}` : '',
+          trackingCode: e.detail.trackingCode,
+          sectionName: e.detail.sectionName
+        });
+      } else {
+        setBugModalInitialValues(undefined);
+      }
+      setIsBugModalOpen(true);
+    };
+
+    window.addEventListener('open-bug-report-modal', handleOpenBugModal);
+    return () => window.removeEventListener('open-bug-report-modal', handleOpenBugModal);
+  }, []);
 
   // Radiant back button color cycling every 1 minute (60 seconds)
   const [backColorIndex, setBackColorIndex] = useState<number>(0);
@@ -240,10 +267,7 @@ function AppContent() {
   }
 
   const handleNavigate = (tab: string, studentId?: string) => {
-    if (studentId) {
-      setSelectedStudentIdForTab(studentId);
-    }
-    setActiveTab(tab);
+    navigateToTab(tab, studentId);
   };
 
   const renderContent = () => {
@@ -254,6 +278,8 @@ function AppContent() {
         return <StudentList initialStudentId={selectedStudentIdForTab} />;
       case 'active-students':
         return <StudentList onlyActive initialStudentId={selectedStudentIdForTab} />;
+      case 'passed-courses':
+        return <PassedCoursesManagement />;
       case 'discussion':
         return <StudyDiscussion initialStudentId={selectedStudentIdForTab} />;
       case 'consultation-advisor':
@@ -491,6 +517,20 @@ function AppContent() {
                 <span className="hidden lg:inline text-[10px] text-emerald-700 font-black">پایگاه داده متصل</span>
               </div>
 
+              {/* Quick Bug Report Button for Any User */}
+              <button
+                type="button"
+                onClick={() => {
+                  setBugModalInitialValues(undefined);
+                  setIsBugModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 py-1.5 px-2.5 bg-rose-50/80 hover:bg-rose-100 text-rose-700 border border-rose-200/80 hover:border-rose-300 rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title="گزارش مشکل یا خطا در سامانه"
+              >
+                <Bug size={14} className="text-rose-600 shrink-0" />
+                <span className="hidden xl:inline">گزارش مشکل</span>
+              </button>
+
               {/* Display & Visual Preferences Button */}
               <button
                 type="button"
@@ -545,7 +585,14 @@ function AppContent() {
         <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
 
         {/* Global Bug Report Modal */}
-        <BugReportModal isOpen={isBugModalOpen} onClose={() => setIsBugModalOpen(false)} />
+        <BugReportModal 
+          isOpen={isBugModalOpen} 
+          onClose={() => {
+            setIsBugModalOpen(false);
+            setBugModalInitialValues(undefined);
+          }} 
+          initialValues={bugModalInitialValues}
+        />
 
         <main className="p-4 lg:p-8">
           {/* Global Security PIN Challenge Modal */}

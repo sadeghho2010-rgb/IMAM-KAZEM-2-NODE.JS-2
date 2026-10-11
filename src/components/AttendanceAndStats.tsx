@@ -100,6 +100,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [classStatusColorFilter, setClassStatusColorFilter] = useState<'all' | 'pending' | 'recorded' | 'substitute' | 'cancelled'>('all');
   const [attendanceMethodFilter, setAttendanceMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
   const [isQuickAttendanceOpen, setIsQuickAttendanceOpen] = useState<boolean>(false);
+  const [isCompactView, setIsCompactView] = useState<boolean>(() => {
+    return localStorage.getItem('attendance_compact_view') === 'true';
+  });
 
   // Quick Class Status Card Change Modal
   const [quickStatusModal, setQuickStatusModal] = useState<{ prog: any; initialMode?: string } | null>(null);
@@ -220,32 +223,124 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Helper to resolve class representative name for cards and headers
   const getProgramRepName = (p: any): string => {
     if (!p) return 'تعیین نشده';
-    if (Array.isArray(p.representativeNames) && p.representativeNames.filter(Boolean).length > 0) {
-      return p.representativeNames.filter(Boolean).join('، ');
+
+    const isValidRepStr = (str: any): boolean => {
+      if (!str || typeof str !== 'string') return false;
+      const trimmed = str.trim();
+      if (!trimmed) return false;
+      const invalidValues = ['مشخص نشده', 'تعیین نشده', 'بدون نماینده', 'نامشخص', '-', 'null', 'undefined'];
+      return !invalidValues.includes(trimmed);
+    };
+
+    // 1. Direct array of names on program
+    if (Array.isArray(p.representativeNames)) {
+      const validArr = p.representativeNames.filter(isValidRepStr).map((s: string) => s.trim());
+      if (validArr.length > 0) return Array.from(new Set(validArr)).join('، ');
     }
-    if (p.customRepresentative && p.customRepresentative.trim()) {
-      return p.customRepresentative.trim();
+
+    // 2. Direct string fields on program
+    if (isValidRepStr(p.customRepresentative)) return p.customRepresentative.trim();
+    if (isValidRepStr(p.representativeName)) return p.representativeName.trim();
+    if (isValidRepStr(p.classRepresentative)) return p.classRepresentative.trim();
+    if (isValidRepStr(p.repName)) return p.repName.trim();
+
+    // 3. Check representativeStudentIds, representativeStudentId, representativeId, representative
+    const repIds: string[] = [];
+    if (Array.isArray(p.representativeStudentIds)) {
+      p.representativeStudentIds.forEach((id: any) => id && repIds.push(String(id).trim()));
     }
-    if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
-      const matchedNames = p.representativeStudentIds
-        .map((sid: string) => {
-          const st = students.find(s => String(s.id) === String(sid) || s.studentCode === sid || s.nationalId === sid);
-          return st ? st.name : null;
-        })
-        .filter(Boolean);
+    if (p.representativeStudentId) repIds.push(String(p.representativeStudentId).trim());
+    if (p.representativeId) repIds.push(String(p.representativeId).trim());
+    if (isValidRepStr(p.representative)) {
+      repIds.push(String(p.representative).trim());
+    }
+
+    if (repIds.length > 0) {
+      const matchedNames: string[] = [];
+      repIds.forEach(sid => {
+        const st = students.find(s => 
+          String(s.id) === String(sid) || 
+          String(s.studentCode) === String(sid) || 
+          String(s.nationalId) === String(sid)
+        );
+        if (st && st.name) {
+          matchedNames.push(st.name);
+          return;
+        }
+
+        const usr = users.find(u => 
+          String(u.id) === String(sid) || 
+          String(u.studentId) === String(sid) || 
+          String(u.username) === String(sid)
+        );
+        if (usr && (usr.fullName || usr.name)) {
+          matchedNames.push(usr.fullName || usr.name);
+          return;
+        }
+
+        if (isValidRepStr(sid) && isNaN(Number(sid)) && sid.length > 2 && !sid.startsWith('id_') && !sid.startsWith('user_')) {
+          matchedNames.push(sid);
+        }
+      });
+
       if (matchedNames.length > 0) {
-        return matchedNames.join('، ');
+        return Array.from(new Set(matchedNames)).join('، ');
       }
     }
-    if (p.representativeName && p.representativeName.trim()) {
-      return p.representativeName.trim();
+
+    // 4. Check users collection where managedClassId === p.id or representativeProgramIds includes p.id
+    const userReps = users.filter(u => 
+      u.managedClassId === p.id || 
+      (Array.isArray(u.representativeProgramIds) && u.representativeProgramIds.includes(p.id)) ||
+      (u as any).classId === p.id
+    );
+    if (userReps.length > 0) {
+      const names = userReps.map(u => {
+        const st = students.find(s => String(s.id) === String(u.studentId || u.id) || s.nationalId === u.username);
+        return st?.name || u.fullName || u.name || u.username;
+      }).filter(isValidRepStr);
+      if (names.length > 0) {
+        return Array.from(new Set(names)).join('، ');
+      }
     }
+
+    // 5. Check students collection where managedClassId === p.id or representativeProgramIds includes p.id
+    const studentReps = students.filter(s => 
+      (s as any).managedClassId === p.id || 
+      (Array.isArray((s as any).representativeProgramIds) && (s as any).representativeProgramIds.includes(p.id))
+    );
+    if (studentReps.length > 0) {
+      const names = studentReps.map(s => s.name).filter(isValidRepStr);
+      if (names.length > 0) {
+        return Array.from(new Set(names)).join('، ');
+      }
+    }
+
+    // 6. Check users with class_representative role or title matching program grade
+    if (p.grade) {
+      const gradeReps = users.filter(u => 
+        (u.role === 'class_representative' || u.roleTitle?.includes('نماینده') || (u as any).isRepresentative) &&
+        (u.grade === p.grade || u.gradeLabel === p.grade)
+      );
+      if (gradeReps.length > 0) {
+        const names = gradeReps.map(u => {
+          const st = students.find(s => String(s.id) === String(u.studentId || u.id) || s.nationalId === u.username);
+          return st?.name || u.fullName || u.name;
+        }).filter(isValidRepStr);
+        if (names.length > 0) {
+          return Array.from(new Set(names)).join('، ');
+        }
+      }
+    }
+
     return 'بدون نماینده';
   };
 
   // Load all initial data from localDb
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (isInitial = false) => {
+    if (isInitial || programs.length === 0) {
+      setIsLoading(true);
+    }
     try {
       const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList] = await Promise.all([
         localDb.getDocs('programs'),
@@ -287,9 +382,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
     const unsub = localDb.subscribe(() => {
-      loadData();
+      loadData(false);
     });
     return () => unsub();
   }, []);
@@ -465,30 +560,22 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const isSettingsReadOnly = isGradeSupervisor && !settings.allowGradeProfessorSettingsEdit;
   const isAttendanceReadOnlyForGradeSupervisor = isGradeSupervisor && !settings.allowGradeProfessorAttendanceEdit;
 
-  // Enforce tab access:
-  // - Ordinary students default to 'report', but if they have self-reporting programs, they can also access 'record' for self-reporting
-  // - Representatives MUST default directly to 'record' tab to immediately record attendance
+  // Enforce default tab access once on user role resolution
+  const hasEnforcedInitialTabRef = React.useRef(false);
   useEffect(() => {
+    if (hasEnforcedInitialTabRef.current) return;
     if (isRepresentative) {
       if (activeTab === 'class_status') {
         setActiveTab('record');
+        hasEnforcedInitialTabRef.current = true;
       }
     } else if (isOrdinaryStudent) {
       if (activeTab !== 'report' && activeTab !== 'record') {
         setActiveTab('report');
+        hasEnforcedInitialTabRef.current = true;
       }
     }
-  }, [isOrdinaryStudent, isRepresentative, activeTab]);
-
-  // When representative programs are loaded or user is recognized as representative,
-  // immediately ensure they land on 'record' tab to record attendance directly!
-  useEffect(() => {
-    if (isRepresentative && representativePrograms.length > 0) {
-      if (activeTab !== 'record') {
-        setActiveTab('record');
-      }
-    }
-  }, [isRepresentative, representativePrograms.length]);
+  }, [isOrdinaryStudent, isRepresentative]);
 
   // Set default selected program strictly constrained to represented classes for class representatives
   useEffect(() => {
@@ -762,65 +849,75 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
   }, [selectedDate, isSuperAdmin, isEducationManager, educationBypassLock, isRepresentative, settings]);
 
+  // Track loaded selection key to prevent background DB updates from wiping unsaved form edits
+  const loadedSelectionKeyRef = React.useRef<string>('');
+
   // Load or initialize attendance record when date or program changes
   useEffect(() => {
     if (!selectedProgramId || !selectedDate) return;
 
-    const existingRecord = attendanceRecords.find(
-      r => r.programId === selectedProgramId && r.date === selectedDate
-    );
+    const selectionKey = `${selectedProgramId}_${selectedDate}`;
+    const selectionChanged = loadedSelectionKeyRef.current !== selectionKey;
 
-    if (existingRecord) {
-      setIsCancelled(existingRecord.isCancelled || false);
-      setCancellationReason(existingRecord.cancellationReason || '');
-      setHasSubstituteTeacher(existingRecord.hasSubstituteTeacher || false);
-      setSubstituteTeacherId(existingRecord.substituteTeacherId);
-      setSubstituteTeacherName(existingRecord.substituteTeacherName || '');
-      setSubstituteTeacherNotes(existingRecord.substituteTeacherNotes || '');
-      setSessionNotes(existingRecord.notes || '');
+    if (selectionChanged) {
+      loadedSelectionKeyRef.current = selectionKey;
 
-      const attMap: Record<string, AttendanceStatus> = {};
-      const noteMap: Record<string, string> = {};
-      const lateMap: Record<string, number> = {};
-      const warnMap: Record<string, boolean> = {};
-      const excMap: Record<string, { isExcused: boolean; reason: string }> = {};
+      const existingRecord = attendanceRecords.find(
+        r => r.programId === selectedProgramId && r.date === selectedDate
+      );
 
-      existingRecord.students?.forEach(item => {
-        if (item.status) {
-          attMap[item.studentId] = item.status;
-        }
-        if (item.note) noteMap[item.studentId] = item.note;
-        if (item.lateMinutes) lateMap[item.studentId] = item.lateMinutes;
-        if (item.hasEducationalWarning) warnMap[item.studentId] = true;
-        if (item.isExcused) {
-          excMap[item.studentId] = { isExcused: true, reason: item.excuseReason || '' };
-        }
-      });
+      if (existingRecord) {
+        setIsCancelled(existingRecord.isCancelled || false);
+        setCancellationReason(existingRecord.cancellationReason || '');
+        setHasSubstituteTeacher(existingRecord.hasSubstituteTeacher || false);
+        setSubstituteTeacherId(existingRecord.substituteTeacherId);
+        setSubstituteTeacherName(existingRecord.substituteTeacherName || '');
+        setSubstituteTeacherNotes(existingRecord.substituteTeacherNotes || '');
+        setSessionNotes(existingRecord.notes || '');
 
-      // Keep unrecorded students undefined (do NOT default to present)
-      setStudentsAttendance(attMap);
-      setStudentNotes(noteMap);
-      setStudentLateMinutes(lateMap);
-      setStudentWarnings(warnMap);
-      setStudentExcused(excMap);
-    } else {
-      setIsCancelled(false);
-      setCancellationReason('');
-      setHasSubstituteTeacher(false);
-      setSubstituteTeacherId(undefined);
-      setSubstituteTeacherName('');
-      setSubstituteTeacherNotes('');
-      setSessionNotes('');
+        const attMap: Record<string, AttendanceStatus> = {};
+        const noteMap: Record<string, string> = {};
+        const lateMap: Record<string, number> = {};
+        const warnMap: Record<string, boolean> = {};
+        const excMap: Record<string, { isExcused: boolean; reason: string }> = {};
 
-      // Fresh session: start empty without pre-selecting present or absent
-      setStudentsAttendance({});
-      setStudentNotes({});
-      setStudentLateMinutes({});
-      setStudentWarnings({});
-      setStudentExcused({});
+        existingRecord.students?.forEach(item => {
+          if (item.status) {
+            attMap[item.studentId] = item.status;
+          }
+          if (item.note) noteMap[item.studentId] = item.note;
+          if (item.lateMinutes) lateMap[item.studentId] = item.lateMinutes;
+          if (item.hasEducationalWarning) warnMap[item.studentId] = true;
+          if (item.isExcused) {
+            excMap[item.studentId] = { isExcused: true, reason: item.excuseReason || '' };
+          }
+        });
+
+        // Keep unrecorded students undefined (do NOT default to present)
+        setStudentsAttendance(attMap);
+        setStudentNotes(noteMap);
+        setStudentLateMinutes(lateMap);
+        setStudentWarnings(warnMap);
+        setStudentExcused(excMap);
+      } else {
+        setIsCancelled(false);
+        setCancellationReason('');
+        setHasSubstituteTeacher(false);
+        setSubstituteTeacherId(undefined);
+        setSubstituteTeacherName('');
+        setSubstituteTeacherNotes('');
+        setSessionNotes('');
+
+        // Fresh session: start empty without pre-selecting present or absent
+        setStudentsAttendance({});
+        setStudentNotes({});
+        setStudentLateMinutes({});
+        setStudentWarnings({});
+        setStudentExcused({});
+      }
+      setIsSavedRecently(false);
     }
-    setIsSavedRecently(false);
-  }, [selectedProgramId, selectedDate, attendanceRecords, enrolledStudents]);
+  }, [selectedProgramId, selectedDate, attendanceRecords]);
 
   // Bulk actions
   const handleMarkAll = (status: AttendanceStatus) => {
@@ -2048,9 +2145,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             statusKey: 'pending' as const,
             badgeText: 'ثبت‌نشده (قرمز)',
             badgeClass: 'bg-rose-950/40 text-rose-100 border border-rose-400/30 backdrop-blur-xs font-extrabold',
-            cardBorder: 'bg-gradient-to-br from-rose-600/90 via-red-600/85 to-rose-800/90 text-white border-rose-400/40 hover:border-rose-300/60 shadow-md shadow-red-500/15 hover:shadow-red-500/25 animate-pulse-subtle font-bold',
+            cardBorder: 'bg-gradient-to-br from-rose-600/90 via-red-600/85 to-rose-800/90 text-white border-rose-400/40 hover:border-rose-300/60 shadow-md shadow-red-500/15 hover:shadow-red-500/25 font-bold',
             gradePill: 'bg-rose-950/40 text-rose-100 border border-rose-400/20 font-black',
-            statusIcon: <AlertCircle className="w-3 h-3 text-rose-200 animate-bounce" />,
+            statusIcon: <AlertCircle className="w-3 h-3 text-rose-200" />,
             actionBtn: 'bg-white/15 hover:bg-white/25 text-white border border-white/20 hover:border-white/40 shadow-sm shadow-black/10 font-black',
             boxBg: 'bg-black/20 backdrop-blur-md rounded-lg p-1 border border-white/10 text-rose-50 font-black text-[9px] text-center'
           };
@@ -2364,40 +2461,61 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </div>
               </div>
 
-              {/* Category Tab Toggle (All / Academic / Counseling) */}
-              <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200 shrink-0">
+              {/* Category Tab Toggle (All / Academic / Counseling) & Compact View Toggle */}
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
                 <button
                   type="button"
-                  onClick={() => setClassStatusCategoryTab('all')}
+                  onClick={() => {
+                    const next = !isCompactView;
+                    setIsCompactView(next);
+                    localStorage.setItem('attendance_compact_view', String(next));
+                  }}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
-                    classStatusCategoryTab === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    "px-3.5 py-1.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-md border shrink-0 active:scale-95",
+                    isCompactView
+                      ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 text-white border-emerald-300 ring-2 ring-emerald-300/50 shadow-emerald-500/30"
+                      : "bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white border-amber-300 ring-2 ring-amber-300/60 shadow-orange-500/30"
                   )}
+                  title="تغییر حالت نمایش به کارت‌های فشرده و جمع‌وجور برای دیدن یکجای ده‌ها کلاس"
                 >
-                  همه ({filteredPrograms.length})
+                  <Layers size={15} className="text-white" />
+                  <span>{isCompactView ? "⚡️ حالت متراکم (فعال)" : "⚡️ حالت جمع‌وجور (دیدن ۲۰+ کلاس)"}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setClassStatusCategoryTab('academic')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
-                    classStatusCategoryTab === 'academic' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  <BookOpen size={13} />
-                  <span>درسی ({academicProgs.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setClassStatusCategoryTab('counseling')}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
-                    classStatusCategoryTab === 'counseling' ? "bg-white text-amber-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  <Sparkles size={13} />
-                  <span>مشاوره ({counselingProgs.length})</span>
-                </button>
+
+                <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusCategoryTab('all')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                      classStatusCategoryTab === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    همه ({filteredPrograms.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusCategoryTab('academic')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                      classStatusCategoryTab === 'academic' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <BookOpen size={13} />
+                    <span>درسی ({academicProgs.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClassStatusCategoryTab('counseling')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                      classStatusCategoryTab === 'counseling' ? "bg-white text-amber-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    <Sparkles size={13} />
+                    <span>مشاوره ({counselingProgs.length})</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2427,145 +2545,182 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                <div className={cn(
+                  "grid gap-2.5 sm:gap-3",
+                  isCompactView 
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8" 
+                    : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                )}>
                   {academicProgs.map(prog => {
                     const st = getStatusCardData(prog);
                     const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
                     const presenceRate = totalAtt > 0 ? Math.round(((st.presentCount || 0) / totalAtt) * 100) : 100;
+
+                    if (isCompactView) {
+                      // EYE-CATCHING HIGH DENSITY COMPACT VIEW CARD (Easily view 20+ classes at once)
+                      return (
+                        <div
+                          key={prog.id}
+                          className={cn(
+                            "rounded-xl p-2 border transition-all duration-200 flex flex-col justify-between space-y-1.5 relative overflow-hidden text-[11px] shadow-xs backdrop-blur-md hover:scale-[1.03] cursor-default active:scale-[0.98] min-h-[95px]",
+                            st.cardBorder
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={cn("px-1.5 py-0.2 text-[9px] rounded-md font-black truncate max-w-[70px]", st.gradePill)}>
+                              {prog.grade || 'عمومی'}
+                            </span>
+                            <span className={cn("px-1 py-0.2 text-[8.5px] rounded-md border flex items-center gap-0.5 font-extrabold truncate max-w-[80px]", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate">{st.badgeText.split(' ')[0]}</span>
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <h4 className="text-[11px] font-black truncate leading-tight drop-shadow-2xs" title={prog.title}>
+                              {prog.title}
+                            </h4>
+                            <p className="text-[9.5px] opacity-90 truncate font-semibold">
+                              استاد: {getProgramTeacherName(prog)}
+                            </p>
+                            <p className="text-[9px] opacity-80 truncate">
+                              نماینده: {getProgramRepName(prog)}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-1 border-t border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProgramId(prog.id);
+                                setActiveTab('record');
+                              }}
+                              className={cn("flex-1 py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs", st.actionBtn)}
+                              title="ثبت و ویرایش"
+                            >
+                              <CheckSquare size={10} />
+                              <span>ثبت</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                              className="py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs bg-black/25 text-white border border-white/20"
+                              title="تغییر وضعیت"
+                            >
+                              <SlidersHorizontal size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // STANDARD CARD VIEW (~20% SMALLER RESIZED RATIO & TIGHTER PADDING)
                     return (
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-2xl sm:rounded-3xl p-4 sm:p-5 border transition-all duration-300 flex flex-col justify-between space-y-3.5 relative overflow-hidden text-xs shadow-md backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.22)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/30 before:to-transparent before:translate-x-[-120%] hover:before:translate-x-[120%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.02] cursor-default active:scale-[0.99] min-h-[195px]",
+                          "rounded-2xl p-2.5 sm:p-3 border transition-all duration-200 flex flex-col justify-between space-y-2 relative overflow-hidden text-xs shadow-xs backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-md hover:scale-[1.01] cursor-default active:scale-[0.99] min-h-[135px]",
                           st.cardBorder
                         )}
                       >
-                        {/* Bank Card Top Row: Grade Pill + Donut & Status Badge */}
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={cn("px-2.5 py-1 text-xs rounded-xl font-black truncate max-w-[110px] tracking-wide shadow-2xs", st.gradePill)}>
+                        {/* Card Top Row */}
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={cn("px-1.5 py-0.5 text-[10px] rounded-lg font-black truncate max-w-[90px] tracking-wide shadow-2xs", st.gradePill)}>
                             {prog.grade || 'عمومی'}
                           </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 shrink-0">
                             {st.statusKey === 'recorded' && (
-                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-md text-white/95 border border-white/15 shadow-2xs" title={`درصد حضور روزانه: ${presenceRate}٪`}>
-                                <svg className="w-4 h-4 -rotate-90 shrink-0" viewBox="0 0 36 36">
-                                  <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                  <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                </svg>
-                                <span className="text-[10px] font-black">{presenceRate}٪</span>
+                              <div className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-black/30 backdrop-blur-md text-white/95 border border-white/15 text-[9px] font-black" title={`درصد حضور: ${presenceRate}٪`}>
+                                <span>{presenceRate}٪</span>
                               </div>
                             )}
-                            <span className={cn("px-2.5 py-1 text-[10px] rounded-xl border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
+                            <span className={cn("px-1.5 py-0.5 text-[9px] rounded-lg border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
                               {st.statusIcon}
-                              <span className="truncate max-w-[70px]">{st.badgeText}</span>
+                              <span className="truncate max-w-[60px]">{st.badgeText}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Title & Teacher & Rep & Schedule Meta */}
-                        <div className="space-y-1.5 flex-1">
-                          <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
+                        {/* Title & Teacher & Rep */}
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <h4 className="text-xs sm:text-[13px] font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
                             {prog.title}
                           </h4>
-                          <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
-                            <User size={13} className="shrink-0 opacity-80" />
+                          <div className="flex items-center gap-1 text-[10.5px] font-bold opacity-95">
+                            <User size={11} className="shrink-0 opacity-80" />
                             <span className="truncate">استاد: {getProgramTeacherName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold opacity-90">
-                            <UserCheck size={12} className="shrink-0 text-emerald-300" />
+                          <div className="flex items-center gap-1 text-[10px] font-semibold opacity-90">
+                            <UserCheck size={10} className="shrink-0 text-emerald-300" />
                             <span className="truncate">نماینده: {getProgramRepName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                          <div className="flex items-center gap-1 flex-wrap pt-0.5 text-[9.5px]">
                             {prog.attendanceType === 'self_reporting' ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1">
-                                <UserCheck size={10} />
-                                <span>خود اظهاری</span>
+                              <span className="px-1 py-0.2 rounded-md font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40">
+                                خود اظهاری
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 flex items-center gap-1">
-                                <Users size={10} />
-                                <span>با نماینده</span>
+                              <span className="px-1 py-0.2 rounded-md font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40">
+                                با نماینده
                               </span>
                             )}
-                            {(prog.classroomTitle || prog.location || prog.madrasRoom || prog.classroom) && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
-                                <DoorOpen size={11} className="shrink-0" />
-                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location || prog.madrasRoom || prog.classroom}</span>
-                              </div>
-                            )}
-                            {prog.timeSlot && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
-                                <Clock size={11} className="shrink-0" />
-                                <span className="truncate">{prog.timeSlot}</span>
-                              </div>
+                            {(prog.classroomTitle || prog.location) && (
+                              <span className="px-1 py-0.2 rounded-md bg-black/15 text-white/90 truncate max-w-[90px]">
+                                {prog.classroomTitle || prog.location}
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Middle Stats Ribbon / Status Details */}
+                        {/* Middle Stats Ribbon */}
                         {st.statusKey === 'recorded' && (
-                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1.5 rounded-xl text-center font-black", st.boxBg)}>
-                            <div>
-                              <span className="block text-[9px] opacity-80">حاضر</span>
-                              <span className="text-xs sm:text-sm font-black">{st.presentCount}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[9px] opacity-80">غایب</span>
-                              <span className="text-xs sm:text-sm font-black">{st.absentCount}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[9px] opacity-80">تاخیر</span>
-                              <span className="text-xs sm:text-sm font-black">{st.lateCount}</span>
-                            </div>
+                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-0.5 rounded-lg text-center font-black text-[9.5px]", st.boxBg)}>
+                            <div><span className="opacity-80">حاضر: </span>{st.presentCount}</div>
+                            <div><span className="opacity-80">غایب: </span>{st.absentCount}</div>
+                            <div><span className="opacity-80">تاخیر: </span>{st.lateCount}</div>
                           </div>
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className={cn("space-y-1 py-1.5 px-2.5 rounded-xl", st.boxBg)}>
-                            <div className="flex items-center gap-1.5 text-[11px]">
-                              <UserCheck2 size={13} className="shrink-0" />
-                              <span className="truncate font-extrabold">استاد جایگزین: {st.substituteName}</span>
-                            </div>
-                            {st.notes && <p className="text-[10px] opacity-85 font-medium line-clamp-1">{st.notes}</p>}
+                          <div className={cn("py-0.5 px-1.5 rounded-lg text-[9.5px] font-extrabold truncate", st.boxBg)}>
+                            استاد جایگزین: {st.substituteName}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className={cn("py-1.5 px-2.5 rounded-xl line-clamp-1 text-[11px] font-bold", st.boxBg)}>
-                            <span className="truncate">علت عدم تشکیل: {st.description}</span>
+                          <div className={cn("py-0.5 px-1.5 rounded-lg text-[9.5px] font-bold truncate", st.boxBg)}>
+                            علت: {st.description}
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className={cn("py-1.5 text-center text-[11px] font-extrabold rounded-xl", st.boxBg)}>
-                            <span>در انتظار ثبت آمار حضور و غیاب امروز</span>
+                          <div className={cn("py-0.5 text-center text-[9.5px] font-extrabold rounded-lg", st.boxBg)}>
+                            در انتظار ثبت حضور و غیاب
                           </div>
                         )}
 
-                        {/* Card Action Buttons: Full Record & Quick Status Change */}
-                        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                        {/* Action Buttons */}
+                        <div className="grid grid-cols-2 gap-1 pt-0.5">
                           <button
                             type="button"
                             onClick={() => {
                               setSelectedProgramId(prog.id);
                               setActiveTab('record');
                             }}
-                            className={cn("col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
-                            title="ورود به فرم کامل ثبت و ویرایش حضور و غیاب این کلاس"
+                            className={cn("col-span-1 py-1 px-1.5 rounded-lg text-[10px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs", st.actionBtn)}
+                            title="ثبت و ویرایش کامل"
                           >
-                            <CheckSquare size={12} className="shrink-0" />
+                            <CheckSquare size={10} className="shrink-0" />
                             <span className="truncate">ثبت و ویرایش</span>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setQuickStatusModal({ prog, initialMode: st.statusKey });
-                            }}
-                            className="col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs bg-black/25 hover:bg-black/35 text-white border border-white/20 hover:border-white/40 backdrop-blur-xs"
-                            title="تغییر سریع وضعیت کارت (تعطیلی، استاد جایگزین، حضور کامل یا بازنشانی)"
+                            onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                            className="col-span-1 py-1 px-1.5 rounded-lg text-[10px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs bg-black/25 hover:bg-black/35 text-white border border-white/20"
+                            title="تغییر سریع وضعیت"
                           >
-                            <SlidersHorizontal size={12} className="shrink-0" />
+                            <SlidersHorizontal size={11} className="shrink-0" />
                             <span className="truncate">تغییر وضعیت</span>
                           </button>
                         </div>
@@ -2591,122 +2746,161 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                <div className={cn(
+                  "grid gap-2.5 sm:gap-3",
+                  isCompactView 
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8" 
+                    : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                )}>
                   {counselingProgs.map(prog => {
                     const st = getStatusCardData(prog);
                     const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
                     const presenceRate = totalAtt > 0 ? Math.round(((st.presentCount || 0) / totalAtt) * 100) : 100;
+
+                    if (isCompactView) {
+                      // EYE-CATCHING HIGH DENSITY COMPACT VIEW CARD FOR COUNSELING
+                      return (
+                        <div
+                          key={prog.id}
+                          className={cn(
+                            "rounded-xl p-2 border transition-all duration-200 flex flex-col justify-between space-y-1.5 relative overflow-hidden text-[11px] shadow-xs backdrop-blur-md hover:scale-[1.03] cursor-default active:scale-[0.98] min-h-[95px]",
+                            st.cardBorder
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={cn("px-1.5 py-0.2 text-[9px] rounded-md font-black truncate max-w-[70px]", st.gradePill)}>
+                              {prog.grade || 'مشاوره'}
+                            </span>
+                            <span className={cn("px-1 py-0.2 text-[8.5px] rounded-md border flex items-center gap-0.5 font-extrabold truncate max-w-[80px]", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate">{st.badgeText.split(' ')[0]}</span>
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <h4 className="text-[11px] font-black truncate leading-tight drop-shadow-2xs" title={prog.title}>
+                              {prog.title}
+                            </h4>
+                            <p className="text-[9.5px] opacity-90 truncate font-semibold">
+                              مشاور: {getProgramTeacherName(prog)}
+                            </p>
+                            <p className="text-[9px] opacity-80 truncate">
+                              نماینده: {getProgramRepName(prog)}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-1 border-t border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProgramId(prog.id);
+                                setActiveTab('record');
+                              }}
+                              className={cn("flex-1 py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs", st.actionBtn)}
+                              title="ثبت و ویرایش"
+                            >
+                              <CheckSquare size={10} />
+                              <span>ثبت</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                              className="py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs bg-black/25 text-white border border-white/20"
+                              title="تغییر وضعیت"
+                            >
+                              <SlidersHorizontal size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // STANDARD VIEW CARD FOR COUNSELING (~20% SMALLER RATIO)
                     return (
                       <div
                         key={prog.id}
                         className={cn(
-                          "rounded-2xl sm:rounded-3xl p-4 sm:p-5 border transition-all duration-300 flex flex-col justify-between space-y-3.5 relative overflow-hidden text-xs shadow-md backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-[0_12px_32px_rgba(0,0,0,0.22)] before:absolute before:inset-0 before:bg-gradient-to-tr before:from-transparent before:via-white/30 before:to-transparent before:translate-x-[-120%] hover:before:translate-x-[120%] before:transition-transform before:duration-1000 before:ease-in-out hover:scale-[1.02] cursor-default active:scale-[0.99] min-h-[195px]",
+                          "rounded-2xl p-2.5 sm:p-3 border transition-all duration-200 flex flex-col justify-between space-y-2 relative overflow-hidden text-xs shadow-xs backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-md hover:scale-[1.01] cursor-default active:scale-[0.99] min-h-[135px]",
                           st.cardBorder
                         )}
                       >
-                        {/* Bank Card Top Row: Grade Pill + Donut & Status Badge */}
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={cn("px-2.5 py-1 text-xs rounded-xl font-black truncate max-w-[110px] tracking-wide shadow-2xs", st.gradePill)}>
+                        {/* Card Top Row */}
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={cn("px-1.5 py-0.5 text-[10px] rounded-lg font-black truncate max-w-[90px] tracking-wide shadow-2xs", st.gradePill)}>
                             {prog.grade || 'مشاوره'}
                           </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 shrink-0">
                             {st.statusKey === 'recorded' && (
-                              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-md text-white/95 border border-white/15 shadow-2xs" title={`درصد حضور روزانه: ${presenceRate}٪`}>
-                                <svg className="w-4 h-4 -rotate-90 shrink-0" viewBox="0 0 36 36">
-                                  <path className="text-white/20" strokeWidth="4" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                  <path className={presenceRate >= 80 ? "text-emerald-300" : presenceRate >= 60 ? "text-amber-300" : "text-rose-300"} strokeDasharray={`${presenceRate}, 100`} strokeWidth="4" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                </svg>
-                                <span className="text-[10px] font-black">{presenceRate}٪</span>
+                              <div className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-black/30 backdrop-blur-md text-white/95 border border-white/15 text-[9px] font-black" title={`درصد حضور: ${presenceRate}٪`}>
+                                <span>{presenceRate}٪</span>
                               </div>
                             )}
-                            <span className={cn("px-2.5 py-1 text-[10px] rounded-xl border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
+                            <span className={cn("px-1.5 py-0.5 text-[9px] rounded-lg border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
                               {st.statusIcon}
-                              <span className="truncate max-w-[70px]">{st.badgeText}</span>
+                              <span className="truncate max-w-[60px]">{st.badgeText}</span>
                             </span>
                           </div>
                         </div>
 
-                        {/* Title & Teacher & Rep & Schedule Meta */}
-                        <div className="space-y-1.5 flex-1">
-                          <h4 className="text-sm sm:text-base font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
+                        {/* Title & Teacher & Rep */}
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <h4 className="text-xs sm:text-[13px] font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
                             {prog.title}
                           </h4>
-                          <div className="flex items-center gap-1.5 text-xs font-bold opacity-95">
-                            <User size={13} className="shrink-0 opacity-80" />
+                          <div className="flex items-center gap-1 text-[10.5px] font-bold opacity-95">
+                            <User size={11} className="shrink-0 opacity-80" />
                             <span className="truncate">مشاور/استاد: {getProgramTeacherName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold opacity-90">
-                            <UserCheck size={12} className="shrink-0 text-emerald-300" />
+                          <div className="flex items-center gap-1 text-[10px] font-semibold opacity-90">
+                            <UserCheck size={10} className="shrink-0 text-emerald-300" />
                             <span className="truncate">نماینده: {getProgramRepName(prog)}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                          <div className="flex items-center gap-1 flex-wrap pt-0.5 text-[9.5px]">
                             {prog.attendanceType === 'self_reporting' ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1">
-                                <UserCheck size={10} />
-                                <span>خود اظهاری</span>
+                              <span className="px-1 py-0.2 rounded-md font-black bg-emerald-500/25 text-emerald-200 border border-emerald-400/40">
+                                خود اظهاری
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 flex items-center gap-1">
-                                <Users size={10} />
-                                <span>با نماینده</span>
+                              <span className="px-1 py-0.2 rounded-md font-black bg-indigo-500/25 text-indigo-200 border border-indigo-400/40">
+                                با نماینده
                               </span>
                             )}
                             {(prog.classroomTitle || prog.location) && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
-                                <DoorOpen size={11} className="shrink-0" />
-                                <span className="truncate max-w-[120px]">{prog.classroomTitle || prog.location}</span>
-                              </div>
-                            )}
-                            {prog.timeSlot && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/15 backdrop-blur-xs border border-white/10 text-[10.5px] opacity-90 font-medium">
-                                <Clock size={11} className="shrink-0" />
-                                <span className="truncate">{prog.timeSlot}</span>
-                              </div>
+                              <span className="px-1 py-0.2 rounded-md bg-black/15 text-white/90 truncate max-w-[90px]">
+                                {prog.classroomTitle || prog.location}
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Middle Stats Ribbon / Status Details */}
+                        {/* Middle Stats Ribbon */}
                         {st.statusKey === 'recorded' && (
-                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1.5 rounded-xl text-center font-black", st.boxBg)}>
-                            <div>
-                              <span className="block text-[9px] opacity-80">حاضر</span>
-                              <span className="text-xs sm:text-sm font-black">{st.presentCount}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[9px] opacity-80">غایب</span>
-                              <span className="text-xs sm:text-sm font-black">{st.absentCount}</span>
-                            </div>
-                            <div>
-                              <span className="block text-[9px] opacity-80">تاخیر</span>
-                              <span className="text-xs sm:text-sm font-black">{st.lateCount}</span>
-                            </div>
+                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1 rounded-xl text-center font-black text-[10px]", st.boxBg)}>
+                            <div><span className="opacity-80">حاضر: </span>{st.presentCount}</div>
+                            <div><span className="opacity-80">غایب: </span>{st.absentCount}</div>
+                            <div><span className="opacity-80">تاخیر: </span>{st.lateCount}</div>
                           </div>
                         )}
 
                         {st.statusKey === 'substitute' && (
-                          <div className={cn("space-y-1 py-1.5 px-2.5 rounded-xl", st.boxBg)}>
-                            <div className="flex items-center gap-1.5 text-[11px]">
-                              <UserCheck2 size={13} className="shrink-0" />
-                              <span className="truncate font-extrabold">استاد جایگزین: {st.substituteName}</span>
-                            </div>
-                            {st.notes && <p className="text-[10px] opacity-85 font-medium line-clamp-1">{st.notes}</p>}
+                          <div className={cn("py-1 px-2 rounded-xl text-[10px] font-extrabold truncate", st.boxBg)}>
+                            استاد جایگزین: {st.substituteName}
                           </div>
                         )}
 
                         {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
-                          <div className={cn("py-1.5 px-2.5 rounded-xl line-clamp-1 text-[11px] font-bold", st.boxBg)}>
-                            <span className="truncate">علت عدم تشکیل: {st.description}</span>
+                          <div className={cn("py-1 px-2 rounded-xl text-[10px] font-bold truncate", st.boxBg)}>
+                            علت: {st.description}
                           </div>
                         )}
 
                         {st.statusKey === 'pending' && (
-                          <div className={cn("py-1.5 text-center text-[11px] font-extrabold rounded-xl", st.boxBg)}>
-                            <span>در انتظار ثبت آمار حضور و غیاب امروز</span>
+                          <div className={cn("py-1 text-center text-[10px] font-extrabold rounded-xl", st.boxBg)}>
+                            در انتظار ثبت حضور و غیاب
                           </div>
                         )}
 
-                        {/* Card Action Buttons: Full Record & Quick Status Change */}
+                        {/* Action Buttons */}
                         <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                           <button
                             type="button"
@@ -2714,22 +2908,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               setSelectedProgramId(prog.id);
                               setActiveTab('record');
                             }}
-                            className={cn("col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs", st.actionBtn)}
-                            title="ورود به فرم کامل ثبت و ویرایش حضور و غیاب این جلسه مشاوره"
+                            className={cn("col-span-1 py-1.5 px-2 rounded-xl text-[10.5px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-2xs", st.actionBtn)}
+                            title="ثبت و ویرایش کامل"
                           >
-                            <CheckSquare size={12} className="shrink-0" />
+                            <CheckSquare size={11} className="shrink-0" />
                             <span className="truncate">ثبت و ویرایش</span>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => {
-                              setQuickStatusModal({ prog, initialMode: st.statusKey });
-                            }}
-                            className="col-span-1 py-2 px-2 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs bg-black/25 hover:bg-black/35 text-white border border-white/20 hover:border-white/40 backdrop-blur-xs"
-                            title="تغییر سریع وضعیت کارت (تعطیلی، مشاور جایگزین، حضور کامل یا بازنشانی)"
+                            onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                            className="col-span-1 py-1.5 px-2 rounded-xl text-[10.5px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-2xs bg-black/25 hover:bg-black/35 text-white border border-white/20"
+                            title="تغییر سریع وضعیت"
                           >
-                            <SlidersHorizontal size={12} className="shrink-0" />
+                            <SlidersHorizontal size={11} className="shrink-0" />
                             <span className="truncate">تغییر وضعیت</span>
                           </button>
                         </div>

@@ -514,8 +514,12 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name?.trim() || isSubmittingStudent) {
-      if (!newStudent.name?.trim()) alert('لطفاً نام و نام خانوادگی را وارد کنید');
+    const fn = newStudent.firstName?.trim() || '';
+    const ln = newStudent.lastName?.trim() || '';
+    const fullName = newStudent.name?.trim() || `${fn} ${ln}`.trim();
+
+    if (!fullName || isSubmittingStudent) {
+      if (!fullName) alert('لطفاً نام و نام خانوادگی را وارد کنید');
       return;
     }
     
@@ -524,6 +528,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       const activeState = newStudent.isActive !== undefined ? isStudentActive(newStudent.isActive) : true;
       const studentPayload: any = {
         ...newStudent,
+        firstName: fn || (fullName.split(' ')[0] || ''),
+        lastName: ln || (fullName.split(' ').slice(1).join(' ') || ''),
+        name: fullName,
         isActive: activeState,
         deactivationReason: !activeState ? (newStudent.deactivationReason || 'صرفا غیر فعال') : undefined
       };
@@ -669,8 +676,14 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   const handleEdit = (student: Student) => {
     setEditingStudent(student);
+    const nameParts = (student.name || '').trim().split(' ');
+    const firstName = student.firstName || nameParts[0] || '';
+    const lastName = student.lastName || nameParts.slice(1).join(' ') || '';
     setNewStudent({
       ...student,
+      firstName,
+      lastName,
+      name: student.name || `${firstName} ${lastName}`.trim(),
       isActive: isStudentActive(student.isActive),
       deactivationReason: student.deactivationReason || 'صرفا غیر فعال'
     });
@@ -1833,15 +1846,40 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     </div>
                   </div>
                   
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">نام و نام خانوادگی <span className="text-rose-500">*</span></label>
-                    <input 
-                      type="text" 
-                      required
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={newStudent.name || ''}
-                      onChange={(e) => setNewStudent({...newStudent, name: e.target.value})}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">نام <span className="text-rose-500">*</span></label>
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="نام طلبه..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={newStudent.firstName || ''}
+                        onChange={(e) => {
+                          const fn = e.target.value;
+                          const ln = newStudent.lastName || '';
+                          const full = `${fn} ${ln}`.trim();
+                          setNewStudent({ ...newStudent, firstName: fn, name: full });
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">نام خانوادگی <span className="text-rose-500">*</span></label>
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="نام خانوادگی..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={newStudent.lastName || ''}
+                        onChange={(e) => {
+                          const ln = e.target.value;
+                          const fn = newStudent.firstName || '';
+                          const full = `${fn} ${ln}`.trim();
+                          setNewStudent({ ...newStudent, lastName: ln, name: full });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">کد ملی</label>

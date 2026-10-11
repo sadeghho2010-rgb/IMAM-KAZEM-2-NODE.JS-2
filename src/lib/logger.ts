@@ -49,12 +49,17 @@ export const logger = winston.createLogger({
  */
 export function requestLogger(req: Request & { requestId?: string }, res: Response, next: NextFunction) {
   const start = Date.now();
-  const requestId = Math.random().toString(36).substring(2, 9);
+  // Standard compact 8-character Request ID
+  const requestId = Math.random().toString(36).substring(2, 10).toUpperCase();
   req.requestId = requestId;
+
+  // Expose Request ID in response header so frontend / user can quote it
+  res.setHeader('X-Request-Id', requestId);
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const message = `${req.method} ${req.originalUrl || req.url} ${res.statusCode} - ${duration}ms`;
+    const path = req.originalUrl || req.url;
+    const message = `${req.method} ${path} ${res.statusCode} - ${duration}ms`;
 
     if (res.statusCode >= 500) {
       logger.error(message, { requestId, ip: req.ip, duration });
@@ -62,6 +67,23 @@ export function requestLogger(req: Request & { requestId?: string }, res: Respon
       logger.warn(message, { requestId, ip: req.ip, duration });
     } else {
       logger.info(message, { requestId, duration });
+    }
+
+    // Record slow request (> 1200ms) asynchronously to monitoring if not noisy
+    if (duration >= 1200 && res.statusCode < 500) {
+      try {
+        import('./monitoringService').then(mod => {
+          mod.recordMonitoringEvent({
+            eventType: 'slow_request',
+            severity: 'warn',
+            routePath: path,
+            statusCode: res.statusCode,
+            durationMs: duration,
+            requestId,
+            shortMessage: `درخواست کند: ${req.method} ${path} (${duration}ms)`
+          });
+        }).catch(() => {});
+      } catch {}
     }
   });
 

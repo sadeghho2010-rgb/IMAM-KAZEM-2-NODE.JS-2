@@ -37,11 +37,13 @@ import counselingRoutes from "./src/routes/counselingRoutes";
 import dataRoutes from "./src/routes/dataRoutes";
 import systemRoutes from "./src/routes/systemRoutes";
 import auditRoutes from "./src/routes/auditRoutes";
+import monitoringRoutes from "./src/routes/monitoringRoutes";
 
 // 2. Cross-cutting Infrastructure
 import { logger, requestLogger } from "./src/lib/logger";
 import { globalErrorHandler } from "./src/lib/errorHandler";
 import { startMemoryMonitor } from "./src/lib/memoryMonitor";
+import { maintenanceMiddleware } from "./src/lib/serverMaintenance";
 import { startSystemHealthMonitor } from "./src/lib/systemHealthMonitor";
 import { BUILD_INFO } from "./src/lib/buildInfo";
 import { fetchAllUsersFromStorage, comparePassword, normalizeDigits } from "./src/lib/serverAuth";
@@ -86,6 +88,9 @@ async function startServer() {
   // Structured Logging for all Incoming Requests
   app.use(requestLogger);
 
+  // System Maintenance Mode Enforcement (bypassed by Super Admin, Education Manager, Finance Manager)
+  app.use(maintenanceMiddleware);
+
   // Unauthenticated diagnostic endpoints for version tracking and container health checks (MOVED TO TOP BEFORE ALL ROUTERS)
   app.get('/api/version', (_req, res) => {
     res.json({
@@ -125,6 +130,7 @@ async function startServer() {
   app.use('/api/counseling', counselingRoutes);
   app.use('/api/system', systemRoutes);
   app.use('/api/audit', auditRoutes);
+  app.use('/api/monitor', monitoringRoutes);
   app.use('/api', dataRoutes);
 
   // System Health Check Endpoint
@@ -240,6 +246,13 @@ async function startServer() {
     import('./src/lib/serverBackupEngine').then(mod => {
       mod.initScheduledBackupService();
       logger.info('[System] Automated database backup scheduler initialized.');
+    }).catch(() => {});
+
+    // Initialize monitoring infrastructure & purge scheduler
+    import('./src/lib/monitoringService').then(mod => {
+      mod.initMonitoringDatabase().catch(() => {});
+      mod.startMonitoringPurgeScheduler();
+      logger.info('[Monitoring] Zero-overhead monitoring database & retention scheduler initialized.');
     }).catch(() => {});
 
     // Automated 24-hour audit logs cleanup scheduler (purges logs older than 30 days)

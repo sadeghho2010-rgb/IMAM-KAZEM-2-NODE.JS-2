@@ -34,8 +34,9 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
-import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup } from '../types';
+import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumBook, CurriculumChapter } from '../types';
 import { localDb } from '../lib/localDb';
+import { StudentCourseProgressService } from '../services/StudentCourseProgressService';
 import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -403,10 +404,10 @@ export function getClassroomConflictDetails(targetRoomName: string, conflictMap:
   return null;
 }
 
-export function getCourseSubjectCategory(p?: { title?: string; subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر' } | string): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
+export function getCourseSubjectCategory(p?: { title?: string; subjectCategory?: string } | string | any): 'اصول' | 'فقه' | 'فلسفه' | 'سایر' {
   if (typeof p === 'object' && p !== null) {
     if (p.subjectCategory && ['اصول', 'فقه', 'فلسفه', 'سایر'].includes(p.subjectCategory)) {
-      return p.subjectCategory;
+      return p.subjectCategory as any;
     }
     return getCourseSubjectCategory(p.title);
   }
@@ -506,7 +507,22 @@ export default function Programs() {
   const [students, setStudents] = useState<Student[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [rooms, setRooms] = useState<MadrasRoom[]>([]);
+  const [curriculumBooks, setCurriculumBooks] = useState<CurriculumBook[]>([]);
+  const [curriculumChapters, setCurriculumChapters] = useState<CurriculumChapter[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadCurriculumBank = async () => {
+      try {
+        const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
+        setCurriculumBooks(seed.books);
+        setCurriculumChapters(seed.chapters);
+      } catch (err) {
+        console.warn('Error loading curriculum bank in Programs:', err);
+      }
+    };
+    loadCurriculumBank();
+  }, []);
 
   // Helper to match program grade with active filter
   const isProgramMatchingGradeFilter = (p: Program, filter: string) => {
@@ -1167,8 +1183,14 @@ export default function Programs() {
         representativeNames: newProgram.representativeNames || [],
         subjectCategory: newProgram.type === 'اصلی' ? newProgram.subjectCategory : undefined,
         subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
+        subjectChapter: newProgram.type === 'اصلی' ? newProgram.subjectChapter : undefined,
+        chapterId: newProgram.type === 'اصلی' ? newProgram.chapterId : undefined,
         mentorId: currentMentorId || 'admin'
       };
+
+      // Auto sync course progress status for students in this grade
+      const gradeStudentIds = students.filter(s => s.grade === programGrade).map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, gradeStudentIds).catch(console.error);
 
       // Optimistic UI Update: update state immediately
       setPrograms(prev => [programPayload, ...prev]);
@@ -1266,8 +1288,14 @@ export default function Programs() {
         customRepresentative: editingProgram.customRepresentative || '',
         parentProgramId: editingProgram.type === 'مشاوره' ? (editingProgram.parentProgramId || '') : '',
         subjectCategory: editingProgram.type === 'اصلی' ? editingProgram.subjectCategory : undefined,
-        subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined
+        subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined,
+        subjectChapter: editingProgram.type === 'اصلی' ? editingProgram.subjectChapter : undefined,
+        chapterId: editingProgram.type === 'اصلی' ? editingProgram.chapterId : undefined
       };
+
+      // Auto sync course progress status for students in this grade
+      const gradeStudentIds = students.filter(s => s.grade === updatedProgram.grade).map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, gradeStudentIds).catch(console.error);
 
       // Optimistic UI update
       setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updatedProgram : p));
@@ -3015,6 +3043,63 @@ export default function Programs() {
                             onChange={(e) => setNewProgram({...newProgram, subjectBook: e.target.value})}
                           />
                         )}
+
+                        {/* STEP 3: Chapter / Section selection dynamically fetched from Curriculum Bank */}
+                        {newProgram.subjectBook && (
+                          <div className="mt-2.5 pt-2.5 border-t border-indigo-100 space-y-1.5">
+                            <label className="block text-[11px] font-bold text-indigo-900">
+                              کدام بخش / مجلد از «{newProgram.subjectBook}»؟ (بانک سرفصل‌ها):
+                            </label>
+                            {(() => {
+                              const matchedChapters = curriculumChapters.filter(c => 
+                                c.bookTitle.trim().includes(newProgram.subjectBook!.trim()) ||
+                                newProgram.subjectBook!.trim().includes(c.bookTitle.trim())
+                              );
+
+                              if (matchedChapters.length === 0) {
+                                return (
+                                  <input
+                                    type="text"
+                                    placeholder="عنوان بخش یا مجلد را وارد کنید (مثلاً: بخش قطع و ظن)..."
+                                    className="w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                                    value={newProgram.subjectChapter || ''}
+                                    onChange={(e) => setNewProgram({ ...newProgram, subjectChapter: e.target.value })}
+                                  />
+                                );
+                              }
+
+                              return (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {matchedChapters.map(chap => {
+                                    const isSel = newProgram.subjectChapter === chap.title;
+                                    return (
+                                      <button
+                                        key={chap.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setNewProgram({
+                                            ...newProgram,
+                                            subjectChapter: chap.title,
+                                            chapterId: chap.id,
+                                            title: `${newProgram.subjectCategory} (${newProgram.subjectBook} - ${chap.title})`
+                                          });
+                                        }}
+                                        className={cn(
+                                          "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer select-none",
+                                          isSel
+                                            ? "bg-amber-600 text-white border-amber-600 shadow-2xs"
+                                            : "bg-white text-amber-950 border-amber-200/90 hover:bg-amber-50"
+                                        )}
+                                      >
+                                        {chap.title} ({chap.credits} واحد)
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -3589,6 +3674,62 @@ export default function Programs() {
                             value={editingProgram.subjectBook === 'سایر (دستی)' ? '' : (editingProgram.subjectBook || '')}
                             onChange={(e) => setEditingProgram({...editingProgram, subjectBook: e.target.value})}
                           />
+                        )}
+
+                        {/* STEP 3: Chapter / Section selection dynamically fetched from Curriculum Bank for Edit */}
+                        {editingProgram.subjectBook && (
+                          <div className="mt-2.5 pt-2.5 border-t border-indigo-100 space-y-1.5">
+                            <label className="block text-[11px] font-bold text-indigo-900">
+                              کدام بخش / مجلد از «{editingProgram.subjectBook}»؟ (بانک سرفصل‌ها):
+                            </label>
+                            {(() => {
+                              const matchedChapters = curriculumChapters.filter(c => 
+                                c.bookTitle.trim().includes(editingProgram.subjectBook!.trim()) ||
+                                editingProgram.subjectBook!.trim().includes(c.bookTitle.trim())
+                              );
+
+                              if (matchedChapters.length === 0) {
+                                return (
+                                  <input
+                                    type="text"
+                                    placeholder="عنوان بخش یا مجلد را وارد کنید (مثلاً: بخش قطع و ظن)..."
+                                    className="w-full px-3 py-1.5 text-xs border border-indigo-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                                    value={editingProgram.subjectChapter || ''}
+                                    onChange={(e) => setEditingProgram({ ...editingProgram, subjectChapter: e.target.value })}
+                                  />
+                                );
+                              }
+
+                              return (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {matchedChapters.map(chap => {
+                                    const isSel = editingProgram.subjectChapter === chap.title;
+                                    return (
+                                      <button
+                                        key={chap.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingProgram({
+                                            ...editingProgram,
+                                            subjectChapter: chap.title,
+                                            chapterId: chap.id
+                                          });
+                                        }}
+                                        className={cn(
+                                          "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer select-none",
+                                          isSel
+                                            ? "bg-amber-600 text-white border-amber-600 shadow-2xs"
+                                            : "bg-white text-amber-950 border-amber-200/90 hover:bg-amber-50"
+                                        )}
+                                      >
+                                        {chap.title} ({chap.credits} واحد)
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
                         )}
                       </div>
                     )}

@@ -508,6 +508,10 @@ export const COLLECTIONS = [
   'evaluation_requests',
   'student_lockers',
   'lockers',
+  'curriculum_subjects',
+  'curriculum_books',
+  'curriculum_chapters',
+  'student_course_progress',
   'app_logs'
 ] as const;
 

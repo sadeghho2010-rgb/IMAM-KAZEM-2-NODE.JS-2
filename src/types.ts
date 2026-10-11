@@ -397,6 +397,8 @@ export type StudentDeactivationReason =
 export interface Student {
   id: string;
   name: string;
+  firstName?: string; // نام
+  lastName?: string;  // نام خانوادگی
   photoUrl?: string;
   nationalId?: string;
   isActive: boolean;
@@ -471,8 +473,10 @@ export interface Program {
   representativeStudentIds?: string[]; // شناسه‌های طلاب نماینده کلاس
   representativeNames?: string[]; // نام‌های نمایندگان کلاس
   customRepresentative?: string; // نماینده متفرقه خارج از طلاب
-  subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر'; // گرایش/شاخه درسی
+  subjectCategory?: 'اصول' | 'فقه' | 'فلسفه' | 'سایر' | string; // گرایش/شاخه درسی
   subjectBook?: string; // کتاب درسی (مثلا رسائل، حلقه ثالثه، کفایه، مکاسب، شرح لمعه، بدایه و...)
+  subjectChapter?: string; // مجلد / بخش / سرفصل درسی (مثلا بخش قطع و ظن، بخش استصحاب)
+  chapterId?: string; // شناسه بخش در بانک دروس
   attendanceType?: 'representative' | 'self_reporting'; // نحوه ثبت حضور و غیاب: ثبت توسط نماینده (پیش‌فرض) یا خوداظهاری توسط طلبه
 }
 
@@ -2195,6 +2199,67 @@ export interface LockerHistoryLog {
   actorId?: string;
   actorName?: string;
   createdAt: string;
+}
+
+// ===================== CURRICULUM & PASSED COURSES TYPES =====================
+
+export interface CurriculumSubject {
+  id: string;
+  title: string;           // e.g. "اصول فقه", "فقه", "فلسفه", "منطق"
+  code?: string;
+  description?: string;
+  orderIndex?: number;
+  color?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CurriculumBook {
+  id: string;
+  subjectId: string;       // links to CurriculumSubject.id
+  subjectTitle: string;    // e.g. "اصول فقه"
+  title: string;           // e.g. "رسائل", "مکاسب", "بدایة الحکمة"
+  credits: number;         // e.g. 4 واحد
+  orderIndex?: number;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CurriculumChapter {
+  id: string;
+  bookId: string;          // links to CurriculumBook.id
+  bookTitle: string;       // e.g. "رسائل"
+  subjectId: string;       // links to CurriculumSubject.id
+  subjectTitle: string;    // e.g. "اصول فقه"
+  title: string;           // e.g. "بخش قطع و ظن", "بخش استصحاب", "بخش تعادل و تراجیح"
+  credits: number;         // e.g. 2 واحد
+  orderIndex?: number;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CourseProgressStatus = 'passed' | 'in_progress' | 'remaining';
+
+export interface StudentCourseProgress {
+  id: string;               // e.g. "progress_${studentId}_${chapterId}"
+  studentId: string;
+  studentName?: string;
+  subjectId: string;
+  subjectTitle: string;
+  bookId: string;
+  bookTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+  status: CourseProgressStatus; // 🟢 'passed', 🔵 'in_progress', 🔴 'remaining'
+  passedAt?: string;
+  passedByUserId?: string;
+  passedByName?: string;
+  gradeAchieved?: number;   // e.g. نمره آزمون
+  notes?: string;
+  programId?: string;       // linked program if in_progress
+  updatedAt: string;
 }
 
 

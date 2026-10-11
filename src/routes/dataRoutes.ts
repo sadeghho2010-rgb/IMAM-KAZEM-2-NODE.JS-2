@@ -116,10 +116,31 @@ router.get('/database/snapshot', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, message: 'مجوز نامعتبر است.' });
   }
 
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  if (!isAuthorizedForMonitoring(verification.decoded)) {
+    return res.status(403).json({ success: false, message: 'فقط کاربران ارشد (مدیر ارشد، مسئول آموزش، مسئول مالی) مجاز به دانلود پشتیبان کامل هستند.' });
+  }
+
+  const operatorName = verification.decoded.name || verification.decoded.username || 'مدیر سامانه';
+
   const { createFullDatabaseSnapshot } = await import('../lib/serverBackupEngine');
+  const { logServerAudit } = await import('../lib/serverAuth');
   try {
     const snapshot = await createFullDatabaseSnapshot(verification.decoded.username || 'operator', false);
     const filename = `madrasah_backup_${snapshot.metadata.timestamp.substring(0, 10)}.json`;
+
+    // Record audit log for backup download
+    await logServerAudit({
+      userId: String(verification.decoded.id || verification.decoded.userId || 'admin'),
+      username: verification.decoded.username || 'admin',
+      userRole: verification.decoded.role || 'manager',
+      action: 'DATABASE_BACKUP_DOWNLOADED',
+      entityType: 'database',
+      entityId: filename,
+      description: `دانلود فایل پشتیبان کامل دیتابیس (${snapshot.metadata.totalRecordsCount} رکورد) توسط ${operatorName}`,
+      ipAddress: getClientIp(req)
+    });
+
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(JSON.stringify(snapshot, null, 2));
@@ -154,19 +175,16 @@ router.post('/database/restore-snapshot', async (req: Request, res: Response) =>
   if (!token) return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
 
   const verification = verifyAccessToken(token);
-  const userRole = verification.decoded?.role;
-  const userLevel = verification.decoded?.level;
-  const username = verification.decoded?.username?.toUpperCase();
+  if (!verification.valid || !verification.decoded) {
+    return res.status(403).json({ success: false, message: 'مجوز نامعتبر است.' });
+  }
 
-  const isAuthorized = verification.valid && verification.decoded && (
-    userLevel === 1 ||
-    userRole === 'super_admin' ||
-    userRole === 'education_manager' ||
-    username === 'SHAH'
-  );
-
-  if (!isAuthorized) {
-    return res.status(403).json({ success: false, message: 'فقط کاربران ارشد سامانه (سطح ۱، سوپر ادمین یا مسئول آموزش) مجاز به بازگردانی کامل پایگاه داده هستند.' });
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  if (!isAuthorizedForMonitoring(verification.decoded)) {
+    return res.status(403).json({ 
+      success: false, 
+      message: 'فقط کاربران ارشد سامانه (مدیر ارشد، مسئول آموزش یا مسئول مالی) مجاز به بازگردانی کامل پایگاه داده هستند.' 
+    });
   }
 
   const { snapshotPayload } = req.body || {};
@@ -192,12 +210,33 @@ router.post('/database/scheduled-backups/run-now', async (req: Request, res: Res
   if (!token) return res.status(401).json({ success: false, message: 'احراز هویت الزامی است.' });
 
   const verification = verifyAccessToken(token);
-  if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
-    return res.status(403).json({ success: false, message: 'دسترسی غیرمجاز' });
+  if (!verification.valid || !verification.decoded) {
+    return res.status(403).json({ success: false, message: 'مجوز نامعتبر است.' });
   }
 
+  const { isAuthorizedForMonitoring } = await import('../config/monitoringAccess');
+  if (!isAuthorizedForMonitoring(verification.decoded)) {
+    return res.status(403).json({ success: false, message: 'دسترسی غیرمجاز برای پشتیبان‌گیری' });
+  }
+
+  const operatorName = verification.decoded.name || verification.decoded.username || 'مدیر سامانه';
+
   const { createFullDatabaseSnapshot } = await import('../lib/serverBackupEngine');
+  const { logServerAudit } = await import('../lib/serverAuth');
   const snapshot = await createFullDatabaseSnapshot(verification.decoded.username, true);
+
+  // Record audit log
+  await logServerAudit({
+    userId: String(verification.decoded.id || verification.decoded.userId || 'admin'),
+    username: verification.decoded.username || 'admin',
+    userRole: verification.decoded.role || 'manager',
+    action: 'DATABASE_BACKUP_CREATED',
+    entityType: 'database',
+    entityId: snapshot.metadata?.timestamp || 'manual_backup',
+    description: `ایجاد نسخه پشتیبان دستی از دیتابیس (${snapshot.metadata.totalRecordsCount} رکورد) توسط ${operatorName}`,
+    ipAddress: getClientIp(req)
+  });
+
   return res.json({
     success: true,
     message: `نسخه پشتیبان خودکار با موفقیت ذخیره شد (${snapshot.metadata.totalRecordsCount} رکورد).`,

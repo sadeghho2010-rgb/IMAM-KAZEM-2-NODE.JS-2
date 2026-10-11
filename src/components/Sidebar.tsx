@@ -97,6 +97,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
     itemIds: [
       'students',
       'active-students',
+      'passed-courses',
       'attendance',
       'discussion',
       'stats',
@@ -169,6 +170,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'finance-expenses-reports', label: 'هزینه‌ها', icon: Receipt },
   { id: 'students', label: 'مدیریت کل طلاب', icon: Users },
   { id: 'active-students', label: 'طلاب فعال', icon: UserCheck },
+  { id: 'passed-courses', label: 'دروس گذرانده شده', icon: BookOpen },
   { id: 'programs', label: 'برنامه‌های مدرسه و کلاس‌ها', icon: Calendar },
   { id: 'student-schedule', label: 'برنامه درسی و هفتگی طلاب', icon: CalendarDays },
   { id: 'teachers-schedule', label: 'برنامه درسی اساتید', icon: GraduationCap },

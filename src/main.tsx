@@ -6,6 +6,10 @@ import '@fontsource/vazirmatn/700.css';
 import '@fontsource/vazirmatn/800.css';
 import App from './App.tsx';
 import './index.css';
+import { initGlobalClientErrorMonitoring } from './lib/clientErrorReporter';
+
+// Global error listener for monitoring
+initGlobalClientErrorMonitoring();
 
 window.addEventListener('vite:preloadError', () => {
   window.location.reload();
