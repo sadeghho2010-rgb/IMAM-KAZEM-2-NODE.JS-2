@@ -55,8 +55,7 @@ import {
   Wallet,
   Send,
   Zap,
-  X,
-  Search
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -217,9 +216,11 @@ export default function MainDashboard({
     return () => clearInterval(timer);
   }, [isHoveredOnCounter]);
 
-  // Software Search Bar State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+  // Display Mode State: 'grouped' (Category Cards - Default Mode 2) vs 'flat' (All Cards Grid - Mode 1)
+  const [displayMode, setDisplayMode] = useState<'grouped' | 'flat'>(() => {
+    const saved = localStorage.getItem('dashboard_display_mode_v2');
+    return (saved === 'flat' || saved === 'grouped') ? saved : 'grouped';
+  });
 
   // Selected Category when in 'grouped' Mode
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(initialCategoryGroup || null);
@@ -384,6 +385,13 @@ export default function MainDashboard({
     setTimeout(() => {
       onNavigateTab(tabId);
     }, 120);
+  };
+
+  // Save display mode
+  const handleToggleDisplayMode = (mode: 'grouped' | 'flat') => {
+    setDisplayMode(mode);
+    setActiveCategoryGroup(null);
+    localStorage.setItem('dashboard_display_mode_v2', mode);
   };
 
   // Load quick live stats
@@ -1233,17 +1241,6 @@ export default function MainDashboard({
     return MAIN_CATEGORY_CARDS.find(c => c.id === activeCategoryGroup) || null;
   }, [activeCategoryGroup]);
 
-  // Search results for software sections
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return Array.from(allowedCardsMap.values()).filter(card => 
-      card.title.toLowerCase().includes(q) ||
-      card.subtitle.toLowerCase().includes(q) ||
-      card.id.toLowerCase().includes(q)
-    );
-  }, [searchQuery, allowedCardsMap]);
-
   // Quick Access Cards State (Persisted in LocalStorage - Max 5)
   const [quickAccessCardIds, setQuickAccessCardIds] = useState<string[]>(() => {
     try {
@@ -1410,6 +1407,37 @@ export default function MainDashboard({
           </button>
         </div>
       )}
+
+      {/* Pending Workflow Alert Banner for Destination Officers */}
+      {pendingWorkflowCount > 0 && isTabAllowed('workflow') && (
+        <div 
+          onClick={() => onNavigateTab('workflow')}
+          className="p-4 rounded-3xl bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 text-white shadow-xl shadow-purple-900/20 border-2 border-purple-300 flex items-center justify-between cursor-pointer active:scale-98 transition-all animate-pulse"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-white text-purple-700 flex items-center justify-center font-black shadow-md shrink-0">
+              <GitBranch size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black">هشدار کارتابل: جریان‌های کار معوق نیازمند بررسی</h4>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black shadow-xs">
+                  {pendingWorkflowCount} مورد جدید
+                </span>
+              </div>
+              <p className="text-xs text-purple-100 mt-0.5">
+                تغییرات گروه‌های مباحثه و فرایندهای آموزشی نیازمند تایید شما هستند. پس از تایید، این هشدار خودکار حذف خواهد شد.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="px-3.5 py-2 bg-white text-purple-900 hover:bg-purple-50 rounded-xl text-xs font-black shrink-0 shadow-md transition-all cursor-pointer"
+          >
+            مشاهده کارتابل
+          </button>
+        </div>
+      )}
       
       {/* 0. CALLIGRAPHIC BISMILLAH & HADITH (Boxless, Minimal, Fine & Beautiful Typography) */}
       {showHadithBanner ? (
@@ -1492,7 +1520,32 @@ export default function MainDashboard({
           <div className="space-y-2 min-w-0 max-w-lg">
             {/* Top row with Red Background Leader Portrait right above سلام و احترام */}
             <div className="flex items-center gap-3">
-              {/* Top row with Greeting & User Role Info & Calendar */}
+              {/* Red Background Photo (حضرت آیت‌الله خامنه‌ای - بالای کلمه احترام و زیر هشدار کارتابل) */}
+              <motion.div
+                initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
+                animate={!isAnimationsDisabled ? { 
+                  opacity: 1, 
+                  scale: 1, 
+                  y: [0, -6, 0] 
+                } : { opacity: 1, scale: 1, y: 0 }}
+                transition={{
+                  y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
+                  opacity: { duration: 0.5 },
+                  scale: { duration: 0.5 }
+                }}
+                whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: 1.5 } : undefined}
+                className="relative group shrink-0 select-none cursor-pointer"
+                title="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
+              >
+                <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-rose-400/80 shadow-lg shadow-rose-500/40 ring-2 ring-rose-500/50 bg-gradient-to-b from-rose-950/60 to-black/70 p-0.5 backdrop-blur-md">
+                  <img
+                    src="/leader_red.png"
+                    alt="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
+                    className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
+                  />
+                </div>
+              </motion.div>
+
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
@@ -1525,8 +1578,33 @@ export default function MainDashboard({
             </div>
           </div>
 
-          {/* LEFT SIDE: Circular Counter */}
+          {/* LEFT SIDE: Green Leader Photo (سمت چپ و قرینه عکس دوم) & Circular Counter */}
           <div className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none">
+            {/* Green Background Leader Photo (قرینه سمت چپ) */}
+            <motion.div
+              initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
+              animate={!isAnimationsDisabled ? { 
+                opacity: 1, 
+                scale: 1, 
+                y: [0, -6, 0] 
+              } : { opacity: 1, scale: 1, y: 0 }}
+              transition={{
+                y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.4 },
+                opacity: { duration: 0.5 },
+                scale: { duration: 0.5 }
+              }}
+              whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: -1.5 } : undefined}
+              className="relative group shrink-0 select-none cursor-pointer"
+              title="حضرت آیت‌الله خامنه‌ای"
+            >
+              <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-emerald-400/80 shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-500/50 bg-gradient-to-b from-emerald-950/60 to-black/70 p-0.5 backdrop-blur-md">
+                <img
+                  src="/leader_green.png"
+                  alt="حضرت آیت‌الله خامنه‌ای"
+                  className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
+                />
+              </div>
+            </motion.div>
 
             {/* Standalone Animated Circular Counter (For Management/Staff only) */}
             {currentUser?.level !== 3 ? (
@@ -1853,262 +1931,739 @@ export default function MainDashboard({
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* 1. ELEGANT COMPACT SOFTWARE SEARCH BAR & CATEGORY PILLS */}
-          <div className="bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 border border-slate-200/90 shadow-sm space-y-3 font-vazir">
-            <div className="relative flex items-center">
-              <div className="absolute right-3.5 text-indigo-600 pointer-events-none flex items-center justify-center">
-                <Search size={19} />
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجو در تمامی بخش‌ها و سامانه‌های نرم‌افزار (مثلاً: کلاس‌ها، درخواست، شهریه، غیبت، استاد)..."
-                className="w-full pr-11 pl-10 py-2.5 sm:py-3 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-slate-900 rounded-2xl text-xs sm:text-sm font-bold border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none"
-              />
-              {searchQuery && (
+        <>
+          {/* 2. DYNAMIC DISPLAY MODE TOOLBAR */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl sm:rounded-3xl p-3.5 sm:p-4 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        
+        {/* Mode Selector Tabs */}
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-2xl w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => handleToggleDisplayMode('grouped')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none",
+              displayMode === 'grouped'
+                ? "bg-white text-indigo-900 shadow-xs border border-slate-200/80"
+                : "text-slate-500 hover:text-slate-800"
+            )}
+          >
+            <Layers size={15} className={displayMode === 'grouped' ? "text-indigo-600" : "text-slate-400"} />
+            <span>دسته‌بندی‌شده (۶ شاخه اصلی)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleToggleDisplayMode('flat')}
+            className={cn(
+              "flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none",
+              displayMode === 'flat'
+                ? "bg-white text-indigo-900 shadow-xs border border-slate-200/80"
+                : "text-slate-500 hover:text-slate-800"
+            )}
+          >
+            <Grid size={15} className={displayMode === 'flat' ? "text-indigo-600" : "text-slate-400"} />
+            <span>نمایش یکپارچه (تمام کارت‌ها)</span>
+          </button>
+        </div>
+
+        {/* Flat Mode & Display Controls / Breadcrumb */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          {/* Quick Access Customization Button (Only if Quick Access is enabled) */}
+          {isQuickAccessEnabled && (
+            <button
+              type="button"
+              onClick={() => setIsQuickAccessModalOpen(true)}
+              className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+              title="انتخاب و ویرایش حداکثر ۵ کارت دسترسی سریع"
+            >
+              <Sparkles size={14} className="text-amber-100 animate-pulse" />
+              <span>افزودن دسترسی‌های سریع</span>
+            </button>
+          )}
+
+          {displayMode === 'grouped' && activeCategoryGroup && (
+            <button
+              type="button"
+              onClick={() => setActiveCategoryGroup(null)}
+              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-200 flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowRight size={14} />
+              <span>بازگشت به تمام دسته‌بندی‌ها</span>
+            </button>
+          )}
+
+          {displayMode === 'flat' && (
+            <>
+              {/* Toggle First Row Sizing Option */}
+              <button
+                type="button"
+                onClick={toggleFirstRowFeatured}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs",
+                  isFirstRowFeatured 
+                    ? "bg-indigo-50 text-indigo-700 border-indigo-200" 
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                )}
+                title="تغییر ابعاد سطر اول به کارت‌های ۳ تایی بزرگ"
+              >
+                <LayoutGrid size={14} className={isFirstRowFeatured ? "text-indigo-600" : "text-slate-400"} />
+                <span className="hidden md:inline">{isFirstRowFeatured ? 'سطر اول ۳ تایی' : 'سطر اول ۴ تایی'}</span>
+              </button>
+
+              {/* Edit / Drag Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95",
+                  isEditMode
+                    ? "bg-emerald-600 text-white border-emerald-600 shadow-emerald-600/20"
+                    : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                {isEditMode ? (
+                  <>
+                    <Check size={15} />
+                    <span>تایید چیدمان</span>
+                  </>
+                ) : (
+                  <>
+                    <Move size={15} className="text-indigo-600" />
+                    <span>جابه‌جایی و ویرایش</span>
+                  </>
+                )}
+              </button>
+
+              {/* Reset Order Button */}
+              {(customOrder.length > 0 || Object.keys(customCardSizes).length > 0) && (
                 <button
                   type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-3 p-1 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
-                  title="پاک کردن جستجو"
+                  onClick={handleResetLayout}
+                  className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 hover:border-rose-200 transition-all cursor-pointer shadow-2xs"
+                  title="بازنشانی چیدمان به حالت اولیه"
                 >
-                  <X size={16} />
+                  <RotateCcw size={15} />
                 </button>
               )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Edit Mode Notice Bar */}
+      <AnimatePresence>
+        {isEditMode && displayMode === 'flat' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={transitionConfig}
+            className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-indigo-500/10 border border-amber-300/80 rounded-xl flex items-center justify-between gap-3 text-right font-vazir text-xs font-bold text-amber-900"
+          >
+            <div className="flex items-center gap-2">
+              <GripVertical size={16} className="text-amber-600 animate-pulse" />
+              <span>حالت ویرایش چیدمان فعال است: کارت‌ها را با ماوس کشیده و جابه‌جا کنید (Drag & Drop).</span>
+            </div>
+            <button
+              onClick={() => setIsEditMode(false)}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-black transition-all cursor-pointer shrink-0 shadow-2xs"
+            >
+              ذخیره
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* DEDICATED EYE-CATCHING QUICK ACCESS BANNER (Available in both grouped & flat modes when enabled) */}
+      {isQuickAccessEnabled && quickAccessCards.length > 0 && (
+        <motion.div
+          initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.96, y: -10 } : { opacity: 1, scale: 1, y: 0 }}
+          animate={!isAnimationsDisabled ? { 
+            opacity: 1, 
+            scale: 1, 
+            y: 0 
+          } : { opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden"
+        >
+          {/* Dark border outline */}
+          <div className="absolute inset-0 rounded-3xl bg-slate-900 pointer-events-none border border-slate-800" />
+
+          {/* Banner inner container with 15% darker black background & single sweeping sheen */}
+          <div className="relative z-10 bg-black rounded-[23px] p-5 text-white shadow-2xl space-y-4 overflow-hidden border border-white/10 backdrop-blur-xl">
+            {/* Continuous Sweeping Lightning / Electric Sheen (تک درخشش روان که میاد و میره) */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[23px]">
+              {/* Single Electric sweep lightning sheen that sweeps completely across */}
+              <div className="absolute top-0 bottom-0 left-0 w-44 bg-gradient-to-r from-transparent via-cyan-300/35 via-white/25 to-transparent skew-x-[-22deg] animate-electric-sweep pointer-events-none" />
             </div>
 
-            {/* Category Filter Pills (When search query is empty) */}
-            {!searchQuery.trim() && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar text-xs">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategoryFilter('all')}
+            {/* Top & Bottom Subtle Border Accents */}
+            <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent pointer-events-none opacity-50" />
+            <div className="absolute bottom-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700 to-transparent pointer-events-none opacity-40" />
+
+            <div className="relative z-10 flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400/40 via-amber-500/25 to-indigo-600/40 text-amber-300 border border-amber-300/60 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/30">
+                  <Zap size={22} className="animate-pulse text-amber-300 drop-shadow-md" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                    <span className="drop-shadow-md">میانبر دسترسی‌های سریع شما</span>
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/30 text-amber-300 border border-amber-400/50 shadow-sm animate-pulse">
+                      {quickAccessCards.length} کارت پرکاربرد
+                    </span>
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-slate-300 font-medium">
+                    دسترسی مستقیم، پرسرعت و آنی به ابزارها و بخش‌های کلیدی حوزه علمیه
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsQuickAccessModalOpen(true)}
+                className="px-3.5 py-1.5 bg-white/10 hover:bg-white/25 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/50 hover:border-amber-300 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm hover:shadow-lg hover:scale-105 active:scale-95"
+              >
+                <Settings size={13} />
+                <span className="hidden sm:inline">مدیریت کارت‌ها</span>
+              </button>
+            </div>
+
+            <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {quickAccessCards.map((card, idx) => {
+                const IconComp = card.icon;
+                return (
+                  <motion.button
+                    key={card.id}
+                    type="button"
+                    initial={!isAnimationsDisabled ? { opacity: 0, y: 14 } : { opacity: 1, y: 0 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.045, duration: 0.35, ease: 'easeOut' }}
+                    whileHover={!isAnimationsDisabled ? {
+                      scale: 1.055,
+                      y: -4,
+                      boxShadow: '0 15px 30px -5px rgba(245, 158, 11, 0.35), 0 0 15px rgba(255, 255, 255, 0.2)',
+                      transition: { type: 'spring', stiffness: 450, damping: 20 }
+                    } : undefined}
+                    whileTap={!isAnimationsDisabled ? { scale: 0.95 } : undefined}
+                    onClick={() => onNavigateTab(card.id)}
+                    className="group relative p-3.5 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-amber-300/80 hover:shadow-2xl hover:shadow-amber-500/25 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2.5 overflow-hidden backdrop-blur-lg"
+                  >
+                    {/* Continuous subtle inner sheen on card */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-20deg] animate-electric-sweep pointer-events-none opacity-40 group-hover:opacity-100" />
+
+                    {/* Interactive hover instant light sweep per card */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent skew-x-[-20deg] -translate-x-[200%] group-hover:translate-x-[300%] transition-transform duration-700 pointer-events-none" />
+
+                    <div className="flex items-center justify-between relative z-10">
+                      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0 transition-transform duration-300 group-hover:scale-115 group-hover:rotate-3", card.iconBg)}>
+                        <IconComp size={18} />
+                      </div>
+                      <ChevronLeft size={16} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1.5 transition-all drop-shadow-sm" />
+                    </div>
+                    <div className="relative z-10">
+                      <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate drop-shadow-sm">
+                        {card.title}
+                      </h4>
+                      <p className="text-[10px] text-slate-300/90 group-hover:text-slate-100 font-medium truncate mt-0.5">
+                        {card.subtitle}
+                      </p>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* 3. MAIN CARDS CONTAINER WITH SMOOTH ANIMATED TRANSITIONS */}
+      <AnimatePresence mode="wait">
+        
+        {/* MODE 2: GROUPED CATEGORY CARDS VIEW (MAIN DEFAULTS) */}
+        {displayMode === 'grouped' && !activeCategoryGroup && (
+          <motion.div
+            key="grouped-categories-list"
+            initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
+            transition={transitionConfig}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+          >
+            {allowedCategoryCards.map((cat) => {
+              const Icon = cat.icon;
+              const subItemsCount = cat.itemIds.filter(id => allowedCardsMap.has(id)).length;
+              const hasBadge = cat.id === 'requests_group' ? unreadRequestsCount > 0 :
+                               cat.id === 'system_group' ? unresolvedAnomaliesCount > 0 : false;
+              const badgeText = cat.id === 'requests_group' && unreadRequestsCount > 0 ? `${unreadRequestsCount} درخواست جدید` :
+                                cat.id === 'system_group' && unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined;
+
+              return (
+                <motion.div
+                  key={cat.id}
+                  whileHover={!isAnimationsDisabled ? { 
+                    scale: 1.025, 
+                    y: -6,
+                    rotateX: -1.5,
+                    rotateY: 2,
+                    transition: { duration: 0.22, ease: 'easeOut' }
+                  } : undefined}
+                  whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
+                  onClick={() => setActiveCategoryGroup(cat.id)}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs border",
-                    selectedCategoryFilter === 'all'
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/80"
+                    "relative group overflow-hidden bg-white/95 rounded-3xl p-6 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-sm select-none backdrop-blur-md min-h-[175px]",
+                    cat.borderGlow,
+                    hasBadge ? "border-rose-300 ring-2 ring-rose-500/20" : "border-slate-200/90"
                   )}
                 >
-                  همه بخش‌ها ({allowedCardsMap.size})
-                </button>
+                  {/* Background Morphing Gradient On Hover */}
+                  <div className={cn(
+                    "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                    cat.cardGradient
+                  )} />
 
-                {allowedCategoryCards.map(cat => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => setSelectedCategoryFilter(cat.id)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs border flex items-center gap-1.5",
-                      selectedCategoryFilter === cat.id
-                        ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20"
-                        : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/80"
-                    )}
-                  >
-                    <span>{cat.title}</span>
-                  </button>
-                ))}
+                  {/* Shimmer Light Reflection Sweep */}
+                  {!isAnimationsDisabled && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+                  )}
+
+                  <div className="relative z-10 space-y-3.5">
+                    {/* Category Icon & Sub-item Counter */}
+                    <div className="flex items-center justify-between">
+                      <div className={cn(
+                        "w-13 h-13 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
+                        cat.iconBg
+                      )}>
+                        <Icon size={26} />
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {badgeText && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50 flex items-center gap-1">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                            </span>
+                            <span>{badgeText}</span>
+                          </span>
+                        )}
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-200">
+                          <AnimatedCounter value={subItemsCount} /> بخش
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Category Titles */}
+                    <div className="space-y-1">
+                      <h3 className="text-base sm:text-lg font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
+                        {cat.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                        {cat.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer Action Link */}
+                  <div className="relative z-10 pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                    <span className="text-xs font-black group-hover:translate-x-1 transition-transform">مشاهده زیرمجموعه‌ها ({subItemsCount})</span>
+                    <div className={cn(
+                      "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
+                      cat.accentText
+                    )}>
+                      <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
+
+        {/* MODE 2 - SUB-LEVEL CARDS VIEW (When a category is selected) */}
+        {displayMode === 'grouped' && activeCategoryGroup && (
+          <motion.div
+            key={`category-subitems-${activeCategoryGroup}`}
+            initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
+            transition={transitionConfig}
+            className="space-y-4"
+          >
+            {/* Category Breadcrumb Title */}
+            {activeCategoryDef && (
+              <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0", activeCategoryDef.iconBg)}>
+                    {React.createElement(activeCategoryDef.icon, { size: 18 })}
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900">{activeCategoryDef.title}</h2>
+                    <p className="text-[11px] text-slate-500 font-medium">زیرمجموعه‌های این بخش ({activeGroupCards.length} کارت فعال)</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveCategoryGroup(null)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <ArrowRight size={14} />
+                  <span>بازگشت به کارت‌های اصلی</span>
+                </button>
               </div>
             )}
-          </div>
 
-          {/* 2. LIVE SEARCH RESULTS OR DIRECT CATEGORIZED SECTIONS */}
-          {searchQuery.trim() !== '' ? (
-            <div className="space-y-3 bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 border border-slate-200/90 shadow-sm">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
-                <span>نتایج جستجو:</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-black">
-                  {searchResults.length} بخش یافت شد
-                </span>
+            {/* Grid of Sub-Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {activeGroupCards.map((card) => {
+                const Icon = card.icon;
+
+                return (
+                  <motion.div
+                    key={card.id}
+                    whileHover={!isAnimationsDisabled ? { 
+                      scale: 1.025, 
+                      y: -6,
+                      rotateX: -1.5,
+                      rotateY: 2,
+                      transition: { duration: 0.22, ease: 'easeOut' }
+                    } : undefined}
+                    whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
+                    onClick={(e) => handleCardClick(e as any, card.id)}
+                    className={cn(
+                      "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-sm select-none backdrop-blur-md min-h-[150px]",
+                      card.borderGlow,
+                      card.highlight ? "border-rose-300 ring-2 ring-rose-500/30" : "border-slate-200/90"
+                    )}
+                  >
+                    {/* Background Morphing Gradient On Hover */}
+                    <div className={cn(
+                      "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                      card.cardGradient
+                    )} />
+
+                    {/* Shimmer Light Reflection Sweep */}
+                    {!isAnimationsDisabled && (
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+                    )}
+
+                    <div className="relative z-10 space-y-3">
+                      {/* Card Icon & Badge */}
+                      <div className="flex items-center justify-between">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
+                          card.iconBg
+                        )}>
+                          <Icon size={24} />
+                        </div>
+
+                        {card.badgeText && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
+                            {card.badgeText}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Card Titles */}
+                      <div className="space-y-1">
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
+                          {card.title}
+                        </h3>
+                        <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                          {card.subtitle}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Footer Action Link */}
+                    <div className="relative z-10 pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                      <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
+                      <div className={cn(
+                        "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
+                        card.accentText
+                      )}>
+                        <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* MODE 1: FLAT VIEW (ALL CARDS IN ONE GRID WITH DRAG & DROP) */}
+        {displayMode === 'flat' && (
+          <motion.div
+            key="flat-cards-grid"
+            initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
+            transition={transitionConfig}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 auto-rows-fr"
+          >
+            {sortedCards.map((card, index) => {
+              const Icon = card.icon;
+
+              // Determine Card Sizing
+              const customSize = customCardSizes[card.id];
+              const isRow1Featured = isFirstRowFeatured && index < 3;
+              const isLarge = customSize === 'large' || (customSize === undefined && isRow1Featured);
+
+              const spanClass = isLarge
+                ? "col-span-1 md:col-span-2 lg:col-span-4/3 xl:col-span-4/3 min-h-[160px]"
+                : "col-span-1 min-h-[145px]";
+
+              const isBeingDragged = draggedIndex === index;
+              const isBeingDraggedOver = dragOverIndex === index;
+
+              return (
+                <motion.div
+                  key={card.id}
+                  layout={!isAnimationsDisabled}
+                  draggable={isEditMode}
+                  onDragStart={(e) => handleDragStart(e as any, index)}
+                  onDragOver={(e) => handleDragOver(e as any, index)}
+                  onDrop={(e) => handleDrop(e as any, index)}
+                  whileHover={!isAnimationsDisabled && !isEditMode ? { 
+                    scale: 1.025, 
+                    y: -6,
+                    rotateX: -1.5,
+                    rotateY: 2,
+                    transition: { duration: 0.22, ease: 'easeOut' }
+                  } : undefined}
+                  whileTap={!isAnimationsDisabled && !isEditMode ? { scale: 0.97 } : undefined}
+                  onClick={(e) => handleCardClick(e as any, card.id)}
+                  className={cn(
+                    "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 flex flex-col justify-between shadow-sm select-none backdrop-blur-md",
+                    spanClass,
+                    card.highlight ? "border-rose-300 ring-2 ring-rose-500/30" : "border-slate-200/90",
+                    card.borderGlow,
+                    isEditMode ? "cursor-grab active:cursor-grabbing ring-2 ring-indigo-400/40 border-indigo-300 shadow-md" : "cursor-pointer",
+                    isBeingDragged && "opacity-40 scale-95 border-dashed border-indigo-500",
+                    isBeingDraggedOver && "ring-4 ring-emerald-500/50 scale-102 border-emerald-500 shadow-xl"
+                  )}
+                >
+                  {/* Background Morphing Gradient On Hover */}
+                  <div className={cn(
+                    "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                    card.cardGradient
+                  )} />
+
+                  {/* Shimmer Light Reflection Sweep */}
+                  {!isAnimationsDisabled && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+                  )}
+
+                  {/* Circular Ripple Wave */}
+                  {ripples.map(r => (
+                    <span
+                      key={r.id}
+                      className="absolute bg-indigo-500/30 rounded-full pointer-events-none animate-ping"
+                      style={{
+                        left: r.x - 20,
+                        top: r.y - 20,
+                        width: 40,
+                        height: 40
+                      }}
+                    />
+                  ))}
+
+                  {/* Drag Handle & Edit Overlay Controls */}
+                  {isEditMode && (
+                    <div className="absolute top-2.5 left-2.5 z-30 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1 rounded-xl text-white shadow-lg">
+                      <div className="p-1 text-slate-400 hover:text-white cursor-grab" title="برای جابه‌جایی بکشید">
+                        <GripVertical size={16} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => toggleCardSize(card.id, e)}
+                        className="p-1 hover:bg-white/20 rounded-lg transition-colors cursor-pointer text-amber-300"
+                        title={isLarge ? "کوچک‌سازی کارت" : "بزرگ‌سازی کارت"}
+                      >
+                        {isLarge ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="relative z-10 space-y-3.5">
+                    {/* Card Icon & Glowing Badge */}
+                    <div className="flex items-center justify-between">
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
+                        card.iconBg
+                      )}>
+                        <Icon size={24} />
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {/* Size Indicator in Edit Mode */}
+                        {isEditMode && (
+                          <span className={cn(
+                            "text-[9px] px-2 py-0.5 rounded-full font-black border",
+                            isLarge ? "bg-amber-50 text-amber-800 border-amber-200" : "bg-slate-100 text-slate-600 border-slate-200"
+                          )}>
+                            {isLarge ? 'سایز بزرگ' : 'عادی'}
+                          </span>
+                        )}
+
+                        {/* Live Badge */}
+                        {card.badgeText && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
+                            {card.badgeText}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Card Titles & Descriptions */}
+                    <div className="space-y-1">
+                      <h3 className={cn(
+                        "font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight",
+                        isLarge ? "text-base sm:text-lg" : "text-sm sm:text-base"
+                      )}>
+                        {card.title}
+                      </h3>
+                      <p className={cn(
+                        "text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2 transition-colors",
+                        isLarge ? "text-xs sm:text-sm" : "text-[11px]"
+                      )}>
+                        {card.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Footer Action Link with Hover Arrow */}
+                  <div className="relative z-10 pt-3.5 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                    <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
+                    <div className={cn(
+                      "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
+                      card.accentText
+                    )}>
+                      <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+        </>
+      )}
+
+      {/* QUICK ACCESS CUSTOMIZATION MODAL */}
+      <AnimatePresence>
+        {isQuickAccessModalOpen && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-[80] flex items-center justify-center p-4 lg:p-8" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-md shadow-amber-200">
+                    <Zap size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900">تنظیم دسترسی‌های سریع روی داشبورد</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      حداکثر ۵ کارت پرکاربرد خود را انتخاب فرمایید تا در بالای داشبورد برای دسترسی سریع قرار گیرند
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAccessModalOpen(false)}
+                  className="p-2 hover:bg-slate-200/80 rounded-2xl text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
               </div>
 
-              {searchResults.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4.5 p-1">
-                  {searchResults.map(card => {
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                <div className="flex items-center justify-between bg-amber-50/80 border border-amber-200/80 p-3 rounded-2xl text-xs font-bold text-amber-950">
+                  <span>تعداد کارت‌های انتخاب‌شده:</span>
+                  <span className="px-3 py-1 bg-amber-500 text-white rounded-xl font-black">
+                    {quickAccessCardIds.length} از ۵ کارت
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {Array.from(allowedCardsMap.values()).map(card => {
+                    const isSelected = quickAccessCardIds.includes(card.id);
                     const IconComp = card.icon;
+
                     return (
-                      <motion.div
+                      <div
                         key={card.id}
-                        whileHover={!isAnimationsDisabled ? { scale: 1.02, y: -3 } : undefined}
-                        whileTap={!isAnimationsDisabled ? { scale: 0.98 } : undefined}
-                        onClick={(e) => {
-                          setSearchQuery('');
-                          handleCardClick(e as any, card.id);
+                        onClick={() => {
+                          if (isSelected) {
+                            saveQuickAccessIds(quickAccessCardIds.filter(id => id !== card.id));
+                          } else {
+                            if (quickAccessCardIds.length >= 5) {
+                              alert('سقف ۵ کارت دسترسی سریع تکمیل شده است. ابتدا یکی از کارت‌های فعلی را از حالت انتخاب خارج فرمایید.');
+                              return;
+                            }
+                            saveQuickAccessIds([...quickAccessCardIds, card.id]);
+                          }
                         }}
                         className={cn(
-                          "relative group overflow-hidden bg-white/95 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-2xs hover:shadow-md select-none backdrop-blur-md min-h-[145px] active:scale-[0.98]",
-                          card.borderGlow,
-                          card.highlight ? "border-rose-400 ring-2 ring-rose-500/20" : "border-slate-200/90"
+                          "p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer select-none",
+                          isSelected 
+                            ? "bg-amber-50/60 border-amber-300 ring-2 ring-amber-400/40" 
+                            : "bg-white hover:bg-slate-50 border-slate-200 hover:border-amber-200"
                         )}
                       >
-                        <div className={cn(
-                          "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-                          card.cardGradient
-                        )} />
-
-                        <div className="relative z-10 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className={cn(
-                              "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-105 shrink-0",
-                              card.iconBg
-                            )}>
-                              <IconComp size={22} />
-                            </div>
-
-                            {card.badgeText && (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xs animate-bounce flex items-center gap-1">
-                                <span>{card.badgeText}</span>
-                              </span>
-                            )}
+                        <div className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer pointer-events-none shrink-0"
+                          />
+                          <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-2xs", card.iconBg)}>
+                            <IconComp size={18} />
                           </div>
-
-                          <div className="space-y-1">
-                            <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
-                              {card.title}
-                            </h3>
-                            <p className="text-[11px] sm:text-xs text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
-                              {card.subtitle}
-                            </p>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-black text-slate-900 truncate">{card.title}</h4>
+                            <p className="text-[10px] text-slate-500 font-medium truncate">{card.subtitle}</p>
                           </div>
                         </div>
 
-                        <div className="relative z-10 pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                          <span className="text-[11px] font-bold">ورود به بخش</span>
-                          <div className={cn(
-                            "w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs",
-                            card.accentText
-                          )}>
-                            <ArrowLeft size={13} className="transform group-hover:-translate-x-0.5 transition-transform" />
-                          </div>
-                        </div>
-                      </motion.div>
+                        <span className={cn(
+                          "text-[10px] font-bold px-2.5 py-1 rounded-xl border shrink-0 mr-2",
+                          isSelected 
+                            ? "bg-amber-500 text-white border-amber-500 font-black shadow-xs" 
+                            : "bg-slate-100 text-slate-600 border-slate-200"
+                        )}>
+                          {isSelected ? 'انتخاب شده ✓' : 'انتخاب'}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
-              ) : (
-                <div className="p-8 text-center text-xs sm:text-sm font-bold text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                  هیچ بخشی با عبارت «{searchQuery}» یافت نشد.
-                </div>
-              )}
-            </div>
-          ) : (
-            /* ALL PERMITTED CARDS DIRECTLY ON DASHBOARD BY CATEGORY SECTION */
-            <div className="space-y-8">
-              {allowedCategoryCards
-                .filter(cat => selectedCategoryFilter === 'all' || selectedCategoryFilter === cat.id)
-                .map(cat => {
-                  const CatIcon = cat.icon;
-                  const catSubCards = cat.itemIds
-                    .map(id => allowedCardsMap.get(id))
-                    .filter((c): c is DashboardCardDef => Boolean(c));
+              </div>
 
-                  if (catSubCards.length === 0) return null;
-
-                  return (
-                    <div key={cat.id} className="space-y-3.5">
-                      {/* Category Section Header */}
-                      <div className="flex items-center justify-between px-1 border-b border-slate-200/80 pb-2.5">
-                        <div className="flex items-center gap-2.5">
-                          <div className={cn("w-9 h-9 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-xs", cat.iconBg)}>
-                            <CatIcon size={20} />
-                          </div>
-                          <div>
-                            <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
-                              <span>{cat.title}</span>
-                              {cat.badgeText && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-bounce">
-                                  {cat.badgeText}
-                                </span>
-                              )}
-                            </h2>
-                            <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-                              {cat.subtitle}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-slate-100 text-slate-700 border border-slate-200/80 shadow-2xs">
-                          {catSubCards.length} بخش
-                        </span>
-                      </div>
-
-                      {/* Cards Grid for this category */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-                        {catSubCards.map(card => {
-                          const Icon = card.icon;
-                          return (
-                            <motion.div
-                              key={card.id}
-                              whileHover={!isAnimationsDisabled ? { 
-                                scale: 1.025, 
-                                y: -5,
-                                transition: { duration: 0.2, ease: 'easeOut' }
-                              } : undefined}
-                              whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
-                              onClick={(e) => handleCardClick(e as any, card.id)}
-                              className={cn(
-                                "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-md select-none backdrop-blur-md min-h-[155px] active:scale-[0.98]",
-                                card.borderGlow,
-                                card.highlight ? "border-rose-400 ring-2 ring-rose-500/20" : "border-slate-200/90"
-                              )}
-                            >
-                              <div className={cn(
-                                "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-                                card.cardGradient
-                              )} />
-
-                              {!isAnimationsDisabled && (
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
-                              )}
-
-                              <div className="relative z-10 space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <div className={cn(
-                                    "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
-                                    card.iconBg
-                                  )}>
-                                    <Icon size={24} />
-                                  </div>
-
-                                  {card.badgeText && (
-                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
-                                      {card.badgeText}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="space-y-1">
-                                  <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
-                                    {card.title}
-                                  </h3>
-                                  <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
-                                    {card.subtitle}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="relative z-10 pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                                <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
-                                <div className={cn(
-                                  "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
-                                  card.accentText
-                                )}>
-                                  <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
-                                </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </div>
-      )}
-      </div>
-    );
+              {/* Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAccessModalOpen(false)}
+                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md"
+                >
+                  تایید و بستن
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
