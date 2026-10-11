@@ -219,6 +219,7 @@ export default function MainDashboard({
 
   // Software Search Bar State
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
 
   // Selected Category when in 'grouped' Mode
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(initialCategoryGroup || null);
@@ -1852,9 +1853,9 @@ export default function MainDashboard({
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          {/* 2. ELEGANT COMPACT SOFTWARE SEARCH BAR */}
-          <div className="bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 border border-slate-200/90 shadow-md space-y-3 font-vazir">
+        <div className="space-y-6">
+          {/* 1. ELEGANT COMPACT SOFTWARE SEARCH BAR & CATEGORY PILLS */}
+          <div className="bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-3 sm:p-4 border border-slate-200/90 shadow-sm space-y-3 font-vazir">
             <div className="relative flex items-center">
               <div className="absolute right-3.5 text-indigo-600 pointer-events-none flex items-center justify-center">
                 <Search size={19} />
@@ -1878,268 +1879,234 @@ export default function MainDashboard({
               )}
             </div>
 
-            {/* Active search results grid */}
-            {searchQuery.trim() !== '' && (
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
-                  <span>نتایج جستجو:</span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-black">
-                    {searchResults.length} بخش یافت شد
-                  </span>
-                </div>
+            {/* Category Filter Pills (When search query is empty) */}
+            {!searchQuery.trim() && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter('all')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs border",
+                    selectedCategoryFilter === 'all'
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/80"
+                  )}
+                >
+                  همه بخش‌ها ({allowedCardsMap.size})
+                </button>
 
-                {searchResults.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[60vh] overflow-y-auto p-1">
-                    {searchResults.map(card => {
-                      const IconComp = card.icon;
-                      return (
-                        <button
-                          key={card.id}
-                          type="button"
-                          onClick={() => {
-                            setSearchQuery('');
-                            onNavigateTab(card.id);
-                          }}
-                          className="p-3 bg-slate-50 hover:bg-indigo-50/80 border border-slate-200/80 hover:border-indigo-300 rounded-2xl transition-all cursor-pointer text-right flex items-center gap-3 group active:scale-98 shadow-2xs"
-                        >
-                          <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm transition-transform group-hover:scale-110", card.iconBg)}>
-                            <IconComp size={18} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs font-black text-slate-800 group-hover:text-indigo-900 truncate">
-                              {card.title}
-                            </h4>
-                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                              {card.subtitle}
-                            </p>
-                          </div>
-                          <ChevronLeft size={16} className="text-slate-400 group-hover:text-indigo-600 group-hover:-translate-x-1 transition-all shrink-0" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="p-6 text-center text-xs font-bold text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                    هیچ بخشی با عبارت «{searchQuery}» یافت نشد.
-                  </div>
-                )}
+                {allowedCategoryCards.map(cat => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategoryFilter(cat.id)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs border flex items-center gap-1.5",
+                      selectedCategoryFilter === cat.id
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-indigo-600/20"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200/80"
+                    )}
+                  >
+                    <span>{cat.title}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          {/* 3. MAIN CATEGORIZED CARDS CONTAINER */}
-          <AnimatePresence mode="wait">
-            {!activeCategoryGroup && (
-              <motion.div
-                key="grouped-categories-list"
-                initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
-                transition={transitionConfig}
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-              >
-            {allowedCategoryCards.map((cat) => {
-              const Icon = cat.icon;
-              const subItemsCount = cat.itemIds.filter(id => allowedCardsMap.has(id)).length;
-              const hasBadge = cat.id === 'requests_group' ? unreadRequestsCount > 0 :
-                               cat.id === 'system_group' ? unresolvedAnomaliesCount > 0 : false;
-              const badgeText = cat.id === 'requests_group' && unreadRequestsCount > 0 ? `${unreadRequestsCount} درخواست جدید` :
-                                cat.id === 'system_group' && unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined;
-
-              return (
-                <motion.div
-                  key={cat.id}
-                  whileHover={!isAnimationsDisabled ? { 
-                    scale: 1.025, 
-                    y: -6,
-                    rotateX: -1.5,
-                    rotateY: 2,
-                    transition: { duration: 0.22, ease: 'easeOut' }
-                  } : undefined}
-                  whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
-                  onClick={() => setActiveCategoryGroup(cat.id)}
-                  className={cn(
-                    "relative group overflow-hidden bg-white/95 rounded-3xl p-6 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-sm select-none backdrop-blur-md min-h-[175px]",
-                    cat.borderGlow,
-                    hasBadge ? "border-rose-300 ring-2 ring-rose-500/20" : "border-slate-200/90"
-                  )}
-                >
-                  {/* Background Morphing Gradient On Hover */}
-                  <div className={cn(
-                    "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-                    cat.cardGradient
-                  )} />
-
-                  {/* Shimmer Light Reflection Sweep */}
-                  {!isAnimationsDisabled && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
-                  )}
-
-                  <div className="relative z-10 space-y-3.5">
-                    {/* Category Icon & Sub-item Counter */}
-                    <div className="flex items-center justify-between">
-                      <div className={cn(
-                        "w-13 h-13 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
-                        cat.iconBg
-                      )}>
-                        <Icon size={26} />
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {badgeText && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50 flex items-center gap-1">
-                            <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-                            </span>
-                            <span>{badgeText}</span>
-                          </span>
-                        )}
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-200">
-                          <AnimatedCounter value={subItemsCount} /> بخش
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Category Titles */}
-                    <div className="space-y-1">
-                      <h3 className="text-base sm:text-lg font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
-                        {cat.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
-                        {cat.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Footer Action Link */}
-                  <div className="relative z-10 pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                    <span className="text-xs font-black group-hover:translate-x-1 transition-transform">مشاهده زیرمجموعه‌ها ({subItemsCount})</span>
-                    <div className={cn(
-                      "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
-                      cat.accentText
-                    )}>
-                      <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        )}
-
-        {/* SUB-LEVEL CARDS VIEW (When a category is selected) */}
-        {activeCategoryGroup && (
-          <motion.div
-            key={`category-subitems-${activeCategoryGroup}`}
-            initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: 8 } : { opacity: 1, scale: 1, y: 0 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={!isAnimationsDisabled ? { opacity: 0, scale: 0.97, y: -8 } : { opacity: 1, scale: 1, y: 0 }}
-            transition={transitionConfig}
-            className="space-y-4"
-          >
-            {/* Category Breadcrumb Title */}
-            {activeCategoryDef && (
-              <div className="p-3.5 bg-white rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0", activeCategoryDef.iconBg)}>
-                    {React.createElement(activeCategoryDef.icon, { size: 18 })}
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-black text-slate-900">{activeCategoryDef.title}</h2>
-                    <p className="text-[11px] text-slate-500 font-medium">زیرمجموعه‌های این بخش ({activeGroupCards.length} کارت فعال)</p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setActiveCategoryGroup(null)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <ArrowRight size={14} />
-                  <span>بازگشت به کارت‌های اصلی</span>
-                </button>
+          {/* 2. LIVE SEARCH RESULTS OR DIRECT CATEGORIZED SECTIONS */}
+          {searchQuery.trim() !== '' ? (
+            <div className="space-y-3 bg-white/90 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 border border-slate-200/90 shadow-sm">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+                <span>نتایج جستجو:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-black">
+                  {searchResults.length} بخش یافت شد
+                </span>
               </div>
-            )}
 
-            {/* Grid of Sub-Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {activeGroupCards.map((card) => {
-                const Icon = card.icon;
-
-                return (
-                  <motion.div
-                    key={card.id}
-                    whileHover={!isAnimationsDisabled ? { 
-                      scale: 1.025, 
-                      y: -6,
-                      rotateX: -1.5,
-                      rotateY: 2,
-                      transition: { duration: 0.22, ease: 'easeOut' }
-                    } : undefined}
-                    whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
-                    onClick={(e) => handleCardClick(e as any, card.id)}
-                    className={cn(
-                      "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-sm select-none backdrop-blur-md min-h-[150px]",
-                      card.borderGlow,
-                      card.highlight ? "border-rose-300 ring-2 ring-rose-500/30" : "border-slate-200/90"
-                    )}
-                  >
-                    {/* Background Morphing Gradient On Hover */}
-                    <div className={cn(
-                      "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-                      card.cardGradient
-                    )} />
-
-                    {/* Shimmer Light Reflection Sweep */}
-                    {!isAnimationsDisabled && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
-                    )}
-
-                    <div className="relative z-10 space-y-3">
-                      {/* Card Icon & Badge */}
-                      <div className="flex items-center justify-between">
+              {searchResults.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4.5 p-1">
+                  {searchResults.map(card => {
+                    const IconComp = card.icon;
+                    return (
+                      <motion.div
+                        key={card.id}
+                        whileHover={!isAnimationsDisabled ? { scale: 1.02, y: -3 } : undefined}
+                        whileTap={!isAnimationsDisabled ? { scale: 0.98 } : undefined}
+                        onClick={(e) => {
+                          setSearchQuery('');
+                          handleCardClick(e as any, card.id);
+                        }}
+                        className={cn(
+                          "relative group overflow-hidden bg-white/95 rounded-2xl sm:rounded-3xl p-4 sm:p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-2xs hover:shadow-md select-none backdrop-blur-md min-h-[145px] active:scale-[0.98]",
+                          card.borderGlow,
+                          card.highlight ? "border-rose-400 ring-2 ring-rose-500/20" : "border-slate-200/90"
+                        )}
+                      >
                         <div className={cn(
-                          "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
-                          card.iconBg
-                        )}>
-                          <Icon size={24} />
+                          "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                          card.cardGradient
+                        )} />
+
+                        <div className="relative z-10 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className={cn(
+                              "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-105 shrink-0",
+                              card.iconBg
+                            )}>
+                              <IconComp size={22} />
+                            </div>
+
+                            {card.badgeText && (
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-xs animate-bounce flex items-center gap-1">
+                                <span>{card.badgeText}</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="space-y-1">
+                            <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
+                              {card.title}
+                            </h3>
+                            <p className="text-[11px] sm:text-xs text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                              {card.subtitle}
+                            </p>
+                          </div>
                         </div>
 
-                        {card.badgeText && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
-                            {card.badgeText}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Card Titles */}
-                      <div className="space-y-1">
-                        <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
-                          {card.title}
-                        </h3>
-                        <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
-                          {card.subtitle}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Footer Action Link */}
-                    <div className="relative z-10 pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
-                      <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
-                      <div className={cn(
-                        "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
-                        card.accentText
-                      )}>
-                        <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                        <div className="relative z-10 pt-3 mt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                          <span className="text-[11px] font-bold">ورود به بخش</span>
+                          <div className={cn(
+                            "w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs",
+                            card.accentText
+                          )}>
+                            <ArrowLeft size={13} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-xs sm:text-sm font-bold text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                  هیچ بخشی با عبارت «{searchQuery}» یافت نشد.
+                </div>
+              )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          ) : (
+            /* ALL PERMITTED CARDS DIRECTLY ON DASHBOARD BY CATEGORY SECTION */
+            <div className="space-y-8">
+              {allowedCategoryCards
+                .filter(cat => selectedCategoryFilter === 'all' || selectedCategoryFilter === cat.id)
+                .map(cat => {
+                  const CatIcon = cat.icon;
+                  const catSubCards = cat.itemIds
+                    .map(id => allowedCardsMap.get(id))
+                    .filter((c): c is DashboardCardDef => Boolean(c));
+
+                  if (catSubCards.length === 0) return null;
+
+                  return (
+                    <div key={cat.id} className="space-y-3.5">
+                      {/* Category Section Header */}
+                      <div className="flex items-center justify-between px-1 border-b border-slate-200/80 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className={cn("w-9 h-9 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-xs", cat.iconBg)}>
+                            <CatIcon size={20} />
+                          </div>
+                          <div>
+                            <h2 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                              <span>{cat.title}</span>
+                              {cat.badgeText && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-bounce">
+                                  {cat.badgeText}
+                                </span>
+                              )}
+                            </h2>
+                            <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
+                              {cat.subtitle}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-slate-100 text-slate-700 border border-slate-200/80 shadow-2xs">
+                          {catSubCards.length} بخش
+                        </span>
+                      </div>
+
+                      {/* Cards Grid for this category */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                        {catSubCards.map(card => {
+                          const Icon = card.icon;
+                          return (
+                            <motion.div
+                              key={card.id}
+                              whileHover={!isAnimationsDisabled ? { 
+                                scale: 1.025, 
+                                y: -5,
+                                transition: { duration: 0.2, ease: 'easeOut' }
+                              } : undefined}
+                              whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
+                              onClick={(e) => handleCardClick(e as any, card.id)}
+                              className={cn(
+                                "relative group overflow-hidden bg-white/95 rounded-3xl p-5 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-xs hover:shadow-md select-none backdrop-blur-md min-h-[155px] active:scale-[0.98]",
+                                card.borderGlow,
+                                card.highlight ? "border-rose-400 ring-2 ring-rose-500/20" : "border-slate-200/90"
+                              )}
+                            >
+                              <div className={cn(
+                                "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+                                card.cardGradient
+                              )} />
+
+                              {!isAnimationsDisabled && (
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-in-out pointer-events-none" />
+                              )}
+
+                              <div className="relative z-10 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className={cn(
+                                    "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-2 shrink-0",
+                                    card.iconBg
+                                  )}>
+                                    <Icon size={24} />
+                                  </div>
+
+                                  {card.badgeText && (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-md shadow-rose-500/40 animate-bounce ring-2 ring-rose-300/50">
+                                      {card.badgeText}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="space-y-1">
+                                  <h3 className="text-sm sm:text-base font-black text-slate-900 group-hover:text-indigo-950 transition-colors tracking-tight">
+                                    {card.title}
+                                  </h3>
+                                  <p className="text-[11px] text-slate-500 group-hover:text-slate-700 font-medium leading-relaxed line-clamp-2">
+                                    {card.subtitle}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="relative z-10 pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">
+                                <span className="text-[11px] font-black group-hover:translate-x-1 transition-transform">ورود به بخش</span>
+                                <div className={cn(
+                                  "w-7 h-7 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:bg-indigo-600 group-hover:text-white shadow-2xs group-hover:shadow-indigo-600/30",
+                                  card.accentText
+                                )}>
+                                  <ArrowLeft size={15} className="transform group-hover:-translate-x-0.5 transition-transform" />
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
         </div>
       )}
       </div>
