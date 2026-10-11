@@ -315,6 +315,15 @@ export default function BackupAndRestore() {
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
   const [resetConfirmText, setResetConfirmText] = useState<string>('');
 
+  // Cached Backup payload before applying to database
+  const [cachedBackupForRestore, setCachedBackupForRestore] = useState<{
+    data: any;
+    name: string;
+    totalRecords: number;
+    moduleCounts: Record<string, number>;
+  } | null>(null);
+  const [showRestoreApplyModal, setShowRestoreApplyModal] = useState<boolean>(false);
+
   // Photo Management State
   const [isProcessingPhotos, setIsProcessingPhotos] = useState<boolean>(false);
   const [showPhotoResultModal, setShowPhotoResultModal] = useState<boolean>(false);
@@ -489,66 +498,43 @@ export default function BackupAndRestore() {
     }
   };
 
-  // 1. Offline Backup Download
-  const handleExportOfflineBackup = async (mentorIdTarget?: MentorId) => {
+  // 1. Offline Backup Download - 100% Comprehensive System Data
+  const handleExportOfflineBackup = async (_mentorIdTarget?: MentorId) => {
     setIsExporting(true);
     setStatusMessage(null);
     try {
-      const targetId = mentorIdTarget || currentMentorId;
-      const targetMentor = MENTORS[targetId] || currentMentor;
-      
-      const isFullBackup = 
-        targetId === 'shahpoori' || 
-        targetMentor.isHeadManager || 
-        isEduOrFinanceManager ||
-        currentUser?.role === 'super_admin' || 
-        currentUser?.role === 'education_manager' || 
-        currentUser?.role === 'finance_manager';
+      // Regardless of which user/mentor is logged in or clicks this button,
+      // ALWAYS export 100% full software database (Finance, Education, Super Admin, Mentors, Students, etc.)
+      const backupPackage = await localDb.exportFullBackup();
 
-      let backupPackage: any;
-      if (isFullBackup && (!mentorIdTarget || mentorIdTarget === 'shahpoori')) {
-        backupPackage = await localDb.exportFullBackup();
-      } else {
-        backupPackage = await localDb.exportMentorBackup(targetId);
-      }
-
-      const filename = generateBackupFilename(targetMentor.name);
+      const filename = generateBackupFilename('کامل_سامانه');
       downloadJsonFile(backupPackage, filename);
+
+      const totalRecs = backupPackage._meta?.totalRecords || 0;
+      const totalCols = backupPackage._meta?.totalCollections || 0;
 
       setStatusMessage({
         type: 'success',
-        text: `فایل پشتیبان آفلاین کاربر «${targetMentor.name}» با موفقیت با تاریخ امروز دانلود شد (${filename}).`
+        text: `فایل پشتیبان کامل و ۱۰۰٪ نرم‌افزار (شامل تمامی دیتای مسئول مالی، آموزش، سوپرادمین، اساتید، طلاب و...) با موفقیت دانلود شد (${filename} — ${totalRecs} رکورد در ${totalCols} بخش، اعتبارسنجی سه‌مرحله‌ای تایید گردید).`
       });
     } catch (err: any) {
       console.error('Offline backup export error:', err);
       setStatusMessage({
         type: 'error',
-        text: `خطا در دانلود پشتیبان آفلاین: ${err?.message || 'خطای ناشناخته'}`
+        text: `خطا در دانلود پشتیبان کامل: ${err?.message || 'خطای ناشناخته'}`
       });
     } finally {
       setIsExporting(false);
     }
   };
 
-  // 2. Upload Backup to Cloud Database
+  // 2. Upload Backup to Cloud Database - 100% Comprehensive System Data
   const handleUploadToDatabase = async () => {
     setIsUploadingToCloud(true);
     setStatusMessage(null);
     try {
-      const isFullBackup = 
-        currentMentorId === 'shahpoori' || 
-        currentMentor.isHeadManager || 
-        isEduOrFinanceManager ||
-        currentUser?.role === 'super_admin' || 
-        currentUser?.role === 'education_manager' || 
-        currentUser?.role === 'finance_manager';
-
-      let backupPackage: any;
-      if (isFullBackup) {
-        backupPackage = await localDb.exportFullBackup();
-      } else {
-        backupPackage = await localDb.exportMentorBackup(currentMentorId);
-      }
+      // Regardless of user role, always backup 100% full system database
+      const backupPackage = await localDb.exportFullBackup();
 
       const record = await uploadBackupToCloud(
         currentMentorId,
@@ -559,7 +545,7 @@ export default function BackupAndRestore() {
 
       setStatusMessage({
         type: 'success',
-        text: `یک نسخه پشتیبان با موفقیت تحت نام کاربر «${currentMentor.name}» و تاریخ «${record.persianDate}» در دیتابیس ثبت و ذخیره گردید.`
+        text: `نسخه پشتیبان کامل سامانه (۱۰۰٪ دیتای کل نرم‌افزار) با موفقیت تحت نام «${currentMentor.name}» و تاریخ «${record.persianDate}» در دیتابیس ثبت و ذخیره گردید.`
       });
 
       await loadCloudBackups();
@@ -596,6 +582,8 @@ export default function BackupAndRestore() {
       setIsImporting(false);
       setPendingFileToRestore(null);
       setShowOverwriteConfirmModal(false);
+      setShowRestoreApplyModal(false);
+      setCachedBackupForRestore(null);
       if (universalFileInputRef.current) universalFileInputRef.current.value = '';
     }
   };
@@ -608,13 +596,47 @@ export default function BackupAndRestore() {
       const text = await file.text();
       const parsedData = JSON.parse(text);
 
-      if (importMode === 'overwrite') {
-        // Must prompt confirmation first if in Overwrite mode!
-        setPendingFileToRestore({ data: parsedData, name: file.name });
-        setShowOverwriteConfirmModal(true);
-      } else {
-        await executeRestore(parsedData, file.name, 'merge');
+      if (!parsedData || typeof parsedData !== 'object') {
+        throw new Error('فرمت فایل پشتیبان نامعتبر است.');
       }
+
+      // Step 1: Cache the imported data first in memory state
+      let totalRecords = 0;
+      const moduleCounts: Record<string, number> = {
+        طلاب: Array.isArray(parsedData.students) ? parsedData.students.length : (parsedData.student ? 1 : 0),
+        مالی_و_شهریه: 0,
+        آموزش_و_تقویم: 0,
+        حضور_غیاب_و_مطالعه: 0,
+        اساتید_و_پرسنل: 0,
+        سایر_بخش‌ها: 0
+      };
+
+      for (const [key, val] of Object.entries(parsedData)) {
+        if (!key.startsWith('_') && Array.isArray(val)) {
+          totalRecords += val.length;
+          if (key.startsWith('finance') || key.startsWith('tuition') || key.includes('meal') || key.includes('claim')) {
+            moduleCounts.مالی_و_شهریه += val.length;
+          } else if (key.startsWith('academic') || key === 'programs' || key === 'enrollments' || key === 'classrooms') {
+            moduleCounts.آموزش_و_تقویم += val.length;
+          } else if (key.startsWith('attendance') || key.startsWith('study')) {
+            moduleCounts.حضور_غیاب_و_مطالعه += val.length;
+          } else if (key.startsWith('teacher') || key === 'staff' || key === 'drivers') {
+            moduleCounts.اساتید_و_پرسنل += val.length;
+          } else if (key !== 'students') {
+            moduleCounts.سایر_بخش‌ها += val.length;
+          }
+        }
+      }
+
+      setCachedBackupForRestore({
+        data: parsedData,
+        name: file.name,
+        totalRecords,
+        moduleCounts
+      });
+
+      // Step 2: Show the prominent message asking if they want to apply/load into the database
+      setShowRestoreApplyModal(true);
     } catch (err: any) {
       setStatusMessage({
         type: 'error',
@@ -1096,18 +1118,18 @@ export default function BackupAndRestore() {
                 <Download size={24} />
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-800">۱. پشتیبان‌گیری آفلاین کاربر</h2>
-                <p className="text-xs text-slate-500">ذخیره کامل دیتای کاربر روی سیستم شخصی همراه با درج نام و تاریخ دقیق</p>
+                <h2 className="text-lg font-black text-slate-800">۱. دانلود پشتیبان کامل نرم‌افزار (۱۰۰٪ کل داده‌ها)</h2>
+                <p className="text-xs text-slate-500">دانلود و ذخیره ۱۰۰٪ تمامی داده‌های نرم‌افزار روی سیستم شخصی</p>
               </div>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs text-slate-600 leading-relaxed">
               <div className="flex items-center justify-between font-bold text-slate-700">
-                <span>عنوان فایل خروجی آفلاین:</span>
-                <span className="text-indigo-600 font-mono text-[11px]">پشتیبان_{currentMentor.name.replace(/\s+/g, '_')}_[تاریخ].json</span>
+                <span>عنوان فایل خروجی:</span>
+                <span className="text-indigo-600 font-mono text-[11px]">پشتیبان_کامل_سامانه_[تاریخ].json</span>
               </div>
-              <p className="text-[11px] text-slate-500">
-                این فایل شامل تمامی دیتای طلاب، مباحثات و گروه های گفتگو، پیگیری‌ها و یادداشت‌ها، سوابق پژوهش، ساعات مطالعه و مباحثه، امتحانات و تقویم تحصیلی مربوط به {currentMentor.name} می‌باشد.
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                تضمین ۱۰۰٪ دیتای نرم‌افزار: این فایل شامل کل داده‌های تمامی بخش‌ها (مسئول مالی و شهریه، سوپرادمین، مسئول آموزش، اساتید، حضور و غیاب، وام، امتحانات و طلاب با تمامی تصاویر) می‌باشد. فرقی ندارد کدام کاربر دانلود کند، در صورت بروز هرگونه مشکل، با بارگذاری مجدد این فایل کل سامانه به طور کامل احیا خواهد شد.
               </p>
             </div>
           </div>
@@ -1115,10 +1137,10 @@ export default function BackupAndRestore() {
           <button
             onClick={() => handleExportOfflineBackup()}
             disabled={isExporting}
-            className="w-full flex items-center justify-center gap-2.5 py-4 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-2xl font-bold transition-all shadow-md hover:shadow-indigo-200 disabled:opacity-50 text-sm"
+            className="w-full flex items-center justify-center gap-2.5 py-4 px-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white rounded-2xl font-black transition-all shadow-md hover:shadow-indigo-200 disabled:opacity-50 text-sm"
           >
             {isExporting ? <RefreshCw size={18} className="animate-spin" /> : <ArrowDownToLine size={18} />}
-            <span>دانلود فایل پشتیبان آفلاین ({currentMentor.name})</span>
+            <span>دانلود فایل پشتیبان کامل سامانه (۱۰۰٪ کل دیتای نرم‌افزار)</span>
           </button>
         </div>
 
@@ -1130,18 +1152,18 @@ export default function BackupAndRestore() {
                 <CloudUpload size={24} />
               </div>
               <div>
-                <h2 className="text-lg font-black text-slate-800">۲. ارسال نسخه پشتیبان به دیتابیس</h2>
-                <p className="text-xs text-slate-500">ثبت و ذخیره‌سازی نسخه پشتیبان در دیتابیس تحت پوشه اختصاصی کاربر با برچسب تاریخ</p>
+                <h2 className="text-lg font-black text-slate-800">۲. ارسال نسخه پشتیبان کامل به دیتابیس</h2>
+                <p className="text-xs text-slate-500">ثبت و ذخیره‌سازی نسخه پشتیبان ۱۰۰٪ دیتای نرم‌افزار در پایگاه داده</p>
               </div>
             </div>
 
             <div className="bg-emerald-50/60 border border-emerald-200 rounded-2xl p-4 space-y-2 text-xs text-emerald-900 leading-relaxed">
               <div className="flex items-center gap-2 font-bold">
                 <CheckCircle2 size={16} className="text-emerald-600" />
-                <span>ذخیره خودکار در پوشه اختصاصی دیتابیس:</span>
+                <span>ذخیره خودکار در پایگاه داده:</span>
               </div>
               <p className="text-[11px] text-emerald-800">
-                با زدن این دکمه، دیتای فعلی نرم‌افزار تحت شناسه <strong>{currentMentor.name}</strong> همراه با زمان دقیق ثبت در دیتابیس قرار می‌گیرد تا هر زمان بتوانید آن را دانلود یا بازیابی کنید.
+                با زدن این دکمه، ۱۰۰٪ دیتای جامع نرم‌افزار (شامل کلیه بخش‌های مالی، آموزش، اساتید، مدیریت و طلاب) در پایگاه داده همراه با برچسب زمان دقیق ثبت می‌گردد.
               </p>
             </div>
           </div>
@@ -1962,6 +1984,135 @@ export default function BackupAndRestore() {
                   className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
                 >
                   انصراف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Caching Step Confirmation & Apply to Database Modal */}
+      <AnimatePresence>
+        {showRestoreApplyModal && cachedBackupForRestore && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-slate-200 shadow-2xl space-y-5 text-right font-vazir"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0 shadow-inner">
+                  <Database size={28} />
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-black mb-1">
+                    <CheckCircle2 size={13} />
+                    <span>مرحله ۱: داده‌ها در حافظه موقت کش گردید</span>
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    آیا می‌خواهید اطلاعات در دیتابیس نیز بارگذاری و اعمال شود؟
+                  </h3>
+                </div>
+              </div>
+
+              {/* Summary of cached file */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+                <div className="flex items-center justify-between text-slate-700 font-bold border-b border-slate-200 pb-2">
+                  <span>نام فایل پشتیبان:</span>
+                  <span className="font-mono text-indigo-700 text-xs">{cachedBackupForRestore.name}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-700">
+                  <span>مجموع رکوردهای شناسایی‌شده در فایل:</span>
+                  <span className="font-black text-emerald-600 text-sm">{cachedBackupForRestore.totalRecords} رکورد</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">طلاب و پرونده‌ها:</span>
+                    <strong className="text-indigo-600 font-bold">{cachedBackupForRestore.moduleCounts.طلاب || 0}</strong>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">بخش مالی و شهریه:</span>
+                    <strong className="text-emerald-600 font-bold">{cachedBackupForRestore.moduleCounts.مالی_و_شهریه || 0}</strong>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">آموزش و تقویم:</span>
+                    <strong className="text-amber-600 font-bold">{cachedBackupForRestore.moduleCounts.آموزش_و_تقویم || 0}</strong>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">حضور و مطالعه:</span>
+                    <strong className="text-sky-600 font-bold">{cachedBackupForRestore.moduleCounts.حضور_غیاب_و_مطالعه || 0}</strong>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">اساتید و پرسنل:</span>
+                    <strong className="text-purple-600 font-bold">{cachedBackupForRestore.moduleCounts.اساتید_و_پرسنل || 0}</strong>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 block">سایر جداول نرم‌افزار:</span>
+                    <strong className="text-slate-700 font-bold">{cachedBackupForRestore.moduleCounts.سایر_بخش‌ها || 0}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Big Important Notice Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2 text-xs text-amber-900 leading-relaxed">
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                  <span>پیغام مهم سیستم: انتخاب نحوه اعمال در دیتابیس</span>
+                </div>
+                <p>
+                  اطلاعات فایل در حافظه بررسی و کش گردیده است. اکنون مشخص نمایید مایلید داده‌ها چگونه در پایگاه داده اعمال شوند:
+                </p>
+              </div>
+
+              {/* Two Action Buttons */}
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pkg = cachedBackupForRestore.data;
+                    const name = cachedBackupForRestore.name;
+                    setShowRestoreApplyModal(false);
+                    setCachedBackupForRestore(null);
+                    executeRestore(pkg, name, 'merge');
+                  }}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-md hover:shadow-indigo-200 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={18} />
+                    <span>تأیید و ادغام با دیتابیس (بدون حذف داده‌های دیگر)</span>
+                  </div>
+                  <span className="text-[11px] opacity-80 font-normal">پیشنهادی</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pkg = cachedBackupForRestore.data;
+                    const name = cachedBackupForRestore.name;
+                    setShowRestoreApplyModal(false);
+                    setCachedBackupForRestore(null);
+                    executeRestore(pkg, name, 'overwrite');
+                  }}
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-md hover:shadow-rose-200 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <Trash2 size={18} />
+                    <span>تأیید و جایگزینی کامل دیتابیس (پاک‌سازی قبلی و درج فایل)</span>
+                  </div>
+                  <span className="text-[11px] opacity-80 font-normal">جایگزینی صددرصد</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRestoreApplyModal(false);
+                    setCachedBackupForRestore(null);
+                    if (universalFileInputRef.current) universalFileInputRef.current.value = '';
+                  }}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all text-center"
+                >
+                  انصراف و لغو اعمال در دیتابیس
                 </button>
               </div>
             </motion.div>

@@ -69,6 +69,34 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, ChevronRight, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
 
+const BACK_BUTTON_GRADIENTS = [
+  {
+    bg: 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700',
+    shadow: 'shadow-amber-500/40 hover:shadow-amber-500/60 ring-amber-400/30',
+    border: 'border-amber-300/50'
+  },
+  {
+    bg: 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-700',
+    shadow: 'shadow-emerald-500/40 hover:shadow-emerald-500/60 ring-emerald-400/30',
+    border: 'border-emerald-300/50'
+  },
+  {
+    bg: 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-800',
+    shadow: 'shadow-indigo-500/40 hover:shadow-indigo-500/60 ring-indigo-400/30',
+    border: 'border-indigo-300/50'
+  },
+  {
+    bg: 'bg-gradient-to-r from-rose-500 via-pink-600 to-rose-600 hover:from-rose-600 hover:to-pink-700',
+    shadow: 'shadow-rose-500/40 hover:shadow-rose-500/60 ring-rose-400/30',
+    border: 'border-rose-300/50'
+  },
+  {
+    bg: 'bg-gradient-to-r from-cyan-500 via-blue-600 to-cyan-600 hover:from-cyan-600 hover:to-blue-700',
+    shadow: 'shadow-cyan-500/40 hover:shadow-cyan-500/60 ring-cyan-400/30',
+    border: 'border-cyan-300/50'
+  }
+];
+
 function AppContent() {
   const { currentUser, logout, isTabAllowed, isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -79,6 +107,17 @@ function AppContent() {
   const [selectedStudentIdForTab, setSelectedStudentIdForTab] = useState<string | undefined>(undefined);
   const [isBugModalOpen, setIsBugModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  // Radiant back button color cycling every 1 minute (60 seconds)
+  const [backColorIndex, setBackColorIndex] = useState<number>(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBackColorIndex((prev) => (prev + 1) % BACK_BUTTON_GRADIENTS.length);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentBackTheme = BACK_BUTTON_GRADIENTS[backColorIndex];
 
   const navigateToTab = (tab: string, studentId?: string) => {
     if (studentId) {
@@ -395,11 +434,17 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 border border-indigo-200/90 rounded-xl text-xs font-black transition-all cursor-pointer shadow-2xs shrink-0 group active:scale-95"
-                  title="بازگشت به یک مرحله قبل"
+                  className={cn(
+                    "flex items-center gap-2 py-2 px-4 sm:px-5 text-white rounded-2xl text-xs sm:text-sm font-black transition-all duration-1000 cursor-pointer shadow-lg hover:shadow-2xl ring-2 shrink-0 group active:scale-95 border relative overflow-hidden",
+                    currentBackTheme.bg,
+                    currentBackTheme.shadow,
+                    currentBackTheme.border
+                  )}
+                  title="بازگشت به مرحله یا صفحه قبلی"
                 >
-                  <ChevronRight size={15} className="text-indigo-600 group-hover:-translate-x-0.5 transition-transform shrink-0" />
-                  <span className="hidden xs:inline">بازگشت</span>
+                  <div className="absolute inset-0 w-1/2 h-full bg-white/30 skew-x-12 -translate-x-full group-hover:translate-x-[350%] transition-transform duration-1000 pointer-events-none" />
+                  <ChevronRight size={18} className="text-white group-hover:-translate-x-1 transition-transform shrink-0 drop-shadow" />
+                  <span className="drop-shadow-sm font-black">بازگشت</span>
                 </button>
               )}
 
@@ -524,11 +569,18 @@ function AppContent() {
               <button
                 type="button"
                 onClick={handleBack}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 via-amber-600 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95 shrink-0 border border-amber-400/40"
+                className={cn(
+                  "inline-flex items-center gap-2.5 px-6 py-3 sm:px-7 sm:py-3.5 rounded-2xl text-xs sm:text-base font-black text-white cursor-pointer active:scale-95 shrink-0 transition-all duration-1000 shadow-xl hover:shadow-2xl ring-2 sm:ring-4 border relative overflow-hidden group",
+                  currentBackTheme.bg,
+                  currentBackTheme.shadow,
+                  currentBackTheme.border
+                )}
                 title="بازگشت به مرحله یا صفحه قبلی"
               >
-                <ArrowRight size={16} className="text-white animate-pulse" />
-                <span>بازگشت</span>
+                {/* Glowing light shimmer effect */}
+                <div className="absolute inset-0 w-1/2 h-full bg-white/30 skew-x-12 -translate-x-full group-hover:translate-x-[350%] transition-transform duration-1000 pointer-events-none" />
+                <ArrowRight size={20} className="text-white group-hover:-translate-x-1.5 transition-transform shrink-0 drop-shadow" />
+                <span className="drop-shadow-sm font-black">بازگشت</span>
               </button>
             </div>
           )}

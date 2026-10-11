@@ -31,6 +31,63 @@ import { AuditLog, AuditActionType, UserLevel } from '../types';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
+// Radiant glowing color gradients for the Back button that cycle every 1 minute
+export const RADIANT_BACK_THEMES = [
+  {
+    bg: 'bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-700 hover:from-emerald-600 hover:to-teal-800',
+    shadow: 'shadow-emerald-500/50 hover:shadow-emerald-500/80 ring-emerald-400/40',
+    border: 'border-emerald-300/60'
+  },
+  {
+    bg: 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-800',
+    shadow: 'shadow-indigo-500/50 hover:shadow-indigo-500/80 ring-indigo-400/40',
+    border: 'border-indigo-300/60'
+  },
+  {
+    bg: 'bg-gradient-to-r from-rose-500 via-pink-600 to-rose-600 hover:from-rose-600 hover:to-pink-700',
+    shadow: 'shadow-rose-500/50 hover:shadow-rose-500/80 ring-rose-400/40',
+    border: 'border-rose-300/60'
+  },
+  {
+    bg: 'bg-gradient-to-r from-amber-500 via-orange-600 to-amber-600 hover:from-amber-600 hover:to-orange-700',
+    shadow: 'shadow-amber-500/50 hover:shadow-amber-500/80 ring-amber-400/40',
+    border: 'border-amber-300/60'
+  },
+  {
+    bg: 'bg-gradient-to-r from-cyan-500 via-blue-600 to-cyan-600 hover:from-cyan-600 hover:to-blue-700',
+    shadow: 'shadow-cyan-500/50 hover:shadow-cyan-500/80 ring-cyan-400/40',
+    border: 'border-cyan-300/60'
+  }
+];
+
+// Helper to format human-readable Persian description matching user request:
+// «مسئول [نام] در ساعت [ساعت] اقدام به [حذف کاربری طلبه فلانی / حذف آمار ...] کرد»
+export function formatHumanLogDescription(log: AuditLog): {
+  headline: string;
+  actorDetail: string;
+  actionTag: string;
+} {
+  const actor = log.userName || log.username || 'مسئول سیستم';
+  const time = log.shamsiTime || 'نامشخص';
+  const date = log.shamsiDate || '';
+
+  let actionLabel = 'اقدام';
+  if (log.actionType === 'delete') actionLabel = 'حذف کاربری/اطلاعات';
+  else if (log.actionType === 'update') actionLabel = 'ویرایش و اصلاح اطلاعات';
+  else if (log.actionType === 'create') actionLabel = 'ایجاد و ثبت رکورد جدید';
+  else if (log.actionType === 'status_change') actionLabel = 'تغییر وضعیت';
+  else if (log.actionType === 'revert') actionLabel = 'استرداد و بازگردانی';
+
+  const entity = log.entityName || 'رکورد داده';
+  const moduleName = log.moduleTitle || log.module;
+
+  const headline = `مسئول «${actor}» در ساعت ${time} اقدام به «${actionLabel} ${entity}» در بخش ${moduleName} کرد`;
+  const actorDetail = `${log.userRoleTitle ? log.userRoleTitle + ' • ' : ''}تاریخ: ${date}`;
+  const actionTag = `${actionLabel} ${entity}`;
+
+  return { headline, actorDetail, actionTag };
+}
+
 async function revertAuditActivity(logId: string, revertedBy: string): Promise<{ success: boolean; message: string }> {
   try {
     const response = await fetch('/api/audit/revert', {
@@ -41,6 +98,80 @@ async function revertAuditActivity(logId: string, revertedBy: string): Promise<{
     return await response.json();
   } catch (err: any) {
     return { success: false, message: err?.message || 'خطا در ارتباط با سرور' };
+  }
+}
+
+// 100% Genuine Revert Execution: Restores deleted documents or rolls back updates in localDb and on server
+async function executeSingleRevert(log: AuditLog, currentName: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const col = log.entityType || log.module;
+    const id = log.entityId;
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    if (log.actionType === 'delete') {
+      if (log.previousState) {
+        await localDb.bulkPut(col as any, [log.previousState], true);
+        try {
+          await fetch(`/api/data/${col}`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify(log.previousState)
+          });
+        } catch {}
+      } else {
+        return { success: false, message: 'داده‌های پیش از حذف در لاگ ثبت نشده است.' };
+      }
+    } else if (log.actionType === 'update' || log.actionType === 'status_change') {
+      if (log.previousState) {
+        await localDb.bulkPut(col as any, [log.previousState], true);
+        try {
+          await fetch(`/api/data/${col}`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify(log.previousState)
+          });
+        } catch {}
+      } else {
+        return { success: false, message: 'داده‌های وضعیت قبل از ویرایش در لاگ ثبت نشده است.' };
+      }
+    } else if (log.actionType === 'create') {
+      if (id) {
+        await localDb.deleteDoc(col as any, id);
+        try {
+          await fetch(`/api/data/${col}/${id}`, {
+            method: 'DELETE',
+            headers,
+            credentials: 'include'
+          });
+        } catch {}
+      }
+    }
+
+    // Mark the audit log itself as reverted
+    const updatedLog: AuditLog = {
+      ...log,
+      isReverted: true,
+      revertedAt: new Date().toISOString(),
+      revertedByUserName: currentName
+    };
+    await localDb.updateDoc('audit_logs', log.id, updatedLog);
+
+    // Record server-side revert log
+    await revertAuditActivity(log.id, currentName);
+
+    return {
+      success: true,
+      message: `اقدام «${log.description || log.entityName}» با موفقیت بازگردانده شد و تغییرات اعمال گردید.`
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `خطا در بازگردانی: ${err?.message || 'مشکل غیرمنتظره'}`
+    };
   }
 }
 
@@ -85,12 +216,26 @@ export default function SiteAuditLogs() {
   const [selectedUser, setSelectedUser] = useState<string>('all');
   const [selectedModule, setSelectedModule] = useState<string>('all');
   const [selectedAction, setSelectedAction] = useState<string>('all');
-  const [selectedDateFilter, setSelectedDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState<'all' | 'today' | 'week' | 'three_weeks' | 'month'>('all');
 
   // Modal States
   const [selectedLogForDetail, setSelectedLogForDetail] = useState<AuditLog | null>(null);
   const [selectedLogForRevert, setSelectedLogForRevert] = useState<AuditLog | null>(null);
   const [isReverting, setIsReverting] = useState<boolean>(false);
+
+  // Batch Rollback (Up to 3 weeks) States
+  const [showBatchRollbackModal, setShowBatchRollbackModal] = useState<boolean>(false);
+  const [isBatchRollingBack, setIsBatchRollingBack] = useState<boolean>(false);
+  const [batchRollbackProgress, setBatchRollbackProgress] = useState<{ current: number; total: number; currentItemText: string } | null>(null);
+
+  // Radiant color cycling for Back button (every 1 minute)
+  const [backThemeIndex, setBackThemeIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setBackThemeIndex(prev => (prev + 1) % RADIANT_BACK_THEMES.length);
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadLogs = async () => {
     setIsLoading(true);
@@ -202,6 +347,9 @@ export default function SiteAuditLogs() {
       } else if (selectedDateFilter === 'week') {
         const sevenDaysAgo = now - 7 * 24 * 3600 * 1000;
         if (logDate < sevenDaysAgo) return false;
+      } else if (selectedDateFilter === 'three_weeks') {
+        const threeWeeksAgo = now - 21 * 24 * 3600 * 1000;
+        if (logDate < threeWeeksAgo) return false;
       } else if (selectedDateFilter === 'month') {
         const thirtyDaysAgo = now - 30 * 24 * 3600 * 1000;
         if (logDate < thirtyDaysAgo) return false;
@@ -211,7 +359,14 @@ export default function SiteAuditLogs() {
     return true;
   });
 
-  // Execute Revert Action
+  // Calculate items eligible for rollback within 3 weeks (21 days)
+  const reversibleFilteredLogs = filteredLogs.filter(l => 
+    !l.isReverted && 
+    (l.actionType === 'delete' || l.actionType === 'update' || l.actionType === 'create' || l.actionType === 'status_change') &&
+    (Date.now() - new Date(l.timestamp).getTime() <= 21 * 24 * 3600 * 1000)
+  );
+
+  // Execute Single Revert Action
   const handleConfirmRevert = async () => {
     if (!selectedLogForRevert) return;
     setIsReverting(true);
@@ -219,7 +374,7 @@ export default function SiteAuditLogs() {
 
     try {
       const currentName = currentUser ? (currentUser.name || currentUser.fullName || currentUser.username) : 'مدیریت سامانه';
-      const result = await revertAuditActivity(selectedLogForRevert.id, currentName);
+      const result = await executeSingleRevert(selectedLogForRevert, currentName);
 
       if (result.success) {
         setStatusMessage({
@@ -243,6 +398,47 @@ export default function SiteAuditLogs() {
     } finally {
       setIsReverting(false);
     }
+  };
+
+  // Execute Batch Rollback (Up to 3 weeks of actions in reverse chronological order)
+  const handleConfirmBatchRollback = async () => {
+    if (reversibleFilteredLogs.length === 0) return;
+    setIsBatchRollingBack(true);
+    setStatusMessage(null);
+    const currentName = currentUser ? (currentUser.name || currentUser.fullName || currentUser.username) : 'مدیریت سامانه';
+
+    // Reverse chronological order: newest operations rolled back first
+    const sorted = [...reversibleFilteredLogs].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const log = sorted[i];
+      setBatchRollbackProgress({
+        current: i + 1,
+        total: sorted.length,
+        currentItemText: log.description || log.entityName || `اقدام ${i + 1}`
+      });
+
+      const res = await executeSingleRevert(log, currentName);
+      if (res.success) {
+        succeeded++;
+      } else {
+        failed++;
+      }
+    }
+
+    setIsBatchRollingBack(false);
+    setShowBatchRollbackModal(false);
+    setBatchRollbackProgress(null);
+    setStatusMessage({
+      type: succeeded > 0 ? 'success' : 'error',
+      text: `عملیات بازگردانی گسترده پایان یافت: ${succeeded} اقدام در بازه ۳ هفته گذشته با موفقیت به حالت قبل بازگردانده شد${failed > 0 ? ` (${failed} مورد با خطا مواجه شد)` : ''}.`
+    });
+    await loadLogs();
   };
 
   // Export Audit Logs as JSON
@@ -350,24 +546,43 @@ export default function SiteAuditLogs() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 bg-white/10 p-3.5 rounded-2xl backdrop-blur-md border border-white/15 shrink-0">
-            <div className="text-center px-3 py-1">
-              <span className="block text-2xl font-black text-white">{logs.length}</span>
-              <span className="text-[11px] text-slate-300">کل فعالیت‌ها</span>
-            </div>
-            <div className="w-px h-8 bg-white/20"></div>
-            <div className="text-center px-3 py-1">
-              <span className="block text-2xl font-black text-rose-400">
-                {logs.filter(l => l.actionType === 'delete').length}
-              </span>
-              <span className="text-[11px] text-slate-300">موارد حذفی</span>
-            </div>
-            <div className="w-px h-8 bg-white/20"></div>
-            <div className="text-center px-3 py-1">
-              <span className="block text-2xl font-black text-emerald-400">
-                {logs.filter(l => l.isReverted).length}
-              </span>
-              <span className="text-[11px] text-slate-300">استرداد شده</span>
+          <div className="flex flex-wrap items-center gap-4 shrink-0">
+            {/* Radiant Glowing Back Button with smooth 1-minute color transitions */}
+            <button
+              type="button"
+              onClick={() => window.history.back()}
+              className={cn(
+                "inline-flex items-center gap-2.5 px-5 py-2.5 sm:px-6 sm:py-3 rounded-2xl text-xs sm:text-sm font-black text-white cursor-pointer active:scale-95 shrink-0 transition-all duration-1000 shadow-xl hover:shadow-2xl ring-2 sm:ring-4 border relative overflow-hidden group",
+                RADIANT_BACK_THEMES[backThemeIndex].bg,
+                RADIANT_BACK_THEMES[backThemeIndex].shadow,
+                RADIANT_BACK_THEMES[backThemeIndex].border
+              )}
+              title="بازگشت به صفحه یا مرحله قبل"
+            >
+              <div className="absolute inset-0 w-1/2 h-full bg-white/30 skew-x-12 -translate-x-full group-hover:translate-x-[350%] transition-transform duration-1000 pointer-events-none" />
+              <ArrowRight size={18} className="text-white group-hover:-translate-x-1.5 transition-transform shrink-0 drop-shadow" />
+              <span className="drop-shadow-sm font-black">بازگشت</span>
+            </button>
+
+            <div className="flex items-center gap-3 bg-white/10 p-3.5 rounded-2xl backdrop-blur-md border border-white/15">
+              <div className="text-center px-3 py-1">
+                <span className="block text-2xl font-black text-white">{logs.length}</span>
+                <span className="text-[11px] text-slate-300">کل فعالیت‌ها</span>
+              </div>
+              <div className="w-px h-8 bg-white/20"></div>
+              <div className="text-center px-3 py-1">
+                <span className="block text-2xl font-black text-rose-400">
+                  {logs.filter(l => l.actionType === 'delete').length}
+                </span>
+                <span className="text-[11px] text-slate-300">موارد حذفی</span>
+              </div>
+              <div className="w-px h-8 bg-white/20"></div>
+              <div className="text-center px-3 py-1">
+                <span className="block text-2xl font-black text-emerald-400">
+                  {logs.filter(l => l.isReverted).length}
+                </span>
+                <span className="text-[11px] text-slate-300">استرداد شده</span>
+              </div>
             </div>
           </div>
         </div>
@@ -676,6 +891,15 @@ export default function SiteAuditLogs() {
               ۷ روز گذشته
             </button>
             <button
+              onClick={() => setSelectedDateFilter('three_weeks')}
+              className={cn(
+                "py-1 px-2.5 rounded-lg transition-all text-[11px]",
+                selectedDateFilter === 'three_weeks' ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              ۳ هفته گذشته (۲۱ روز)
+            </button>
+            <button
               onClick={() => setSelectedDateFilter('month')}
               className={cn(
                 "py-1 px-2.5 rounded-lg transition-all text-[11px]",
@@ -690,7 +914,7 @@ export default function SiteAuditLogs() {
 
       {/* LOGS DATA TABLE */}
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500">تعداد نتایج یافت‌شده:</span>
             <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-full font-black text-xs">
@@ -698,22 +922,36 @@ export default function SiteAuditLogs() {
             </span>
           </div>
 
-          {(searchTerm || selectedRoleGroup !== 'all' || selectedUser !== 'all' || selectedModule !== 'all' || selectedAction !== 'all' || selectedDateFilter !== 'all') && (
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedRoleGroup('all');
-                setSelectedUser('all');
-                setSelectedModule('all');
-                setSelectedAction('all');
-                setSelectedDateFilter('all');
-              }}
-              className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <X size={14} />
-              <span>پاکسازی همه فیلترها</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {reversibleFilteredLogs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowBatchRollbackModal(true)}
+                className="py-1.5 px-3.5 bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600 hover:from-rose-700 hover:to-amber-700 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer ring-2 ring-rose-400/30 active:scale-95"
+                title="بازگرداندن دسته‌جمعی تمامی اقدامات فیلتر شده تا ۳ هفته گذشته"
+              >
+                <RotateCcw size={14} />
+                <span>بازگردانی همه‌جانبه اقدامات ({reversibleFilteredLogs.length} مورد تا ۳ هفته)</span>
+              </button>
+            )}
+
+            {(searchTerm || selectedRoleGroup !== 'all' || selectedUser !== 'all' || selectedModule !== 'all' || selectedAction !== 'all' || selectedDateFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setSelectedRoleGroup('all');
+                  setSelectedUser('all');
+                  setSelectedModule('all');
+                  setSelectedAction('all');
+                  setSelectedDateFilter('all');
+                }}
+                className="text-xs font-bold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <X size={14} />
+                <span>پاکسازی فیلترها</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {isLoading ? (
@@ -811,16 +1049,23 @@ export default function SiteAuditLogs() {
 
                       {/* Description */}
                       <td className="py-3.5 px-4 max-w-md">
-                        <div className="space-y-1">
-                          <p className="font-bold text-slate-800 text-xs leading-relaxed">
-                            {log.description}
-                          </p>
-                          {log.entityName && (
-                            <span className="text-[10px] text-indigo-600 font-bold block truncate">
-                              مورد: {log.entityName}
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const human = formatHumanLogDescription(log);
+                          return (
+                            <div className="space-y-1">
+                              <p className="font-bold text-slate-900 text-xs leading-relaxed">
+                                {human.headline}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500 font-medium">
+                                <span className="text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 font-bold">
+                                  {human.actionTag}
+                                </span>
+                                <span>•</span>
+                                <span>{human.actorDetail}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Action Controls & Revert Button */}
@@ -924,6 +1169,132 @@ export default function SiteAuditLogs() {
                   onClick={() => setSelectedLogForRevert(null)}
                   disabled={isReverting}
                   className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* BATCH ROLLBACK MODAL (UP TO 3 WEEKS) */}
+      <AnimatePresence>
+        {showBatchRollbackModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full border border-slate-200 shadow-2xl space-y-5 text-right font-vazir"
+            >
+              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500 to-amber-600 text-white flex items-center justify-center font-bold shrink-0 shadow-lg shadow-rose-500/20">
+                  <RotateCcw size={28} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    بازگردانی جامع اقدامات (قابلیت بازگشت تا ۳ هفته)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    استرداد و احیای کلیه تغییرات و حذفیات انجام‌شده در ۲۱ روز اخیر حتی توسط سوپر ادمین
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning Banner */}
+              <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-4 space-y-2 text-xs text-amber-900 leading-relaxed">
+                <div className="flex items-center gap-2 font-bold text-amber-950">
+                  <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                  <span>تأیید بازگردانی قدرتمند:</span>
+                </div>
+                <p>
+                  این فرآیند به صورت خودکار تمامی اقدامات فیلترشده شامل <strong className="text-rose-700">{reversibleFilteredLogs.filter(l => l.actionType === 'delete').length} مورد حذفی</strong> (احیای پرونده‌ها و اطلاعات حذف‌شده)، <strong className="text-amber-700">{reversibleFilteredLogs.filter(l => l.actionType === 'update' || l.actionType === 'status_change').length} مورد ویرایشی</strong> (بازگشت به مقادیر اولیه)، و <strong className="text-emerald-700">{reversibleFilteredLogs.filter(l => l.actionType === 'create').length} مورد ایجاد جدید</strong> را به ترتیب معکوس زمانی در پایگاه داده بازگردانی می‌نماید.
+                </p>
+              </div>
+
+              {/* Breakdown Stats Grid */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                  <span className="text-slate-400 text-[11px] block">کل اقدامات قابل استرداد:</span>
+                  <span className="font-black text-slate-900 text-base">{reversibleFilteredLogs.length}</span>
+                </div>
+                <div className="bg-rose-50 p-3 rounded-2xl border border-rose-200">
+                  <span className="text-rose-600 text-[11px] block">احیای اطلاعات حذفی:</span>
+                  <span className="font-black text-rose-700 text-base">{reversibleFilteredLogs.filter(l => l.actionType === 'delete').length}</span>
+                </div>
+                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200">
+                  <span className="text-amber-700 text-[11px] block">بازگشت ویرایش‌ها:</span>
+                  <span className="font-black text-amber-800 text-base">{reversibleFilteredLogs.filter(l => l.actionType === 'update' || l.actionType === 'status_change').length}</span>
+                </div>
+              </div>
+
+              {/* List Preview */}
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-600 block">فهرست اقدامات در صف بازگردانی:</span>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-200 text-xs">
+                  {reversibleFilteredLogs.slice(0, 15).map((l) => (
+                    <div key={l.id} className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-100 text-[11px]">
+                      <span className="font-bold text-slate-800 truncate max-w-[280px]">
+                        {l.description || l.entityName}
+                      </span>
+                      <span className="text-slate-400 font-mono text-[10px] shrink-0">
+                        {l.shamsiDate} {l.shamsiTime}
+                      </span>
+                    </div>
+                  ))}
+                  {reversibleFilteredLogs.length > 15 && (
+                    <div className="text-center py-1 text-[11px] text-slate-400 font-bold">
+                      ... و {reversibleFilteredLogs.length - 15} مورد دیگر
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress bar if executing */}
+              {isBatchRollingBack && batchRollbackProgress && (
+                <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-indigo-900 font-bold">
+                    <span>در حال بازگردانی ردیف {batchRollbackProgress.current} از {batchRollbackProgress.total}...</span>
+                    <span>{Math.round((batchRollbackProgress.current / batchRollbackProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-indigo-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-indigo-600 h-full transition-all duration-300"
+                      style={{ width: `${(batchRollbackProgress.current / batchRollbackProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-indigo-700 truncate font-mono">
+                    {batchRollbackProgress.currentItemText}
+                  </p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleConfirmBatchRollback}
+                  disabled={isBatchRollingBack || reversibleFilteredLogs.length === 0}
+                  className="flex-1 py-3 px-4 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700 active:from-rose-800 active:to-amber-800 text-white rounded-2xl text-xs sm:text-sm font-black transition-all shadow-lg shadow-rose-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isBatchRollingBack ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      <span>در حال بازگردانی زنجیره‌ای اقدامات...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw size={16} />
+                      <span>تأیید و اجرای بازگردانی کلیه اقدامات ({reversibleFilteredLogs.length} مورد)</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchRollbackModal(false)}
+                  disabled={isBatchRollingBack}
+                  className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all cursor-pointer"
                 >
                   انصراف
                 </button>

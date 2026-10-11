@@ -2003,64 +2003,103 @@ export default function MainDashboard({ onNavigateTab }: MainDashboardProps) {
 
       {/* DEDICATED EYE-CATCHING QUICK ACCESS BANNER (Available in both grouped & flat modes when enabled) */}
       {isQuickAccessEnabled && quickAccessCards.length > 0 && (
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-500/20 space-y-3">
-          <div className="flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
-                <Zap size={18} />
-              </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
-                  <span>میانبر دسترسی‌های سریع شما</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    {quickAccessCards.length} کارت پرکاربرد
-                  </span>
-                </h3>
-                <p className="text-[10px] sm:text-[11px] text-slate-300 font-medium">
-                  دسترسی مستقیم و پرسرعت به ابزارها و بخش‌های کلیدی حوزه علمیه
-                </p>
-              </div>
+        <motion.div
+          initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.96, y: -10 } : { opacity: 1, scale: 1, y: 0 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+          className="relative group/quick-banner rounded-3xl p-0.5 shadow-2xl transition-all duration-500 overflow-hidden"
+        >
+          {/* Animated Radiant Neon Outer Glow Aura (matching login page) */}
+          <div className="absolute -inset-1 rounded-[34px] bg-gradient-to-r from-amber-500 via-indigo-600 to-cyan-400 opacity-60 blur-xl animate-border-glow group-hover/quick-banner:opacity-100 group-hover/quick-banner:blur-2xl transition-all duration-700 pointer-events-none" />
+
+          {/* Secondary crystal gradient line border */}
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-amber-400/80 via-indigo-400/70 to-cyan-400/80 pointer-events-none opacity-80" />
+
+          {/* Banner inner container with glassmorphic depth & sweep shimmer */}
+          <div className="relative z-10 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-[23px] p-5 text-white shadow-xl space-y-4 overflow-hidden border border-white/10">
+            {/* Continuous Sweeping Lightning / Electric Sheen (برق که میاد و میره) */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[23px]">
+              <div className="absolute top-0 bottom-0 left-0 w-64 bg-gradient-to-r from-transparent via-cyan-300/25 to-transparent skew-x-[-25deg] animate-card-shine pointer-events-none" />
+              <div className="absolute top-0 bottom-0 left-0 w-40 bg-gradient-to-r from-transparent via-amber-300/20 to-transparent skew-x-[-25deg] animate-login-shine pointer-events-none" />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsQuickAccessModalOpen(true)}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/30 flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              <Settings size={13} />
-              <span className="hidden sm:inline">مدیریت کارت‌ها</span>
-            </button>
-          </div>
+            {/* Top Edge Prism Pulsing Reflection */}
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 via-cyan-300 to-transparent pointer-events-none animate-pulse" />
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {quickAccessCards.map((card) => {
-              const IconComp = card.icon;
-              return (
-                <button
-                  key={card.id}
-                  type="button"
-                  onClick={() => onNavigateTab(card.id)}
-                  className="group p-3 bg-white/5 hover:bg-white/15 border border-white/10 hover:border-amber-400/50 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2 relative overflow-hidden active:scale-95 shadow-2xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md shrink-0", card.iconBg)}>
-                      <IconComp size={18} />
+            {/* Subtle Corner Ambient Lights */}
+            <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-36 h-36 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="relative z-10 flex items-center justify-between gap-3 border-b border-indigo-800/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400/30 via-amber-500/20 to-indigo-600/30 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/20">
+                  <Zap size={20} className="animate-pulse text-amber-300 drop-shadow" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                    <span className="drop-shadow-sm">میانبر دسترسی‌های سریع شما</span>
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/25 text-amber-300 border border-amber-400/40 shadow-xs">
+                      {quickAccessCards.length} کارت پرکاربرد
+                    </span>
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-slate-300 font-medium">
+                    دسترسی مستقیم، پرسرعت و آنی به ابزارها و بخش‌های کلیدی حوزه علمیه
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsQuickAccessModalOpen(true)}
+                className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-amber-300 rounded-xl text-xs font-bold transition-all border border-amber-400/40 hover:border-amber-300 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm hover:shadow-md"
+              >
+                <Settings size={13} />
+                <span className="hidden sm:inline">مدیریت کارت‌ها</span>
+              </button>
+            </div>
+
+            <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {quickAccessCards.map((card, idx) => {
+                const IconComp = card.icon;
+                return (
+                  <motion.button
+                    key={card.id}
+                    type="button"
+                    initial={!isAnimationsDisabled ? { opacity: 0, y: 10 } : { opacity: 1, y: 0 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.04, duration: 0.3 }}
+                    whileHover={!isAnimationsDisabled ? {
+                      scale: 1.045,
+                      y: -3,
+                      transition: { type: 'spring', stiffness: 400, damping: 22 }
+                    } : undefined}
+                    whileTap={!isAnimationsDisabled ? { scale: 0.96 } : undefined}
+                    onClick={() => onNavigateTab(card.id)}
+                    className="group relative p-3.5 bg-white/5 hover:bg-white/15 border border-white/15 hover:border-amber-400/70 hover:shadow-xl hover:shadow-amber-500/20 rounded-2xl transition-all cursor-pointer text-right flex flex-col justify-between space-y-2.5 overflow-hidden backdrop-blur-md"
+                  >
+                    {/* Hover inner light sweep per card */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[-20deg] -translate-x-[200%] group-hover:translate-x-[300%] transition-transform duration-700 pointer-events-none" />
+
+                    <div className="flex items-center justify-between">
+                      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-md shrink-0 transition-transform duration-300 group-hover:scale-110", card.iconBg)}>
+                        <IconComp size={18} />
+                      </div>
+                      <ChevronLeft size={16} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1.5 transition-all" />
                     </div>
-                    <ChevronLeft size={15} className="text-slate-400 group-hover:text-amber-300 group-hover:-translate-x-1 transition-all" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate">
-                      {card.title}
-                    </h4>
-                    <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
-                      {card.subtitle}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+                    <div>
+                      <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors truncate drop-shadow-xs">
+                        {card.title}
+                      </h4>
+                      <p className="text-[10px] text-slate-300/80 group-hover:text-slate-200 font-medium truncate mt-0.5">
+                        {card.subtitle}
+                      </p>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* 3. MAIN CARDS CONTAINER WITH SMOOTH ANIMATED TRANSITIONS */}

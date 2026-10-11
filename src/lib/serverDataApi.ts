@@ -646,10 +646,15 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth
   if (isMysqlConfigured) {
     try {
+      let existingRecord: any = null;
+      try {
+        existingRecord = await MysqlRepository.getDocument(collection, id);
+      } catch {}
+
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
 
-      // Log Audit Entry asynchronously (non-blocking)
+      // Log Audit Entry asynchronously (non-blocking) with full deleted record for 3-week rollback capability
       logAudit({
         action: 'delete',
         collectionName: collection,
@@ -657,7 +662,7 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
         userId: callerUser?.id || callerUser?.userId,
         userName: callerUser?.username || callerUser?.name,
         userRole: callerUser?.role,
-        details: { deletedId: id, affectedRows },
+        details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
         status: 'success'
       }).catch(() => {});
 
