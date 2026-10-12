@@ -361,6 +361,86 @@
   animation: cardGradientGlow1 30s ease-in-out infinite !important;
 }
 
+/* Independent wave animation for student "ساعت مطالعه من" (Rich ocean/sapphire/teal/cyan/cobalt/emerald - NO brown, NO pink) */
+@keyframes studentWaveStudy {
+  0% {
+    background-position: 0% 50%;
+  }
+  25% {
+    background-position: 50% 100%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  75% {
+    background-position: 50% 0%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.student-card-wave-study {
+  background: linear-gradient(
+    -45deg,
+    #03045e,
+    #023e8a,
+    #0077b6,
+    #0096c7,
+    #007f5f,
+    #1b4332,
+    #081c15,
+    #005f73,
+    #0a9396,
+    #023047,
+    #1d3557,
+    #0f4c5c,
+    #023e8a
+  ) !important;
+  background-size: 400% 400% !important;
+  animation: studentWaveStudy 32s ease-in-out infinite !important;
+}
+
+/* Independent wave animation for student "ثبت تقاضا و درخواست" (Rich jade/forest/teal/indigo/cyan/violet - NO brown, NO pink) */
+@keyframes studentWaveRequests {
+  0% {
+    background-position: 100% 50%;
+  }
+  25% {
+    background-position: 50% 0%;
+  }
+  50% {
+    background-position: 0% 50%;
+  }
+  75% {
+    background-position: 50% 100%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.student-card-wave-requests {
+  background: linear-gradient(
+    135deg,
+    #064e3b,
+    #047857,
+    #0d9488,
+    #0f766e,
+    #312e81,
+    #3730a3,
+    #1e1b4b,
+    #0369a1,
+    #0284c7,
+    #15803d,
+    #065f46,
+    #164e63,
+    #064e3b
+  ) !important;
+  background-size: 450% 450% !important;
+  animation: studentWaveRequests 44s ease-in-out infinite !important;
+}
+
 html, body {
   margin: 0;
   padding: 0;

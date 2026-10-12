@@ -65,7 +65,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
               <button
                 type="button"
                 onClick={() => onNavigateTab('dashboard')}
-                className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-all flex items-center gap-2 border border-white/20 active:scale-95 cursor-pointer shadow-xs"
+                className="hidden sm:flex px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-all items-center gap-2 border border-white/20 active:scale-95 cursor-pointer shadow-xs"
               >
                 <ArrowRight size={16} />
                 <span>بازگشت به پیشخوان</span>

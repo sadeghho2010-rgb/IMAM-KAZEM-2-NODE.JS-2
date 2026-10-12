@@ -1681,95 +1681,55 @@ export default function MainDashboard({
           </div>
 
           {/* 
-            Grid of 4 Core Cards in Desktop RTL:
-            Row 1: [Right: کارنامه علمی] | [Left: ثبت تقاضا و درخواست]
-            Row 2: [Right: ساعت مطالعه من] | [Left: رزرو نهار و شام] (پایین سمت چپ)
-            With the continuous smooth radiant wave animation shifting color gently over ~55s!
+            Grid of 2 Core Cards for Students:
+            Card 1: [ساعت مطالعه من] (Wave Animation: Ocean/Sapphire/Teal - Independent, No brown, No pink)
+            Card 2: [ثبت تقاضا و درخواست] (Wave Animation: Jade/Teal/Indigo - Independent, No brown, No pink)
+            Note: "کارنامه علمی" and "رزرو نهار و شام" have moved to the lower section cards per request.
           */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Card 1 (بالا سمت راست): کارنامه علمی */}
+            {/* Card 1: ساعت مطالعه من (Independent Ocean/Teal Wave Animation) */}
             <div
-              onClick={() => onNavigateTab('student-portal')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-indigo-950/30 border border-indigo-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-1"
+              onClick={() => onNavigateTab('stats')}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-cyan-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none student-card-wave-study"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-cyan-400/15 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
-                  <BrainCircuit size={22} />
+                <div className="w-11 h-11 rounded-xl bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <BookOpen size={22} />
                 </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
-                  سوابق علمی و تحصیلی
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
+                  مباحثه و ساعات مطالعه
                 </span>
               </div>
               <div className="relative z-10 space-y-1 pt-2">
-                <h3 className="text-base sm:text-lg font-black text-white truncate">کارنامه علمی</h3>
-                <p className="text-xs text-indigo-100/90 font-medium truncate">مشاهده پرونده تحصیلی، نمرات، وضعیت ترم و دروس</p>
+                <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ساعت مطالعه من</h3>
+                <p className="text-xs text-cyan-100/90 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی (بدون سقف و محدودیت)</p>
               </div>
             </div>
 
-            {/* Card 2 (بالا سمت چپ): ثبت تقاضا و درخواست */}
+            {/* Card 2: ثبت تقاضا و درخواست (Independent Jade/Teal/Indigo Wave Animation) */}
             <div
               onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-indigo-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-2"
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-emerald-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none student-card-wave-requests"
             >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-indigo-500/10 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-emerald-400/15 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-indigo-500/20 text-indigo-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-indigo-400/30 group-hover:scale-110 transition-transform">
+                <div className="w-11 h-11 rounded-xl bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
                   <Send size={21} />
                 </div>
                 {unreadRequestsCount > 0 ? (
-                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-indigo-950 shadow-sm animate-pulse">
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 shadow-sm font-mono">
                     {unreadRequestsCount} درخواست جاری
                   </span>
                 ) : (
-                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 backdrop-blur-xs">
+                  <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
                     کارتابل آنلاین
                   </span>
                 )}
               </div>
               <div className="relative z-10 space-y-1 pt-2">
-                <h3 className="text-base sm:text-lg font-black text-white truncate">ثبت تقاضا و درخواست</h3>
-                <p className="text-xs text-indigo-100/90 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
-              </div>
-            </div>
-
-            {/* Card 3 (پایین سمت راست): ساعت مطالعه من */}
-            <div
-              onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-900/30 border border-amber-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-3"
-            >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
-                  <BookOpen size={22} />
-                </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
-                  مباحثه و ساعات مطالعه
-                </span>
-              </div>
-              <div className="relative z-10 space-y-1 pt-2">
-                <h3 className="text-base sm:text-lg font-black text-white truncate">ساعت مطالعه من</h3>
-                <p className="text-xs text-indigo-100/90 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی</p>
-              </div>
-            </div>
-
-            {/* Card 4 (پایین سمت چپ): رزرو نهار و شام */}
-            <div
-              onClick={() => onNavigateTab('student-meals')}
-              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-indigo-950/30 border border-amber-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none animate-card-glow-4"
-            >
-              <div className="absolute -top-10 -right-10 w-28 h-28 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-300 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-amber-400/30 group-hover:scale-110 transition-transform">
-                  <UtensilsCrossed size={22} />
-                </div>
-                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 backdrop-blur-xs">
-                  سلف و تغذیه
-                </span>
-              </div>
-              <div className="relative z-10 space-y-1 pt-2">
-                <h3 className="text-base sm:text-lg font-black text-white truncate">رزرو نهار و شام</h3>
-                <p className="text-xs text-amber-100/90 font-medium truncate">انتخاب و سفارش غذا، مشاهده ژتون‌ها و رزروهای هفتگی سلف</p>
+                <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ثبت تقاضا و درخواست</h3>
+                <p className="text-xs text-emerald-100/90 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
               </div>
             </div>
           </div>

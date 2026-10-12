@@ -1104,28 +1104,30 @@ export default function StudentStudyPortal({
               <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
                 <span className="text-[11px] font-bold text-slate-400 block">مجموع مطالعه انفرادی</span>
                 <div className="text-xl font-black text-indigo-700 mt-1">
-                  {activePeriodTotals.totalStudy.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
+                  {activePeriodTotals.totalStudyHours.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
                 </div>
               </div>
 
               <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
                 <span className="text-[11px] font-bold text-slate-400 block">مجموع مباحثه گروهی</span>
                 <div className="text-xl font-black text-emerald-700 mt-1">
-                  {activePeriodTotals.totalDisc.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
+                  {activePeriodTotals.totalDiscHours.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
                 </div>
               </div>
 
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
                 <span className="text-[11px] font-bold text-slate-400 block">کل کارکرد دوره</span>
                 <div className="text-xl font-black text-slate-900 mt-1 flex items-baseline gap-1.5">
-                  <span>{activePeriodTotals.totalSum.toLocaleString('fa-IR')}</span>
+                  <span>{activePeriodTotals.totalSumHours.toLocaleString('fa-IR')}</span>
                   <span className="text-xs font-normal text-slate-500">ساعت</span>
-                  {activePeriodTotals.mandatory > 0 && (
+                  {activePeriodTotals.mandatoryTotalMin > 0 && (
                     <span className={cn(
                       "text-xs font-bold mr-auto px-2 py-0.5 rounded-lg text-[10.5px]",
-                      activePeriodTotals.isFulfilled ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                      activePeriodTotals.isFullyFulfilled ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
                     )}>
-                      {activePeriodTotals.diff >= 0 ? `+${activePeriodTotals.diff} مازاد` : `${activePeriodTotals.diff} کسری`}
+                      {activePeriodTotals.diffTotalMin >= 0 
+                        ? `+${Math.round(activePeriodTotals.diffTotalMin / 60)} ساعت مازاد` 
+                        : `${Math.round(Math.abs(activePeriodTotals.diffTotalMin) / 60)} ساعت کسری`}
                     </span>
                   )}
                 </div>

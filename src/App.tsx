@@ -66,6 +66,11 @@ const StudentRequestsPortal = lazy(() => import('./components/StudentRequestsPor
 const StudentPaymentsSection = lazy(() => import('./components/finance/StudentPaymentsSection').then(m => ({ default: m.StudentPaymentsSection })));
 const AnomalyDetectionView = lazy(() => import('./components/admin/AnomalyDetectionView'));
 import AccountSecurityPinModal from './components/auth/AccountSecurityPinModal';
+import { StudentMobileAttendance } from './components/student/mobile/StudentMobileAttendance';
+import { StudentMobileStudy } from './components/student/mobile/StudentMobileStudy';
+import { StudentMobileSchedule } from './components/student/mobile/StudentMobileSchedule';
+import { StudentMobileSummary } from './components/student/mobile/StudentMobileSummary';
+import { StudentMobileDiscussion } from './components/student/mobile/StudentMobileDiscussion';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, ChevronRight, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -184,6 +189,25 @@ function AppContent() {
   const currentBackTheme = BACK_BUTTON_GRADIENTS[backColorIndex];
 
   const [dashboardCategoryGroup, setDashboardCategoryGroup] = useState<string | null>(null);
+
+  // Mobile device auto-detection for students
+  const [isMobileDevice, setIsMobileDevice] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth <= 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    }
+    return false;
+  });
+  const [forceDesktopMode, setForceDesktopMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileDevice(window.innerWidth <= 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isStudentMobile = Boolean(currentUser?.level === 3 && isMobileDevice && !forceDesktopMode);
 
   const navigateToTab = (tab: string, studentId?: string) => {
     if (studentId) {
@@ -330,6 +354,9 @@ function AppContent() {
       case 'passed-courses':
         return <PassedCoursesManagement />;
       case 'discussion':
+        if (isStudentMobile) {
+          return <StudentMobileDiscussion onNavigateTab={handleNavigate} />;
+        }
         return <StudyDiscussion initialStudentId={selectedStudentIdForTab} />;
       case 'consultation-advisor':
         return <ConsultationAdvisor onNavigate={handleNavigate} />;
@@ -340,6 +367,9 @@ function AppContent() {
       case 'classrooms':
         return <MadrasRooms />;
       case 'student-schedule':
+        if (isStudentMobile) {
+          return <StudentMobileSchedule onNavigateTab={handleNavigate} />;
+        }
         return <StudentSchedule initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-schedule':
         return <TeachersSchedule />;
@@ -348,6 +378,9 @@ function AppContent() {
       case 'article-evaluations':
         return <ArticleEvaluations />;
       case 'attendance':
+        if (isStudentMobile) {
+          return <StudentMobileAttendance onNavigateTab={handleNavigate} />;
+        }
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
       case 'course-selection':
         return <CourseSelection />;
@@ -358,6 +391,9 @@ function AppContent() {
       case 'comments':
         return <StudentComments initialStudentId={selectedStudentIdForTab} />;
       case 'stats':
+        if (isStudentMobile) {
+          return <StudentMobileStudy onNavigateTab={handleNavigate} />;
+        }
         return <StudyStats initialStudentId={selectedStudentIdForTab} />;
       case 'todos':
         return <TodoList />;
@@ -386,6 +422,9 @@ function AppContent() {
       case 'finance-expenses-reports':
         return <ExpensesAndReports onNavigateTab={handleNavigate} />;
       case 'summary':
+        if (isStudentMobile) {
+          return <StudentMobileSummary onNavigateTab={handleNavigate} />;
+        }
         return <Summary onNavigate={handleNavigate} initialStudentId={selectedStudentIdForTab} />;
       case 'teachers-bank':
         return <TeachersBank />;
@@ -396,6 +435,9 @@ function AppContent() {
       case 'student-requests':
         return <StudentRequestsPortal />;
       case 'student-portal':
+        if (isStudentMobile) {
+          return <StudentMobileSummary onNavigateTab={handleNavigate} />;
+        }
         return <Summary onNavigate={handleNavigate} initialStudentId={currentUser?.studentId || selectedStudentIdForTab} />;
       case 'anomaly-detection':
         return <AnomalyDetectionView />;
@@ -504,8 +546,8 @@ function AppContent() {
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
 
-              {/* Universal Header Back Button */}
-              {(activeTab !== 'dashboard' || dashboardCategoryGroup !== null) && (
+              {/* Universal Header Back Button - Never rendered on first page (dashboard) */}
+              {activeTab !== 'dashboard' && (
                 <button
                   type="button"
                   onClick={handleBack}
@@ -515,7 +557,7 @@ function AppContent() {
                     currentBackTheme.shadow,
                     currentBackTheme.border
                   )}
-                  title="بازگشت به مرحله یا صفحه قبلی"
+                  title="بازگشت به پیشخوان"
                 >
                   <ChevronRight size={18} className="text-white group-hover:-translate-x-1 transition-transform shrink-0 drop-shadow" />
                   <span className="drop-shadow-sm font-black">بازگشت</span>

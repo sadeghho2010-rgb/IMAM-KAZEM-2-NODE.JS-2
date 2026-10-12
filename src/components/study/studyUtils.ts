@@ -120,6 +120,8 @@ export interface StudyWarningDetail {
   mandatoryCoreMinutes: number;
 }
 
+export type StudyWarningStatus = StudyWarningDetail;
+
 export function getStudyWarningStatus(
   period: StudyPeriod,
   log?: PeriodicStudyLog,
@@ -375,7 +377,7 @@ export function exportStudyStatsCSV(periods: StudyPeriod[], allLogs: PeriodicStu
 // -------------------------------------------------------------
 import { localDb } from '../../lib/localDb';
 import { getTodayShamsi } from '../../lib/jalali';
-import { StudyDailyEntry, CourseStudyDetail, Program } from '../../types';
+import { StudyDailyEntry, Program } from '../../types';
 
 export interface CoreCourseItem {
   id: string;
