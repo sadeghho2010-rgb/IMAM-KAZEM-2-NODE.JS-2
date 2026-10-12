@@ -322,7 +322,14 @@ export default function PeriodViewTable({
     if (myCourses.length === 0 && studentGrade) {
       myCourses = programs.filter(p => p.grade === studentGrade);
     }
-    return myCourses;
+    return myCourses.filter(p => {
+      if (p.type && p.type !== 'اصلی') return false;
+      const typeStr = (p.type || '').trim();
+      const titleStr = (p.title || '').trim();
+      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
+      if (isExcluded) return false;
+      return p.type === 'اصلی' || !p.type;
+    });
   };
 
   // Precompute row data with warning statuses for filtering and rendering
@@ -429,16 +436,25 @@ export default function PeriodViewTable({
   // Dynamic list of unique courses present across filtered students for detailed split columns
   const allEnrolledCourses = useMemo(() => {
     const courseMap = new Map<string, string>();
+    const isExcludedTitle = (titleStr: string) => {
+      const kList = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'];
+      return kList.some(k => titleStr.includes(k));
+    };
+
     filteredRows.forEach(r => {
       // From courseBreakdown in log
       if (r.log?.coursesBreakdown) {
         r.log.coursesBreakdown.forEach(c => {
-          if (!courseMap.has(c.courseId)) courseMap.set(c.courseId, c.courseTitle);
+          if (!isExcludedTitle(c.courseTitle || '') && !courseMap.has(c.courseId)) {
+            courseMap.set(c.courseId, c.courseTitle);
+          }
         });
       }
       // From student's enrolled courses
       r.studentCourses.forEach(c => {
-        if (!courseMap.has(c.id)) courseMap.set(c.id, c.title);
+        if (!isExcludedTitle(c.title || '') && !courseMap.has(c.id)) {
+          courseMap.set(c.id, c.title);
+        }
       });
     });
 

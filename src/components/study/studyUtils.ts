@@ -391,6 +391,12 @@ export function getStudentCoreCourses(student?: Student | null, programs?: Progr
   // 1. If programs are provided, filter programs matching the student's grade or enrollment
   if (Array.isArray(programs) && programs.length > 0) {
     const studentProgs = programs.filter(p => {
+      if (p.type && p.type !== 'اصلی') return false;
+      const typeStr = (p.type || '').trim();
+      const titleStr = (p.title || '').trim();
+      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
+      if (isExcluded) return false;
+
       const matchesGrade = !p.grade || p.grade === grade || p.grade === 'همه پایه‌ها';
       const matchesId = student?.id && (
         (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(student.id)) ||
