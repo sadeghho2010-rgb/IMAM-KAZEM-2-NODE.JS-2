@@ -8,19 +8,13 @@ import {
   Plus, 
   Edit3, 
   Trash2, 
-  FolderPlus, 
   Layers, 
-  UserCheck, 
-  Award, 
-  BarChart3, 
   X, 
-  Save, 
-  HelpCircle,
   RefreshCw,
   Sparkles,
-  ChevronRight,
   Filter,
-  Users
+  Users,
+  CheckSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
@@ -40,10 +34,9 @@ import { StudentCourseProgressService } from '../services/StudentCourseProgressS
 export default function PassedCoursesManagement() {
   const { currentUser } = useAuth();
   
-  // Access authorization check (Super Admin, Education Manager, Grade Supervisors - Level 1 & 2)
+  // Access authorization check
   const isSuperAdmin = currentUser?.role === 'super_admin' || currentUser?.level === 1;
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.level === 2;
-  const isGradeSupervisor = currentUser?.level === 2;
 
   // Active Main Sub-Tab
   const [activeTab, setActiveTab] = useState<'students_progress' | 'curriculum_bank'>('students_progress');
@@ -61,10 +54,19 @@ export default function PassedCoursesManagement() {
   // Student Progress Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'passed' | 'remaining'>('all');
 
   // Student Details Modal State
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<Student | null>(null);
+
+  // Finalize In-Progress Courses Modal
+  const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState<boolean>(false);
+  const [isFinalizing, setIsFinalizing] = useState<boolean>(false);
+
+  // Custom Student Passed Course Form
+  const [customSubjectTitle, setCustomSubjectTitle] = useState<string>('اصول فقه');
+  const [customBookTitle, setCustomBookTitle] = useState<string>('');
+  const [customChapterTitle, setCustomChapterTitle] = useState<string>('');
+  const [isAddingCustomCourse, setIsAddingCustomCourse] = useState<boolean>(false);
 
   // Curriculum Bank Modals
   const [isSubjectModalOpen, setIsSubjectModalOpen] = useState<boolean>(false);
@@ -80,10 +82,9 @@ export default function PassedCoursesManagement() {
   const loadAllData = async () => {
     setIsLoading(true);
     try {
-      // 1. Ensure default curriculum items exist
+      // Ensure seed data and purge non-allowed subjects / duplicates
       const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
       
-      // 2. Fetch all collections
       const [stList, subList, bkList, chList, prgList, enrList, progList] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<CurriculumSubject>('curriculum_subjects'),
@@ -112,7 +113,6 @@ export default function PassedCoursesManagement() {
     loadAllData();
   }, []);
 
-  // Compute Full Name Helper
   const getStudentFullName = (s: Student): string => {
     if (s.firstName || s.lastName) {
       return `${s.firstName || ''} ${s.lastName || ''}`.trim();
@@ -123,11 +123,9 @@ export default function PassedCoursesManagement() {
   // Filtered Students List
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      // Grade filter
       if (selectedGradeFilter !== 'all' && s.grade !== selectedGradeFilter) {
         return false;
       }
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const fullName = getStudentFullName(s).toLowerCase();
@@ -141,55 +139,46 @@ export default function PassedCoursesManagement() {
     });
   }, [students, selectedGradeFilter, searchQuery]);
 
-  // Compute student summary progress stats map
+  // Compute student summary progress stats map (Count of COURSES, NO CREDITS / NO UNITHA)
   const studentStatsMap = useMemo(() => {
     const map: Record<string, {
       passedCount: number;
       inProgressCount: number;
       remainingCount: number;
-      passedCredits: number;
-      inProgressCredits: number;
-      remainingCredits: number;
-      totalCredits: number;
+      totalCount: number;
       percentCompleted: number;
     }> = {};
 
     const totalChaptersCount = chapters.length;
-    const totalCurriculumCredits = chapters.reduce((acc, c) => acc + (c.credits || 2), 0);
 
     students.forEach(s => {
       const studentProgs = progressRecords.filter(p => p.studentId === s.id);
 
       let passedCount = 0;
       let inProgressCount = 0;
-      let passedCredits = 0;
-      let inProgressCredits = 0;
 
       chapters.forEach(ch => {
-        const progRec = studentProgs.find(p => p.chapterId === ch.id);
-        const credits = ch.credits || 2;
-
+        const progRec = studentProgs.find(p => p.chapterId === ch.id || p.chapterTitle === ch.title);
         if (progRec?.status === 'passed') {
           passedCount++;
-          passedCredits += credits;
         } else if (progRec?.status === 'in_progress') {
           inProgressCount++;
-          inProgressCredits += credits;
         }
       });
 
+      // Count custom passed courses that might not be in standard chapter list
+      const customPassed = studentProgs.filter(p => p.status === 'passed' && !chapters.some(ch => ch.id === p.chapterId));
+      passedCount += customPassed.length;
+
       const remainingCount = Math.max(0, totalChaptersCount - passedCount - inProgressCount);
-      const remainingCredits = Math.max(0, totalCurriculumCredits - passedCredits - inProgressCredits);
-      const percentCompleted = totalCurriculumCredits > 0 ? Math.round((passedCredits / totalCurriculumCredits) * 100) : 0;
+      const denominator = Math.max(1, totalChaptersCount);
+      const percentCompleted = Math.min(100, Math.round((passedCount / denominator) * 100));
 
       map[s.id] = {
         passedCount,
         inProgressCount,
         remainingCount,
-        passedCredits,
-        inProgressCredits,
-        remainingCredits,
-        totalCredits: totalCurriculumCredits,
+        totalCount: totalChaptersCount,
         percentCompleted
       };
     });
@@ -197,26 +186,97 @@ export default function PassedCoursesManagement() {
     return map;
   }, [students, chapters, progressRecords]);
 
-  // Total System Credits Stats
+  // Total System Stats (NO CREDITS)
   const systemTotalStats = useMemo(() => {
-    let totalPassedCredits = 0;
-    let totalInProgressCredits = 0;
-    let totalRemainingCredits = 0;
+    let totalPassed = 0;
+    let totalInProgress = 0;
+    let totalRemaining = 0;
 
     Object.values(studentStatsMap).forEach(st => {
-      totalPassedCredits += st.passedCredits;
-      totalInProgressCredits += st.inProgressCredits;
-      totalRemainingCredits += st.remainingCredits;
+      totalPassed += st.passedCount;
+      totalInProgress += st.inProgressCount;
+      totalRemaining += st.remainingCount;
     });
 
     return {
-      totalPassedCredits,
-      totalInProgressCredits,
-      totalRemainingCredits
+      totalPassed,
+      totalInProgress,
+      totalRemaining
     };
   }, [studentStatsMap]);
 
-  // Handler to toggle status of a chapter for a student
+  // Finalize all in-progress courses for end of year
+  const handleFinalizeInProgressCourses = async () => {
+    setIsFinalizing(true);
+    try {
+      const updatedUser = currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش';
+      const nowIso = new Date().toISOString();
+
+      let convertedCount = 0;
+
+      // 1. Convert all existing in_progress records to passed
+      const allProgress = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+
+      for (const rec of allProgress) {
+        if (rec.status === 'in_progress') {
+          const updatedDoc: StudentCourseProgress = {
+            ...rec,
+            status: 'passed',
+            passedAt: nowIso,
+            passedByName: updatedUser,
+            updatedAt: nowIso
+          };
+          await localDb.setDoc('student_course_progress', updatedDoc);
+          convertedCount++;
+        }
+      }
+
+      // 2. For active enrolled main programs, mark their course status as passed in student records
+      for (const st of students) {
+        const myEnrolls = enrollments.filter(e => e.studentId === st.id);
+        const enrolledProgIds = new Set(myEnrolls.map(e => e.programId));
+        const myMainProgs = programs.filter(p => p.type === 'اصلی' && (enrolledProgIds.has(p.id) || p.grade === st.grade));
+
+        for (const prog of myMainProgs) {
+          const matchedChap = chapters.find(c => prog.title.includes(c.title) || prog.title.includes(c.bookTitle)) || chapters[0];
+          if (matchedChap) {
+            const recId = `progress_${st.id}_${matchedChap.id}`;
+            const existing = allProgress.find(p => p.id === recId || (p.studentId === st.id && p.chapterId === matchedChap.id));
+
+            if (!existing || existing.status !== 'passed') {
+              const newDoc: StudentCourseProgress = {
+                id: existing?.id || recId,
+                studentId: st.id,
+                subjectId: matchedChap.subjectId,
+                subjectTitle: matchedChap.subjectTitle,
+                bookId: matchedChap.bookId,
+                bookTitle: matchedChap.bookTitle,
+                chapterId: matchedChap.id,
+                chapterTitle: matchedChap.title,
+                status: 'passed',
+                passedAt: nowIso,
+                passedByName: updatedUser,
+                updatedAt: nowIso
+              };
+              await localDb.setDoc('student_course_progress', newDoc);
+              convertedCount++;
+            }
+          }
+        }
+      }
+
+      setIsFinalizeModalOpen(false);
+      await loadAllData();
+      alert(`✅ با موفقیت تمامی درس‌های در حال جریان طلاب (${convertedCount} مورد) نهایی گردیده و در سابقه علمی طلاب به عنوان «گذرانده شده» ثبت شد.`);
+    } catch (err: any) {
+      console.error('Error finalizing in-progress courses:', err);
+      alert('خطا در نهایی‌سازی دروس در حال جریان: ' + (err?.message || ''));
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  // Toggle status of a chapter for a student directly
   const handleToggleChapterStatus = async (
     studentId: string, 
     chapter: CurriculumChapter, 
@@ -244,7 +304,6 @@ export default function PassedCoursesManagement() {
 
       await localDb.setDoc('student_course_progress', updatedRecord);
 
-      // Local state update
       setProgressRecords(prev => {
         const filtered = prev.filter(p => p.id !== updatedRecord.id && !(p.studentId === studentId && p.chapterId === chapter.id));
         return [...filtered, updatedRecord];
@@ -255,7 +314,43 @@ export default function PassedCoursesManagement() {
     }
   };
 
-  // Handler to save/edit Subject
+  // Add custom passed course to student
+  const handleAddCustomPassedCourse = async (studentId: string) => {
+    if (!customBookTitle.trim() || !customChapterTitle.trim()) {
+      alert('لطفاً عنوان کتاب و بخش را وارد نمایید.');
+      return;
+    }
+
+    try {
+      const recId = `custom_prog_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const newRec: StudentCourseProgress = {
+        id: recId,
+        studentId,
+        subjectId: `subj_${Date.now()}`,
+        subjectTitle: customSubjectTitle.trim(),
+        bookId: `book_${Date.now()}`,
+        bookTitle: customBookTitle.trim(),
+        chapterId: `chap_${Date.now()}`,
+        chapterTitle: customChapterTitle.trim(),
+        status: 'passed',
+        passedAt: new Date().toISOString(),
+        passedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش',
+        updatedAt: new Date().toISOString()
+      };
+
+      await localDb.setDoc('student_course_progress', newRec);
+      setProgressRecords(prev => [...prev, newRec]);
+      setCustomBookTitle('');
+      setCustomChapterTitle('');
+      setIsAddingCustomCourse(false);
+      alert('✅ درس گذرانده جدید با موفقیت در سابقه علمی طلبه ثبت گردید.');
+    } catch (err) {
+      console.error('Error adding custom course:', err);
+      alert('خطا در ثبت درس.');
+    }
+  };
+
+  // Handlers for Curriculum Bank Modals
   const handleSaveSubject = async () => {
     if (!editingSubject?.title?.trim()) {
       alert('لطفاً عنوان ماده درسی را وارد کنید.');
@@ -284,10 +379,9 @@ export default function PassedCoursesManagement() {
     }
   };
 
-  // Handler to save/edit Book
   const handleSaveBook = async () => {
     if (!editingBook?.title?.trim() || !editingBook?.subjectId) {
-      alert('لطفاً عنوان کتاب و ماده درسی مربوطه را تعیین کنید.');
+      alert('لطفاً عنوان کتاب و عنوان درسی مربوطه را تعیین کنید.');
       return;
     }
 
@@ -297,9 +391,9 @@ export default function PassedCoursesManagement() {
       const doc: CurriculumBook = {
         id: editingBook.id || `book_${Date.now()}`,
         subjectId: editingBook.subjectId,
-        subjectTitle: parentSubj?.title || editingBook.subjectTitle || '',
+        subjectTitle: parentSubj?.title || editingBook.subjectTitle || 'اصول فقه',
         title: editingBook.title.trim(),
-        credits: Number(editingBook.credits) || 4,
+        credits: 1,
         orderIndex: editingBook.orderIndex || books.length + 1,
         description: editingBook.description || '',
         createdAt: editingBook.createdAt || new Date().toISOString(),
@@ -316,10 +410,9 @@ export default function PassedCoursesManagement() {
     }
   };
 
-  // Handler to save/edit Chapter
   const handleSaveChapter = async () => {
     if (!editingChapter?.title?.trim() || !editingChapter?.bookId) {
-      alert('لطفاً عنوان سرفصل و کتاب مربوطه را تعیین کنید.');
+      alert('لطفاً عنوان بخش و کتاب مربوطه را تعیین کنید.');
       return;
     }
 
@@ -333,7 +426,7 @@ export default function PassedCoursesManagement() {
         subjectId: parentBook?.subjectId || editingChapter.subjectId || '',
         subjectTitle: parentBook?.subjectTitle || editingChapter.subjectTitle || '',
         title: editingChapter.title.trim(),
-        credits: Number(editingChapter.credits) || 2,
+        credits: 1,
         orderIndex: editingChapter.orderIndex || chapters.length + 1,
         description: editingChapter.description || '',
         createdAt: editingChapter.createdAt || new Date().toISOString(),
@@ -346,11 +439,10 @@ export default function PassedCoursesManagement() {
       await loadAllData();
     } catch (err) {
       console.error(err);
-      alert('خطا در ذخیره سرفصل درسی.');
+      alert('خطا در ذخیره بخش درسی.');
     }
   };
 
-  // Handler Delete Items
   const handleDeleteItem = async (collection: 'curriculum_subjects' | 'curriculum_books' | 'curriculum_chapters', id: string, title: string) => {
     if (!window.confirm(`آیا از حذف «${title}» اطمینان دارید؟`)) return;
     try {
@@ -362,9 +454,18 @@ export default function PassedCoursesManagement() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center font-vazir text-slate-600 bg-white rounded-3xl border border-slate-200">
+        <div className="w-10 h-10 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-xs font-bold">در حال بارگذاری بانک دروس گذرانده شده...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12 font-vazir text-slate-800 dir-rtl">
-      {/* Top Header & Page Navigation Tabs */}
+      {/* Top Header & Navigation Tabs */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="p-3 bg-gradient-to-br from-indigo-600 to-indigo-800 text-white rounded-2xl shadow-md shadow-indigo-200">
@@ -372,15 +473,15 @@ export default function PassedCoursesManagement() {
           </div>
           <div>
             <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-              دروس گذرانده شده و سرفصل‌های آموزشی
+              دروس گذرانده شده و بانک سرفصل‌های آموزشی
             </h1>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              مدیریت کارنامه دروس گذرانده، در جریان و مانده طلاب همراه با بانک سرفصل‌های دروس حوزه
+              مدیریت کارنامه دروس گذرانده، در جریان و مانده طلاب با ساختار «عنوان / کتاب / بخش»
             </p>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Navigation Sub-Tabs */}
         <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200/80 shrink-0 self-start md:self-auto">
           <button
             type="button"
@@ -407,7 +508,7 @@ export default function PassedCoursesManagement() {
             )}
           >
             <Layers size={15} />
-            <span>بانک دروس مصوب و سرفصل‌ها</span>
+            <span>بانک دروس مصوب (اصول، فقه، فلسفه)</span>
           </button>
         </div>
       </div>
@@ -415,12 +516,39 @@ export default function PassedCoursesManagement() {
       {/* SUB-TAB 1: STUDENTS COURSE PROGRESS LIST */}
       {activeTab === 'students_progress' && (
         <div className="space-y-5">
-          {/* Summary KPI Cards Ribbon */}
+          {/* Action Ribbon: Finalize End-of-Year Courses Button */}
+          {(isSuperAdmin || isEducationManager) && (
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-5 rounded-3xl text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 border border-indigo-900/40">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                  <Sparkles size={16} />
+                  <span>عملیات پایان سال تحصیلی مسئول آموزش</span>
+                </div>
+                <h3 className="text-sm sm:text-base font-black text-white">
+                  نهایی‌سازی کلی دروس در حال جریان کلیه طلاب
+                </h3>
+                <p className="text-xs text-indigo-200/80 font-medium">
+                  تبدیل خودکار تمامی دروس در حال جریان (آبی) به وضعیت «گذرانده شده» (سبز) و ثبت دائم در سابقه علمی.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsFinalizeModalOpen(true)}
+                className="px-5 py-3 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shrink-0 border border-emerald-300/40"
+              >
+                <CheckSquare size={18} className="text-slate-950" />
+                <span>نهایی کردن درس‌های در حال جریان و ثبت در سابقه علمی طلاب</span>
+              </button>
+            </div>
+          )}
+
+          {/* Summary KPI Cards Ribbon (NO CREDITS) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-gradient-to-br from-emerald-500 to-teal-700 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-extrabold text-emerald-100 block">واحد‌های گذرانده شده (کل طلاب)</span>
-                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalPassedCredits} <span className="text-xs font-bold opacity-80">واحد</span></span>
+                <span className="text-xs font-extrabold text-emerald-100 block">دروس گذرانده شده (کل طلاب)</span>
+                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalPassed} <span className="text-xs font-bold opacity-80">درس</span></span>
               </div>
               <div className="p-3 bg-white/15 rounded-xl backdrop-blur-sm">
                 <CheckCircle2 size={24} className="text-emerald-100" />
@@ -429,8 +557,8 @@ export default function PassedCoursesManagement() {
 
             <div className="bg-gradient-to-br from-sky-500 to-blue-700 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-extrabold text-sky-100 block">واحد‌های در حال گذراندن (در جریان)</span>
-                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalInProgressCredits} <span className="text-xs font-bold opacity-80">واحد</span></span>
+                <span className="text-xs font-extrabold text-sky-100 block">دروس در حال گذراندن (در جریان)</span>
+                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalInProgress} <span className="text-xs font-bold opacity-80">درس</span></span>
               </div>
               <div className="p-3 bg-white/15 rounded-xl backdrop-blur-sm">
                 <Circle size={24} className="text-sky-100 fill-sky-200/30" />
@@ -439,8 +567,8 @@ export default function PassedCoursesManagement() {
 
             <div className="bg-gradient-to-br from-rose-500 to-red-700 text-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-extrabold text-rose-100 block">واحد‌های باقی‌مانده (مانده)</span>
-                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalRemainingCredits} <span className="text-xs font-bold opacity-80">واحد</span></span>
+                <span className="text-xs font-extrabold text-rose-100 block">دروس باقی‌مانده (مانده)</span>
+                <span className="text-2xl font-black mt-1 block">{systemTotalStats.totalRemaining} <span className="text-xs font-bold opacity-80">درس</span></span>
               </div>
               <div className="p-3 bg-white/15 rounded-xl backdrop-blur-sm">
                 <XCircle size={24} className="text-rose-100" />
@@ -495,7 +623,7 @@ export default function PassedCoursesManagement() {
             </div>
           </div>
 
-          {/* Students Table */}
+          {/* Students Table (NO CREDITS / NO UNITHA) */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs">
@@ -506,7 +634,7 @@ export default function PassedCoursesManagement() {
                     <th className="p-3.5">🟢 گذرانده شده</th>
                     <th className="p-3.5">🔵 در حال گذراندن</th>
                     <th className="p-3.5">🔴 باقی‌مانده</th>
-                    <th className="p-3.5 text-center">پیشرفت</th>
+                    <th className="p-3.5 text-center">پیشرفت درصد</th>
                     <th className="p-3.5 text-center pl-5">عملیات</th>
                   </tr>
                 </thead>
@@ -523,9 +651,7 @@ export default function PassedCoursesManagement() {
                         passedCount: 0,
                         inProgressCount: 0,
                         remainingCount: 0,
-                        passedCredits: 0,
-                        inProgressCredits: 0,
-                        remainingCredits: 0,
+                        totalCount: 0,
                         percentCompleted: 0
                       };
 
@@ -560,21 +686,21 @@ export default function PassedCoursesManagement() {
                           <td className="p-3.5">
                             <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-black text-[11px] inline-flex items-center gap-1">
                               <CheckCircle2 size={13} className="text-emerald-600" />
-                              <span>{stats.passedCredits} واحد ({stats.passedCount} درس)</span>
+                              <span>{stats.passedCount} درس گذرانده</span>
                             </span>
                           </td>
 
                           <td className="p-3.5">
                             <span className="px-2.5 py-1 bg-sky-50 text-sky-800 border border-sky-200 rounded-lg font-black text-[11px] inline-flex items-center gap-1">
                               <Circle size={12} className="text-sky-600 fill-sky-300/40" />
-                              <span>{stats.inProgressCredits} واحد ({stats.inProgressCount} درس)</span>
+                              <span>{stats.inProgressCount} درس در جریان</span>
                             </span>
                           </td>
 
                           <td className="p-3.5">
                             <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded-lg font-black text-[11px] inline-flex items-center gap-1">
                               <XCircle size={13} className="text-rose-600" />
-                              <span>{stats.remainingCredits} واحد ({stats.remainingCount} درس)</span>
+                              <span>{stats.remainingCount} درس مانده</span>
                             </span>
                           </td>
 
@@ -596,10 +722,10 @@ export default function PassedCoursesManagement() {
                             <button
                               type="button"
                               onClick={() => setSelectedStudentForModal(student)}
-                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
+                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
                             >
                               <BookOpen size={13} />
-                              <span>مشاهده و ویرایش ریز دروس</span>
+                              <span>مشاهده و ویرایش سابقه علمی</span>
                             </button>
                           </td>
                         </tr>
@@ -613,7 +739,7 @@ export default function PassedCoursesManagement() {
         </div>
       )}
 
-      {/* SUB-TAB 2: CURRICULUM COURSES BANK */}
+      {/* SUB-TAB 2: CURRICULUM COURSES BANK (ONLY TITLE / BOOK / CHAPTER) */}
       {activeTab === 'curriculum_bank' && (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -622,7 +748,7 @@ export default function PassedCoursesManagement() {
                 مرجع اصلی بانک دروس و سرفصل‌های مصوب
               </h2>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                تعریف دسته‌بندی موضوعی (اصول، فقه، فلسفه و...)، کتب درسی و مجلدات/سرفصل‌ها جهت استفاده در برنامه‌ریزی دروس
+                قالب ثبت: <strong>عنوان</strong> (اصول، فقه، فلسفه) ← <strong>کتاب</strong> (مثلاً رسائل) ← <strong>بخش</strong> (مثلاً قطع و ظن)
               </p>
             </div>
 
@@ -636,7 +762,7 @@ export default function PassedCoursesManagement() {
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <Plus size={15} />
-                <span>افزودن ماده درسی جدید</span>
+                <span>افزودن عنوان درسی جدید</span>
               </button>
             </div>
           </div>
@@ -656,7 +782,7 @@ export default function PassedCoursesManagement() {
                       </div>
                       <div>
                         <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                          <span>{subject.title}</span>
+                          <span>عنوان: {subject.title}</span>
                           <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
                             {subjectBooks.length} کتاب
                           </span>
@@ -669,7 +795,7 @@ export default function PassedCoursesManagement() {
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingBook({ subjectId: subject.id, subjectTitle: subject.title, credits: 4 });
+                          setEditingBook({ subjectId: subject.id, subjectTitle: subject.title, credits: 1 });
                           setIsBookModalOpen(true);
                         }}
                         className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black transition-colors flex items-center gap-1 cursor-pointer"
@@ -685,7 +811,7 @@ export default function PassedCoursesManagement() {
                           setIsSubjectModalOpen(true);
                         }}
                         className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                        title="ویرایش ماده درسی"
+                        title="ویرایش عنوان"
                       >
                         <Edit3 size={15} />
                       </button>
@@ -705,7 +831,7 @@ export default function PassedCoursesManagement() {
                   <div className="p-4 sm:p-5 space-y-4">
                     {subjectBooks.length === 0 ? (
                       <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs font-medium">
-                        هنوز هیچ کتابی برای ماده درسی «{subject.title}» تعریف نشده است.
+                        هنوز هیچ کتابی برای عنوان «{subject.title}» تعریف نشده است.
                       </div>
                     ) : (
                       subjectBooks.map(book => {
@@ -715,17 +841,14 @@ export default function PassedCoursesManagement() {
                           <div key={book.id} className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <span className="font-black text-xs sm:text-sm text-slate-900">📖 {book.title}</span>
-                                <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md font-extrabold">
-                                  {book.credits} واحد
-                                </span>
+                                <span className="font-black text-xs sm:text-sm text-slate-900">📖 کتاب: {book.title}</span>
                               </div>
 
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingChapter({ bookId: book.id, bookTitle: book.title, subjectId: subject.id, subjectTitle: subject.title, credits: 2 });
+                                    setEditingChapter({ bookId: book.id, bookTitle: book.title, subjectId: subject.id, subjectTitle: subject.title, credits: 1 });
                                     setIsChapterModalOpen(true);
                                   }}
                                   className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
@@ -757,7 +880,7 @@ export default function PassedCoursesManagement() {
                               </div>
                             </div>
 
-                            {/* Chapters Chips List */}
+                            {/* Chapters Chips List (NO CREDITS) */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
                               {bookChapters.length === 0 ? (
                                 <div className="col-span-full text-[11px] text-slate-400 italic">
@@ -767,8 +890,7 @@ export default function PassedCoursesManagement() {
                                 bookChapters.map(chap => (
                                   <div key={chap.id} className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between shadow-2xs">
                                     <div>
-                                      <span className="font-bold text-xs text-slate-800 block">{chap.title}</span>
-                                      <span className="text-[10px] text-slate-400 font-medium">{chap.credits} واحد</span>
+                                      <span className="font-bold text-xs text-slate-800 block">📌 بخش: {chap.title}</span>
                                     </div>
 
                                     <div className="flex items-center gap-1">
@@ -806,7 +928,58 @@ export default function PassedCoursesManagement() {
         </div>
       )}
 
-      {/* STUDENT DETAILS & COURSE PROGRESS MODAL */}
+      {/* MODAL: FINALIZE IN-PROGRESS COURSES */}
+      {isFinalizeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl w-full max-w-lg space-y-4 dir-rtl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={20} className="text-emerald-600" />
+                <h3 className="text-base font-black text-slate-900">
+                  نهایی کردن درس‌های در حال جریان و ثبت در سابقه علمی طلاب
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFinalizeModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl text-xs text-emerald-950 font-medium leading-relaxed space-y-2">
+              <p>
+                <strong>راهنمای مسئول آموزش و سوپر ادمین:</strong>
+              </p>
+              <p>
+                با فشردن این دکمه در پایان سال تحصیلی، تمامی دروس در حال جریان (آبی) طلاب به عنوان «گذرانده شده» (سبز 🟢) نهایی می‌گردند و به طور دائم در کارنامه و سابقه علمی تک‌تک طلاب ثبت خواهند شد.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsFinalizeModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                disabled={isFinalizing}
+                onClick={handleFinalizeInProgressCourses}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <CheckCircle2 size={16} />
+                <span>{isFinalizing ? 'در حال ثبت نهایی...' : 'تایید و نهایی کردن در سابقه علمی'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STUDENT DETAILS & COURSE PROGRESS MODAL (INDIVIDUAL EDITING) */}
       {selectedStudentForModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -847,9 +1020,7 @@ export default function PassedCoursesManagement() {
                   passedCount: 0,
                   inProgressCount: 0,
                   remainingCount: 0,
-                  passedCredits: 0,
-                  inProgressCredits: 0,
-                  remainingCredits: 0,
+                  totalCount: 0,
                   percentCompleted: 0
                 };
 
@@ -857,27 +1028,88 @@ export default function PassedCoursesManagement() {
                   <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                     <div className="text-center p-2.5 bg-emerald-50 text-emerald-900 rounded-xl border border-emerald-200">
                       <span className="text-[11px] font-bold text-emerald-700 block">🟢 گذرانده شده</span>
-                      <span className="text-lg font-black mt-0.5 block">{stats.passedCredits} واحد <span className="text-xs font-normal">({stats.passedCount} درس)</span></span>
+                      <span className="text-lg font-black mt-0.5 block">{stats.passedCount} درس</span>
                     </div>
 
                     <div className="text-center p-2.5 bg-sky-50 text-sky-900 rounded-xl border border-sky-200">
                       <span className="text-[11px] font-bold text-sky-700 block">🔵 در جریان (تحصیل)</span>
-                      <span className="text-lg font-black mt-0.5 block">{stats.inProgressCredits} واحد <span className="text-xs font-normal">({stats.inProgressCount} درس)</span></span>
+                      <span className="text-lg font-black mt-0.5 block">{stats.inProgressCount} درس</span>
                     </div>
 
                     <div className="text-center p-2.5 bg-rose-50 text-rose-900 rounded-xl border border-rose-200">
                       <span className="text-[11px] font-bold text-rose-700 block">🔴 مانده (باقی‌مانده)</span>
-                      <span className="text-lg font-black mt-0.5 block">{stats.remainingCredits} واحد <span className="text-xs font-normal">({stats.remainingCount} درس)</span></span>
+                      <span className="text-lg font-black mt-0.5 block">{stats.remainingCount} درس</span>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Curriculum Tree with Status Toggles */}
+              {/* Add Custom Course Form toggle */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800">ثبت درس گذرانده جدید خارج از سرفصل‌های عمومی برای این طلبه:</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCustomCourse(!isAddingCustomCourse)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    {isAddingCustomCourse ? 'بستن فرم' : '+ افزودن درس دلخواه'}
+                  </button>
+                </div>
+
+                {isAddingCustomCourse && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">عنوان:</label>
+                      <input
+                        type="text"
+                        value={customSubjectTitle}
+                        onChange={(e) => setCustomSubjectTitle(e.target.value)}
+                        placeholder="اصول / فقه / فلسفه"
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">کتاب:</label>
+                      <input
+                        type="text"
+                        value={customBookTitle}
+                        onChange={(e) => setCustomBookTitle(e.target.value)}
+                        placeholder="مثلاً رسائل"
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">بخش:</label>
+                      <input
+                        type="text"
+                        value={customChapterTitle}
+                        onChange={(e) => setCustomChapterTitle(e.target.value)}
+                        placeholder="مثلاً قطع و ظن"
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleAddCustomPassedCourse(selectedStudentForModal.id)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                      >
+                        ثبت نهایی درس گذرانده برای این طلبه
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Curriculum Tree with Instant Status Toggles */}
               <div className="space-y-5">
                 <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Layers size={15} className="text-indigo-600" />
-                  <span>جدول ریز تفکیکی دروس و سرفصل‌ها (قابل ویرایش توسط مسئول آموزش)</span>
+                  <span>جدول ریز تفکیکی سابقه علمی طلبه (قابل ویرایش توسط مسئول آموزش)</span>
                 </h4>
 
                 {subjects.map(subject => {
@@ -886,7 +1118,7 @@ export default function PassedCoursesManagement() {
                   return (
                     <div key={subject.id} className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
                       <div className="bg-slate-100/90 p-3 font-black text-xs text-slate-900 border-b border-slate-200 flex items-center justify-between">
-                        <span>📚 {subject.title}</span>
+                        <span>📚 عنوان: {subject.title}</span>
                       </div>
 
                       <div className="p-3 space-y-4">
@@ -896,24 +1128,23 @@ export default function PassedCoursesManagement() {
                           return (
                             <div key={book.id} className="space-y-2">
                               <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                                <span>📖 {book.title} ({book.credits} واحد)</span>
+                                <span>📖 کتاب: {book.title}</span>
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {bookChapters.map(chap => {
-                                  const progRec = progressRecords.find(p => p.studentId === selectedStudentForModal.id && p.chapterId === chap.id);
+                                  const progRec = progressRecords.find(p => p.studentId === selectedStudentForModal.id && (p.chapterId === chap.id || p.chapterTitle === chap.title));
                                   const currentStatus: CourseProgressStatus = progRec?.status || 'remaining';
 
                                   return (
                                     <div key={chap.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
                                       <div className="min-w-0 flex-1">
-                                        <span className="font-bold text-xs text-slate-900 block truncate">{chap.title}</span>
-                                        <span className="text-[10px] text-slate-400 font-medium">{chap.credits} واحد</span>
+                                        <span className="font-bold text-xs text-slate-900 block truncate">📌 بخش: {chap.title}</span>
                                       </div>
 
                                       {/* Status Toggle Buttons */}
                                       <div className="flex items-center gap-1 shrink-0">
-                                        {/* Passed button (Green Check) */}
+                                        {/* Passed button */}
                                         <button
                                           type="button"
                                           onClick={() => handleToggleChapterStatus(selectedStudentForModal.id, chap, 'passed')}
@@ -929,7 +1160,7 @@ export default function PassedCoursesManagement() {
                                           <span className="hidden sm:inline">گذرانده</span>
                                         </button>
 
-                                        {/* In-Progress button (Blue Circle) */}
+                                        {/* In-Progress button */}
                                         <button
                                           type="button"
                                           onClick={() => handleToggleChapterStatus(selectedStudentForModal.id, chap, 'in_progress')}
@@ -945,7 +1176,7 @@ export default function PassedCoursesManagement() {
                                           <span className="hidden sm:inline">در جریان</span>
                                         </button>
 
-                                        {/* Remaining button (Red Cross) */}
+                                        {/* Remaining button */}
                                         <button
                                           type="button"
                                           onClick={() => handleToggleChapterStatus(selectedStudentForModal.id, chap, 'remaining')}
@@ -994,17 +1225,17 @@ export default function PassedCoursesManagement() {
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl w-full max-w-md space-y-4 dir-rtl">
             <h3 className="text-sm font-black text-slate-900">
-              {editingSubject.id ? 'ویرایش ماده درسی' : 'افزودن ماده درسی جدید'}
+              {editingSubject.id ? 'ویرایش عنوان درسی' : 'افزودن عنوان درسی جدید'}
             </h3>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">عنوان ماده درسی (مثلا اصول فقه، فقه، فلسفه)</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">عنوان درسی (مثلا اصول، فقه، فلسفه)</label>
               <input
                 type="text"
                 value={editingSubject.title || ''}
                 onChange={(e) => setEditingSubject({ ...editingSubject, title: e.target.value })}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
-                placeholder="عنوان ماده درسی..."
+                placeholder="عنوان درسی..."
               />
             </div>
 
@@ -1032,14 +1263,14 @@ export default function PassedCoursesManagement() {
                 onClick={handleSaveSubject}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black"
               >
-                ذخیره ماده درسی
+                ذخیره عنوان درسی
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* BOOK MODAL */}
+      {/* BOOK MODAL (NO CREDITS / NO UNITHA) */}
       {isBookModalOpen && editingBook && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl w-full max-w-md space-y-4 dir-rtl">
@@ -1048,7 +1279,7 @@ export default function PassedCoursesManagement() {
             </h3>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">ماده درسی مربوطه</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">عنوان درسی مربوطه (مثلاً اصول)</label>
               <select
                 value={editingBook.subjectId || ''}
                 onChange={(e) => setEditingBook({ ...editingBook, subjectId: e.target.value })}
@@ -1062,23 +1293,13 @@ export default function PassedCoursesManagement() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">عنوان کتاب (مثلا رسائل، مکاسب، کفایه)</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">کتاب (مثلا رسائل، مکاسب، بدایه)</label>
               <input
                 type="text"
                 value={editingBook.title || ''}
                 onChange={(e) => setEditingBook({ ...editingBook, title: e.target.value })}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
                 placeholder="عنوان کتاب..."
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">تعداد واحدها</label>
-              <input
-                type="number"
-                value={editingBook.credits || 4}
-                onChange={(e) => setEditingBook({ ...editingBook, credits: Number(e.target.value) })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
               />
             </div>
 
@@ -1102,16 +1323,16 @@ export default function PassedCoursesManagement() {
         </div>
       )}
 
-      {/* CHAPTER MODAL */}
+      {/* CHAPTER MODAL (NO CREDITS / NO UNITHA) */}
       {isChapterModalOpen && editingChapter && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl w-full max-w-md space-y-4 dir-rtl">
             <h3 className="text-sm font-black text-slate-900">
-              {editingChapter.id ? 'ویرایش سرفصل/بخش درسی' : 'افزودن سرفصل/بخش درسی جدید'}
+              {editingChapter.id ? 'ویرایش بخش/سرفصل درسی' : 'افزودن بخش/سرفصل درسی جدید'}
             </h3>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">کتاب درسی مربوطه</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">کتاب درسی مربوطه (مثلاً رسائل)</label>
               <select
                 value={editingChapter.bookId || ''}
                 onChange={(e) => setEditingChapter({ ...editingChapter, bookId: e.target.value })}
@@ -1125,23 +1346,13 @@ export default function PassedCoursesManagement() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">عنوان سرفصل/بخش (مثلا بخش قطع و ظن)</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1">بخش/سرفصل (مثلا قطع و ظن)</label>
               <input
                 type="text"
                 value={editingChapter.title || ''}
                 onChange={(e) => setEditingChapter({ ...editingChapter, title: e.target.value })}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
-                placeholder="عنوان سرفصل..."
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1">تعداد واحدها</label>
-              <input
-                type="number"
-                value={editingChapter.credits || 2}
-                onChange={(e) => setEditingChapter({ ...editingChapter, credits: Number(e.target.value) })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                placeholder="عنوان بخش..."
               />
             </div>
 
@@ -1158,7 +1369,7 @@ export default function PassedCoursesManagement() {
                 onClick={handleSaveChapter}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black"
               >
-                ذخیره سرفصل
+                ذخیره بخش
               </button>
             </div>
           </div>

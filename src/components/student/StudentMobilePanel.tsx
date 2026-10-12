@@ -464,7 +464,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               </div>
               <div>
                 <div className="text-xs font-black text-slate-900">دروس گذرانده شده</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">سوابق نمرات و واحدها</div>
+                <div className="text-[9px] text-slate-400 font-medium truncate">سوابق دروس گذرانده</div>
               </div>
             </div>
           </div>

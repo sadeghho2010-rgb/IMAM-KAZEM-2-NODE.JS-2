@@ -121,7 +121,14 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       (p as any).studentIds?.includes(studentObj.id)
     );
 
-    const mainOnly = matchedProgs.filter(p => p.type === 'اصلی' || !p.type || (!['مشاوره', 'پژوهش', 'دروس 5 شنبه'].includes(p.type)));
+    const mainOnly = matchedProgs.filter(p => {
+      if (p.type && p.type !== 'اصلی') return false;
+      const typeStr = (p.type || '').trim();
+      const titleStr = (p.title || '').trim();
+      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
+      if (isExcluded) return false;
+      return p.type === 'اصلی' || !p.type;
+    });
     if (mainOnly.length > 0) {
       const seen = new Set<string>();
       const list: { id: string; title: string }[] = [];

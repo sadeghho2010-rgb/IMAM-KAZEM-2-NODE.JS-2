@@ -12,66 +12,87 @@ import {
  * Pre-populates standard subjects, books, and chapters for Hawza Level 1 & 2
  */
 export const DEFAULT_CURRICULUM_SUBJECTS: Omit<CurriculumSubject, 'id'>[] = [
-  { title: 'اصول فقه', code: 'USUL', description: 'مبانی، مباحث الفاظ و ادله عقلية و شرعیة', color: 'indigo', orderIndex: 1 },
+  { title: 'اصول', code: 'USUL', description: 'مبانی، مباحث الفاظ و ادله عقلية و شرعیة', color: 'indigo', orderIndex: 1 },
   { title: 'فقه', code: 'FIQH', description: 'ابواب فقهی عبادات، معاملات و احکام', color: 'emerald', orderIndex: 2 },
   { title: 'فلسفه', code: 'PHIL', description: 'حکمت متعالیه و فلسفه اسلامی', color: 'amber', orderIndex: 3 },
-  { title: 'منطق و کلام', code: 'LOGIC', description: 'منطق ارسطویی، عقاید و کلام اسلامی', color: 'sky', orderIndex: 4 },
-  { title: 'ادبیات عرب', code: 'ARABIC', description: 'صرف، نحو، بلاغت و تجزیه و ترکیب', color: 'purple', orderIndex: 5 },
 ];
 
 export const DEFAULT_CURRICULUM_BOOKS: { subjectTitle: string; title: string; credits: number; orderIndex: number }[] = [
-  // اصول فقه
-  { subjectTitle: 'اصول فقه', title: 'رسائل (فرائد الاصول)', credits: 8, orderIndex: 1 },
-  { subjectTitle: 'اصول فقه', title: 'کفایة الاصول', credits: 10, orderIndex: 2 },
-  { subjectTitle: 'اصول فقه', title: 'حلقه ثالثه', credits: 6, orderIndex: 3 },
-  { subjectTitle: 'اصول فقه', title: 'اصول فقه مظفر', credits: 6, orderIndex: 4 },
+  // اصول
+  { subjectTitle: 'اصول', title: 'رسائل', credits: 1, orderIndex: 1 },
+  { subjectTitle: 'اصول', title: 'کفایة الاصول', credits: 1, orderIndex: 2 },
+  { subjectTitle: 'اصول', title: 'حلقه ثالثه', credits: 1, orderIndex: 3 },
+  { subjectTitle: 'اصول', title: 'اصول فقه مظفر', credits: 1, orderIndex: 4 },
 
   // فقه
-  { subjectTitle: 'فقه', title: 'مکاسب (محرمه / بیع / خیارات)', credits: 12, orderIndex: 1 },
-  { subjectTitle: 'فقه', title: 'شرح لمعه (الروضة البهية)', credits: 10, orderIndex: 2 },
-  { subjectTitle: 'فقه', title: 'عروة الوثقی', credits: 8, orderIndex: 3 },
+  { subjectTitle: 'فقه', title: 'مکاسب', credits: 1, orderIndex: 1 },
+  { subjectTitle: 'فقه', title: 'شرح لمعه', credits: 1, orderIndex: 2 },
+  { subjectTitle: 'فقه', title: 'عروة الوثقی', credits: 1, orderIndex: 3 },
 
   // فلسفه
-  { subjectTitle: 'فلسفه', title: 'بدایة الحکمة', credits: 4, orderIndex: 1 },
-  { subjectTitle: 'فلسفه', title: 'نهایة الحکمة', credits: 6, orderIndex: 2 },
+  { subjectTitle: 'فلسفه', title: 'بدایة الحکمة', credits: 1, orderIndex: 1 },
+  { subjectTitle: 'فلسفه', title: 'نهایة الحکمة', credits: 1, orderIndex: 2 },
 ];
 
 export const DEFAULT_CURRICULUM_CHAPTERS: { bookTitle: string; title: string; credits: number; orderIndex: number }[] = [
   // رسائل
-  { bookTitle: 'رسائل (فرائد الاصول)', title: 'بخش قطع و ظن', credits: 3, orderIndex: 1 },
-  { bookTitle: 'رسائل (فرائد الاصول)', title: 'بخش اصول عملیه (استصحاب)', credits: 3, orderIndex: 2 },
-  { bookTitle: 'رسائل (فرائد الاصول)', title: 'بخش تعادل و تراجیح', credits: 2, orderIndex: 3 },
+  { bookTitle: 'رسائل', title: 'قطع و ظن', credits: 1, orderIndex: 1 },
+  { bookTitle: 'رسائل', title: 'استصحاب', credits: 1, orderIndex: 2 },
+  { bookTitle: 'رسائل', title: 'تعادل و تراجیح', credits: 1, orderIndex: 3 },
 
   // کفایة الاصول
-  { bookTitle: 'کفایة الاصول', title: 'جلد اول (مباحث الفاظ)', credits: 5, orderIndex: 1 },
-  { bookTitle: 'کفایة الاصول', title: 'جلد دوم (مباحث ملازمات و امارات)', credits: 5, orderIndex: 2 },
+  { bookTitle: 'کفایة الاصول', title: 'مباحث الفاظ', credits: 1, orderIndex: 1 },
+  { bookTitle: 'کفایة الاصول', title: 'مباحث امارات و اصول عملیه', credits: 1, orderIndex: 2 },
 
   // مکاسب
-  { bookTitle: 'مکاسب (محرمه / بیع / خیارات)', title: 'بخش مکاسب محرمه', credits: 4, orderIndex: 1 },
-  { bookTitle: 'مکاسب (محرمه / بیع / خیارات)', title: 'بخش کتاب البيع', credits: 4, orderIndex: 2 },
-  { bookTitle: 'مکاسب (محرمه / بیع / خیارات)', title: 'بخش خیارات و شروط', credits: 4, orderIndex: 3 },
+  { bookTitle: 'مکاسب', title: 'مکاسب محرمه', credits: 1, orderIndex: 1 },
+  { bookTitle: 'مکاسب', title: 'کتاب البيع', credits: 1, orderIndex: 2 },
+  { bookTitle: 'مکاسب', title: 'خیارات', credits: 1, orderIndex: 3 },
 
   // شرح لمعه
-  { bookTitle: 'شرح لمعه (الروضة البهية)', title: 'جلد اول (عبادات)', credits: 5, orderIndex: 1 },
-  { bookTitle: 'شرح لمعه (الروضة البهية)', title: 'جلد دوم (معاملات)', credits: 5, orderIndex: 2 },
+  { bookTitle: 'شرح لمعه', title: 'عبادات', credits: 1, orderIndex: 1 },
+  { bookTitle: 'شرح لمعه', title: 'معاملات', credits: 1, orderIndex: 2 },
 
   // بدایة الحکمة
-  { bookTitle: 'بدایة الحکمة', title: 'بخش اول (مراحل ۱ تا ۶)', credits: 2, orderIndex: 1 },
-  { bookTitle: 'بدایة الحکمة', title: 'بخش دوم (مراحل ۷ تا ۱۲)', credits: 2, orderIndex: 2 },
+  { bookTitle: 'بدایة الحکمة', title: 'مراحل ۱ تا ۶', credits: 1, orderIndex: 1 },
+  { bookTitle: 'بدایة الحکمة', title: 'مراحل ۷ تا ۱۲', credits: 1, orderIndex: 2 },
 ];
 
 export class StudentCourseProgressService {
   /**
-   * Seeds initial default curriculum if database tables are empty
+   * Seeds initial default curriculum if database tables are empty and cleans up invalid subjects/duplicates
    */
   static async ensureDefaultCurriculumData(): Promise<{
     subjects: CurriculumSubject[];
     books: CurriculumBook[];
     chapters: CurriculumChapter[];
   }> {
+    const ALLOWED_SUBJECT_TITLES = ['اصول', 'فقه', 'فلسفه'];
+
     let subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
     let books = await localDb.getDocs<CurriculumBook>('curriculum_books');
     let chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
+
+    // Helper normalize subject
+    const normSubj = (t: string) => {
+      const clean = (t || '').trim();
+      if (clean.includes('اصول')) return 'اصول';
+      if (clean.includes('فقه')) return 'فقه';
+      if (clean.includes('فلسفه')) return 'فلسفه';
+      return clean;
+    };
+
+    // 1. Purge non-allowed subjects (e.g. logic, arabic) from DB if present & normalize titles
+    for (const s of subjects) {
+      const normalized = normSubj(s.title);
+      if (!ALLOWED_SUBJECT_TITLES.includes(normalized)) {
+        await localDb.deleteDoc('curriculum_subjects', s.id);
+      } else if (s.title !== normalized) {
+        await localDb.setDoc('curriculum_subjects', { ...s, title: normalized });
+      }
+    }
+
+    subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
 
     if (subjects.length === 0) {
       console.log('Seeding default curriculum subjects...');
@@ -86,6 +107,30 @@ export class StudentCourseProgressService {
       subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
     }
 
+    // Deduplicate subjects
+    const seenSubjects = new Map<string, CurriculumSubject>();
+    for (const s of subjects) {
+      const cleanTitle = normSubj(s.title);
+      if (seenSubjects.has(cleanTitle)) {
+        await localDb.deleteDoc('curriculum_subjects', s.id);
+      } else {
+        seenSubjects.set(cleanTitle, s);
+      }
+    }
+    subjects = Array.from(seenSubjects.values());
+
+    // Purge orphaned books or non-allowed subject books
+    const validSubjectIds = new Set(subjects.map(s => s.id));
+    const validSubjectTitles = new Set(subjects.map(s => s.title.trim()));
+
+    for (const b of books) {
+      if (!validSubjectIds.has(b.subjectId) && !validSubjectTitles.has(b.subjectTitle?.trim())) {
+        await localDb.deleteDoc('curriculum_books', b.id);
+      }
+    }
+
+    books = await localDb.getDocs<CurriculumBook>('curriculum_books');
+
     if (books.length === 0) {
       console.log('Seeding default curriculum books...');
       for (const b of DEFAULT_CURRICULUM_BOOKS) {
@@ -96,7 +141,7 @@ export class StudentCourseProgressService {
             subjectId: parentSubj.id,
             subjectTitle: parentSubj.title,
             title: b.title,
-            credits: b.credits,
+            credits: 1,
             orderIndex: b.orderIndex,
             createdAt: new Date().toISOString()
           };
@@ -105,6 +150,30 @@ export class StudentCourseProgressService {
       }
       books = await localDb.getDocs<CurriculumBook>('curriculum_books');
     }
+
+    // Deduplicate books
+    const seenBooks = new Map<string, CurriculumBook>();
+    for (const b of books) {
+      const key = `${b.subjectTitle.trim()}_${b.title.trim()}`;
+      if (seenBooks.has(key)) {
+        await localDb.deleteDoc('curriculum_books', b.id);
+      } else {
+        seenBooks.set(key, b);
+      }
+    }
+    books = Array.from(seenBooks.values());
+
+    // Purge orphaned chapters
+    const validBookIds = new Set(books.map(b => b.id));
+    const validBookTitles = new Set(books.map(b => b.title.trim()));
+
+    for (const ch of chapters) {
+      if (!validBookIds.has(ch.bookId) && !validBookTitles.has(ch.bookTitle?.trim())) {
+        await localDb.deleteDoc('curriculum_chapters', ch.id);
+      }
+    }
+
+    chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
 
     if (chapters.length === 0) {
       console.log('Seeding default curriculum chapters...');
@@ -118,7 +187,7 @@ export class StudentCourseProgressService {
             subjectId: parentBook.subjectId,
             subjectTitle: parentBook.subjectTitle,
             title: ch.title,
-            credits: ch.credits,
+            credits: 1,
             orderIndex: ch.orderIndex,
             createdAt: new Date().toISOString()
           };
@@ -127,6 +196,18 @@ export class StudentCourseProgressService {
       }
       chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
     }
+
+    // Deduplicate chapters
+    const seenChapters = new Map<string, CurriculumChapter>();
+    for (const ch of chapters) {
+      const key = `${ch.bookTitle.trim()}_${ch.title.trim()}`;
+      if (seenChapters.has(key)) {
+        await localDb.deleteDoc('curriculum_chapters', ch.id);
+      } else {
+        seenChapters.set(key, ch);
+      }
+    }
+    chapters = Array.from(seenChapters.values());
 
     return { subjects, books, chapters };
   }

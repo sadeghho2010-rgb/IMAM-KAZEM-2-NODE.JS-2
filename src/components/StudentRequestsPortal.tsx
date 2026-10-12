@@ -880,13 +880,54 @@ export default function StudentRequestsPortal() {
 
   // Mark student request as read by officer
   const handleMarkAsReadByOfficer = async (req: StudentRequest) => {
-    if (req.isReadByOfficer !== false) return;
+    if (req.isReadByOfficer === true) return;
     const updated = { ...req, isReadByOfficer: true };
     try {
       await localDb.saveDoc('student_requests', req.id, updated);
       setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
       triggerUpdateEvent();
     } catch (e) {}
+  };
+
+  // Convert all active requests for the officer to completed/done
+  const handleResolveAllActiveRequests = async () => {
+    const activeRequests = filteredRequests.filter(r => !r.isTerminated && r.status !== 'resolved' && r.status !== 'rejected');
+    if (activeRequests.length === 0) {
+      alert('در حال حاضر هیچ درخواست فعالی برای تبدیل وجود ندارد.');
+      return;
+    }
+
+    if (!window.confirm(`آیا از تبدیل تمامی (${activeRequests.length}) درخواست فعال به حالت «انجام شد» اطمینان دارید؟\nبا این کار هشدارهای پیام‌های قبلی پاک شده و تمام این درخواست‌ها انجام‌شده خواهند شد.`)) {
+      return;
+    }
+
+    try {
+      const replierTitle = currentUser?.roleTitle || currentUser?.name || 'مسئول مربوطه';
+      const nowIso = new Date().toISOString();
+
+      for (const req of activeRequests) {
+        const updated: StudentRequest = {
+          ...req,
+          status: 'resolved',
+          statusTitle: 'تکمیل و انجام شد',
+          officialReply: req.officialReply || 'درخواست شما بررسی و با موفقیت انجام شد.',
+          repliedBy: currentUser?.id,
+          repliedByName: replierTitle,
+          repliedAt: nowIso,
+          isReadByOfficer: true,
+          isReadByStudent: false,
+          updatedAt: nowIso
+        };
+        await localDb.saveDoc('student_requests', updated.id, updated);
+      }
+
+      const updatedAll = await localDb.getDocs<StudentRequest>('student_requests');
+      setRequests(updatedAll);
+      triggerUpdateEvent();
+      alert(`✅ با موفقیت تمامی (${activeRequests.length}) درخواست فعال به حالت «انجام شد» تبدیل گردیدند و تمامی هشدارها برطرف گردید.`);
+    } catch (err: any) {
+      alert('خطا در تبدیل درخواست‌ها: ' + (err?.message || ''));
+    }
   };
 
   // Filter requests
@@ -929,11 +970,11 @@ export default function StudentRequestsPortal() {
     return true;
   });
 
-  // Sort requests: Unreplied / pending / latest submitted requests at the top
+  // Sort requests: Unread requests by officer at the top
   const sortedFilteredRequests = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
-      const aUnread = a.isReadByOfficer === false || a.status === 'pending';
-      const bUnread = b.isReadByOfficer === false || b.status === 'pending';
+      const aUnread = a.isReadByOfficer === false;
+      const bUnread = b.isReadByOfficer === false;
       if (aUnread && !bUnread) return -1;
       if (!aUnread && bUnread) return 1;
 
@@ -984,7 +1025,7 @@ export default function StudentRequestsPortal() {
       const group = map.get(key)!;
       group.allRequests.push(req);
 
-      const isActive = req.status === 'pending' || req.status === 'in_progress' || req.isReadByOfficer === false;
+      const isActive = !req.isTerminated && req.status !== 'resolved' && req.status !== 'rejected';
       if (isActive) {
         group.activeRequests.push(req);
         group.hasActiveRequest = true;
@@ -992,7 +1033,7 @@ export default function StudentRequestsPortal() {
         group.closedRequests.push(req);
       }
 
-      if (req.isReadByOfficer === false || req.status === 'pending') {
+      if (req.isReadByOfficer === false) {
         group.unreadCount++;
       }
 
@@ -1141,6 +1182,18 @@ export default function StudentRequestsPortal() {
             >
               <Settings size={15} />
               <span>موضوعات درخواست‌ها</span>
+            </button>
+          )}
+
+          {/* Bulk Resolve Active Requests Button for Officers */}
+          {!isStudentUser && (
+            <button
+              onClick={handleResolveAllActiveRequests}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+              title="تبدیل کلیه درخواست‌های فعال به انجام شد و پاک‌سازی هشدارها"
+            >
+              <CheckSquare size={15} className="text-emerald-700" />
+              <span>تبدیل همه درخواست‌های فعال به انجام شد</span>
             </button>
           )}
 
@@ -1561,7 +1614,7 @@ export default function StudentRequestsPortal() {
                           </div>
                         ) : (
                           targetRequestsList.map((req) => {
-                            const isUnreadForOfficer = req.status === 'pending' || req.isReadByOfficer === false;
+                            const isUnreadForOfficer = req.isReadByOfficer === false;
                             const messageCount = Array.isArray(req.messages) ? req.messages.length : 0;
 
                             return (
