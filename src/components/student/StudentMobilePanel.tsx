@@ -453,6 +453,20 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
                 <div className="text-[9px] text-slate-400 font-medium truncate">واحدهای آموزشی دوره</div>
               </div>
             </div>
+
+            {/* دروس گذرانده شده */}
+            <div 
+              onClick={() => onNavigateTab('passed-courses')}
+              className="p-3 bg-white hover:bg-emerald-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+            >
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                <BookOpen size={16} />
+              </div>
+              <div>
+                <div className="text-xs font-black text-slate-900">دروس گذرانده شده</div>
+                <div className="text-[9px] text-slate-400 font-medium truncate">سوابق نمرات و واحدها</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

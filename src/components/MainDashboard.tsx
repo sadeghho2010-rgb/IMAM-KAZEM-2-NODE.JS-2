@@ -762,6 +762,17 @@ export default function MainDashboard({
       borderGlow: 'hover:border-fuchsia-400 hover:shadow-2xl hover:shadow-fuchsia-500/20',
       accentText: 'text-fuchsia-600'
     },
+    {
+      id: 'passed-courses',
+      title: 'دروس گذرانده شده',
+      subtitle: 'سوابق دروس گذرانده، تایید نمرات و کارنامه دروس',
+      category: 'students',
+      icon: BookOpen,
+      iconBg: 'bg-gradient-to-br from-emerald-600 via-teal-600 to-green-700 text-white shadow-lg shadow-emerald-600/30',
+      cardGradient: 'from-emerald-600/10 via-teal-500/5 to-transparent',
+      borderGlow: 'hover:border-emerald-500 hover:shadow-2xl hover:shadow-emerald-600/20',
+      accentText: 'text-emerald-600'
+    },
 
     // 4. CARDS FOR RESEARCH & COUNSELING
     {
@@ -1116,7 +1127,7 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'oral-exams', 'academic-calendar', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'teachers-bank']
     },
     {
       id: 'students_group',
@@ -1128,7 +1139,7 @@ export default function MainDashboard({
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'discussion', 'stats', 'comments', 'summary']
+      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
     },
     {
       id: 'research_group',
