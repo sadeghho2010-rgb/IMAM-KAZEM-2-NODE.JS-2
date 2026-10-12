@@ -898,9 +898,14 @@ export default function StudentRequestsPortal() {
     return true;
   });
 
-  // Sort requests: Active/Pending/In-Progress first; Terminated/Resolved/Rejected moved to the bottom
+  // Sort requests: Unreplied / pending / latest submitted requests at the top
   const sortedFilteredRequests = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
+      const aUnread = a.isReadByOfficer === false || a.status === 'pending';
+      const bUnread = b.isReadByOfficer === false || b.status === 'pending';
+      if (aUnread && !bUnread) return -1;
+      if (!aUnread && bUnread) return 1;
+
       const aClosed = a.isTerminated || a.status === 'resolved' || a.status === 'rejected';
       const bClosed = b.isTerminated || b.status === 'resolved' || b.status === 'rejected';
       if (aClosed && !bClosed) return 1;

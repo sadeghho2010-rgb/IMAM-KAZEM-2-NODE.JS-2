@@ -1949,7 +1949,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 onClick={() => setIsQuickAttendanceOpen(true)}
                 className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 border border-emerald-400/30"
               >
-                <Sparkles size={14} className="text-amber-300 animate-pulse" />
+                <Sparkles size={14} className="text-amber-300" />
                 <span>ثبت سریع حضور و غیاب (۱ کلیک)</span>
               </button>
             )}
@@ -1966,7 +1966,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     : "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200"
                 )}
               >
-                <LayoutGrid size={15} className={activeTab === 'class_status' ? 'text-white animate-pulse' : 'text-emerald-600'} />
+                <LayoutGrid size={15} className={activeTab === 'class_status' ? 'text-white' : 'text-emerald-600'} />
                 <span>وضعیت کلاس‌ها</span>
               </button>
             )}
@@ -2417,7 +2417,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     className={cn(
                       "px-2.5 py-1 rounded-lg transition-all cursor-pointer border flex items-center gap-1",
                       classStatusColorFilter === 'pending'
-                        ? "bg-rose-600 text-white border-rose-400 shadow-xs font-black ring-2 ring-rose-300 animate-pulse"
+                        ? "bg-rose-600 text-white border-rose-400 shadow-xs font-black ring-2 ring-rose-300"
                         : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/30"
                     )}
                     title="فیلتر فقط کارت‌های انجام‌نشده (قرمز) - کلیک مجدد برای لغو"

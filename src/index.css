@@ -295,14 +295,13 @@
 .animate-radiant-wave-1 {
   background: linear-gradient(
     -45deg,
+    #042f2e,
+    #0f766e,
     #0f172a,
-    #1e1b4b,
-    #1e3a8a,
-    #0f4c5c,
-    #1d4ed8,
-    #312e81,
-    #172554,
     #0284c7,
+    #0d9488,
+    #022c22,
+    #0891b2,
     #0f172a
   ) !important;
   background-size: 400% 400% !important;
@@ -313,12 +312,12 @@
 .animate-radiant-wave-2 {
   background: linear-gradient(
     135deg,
+    #0f172a,
     #1e1b4b,
-    #03045e,
-    #0077b6,
-    #023047,
     #1d4ed8,
-    #0284c7,
+    #312e81,
+    #0369a1,
+    #4338ca,
     #0f172a,
     #1e1b4b
   ) !important;
@@ -330,13 +329,13 @@
 .animate-radiant-wave-3 {
   background: linear-gradient(
     -60deg,
+    #022c22,
+    #0d9488,
     #0f172a,
-    #312e81,
-    #451a03,
-    #1e293b,
-    #1e1b4b,
-    #78350f,
-    #0f172a
+    #0284c7,
+    #0f766e,
+    #0891b2,
+    #042f2e
   ) !important;
   background-size: 400% 400% !important;
   animation: cardGradientGlow3 32s ease-in-out infinite !important;
@@ -347,9 +346,9 @@
   background: linear-gradient(
     45deg,
     #1e1b4b,
-    #451a03,
+    #1d4ed8,
     #0f172a,
-    #78350f,
+    #4338ca,
     #1e3a8a,
     #312e81,
     #1e1b4b

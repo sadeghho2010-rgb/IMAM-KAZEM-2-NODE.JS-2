@@ -866,26 +866,26 @@ export default function TeacherPortal() {
         )}
       </AnimatePresence>
 
-      {/* --- TOP MOBILE APP BAR --- */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 shadow-xs">
-        <div className="max-w-md sm:max-w-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white font-black flex items-center justify-center shadow-md shadow-indigo-100 text-lg">
+      {/* --- EXECUTIVE MANAGEMENT HEADER (طراحی مسئولین آموزش) --- */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-6 py-4 shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-700 to-blue-600 text-white font-black flex items-center justify-center shadow-md shadow-indigo-200 text-xl">
               {currentTeacherObj?.fullName?.[0] || 'ا'}
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
                   {currentTeacherObj?.fullName || currentUser?.name || 'استاد محترم'}
                 </h1>
-                <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
-                  استاد مدرسه
+                <span className="text-[11px] px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
+                  پنل مدیریت اساتید پایه
                 </span>
               </div>
-              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 font-medium">
+              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium">
                 {currentTeacherObj?.teacherCode && (
-                  <span className="font-mono font-bold bg-slate-100 px-1.5 py-0.2 rounded text-[10px] text-slate-700">
-                    کد: {currentTeacherObj.teacherCode}
+                  <span className="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-700">
+                    کد استاد: {currentTeacherObj.teacherCode}
                   </span>
                 )}
                 {currentTeacherObj?.phoneNumber && (
@@ -897,37 +897,37 @@ export default function TeacherPortal() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {/* Sync / Refresh Button */}
             <button
               onClick={() => syncPortalData(true)}
               disabled={isSyncing || loadingState === 'loading'}
-              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold disabled:opacity-50"
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 border border-indigo-200"
               title="همگام‌سازی و بروزرسانی برنامه از سرور"
             >
-              <RotateCw size={17} className={cn("transition-transform", isSyncing && "animate-spin text-indigo-700")} />
-              <span className="hidden sm:inline text-[11px]">همگام‌سازی</span>
+              <RotateCw size={16} className={cn("transition-transform", isSyncing && "animate-spin text-indigo-700")} />
+              <span>همگام‌سازی اطلاعات</span>
             </button>
 
             {/* Logout Button */}
             <button
               onClick={logout}
-              className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
+              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-rose-200"
               title="خروج از حساب کاربری"
             >
-              <LogOut size={18} />
-              <span className="hidden sm:inline">خروج</span>
+              <LogOut size={16} />
+              <span>خروج</span>
             </button>
           </div>
         </div>
 
-        {/* --- CLEAN MOBILE SEGMENTED TABS --- */}
-        <div className="max-w-md sm:max-w-xl mx-auto mt-3">
-          <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/70 text-xs font-bold">
+        {/* --- EXECUTIVE SEGMENTED TABS --- */}
+        <div className="max-w-7xl mx-auto mt-4">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit">
             <button
               onClick={() => setActiveTab('schedule')}
               className={cn(
-                "py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer",
                 activeTab === 'schedule'
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
@@ -940,21 +940,21 @@ export default function TeacherPortal() {
             <button
               onClick={() => setActiveTab('counseling')}
               className={cn(
-                "py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer relative",
+                "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer relative",
                 activeTab === 'counseling'
                   ? "bg-emerald-600 text-white shadow-xs font-black"
                   : "text-emerald-800 hover:bg-emerald-50"
               )}
             >
               <BookCheck size={15} />
-              <span>ارزیابی مشاوره</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-1.5 left-2" />
+              <span>ارزیابی مشاوره و نمرات</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-2 right-2 animate-pulse" />
             </button>
 
             <button
               onClick={() => setActiveTab('calendar')}
               className={cn(
-                "py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer",
                 activeTab === 'calendar'
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
@@ -967,8 +967,8 @@ export default function TeacherPortal() {
         </div>
       </header>
 
-      {/* --- MAIN VERTICAL CONTENT CONTAINER --- */}
-      <main className="max-w-md sm:max-w-xl mx-auto p-4 space-y-4">
+      {/* --- MAIN EXECUTIVE CONTENT CONTAINER --- */}
+      <main className="max-w-7xl mx-auto p-4 lg:p-8 space-y-6">
         {/* Loading State Spinner */}
         {loadingState === 'loading' ? (
           <div className="bg-white rounded-3xl p-10 text-center border border-slate-200/90 shadow-xs space-y-3 my-8">

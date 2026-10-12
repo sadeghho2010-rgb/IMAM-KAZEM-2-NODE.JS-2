@@ -646,40 +646,6 @@ function AppContent() {
           {/* Global Security PIN Challenge Modal */}
           <SecurityPinModal />
 
-          {/* Universal Sticky / Prominent Back to Dashboard Banner for all sections */}
-          {(activeTab !== 'dashboard' || dashboardCategoryGroup !== null) && (
-            <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 px-3.5 sm:px-4 py-2.5 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xs mb-4">
-              <div className="flex items-center gap-2 text-xs min-w-0">
-                <button
-                  type="button"
-                  onClick={() => navigateToTab('dashboard')}
-                  className="flex items-center gap-1.5 text-indigo-700 hover:text-indigo-900 font-black hover:underline cursor-pointer group shrink-0"
-                >
-                  <LayoutDashboard size={14} className="text-indigo-600 group-hover:scale-110 transition-transform shrink-0" />
-                  <span>داشبورد اصلی</span>
-                </button>
-                <ChevronLeft size={13} className="text-slate-400 shrink-0" />
-                <span className="font-bold text-slate-800 truncate">
-                  {activeTab !== 'dashboard' ? getActiveTabTitle(activeTab) : 'دسته‌بندی‌ها'}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleBack}
-                className={cn(
-                  "inline-flex items-center gap-2.5 px-6 py-3 sm:px-7 sm:py-3.5 rounded-2xl text-xs sm:text-base font-black text-white cursor-pointer active:scale-95 shrink-0 transition-all duration-1000 shadow-xl hover:shadow-2xl ring-2 sm:ring-4 border relative overflow-hidden group",
-                  currentBackTheme.bg,
-                  currentBackTheme.shadow,
-                  currentBackTheme.border
-                )}
-                title="بازگشت به مرحله یا صفحه قبلی"
-              >
-                <ArrowRight size={20} className="text-white group-hover:-translate-x-1.5 transition-transform shrink-0 drop-shadow" />
-                <span className="drop-shadow-sm font-black">بازگشت</span>
-              </button>
-            </div>
-          )}
-
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

@@ -1516,50 +1516,21 @@ export default function MainDashboard({
         )}
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* RIGHT SIDE: Red Leader Photo (above سلام و احترام) & Greeting & User Role Info & Calendar */}
+          {/* RIGHT SIDE: Greeting & User Role Info & Calendar */}
           <div className="space-y-2 min-w-0 max-w-lg">
-            {/* Top row with Red Background Leader Portrait right above سلام و احترام */}
-            <div className="flex items-center gap-3">
-              {/* Red Background Photo (حضرت آیت‌الله خامنه‌ای - بالای کلمه احترام و زیر هشدار کارتابل) */}
-              <motion.div
-                initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
-                animate={!isAnimationsDisabled ? { 
-                  opacity: 1, 
-                  scale: 1, 
-                  y: [0, -6, 0] 
-                } : { opacity: 1, scale: 1, y: 0 }}
-                transition={{
-                  y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut' },
-                  opacity: { duration: 0.5 },
-                  scale: { duration: 0.5 }
-                }}
-                whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: 1.5 } : undefined}
-                className="relative group shrink-0 select-none cursor-pointer"
-                title="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
-              >
-                <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-rose-400/80 shadow-lg shadow-rose-500/40 ring-2 ring-rose-500/50 bg-gradient-to-b from-rose-950/60 to-black/70 p-0.5 backdrop-blur-md">
-                  <img
-                    src="/leader_red.png"
-                    alt="حضرت آیت‌الله العظمی سید علی خامنه‌ای"
-                    className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
-                  />
-                </div>
-              </motion.div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
-                    <Sparkles size={12} className="text-amber-300" />
-                    <span>{currentUser?.level === 3 ? 'پرتال اختصاصی طلاب' : 'داشبورد اختصاصی'}</span>
-                  </span>
-                  <span className="text-[11px] text-indigo-200/80 font-medium">
-                    سطح {currentUser?.level || 2}: {currentUser?.roleTitle || (currentUser?.level === 3 ? 'طلبه / دانش‌پژوه' : 'مسئول سازمانی')}
-                  </span>
-                </div>
-                <h1 className="text-base sm:text-lg lg:text-xl font-black text-white tracking-tight">
-                  سلام و احترام، {currentUser?.level === 3 ? (currentUser?.studentName || currentUser?.name || currentUser?.fullName || currentUser?.username) : (currentUser?.name || currentUser?.fullName || currentUser?.username)}
-                </h1>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black text-indigo-200 border border-white/10 flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-300" />
+                  <span>{currentUser?.level === 3 ? 'پرتال اختصاصی طلاب' : 'داشبورد اختصاصی'}</span>
+                </span>
+                <span className="text-[11px] text-indigo-200/80 font-medium">
+                  سطح {currentUser?.level || 2}: {currentUser?.roleTitle || (currentUser?.level === 3 ? 'طلبه / دانش‌پژوه' : 'مسئول سازمانی')}
+                </span>
               </div>
+              <h1 className="text-base sm:text-lg lg:text-xl font-black text-white tracking-tight">
+                سلام و احترام، {currentUser?.level === 3 ? (currentUser?.studentName || currentUser?.name || currentUser?.fullName || currentUser?.username) : (currentUser?.name || currentUser?.fullName || currentUser?.username)}
+              </h1>
             </div>
 
             <p className="text-xs text-indigo-100/85 font-medium leading-normal">
@@ -1578,35 +1549,8 @@ export default function MainDashboard({
             </div>
           </div>
 
-          {/* LEFT SIDE: Green Leader Photo (سمت چپ و قرینه عکس دوم) & Circular Counter */}
+          {/* LEFT SIDE: Circular Counter */}
           <div className="flex items-center gap-3 self-center md:self-auto shrink-0 select-none">
-            {/* Green Background Leader Photo (قرینه سمت چپ) */}
-            <motion.div
-              initial={!isAnimationsDisabled ? { opacity: 0, scale: 0.85, y: -6 } : { opacity: 1, scale: 1, y: 0 }}
-              animate={!isAnimationsDisabled ? { 
-                opacity: 1, 
-                scale: 1, 
-                y: [0, -6, 0] 
-              } : { opacity: 1, scale: 1, y: 0 }}
-              transition={{
-                y: { duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.4 },
-                opacity: { duration: 0.5 },
-                scale: { duration: 0.5 }
-              }}
-              whileHover={!isAnimationsDisabled ? { scale: 1.08, rotate: -1.5 } : undefined}
-              className="relative group shrink-0 select-none cursor-pointer"
-              title="حضرت آیت‌الله خامنه‌ای"
-            >
-              <div className="relative w-16 h-18 sm:w-20 sm:h-22 rounded-2xl overflow-hidden border-2 border-emerald-400/80 shadow-lg shadow-emerald-500/40 ring-2 ring-emerald-500/50 bg-gradient-to-b from-emerald-950/60 to-black/70 p-0.5 backdrop-blur-md">
-                <img
-                  src="/leader_green.png"
-                  alt="حضرت آیت‌الله خامنه‌ای"
-                  className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-110 drop-shadow-md"
-                />
-              </div>
-            </motion.div>
-
-            {/* Standalone Animated Circular Counter (For Management/Staff only) */}
             {currentUser?.level !== 3 ? (
               <div 
                 className="flex items-center gap-3 shrink-0 select-none"
