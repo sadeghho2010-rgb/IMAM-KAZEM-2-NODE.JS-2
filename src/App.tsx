@@ -546,24 +546,7 @@ function AppContent() {
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
 
-              {/* Universal Header Back Button - Never rendered on first page (dashboard) */}
-              {activeTab !== 'dashboard' && (
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  className={cn(
-                    "flex items-center gap-2 py-2 px-4 sm:px-5 text-white rounded-2xl text-xs sm:text-sm font-black transition-all duration-1000 cursor-pointer shadow-lg hover:shadow-2xl ring-2 shrink-0 group active:scale-95 border relative overflow-hidden",
-                    currentBackTheme.bg,
-                    currentBackTheme.shadow,
-                    currentBackTheme.border
-                  )}
-                  title="بازگشت به پیشخوان"
-                >
-                  <ChevronRight size={18} className="text-white group-hover:-translate-x-1 transition-transform shrink-0 drop-shadow" />
-                  <span className="drop-shadow-sm font-black">بازگشت</span>
-                </button>
-              )}
-
+              {/* Header Title Info */}
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate">
@@ -670,6 +653,31 @@ function AppContent() {
             </div>
           </div>
         </header>
+
+        {/* Universal Sub-Header Back Button - Positioned on the LEFT side and slightly lower */}
+        {activeTab !== 'dashboard' && (
+          <div className="bg-slate-50/90 border-b border-slate-200/80 px-4 sm:px-6 py-1.5 flex items-center justify-between min-w-0 shadow-2xs">
+            <div className="text-[11px] font-bold text-slate-500 truncate flex items-center gap-1.5">
+              <span>محیط جاری:</span>
+              <span className="text-slate-800 font-black text-xs">{getActiveTabTitle(activeTab)}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBack}
+              className={cn(
+                "flex items-center gap-1.5 py-1.5 px-4 text-white rounded-xl text-xs font-black transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-95 border relative overflow-hidden shrink-0 group",
+                currentBackTheme.bg,
+                currentBackTheme.shadow,
+                currentBackTheme.border
+              )}
+              title="بازگشت به پیشخوان اصلی"
+            >
+              <ChevronRight size={16} className="text-white group-hover:-translate-x-0.5 transition-transform shrink-0 drop-shadow" />
+              <span className="drop-shadow-sm font-black">بازگشت</span>
+            </button>
+          </div>
+        )}
 
         {/* Global Settings & Preferences Modal */}
         <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />

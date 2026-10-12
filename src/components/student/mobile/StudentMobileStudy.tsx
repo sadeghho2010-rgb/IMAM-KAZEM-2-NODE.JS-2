@@ -12,14 +12,17 @@ import {
   Calendar,
   Layers,
   ChevronDown,
-  Info
+  Info,
+  MessageSquare,
+  FileText
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
-import { Student, StudyPeriod, StudyDailyEntry, Program, Enrollment, PeriodicStudyLog } from '../../../types';
+import { Student, StudyPeriod, StudyDailyEntry, Program, Enrollment, PeriodicStudyLog, CourseStudyDetail } from '../../../types';
 import { getTodayShamsi } from '../../../lib/jalali';
 import { formatMinutesToHoursAndMinutes, getStudyWarningStatus } from '../../study/studyUtils';
+import FreeStudyRulesModal from '../../study/FreeStudyRulesModal';
 
 interface StudentMobileStudyProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -38,15 +41,16 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
   const [allLogs, setAllLogs] = useState<PeriodicStudyLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form state
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
-  const [studyMinutes, setStudyMinutes] = useState<number>(60);
-  const [discussionMinutes, setDiscussionMinutes] = useState<number>(45);
-  const [freeStudyMinutes, setFreeStudyMinutes] = useState<number>(0);
+  // Per-course minute input states (Record courseId -> minute string)
+  const [courseStudyMinutes, setCourseStudyMinutes] = useState<Record<string, string>>({});
+  const [courseDiscussionMinutes, setCourseDiscussionMinutes] = useState<Record<string, string>>({});
+  const [freeStudyMinutesInput, setFreeStudyMinutesInput] = useState<string>('');
   const [freeStudyBookTitle, setFreeStudyBookTitle] = useState<string>('');
   const [entryDate, setEntryDate] = useState<string>(() => getTodayShamsi());
+  
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
+  const [showFreeRulesModal, setShowFreeRulesModal] = useState<boolean>(false);
 
   useEffect(() => {
     loadAllData();
@@ -103,7 +107,11 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
 
   // Student's core seminary courses
   const studentCourses = useMemo(() => {
-    if (!studentObj) return [];
+    if (!studentObj) return [
+      { id: 'c_usul', title: 'اصول فقه' },
+      { id: 'c_fiqh', title: 'فقه' },
+      { id: 'c_falsafa', title: 'فلسفه و کلام' }
+    ];
     const myEnrolls = enrollments.filter(e => e.studentId === studentObj.id);
     const enrolledProgIds = new Set(myEnrolls.map(e => e.programId));
 
@@ -133,12 +141,6 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       { id: 'c_falsafa', title: 'فلسفه و کلام' }
     ];
   }, [programs, enrollments, studentObj]);
-
-  useEffect(() => {
-    if (studentCourses.length > 0 && !selectedCourseId) {
-      setSelectedCourseId(studentCourses[0].id);
-    }
-  }, [studentCourses, selectedCourseId]);
 
   const activePeriod = useMemo(() => {
     return periods.find(p => p.id === activePeriodId) || periods[0] || null;
@@ -184,7 +186,6 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       freeStudyMinutes: free
     };
 
-    // Check commendation status
     const warningStatus = activePeriod
       ? getStudyWarningStatus(
           activePeriod,
@@ -219,11 +220,26 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     };
   }, [currentPeriodEntries, studentObj, studentId, currentUser, activePeriod]);
 
-  // Quick increment helper
-  const addMinutes = (type: 'study' | 'disc' | 'free', delta: number) => {
-    if (type === 'study') setStudyMinutes(prev => Math.max(0, prev + delta));
-    if (type === 'disc') setDiscussionMinutes(prev => Math.max(0, prev + delta));
-    if (type === 'free') setFreeStudyMinutes(prev => Math.max(0, prev + delta));
+  // Quick increment helper per course
+  const addCourseMinutes = (courseId: string, type: 'study' | 'disc', delta: number) => {
+    if (type === 'study') {
+      const currentVal = parseInt(courseStudyMinutes[courseId] || '0') || 0;
+      setCourseStudyMinutes(prev => ({
+        ...prev,
+        [courseId]: (currentVal + delta).toString()
+      }));
+    } else {
+      const currentVal = parseInt(courseDiscussionMinutes[courseId] || '0') || 0;
+      setCourseDiscussionMinutes(prev => ({
+        ...prev,
+        [courseId]: (currentVal + delta).toString()
+      }));
+    }
+  };
+
+  const addFreeMinutes = (delta: number) => {
+    const currentVal = parseInt(freeStudyMinutesInput || '0') || 0;
+    setFreeStudyMinutesInput((currentVal + delta).toString());
   };
 
   // Submit daily study entry
@@ -231,31 +247,46 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     e.preventDefault();
     if (!activePeriod) return;
 
+    let totalCoreStudyMin = 0;
+    let totalCoreDiscMin = 0;
+
+    const breakdown: CourseStudyDetail[] = studentCourses.map(course => {
+      const sMin = parseInt(courseStudyMinutes[course.id] || '0') || 0;
+      const dMin = parseInt(courseDiscussionMinutes[course.id] || '0') || 0;
+      totalCoreStudyMin += sMin;
+      totalCoreDiscMin += dMin;
+      return {
+        courseId: course.id,
+        courseTitle: course.title,
+        studyMinutes: sMin,
+        discussionMinutes: dMin
+      };
+    });
+
+    const parsedFreeMin = parseInt(freeStudyMinutesInput || '0') || 0;
+    const totalMin = totalCoreStudyMin + totalCoreDiscMin + parsedFreeMin;
+
+    if (totalMin <= 0) {
+      alert('لطفاً حداقل برای یکی از دروس یا مطالعه آزاد، میزان دقیقه کارکرد را وارد کنید.');
+      return;
+    }
+
     try {
       setIsSaving(true);
-      const chosenCourse = studentCourses.find(c => c.id === selectedCourseId);
-      const courseTitle = chosenCourse?.title || 'درس اصلی';
 
       const newEntry: StudyDailyEntry = {
         id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         studentId,
         periodId: activePeriod.id,
         entryDate,
-        studyHours: Math.round((studyMinutes / 60) * 10) / 10,
-        discussionHours: Math.round((discussionMinutes / 60) * 10) / 10,
-        totalHours: Math.round(((studyMinutes + discussionMinutes + freeStudyMinutes) / 60) * 10) / 10,
-        totalMinutes: studyMinutes + discussionMinutes + freeStudyMinutes,
-        coreTotalMinutes: studyMinutes + discussionMinutes,
-        coursesBreakdown: [
-          {
-            courseId: selectedCourseId || 'course_default',
-            courseTitle,
-            studyMinutes,
-            discussionMinutes
-          }
-        ],
-        freeStudyMinutes,
-        note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : `ثبت کارکرد روزانه: ${courseTitle}`,
+        studyHours: Math.round((totalCoreStudyMin / 60) * 10) / 10,
+        discussionHours: Math.round((totalCoreDiscMin / 60) * 10) / 10,
+        totalHours: Math.round((totalMin / 60) * 10) / 10,
+        totalMinutes: totalMin,
+        coreTotalMinutes: totalCoreStudyMin + totalCoreDiscMin,
+        coursesBreakdown: breakdown,
+        freeStudyMinutes: parsedFreeMin,
+        note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : `ثبت کارکرد روزانه دروس اصلی`,
         createdAt: new Date().toISOString()
       };
 
@@ -266,8 +297,10 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       setSaveSuccessMsg('کارکرد روزانه شما با موفقیت ثبت شد!');
       setTimeout(() => setSaveSuccessMsg(''), 3500);
 
-      // Reset fields
-      setFreeStudyMinutes(0);
+      // CRITICAL REQUIREMENT: Reset ALL numbers, inputs, and fields so they are completely EMPTY
+      setCourseStudyMinutes({});
+      setCourseDiscussionMinutes({});
+      setFreeStudyMinutesInput('');
       setFreeStudyBookTitle('');
     } catch (err) {
       console.error('Error saving study entry:', err);
@@ -370,14 +403,14 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         </div>
       </div>
 
-      {/* 2. Fast Registration Form */}
-      <form onSubmit={handleSubmitEntry} className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-3">
+      {/* 2. Detailed Multi-Course Registration Form (جدول تفکیکی هر درس در موبایل) */}
+      <form onSubmit={handleSubmitEntry} className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-3.5">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
           <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
             <Plus size={14} className="text-indigo-600" />
-            <span>ثبت سریع کارکرد روزانه</span>
+            <span>ثبت تفصیلی کارکرد دروس و مطالعه آزاد</span>
           </h3>
-          <span className="text-[10px] text-slate-400 font-bold">
+          <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
             تاریخ: {entryDate}
           </span>
         </div>
@@ -389,116 +422,196 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
           </div>
         )}
 
-        {/* Select Course */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold text-slate-700 block">
-            عنوان درس اصلی:
-          </label>
-          <select
-            value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
-          >
-            {studentCourses.map(c => (
-              <option key={c.id} value={c.id}>{c.title}</option>
-            ))}
-          </select>
+        {/* Detailed Course Tables / Card Grids */}
+        <div className="space-y-3">
+          {studentCourses.map((course, idx) => {
+            const studyVal = courseStudyMinutes[course.id] || '';
+            const discVal = courseDiscussionMinutes[course.id] || '';
+            const studyNum = parseInt(studyVal) || 0;
+            const discNum = parseInt(discVal) || 0;
+
+            return (
+              <div 
+                key={course.id}
+                className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3 space-y-2.5 shadow-2xs"
+              >
+                {/* Header row for course */}
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-lg bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="text-xs font-black text-slate-900">{course.title}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg">
+                    مجموع این درس: {studyNum + discNum} د
+                  </span>
+                </div>
+
+                {/* Table Grid inputs for this course */}
+                <div className="grid grid-cols-1 gap-2">
+                  {/* Row 1: Study Minutes */}
+                  <div className="p-2 bg-white rounded-xl border border-indigo-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950">
+                      <span className="flex items-center gap-1">
+                        <BookOpen size={12} className="text-indigo-600" />
+                        <span>مدت مطالعه (دقیقه):</span>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1440"
+                        value={studyVal}
+                        onChange={(e) => setCourseStudyMinutes({
+                          ...courseStudyMinutes,
+                          [course.id]: e.target.value
+                        })}
+                        placeholder="تایپ کنید (مثلاً ۶۰)"
+                        className="w-28 px-2 py-1 bg-slate-50 border border-indigo-200 rounded-lg text-slate-900 font-mono font-black text-xs text-center focus:bg-white focus:border-indigo-500 outline-hidden"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1">
+                      {[15, 30, 45, 60].map(inc => (
+                        <button
+                          key={inc}
+                          type="button"
+                          onClick={() => addCourseMinutes(course.id, 'study', inc)}
+                          className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 border border-slate-200 text-[10px] font-black text-slate-700 hover:text-indigo-700 active:scale-95 cursor-pointer"
+                        >
+                          +{inc}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setCourseStudyMinutes({ ...courseStudyMinutes, [course.id]: '' })}
+                        className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer shrink-0"
+                      >
+                        صفر
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Discussion Minutes */}
+                  <div className="p-2 bg-white rounded-xl border border-purple-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-purple-950">
+                      <span className="flex items-center gap-1">
+                        <MessageSquare size={12} className="text-purple-600" />
+                        <span>مدت مباحثه (دقیقه):</span>
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1440"
+                        value={discVal}
+                        onChange={(e) => setCourseDiscussionMinutes({
+                          ...courseDiscussionMinutes,
+                          [course.id]: e.target.value
+                        })}
+                        placeholder="تایپ کنید (مثلاً ۴۵)"
+                        className="w-28 px-2 py-1 bg-slate-50 border border-purple-200 rounded-lg text-slate-900 font-mono font-black text-xs text-center focus:bg-white focus:border-purple-500 outline-hidden"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1 pt-1">
+                      {[15, 30, 45, 60].map(inc => (
+                        <button
+                          key={inc}
+                          type="button"
+                          onClick={() => addCourseMinutes(course.id, 'disc', inc)}
+                          className="flex-1 py-1 rounded-lg bg-slate-100 hover:bg-purple-50 border border-slate-200 text-[10px] font-black text-slate-700 hover:text-purple-700 active:scale-95 cursor-pointer"
+                        >
+                          +{inc}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setCourseDiscussionMinutes({ ...courseDiscussionMinutes, [course.id]: '' })}
+                        className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer shrink-0"
+                      >
+                        صفر
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Study Minutes Input */}
-        <div className="space-y-1.5 p-2.5 bg-slate-50/70 rounded-xl border border-slate-200/80">
+        {/* Free Study Section (مطالعه آزاد) */}
+        <div className="space-y-2.5 p-3 bg-teal-50/60 rounded-2xl border border-teal-200/80">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-700">مدت مطالعه فردی (دقیقه):</span>
-            <span className="font-mono font-black text-indigo-700 text-sm">
-              {studyMinutes} دقیقه ({formatMinutesToHoursAndMinutes(studyMinutes)})
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {[15, 30, 45, 60].map(inc => (
-              <button
-                key={inc}
-                type="button"
-                onClick={() => addMinutes('study', inc)}
-                className="flex-1 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 active:scale-95 cursor-pointer"
-              >
-                +{inc}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setStudyMinutes(0)}
-              className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer"
-            >
-              صفر
-            </button>
-          </div>
-        </div>
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={15} className="text-teal-700" />
+              <span className="text-xs font-black text-teal-950">مطالعه آزاد جانبی</span>
+            </div>
 
-        {/* Discussion Minutes Input */}
-        <div className="space-y-1.5 p-2.5 bg-slate-50/70 rounded-xl border border-slate-200/80">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-700">مدت مباحثه هم‌بحثی (دقیقه):</span>
-            <span className="font-mono font-black text-purple-700 text-sm">
-              {discussionMinutes} دقیقه ({formatMinutesToHoursAndMinutes(discussionMinutes)})
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {[15, 30, 45, 60].map(inc => (
-              <button
-                key={inc}
-                type="button"
-                onClick={() => addMinutes('disc', inc)}
-                className="flex-1 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-700 hover:bg-purple-50 hover:text-purple-700 active:scale-95 cursor-pointer"
-              >
-                +{inc}
-              </button>
-            ))}
+            {/* Dedicated Button for Free Study Guidelines */}
             <button
               type="button"
-              onClick={() => setDiscussionMinutes(0)}
-              className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer"
+              onClick={() => setShowFreeRulesModal(true)}
+              className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[10.5px] font-black flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
             >
-              صفر
+              <Info size={13} />
+              <span>توضیحات مطالعه آزاد</span>
             </button>
           </div>
-        </div>
 
-        {/* Free Study Section (Optional) */}
-        <div className="space-y-2 p-2.5 bg-teal-50/40 rounded-xl border border-teal-200/60">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-teal-900">مطالعه آزاد جانبی (بدون سقف):</span>
-            <span className="font-mono font-black text-teal-800 text-sm">
-              {freeStudyMinutes} دقیقه
-            </span>
+          {/* EXACT TEXT REPLACEMENT REQUIREMENT */}
+          <div className="p-2.5 bg-white/90 border border-teal-200/80 rounded-xl space-y-1 text-[11px] text-teal-900 leading-relaxed font-medium">
+            <p>
+              برای مطالعه دروس اصلی مجموعه حداقل 800 دقیقه قرار داده شده است ، دوستان طلبه می توانند پس از پرکردن این حداقل به انجام مطالعه آزاد بپردازند.
+            </p>
+            <p className="text-[10.5px] text-teal-700 font-bold pt-0.5 border-t border-teal-100">
+              جهت اطلاع از قوانین مطالعه آزاد بر روی توضیحات مطالعه آزاد کلیک فرمایید.
+            </p>
           </div>
-          <div className="flex items-center gap-1.5">
-            {[15, 30, 45, 60].map(inc => (
+
+          {/* Free study minutes input with typing & quick buttons */}
+          <div className="p-2 bg-white rounded-xl border border-teal-200 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold text-teal-950">
+              <span>مدت مطالعه آزاد (دقیقه):</span>
+              <input
+                type="number"
+                min="0"
+                value={freeStudyMinutesInput}
+                onChange={(e) => setFreeStudyMinutesInput(e.target.value)}
+                placeholder="تایپ کنید (مثلاً ۱۲۰)"
+                className="w-28 px-2 py-1 bg-slate-50 border border-teal-300 rounded-lg text-slate-900 font-mono font-black text-xs text-center focus:bg-white focus:border-teal-500 outline-hidden"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 pt-1">
+              {[30, 60, 90, 120].map(inc => (
+                <button
+                  key={inc}
+                  type="button"
+                  onClick={() => addFreeMinutes(inc)}
+                  className="flex-1 py-1 rounded-lg bg-teal-50 border border-teal-200 text-[10px] font-black text-teal-800 hover:bg-teal-100 active:scale-95 cursor-pointer"
+                >
+                  +{inc}
+                </button>
+              ))}
               <button
-                key={inc}
                 type="button"
-                onClick={() => addMinutes('free', inc)}
-                className="flex-1 py-1 rounded-lg bg-white border border-teal-200 text-[10px] font-black text-teal-800 hover:bg-teal-50 active:scale-95 cursor-pointer"
+                onClick={() => setFreeStudyMinutesInput('')}
+                className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer shrink-0"
               >
-                +{inc}
+                صفر
               </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setFreeStudyMinutes(0)}
-              className="px-2 py-1 rounded-lg bg-rose-50 border border-rose-200 text-[10px] font-black text-rose-700 active:scale-95 cursor-pointer"
-            >
-              صفر
-            </button>
+            </div>
+
+            {parseInt(freeStudyMinutesInput || '0') > 0 && (
+              <input
+                type="text"
+                placeholder="عنوان کتاب مطالعه آزاد (اختیاری)"
+                value={freeStudyBookTitle}
+                onChange={(e) => setFreeStudyBookTitle(e.target.value)}
+                className="w-full mt-1.5 bg-slate-50 border border-teal-200 rounded-lg p-1.5 text-[11px] text-teal-950 focus:outline-hidden"
+              />
+            )}
           </div>
-          {freeStudyMinutes > 0 && (
-            <input
-              type="text"
-              placeholder="عنوان کتاب مطالعه آزاد (اختیاری)"
-              value={freeStudyBookTitle}
-              onChange={(e) => setFreeStudyBookTitle(e.target.value)}
-              className="w-full bg-white border border-teal-200 rounded-lg p-1.5 text-[11px] text-teal-900 focus:outline-hidden"
-            />
-          )}
         </div>
 
         {/* Save Button */}
@@ -578,6 +691,12 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
           </div>
         )}
       </div>
+
+      {/* Free Study Rules Modal */}
+      <FreeStudyRulesModal
+        isOpen={showFreeRulesModal}
+        onClose={() => setShowFreeRulesModal(false)}
+      />
     </div>
   );
 };

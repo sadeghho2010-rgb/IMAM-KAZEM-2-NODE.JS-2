@@ -43,6 +43,7 @@ import StudentBreakoutSection from './study/StudentBreakoutSection';
 import DashboardAnalytics from './study/DashboardAnalytics';
 import PeriodAnalytics from './study/PeriodAnalytics';
 import StudentStudyPortal from './study/StudentStudyPortal';
+import FreeStudyRulesModal from './study/FreeStudyRulesModal';
 import { calculatePeriodAverages, exportStudyStatsCSV, isPeriodClosed, isStudentExempt } from './study/studyUtils';
 
 interface StudyStatsProps {
@@ -69,6 +70,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
 
   // Modals state
   const [showEntryModal, setShowEntryModal] = useState(false);
+  const [showFreeRulesModal, setShowFreeRulesModal] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState<StudyPeriod | null>(null);
   const [deleteConfirmPeriod, setDeleteConfirmPeriod] = useState<StudyPeriod | null>(null);
   const [rankingModalData, setRankingModalData] = useState<RankingModalData | null>(null);
@@ -401,6 +403,16 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
 
             {!isGradeMentor && (
               <div className="relative z-10 flex flex-wrap items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowFreeRulesModal(true)}
+                  className="px-4 py-3.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-black text-xs sm:text-sm rounded-2xl flex items-center gap-2 transition-all shadow-lg shadow-teal-950/30 hover:-translate-y-0.5 cursor-pointer"
+                  title="مشاهده و ویرایش آیین‌نامه و قوانین مطالعه آزاد"
+                >
+                  <BookOpen size={18} />
+                  <span>توضیحات مطالعه آزاد</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleOpenCreatePeriod}
@@ -987,6 +999,12 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       <RankingModal
         data={rankingModalData}
         onClose={() => setRankingModalData(null)}
+      />
+
+      {/* Free Study Rules Modal */}
+      <FreeStudyRulesModal
+        isOpen={showFreeRulesModal}
+        onClose={() => setShowFreeRulesModal(false)}
       />
 
       {/* Delete Confirmation Modal */}

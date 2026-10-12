@@ -916,11 +916,16 @@ export default function StudentStudyPortal({
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-teal-800/90 font-medium leading-relaxed">
-                    مطالعه آزاد شامل کتب تفسیری، روایی، فلسفی، کلامی و تاریخی معتبر خارج از سرفصل کتب درسی است. مطالعه آزاد هیچ سقف یا محدودیتی ندارد و طلبه می‌تواند هر میزان دلخواه را ثبت نماید؛ شرط عدم دریافت اخطار تنها رعایت «حداقل دروس اصلی» و رسیدن مجموع به «حداقل موظفی کل دوره» می‌باشد.
-                  </p>
+                  <div className="p-3 bg-white border border-teal-200 rounded-xl space-y-1 text-xs text-teal-950 font-medium leading-relaxed">
+                    <p>
+                      برای مطالعه دروس اصلی مجموعه حداقل 800 دقیقه قرار داده شده است ، دوستان طلبه می توانند پس از پرکردن این حداقل به انجام مطالعه آزاد بپردازند.
+                    </p>
+                    <p className="text-[11px] text-teal-700 font-bold pt-1 border-t border-teal-100">
+                      جهت اطلاع از قوانین مطالعه آزاد بر روی توضیحات مطالعه آزاد کلیک فرمایید.
+                    </p>
+                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div className="pt-1">
                     <div className="space-y-2">
                       <div className="relative">
                         <input
@@ -952,24 +957,6 @@ export default function StudentStudyPortal({
                           ))}
                         </div>
                       )}
-                    </div>
-
-                    <div className="bg-white/80 border border-teal-200 rounded-xl p-3 flex flex-col justify-between text-xs space-y-1.5">
-                      <div className="flex items-center justify-between text-slate-600 font-medium">
-                        <span>سقف مطالعه آزاد:</span>
-                        <span className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200">
-                          بدون سقف و نامحدود (✨)
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-slate-600 font-medium">
-                        <span>مقدار وارد شده برای مطالعه آزاد:</span>
-                        <span className="font-black text-teal-700">
-                          {parsedFreeStudyMinutes} دقیقه {parsedFreeStudyMinutes > 0 ? `(${((parsedFreeStudyMinutes) / 60).toFixed(1)} ساعت)` : ''}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-600 font-medium border-t border-teal-100 pt-1">
-                        💡 نکته: کارکرد مازاد بر موظفی در کارنامه ثبت شده و طلابی که هر دو حداقل را رعایت کرده و کارکرد بالاتری داشته باشند در رده «شایسته تشویق» قرار می‌گیرند.
-                      </div>
                     </div>
                   </div>
                 </div>

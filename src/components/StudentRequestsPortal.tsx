@@ -58,6 +58,7 @@ import {
   Settings,
   Trash2,
   Calendar,
+  ChevronDown,
   ChevronRight,
   ChevronLeft,
   CalendarCheck,
@@ -180,6 +181,10 @@ export default function StudentRequestsPortal() {
 
   // Officer toggle state form
   const [officerNoteDraft, setOfficerNoteDraft] = useState('');
+
+  // Officer Grouping State (لیست طلابی که درخواست داشته‌اند به همراه تفکیک فعال و مختومه)
+  const [expandedStudentKey, setExpandedStudentKey] = useState<string | null>(null);
+  const [officerStudentSubTab, setOfficerStudentSubTab] = useState<Record<string, 'active' | 'closed'>>({});
 
   const loadData = async (silent = false) => {
     if (!silent && requests.length === 0) {
@@ -334,19 +339,24 @@ export default function StudentRequestsPortal() {
     };
   }, [weekOffset]);
 
-  // Student's enrolled programs
+  // Student's enrolled programs for leave requests
   const studentPrograms = useMemo(() => {
-    const studentGrade = currentUser?.gradeLabel || 'پایه ۷';
-    const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
-    const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
-    const uName = (currentUser?.username || '').trim().toLowerCase();
+    const studentGrade = (currentUser?.gradeLabel || 'پایه ۷').trim();
+    const sId = String(currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '').trim();
 
-    return programs.filter(p => {
-      const matchesGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
-      const matchesEnrollment = sId && Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(sId);
-      const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(sId);
+    const normalizeGrade = (g: string) => g.replace(/7/g, '۷').replace(/8/g, '۸').replace(/9/g, '۹').replace(/10/g, '۱۰');
+    const normStudentGrade = normalizeGrade(studentGrade);
+
+    const filtered = programs.filter(p => {
+      const pGrade = normalizeGrade(p.grade || '');
+      const matchesGrade = !p.grade || pGrade === normStudentGrade || p.grade === 'همه پایه‌ها' || pGrade.includes(normStudentGrade) || normStudentGrade.includes(pGrade);
+      const matchesEnrollment = sId && Array.isArray((p as any).studentIds) && (p as any).studentIds.map(String).includes(sId);
+      const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.map(String).includes(sId);
       return matchesGrade || matchesEnrollment || matchesRep;
     });
+
+    if (filtered.length > 0) return filtered;
+    return programs; // Fallback: return all programs so the schedule grid is never empty
   }, [programs, currentUser]);
 
   // Toggle Officer Response State (مسئول آموزش، مالی، فرهنگی)
@@ -868,6 +878,17 @@ export default function StudentRequestsPortal() {
     } catch (e) {}
   };
 
+  // Mark student request as read by officer
+  const handleMarkAsReadByOfficer = async (req: StudentRequest) => {
+    if (req.isReadByOfficer !== false) return;
+    const updated = { ...req, isReadByOfficer: true };
+    try {
+      await localDb.saveDoc('student_requests', req.id, updated);
+      setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
+      triggerUpdateEvent();
+    } catch (e) {}
+  };
+
   // Filter requests
   const filteredRequests = requests.filter(r => {
     if (isStudentUser) {
@@ -923,6 +944,76 @@ export default function StudentRequestsPortal() {
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
   }, [filteredRequests]);
+
+  // Group requests by Student for Officer View
+  const officerStudentGroups = useMemo(() => {
+    if (isStudentUser) return [];
+
+    const map = new Map<string, {
+      studentKey: string;
+      studentId: string;
+      studentName: string;
+      nationalCode: string;
+      grade: string;
+      activeRequests: StudentRequest[];
+      closedRequests: StudentRequest[];
+      allRequests: StudentRequest[];
+      hasActiveRequest: boolean;
+      unreadCount: number;
+      latestTimestamp: number;
+    }>();
+
+    sortedFilteredRequests.forEach(req => {
+      const key = String(req.studentId || req.studentName || 'unknown').trim();
+      if (!map.has(key)) {
+        map.set(key, {
+          studentKey: key,
+          studentId: req.studentId || '',
+          studentName: req.studentName || 'طلبه گرامی',
+          nationalCode: req.nationalCode || '',
+          grade: req.grade || '',
+          activeRequests: [],
+          closedRequests: [],
+          allRequests: [],
+          hasActiveRequest: false,
+          unreadCount: 0,
+          latestTimestamp: 0
+        });
+      }
+
+      const group = map.get(key)!;
+      group.allRequests.push(req);
+
+      const isActive = req.status === 'pending' || req.status === 'in_progress' || req.isReadByOfficer === false;
+      if (isActive) {
+        group.activeRequests.push(req);
+        group.hasActiveRequest = true;
+      } else {
+        group.closedRequests.push(req);
+      }
+
+      if (req.isReadByOfficer === false || req.status === 'pending') {
+        group.unreadCount++;
+      }
+
+      const reqTime = new Date(req.createdAt).getTime();
+      if (reqTime > group.latestTimestamp) {
+        group.latestTimestamp = reqTime;
+      }
+    });
+
+    const groupsList = Array.from(map.values());
+
+    // CRITICAL SORTING RULE:
+    // Students with active requests ALWAYS move to the top of the list!
+    groupsList.sort((a, b) => {
+      if (a.hasActiveRequest && !b.hasActiveRequest) return -1;
+      if (!a.hasActiveRequest && b.hasActiveRequest) return 1;
+      return b.latestTimestamp - a.latestTimestamp;
+    });
+
+    return groupsList;
+  }, [sortedFilteredRequests, isStudentUser]);
 
   const getStatusBadge = (status: StudentRequestStatus, isTerminated?: boolean) => {
     if (isTerminated) {
@@ -1210,7 +1301,7 @@ export default function StudentRequestsPortal() {
         </div>
       </div>
 
-      {/* Request Cards List */}
+      {/* Request Cards List / Officer Student-Grouped View */}
       <div className="space-y-4">
         {isLoading && requests.length === 0 ? (
           <div className="bg-white rounded-3xl p-16 text-center text-slate-400 flex flex-col items-center gap-2 border border-slate-200">
@@ -1227,17 +1318,19 @@ export default function StudentRequestsPortal() {
                 : 'درخواست‌های جدید ارسالی از سوی طلاب در این کارتابل نمایش داده خواهند شد.'}
             </p>
           </div>
-        ) : (
+        ) : isStudentUser ? (
+          /* ========================================================================= */
+          /* STUDENT VIEW: Flat List of Student's Own Requests                          */
+          /* ========================================================================= */
           sortedFilteredRequests.map((req) => {
-            const isUnreadForOfficer = !isStudentUser && (req.status === 'pending' || req.isReadByOfficer === false);
-            const isUnreadForStudent = isStudentUser && req.isReadByStudent === false;
+            const isUnreadForStudent = req.isReadByStudent === false;
             const messageCount = Array.isArray(req.messages) ? req.messages.length : 0;
 
             return (
               <div
                 key={req.id}
                 onClick={() => {
-                  if (isStudentUser) handleMarkAsReadByStudent(req);
+                  handleMarkAsReadByStudent(req);
                   setSelectedRequestDetail(req);
                   setReplyStatus(req.status);
                   setOfficialReply(req.officialReply || '');
@@ -1252,14 +1345,12 @@ export default function StudentRequestsPortal() {
                 }}
                 className={cn(
                   "bg-white rounded-2xl p-4 border transition-all shadow-2xs hover:shadow-md cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 group relative overflow-hidden",
-                  isUnreadForOfficer ? "border-amber-300 bg-amber-50/20 ring-1 ring-amber-300" :
                   isUnreadForStudent ? "border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-300" :
                   req.isTerminated ? "border-slate-200 bg-slate-50/60" :
                   req.status === 'resolved' ? "border-emerald-200/90 hover:border-emerald-300" :
                   req.status === 'rejected' ? "border-rose-200/90 hover:border-rose-300" : "border-slate-200 hover:border-indigo-300"
                 )}
               >
-                {/* Right: Student Avatar/Name, Category & Title */}
                 <div className="flex items-center gap-3 min-w-0">
                   <div className={cn(
                     "w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs border",
@@ -1295,12 +1386,6 @@ export default function StudentRequestsPortal() {
                         {req.unit === 'education' ? 'آموزش' : req.unit === 'finance' ? 'مالی' : 'فرهنگی/رفاهی'}
                       </span>
 
-                      {isUnreadForOfficer && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
-                          جدید 🔥
-                        </span>
-                      )}
-
                       {isUnreadForStudent && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white animate-bounce">
                           پاسخ جدید 📩
@@ -1314,7 +1399,6 @@ export default function StudentRequestsPortal() {
                   </div>
                 </div>
 
-                {/* Left: Status Badge, Date, Message Count & Action */}
                 <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
                   <div className="flex items-center gap-2">
                     {getStatusBadge(req.status, req.isTerminated)}
@@ -1337,6 +1421,243 @@ export default function StudentRequestsPortal() {
                     </span>
                   </div>
                 </div>
+              </div>
+            );
+          })
+        ) : (
+          /* ========================================================================= */
+          /* OFFICER VIEW: Grouped by Student with Active Requests at Top               */
+          /* ========================================================================= */
+          officerStudentGroups.map((group) => {
+            const isExpanded = expandedStudentKey === group.studentKey;
+            const currentSubTab = officerStudentSubTab[group.studentKey] || (group.hasActiveRequest ? 'active' : 'closed');
+            const targetRequestsList = currentSubTab === 'active' ? group.activeRequests : group.closedRequests;
+
+            return (
+              <div 
+                key={group.studentKey}
+                className={cn(
+                  "bg-white rounded-3xl border transition-all overflow-hidden shadow-xs hover:shadow-md",
+                  group.hasActiveRequest 
+                    ? "border-amber-300 bg-gradient-to-r from-amber-50/30 via-white to-white ring-2 ring-amber-400/50" 
+                    : "border-slate-200/90"
+                )}
+              >
+                {/* Student Card Header */}
+                <div 
+                  onClick={() => setExpandedStudentKey(isExpanded ? null : group.studentKey)}
+                  className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 shadow-sm border",
+                      group.hasActiveRequest
+                        ? "bg-amber-500 text-white border-amber-600 animate-pulse"
+                        : "bg-indigo-100 text-indigo-900 border-indigo-200"
+                    )}>
+                      {group.studentName?.[0] || 'ط'}
+                    </div>
+
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <span className="font-black text-sm text-slate-900 truncate">
+                          {group.studentName}
+                        </span>
+
+                        {group.grade && (
+                          <span className="text-[10.5px] px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                            {group.grade}
+                          </span>
+                        )}
+
+                        {group.hasActiveRequest && (
+                          <span className="px-3 py-0.5 rounded-full text-[10.5px] font-black bg-rose-500 text-white animate-pulse shadow-xs flex items-center gap-1">
+                            <span>🔥 نیازمند رسیدگی و پاسخ</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
+                        {group.nationalCode && <span>کد ملی / شناسه: {group.nationalCode}</span>}
+                        <span>•</span>
+                        <span>مجموع درخواست‌ها: {group.allRequests.length} مورد</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Badges & Expand Indicator */}
+                  <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1",
+                        group.activeRequests.length > 0 
+                          ? "bg-amber-100 text-amber-950 border-amber-300 shadow-xs" 
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      )}>
+                        <Clock size={13} className={group.activeRequests.length > 0 ? "text-amber-700" : ""} />
+                        <span>فعال / در جریان: {group.activeRequests.length}</span>
+                      </span>
+
+                      <span className="px-3 py-1 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+                        مختومه: {group.closedRequests.length}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="p-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-indigo-600 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
+                    >
+                      <span>{isExpanded ? 'بستن لیست' : 'مشاهده درخواست‌ها'}</span>
+                      <ChevronDown size={16} className={cn("transition-transform duration-300", isExpanded && "rotate-180")} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded Student Requests Container */}
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-slate-200/90 bg-slate-50/60 p-4 sm:p-5 space-y-4"
+                    >
+                      {/* Sub Tabs: Active vs Closed */}
+                      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+                        <button
+                          type="button"
+                          onClick={() => setOfficerStudentSubTab({ ...officerStudentSubTab, [group.studentKey]: 'active' })}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            currentSubTab === 'active'
+                              ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          <Clock size={14} />
+                          <span>درخواست‌های فعال و جاری ({group.activeRequests.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setOfficerStudentSubTab({ ...officerStudentSubTab, [group.studentKey]: 'closed' })}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            currentSubTab === 'closed'
+                              ? "bg-slate-800 text-white shadow-md"
+                              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          <ShieldCheck size={14} />
+                          <span>مراودات مختومه‌شده و بایگانی ({group.closedRequests.length})</span>
+                        </button>
+                      </div>
+
+                      {/* Request Cards Under Selected Sub Tab */}
+                      <div className="space-y-3">
+                        {targetRequestsList.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-dashed border-slate-200">
+                            در این بخش درخواستی موجود نیست.
+                          </div>
+                        ) : (
+                          targetRequestsList.map((req) => {
+                            const isUnreadForOfficer = req.status === 'pending' || req.isReadByOfficer === false;
+                            const messageCount = Array.isArray(req.messages) ? req.messages.length : 0;
+
+                            return (
+                              <div
+                                key={req.id}
+                                onClick={() => {
+                                  handleMarkAsReadByOfficer(req);
+                                  setSelectedRequestForReview(req);
+                                  setSelectedRequestDetail(req);
+                                  setReplyStatus(req.status);
+                                  setOfficialReply(req.officialReply || '');
+                                  setRejectionReason(req.rejectionReason || '');
+                                  if (req.isLeaveRequest && req.leaveDetails) {
+                                    const initMap: Record<string, 'approved' | 'rejected'> = {};
+                                    req.leaveDetails.selectedClasses.forEach(c => {
+                                      initMap[`${c.programId}_${c.dateShamsi}`] = c.status === 'rejected' ? 'rejected' : 'approved';
+                                    });
+                                    setLeaveClassStatuses(initMap);
+                                  }
+                                }}
+                                className={cn(
+                                  "bg-white rounded-2xl p-4 border transition-all shadow-2xs hover:shadow-md cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 group relative overflow-hidden",
+                                  isUnreadForOfficer ? "border-amber-400 bg-amber-50/40 ring-1 ring-amber-400" :
+                                  req.isTerminated ? "border-slate-200 bg-slate-50/80" :
+                                  req.status === 'resolved' ? "border-emerald-200" :
+                                  req.status === 'rejected' ? "border-rose-200" : "border-slate-200 hover:border-indigo-300"
+                                )}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={cn(
+                                    "w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs border",
+                                    req.isLeaveRequest 
+                                      ? "bg-amber-100 text-amber-900 border-amber-300" 
+                                      : "bg-indigo-100 text-indigo-900 border-indigo-200"
+                                  )}>
+                                    {req.isLeaveRequest ? <CalendarCheck size={16} /> : <FileText size={16} />}
+                                  </div>
+
+                                  <div className="space-y-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                                      <span className={cn(
+                                        "text-[10px] px-2 py-0.5 rounded-md font-bold border",
+                                        req.isLeaveRequest 
+                                          ? "bg-amber-50 text-amber-900 border-amber-200" 
+                                          : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                      )}>
+                                        {req.category}
+                                      </span>
+
+                                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
+                                        {req.unit === 'education' ? 'آموزش' : req.unit === 'finance' ? 'مالی' : 'فرهنگی/رفاهی'}
+                                      </span>
+
+                                      {isUnreadForOfficer && (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                                          جدید 🔥
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                                      {req.title}
+                                    </h4>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    {getStatusBadge(req.status, req.isTerminated)}
+
+                                    {messageCount > 0 && (
+                                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-700 flex items-center gap-1 font-mono border border-slate-200/80">
+                                        <MessageSquare size={12} className="text-indigo-600" />
+                                        <span>{messageCount}</span>
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] text-slate-400 font-mono">
+                                      {new Date(req.createdAt).toLocaleDateString('fa-IR')}
+                                    </span>
+                                    <span className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-all text-xs font-bold flex items-center gap-1 shadow-2xs">
+                                      <span>رسیدگی و پاسخ</span>
+                                      <ChevronLeft size={14} />
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })
@@ -1672,7 +1993,18 @@ export default function StudentRequestsPortal() {
                   <label className="block font-bold text-slate-700 mb-1">موضوع تقاضا:</label>
                   <select
                     value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
+                    onChange={(e) => {
+                      const selectedCat = e.target.value;
+                      if (selectedCat === 'درخواست مرخصی') {
+                        setShowNewRequestModal(false);
+                        setWeekOffset(0);
+                        setSelectedClassesForLeave([]);
+                        setLeaveAbsenceReason('');
+                        setShowLeaveRequestModal(true);
+                      } else {
+                        setNewCategory(selectedCat);
+                      }
+                    }}
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none"
                   >
                     {(unitSettings[newUnit]?.allowedCategories || []).map((cat) => (
