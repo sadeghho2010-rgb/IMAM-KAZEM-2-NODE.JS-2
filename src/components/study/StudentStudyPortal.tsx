@@ -42,10 +42,11 @@ import {
   ResponsiveContainer, 
   Legend 
 } from 'recharts';
-import { Student, StudyPeriod, PeriodicStudyLog, StudyDailyEntry } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, StudyDailyEntry, Program, Enrollment, CourseStudyDetail } from '../../types';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
+import FreeStudyRulesModal from './FreeStudyRulesModal';
 import { 
   getLogMetrics, 
   calculatePeriodAverages, 
@@ -54,7 +55,8 @@ import {
   formatMinutesToHoursAndMinutes,
   addStudyDailyEntry,
   updateStudyDailyEntry,
-  deleteStudyDailyEntry
+  deleteStudyDailyEntry,
+  getStudyWarningStatus
 } from './studyUtils';
 
 interface StudentStudyPortalProps {
@@ -86,21 +88,82 @@ export default function StudentStudyPortal({
   // Daily entries list state
   const [dailyEntries, setDailyEntries] = useState<StudyDailyEntry[]>([]);
 
-  // Entry inputs (in hours, e.g. "2" or "1.5")
-  const [studyHoursInput, setStudyHoursInput] = useState<string>('');
-  const [discussionHoursInput, setDiscussionHoursInput] = useState<string>('');
+  // Programs and Enrollments for student classes
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+
+  // Free Study Rules Modal
+  const [showFreeRulesModal, setShowFreeRulesModal] = useState<boolean>(false);
+
+  // Minutes-based entry inputs: per course study & discussion minutes
+  const [courseStudyMinutes, setCourseStudyMinutes] = useState<Record<string, string>>({});
+  const [courseDiscussionMinutes, setCourseDiscussionMinutes] = useState<Record<string, string>>({});
+  const [freeStudyMinutesInput, setFreeStudyMinutesInput] = useState<string>('');
   const [entryNoteInput, setEntryNoteInput] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string>('');
 
   // Editing state for an existing daily entry
   const [editingEntry, setEditingEntry] = useState<StudyDailyEntry | null>(null);
-  const [editStudyHours, setEditStudyHours] = useState<string>('');
-  const [editDiscussionHours, setEditDiscussionHours] = useState<string>('');
+  const [editCourseStudyMinutes, setEditCourseStudyMinutes] = useState<Record<string, string>>({});
+  const [editCourseDiscussionMinutes, setEditCourseDiscussionMinutes] = useState<Record<string, string>>({});
+  const [editFreeStudyMinutes, setEditFreeStudyMinutes] = useState<string>('');
   const [editNote, setEditNote] = useState<string>('');
   const [isUpdatingEntry, setIsUpdatingEntry] = useState<boolean>(false);
 
   const [chartViewMode, setChartViewMode] = useState<'TOTAL' | 'SPLIT'>('TOTAL');
+
+  // Fetch programs and enrollments
+  useEffect(() => {
+    const fetchProgramsAndEnrollments = async () => {
+      try {
+        const [progList, enrList] = await Promise.all([
+          localDb.getDocs<Program>('programs'),
+          localDb.getDocs<Enrollment>('enrollments')
+        ]);
+        setPrograms(progList || []);
+        setEnrollments(enrList || []);
+      } catch (err) {
+        console.warn('Error loading programs or enrollments:', err);
+      }
+    };
+    fetchProgramsAndEnrollments();
+  }, []);
+
+  // Compute student's main classes
+  const studentMainCourses = useMemo(() => {
+    const studentEnrollments = enrollments.filter(e => e.studentId === student.id);
+    const enrolledProgramIds = new Set(studentEnrollments.map(e => e.programId));
+
+    let userProgs = programs.filter(p => 
+      enrolledProgramIds.has(p.id) || 
+      p.grade === student.grade || 
+      (p as any).studentIds?.includes(student.id) ||
+      (p as any).studentId === student.id
+    );
+
+    // Filter main courses
+    const mainOnly = userProgs.filter(p => p.type === 'اصلی' || !p.type || (!['مشاوره', 'پژوهش', 'دروس 5 شنبه'].includes(p.type)));
+    if (mainOnly.length > 0) {
+      const seen = new Set<string>();
+      const list: { id: string; title: string }[] = [];
+      for (const p of mainOnly) {
+        const cleanTitle = p.title.trim();
+        if (!seen.has(cleanTitle)) {
+          seen.add(cleanTitle);
+          list.push({ id: p.id, title: cleanTitle });
+        }
+      }
+      return list;
+    }
+
+    // Default seminary core courses matching student's grade or standard curriculum:
+    return [
+      { id: 'c_usul', title: 'اصول {حلقه ثالثه}' },
+      { id: 'c_fiqh', title: 'فقه {مکاسب خیارات}' },
+      { id: 'c_falsafa', title: 'فلسفه {قسمت دوم نهایه}' }
+    ];
+  }, [programs, enrollments, student]);
 
   // Active period object
   const currentPeriod = useMemo(() => {
@@ -147,11 +210,20 @@ export default function StudentStudyPortal({
     return allLogs.find(l => l.studentId === student.id && l.periodId === currentPeriod.id) || null;
   }, [allLogs, student.id, currentPeriod]);
 
-  // Parsed input numbers
-  const parsedStudyHours = Math.max(0, parseFloat(studyHoursInput) || 0);
-  const parsedDiscussionHours = Math.max(0, parseFloat(discussionHoursInput) || 0);
-  const calculatedTotalHours = Math.round((parsedStudyHours + parsedDiscussionHours) * 100) / 100;
-  const calculatedTotalMinutes = Math.round(calculatedTotalHours * 60);
+  // Parsed minutes per course and free study
+  const calculatedCoreStudyMinutes = useMemo(() => {
+    return studentMainCourses.reduce((sum, c) => sum + (parseInt(courseStudyMinutes[c.id] || '0') || 0), 0);
+  }, [studentMainCourses, courseStudyMinutes]);
+
+  const calculatedCoreDiscussionMinutes = useMemo(() => {
+    return studentMainCourses.reduce((sum, c) => sum + (parseInt(courseDiscussionMinutes[c.id] || '0') || 0), 0);
+  }, [studentMainCourses, courseDiscussionMinutes]);
+
+  const calculatedCoreTotalMinutes = calculatedCoreStudyMinutes + calculatedCoreDiscussionMinutes;
+  const parsedFreeStudyMinutes = parseInt(freeStudyMinutesInput || '0') || 0;
+  const calculatedTotalMinutes = calculatedCoreTotalMinutes + parsedFreeStudyMinutes;
+
+  const calculatedTotalHours = Math.round((calculatedTotalMinutes / 60) * 10) / 10;
 
   const isCurrentPeriodClosed = isPeriodClosed(currentPeriod);
   const isCurrentStudentExempt = isStudentExempt(currentPeriod, student, currentPeriodLog);
@@ -159,52 +231,74 @@ export default function StudentStudyPortal({
   // Can the student edit? (Level 1/2 can always edit; Level 3 only if not closed and not exempt)
   const isReadOnlyForUser = currentUser?.level === 3 && (isCurrentPeriodClosed || isCurrentStudentExempt);
 
-  // Quick preset hour addition helpers
-  const handleQuickAddStudy = (amountHours: number) => {
+  // Quick preset minute addition helpers for courses and free study
+  const handleQuickAddCourseStudy = (courseId: string, amountMinutes: number) => {
     if (isReadOnlyForUser) return;
-    const currentVal = parseFloat(studyHoursInput) || 0;
-    const newVal = Math.round((currentVal + amountHours) * 10) / 10;
-    setStudyHoursInput(newVal.toString());
+    const currentVal = parseInt(courseStudyMinutes[courseId] || '0') || 0;
+    setCourseStudyMinutes(prev => ({
+      ...prev,
+      [courseId]: (currentVal + amountMinutes).toString()
+    }));
   };
 
-  const handleQuickAddDiscussion = (amountHours: number) => {
+  const handleQuickAddCourseDisc = (courseId: string, amountMinutes: number) => {
     if (isReadOnlyForUser) return;
-    const currentVal = parseFloat(discussionHoursInput) || 0;
-    const newVal = Math.round((currentVal + amountHours) * 10) / 10;
-    setDiscussionHoursInput(newVal.toString());
+    const currentVal = parseInt(courseDiscussionMinutes[courseId] || '0') || 0;
+    setCourseDiscussionMinutes(prev => ({
+      ...prev,
+      [courseId]: (currentVal + amountMinutes).toString()
+    }));
   };
 
-  // Handle Cumulative Submission (اصلاح ۱ و ۲ و ۹)
+  const handleQuickAddFreeStudy = (amountMinutes: number) => {
+    if (isReadOnlyForUser) return;
+    const currentVal = parseInt(freeStudyMinutesInput || '0') || 0;
+    setFreeStudyMinutesInput((currentVal + amountMinutes).toString());
+  };
+
+  // Handle Cumulative Submission (به دقیقه، با تفکیک کلاس‌های اصلی و مطالعه آزاد)
   const handleSaveHours = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPeriod || isReadOnlyForUser) return;
-    if (parsedStudyHours <= 0 && parsedDiscussionHours <= 0) {
-      alert('لطفاً حداقل مقدار برای مطالعه یا مباحثه وارد نمایید.');
+    if (calculatedTotalMinutes <= 0) {
+      alert('لطفاً حداقل مقدار برای یکی از دروس اصلی یا مطالعه آزاد را به دقیقه وارد نمایید.');
       return;
     }
-    if (parsedStudyHours > 40 || parsedDiscussionHours > 40) {
-      alert('سقف مقدار قابل ثبت در هر باکس حداکثر ۴۰ ساعت می‌باشد.');
+    if (calculatedTotalMinutes > 2400) {
+      alert('سقف مقدار قابل ثبت در یک نوبت حداکثر ۲۴۰۰ دقیقه (۴۰ ساعت) می‌باشد.');
       return;
     }
 
     setIsSaving(true);
     try {
+      const coursesBreakdown: CourseStudyDetail[] = studentMainCourses.map(c => ({
+        courseId: c.id,
+        courseTitle: c.title,
+        studyMinutes: parseInt(courseStudyMinutes[c.id] || '0') || 0,
+        discussionMinutes: parseInt(courseDiscussionMinutes[c.id] || '0') || 0
+      }));
+
       // Create new daily entry (Cumulative)
       await addStudyDailyEntry({
         periodId: currentPeriod.id,
         studentId: student.id,
-        studyHours: parsedStudyHours,
-        discussionHours: parsedDiscussionHours,
+        studyHours: calculatedCoreStudyMinutes / 60,
+        discussionHours: calculatedCoreDiscussionMinutes / 60,
+        coursesBreakdown,
+        freeStudyMinutes: parsedFreeStudyMinutes,
+        coreTotalMinutes: calculatedCoreTotalMinutes,
+        totalMinutes: calculatedTotalMinutes,
         submittedBy: currentUser?.level === 3 ? 'student' : 'officer',
         note: entryNoteInput.trim()
       });
 
-      // Clear input boxes immediately after success (اصلاح ۲)
-      setStudyHoursInput('');
-      setDiscussionHoursInput('');
+      // Clear input boxes immediately after success
+      setCourseStudyMinutes({});
+      setCourseDiscussionMinutes({});
+      setFreeStudyMinutesInput('');
       setEntryNoteInput('');
 
-      setSaveSuccessMessage('ساعات جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.');
+      setSaveSuccessMessage('دقایق جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.');
       await loadDailyEntries();
       if (onRefresh) onRefresh();
 
@@ -221,21 +315,65 @@ export default function StudentStudyPortal({
   const handleStartEditEntry = (entry: StudyDailyEntry) => {
     if (isReadOnlyForUser) return;
     setEditingEntry(entry);
-    setEditStudyHours(entry.studyHours.toString());
-    setEditDiscussionHours(entry.discussionHours.toString());
+    
+    const studyMap: Record<string, string> = {};
+    const discMap: Record<string, string> = {};
+
+    if (Array.isArray(entry.coursesBreakdown) && entry.coursesBreakdown.length > 0) {
+      entry.coursesBreakdown.forEach(c => {
+        if (c.studyMinutes > 0) studyMap[c.courseId] = c.studyMinutes.toString();
+        if (c.discussionMinutes > 0) discMap[c.courseId] = c.discussionMinutes.toString();
+      });
+    } else {
+      // Legacy fallback
+      const sMin = Math.round((entry.studyHours || 0) * 60);
+      const dMin = Math.round((entry.discussionHours || 0) * 60);
+      const firstCourseId = studentMainCourses[0]?.id || 'c_usul';
+      if (sMin > 0) studyMap[firstCourseId] = sMin.toString();
+      if (dMin > 0) discMap[firstCourseId] = dMin.toString();
+    }
+
+    setEditCourseStudyMinutes(studyMap);
+    setEditCourseDiscussionMinutes(discMap);
+    setEditFreeStudyMinutes(entry.freeStudyMinutes ? entry.freeStudyMinutes.toString() : '');
     setEditNote(entry.note || '');
   };
 
   const handleSaveEditEntry = async () => {
     if (!editingEntry || !currentPeriod) return;
-    const sH = Math.max(0, parseFloat(editStudyHours) || 0);
-    const dH = Math.max(0, parseFloat(editDiscussionHours) || 0);
+
+    let editCoreStudyMin = 0;
+    let editCoreDiscMin = 0;
+    const coursesBreakdown: CourseStudyDetail[] = studentMainCourses.map(c => {
+      const sMin = parseInt(editCourseStudyMinutes[c.id] || '0') || 0;
+      const dMin = parseInt(editCourseDiscussionMinutes[c.id] || '0') || 0;
+      editCoreStudyMin += sMin;
+      editCoreDiscMin += dMin;
+      return {
+        courseId: c.id,
+        courseTitle: c.title,
+        studyMinutes: sMin,
+        discussionMinutes: dMin
+      };
+    });
+
+    const editCoreTotalMin = editCoreStudyMin + editCoreDiscMin;
+    const editFreeMin = parseInt(editFreeStudyMinutes || '0') || 0;
+    const editTotalMin = editCoreTotalMin + editFreeMin;
 
     setIsUpdatingEntry(true);
     try {
       await updateStudyDailyEntry(
         editingEntry.id,
-        { studyHours: sH, discussionHours: dH, note: editNote.trim() },
+        {
+          studyHours: editCoreStudyMin / 60,
+          discussionHours: editCoreDiscMin / 60,
+          coursesBreakdown,
+          freeStudyMinutes: editFreeMin,
+          coreTotalMinutes: editCoreTotalMin,
+          totalMinutes: editTotalMin,
+          note: editNote.trim()
+        },
         currentPeriod.id,
         student.id,
         currentUser?.level === 3 ? 'student' : 'officer'
@@ -257,7 +395,8 @@ export default function StudentStudyPortal({
   // Handle Deleting an Entry
   const handleDeleteEntry = async (entry: StudyDailyEntry) => {
     if (isReadOnlyForUser) return;
-    if (!window.confirm(`آیا از حذف این ثبت (${entry.totalHours} ساعت) اطمینان دارید؟`)) return;
+    const totalMinutesLabel = entry.totalMinutes ? `${entry.totalMinutes} دقیقه` : `${entry.totalHours} ساعت`;
+    if (!window.confirm(`آیا از حذف این ثبت (${totalMinutesLabel}) اطمینان دارید؟`)) return;
 
     try {
       await deleteStudyDailyEntry(
@@ -278,19 +417,53 @@ export default function StudentStudyPortal({
 
   // Cumulative Totals for current active period
   const activePeriodTotals = useMemo(() => {
-    const totalStudy = Math.round(dailyEntries.reduce((acc, e) => acc + (Number(e.studyHours) || 0), 0) * 10) / 10;
-    const totalDisc = Math.round(dailyEntries.reduce((acc, e) => acc + (Number(e.discussionHours) || 0), 0) * 10) / 10;
-    const totalSum = Math.round((totalStudy + totalDisc) * 10) / 10;
-    const mandatory = currentPeriod?.mandatoryHours || 0;
-    const diff = Math.round((totalSum - mandatory) * 10) / 10;
+    let totalCoreStudyMin = 0;
+    let totalCoreDiscMin = 0;
+    let totalFreeMin = 0;
+    let totalSumMin = 0;
+
+    dailyEntries.forEach(e => {
+      totalFreeMin += Number(e.freeStudyMinutes) || 0;
+      if (Array.isArray(e.coursesBreakdown) && e.coursesBreakdown.length > 0) {
+        e.coursesBreakdown.forEach(c => {
+          totalCoreStudyMin += Number(c.studyMinutes) || 0;
+          totalCoreDiscMin += Number(c.discussionMinutes) || 0;
+        });
+      } else {
+        totalCoreStudyMin += Math.round((Number(e.studyHours) || 0) * 60);
+        totalCoreDiscMin += Math.round((Number(e.discussionHours) || 0) * 60);
+      }
+    });
+
+    const totalCoreMin = totalCoreStudyMin + totalCoreDiscMin;
+    totalSumMin = totalCoreMin + totalFreeMin;
+
+    const mandatoryTotalMin = currentPeriod?.mandatoryMinutes || Math.round((currentPeriod?.mandatoryHours || 0) * 60);
+    const mandatoryCoreMin = currentPeriod?.mandatoryCoreMinutes ?? Math.round(mandatoryTotalMin * 0.75);
+
+    const diffTotalMin = totalSumMin - mandatoryTotalMin;
+    const diffCoreMin = totalCoreMin - mandatoryCoreMin;
+
+    const isCoreFulfilled = totalCoreMin >= mandatoryCoreMin;
+    const isTotalFulfilled = totalSumMin >= mandatoryTotalMin;
+    const isFullyFulfilled = isCoreFulfilled && isTotalFulfilled && mandatoryTotalMin > 0;
 
     return {
-      totalStudy,
-      totalDisc,
-      totalSum,
-      mandatory,
-      diff,
-      isFulfilled: totalSum >= mandatory && mandatory > 0
+      totalCoreStudyMin,
+      totalCoreDiscMin,
+      totalCoreMin,
+      totalFreeMin,
+      totalSumMin,
+      totalStudyHours: Math.round((totalCoreStudyMin / 60) * 10) / 10,
+      totalDiscHours: Math.round((totalCoreDiscMin / 60) * 10) / 10,
+      totalSumHours: Math.round((totalSumMin / 60) * 10) / 10,
+      mandatoryTotalMin,
+      mandatoryCoreMin,
+      diffTotalMin,
+      diffCoreMin,
+      isCoreFulfilled,
+      isTotalFulfilled,
+      isFullyFulfilled
     };
   }, [dailyEntries, currentPeriod]);
 
@@ -556,7 +729,11 @@ export default function StudentStudyPortal({
 
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-3 py-1 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 shadow-2xs">
-                      موظفی دوره: <b className="text-indigo-600 font-black">{currentPeriod.mandatoryHours || 0} ساعت</b>
+                      موظفی کل دوره: <b className="text-indigo-600 font-black">{currentPeriod.mandatoryMinutes || Math.round((currentPeriod.mandatoryHours || 0) * 60)} دقیقه</b> ({((currentPeriod.mandatoryMinutes || Math.round((currentPeriod.mandatoryHours || 0) * 60)) / 60).toFixed(1)} ساعت)
+                    </span>
+
+                    <span className="px-3 py-1 bg-amber-50 border border-amber-200 rounded-xl font-bold text-amber-900 shadow-2xs">
+                      حداقل دروس اصلی: <b className="text-amber-700 font-black">{currentPeriod.mandatoryCoreMinutes ?? Math.round(((currentPeriod.mandatoryMinutes || Math.round((currentPeriod.mandatoryHours || 0) * 60)) * 0.75))} دقیقه</b>
                     </span>
 
                     {isCurrentStudentExempt ? (
@@ -578,145 +755,272 @@ export default function StudentStudyPortal({
                   </div>
                 </div>
 
-                {/* Input Fields & Quick Buttons */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Box 1: Study Hours Input */}
-                  <div className="bg-indigo-50/60 border-2 border-indigo-200/80 rounded-2xl p-4 space-y-2.5 relative focus-within:border-indigo-500 transition-all">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                        <BookOpen size={16} className="text-indigo-600" />
-                        <span>۱. ساعت مطالعه جدید</span>
-                      </label>
-                      <span className="text-[10px] font-bold text-indigo-600 bg-white px-2 py-0.5 rounded-full border border-indigo-100">
-                        مطالعه
-                      </span>
+                {/* --- Section 1: Main Seminary Classes (فیلد مطالعه و مباحثه به دقیقه به ازای هر کلاس اصلی) --- */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <BookOpen size={16} className="text-indigo-600" />
+                      <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                        ۱. ثبت کارکرد دروس اصلی طلبه (به دقیقه)
+                      </h4>
                     </div>
-
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="40"
-                        disabled={isReadOnlyForUser}
-                        value={studyHoursInput}
-                        onChange={(e) => setStudyHoursInput(e.target.value)}
-                        placeholder="مثلاً 2 یا 1.5"
-                        className="w-full pr-4 pl-12 py-3 bg-white border border-indigo-200 rounded-xl text-slate-900 font-black text-base outline-none focus:ring-2 focus:ring-indigo-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                      />
-                      <span className="absolute left-3 top-3.5 text-xs font-bold text-slate-400 pointer-events-none">
-                        ساعت
-                      </span>
-                    </div>
-
-                    {/* Quick Add Buttons */}
-                    {!isReadOnlyForUser && (
-                      <div className="flex items-center gap-1 pt-1">
-                        <span className="text-[10px] text-slate-400 font-bold ml-1">افزودن سریع:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddStudy(0.5)}
-                          className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold rounded-lg border border-indigo-200 transition-all"
-                        >
-                          +۰.۵س
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddStudy(1)}
-                          className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold rounded-lg border border-indigo-200 transition-all"
-                        >
-                          +۱س
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddStudy(2)}
-                          className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-700 text-[10.5px] font-bold rounded-lg border border-indigo-200 transition-all"
-                        >
-                          +۲س
-                        </button>
-                      </div>
-                    )}
+                    <span className="text-[11px] font-bold text-slate-500">
+                      تعداد دروس اصلی شناسایی‌شده: {studentMainCourses.length} درس
+                    </span>
                   </div>
 
-                  {/* Box 2: Discussion Hours Input */}
-                  <div className="bg-emerald-50/60 border-2 border-emerald-200/80 rounded-2xl p-4 space-y-2.5 relative focus-within:border-emerald-500 transition-all">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                        <MessageSquare size={16} className="text-emerald-600" />
-                        <span>۲. ساعت مباحثه جدید</span>
+                  <div className="space-y-4">
+                    {studentMainCourses.map((course, idx) => {
+                      const sVal = courseStudyMinutes[course.id] || '';
+                      const dVal = courseDiscussionMinutes[course.id] || '';
+                      const sNum = parseInt(sVal) || 0;
+                      const dNum = parseInt(dVal) || 0;
+
+                      return (
+                        <div
+                          key={course.id}
+                          className="bg-slate-50/70 border border-slate-200/90 hover:border-indigo-200 rounded-2xl p-4 transition-all space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-indigo-950 flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-lg bg-indigo-100 text-indigo-800 text-[11px] font-bold flex items-center justify-center">
+                                {idx + 1}
+                              </span>
+                              <span>درس اصلی: {course.title}</span>
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-500">
+                              مجموع این درس: <b className="text-indigo-700">{sNum + dNum} دقیقه</b> {sNum + dNum > 0 ? `(${((sNum + dNum) / 60).toFixed(1)} ساعت)` : ''}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Study Minutes Input */}
+                            <div className="bg-indigo-50/50 border border-indigo-200/70 rounded-xl p-3 space-y-2 focus-within:border-indigo-500 transition-all">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-black text-indigo-900 flex items-center gap-1.5">
+                                  <BookOpen size={14} className="text-indigo-600" />
+                                  <span>ساعت مطالعه {course.title} (دقیقه)</span>
+                                </label>
+                                {sNum > 0 && (
+                                  <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-100">
+                                    {(sNum / 60).toFixed(1)} ساعت
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="1440"
+                                  disabled={isReadOnlyForUser}
+                                  value={sVal}
+                                  onChange={(e) => setCourseStudyMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
+                                  placeholder="مثلاً ۹۰ یا ۶۰ دقیقه"
+                                  className="w-full pr-3 pl-12 py-2.5 bg-white border border-indigo-200 rounded-xl text-slate-900 font-black text-sm outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
+                                />
+                                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400 pointer-events-none">
+                                  دقیقه
+                                </span>
+                              </div>
+
+                              {!isReadOnlyForUser && (
+                                <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+                                  <span className="text-[10px] text-slate-400 font-bold ml-1">افزودن:</span>
+                                  {[30, 45, 60, 90].map(mins => (
+                                    <button
+                                      key={mins}
+                                      type="button"
+                                      onClick={() => handleQuickAddCourseStudy(course.id, mins)}
+                                      className="px-2 py-0.5 bg-white hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-200 transition-all cursor-pointer"
+                                    >
+                                      +{mins}د
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Discussion Minutes Input */}
+                            <div className="bg-emerald-50/50 border border-emerald-200/70 rounded-xl p-3 space-y-2 focus-within:border-emerald-500 transition-all">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[11px] font-black text-emerald-950 flex items-center gap-1.5">
+                                  <MessageSquare size={14} className="text-emerald-600" />
+                                  <span>ساعت مباحثه {course.title} (دقیقه)</span>
+                                </label>
+                                {dNum > 0 && (
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-100">
+                                    {(dNum / 60).toFixed(1)} ساعت
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="1440"
+                                  disabled={isReadOnlyForUser}
+                                  value={dVal}
+                                  onChange={(e) => setCourseDiscussionMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
+                                  placeholder="مثلاً ۶۰ یا ۴۵ دقیقه"
+                                  className="w-full pr-3 pl-12 py-2.5 bg-white border border-emerald-200 rounded-xl text-slate-900 font-black text-sm outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-100 disabled:text-slate-400"
+                                />
+                                <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400 pointer-events-none">
+                                  دقیقه
+                                </span>
+                              </div>
+
+                              {!isReadOnlyForUser && (
+                                <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+                                  <span className="text-[10px] text-slate-400 font-bold ml-1">افزودن:</span>
+                                  {[30, 45, 60, 90].map(mins => (
+                                    <button
+                                      key={mins}
+                                      type="button"
+                                      onClick={() => handleQuickAddCourseDisc(course.id, mins)}
+                                      className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-200 transition-all cursor-pointer"
+                                    >
+                                      +{mins}د
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* --- Section 2: Free Study (مطالعه آزاد به دقیقه) & Guidelines Button --- */}
+                <div className="bg-gradient-to-r from-teal-50/70 via-emerald-50/50 to-teal-50/70 border-2 border-teal-200/90 rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-teal-200/60">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-teal-700" />
+                      <label className="text-xs sm:text-sm font-black text-teal-950">
+                        ۲. میزان مطالعه آزاد (به دقیقه)
                       </label>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-full border border-emerald-100">
-                        مباحثه
-                      </span>
                     </div>
 
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="40"
-                        disabled={isReadOnlyForUser}
-                        value={discussionHoursInput}
-                        onChange={(e) => setDiscussionHoursInput(e.target.value)}
-                        placeholder="مثلاً 1.5 یا 2"
-                        className="w-full pr-4 pl-12 py-3 bg-white border border-emerald-200 rounded-xl text-slate-900 font-black text-base outline-none focus:ring-2 focus:ring-emerald-500 transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
-                      />
-                      <span className="absolute left-3 top-3.5 text-xs font-bold text-slate-400 pointer-events-none">
-                        ساعت
-                      </span>
-                    </div>
-
-                    {/* Quick Add Buttons */}
-                    {!isReadOnlyForUser && (
-                      <div className="flex items-center gap-1 pt-1">
-                        <span className="text-[10px] text-slate-400 font-bold ml-1">افزودن سریع:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddDiscussion(0.5)}
-                          className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-700 text-[10.5px] font-bold rounded-lg border border-emerald-200 transition-all"
-                        >
-                          +۰.۵س
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddDiscussion(1)}
-                          className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-700 text-[10.5px] font-bold rounded-lg border border-emerald-200 transition-all"
-                        >
-                          +۱س
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddDiscussion(2)}
-                          className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-700 text-[10.5px] font-bold rounded-lg border border-emerald-200 transition-all"
-                        >
-                          +۲س
-                        </button>
-                      </div>
-                    )}
+                    {/* Button for Free Study Guidelines & Rules */}
+                    <button
+                      type="button"
+                      onClick={() => setShowFreeRulesModal(true)}
+                      title="مشاهده و ویرایش ضوابط و قوانین مطالعه آزاد"
+                      className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-1.5 cursor-pointer self-start sm:self-auto hover:shadow-teal-600/20"
+                    >
+                      <Info size={14} />
+                      <span>توضیحات و قوانین مطالعه آزاد</span>
+                    </button>
                   </div>
 
-                  {/* Box 3: Total Sum Preview */}
-                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-4 space-y-2.5 relative shadow-md">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-black text-slate-200 flex items-center gap-1.5">
-                        <Calculator size={16} className="text-amber-400" />
-                        <span>۳. کارکرد این ثبت</span>
-                      </label>
-                      <span className="text-[10px] font-black bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-400/30">
-                        تجمیعی
-                      </span>
+                  <p className="text-[11px] text-teal-800/90 font-medium leading-relaxed">
+                    مطالعه آزاد شامل کتب تفسیری، روایی، فلسفی، کلامی و تاریخی معتبر خارج از سرفصل کتب درسی است. مطالعه آزاد هیچ سقف یا محدودیتی ندارد و طلبه می‌تواند هر میزان دلخواه را ثبت نماید؛ شرط عدم دریافت اخطار تنها رعایت «حداقل دروس اصلی» و رسیدن مجموع به «حداقل موظفی کل دوره» می‌باشد.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          disabled={isReadOnlyForUser}
+                          value={freeStudyMinutesInput}
+                          onChange={(e) => setFreeStudyMinutesInput(e.target.value)}
+                          placeholder="مثلاً ۱۲۰ یا ۲۴۰ دقیقه (بدون محدودیت)"
+                          className="w-full pr-3 pl-12 py-3 bg-white border border-teal-300 rounded-xl text-slate-900 font-black text-base outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100 disabled:text-slate-400"
+                        />
+                        <span className="absolute left-3 top-3 text-xs font-bold text-slate-400 pointer-events-none">
+                          دقیقه
+                        </span>
+                      </div>
+
+                      {!isReadOnlyForUser && (
+                        <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+                          <span className="text-[10px] text-slate-400 font-bold ml-1">افزودن سریع:</span>
+                          {[30, 60, 90, 120, 180, 240].map(mins => (
+                            <button
+                              key={mins}
+                              type="button"
+                              onClick={() => handleQuickAddFreeStudy(mins)}
+                              className="px-2.5 py-0.5 bg-white hover:bg-teal-100 text-teal-800 text-[10.5px] font-bold rounded-lg border border-teal-300 transition-all cursor-pointer"
+                            >
+                              +{mins}د
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="px-4 py-3 bg-white/10 rounded-xl flex items-center justify-between border border-white/10">
-                      <span className="text-2xl font-black text-white">
-                        {calculatedTotalHours.toLocaleString('fa-IR')}
-                      </span>
-                      <span className="text-xs font-bold text-slate-300">ساعت</span>
+                    <div className="bg-white/80 border border-teal-200 rounded-xl p-3 flex flex-col justify-between text-xs space-y-1.5">
+                      <div className="flex items-center justify-between text-slate-600 font-medium">
+                        <span>سقف مطالعه آزاد:</span>
+                        <span className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200">
+                          بدون سقف و نامحدود (✨)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-600 font-medium">
+                        <span>مقدار وارد شده برای مطالعه آزاد:</span>
+                        <span className="font-black text-teal-700">
+                          {parsedFreeStudyMinutes} دقیقه {parsedFreeStudyMinutes > 0 ? `(${((parsedFreeStudyMinutes) / 60).toFixed(1)} ساعت)` : ''}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-600 font-medium border-t border-teal-100 pt-1">
+                        💡 نکته: کارکرد مازاد بر موظفی در کارنامه ثبت شده و طلابی که هر دو حداقل را رعایت کرده و کارکرد بالاتری داشته باشند در رده «شایسته تشویق» قرار می‌گیرند.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* --- Section 3: Real-Time Registration Summary Card --- */}
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 space-y-4 shadow-lg border border-indigo-900/50">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <Calculator size={18} className="text-amber-400" />
+                      <h4 className="text-xs sm:text-sm font-black text-white">
+                        ۳. پیش‌نمایش و خلاصه کارکرد این نوبت ثبت
+                      </h4>
+                    </div>
+                    <span className="text-[11px] font-bold text-amber-300 bg-amber-400/20 px-2.5 py-0.5 rounded-full border border-amber-400/30">
+                      محاسبه خودکار به دقیقه
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    {/* Core Classes Sum */}
+                    <div className="bg-white/10 border border-white/15 rounded-xl p-3.5 space-y-1">
+                      <span className="text-[11px] font-bold text-indigo-200 block">مجموع دروس اصلی (مطالعه + مباحثه)</span>
+                      <div className="text-xl font-black text-white">
+                        {calculatedCoreTotalMinutes} <span className="text-xs font-normal text-indigo-200">دقیقه</span>
+                      </div>
+                      <p className="text-[10px] text-indigo-300 font-medium">
+                        معادل {((calculatedCoreTotalMinutes) / 60).toFixed(1)} ساعت
+                        (مطالعه: {calculatedCoreStudyMinutes}د • مباحثه: {calculatedCoreDiscussionMinutes}د)
+                      </p>
                     </div>
 
-                    <div className="text-[11px] text-slate-300">
-                      پس از ثبت، به مجموع کارکرد دوره افزوده خواهد شد.
+                    {/* Free Study Sum */}
+                    <div className="bg-white/10 border border-white/15 rounded-xl p-3.5 space-y-1">
+                      <span className="text-[11px] font-bold text-teal-200 block">سهم مطالعه آزاد</span>
+                      <div className="text-xl font-black text-teal-300">
+                        {parsedFreeStudyMinutes} <span className="text-xs font-normal text-teal-200">دقیقه</span>
+                      </div>
+                      <p className="text-[10px] text-teal-200/80 font-medium">
+                        معادل {((parsedFreeStudyMinutes) / 60).toFixed(1)} ساعت
+                      </p>
+                    </div>
+
+                    {/* Grand Total */}
+                    <div className="bg-white/15 border border-amber-400/30 rounded-xl p-3.5 space-y-1">
+                      <span className="text-[11px] font-bold text-amber-300 block">مجموع کل این ثبت (اصلی + آزاد)</span>
+                      <div className="text-xl font-black text-amber-300">
+                        {calculatedTotalMinutes} <span className="text-xs font-normal text-amber-200">دقیقه</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300 font-medium">
+                        معادل {calculatedTotalHours} ساعت کارکرد
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -725,14 +1029,14 @@ export default function StudentStudyPortal({
                 {!isReadOnlyForUser && (
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-600 block">
-                      توضیحات یا مبحث مورد مطالعه (اختیاری):
+                      توضیحات، مبحث یا عنوان کتاب مطالعه آزاد (اختیاری):
                     </label>
                     <input
                       type="text"
-                      placeholder="مثلاً: مطالعه کتاب مکاسب - مباحثه اصول الکفایه..."
+                      placeholder="مثلاً: مطالعه کتاب مکاسب محرمه - مباحثه کفایه - مطالعه آزاد تفسیر المیزان جلد ۳..."
                       value={entryNoteInput}
                       onChange={(e) => setEntryNoteInput(e.target.value)}
-                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
                     />
                   </div>
                 )}
@@ -744,7 +1048,7 @@ export default function StudentStudyPortal({
                     <span>
                       {isReadOnlyForUser
                         ? '🔒 این دوره مطالعاتی بسته‌شده است و امکان ثبت جدید یا ویرایش وجود ندارد.'
-                        : 'با زدن دکمه ثبت، ساعت جدید وارد شده به کارکرد کل دوره افزوده شده و باکس پاک می‌شود.'}
+                        : 'با زدن دکمه ثبت، دقایق وارد شده به کارکرد کل دوره افزوده شده و فیلدها پاک می‌شوند.'}
                     </span>
                   </div>
 
@@ -856,61 +1160,108 @@ export default function StudentStudyPortal({
                   <thead>
                     <tr className="bg-slate-50 text-slate-700 font-black border-y border-slate-200 text-[11px]">
                       <th className="py-3 px-3">ردیف</th>
-                      <th className="py-3 px-3">تاریخ و ساعت دقیق ثبت</th>
-                      <th className="py-3 px-3 text-center">ساعت مطالعه</th>
-                      <th className="py-3 px-3 text-center">ساعت مباحثه</th>
-                      <th className="py-3 px-3 text-center">جمع این ثبت</th>
+                      <th className="py-3 px-3">تاریخ و ساعت دقیق</th>
+                      <th className="py-3 px-3">ریز دروس اصلی (مطالعه و مباحثه)</th>
+                      <th className="py-3 px-3 text-center">مطالعه آزاد</th>
+                      <th className="py-3 px-3 text-center">مجموع دروس اصلی</th>
+                      <th className="py-3 px-3 text-center bg-indigo-50/50 text-indigo-950 font-black">مجموع کل ثبت</th>
                       <th className="py-3 px-3">توضیحات</th>
                       {!isReadOnlyForUser && <th className="py-3 px-3 text-center">عملیات</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {dailyEntries.map((entry, idx) => (
-                      <tr key={entry.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3.5 px-3 text-slate-400 font-bold">{idx + 1}</td>
-                        <td className="py-3.5 px-3 text-slate-800 font-bold">
-                          <div className="flex items-center gap-2">
-                            <Clock size={14} className="text-indigo-600 shrink-0" />
-                            <span>{entry.entryDate || '---'}</span>
-                            <span className="text-[11px] text-slate-400 font-normal">({entry.entryTime || '---'})</span>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-3 text-center font-bold text-indigo-700 bg-indigo-50/20">
-                          {entry.studyHours > 0 ? `${entry.studyHours} س` : '۰'}
-                        </td>
-                        <td className="py-3.5 px-3 text-center font-bold text-emerald-700 bg-emerald-50/20">
-                          {entry.discussionHours > 0 ? `${entry.discussionHours} س` : '۰'}
-                        </td>
-                        <td className="py-3.5 px-3 text-center font-black text-slate-900 bg-slate-50">
-                          {entry.totalHours} ساعت
-                        </td>
-                        <td className="py-3.5 px-3 text-slate-600 text-[11px]">
-                          {entry.note || <span className="text-slate-300">بدون توضیح</span>}
-                        </td>
-                        {!isReadOnlyForUser && (
-                          <td className="py-3.5 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditEntry(entry)}
-                                title="ویرایش این ثبت"
-                                className="p-1.5 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-all cursor-pointer"
-                              >
-                                <Edit size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteEntry(entry)}
-                                title="حذف این ثبت"
-                                className="p-1.5 hover:bg-rose-100 text-rose-700 rounded-lg transition-all cursor-pointer"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                    {dailyEntries.map((entry, idx) => {
+                      const breakdown = entry.coursesBreakdown || [];
+                      const freeMin = entry.freeStudyMinutes || 0;
+                      let entryCoreStudy = 0;
+                      let entryCoreDisc = 0;
+
+                      if (breakdown.length > 0) {
+                        breakdown.forEach(c => {
+                          entryCoreStudy += c.studyMinutes || 0;
+                          entryCoreDisc += c.discussionMinutes || 0;
+                        });
+                      } else {
+                        entryCoreStudy = Math.round((entry.studyHours || 0) * 60);
+                        entryCoreDisc = Math.round((entry.discussionHours || 0) * 60);
+                      }
+
+                      const entryCoreTotal = entry.coreTotalMinutes ?? (entryCoreStudy + entryCoreDisc);
+                      const entryTotal = entry.totalMinutes ?? (entryCoreTotal + freeMin);
+
+                      return (
+                        <tr key={entry.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-3 text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="py-3.5 px-3 text-slate-800 font-bold whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              <Clock size={13} className="text-indigo-600 shrink-0" />
+                              <span>{entry.entryDate || '---'}</span>
+                              <span className="text-[10px] text-slate-400 font-normal">({entry.entryTime || '---'})</span>
                             </div>
                           </td>
-                        )}
-                      </tr>
-                    ))}
+                          <td className="py-3.5 px-3">
+                            {breakdown.length > 0 ? (
+                              <div className="space-y-1">
+                                {breakdown.filter(c => c.studyMinutes > 0 || c.discussionMinutes > 0).map(c => (
+                                  <div key={c.courseId} className="flex items-center gap-2 text-[11px]">
+                                    <span className="font-bold text-slate-700">{c.courseTitle}:</span>
+                                    <span className="text-indigo-700 font-bold">مطالعه: {c.studyMinutes}د</span>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="text-emerald-700 font-bold">مباحثه: {c.discussionMinutes}د</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-600">
+                                <span className="text-indigo-700 font-bold">مطالعه: {entryCoreStudy}د</span>
+                                <span className="text-slate-300 mx-1">•</span>
+                                <span className="text-emerald-700 font-bold">مباحثه: {entryCoreDisc}د</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-bold text-teal-700 bg-teal-50/30 whitespace-nowrap">
+                            {freeMin > 0 ? `${freeMin} دقیقه (${(freeMin / 60).toFixed(1)}س)` : <span className="text-slate-300 font-normal">۰</span>}
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-bold text-slate-800 whitespace-nowrap">
+                            {entryCoreTotal} دقیقه
+                            <span className="block text-[10px] text-slate-400 font-normal">
+                              ({(entryCoreTotal / 60).toFixed(1)} ساعت)
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-black text-indigo-900 bg-indigo-50/40 whitespace-nowrap">
+                            {entryTotal} دقیقه
+                            <span className="block text-[10px] text-indigo-600 font-bold">
+                              ({(entryTotal / 60).toFixed(1)} ساعت)
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-600 text-[11px] max-w-xs">
+                            {entry.note || <span className="text-slate-300">بدون توضیح</span>}
+                          </td>
+                          {!isReadOnlyForUser && (
+                            <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditEntry(entry)}
+                                  title="ویرایش این ثبت"
+                                  className="p-1.5 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-all cursor-pointer"
+                                >
+                                  <Edit size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteEntry(entry)}
+                                  title="حذف این ثبت"
+                                  className="p-1.5 hover:bg-rose-100 text-rose-700 rounded-lg transition-all cursor-pointer"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1209,12 +1560,12 @@ export default function StudentStudyPortal({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 space-y-5"
+              className="bg-white rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl border border-slate-100 space-y-5 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <Edit size={18} className="text-indigo-600" />
-                  <h3 className="text-sm font-black text-slate-900">ویرایش ثبت مطالعه و مباحثه</h3>
+                  <h3 className="text-sm font-black text-slate-900">ویرایش ثبت مطالعه و مباحثه (به دقیقه)</h3>
                 </div>
                 <button
                   type="button"
@@ -1230,27 +1581,50 @@ export default function StudentStudyPortal({
                   تاریخ و ساعت این ثبت: <b className="text-slate-800">{editingEntry.entryDate} ({editingEntry.entryTime})</b>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 block">ساعت مطالعه جدید:</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={editStudyHours}
-                    onChange={(e) => setEditStudyHours(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                {/* Edit inputs per main course */}
+                <div className="space-y-3">
+                  <span className="text-xs font-black text-slate-800 block">دقایق دروس اصلی:</span>
+                  {studentMainCourses.map(course => (
+                    <div key={course.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                      <span className="text-xs font-bold text-slate-900 block">{course.title}</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-bold block mb-1">دقیقه مطالعه:</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editCourseStudyMinutes[course.id] || ''}
+                            onChange={(e) => setEditCourseStudyMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
+                            placeholder="دقیقه مطالعه"
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 font-bold block mb-1">دقیقه مباحثه:</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editCourseDiscussionMinutes[course.id] || ''}
+                            onChange={(e) => setEditCourseDiscussionMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
+                            placeholder="دقیقه مباحثه"
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
+                {/* Edit Free Study */}
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 block">ساعت مباحثه جدید:</label>
+                  <label className="text-xs font-bold text-teal-900 block">دقیقه مطالعه آزاد:</label>
                   <input
                     type="number"
-                    step="0.1"
                     min="0"
-                    value={editDiscussionHours}
-                    onChange={(e) => setEditDiscussionHours(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={editFreeStudyMinutes}
+                    onChange={(e) => setEditFreeStudyMinutes(e.target.value)}
+                    placeholder="دقیقه مطالعه آزاد"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-teal-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-teal-500"
                   />
                 </div>
 
@@ -1287,6 +1661,13 @@ export default function StudentStudyPortal({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Free Study Guidelines & Rules Modal */}
+      <FreeStudyRulesModal
+        isOpen={showFreeRulesModal}
+        onClose={() => setShowFreeRulesModal(false)}
+        periodRuleOverride={currentPeriod?.freeStudyRuleText}
+      />
     </div>
   );
 }

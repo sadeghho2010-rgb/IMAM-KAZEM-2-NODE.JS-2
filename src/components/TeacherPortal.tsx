@@ -867,29 +867,29 @@ export default function TeacherPortal() {
       </AnimatePresence>
 
       {/* --- EXECUTIVE MANAGEMENT HEADER (طراحی مسئولین آموزش) --- */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-6 py-4 shadow-sm">
+      <header className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-indigo-900/50 px-6 py-4 shadow-xl">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-700 to-blue-600 text-white font-black flex items-center justify-center shadow-md shadow-indigo-200 text-xl">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-amber-500 text-white font-black flex items-center justify-center shadow-lg shadow-amber-500/20 text-xl border border-white/20">
               {currentTeacherObj?.fullName?.[0] || 'ا'}
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                <h1 className="text-base sm:text-lg font-black text-white leading-tight">
                   {currentTeacherObj?.fullName || currentUser?.name || 'استاد محترم'}
                 </h1>
-                <span className="text-[11px] px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
-                  پنل مدیریت اساتید پایه
+                <span className="text-[11px] px-2.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full font-bold">
+                  سامانه مدیریت و ارزیابی اساتید پایه
                 </span>
               </div>
-              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 font-medium">
+              <div className="flex items-center gap-2 mt-1 text-xs text-slate-300 font-medium">
                 {currentTeacherObj?.teacherCode && (
-                  <span className="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-700">
+                  <span className="font-mono font-bold bg-white/10 px-2 py-0.5 rounded text-amber-200 border border-white/10">
                     کد استاد: {currentTeacherObj.teacherCode}
                   </span>
                 )}
                 {currentTeacherObj?.phoneNumber && (
-                  <span className="font-mono">
+                  <span className="font-mono opacity-80">
                     همراه: {currentTeacherObj.phoneNumber}
                   </span>
                 )}
@@ -902,17 +902,17 @@ export default function TeacherPortal() {
             <button
               onClick={() => syncPortalData(true)}
               disabled={isSyncing || loadingState === 'loading'}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 border border-indigo-200"
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold disabled:opacity-50 border border-white/10 backdrop-blur-md"
               title="همگام‌سازی و بروزرسانی برنامه از سرور"
             >
-              <RotateCw size={16} className={cn("transition-transform", isSyncing && "animate-spin text-indigo-700")} />
+              <RotateCw size={16} className={cn("transition-transform", isSyncing && "animate-spin text-amber-400")} />
               <span>همگام‌سازی اطلاعات</span>
             </button>
 
             {/* Logout Button */}
             <button
               onClick={logout}
-              className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-rose-200"
+              className="px-3.5 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-rose-500/30"
               title="خروج از حساب کاربری"
             >
               <LogOut size={16} />
@@ -923,32 +923,31 @@ export default function TeacherPortal() {
 
         {/* --- EXECUTIVE SEGMENTED TABS --- */}
         <div className="max-w-7xl mx-auto mt-4">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit">
+          <div className="flex items-center gap-1.5 bg-white/10 p-1.5 rounded-2xl border border-white/10 text-xs font-bold w-fit backdrop-blur-md">
             <button
               onClick={() => setActiveTab('schedule')}
               className={cn(
                 "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer",
                 activeTab === 'schedule'
-                  ? "bg-white text-indigo-700 shadow-xs font-black"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
+                  : "text-slate-300 hover:text-white hover:bg-white/10"
               )}
             >
               <Calendar size={15} />
-              <span>برنامه درسی</span>
+              <span>برنامه هفتگی کلاس‌ها</span>
             </button>
 
             <button
               onClick={() => setActiveTab('counseling')}
               className={cn(
-                "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer relative",
+                "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer",
                 activeTab === 'counseling'
-                  ? "bg-emerald-600 text-white shadow-xs font-black"
-                  : "text-emerald-800 hover:bg-emerald-50"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
+                  : "text-slate-300 hover:text-white hover:bg-white/10"
               )}
             >
-              <BookCheck size={15} />
-              <span>ارزیابی مشاوره و نمرات</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute top-2 right-2 animate-pulse" />
+              <Award size={15} />
+              <span>ارزیابی و نمره‌دهی مشاوره</span>
             </button>
 
             <button
@@ -956,12 +955,12 @@ export default function TeacherPortal() {
               className={cn(
                 "px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer",
                 activeTab === 'calendar'
-                  ? "bg-white text-indigo-700 shadow-xs font-black"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20"
+                  : "text-slate-300 hover:text-white hover:bg-white/10"
               )}
             >
               <CalendarDays size={15} />
-              <span>تقویم مدرسه</span>
+              <span>تقویم آموزشی و تعطیلات</span>
             </button>
           </div>
         </div>

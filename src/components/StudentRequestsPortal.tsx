@@ -147,6 +147,7 @@ export default function StudentRequestsPortal() {
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
   const [showLeaveRequestModal, setShowLeaveRequestModal] = useState(false);
   const [selectedRequestForReview, setSelectedRequestForReview] = useState<StudentRequest | null>(null);
+  const [selectedRequestDetail, setSelectedRequestDetail] = useState<StudentRequest | null>(null);
   const [showSuperAdminSettingsModal, setShowSuperAdminSettingsModal] = useState(false);
   const [showOfficerToggleStatusModal, setShowOfficerToggleStatusModal] = useState(false);
   const [showSubjectSettingsModal, setShowSubjectSettingsModal] = useState(false);
@@ -718,6 +719,9 @@ export default function StudentRequestsPortal() {
     try {
       await localDb.saveDoc('student_requests', updated.id, updated);
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+      if (selectedRequestDetail?.id === updated.id) {
+        setSelectedRequestDetail(updated);
+      }
       setSelectedRequestForReview(null);
       setOfficialReply('');
       setRejectionReason('');
@@ -768,6 +772,9 @@ export default function StudentRequestsPortal() {
 
       await localDb.saveDoc('student_requests', updated.id, updated);
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+      if (selectedRequestDetail?.id === updated.id) {
+        setSelectedRequestDetail(updated);
+      }
       setFollowupDrafts(prev => ({ ...prev, [req.id]: '' }));
       triggerUpdateEvent();
     } catch (err: any) {
@@ -805,6 +812,9 @@ export default function StudentRequestsPortal() {
 
       await localDb.saveDoc('student_requests', updated.id, updated);
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
+      if (selectedRequestDetail?.id === req.id) {
+        setSelectedRequestDetail(updated);
+      }
       if (selectedRequestForReview?.id === req.id) {
         setSelectedRequestForReview(null);
       }
@@ -1221,294 +1231,398 @@ export default function StudentRequestsPortal() {
           sortedFilteredRequests.map((req) => {
             const isUnreadForOfficer = !isStudentUser && (req.status === 'pending' || req.isReadByOfficer === false);
             const isUnreadForStudent = isStudentUser && req.isReadByStudent === false;
+            const messageCount = Array.isArray(req.messages) ? req.messages.length : 0;
 
             return (
               <div
                 key={req.id}
                 onClick={() => {
                   if (isStudentUser) handleMarkAsReadByStudent(req);
+                  setSelectedRequestDetail(req);
+                  setReplyStatus(req.status);
+                  setOfficialReply(req.officialReply || '');
+                  setRejectionReason(req.rejectionReason || '');
+                  if (req.isLeaveRequest && req.leaveDetails) {
+                    const initMap: Record<string, 'approved' | 'rejected'> = {};
+                    req.leaveDetails.selectedClasses.forEach(c => {
+                      initMap[`${c.programId}_${c.dateShamsi}`] = c.status === 'rejected' ? 'rejected' : 'approved';
+                    });
+                    setLeaveClassStatuses(initMap);
+                  }
                 }}
                 className={cn(
-                  "bg-white rounded-2xl p-5 border transition-all shadow-xs space-y-4 relative",
-                  isUnreadForOfficer ? "border-amber-300 bg-amber-50/15 ring-1 ring-amber-200" :
-                  isUnreadForStudent ? "border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-200" :
-                  req.status === 'resolved' ? "border-emerald-200/80" :
-                  req.status === 'rejected' ? "border-rose-200/80" : "border-slate-200/80"
+                  "bg-white rounded-2xl p-4 border transition-all shadow-2xs hover:shadow-md cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 group relative overflow-hidden",
+                  isUnreadForOfficer ? "border-amber-300 bg-amber-50/20 ring-1 ring-amber-300" :
+                  isUnreadForStudent ? "border-emerald-300 bg-emerald-50/20 ring-1 ring-emerald-300" :
+                  req.isTerminated ? "border-slate-200 bg-slate-50/60" :
+                  req.status === 'resolved' ? "border-emerald-200/90 hover:border-emerald-300" :
+                  req.status === 'rejected' ? "border-rose-200/90 hover:border-rose-300" : "border-slate-200 hover:border-indigo-300"
                 )}
               >
-                {/* Header line */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={cn(
-                      "px-2.5 py-1 rounded-lg text-xs font-bold border",
-                      req.isLeaveRequest ? "bg-amber-100 text-amber-900 border-amber-300" : "bg-indigo-50 text-indigo-700 border-indigo-100"
-                    )}>
-                      {req.category}
-                    </span>
+                {/* Right: Student Avatar/Name, Category & Title */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs border",
+                    req.isLeaveRequest 
+                      ? "bg-amber-100 text-amber-900 border-amber-300" 
+                      : "bg-indigo-100 text-indigo-900 border-indigo-200"
+                  )}>
+                    {req.studentName?.[0] || 'ط'}
+                  </div>
 
-                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
-                      {req.unit === 'education' ? 'آموزش' : req.unit === 'finance' ? 'مالی' : 'فرهنگی/رفاهی'}
-                    </span>
-
-                    <h3 className="text-sm font-black text-slate-900 mr-1">{req.title}</h3>
-
-                    {isUnreadForOfficer && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
-                        جدید 🔥
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <span className="font-black text-slate-900 truncate">
+                        {req.studentName}
                       </span>
-                    )}
 
-                    {isUnreadForStudent && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white animate-bounce">
-                        پاسخ جدید 📩
+                      {req.grade && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-bold">
+                          {req.grade}
+                        </span>
+                      )}
+
+                      <span className={cn(
+                        "text-[10px] px-2 py-0.5 rounded-md font-bold border",
+                        req.isLeaveRequest 
+                          ? "bg-amber-50 text-amber-900 border-amber-200" 
+                          : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                      )}>
+                        {req.category}
+                      </span>
+
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-medium">
+                        {req.unit === 'education' ? 'آموزش' : req.unit === 'finance' ? 'مالی' : 'فرهنگی/رفاهی'}
+                      </span>
+
+                      {isUnreadForOfficer && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                          جدید 🔥
+                        </span>
+                      )}
+
+                      {isUnreadForStudent && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white animate-bounce">
+                          پاسخ جدید 📩
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">
+                      {req.title}
+                    </h4>
+                  </div>
+                </div>
+
+                {/* Left: Status Badge, Date, Message Count & Action */}
+                <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                  <div className="flex items-center gap-2">
+                    {getStatusBadge(req.status, req.isTerminated)}
+
+                    {messageCount > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-700 flex items-center gap-1 font-mono border border-slate-200/80" title="تعداد پیام‌های ثبت‌شده">
+                        <MessageSquare size={12} className="text-indigo-600" />
+                        <span>{messageCount}</span>
                       </span>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {getStatusBadge(req.status, req.isTerminated)}
                     <span className="text-[11px] text-slate-400 font-mono">
                       {new Date(req.createdAt).toLocaleDateString('fa-IR')}
                     </span>
-                  </div>
-                </div>
-
-                {/* Body Description */}
-                <div className="text-xs text-slate-700 leading-relaxed bg-slate-50/70 p-3.5 rounded-xl border border-slate-100">
-                  <span className="block font-bold text-slate-900 mb-1 text-[11px]">متن درخواست طلبه:</span>
-                  <p className="whitespace-pre-line">{req.description}</p>
-                </div>
-
-                {/* LEAVE REQUEST DETAILS BREAKDOWN (اگر درخواست مرخصی باشد) */}
-                {req.isLeaveRequest && req.leaveDetails && (
-                  <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl space-y-3">
-                    <div className="flex items-center justify-between text-amber-900 font-black text-xs border-b border-amber-200/80 pb-2">
-                      <span className="flex items-center gap-1.5">
-                        <CalendarCheck size={16} className="text-amber-700" />
-                        <span>جلسات کلاس انتخاب‌شده جهت مرخصی (بازه: {req.leaveDetails.weekStartShamsi} تا {req.leaveDetails.weekEndShamsi}):</span>
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                      {req.leaveDetails.selectedClasses.map((cls, idx) => (
-                        <div
-                          key={idx}
-                          className={cn(
-                            "p-2.5 rounded-xl border text-xs flex flex-col justify-between gap-1.5",
-                            cls.status === 'approved' ? "bg-emerald-50 border-emerald-300 text-emerald-950" :
-                            cls.status === 'rejected' ? "bg-rose-50 border-rose-300 text-rose-950" :
-                            "bg-white border-amber-300 text-slate-800"
-                          )}
-                        >
-                          <div className="font-bold flex items-center justify-between">
-                            <span>{cls.dayOfWeek} ({cls.dateShamsi})</span>
-                            <span className={cn(
-                              "text-[10px] font-black px-1.5 py-0.5 rounded",
-                              cls.status === 'approved' ? "bg-emerald-200 text-emerald-900" :
-                              cls.status === 'rejected' ? "bg-rose-200 text-rose-900" :
-                              "bg-amber-100 text-amber-900"
-                            )}>
-                              {cls.status === 'approved' ? '🟢 مرخصی موجه' : cls.status === 'rejected' ? '🔴 رد (غیرموجه)' : '🟡 در انتظار بررسی'}
-                            </span>
-                          </div>
-                          <div className="text-[11px] opacity-90 font-medium">
-                            {cls.programTitle} {cls.teacherName ? `(${cls.teacherName})` : ''}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* OFFICIAL REPLY AREA */}
-                {(req.officialReply || req.rejectionReason) && (
-                  <div className="p-4 bg-emerald-50/95 border-2 border-emerald-300 rounded-2xl text-xs space-y-2 shadow-xs">
-                    <div className="flex items-center justify-between text-emerald-950 font-black text-xs border-b border-emerald-200 pb-2">
-                      <span className="flex items-center gap-2">
-                        <MessageSquare size={16} className="text-emerald-700 shrink-0" />
-                        <span>پاسخ رسمی {req.repliedByName || (req.unit === 'education' ? 'واحد آموزش' : req.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی')}:</span>
-                      </span>
-                      {req.repliedAt && (
-                        <span className="font-mono text-[11px] text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded-md font-bold">
-                          {new Date(req.repliedAt).toLocaleDateString('fa-IR')}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-emerald-950 leading-relaxed font-bold text-xs whitespace-pre-line">
-                      {req.officialReply || req.rejectionReason}
-                    </p>
-                  </div>
-                )}
-
-                {/* CONVERSATION THREAD (پیام‌های متقابل بین طلبه و مسئول) */}
-                {Array.isArray(req.messages) && req.messages.length > 0 && (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                    <span className="font-black text-xs text-slate-800 flex items-center gap-1.5 border-b border-slate-200 pb-2">
-                      <MessageSquare size={15} className="text-indigo-600" />
-                      <span>تاریخچه گفتگو و پیام‌های متقابل ({req.messages.length} پیام):</span>
-                    </span>
-
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {req.messages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={cn(
-                            "p-3 rounded-2xl text-xs space-y-1 max-w-[88%]",
-                            msg.senderRole === 'student'
-                              ? "bg-indigo-50 border border-indigo-200 text-indigo-950 mr-auto"
-                              : "bg-emerald-50 border border-emerald-200 text-emerald-950 ml-auto"
-                          )}
-                        >
-                          <div className="flex items-center justify-between font-bold text-[11px] opacity-80 border-b border-black/5 pb-1">
-                            <span>{msg.senderName} ({msg.senderRole === 'student' ? 'طلبه' : 'مسئول مربوطه'})</span>
-                            <span className="font-mono text-[10px]">
-                              {new Date(msg.createdAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} - {new Date(msg.createdAt).toLocaleDateString('fa-IR')}
-                            </span>
-                          </div>
-                          <p className="whitespace-pre-line leading-relaxed font-medium">{msg.content}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* STUDENT CONVERSATIONAL REPLY FIELD (اگر پرونده مختومه نشده باشد) */}
-                {isStudentUser && (
-                  <div className="pt-2">
-                    {!req.isTerminated ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={followupDrafts[req.id] || ''}
-                          onChange={(e) => setFollowupDrafts(prev => ({ ...prev, [req.id]: e.target.value }))}
-                          placeholder="نگارش و ارسال پاسخ جدید به مسئول مربوطه..."
-                          className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-500 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleSendFollowup(req)}
-                          disabled={isSendingFollowup || !followupDrafts[req.id]?.trim()}
-                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
-                        >
-                          <Send size={14} />
-                          <span>ارسال پاسخ</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] font-bold flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-amber-700 shrink-0" />
-                        <span>⚖️ این پرونده توسط مسئول مربوطه ختم رسیدگی شده است. جهت تقاضای جدید از دکمه «ثبت درخواست جدید» استفاده فرمایید.</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Footer Bar: Student details & Officer Actions */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 text-[11px] text-slate-500 border-t border-slate-100/80">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span>
-                      متقاضی: <strong className="text-slate-800">{req.studentName}</strong> {req.grade ? `(${req.grade})` : ''}
-                    </span>
-                    <span>
-                      اولویت: <strong className={cn(
-                        req.priority === 'urgent' ? "text-rose-600" :
-                        req.priority === 'high' ? "text-amber-600" : "text-slate-700"
-                      )}>
-                        {req.priority === 'urgent' ? 'فوری و ضروری' : req.priority === 'high' ? 'بالا' : 'عادی'}
-                      </strong>
+                    <span className="px-2.5 py-1.5 rounded-xl bg-slate-100 group-hover:bg-indigo-600 group-hover:text-white text-slate-600 transition-all text-xs font-bold flex items-center gap-1">
+                      <span>مشاهده و گفتگو</span>
+                      <ChevronLeft size={14} />
                     </span>
                   </div>
-
-                  {/* Officer Actions */}
-                  {!isStudentUser && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickStatusChange(req, 'resolved')}
-                        className={cn(
-                          "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer",
-                          req.status === 'resolved' 
-                            ? "bg-emerald-600 text-white shadow-xs" 
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                        )}
-                        title="تغییر وضعیت به انجام شد"
-                      >
-                        <Check size={12} />
-                        <span>انجام شد</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleQuickStatusChange(req, 'in_progress')}
-                        className={cn(
-                          "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer",
-                          req.status === 'in_progress' 
-                            ? "bg-blue-600 text-white shadow-xs" 
-                            : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
-                        )}
-                        title="تغییر وضعیت به در حال بررسی"
-                      >
-                        <Clock size={12} />
-                        <span>در حال بررسی</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleQuickStatusChange(req, 'rejected')}
-                        className={cn(
-                          "px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer",
-                          req.status === 'rejected' 
-                            ? "bg-rose-600 text-white shadow-xs" 
-                            : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
-                        )}
-                        title="تغییر وضعیت به رد درخواست"
-                      >
-                        <X size={12} />
-                        <span>رد درخواست</span>
-                      </button>
-
-                      {/* Open Full Review & Reply Modal */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedRequestForReview(req);
-                          setReplyStatus(req.status);
-                          setOfficialReply(req.officialReply || '');
-                          setRejectionReason(req.rejectionReason || '');
-                          if (req.isLeaveRequest && req.leaveDetails) {
-                            const initMap: Record<string, 'approved' | 'rejected'> = {};
-                            req.leaveDetails.selectedClasses.forEach(c => {
-                              initMap[`${c.programId}_${c.dateShamsi}`] = c.status === 'rejected' ? 'rejected' : 'approved';
-                            });
-                            setLeaveClassStatuses(initMap);
-                          }
-                        }}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                      >
-                        <Send size={12} />
-                        <span>رسیدگی و پاسخ رسمی</span>
-                      </button>
-
-                      {/* Terminate Request Button (ختم رسیدگی) */}
-                      {!req.isTerminated && (
-                        <button
-                          type="button"
-                          onClick={() => handleTerminateRequest(req)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                          title="ختم رسیدگی و بستن پرونده"
-                        >
-                          <ShieldCheck size={12} />
-                          <span>ختم رسیدگی</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* ======================= Modal: Full Request Detail & Conversation Thread ======================= */}
+      <AnimatePresence>
+        {selectedRequestDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm dir-rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl w-full max-w-3xl border border-slate-200 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+            >
+              {/* Modal Top Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center font-black text-amber-300 text-sm shrink-0">
+                    {selectedRequestDetail.studentName?.[0] || 'ط'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm sm:text-base font-black text-white truncate">
+                        {selectedRequestDetail.title}
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                        {selectedRequestDetail.category}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-300 mt-0.5">
+                      <span>متقاضی: <strong className="text-white">{selectedRequestDetail.studentName}</strong></span>
+                      {selectedRequestDetail.grade && <span>({selectedRequestDetail.grade})</span>}
+                      <span>•</span>
+                      <span className="font-mono text-[11px]">{new Date(selectedRequestDetail.createdAt).toLocaleDateString('fa-IR')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {getStatusBadge(selectedRequestDetail.status, selectedRequestDetail.isTerminated)}
+                  <button
+                    onClick={() => setSelectedRequestDetail(null)}
+                    className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Scrollable Body */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                {/* 1. Original Request Details Card */}
+                <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between text-xs border-b border-slate-200/80 pb-2">
+                    <span className="font-black text-slate-900 flex items-center gap-1.5">
+                      <Inbox size={15} className="text-indigo-600" />
+                      <span>متن اولیه درخواست:</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      ارسال به: {selectedRequestDetail.unit === 'education' ? 'واحد آموزش' : selectedRequestDetail.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی/رفاهی'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-800 leading-relaxed font-medium whitespace-pre-line">
+                    {selectedRequestDetail.description}
+                  </p>
+                </div>
+
+                {/* 2. Leave Request Class Table Breakdown (If leave request) */}
+                {selectedRequestDetail.isLeaveRequest && selectedRequestDetail.leaveDetails && (
+                  <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between font-black text-xs text-amber-950 border-b border-amber-200/80 pb-2">
+                      <span className="flex items-center gap-1.5">
+                        <CalendarCheck size={16} className="text-amber-700" />
+                        <span>جدول کلاس‌های انتخابی جهت مرخصی ({selectedRequestDetail.leaveDetails.weekStartShamsi} تا {selectedRequestDetail.leaveDetails.weekEndShamsi}):</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {selectedRequestDetail.leaveDetails.selectedClasses.map((cls, idx) => {
+                        const key = `${cls.programId}_${cls.dateShamsi}`;
+                        const currentSt = leaveClassStatuses[key] || cls.status;
+
+                        return (
+                          <div key={idx} className="p-3 bg-white border border-amber-200 rounded-xl flex items-center justify-between text-xs gap-2">
+                            <div>
+                              <span className="font-bold text-slate-900 block">{cls.dayOfWeek} ({cls.dateShamsi})</span>
+                              <span className="text-[11px] text-slate-600 font-medium">{cls.programTitle}</span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!isStudentUser ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'approved' }))}
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                                      currentSt === 'approved' ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    )}
+                                  >
+                                    موافق
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'rejected' }))}
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                                      currentSt === 'rejected' ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700 border border-rose-200"
+                                    )}
+                                  >
+                                    مخالف
+                                  </button>
+                                </>
+                              ) : (
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-black",
+                                  cls.status === 'approved' ? "bg-emerald-200 text-emerald-900" :
+                                  cls.status === 'rejected' ? "bg-rose-200 text-rose-900" : "bg-amber-100 text-amber-900"
+                                )}>
+                                  {cls.status === 'approved' ? '🟢 موجه' : cls.status === 'rejected' ? '🔴 غیرموجه' : '🟡 در انتظار'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Single Consolidated Conversation Thread (تاریخچه یکپارچه گفتگو) */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between text-xs font-black text-slate-800 border-b border-slate-200 pb-2">
+                    <span className="flex items-center gap-1.5">
+                      <MessageSquare size={16} className="text-indigo-600" />
+                      <span>تاریخچه گفتگو و پیام‌های متقابل</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {selectedRequestDetail.messages?.length || 0} پیام ثبت‌شده
+                    </span>
+                  </div>
+
+                  <div className="space-y-3 max-h-80 overflow-y-auto p-1">
+                    {Array.isArray(selectedRequestDetail.messages) && selectedRequestDetail.messages.length > 0 ? (
+                      selectedRequestDetail.messages.map((msg) => {
+                        const isStudentMsg = msg.senderRole === 'student';
+                        return (
+                          <div
+                            key={msg.id}
+                            className={cn(
+                              "p-3.5 rounded-2xl text-xs space-y-1.5 max-w-[88%] shadow-2xs border",
+                              isStudentMsg
+                                ? "bg-indigo-50/90 border-indigo-200/90 text-indigo-950 mr-auto"
+                                : "bg-emerald-50/90 border-emerald-200/90 text-emerald-950 ml-auto"
+                            )}
+                          >
+                            <div className="flex items-center justify-between font-bold text-[11px] opacity-80 border-b border-black/5 pb-1">
+                              <span className="flex items-center gap-1">
+                                <strong>{msg.senderName}</strong>
+                                <span className="text-[10px] opacity-75">({isStudentMsg ? 'طلبه' : 'مسئول'})</span>
+                              </span>
+                              <span className="font-mono text-[10px]">
+                                {new Date(msg.createdAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} - {new Date(msg.createdAt).toLocaleDateString('fa-IR')}
+                              </span>
+                            </div>
+                            <p className="whitespace-pre-line leading-relaxed font-medium text-slate-800">
+                              {msg.content}
+                            </p>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-4 text-center text-xs text-slate-400 italic bg-slate-50 rounded-2xl">
+                        هنوز پاسخی در این رشته پیام ارسال نشده است.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. Official Response / Action Controls */}
+                {!isStudentUser ? (
+                  /* Officer Review & Action Panel */
+                  <form onSubmit={(e) => handleSaveOfficerReply(e)} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3.5 text-xs pt-3">
+                    <span className="font-black text-slate-900 block border-b border-slate-200 pb-2">
+                      ثبت پاسخ رسمی و تعیین وضعیت توسط مسئول:
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">تغییر وضعیت درخواست:</label>
+                        <select
+                          value={replyStatus}
+                          onChange={(e) => setReplyStatus(e.target.value as StudentRequestStatus)}
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-indigo-500"
+                        >
+                          <option value="in_progress">🔄 در حال بررسی و اقدام</option>
+                          <option value="resolved">✅ تکمیل و انجام شد</option>
+                          <option value="rejected">❌ رد درخواست</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-end gap-2">
+                        {!selectedRequestDetail.isTerminated && (
+                          <button
+                            type="button"
+                            onClick={() => handleTerminateRequest(selectedRequestDetail)}
+                            className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            <ShieldCheck size={15} />
+                            <span>ختم رسیدگی و بستن پرونده</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">متن پاسخ رسمی / یادداشت مسئول:</label>
+                      <textarea
+                        rows={3}
+                        value={officialReply}
+                        onChange={(e) => setOfficialReply(e.target.value)}
+                        placeholder="متن پاسخ رسمی، دستور یا توضیحات برای اطلاع طلبه را بنویسید..."
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:border-indigo-500 outline-none resize-none leading-relaxed"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRequestDetail(null)}
+                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 cursor-pointer"
+                      >
+                        بستن
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isReplying}
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-indigo-600/20 cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Send size={15} />
+                        <span>{isReplying ? 'در حال ثبت...' : 'ارسال پاسخ و بروزرسانی پرونده'}</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  /* Student Followup Messaging Area */
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    {!selectedRequestDetail.isTerminated ? (
+                      <div className="space-y-2">
+                        <label className="block font-bold text-xs text-slate-800">
+                          ارسال پیام و پاسخ جدید در ادامه گفتگو:
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={followupDrafts[selectedRequestDetail.id] || ''}
+                            onChange={(e) => setFollowupDrafts(prev => ({ ...prev, [selectedRequestDetail.id]: e.target.value }))}
+                            placeholder="پیام یا توضیحات خود را بنویسید..."
+                            className="flex-1 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-indigo-500 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSendFollowup(selectedRequestDetail)}
+                            disabled={isSendingFollowup || !followupDrafts[selectedRequestDetail.id]?.trim()}
+                            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-indigo-600/20"
+                          >
+                            <Send size={14} />
+                            <span>ارسال پیام</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-amber-700 shrink-0" />
+                        <span>⚖️ این پرونده توسط مسئول مربوطه مختومه اعلام گردیده است.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ======================= Modal: New Standard Request ======================= */}
       <AnimatePresence>

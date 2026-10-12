@@ -35,7 +35,8 @@ export default function StudyEntryModal({
   const [endDate, setEndDate] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
   const [isClosed, setIsClosed] = useState(false);
-  const [mandatoryHours, setMandatoryHours] = useState<number>(0);
+  const [mandatoryHours, setMandatoryHours] = useState<number>(1200); // کل موظفی به دقیقه
+  const [mandatoryCoreMinutes, setMandatoryCoreMinutes] = useState<number>(900); // حداقل موظفی دروس اصلی به دقیقه
 
   // Target grades for the period (default: all 4 grades)
   const [targetGrades, setTargetGrades] = useState<string[]>(ALL_SYSTEM_GRADES);
@@ -96,7 +97,9 @@ export default function StudyEntryModal({
         setEndDate(editingPeriod.endDate || '');
         setDeadlineDate(editingPeriod.deadlineDate || '');
         setIsClosed(editingPeriod.isClosed || false);
-        setMandatoryHours(Math.round((editingPeriod.mandatoryHours || 0) * 60));
+        const totMins = editingPeriod.mandatoryMinutes ? editingPeriod.mandatoryMinutes : Math.round((editingPeriod.mandatoryHours || 0) * 60);
+        setMandatoryHours(totMins);
+        setMandatoryCoreMinutes(editingPeriod.mandatoryCoreMinutes ?? Math.round(totMins * 0.75));
         setTargetGrades(editingPeriod.targetGrades && editingPeriod.targetGrades.length > 0 ? editingPeriod.targetGrades : ALL_SYSTEM_GRADES);
         setWarningRule(editingPeriod.warningRule || 'none');
 
@@ -119,7 +122,8 @@ export default function StudyEntryModal({
         setEndDate('');
         setDeadlineDate('');
         setIsClosed(false);
-        setMandatoryHours(0);
+        setMandatoryHours(1200);
+        setMandatoryCoreMinutes(900);
         setTargetGrades(ALL_SYSTEM_GRADES);
         setWarningRule('none');
         setEntryStudyValues({});
@@ -626,6 +630,8 @@ export default function StudyEntryModal({
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
+          mandatoryMinutes: finalMandatoryHours,
+          mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
           targetGrades: finalTargetGrades,
           warningRule: warningRule,
           updatedAt: new Date().toISOString()
@@ -673,6 +679,8 @@ export default function StudyEntryModal({
           deadlineDate: deadlineDate || '',
           isClosed: isClosed || false,
           mandatoryHours: mandatoryInHours,
+          mandatoryMinutes: finalMandatoryHours,
+          mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
           targetGrades: finalTargetGrades,
           warningRule: warningRule,
           mentorId: currentMentorId,
@@ -854,9 +862,9 @@ export default function StudyEntryModal({
                   onChange={(date) => setEndDate(date?.toDate?.().toISOString() || '')}
                 />
               </div>
-              <div className="md:col-span-2 space-y-1.5">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-600">میزان موظفی دوره (برحسب دقیقه)</label>
+                  <label className="text-xs font-black text-slate-700">موظفی کل دوره (دقیقه)</label>
                   <span className="text-[11px] font-bold text-indigo-600">
                     {mandatoryHours > 0 ? `معادل ${(mandatoryHours / 60).toFixed(1)} ساعت` : ''}
                   </span>
@@ -868,6 +876,31 @@ export default function StudyEntryModal({
                   value={mandatoryHours || ''}
                   onChange={(e) => setMandatoryHours(parseFloat(e.target.value) || 0)}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-700">حداقل موظفی دروس اصلی (دقیقه)</label>
+                  <span className="text-[11px] font-bold text-amber-600">
+                    {mandatoryCoreMinutes > 0 ? `معادل ${(mandatoryCoreMinutes / 60).toFixed(1)} ساعت` : ''}
+                  </span>
+                </div>
+                <input 
+                  type="number"
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-amber-500 transition-all font-bold text-slate-800 text-sm"
+                  placeholder="مثلاً 900 دقیقه (15 ساعت)"
+                  value={mandatoryCoreMinutes || ''}
+                  onChange={(e) => setMandatoryCoreMinutes(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="md:col-span-2 p-3 bg-amber-50/70 border border-amber-200 rounded-2xl text-[11px] text-amber-950 font-medium flex items-center justify-between flex-wrap gap-2">
+                <span>
+                  <strong>قاعده حداقل‌های موظفی:</strong> این مقادیر صرفاً «حداقل کفایت» هستند و <b>هیچ سقفی برای مطالعه دروس اصلی یا آزاد وجود ندارد</b>.
+                </span>
+                <span className="text-slate-600">
+                  طلبه می‌تواند هر میزان مطالعه آزاد یا اصلی ثبت کند؛ طلابی که هر دو حداقل را رعایت کرده و کارکرد بالاتری داشته باشند در آمار با برچسب <b>«شایسته تشویق»</b> مشخص خواهند شد.
+                </span>
               </div>
 
               <div className="space-y-1.5">

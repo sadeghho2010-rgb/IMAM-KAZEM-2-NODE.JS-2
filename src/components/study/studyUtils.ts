@@ -1,4 +1,4 @@
-import { Student, StudyPeriod, PeriodicStudyLog } from '../../types';
+import { Student, StudyPeriod, PeriodicStudyLog, CourseStudyDetail } from '../../types';
 
 export interface LogMetric {
   studyHours: number;
@@ -7,6 +7,11 @@ export interface LogMetric {
   studyMinutes: number;
   discussionMinutes: number;
   totalMinutes: number;
+  coreStudyMinutes: number;
+  coreDiscussionMinutes: number;
+  coreTotalMinutes: number;
+  freeStudyMinutes: number;
+  coursesBreakdown: CourseStudyDetail[];
 }
 
 export function isPeriodClosed(period?: StudyPeriod | null): boolean {
@@ -60,7 +65,12 @@ export function getLogMetrics(log?: PeriodicStudyLog): LogMetric {
       totalHours: 0,
       studyMinutes: 0,
       discussionMinutes: 0,
-      totalMinutes: 0
+      totalMinutes: 0,
+      coreStudyMinutes: 0,
+      coreDiscussionMinutes: 0,
+      coreTotalMinutes: 0,
+      freeStudyMinutes: 0,
+      coursesBreakdown: []
     };
   }
 
@@ -68,13 +78,189 @@ export function getLogMetrics(log?: PeriodicStudyLog): LogMetric {
   const dHours = log.discussionHours !== undefined ? (Number(log.discussionHours) || 0) : 0;
   const tHours = (log.hours !== undefined && log.hours !== null) ? Number(log.hours) || (sHours + dHours) : (sHours + dHours);
 
+  const studyMin = Math.round(sHours * 60);
+  const discMin = Math.round(dHours * 60);
+  const totalMin = log.totalMinutes !== undefined ? log.totalMinutes : Math.round(tHours * 60);
+
+  const freeStudyMin = log.freeStudyMinutes !== undefined ? log.freeStudyMinutes : 0;
+  const coreStudyMin = log.coreStudyMinutes !== undefined ? log.coreStudyMinutes : studyMin;
+  const coreDiscMin = log.coreDiscussionMinutes !== undefined ? log.coreDiscussionMinutes : discMin;
+  const coreTotalMin = log.coreTotalMinutes !== undefined ? log.coreTotalMinutes : (coreStudyMin + coreDiscMin);
+
   return {
     studyHours: sHours,
     discussionHours: dHours,
     totalHours: tHours,
-    studyMinutes: Math.round(sHours * 60),
-    discussionMinutes: Math.round(dHours * 60),
-    totalMinutes: Math.round(tHours * 60)
+    studyMinutes: studyMin,
+    discussionMinutes: discMin,
+    totalMinutes: totalMin,
+    coreStudyMinutes: coreStudyMin,
+    coreDiscussionMinutes: coreDiscMin,
+    coreTotalMinutes: coreTotalMin,
+    freeStudyMinutes: freeStudyMin,
+    coursesBreakdown: log.coursesBreakdown || []
+  };
+}
+
+export interface StudyWarningDetail {
+  isExempt: boolean;
+  hasWarning: boolean;
+  isCoreDeficit: boolean;
+  isTotalDeficit: boolean;
+  isCommended: boolean; // طلابی که هم حداقل درس اصلی و هم کل موظفی را رد کرده و عملکرد مازاد/تشویقی دارند
+  warningType: 'none' | 'deficit_both' | 'deficit_core_only' | 'deficit_total_only' | 'exempt' | 'commended';
+  statusLabel: string;
+  shortBadge: string;
+  badgeClass: string;
+  coreDeficitMinutes: number;
+  totalDeficitMinutes: number;
+  coreSurplusMinutes: number;
+  totalSurplusMinutes: number;
+  mandatoryTotalMinutes: number;
+  mandatoryCoreMinutes: number;
+}
+
+export function getStudyWarningStatus(
+  period: StudyPeriod,
+  log?: PeriodicStudyLog,
+  student?: Student
+): StudyWarningDetail {
+  const exempt = isStudentExempt(period, student, log);
+  const mandatoryTotal = period.mandatoryMinutes || Math.round((period.mandatoryHours || 0) * 60);
+  const mandatoryCore = period.mandatoryCoreMinutes ?? Math.round(mandatoryTotal * 0.75);
+
+  if (exempt) {
+    return {
+      isExempt: true,
+      hasWarning: false,
+      isCoreDeficit: false,
+      isTotalDeficit: false,
+      isCommended: false,
+      warningType: 'exempt',
+      statusLabel: 'معاف از موظفی',
+      shortBadge: '🛡️ معاف',
+      badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
+      coreDeficitMinutes: 0,
+      totalDeficitMinutes: 0,
+      coreSurplusMinutes: 0,
+      totalSurplusMinutes: 0,
+      mandatoryTotalMinutes: mandatoryTotal,
+      mandatoryCoreMinutes: mandatoryCore
+    };
+  }
+
+  const metrics = getLogMetrics(log);
+  const coreMins = metrics.coreTotalMinutes;
+  const totalMins = metrics.totalMinutes;
+
+  const isCoreDeficit = coreMins < mandatoryCore;
+  const isTotalDeficit = totalMins < mandatoryTotal;
+  const coreDeficit = Math.max(0, mandatoryCore - coreMins);
+  const totalDeficit = Math.max(0, mandatoryTotal - totalMins);
+
+  const coreSurplus = Math.max(0, coreMins - mandatoryCore);
+  const totalSurplus = Math.max(0, totalMins - mandatoryTotal);
+
+  if (isCoreDeficit && isTotalDeficit) {
+    return {
+      isExempt: false,
+      hasWarning: true,
+      isCoreDeficit: true,
+      isTotalDeficit: true,
+      isCommended: false,
+      warningType: 'deficit_both',
+      statusLabel: `اخطار دوگانه (کسری دروس اصلی ${coreDeficit}د و کسری کل ${totalDeficit}د)`,
+      shortBadge: '🔴⚠️ اخطار دوگانه',
+      badgeClass: 'bg-rose-100 text-rose-900 border-rose-300 font-black',
+      coreDeficitMinutes: coreDeficit,
+      totalDeficitMinutes: totalDeficit,
+      coreSurplusMinutes: 0,
+      totalSurplusMinutes: 0,
+      mandatoryTotalMinutes: mandatoryTotal,
+      mandatoryCoreMinutes: mandatoryCore
+    };
+  }
+
+  if (isCoreDeficit) {
+    return {
+      isExempt: false,
+      hasWarning: true,
+      isCoreDeficit: true,
+      isTotalDeficit: false,
+      isCommended: false,
+      warningType: 'deficit_core_only',
+      statusLabel: `اخطار کسری دروس اصلی (${coreDeficit} دقیقه کسری دروس اصلی)`,
+      shortBadge: '🔴 اخطار دروس اصلی',
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-bold',
+      coreDeficitMinutes: coreDeficit,
+      totalDeficitMinutes: 0,
+      coreSurplusMinutes: 0,
+      totalSurplusMinutes: totalSurplus,
+      mandatoryTotalMinutes: mandatoryTotal,
+      mandatoryCoreMinutes: mandatoryCore
+    };
+  }
+
+  if (isTotalDeficit) {
+    return {
+      isExempt: false,
+      hasWarning: true,
+      isCoreDeficit: false,
+      isTotalDeficit: true,
+      isCommended: false,
+      warningType: 'deficit_total_only',
+      statusLabel: `اخطار کسری مجموع کل (${totalDeficit} دقیقه کسری کل)`,
+      shortBadge: '🟠 اخطار مجموع کل',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-bold',
+      coreDeficitMinutes: 0,
+      totalDeficitMinutes: totalDeficit,
+      coreSurplusMinutes: coreSurplus,
+      totalSurplusMinutes: 0,
+      mandatoryTotalMinutes: mandatoryTotal,
+      mandatoryCoreMinutes: mandatoryCore
+    };
+  }
+
+  // طلبه‌هایی که هر دو حداقل را گذرانده‌اند:
+  // آیا مازاد دارد (مجموع کل بالای موظفی)؟ در این صورت مستحق تشویق است
+  const isCommended = totalMins > mandatoryTotal && coreMins >= mandatoryCore;
+
+  if (isCommended) {
+    return {
+      isExempt: false,
+      hasWarning: false,
+      isCoreDeficit: false,
+      isTotalDeficit: false,
+      isCommended: true,
+      warningType: 'commended',
+      statusLabel: `شایسته تشویق (مازاد کارکرد: +${totalSurplus} دقیقه کل | +${coreSurplus} دقیقه اصلی)`,
+      shortBadge: '⭐ شایسته تشویق',
+      badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300 font-black shadow-2xs',
+      coreDeficitMinutes: 0,
+      totalDeficitMinutes: 0,
+      coreSurplusMinutes: coreSurplus,
+      totalSurplusMinutes: totalSurplus,
+      mandatoryTotalMinutes: mandatoryTotal,
+      mandatoryCoreMinutes: mandatoryCore
+    };
+  }
+
+  return {
+    isExempt: false,
+    hasWarning: false,
+    isCoreDeficit: false,
+    isTotalDeficit: false,
+    isCommended: false,
+    warningType: 'none',
+    statusLabel: 'تکمیل دقیق موظفی (فاقد اخطار)',
+    shortBadge: '🟢 تکمیل موظفی',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold',
+    coreDeficitMinutes: 0,
+    totalDeficitMinutes: 0,
+    coreSurplusMinutes: coreSurplus,
+    totalSurplusMinutes: totalSurplus,
+    mandatoryTotalMinutes: mandatoryTotal,
+    mandatoryCoreMinutes: mandatoryCore
   };
 }
 
@@ -189,17 +375,196 @@ export function exportStudyStatsCSV(periods: StudyPeriod[], allLogs: PeriodicStu
 // -------------------------------------------------------------
 import { localDb } from '../../lib/localDb';
 import { getTodayShamsi } from '../../lib/jalali';
-import { StudyDailyEntry } from '../../types';
+import { StudyDailyEntry, CourseStudyDetail, Program } from '../../types';
+
+export interface CoreCourseItem {
+  id: string;
+  title: string;
+  subjectType: string;
+}
+
+export function getStudentCoreCourses(student?: Student | null, programs?: Program[]): CoreCourseItem[] {
+  const grade = student?.grade || 'پایه ۷';
+
+  // 1. If programs are provided, filter programs matching the student's grade or enrollment
+  if (Array.isArray(programs) && programs.length > 0) {
+    const studentProgs = programs.filter(p => {
+      const matchesGrade = !p.grade || p.grade === grade || p.grade === 'همه پایه‌ها';
+      const matchesId = student?.id && (
+        (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(student.id)) ||
+        (Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(student.id))
+      );
+      return matchesGrade || matchesId;
+    });
+
+    if (studentProgs.length > 0) {
+      const courseMap = new Map<string, CoreCourseItem>();
+      studentProgs.forEach(p => {
+        const cleanTitle = (p.title || '').trim();
+        if (cleanTitle && !courseMap.has(cleanTitle)) {
+          let sType = 'سایر';
+          if (/اصول|رسائل|کفایه|حلقه/i.test(cleanTitle)) sType = 'اصول';
+          else if (/فقه|مکاسب|لمعه/i.test(cleanTitle)) sType = 'فقه';
+          else if (/فلسفه|بدایه|نهایه/i.test(cleanTitle)) sType = 'فلسفه';
+          
+          courseMap.set(cleanTitle, {
+            id: p.id || `c_${cleanTitle}`,
+            title: cleanTitle,
+            subjectType: sType
+          });
+        }
+      });
+      if (courseMap.size > 0) {
+        return Array.from(courseMap.values());
+      }
+    }
+  }
+
+  // 2. Fallback standard seminary courses per grade
+  if (grade.includes('۷') || grade.includes('7')) {
+    return [
+      { id: 'c_usul_7', title: 'اصول {حلقه ثالثه}', subjectType: 'اصول' },
+      { id: 'c_fiqh_7', title: 'فقه {مکاسب خیارات}', subjectType: 'فقه' },
+      { id: 'c_phil_7', title: 'فلسفه {قسمت دوم نهایه}', subjectType: 'فلسفه' }
+    ];
+  }
+  if (grade.includes('۸') || grade.includes('8')) {
+    return [
+      { id: 'c_usul_8', title: 'اصول {رسائل}', subjectType: 'اصول' },
+      { id: 'c_fiqh_8', title: 'فقه {مکاسب بیع}', subjectType: 'فقه' },
+      { id: 'c_phil_8', title: 'فلسفه {بدایة الحکمة}', subjectType: 'فلسفه' }
+    ];
+  }
+  if (grade.includes('۹') || grade.includes('9')) {
+    return [
+      { id: 'c_usul_9', title: 'اصول {کفایه}', subjectType: 'اصول' },
+      { id: 'c_fiqh_9', title: 'فقه {مکاسب خیارات}', subjectType: 'فقه' },
+      { id: 'c_phil_9', title: 'فلسفه {نهایة الحکمة}', subjectType: 'فلسفه' }
+    ];
+  }
+  return [
+    { id: 'c_usul_10', title: 'اصول {کفایة الاصول جلد ۲}', subjectType: 'اصول' },
+    { id: 'c_fiqh_10', title: 'فقه {مکاسب شروط و خیارات}', subjectType: 'فقه' },
+    { id: 'c_phil_10', title: 'فلسفه {نهایة الحکمة - مرحله دوم}', subjectType: 'فلسفه' }
+  ];
+}
+
+export interface StudentStudyComplianceStatus {
+  isExempt: boolean;
+  isMet: boolean;
+  isWarning: boolean;
+  deficitTotalMinutes: number;
+  deficitCoreMinutes: number;
+  warningType: 'none' | 'core_only' | 'total_only' | 'both';
+  warningLabel: string;
+}
+
+export function evaluateStudentStudyCompliance(
+  period: StudyPeriod,
+  log?: PeriodicStudyLog | null,
+  isExempt?: boolean
+): StudentStudyComplianceStatus {
+  if (isExempt) {
+    return {
+      isExempt: true,
+      isMet: true,
+      isWarning: false,
+      deficitTotalMinutes: 0,
+      deficitCoreMinutes: 0,
+      warningType: 'none',
+      warningLabel: 'معاف از موظفی'
+    };
+  }
+
+  // Mandatory thresholds in minutes
+  const mandatoryTotal = period.mandatoryMinutes ?? Math.round((period.mandatoryHours || 0) * 60);
+  const mandatoryCore = period.mandatoryCoreMinutes ?? Math.round(mandatoryTotal * 0.75);
+
+  const totalMin = log?.totalMinutes ?? (log ? Math.round((log.hours || 0) * 60) : 0);
+  const coreMin = log?.coreTotalMinutes ?? (log ? Math.round(((log.studyHours || 0) + (log.discussionHours || 0)) * 60) : totalMin);
+
+  const coreFailed = mandatoryCore > 0 && coreMin < mandatoryCore;
+  const totalFailed = mandatoryTotal > 0 && totalMin < mandatoryTotal;
+
+  const deficitCore = coreFailed ? (mandatoryCore - coreMin) : 0;
+  const deficitTotal = totalFailed ? (mandatoryTotal - totalMin) : 0;
+
+  if (coreFailed && totalFailed) {
+    return {
+      isExempt: false,
+      isMet: false,
+      isWarning: true,
+      deficitTotalMinutes: deficitTotal,
+      deficitCoreMinutes: deficitCore,
+      warningType: 'both',
+      warningLabel: 'مستحق اخطار: کسری دروس اصلی و مجموع کل'
+    };
+  }
+
+  if (coreFailed && !totalFailed) {
+    return {
+      isExempt: false,
+      isMet: false,
+      isWarning: true,
+      deficitTotalMinutes: 0,
+      deficitCoreMinutes: deficitCore,
+      warningType: 'core_only',
+      warningLabel: 'مستحق اخطار: کسری دروس اصلی (با وجود تکمیل کل)'
+    };
+  }
+
+  if (!coreFailed && totalFailed) {
+    return {
+      isExempt: false,
+      isMet: false,
+      isWarning: true,
+      deficitTotalMinutes: deficitTotal,
+      deficitCoreMinutes: 0,
+      warningType: 'total_only',
+      warningLabel: 'مستحق اخطار: کسری مجموع کل'
+    };
+  }
+
+  return {
+    isExempt: false,
+    isMet: true,
+    isWarning: false,
+    deficitTotalMinutes: 0,
+    deficitCoreMinutes: 0,
+    warningType: 'none',
+    warningLabel: 'رعایت کامل موظفی ✅'
+  };
+}
 
 export async function addStudyDailyEntry(entry: {
   periodId: string;
   studentId: string;
-  studyHours: number;
-  discussionHours: number;
+  studyHours?: number;
+  discussionHours?: number;
+  coursesBreakdown?: CourseStudyDetail[];
+  freeStudyMinutes?: number;
+  totalMinutes?: number;
+  coreTotalMinutes?: number;
   submittedBy?: string;
   note?: string;
 }) {
-  const totalHours = Math.round((entry.studyHours + entry.discussionHours) * 100) / 100;
+  const breakdown = entry.coursesBreakdown || [];
+  const freeMin = entry.freeStudyMinutes || 0;
+
+  let coreStudyMin = 0;
+  let coreDiscMin = 0;
+  breakdown.forEach(c => {
+    coreStudyMin += Number(c.studyMinutes) || 0;
+    coreDiscMin += Number(c.discussionMinutes) || 0;
+  });
+
+  const coreTotalMin = entry.coreTotalMinutes ?? (coreStudyMin + coreDiscMin);
+  const totalMin = entry.totalMinutes ?? (coreTotalMin + freeMin);
+
+  const studyHours = Math.round((coreStudyMin / 60) * 100) / 100;
+  const discussionHours = Math.round((coreDiscMin / 60) * 100) / 100;
+  const totalHours = Math.round((totalMin / 60) * 100) / 100;
+
   const now = new Date();
   const todayShamsi = getTodayShamsi();
   const timeStr = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
@@ -207,9 +572,13 @@ export async function addStudyDailyEntry(entry: {
   const newDoc = await localDb.addDoc('study_daily_entries', {
     periodId: entry.periodId,
     studentId: entry.studentId,
-    studyHours: entry.studyHours,
-    discussionHours: entry.discussionHours,
+    studyHours,
+    discussionHours,
     totalHours,
+    totalMinutes: totalMin,
+    coreTotalMinutes: coreTotalMin,
+    freeStudyMinutes: freeMin,
+    coursesBreakdown: breakdown,
     entryDate: todayShamsi,
     entryTime: timeStr,
     createdAt: now.toISOString(),
@@ -223,18 +592,45 @@ export async function addStudyDailyEntry(entry: {
 
 export async function updateStudyDailyEntry(
   entryId: string, 
-  updated: { studyHours: number; discussionHours: number; note?: string },
+  updated: { 
+    studyHours?: number; 
+    discussionHours?: number; 
+    coursesBreakdown?: CourseStudyDetail[];
+    freeStudyMinutes?: number;
+    totalMinutes?: number;
+    coreTotalMinutes?: number;
+    note?: string 
+  },
   periodId: string,
   studentId: string,
   submittedBy?: string
 ) {
-  const totalHours = Math.round((updated.studyHours + updated.discussionHours) * 100) / 100;
+  const breakdown = updated.coursesBreakdown || [];
+  const freeMin = updated.freeStudyMinutes || 0;
+
+  let coreStudyMin = 0;
+  let coreDiscMin = 0;
+  breakdown.forEach(c => {
+    coreStudyMin += Number(c.studyMinutes) || 0;
+    coreDiscMin += Number(c.discussionMinutes) || 0;
+  });
+
+  const coreTotalMin = updated.coreTotalMinutes ?? (coreStudyMin + coreDiscMin);
+  const totalMin = updated.totalMinutes ?? (coreTotalMin + freeMin);
+
+  const studyHours = Math.round((coreStudyMin / 60) * 100) / 100;
+  const discussionHours = Math.round((coreDiscMin / 60) * 100) / 100;
+  const totalHours = Math.round((totalMin / 60) * 100) / 100;
   const now = new Date();
 
   await localDb.updateDoc('study_daily_entries', entryId, {
-    studyHours: updated.studyHours,
-    discussionHours: updated.discussionHours,
+    studyHours,
+    discussionHours,
     totalHours,
+    totalMinutes: totalMin,
+    coreTotalMinutes: coreTotalMin,
+    freeStudyMinutes: freeMin,
+    coursesBreakdown: breakdown,
     note: updated.note || '',
     updatedAt: now.toISOString()
   });
@@ -255,9 +651,51 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
     String(e.studentId || (e as any).student_id || '').trim() === targetStudentId
   );
 
-  const totalStudy = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.studyHours) || 0), 0) * 100) / 100;
-  const totalDisc = Math.round(studentEntries.reduce((acc, e) => acc + (Number(e.discussionHours) || 0), 0) * 100) / 100;
-  const totalSum = Math.round((totalStudy + totalDisc) * 100) / 100;
+  let totalMinutesSum = 0;
+  let coreTotalMinutesSum = 0;
+  let coreStudyMinutesSum = 0;
+  let coreDiscussionMinutesSum = 0;
+  let freeStudyMinutesSum = 0;
+
+  // Aggregate breakdown by courseId
+  const coursesAggMap = new Map<string, CourseStudyDetail>();
+
+  studentEntries.forEach(e => {
+    const eFree = Number(e.freeStudyMinutes) || 0;
+    freeStudyMinutesSum += eFree;
+
+    if (Array.isArray(e.coursesBreakdown) && e.coursesBreakdown.length > 0) {
+      e.coursesBreakdown.forEach(c => {
+        const sMin = Number(c.studyMinutes) || 0;
+        const dMin = Number(c.discussionMinutes) || 0;
+        coreStudyMinutesSum += sMin;
+        coreDiscussionMinutesSum += dMin;
+
+        const existing = coursesAggMap.get(c.courseId) || {
+          courseId: c.courseId,
+          courseTitle: c.courseTitle,
+          studyMinutes: 0,
+          discussionMinutes: 0
+        };
+        existing.studyMinutes += sMin;
+        existing.discussionMinutes += dMin;
+        coursesAggMap.set(c.courseId, existing);
+      });
+    } else {
+      // Legacy fallback
+      const legacyStudyMin = Math.round((Number(e.studyHours) || 0) * 60);
+      const legacyDiscMin = Math.round((Number(e.discussionHours) || 0) * 60);
+      coreStudyMinutesSum += legacyStudyMin;
+      coreDiscussionMinutesSum += legacyDiscMin;
+    }
+  });
+
+  coreTotalMinutesSum = coreStudyMinutesSum + coreDiscussionMinutesSum;
+  totalMinutesSum = coreTotalMinutesSum + freeStudyMinutesSum;
+
+  const totalSumHours = Math.round((totalMinutesSum / 60) * 100) / 100;
+  const totalStudyHours = Math.round((coreStudyMinutesSum / 60) * 100) / 100;
+  const totalDiscHours = Math.round((coreDiscussionMinutesSum / 60) * 100) / 100;
 
   const existingLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
   const existingLog = existingLogs.find(l => 
@@ -265,23 +703,27 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
     String(l.studentId || (l as any).student_id || '').trim() === targetStudentId
   );
 
+  const payload: Partial<PeriodicStudyLog> = {
+    hours: totalSumHours,
+    totalMinutes: totalMinutesSum,
+    studyHours: totalStudyHours,
+    discussionHours: totalDiscHours,
+    coreStudyMinutes: coreStudyMinutesSum,
+    coreDiscussionMinutes: coreDiscussionMinutesSum,
+    coreTotalMinutes: coreTotalMinutesSum,
+    freeStudyMinutes: freeStudyMinutesSum,
+    coursesBreakdown: Array.from(coursesAggMap.values()),
+    submittedBy: (submittedBy as any) || existingLog?.submittedBy || 'student',
+    lastModifiedAt: new Date().toISOString()
+  };
+
   if (existingLog) {
-    await localDb.updateDoc('periodic_study_logs', existingLog.id, {
-      hours: totalSum,
-      studyHours: totalStudy,
-      discussionHours: totalDisc,
-      submittedBy: submittedBy || existingLog.submittedBy || 'student',
-      lastModifiedAt: new Date().toISOString()
-    });
+    await localDb.updateDoc('periodic_study_logs', existingLog.id, payload);
   } else if (studentEntries.length > 0) {
     await localDb.addDoc('periodic_study_logs', {
       periodId,
       studentId,
-      hours: totalSum,
-      studyHours: totalStudy,
-      discussionHours: totalDisc,
-      submittedBy: submittedBy || 'student',
-      lastModifiedAt: new Date().toISOString()
+      ...payload
     });
   }
 

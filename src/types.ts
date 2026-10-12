@@ -747,12 +747,22 @@ export interface PresenceReport {
   notes?: string;
 }
 
+export interface CourseStudyDetail {
+  courseId: string;
+  courseTitle: string;
+  studyMinutes: number;
+  discussionMinutes: number;
+}
+
 export interface StudyPeriod {
   id: string;
   title: string;
   startDate: string;
   endDate: string;
   mandatoryHours: number;
+  mandatoryMinutes?: number; // موظفی کل به دقیقه (مثلاً ۱۲۰۰ دقیقه)
+  mandatoryCoreMinutes?: number; // حداقل موظفی دروس اصلی (مجموع مطالعه و مباحثه، مثلاً ۹۰۰ دقیقه)
+  freeStudyRuleText?: string; // قوانین و توضیحات مطالعه آزاد
   deadlineDate?: string;
   isClosed?: boolean;
   closedManually?: boolean;
@@ -771,11 +781,18 @@ export interface PeriodicStudyLog {
   periodId: string;
   studentId: string;
   hours: number;
+  totalMinutes?: number;
   studyHours?: number;
   discussionHours?: number;
+  coreStudyMinutes?: number; // مجموع مطالعه دروس اصلی
+  coreDiscussionMinutes?: number; // مجموع مباحثه دروس اصلی
+  coreTotalMinutes?: number; // مجموع مطالعه + مباحثه دروس اصلی
+  freeStudyMinutes?: number; // مجموع مطالعه آزاد
+  coursesBreakdown?: CourseStudyDetail[];
   isExempt?: boolean;
   exemptionReason?: string;
   warningsCount?: number;
+  warningReasons?: ('below_mandatory_total' | 'below_mandatory_core')[];
   submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer';
   lastModifiedAt?: string;
 }
@@ -789,6 +806,10 @@ export interface StudyDailyEntry {
   totalHours: number;
   entryDate?: string;
   entryTime?: string;
+  totalMinutes?: number;
+  coreTotalMinutes?: number;
+  freeStudyMinutes?: number;
+  coursesBreakdown?: CourseStudyDetail[];
   createdAt: string;
   updatedAt?: string;
   submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer' | string;

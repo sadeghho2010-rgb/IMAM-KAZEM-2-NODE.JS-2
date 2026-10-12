@@ -1418,37 +1418,6 @@ export default function MainDashboard({
           </button>
         </div>
       )}
-
-      {/* Pending Workflow Alert Banner for Destination Officers */}
-      {pendingWorkflowCount > 0 && isTabAllowed('workflow') && (
-        <div 
-          onClick={() => onNavigateTab('workflow')}
-          className="p-4 rounded-3xl bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 text-white shadow-xl shadow-purple-900/20 border-2 border-purple-300 flex items-center justify-between cursor-pointer active:scale-98 transition-all animate-pulse"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-white text-purple-700 flex items-center justify-center font-black shadow-md shrink-0">
-              <GitBranch size={22} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-black">هشدار کارتابل: جریان‌های کار معوق نیازمند بررسی</h4>
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black shadow-xs">
-                  {pendingWorkflowCount} مورد جدید
-                </span>
-              </div>
-              <p className="text-xs text-purple-100 mt-0.5">
-                تغییرات گروه‌های مباحثه و فرایندهای آموزشی نیازمند تایید شما هستند. پس از تایید، این هشدار خودکار حذف خواهد شد.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="px-3.5 py-2 bg-white text-purple-900 hover:bg-purple-50 rounded-xl text-xs font-black shrink-0 shadow-md transition-all cursor-pointer"
-          >
-            مشاهده کارتابل
-          </button>
-        </div>
-      )}
       
       {/* 0. CALLIGRAPHIC BISMILLAH & HADITH (Boxless, Minimal, Fine & Beautiful Typography) */}
       {showHadithBanner ? (

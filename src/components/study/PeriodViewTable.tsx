@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   BookOpen, 
   MessageSquare, 
@@ -18,16 +18,34 @@ import {
   AlertCircle,
   Copy,
   ShieldCheck,
-  Shield
+  Shield,
+  Download,
+  AlertTriangle,
+  FileSpreadsheet,
+  ListFilter,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, StudyPeriod, PeriodicStudyLog, Todo, WorkflowItem } from '../../types';
-import { getLogMetrics, calculatePeriodAverages, isStudentExempt } from './studyUtils';
+import { Student, StudyPeriod, PeriodicStudyLog, Todo, WorkflowItem, Program, Enrollment } from '../../types';
+import { getLogMetrics, calculatePeriodAverages, isStudentExempt, getStudyWarningStatus, StudyWarningStatus } from './studyUtils';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
-export type TableDisplayMode = 'ALL_SPLIT' | 'TOTAL_ONLY' | 'STUDY_ONLY' | 'DISCUSSION_ONLY';
+export type TableDisplayMode = 
+  | 'ALL_SPLIT'            // تفکیک دروس اصلی + آزاد + مجموع
+  | 'AGGREGATED_TOTALS'    // مجموع دروس اصلی + مجموع آزاد + مجموع کل
+  | 'TOTAL_ONLY'           // فقط مجموع کل
+  | 'STUDY_ONLY'           // فقط مطالعه
+  | 'DISCUSSION_ONLY';     // فقط مباحثه
+
+export type WarningFilterType = 
+  | 'ALL' 
+  | 'COMMENDED_ONLY'       // افراد بالای موظفی‌ها و شایسته تشویق (رعایت حداقل اصلی و حداقل کل)
+  | 'WARNINGS_ONLY' 
+  | 'CORE_DEFICIT_ONLY' 
+  | 'TOTAL_DEFICIT_ONLY' 
+  | 'NO_WARNING';
 
 export interface PeriodColumnsVisibility {
   grade: boolean;
@@ -35,16 +53,15 @@ export interface PeriodColumnsVisibility {
   individualExempt: boolean;
   warningNotice: boolean;
   warningStatus: boolean;
-  studyMinutes: boolean;
-  discussionMinutes: boolean;
+  coreStudyMinutes: boolean;
+  coreDiscussionMinutes: boolean;
+  coreTotalMinutes: boolean;
+  freeStudyMinutes: boolean;
   totalMinutes: boolean;
   diffMandatory: boolean;
+  diffCoreMandatory: boolean;
   diffAvg: boolean;
-  diffStudyAvg: boolean;
-  diffDiscussionAvg: boolean;
   statusMandatory: boolean;
-  statusAvg: boolean;
-  action: boolean;
 }
 
 interface PeriodViewTableProps {
@@ -75,10 +92,30 @@ export default function PeriodViewTable({
   };
 
   const [displayMode, setDisplayMode] = useState<TableDisplayMode>('ALL_SPLIT');
+  const [warningFilter, setWarningFilter] = useState<WarningFilterType>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>('ALL');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+
+  useEffect(() => {
+    const loadAcademicData = async () => {
+      try {
+        const [progs, enr] = await Promise.all([
+          localDb.getDocs<Program>('programs'),
+          localDb.getDocs<Enrollment>('enrollments')
+        ]);
+        setPrograms(progs || []);
+        setEnrollments(enr || []);
+      } catch (e) {
+        console.error('Error loading programs/enrollments in PeriodViewTable:', e);
+      }
+    };
+    loadAcademicData();
+  }, []);
 
   const [cols, setCols] = useState<PeriodColumnsVisibility>({
     grade: true,
@@ -86,16 +123,15 @@ export default function PeriodViewTable({
     individualExempt: true,
     warningNotice: true,
     warningStatus: true,
-    studyMinutes: true,
-    discussionMinutes: true,
+    coreStudyMinutes: true,
+    coreDiscussionMinutes: true,
+    coreTotalMinutes: true,
+    freeStudyMinutes: true,
     totalMinutes: true,
     diffMandatory: true,
+    diffCoreMandatory: true,
     diffAvg: true,
-    diffStudyAvg: false,
-    diffDiscussionAvg: false,
-    statusMandatory: true,
-    statusAvg: true,
-    action: true
+    statusMandatory: true
   });
 
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -166,7 +202,7 @@ export default function PeriodViewTable({
     return () => unsub();
   }, []);
 
-  const handleRegisterWarning = async (student: Student, deficitMinutes: number) => {
+  const handleRegisterWarning = async (student: Student, warningStatus: StudyWarningStatus) => {
     try {
       const existingWf = workflowItems.find(w => 
         w.category === 'study_deficit_warning' && 
@@ -182,12 +218,21 @@ export default function PeriodViewTable({
         return;
       }
 
+      let descText = `طلبه ${student.name} (${student.grade || 'پایه نامشخص'}) در دوره مطالعاتی «${period.title}»: `;
+      if (warningStatus.warningType === 'deficit_both') {
+        descText += `دارای ${warningStatus.coreDeficitMinutes.toLocaleString('fa-IR')} دقیقه کسری دروس اصلی (حداقل موظفی ${warningStatus.mandatoryCoreMinutes}د) و ${warningStatus.totalDeficitMinutes.toLocaleString('fa-IR')} دقیقه کسری موظفی کل (موظفی ${warningStatus.mandatoryTotalMinutes}د) می‌باشد. مستحق اخطار دوگانه.`;
+      } else if (warningStatus.warningType === 'deficit_core_only') {
+        descText += `دارای ${warningStatus.coreDeficitMinutes.toLocaleString('fa-IR')} دقیقه کسری از حداقل مطالعه و مباحثه دروس اصلی (${warningStatus.mandatoryCoreMinutes} دقیقه) می‌باشد؛ اگرچه ممکن است مجموع کل با مطالعه آزاد تکمیل شده باشد، طبق ضوابط مجاز نبوده و مستحق اخطار است.`;
+      } else {
+        descText += `دارای ${warningStatus.totalDeficitMinutes.toLocaleString('fa-IR')} دقیقه کسری از موظفی کل دوره (${warningStatus.mandatoryTotalMinutes} دقیقه) می‌باشد. مستحق اخطار کسری مطالعه.`;
+      }
+
       const newWfItem: WorkflowItem = {
         id: `wf_warning_${Date.now()}_${student.id}`,
         type: 'approval',
         category: 'study_deficit_warning',
         title: `اخطار کسری مطالعه: ${student.name} - ${period.title}`,
-        description: `طلبه ${student.name} (${student.grade || 'پایه نامشخص'}) در دوره مطالعاتی «${period.title}»، دارای ${deficitMinutes.toLocaleString('fa-IR')} دقیقه کسری مطالعه از میزان موظفی (${period.mandatoryHours || 0} ساعت) می‌باشد. درخواست ثبت اخطار در پرونده.`,
+        description: descText,
         status: 'pending',
         grade: student.grade || 'همه پایه‌ها',
         studentId: student.id,
@@ -197,14 +242,19 @@ export default function PeriodViewTable({
         details: {
           periodId: period.id,
           periodTitle: period.title,
-          deficitMinutes: deficitMinutes,
+          deficitMinutes: warningStatus.totalDeficitMinutes || warningStatus.coreDeficitMinutes,
+          coreDeficitMinutes: warningStatus.coreDeficitMinutes,
+          totalDeficitMinutes: warningStatus.totalDeficitMinutes,
+          warningType: warningStatus.warningType,
+          mandatoryTotalMinutes: warningStatus.mandatoryTotalMinutes,
+          mandatoryCoreMinutes: warningStatus.mandatoryCoreMinutes,
           mandatoryHours: period.mandatoryHours || 0
         },
         createdAt: new Date().toISOString()
       };
 
       await localDb.addDoc('workflow_items', newWfItem);
-      alert(`درخواست ثبت اخطار برای ${student.name} جهت تایید به بخش «جریان کار» ارسال گردید.`);
+      alert(`درخواست صدور ${warningStatus.shortBadge} برای ${student.name} جهت تایید به بخش «جریان کار» ارسال گردید.`);
     } catch (err) {
       console.error("Error registering warning workflow item:", err);
       alert("خطا در ثبت اخطار در جریان کار");
@@ -253,7 +303,8 @@ export default function PeriodViewTable({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const mandatoryMinutes = Math.round((period.mandatoryHours || 0) * 60);
+  const mandatoryTotalMinutes = period.mandatoryMinutes || Math.round((period.mandatoryHours || 0) * 60);
+  const mandatoryCoreMinutes = period.mandatoryCoreMinutes ?? Math.round(mandatoryTotalMinutes * 0.75);
   const periodLogs = allLogs.filter(l => l.periodId === period.id);
 
   // Overall Period Averages
@@ -262,206 +313,536 @@ export default function PeriodViewTable({
   // Unique grades for filter
   const uniqueGrades = Array.from(new Set(students.map(s => s.grade).filter(Boolean))) as string[];
 
-  // Filter students
-  const filteredStudents = students.filter(s => {
-    const matchSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      (s.nationalId && s.nationalId.includes(searchTerm));
-    const matchGrade = gradeFilter === 'ALL' || s.grade === gradeFilter;
-    return matchSearch && matchGrade;
-  });
+  // Helper to map student to their main enrolled courses
+  const getStudentCourses = (studentId: string, studentGrade?: string) => {
+    const enrolledProgIds = new Set(
+      enrollments.filter(e => e.studentId === studentId && (e.status === 'enrolled' || !e.status)).map(e => e.programId)
+    );
+    let myCourses = programs.filter(p => enrolledProgIds.has(p.id));
+    if (myCourses.length === 0 && studentGrade) {
+      myCourses = programs.filter(p => p.grade === studentGrade);
+    }
+    return myCourses;
+  };
+
+  // Precompute row data with warning statuses for filtering and rendering
+  const studentRows = useMemo(() => {
+    return students.map(student => {
+      const log = periodLogs.find(l => l.studentId === student.id);
+      const metrics = getLogMetrics(log);
+      const warningStatus = getStudyWarningStatus(period, log, student);
+      const studentCourses = getStudentCourses(student.id, student.grade);
+
+      const isStudentIndividuallyExempt = (period.exemptStudentIds || []).includes(student.id);
+      const isGradeExempt = (period.exemptGrades || []).includes(student.grade || '');
+      const isAnyExempt = isStudentIndividuallyExempt || isGradeExempt;
+
+      // Grade-peer averages
+      const gradeStudents = students.filter(s => s.grade === student.grade);
+      const gradeAvg = calculatePeriodAverages(period.id, allLogs, gradeStudents.map(s => s.id));
+
+      const diffTotalMandatory = isAnyExempt ? 0 : (metrics.totalMinutes - mandatoryTotalMinutes);
+      const diffCoreMandatory = isAnyExempt ? 0 : (metrics.coreTotalMinutes - mandatoryCoreMinutes);
+      const diffTotalAvg = metrics.totalMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.totalAvgMinutes : overallAvg.totalAvgMinutes);
+
+      const activeTodo = todos.find(t => 
+        t.studentId === student.id && 
+        !t.completed && 
+        (t.isStudyFollowUp || (t.title && t.title.includes('[پیگیری مطالعه]'))) && 
+        (t.periodId === period.id || (t.title && t.title.includes(period.title)))
+      );
+      const hasActiveFollowUp = !!activeTodo;
+
+      const wfItem = workflowItems.find(w => 
+        w.category === 'study_deficit_warning' && 
+        w.studentId === student.id && 
+        (w.details?.periodId === period.id || w.title?.includes(period.title))
+      );
+
+      return {
+        student,
+        log,
+        metrics,
+        warningStatus,
+        studentCourses,
+        isStudentIndividuallyExempt,
+        isGradeExempt,
+        isAnyExempt,
+        diffTotalMandatory,
+        diffCoreMandatory,
+        diffTotalAvg,
+        hasActiveFollowUp,
+        activeTodo,
+        wfItem
+      };
+    });
+  }, [students, periodLogs, period, allLogs, todos, workflowItems, programs, enrollments]);
+
+  // Warning summary counts for tabs
+  const warningCounts = useMemo(() => {
+    let totalWarnings = 0;
+    let coreDeficits = 0;
+    let totalDeficits = 0;
+    let commendedCount = 0;
+    let noWarnings = 0;
+
+    studentRows.forEach(r => {
+      if (r.warningStatus.isCommended) {
+        commendedCount++;
+      }
+      if (r.warningStatus.hasWarning) {
+        totalWarnings++;
+        if (r.warningStatus.isCoreDeficit) coreDeficits++;
+        if (r.warningStatus.isTotalDeficit) totalDeficits++;
+      } else {
+        noWarnings++;
+      }
+    });
+
+    return { totalWarnings, coreDeficits, totalDeficits, commendedCount, noWarnings };
+  }, [studentRows]);
+
+  // Filter students based on search, grade, and warning filter
+  const filteredRows = useMemo(() => {
+    return studentRows.filter(r => {
+      const matchSearch = r.student.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (r.student.nationalId && r.student.nationalId.includes(searchTerm));
+      const matchGrade = gradeFilter === 'ALL' || r.student.grade === gradeFilter;
+
+      let matchWarning = true;
+      if (warningFilter === 'COMMENDED_ONLY') {
+        matchWarning = r.warningStatus.isCommended;
+      } else if (warningFilter === 'WARNINGS_ONLY') {
+        matchWarning = r.warningStatus.hasWarning;
+      } else if (warningFilter === 'CORE_DEFICIT_ONLY') {
+        matchWarning = r.warningStatus.isCoreDeficit;
+      } else if (warningFilter === 'TOTAL_DEFICIT_ONLY') {
+        matchWarning = r.warningStatus.isTotalDeficit;
+      } else if (warningFilter === 'NO_WARNING') {
+        matchWarning = !r.warningStatus.hasWarning;
+      }
+
+      return matchSearch && matchGrade && matchWarning;
+    });
+  }, [studentRows, searchTerm, gradeFilter, warningFilter]);
+
+  // Dynamic list of unique courses present across filtered students for detailed split columns
+  const allEnrolledCourses = useMemo(() => {
+    const courseMap = new Map<string, string>();
+    filteredRows.forEach(r => {
+      // From courseBreakdown in log
+      if (r.log?.coursesBreakdown) {
+        r.log.coursesBreakdown.forEach(c => {
+          if (!courseMap.has(c.courseId)) courseMap.set(c.courseId, c.courseTitle);
+        });
+      }
+      // From student's enrolled courses
+      r.studentCourses.forEach(c => {
+        if (!courseMap.has(c.id)) courseMap.set(c.id, c.title);
+      });
+    });
+
+    // Fallback if none enrolled yet
+    if (courseMap.size === 0) {
+      return [
+        { id: 'c_usul', title: 'اصول فقه' },
+        { id: 'c_fiqh', title: 'فقه' },
+        { id: 'c_falsafe', title: 'فلسفه' }
+      ];
+    }
+
+    return Array.from(courseMap.entries()).map(([id, title]) => ({ id, title }));
+  }, [filteredRows]);
+
+  // Export to Excel / CSV based on current view mode
+  const handleExportTable = (exportAllDetails: boolean = false) => {
+    try {
+      const rowsToExport = filteredRows;
+      const headers: string[] = ['ردیف', 'نام و نام خانوادگی', 'پایه تحصیلی'];
+
+      if (exportAllDetails || displayMode === 'ALL_SPLIT') {
+        allEnrolledCourses.forEach(c => {
+          headers.push(`مطالعه ${c.title} (دقیقه)`);
+          headers.push(`مباحثه ${c.title} (دقیقه)`);
+        });
+      }
+
+      headers.push('مجموع مطالعه دروس اصلی (دقیقه)');
+      headers.push('مجموع مباحثه دروس اصلی (دقیقه)');
+      headers.push('مجموع کل دروس اصلی (دقیقه)');
+      headers.push('مطالعه آزاد (دقیقه)');
+      headers.push('مجموع کل کارکرد (دقیقه)');
+      headers.push('مجموع کل کارکرد (ساعت)');
+      headers.push('موظفی کل دوره (دقیقه)');
+      headers.push('حداقل موظفی دروس اصلی (دقیقه)');
+      headers.push('کسر/مازاد کل (دقیقه)');
+      headers.push('کسر/مازاد دروس اصلی (دقیقه)');
+      headers.push('وضعیت اخطار و انضباطی');
+      headers.push('توضیحات اخطار');
+
+      const csvRows = [headers.join(',')];
+
+      rowsToExport.forEach((r, idx) => {
+        const rowVals: string[] = [
+          (idx + 1).toString(),
+          `"${r.student.name.replace(/"/g, '""')}"`,
+          `"${r.student.grade || '---'}"`
+        ];
+
+        if (exportAllDetails || displayMode === 'ALL_SPLIT') {
+          allEnrolledCourses.forEach(c => {
+            const courseDetail = r.log?.coursesBreakdown?.find(cb => cb.courseId === c.id || cb.courseTitle === c.title);
+            rowVals.push((courseDetail?.studyMinutes || 0).toString());
+            rowVals.push((courseDetail?.discussionMinutes || 0).toString());
+          });
+        }
+
+        rowVals.push(r.metrics.coreStudyMinutes.toString());
+        rowVals.push(r.metrics.coreDiscussionMinutes.toString());
+        rowVals.push(r.metrics.coreTotalMinutes.toString());
+        rowVals.push(r.metrics.freeStudyMinutes.toString());
+        rowVals.push(r.metrics.totalMinutes.toString());
+        rowVals.push((r.metrics.totalMinutes / 60).toFixed(1));
+        rowVals.push(mandatoryTotalMinutes.toString());
+        rowVals.push(mandatoryCoreMinutes.toString());
+        rowVals.push(r.diffTotalMandatory.toString());
+        rowVals.push(r.diffCoreMandatory.toString());
+        rowVals.push(`"${r.warningStatus.shortBadge.replace(/"/g, '""')}"`);
+        rowVals.push(`"${r.warningStatus.statusLabel.replace(/"/g, '""')}"`);
+
+        csvRows.push(rowVals.join(','));
+      });
+
+      const csvContent = '\uFEFF' + csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `گزارش_${exportAllDetails ? 'تفصیلی' : 'تجمیعی'}_مطالعه_${period.title.replace(/\s+/g, '_')}_${new Date().toLocaleDateString('fa-IR').replace(/\//g, '-')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Error exporting table:", e);
+      alert("خطا در صدور خروجی اکسل");
+    }
+  };
 
   return (
     <div className="space-y-4">
-      {/* Controls: Display Mode Tabs & Search & Filter Dropdown */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
-        {/* View Mode Selector */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
-          <button
-            type="button"
-            onClick={() => setDisplayMode('ALL_SPLIT')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5",
-              displayMode === 'ALL_SPLIT' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Layers size={13} />
-            <span>تفکیکی و مجموع (پیش‌فرض)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDisplayMode('TOTAL_ONLY')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5",
-              displayMode === 'TOTAL_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Calculator size={13} />
-            <span>فقط مجموع کل</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDisplayMode('STUDY_ONLY')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5",
-              displayMode === 'STUDY_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <BookOpen size={13} />
-            <span>فقط مطالعه</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setDisplayMode('DISCUSSION_ONLY')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5",
-              displayMode === 'DISCUSSION_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <MessageSquare size={13} />
-            <span>فقط مباحثه</span>
-          </button>
-        </div>
-
-        {/* Search, Grade & Columns Drawer */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Grade filter */}
-          {uniqueGrades.length > 0 && (
-            <select
-              value={gradeFilter}
-              onChange={(e) => setGradeFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
-            >
-              <option value="ALL">همه پایه‌ها</option>
-              {uniqueGrades.map(g => (
-                <option key={g} value={g}>پایه {g}</option>
-              ))}
-            </select>
-          )}
-
-          {/* Search Box */}
-          <div className="relative min-w-[180px]">
-            <input
-              type="text"
-              placeholder="جستجوی طلبه..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
-            />
-            <Search size={14} className="absolute right-2.5 top-2.5 text-slate-400" />
-          </div>
-
-          {/* Column Toggle Button */}
-          <div ref={filterRef} className="relative">
+      {/* Controls: Display Mode Tabs, Warning Filters & Search & Export */}
+      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          {/* View Mode Selector */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
             <button
               type="button"
-              onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-              className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-xs"
+              onClick={() => setDisplayMode('ALL_SPLIT')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'ALL_SPLIT' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
             >
-              <SlidersHorizontal size={14} className="text-indigo-600" />
-              <span>مدیریت ستون‌ها</span>
-              <ChevronDown size={14} className={cn("text-slate-400 transition-transform", isFilterDropdownOpen && "rotate-180")} />
+              <Layers size={13} />
+              <span>تفکیک دروس اصلی + آزاد (تفصیلی)</span>
             </button>
 
-            <AnimatePresence>
-              {isFilterDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute left-0 mt-2 w-80 p-4 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-3 z-40"
-                >
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="text-xs font-black text-slate-800">ستون‌های قابل نمایش:</span>
-                    <button
-                      type="button"
-                      onClick={() => setCols({
-                        grade: true,
-                        needsFollowUp: true,
-                        warningNotice: true,
-                        warningStatus: true,
-                        studyMinutes: true,
-                        discussionMinutes: true,
-                        totalMinutes: true,
-                        diffMandatory: true,
-                        diffAvg: true,
-                        diffStudyAvg: true,
-                        diffDiscussionAvg: true,
-                        statusMandatory: true,
-                        statusAvg: true,
-                        individualExempt: true,
-                        action: true
-                      })}
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
-                    >
-                      نمایش همه
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-1.5 text-xs font-bold text-slate-700">
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.grade} onChange={() => setCols(p => ({ ...p, grade: !p.grade }))} className="rounded text-indigo-600" />
-                      <span>پایه تحصیلی</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
-                      <input type="checkbox" checked={cols.needsFollowUp} onChange={() => setCols(p => ({ ...p, needsFollowUp: !p.needsFollowUp }))} className="rounded text-amber-600" />
-                      <span className="text-amber-800 font-black">نیاز به پیگیری</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-purple-50/50 cursor-pointer bg-purple-50/30">
-                      <input type="checkbox" checked={cols.individualExempt} onChange={() => setCols(p => ({ ...p, individualExempt: !p.individualExempt }))} className="rounded text-purple-600" />
-                      <span className="text-purple-800 font-black">معافیت موردی</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-rose-50/50 cursor-pointer bg-rose-50/30">
-                      <input type="checkbox" checked={cols.warningNotice} onChange={() => setCols(p => ({ ...p, warningNotice: !p.warningNotice }))} className="rounded text-rose-600" />
-                      <span className="text-rose-800 font-black">ثبت اخطار</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
-                      <input type="checkbox" checked={cols.warningStatus} onChange={() => setCols(p => ({ ...p, warningStatus: !p.warningStatus }))} className="rounded text-amber-600" />
-                      <span className="text-amber-900 font-black">وضعیت اخطار</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.studyMinutes} onChange={() => setCols(p => ({ ...p, studyMinutes: !p.studyMinutes }))} className="rounded text-indigo-600" />
-                      <span>دقیقه مطالعه</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.discussionMinutes} onChange={() => setCols(p => ({ ...p, discussionMinutes: !p.discussionMinutes }))} className="rounded text-indigo-600" />
-                      <span>دقیقه مباحثه</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.totalMinutes} onChange={() => setCols(p => ({ ...p, totalMinutes: !p.totalMinutes }))} className="rounded text-indigo-600" />
-                      <span>مجموع دقایق</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.diffMandatory} onChange={() => setCols(p => ({ ...p, diffMandatory: !p.diffMandatory }))} className="rounded text-indigo-600" />
-                      <span>اختلاف با موظفی</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.diffAvg} onChange={() => setCols(p => ({ ...p, diffAvg: !p.diffAvg }))} className="rounded text-indigo-600" />
-                      <span>اختلاف با میانگین کل</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.diffStudyAvg} onChange={() => setCols(p => ({ ...p, diffStudyAvg: !p.diffStudyAvg }))} className="rounded text-indigo-600" />
-                      <span>اختلاف با میانگین مطالعه</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.diffDiscussionAvg} onChange={() => setCols(p => ({ ...p, diffDiscussionAvg: !p.diffDiscussionAvg }))} className="rounded text-indigo-600" />
-                      <span>اختلاف با میانگین مباحثه</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.statusMandatory} onChange={() => setCols(p => ({ ...p, statusMandatory: !p.statusMandatory }))} className="rounded text-indigo-600" />
-                      <span>وضعیت موظفی</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={cols.statusAvg} onChange={() => setCols(p => ({ ...p, statusAvg: !p.statusAvg }))} className="rounded text-indigo-600" />
-                      <span>وضعیت میانگین</span>
-                    </label>
-                  </div>
-                </motion.div>
+            <button
+              type="button"
+              onClick={() => setDisplayMode('AGGREGATED_TOTALS')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'AGGREGATED_TOTALS' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
               )}
-            </AnimatePresence>
+            >
+              <Calculator size={13} />
+              <span>مجموع دروس اصلی + آزاد + کل (تجمیعی)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisplayMode('TOTAL_ONLY')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'TOTAL_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <span>فقط مجموع کل</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisplayMode('STUDY_ONLY')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'STUDY_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <BookOpen size={13} />
+              <span>فقط مطالعه</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisplayMode('DISCUSSION_ONLY')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'DISCUSSION_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <MessageSquare size={13} />
+              <span>فقط مباحثه</span>
+            </button>
+          </div>
+
+          {/* Export & Columns Drawer */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Export Buttons */}
+            <button
+              type="button"
+              onClick={() => handleExportTable(false)}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              title="خروجی فایل اکسل بر اساس جدول جاری"
+            >
+              <Download size={13} />
+              <span>خروجی اکسل ({displayMode === 'ALL_SPLIT' ? 'تفصیلی' : 'تجمیعی'})</span>
+            </button>
+
+            {displayMode !== 'ALL_SPLIT' && (
+              <button
+                type="button"
+                onClick={() => handleExportTable(true)}
+                className="px-3 py-2 bg-white hover:bg-slate-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                title="خروجی کامل تفصیلی به تفکیک تمام دروس اصلی"
+              >
+                <FileSpreadsheet size={13} className="text-emerald-600" />
+                <span>خروجی تفکیک دروس</span>
+              </button>
+            )}
+
+            {/* Column Toggle Button */}
+            <div ref={filterRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              >
+                <SlidersHorizontal size={14} className="text-indigo-600" />
+                <span>مدیریت ستون‌ها</span>
+                <ChevronDown size={14} className={cn("text-slate-400 transition-transform", isFilterDropdownOpen && "rotate-180")} />
+              </button>
+
+              <AnimatePresence>
+                {isFilterDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 mt-2 w-80 p-4 bg-white rounded-2xl border border-slate-200 shadow-xl space-y-3 z-40"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <span className="text-xs font-black text-slate-800">ستون‌های قابل نمایش:</span>
+                      <button
+                        type="button"
+                        onClick={() => setCols({
+                          grade: true,
+                          needsFollowUp: true,
+                          individualExempt: true,
+                          warningNotice: true,
+                          warningStatus: true,
+                          coreStudyMinutes: true,
+                          coreDiscussionMinutes: true,
+                          coreTotalMinutes: true,
+                          freeStudyMinutes: true,
+                          totalMinutes: true,
+                          diffMandatory: true,
+                          diffCoreMandatory: true,
+                          diffAvg: true,
+                          statusMandatory: true
+                        })}
+                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                      >
+                        نمایش همه
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 text-xs font-bold text-slate-700">
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.grade} onChange={() => setCols(p => ({ ...p, grade: !p.grade }))} className="rounded text-indigo-600" />
+                        <span>پایه تحصیلی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
+                        <input type="checkbox" checked={cols.needsFollowUp} onChange={() => setCols(p => ({ ...p, needsFollowUp: !p.needsFollowUp }))} className="rounded text-amber-600" />
+                        <span className="text-amber-800 font-black">نیاز به پیگیری</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-purple-50/50 cursor-pointer bg-purple-50/30">
+                        <input type="checkbox" checked={cols.individualExempt} onChange={() => setCols(p => ({ ...p, individualExempt: !p.individualExempt }))} className="rounded text-purple-600" />
+                        <span className="text-purple-800 font-black">معافیت موردی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-rose-50/50 cursor-pointer bg-rose-50/30">
+                        <input type="checkbox" checked={cols.warningNotice} onChange={() => setCols(p => ({ ...p, warningNotice: !p.warningNotice }))} className="rounded text-rose-600" />
+                        <span className="text-rose-800 font-black">ثبت اخطار</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-amber-50/50 cursor-pointer bg-amber-50/30">
+                        <input type="checkbox" checked={cols.warningStatus} onChange={() => setCols(p => ({ ...p, warningStatus: !p.warningStatus }))} className="rounded text-amber-600" />
+                        <span className="text-amber-900 font-black">وضعیت اخطار</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.coreStudyMinutes} onChange={() => setCols(p => ({ ...p, coreStudyMinutes: !p.coreStudyMinutes }))} className="rounded text-indigo-600" />
+                        <span>مطالعه دروس اصلی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.coreDiscussionMinutes} onChange={() => setCols(p => ({ ...p, coreDiscussionMinutes: !p.coreDiscussionMinutes }))} className="rounded text-indigo-600" />
+                        <span>مباحثه دروس اصلی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.coreTotalMinutes} onChange={() => setCols(p => ({ ...p, coreTotalMinutes: !p.coreTotalMinutes }))} className="rounded text-indigo-600" />
+                        <span>مجموع دروس اصلی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.freeStudyMinutes} onChange={() => setCols(p => ({ ...p, freeStudyMinutes: !p.freeStudyMinutes }))} className="rounded text-teal-600" />
+                        <span>مطالعه آزاد</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.totalMinutes} onChange={() => setCols(p => ({ ...p, totalMinutes: !p.totalMinutes }))} className="rounded text-indigo-600" />
+                        <span>مجموع کل دقایق</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.diffCoreMandatory} onChange={() => setCols(p => ({ ...p, diffCoreMandatory: !p.diffCoreMandatory }))} className="rounded text-indigo-600" />
+                        <span>کسر/مازاد درس اصلی</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.diffMandatory} onChange={() => setCols(p => ({ ...p, diffMandatory: !p.diffMandatory }))} className="rounded text-indigo-600" />
+                        <span>کسر/مازاد کل</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={cols.statusMandatory} onChange={() => setCols(p => ({ ...p, statusMandatory: !p.statusMandatory }))} className="rounded text-indigo-600" />
+                        <span>وضعیت موظفی</span>
+                      </label>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Search, Grade, & Advanced Warning Quick Filter Tabs */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
+          {/* Quick Warning Filtering Badges */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-black text-slate-500 ml-1 flex items-center gap-1">
+              <Filter size={13} />
+              فیلتر وضعیت:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('ALL')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                warningFilter === 'ALL'
+                  ? "bg-slate-800 text-white shadow-xs"
+                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+              )}
+            >
+              همه طلاب ({studentRows.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('COMMENDED_ONLY')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                warningFilter === 'COMMENDED_ONLY'
+                  ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/40"
+                  : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300"
+              )}
+              title="طلابی که هم حداقل مطالعه دروس اصلی و هم حداقل موظفی کل دوره را تکمیل کرده و مازاد تشویقی دارند"
+            >
+              <Sparkles size={13} className="text-amber-300" />
+              <span>شایسته تشویق / مازاد موظفی ({warningCounts.commendedCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('WARNINGS_ONLY')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                warningFilter === 'WARNINGS_ONLY'
+                  ? "bg-rose-600 text-white shadow-xs"
+                  : "bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200"
+              )}
+            >
+              <AlertTriangle size={12} />
+              <span>مشمولین اخطار ({warningCounts.totalWarnings})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('CORE_DEFICIT_ONLY')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                warningFilter === 'CORE_DEFICIT_ONLY'
+                  ? "bg-rose-700 text-white shadow-xs"
+                  : "bg-white text-rose-700 hover:bg-rose-50 border border-rose-200"
+              )}
+            >
+              <span>کسری دروس اصلی ({warningCounts.coreDeficits})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('TOTAL_DEFICIT_ONLY')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                warningFilter === 'TOTAL_DEFICIT_ONLY'
+                  ? "bg-amber-600 text-white shadow-xs"
+                  : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200"
+              )}
+            >
+              <span>کسری مجموع کل ({warningCounts.totalDeficits})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setWarningFilter('NO_WARNING')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                warningFilter === 'NO_WARNING'
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200"
+              )}
+            >
+              <span>فاقد اخطار / معاف ({warningCounts.noWarnings})</span>
+            </button>
+          </div>
+
+          {/* Search Box & Grade Select */}
+          <div className="flex items-center gap-2">
+            {uniqueGrades.length > 0 && (
+              <select
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
+              >
+                <option value="ALL">همه پایه‌ها</option>
+                {uniqueGrades.map(g => (
+                  <option key={g} value={g}>پایه {g}</option>
+                ))}
+              </select>
+            )}
+
+            <div className="relative min-w-[180px]">
+              <input
+                type="text"
+                placeholder="جستجوی طلبه..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-3 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
+              />
+              <Search size={14} className="absolute right-2.5 top-2 text-slate-400" />
+            </div>
           </div>
         </div>
       </div>
@@ -508,10 +889,10 @@ export default function PeriodViewTable({
               <th className="px-3 py-3.5 text-center w-8">
                 <input
                   type="checkbox"
-                  checked={filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.includes(s.id))}
+                  checked={filteredRows.length > 0 && filteredRows.every(r => selectedStudentIds.includes(r.student.id))}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      setSelectedStudentIds(filteredStudents.map(s => s.id));
+                      setSelectedStudentIds(filteredRows.map(r => r.student.id));
                     } else {
                       setSelectedStudentIds([]);
                     }
@@ -528,63 +909,99 @@ export default function PeriodViewTable({
               {cols.warningNotice && <th className="px-3 py-3.5 text-center bg-rose-50/70 text-rose-800 font-extrabold">ثبت اخطار</th>}
               {cols.warningStatus && <th className="px-3 py-3.5 text-center bg-amber-50/70 text-amber-900 font-extrabold">وضعیت اخطار</th>}
 
-              {/* Show Study column if mode allows and column enabled */}
-              {cols.studyMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'STUDY_ONLY') && (
+              {/* DETAILED MODE (ALL_SPLIT): Dynamic columns for each core course */}
+              {displayMode === 'ALL_SPLIT' && allEnrolledCourses.map(course => (
+                <React.Fragment key={course.id}>
+                  <th className="px-3 py-3.5 text-center bg-indigo-50/70 text-indigo-900 font-extrabold border-r border-indigo-100 whitespace-nowrap">
+                    مطالعه {course.title} (د)
+                  </th>
+                  <th className="px-3 py-3.5 text-center bg-emerald-50/70 text-emerald-900 font-extrabold whitespace-nowrap">
+                    مباحثه {course.title} (د)
+                  </th>
+                </React.Fragment>
+              ))}
+
+              {/* CORE TOTALS (In both ALL_SPLIT and AGGREGATED_TOTALS) */}
+              {(displayMode === 'ALL_SPLIT' || displayMode === 'AGGREGATED_TOTALS') && (
+                <>
+                  {cols.coreStudyMinutes && (
+                    <th className="px-3 py-3.5 text-center bg-indigo-100/70 text-indigo-900 font-black whitespace-nowrap">
+                      مجموع مطالعه اصلی
+                    </th>
+                  )}
+                  {cols.coreDiscussionMinutes && (
+                    <th className="px-3 py-3.5 text-center bg-emerald-100/70 text-emerald-900 font-black whitespace-nowrap">
+                      مجموع مباحثه اصلی
+                    </th>
+                  )}
+                  {cols.coreTotalMinutes && (
+                    <th className="px-3 py-3.5 text-center bg-amber-100/70 text-amber-950 font-black whitespace-nowrap border-l border-amber-200">
+                      مجموع دروس اصلی
+                    </th>
+                  )}
+                  {cols.freeStudyMinutes && (
+                    <th className="px-3 py-3.5 text-center bg-teal-50 text-teal-900 font-black whitespace-nowrap">
+                      مطالعه آزاد
+                    </th>
+                  )}
+                </>
+              )}
+
+              {/* STUDY ONLY MODE */}
+              {displayMode === 'STUDY_ONLY' && (
                 <th className="px-3 py-3.5 text-center bg-indigo-50/50 text-indigo-700">دقیقه مطالعه</th>
               )}
 
-              {/* Show Discussion column if mode allows and column enabled */}
-              {cols.discussionMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'DISCUSSION_ONLY') && (
+              {/* DISCUSSION ONLY MODE */}
+              {displayMode === 'DISCUSSION_ONLY' && (
                 <th className="px-3 py-3.5 text-center bg-emerald-50/50 text-emerald-700">دقیقه مباحثه</th>
               )}
 
-              {/* Show Total column if mode allows and column enabled */}
-              {cols.totalMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'TOTAL_ONLY') && (
-                <th className="px-3 py-3.5 text-center bg-slate-100 text-slate-800 font-extrabold">مجموع کل (دقیقه)</th>
+              {/* OVERALL TOTAL COLUMN */}
+              {cols.totalMinutes && (
+                <th className="px-3 py-3.5 text-center bg-slate-900 text-white font-black whitespace-nowrap">
+                  مجموع کل (دقیقه / ساعت)
+                </th>
               )}
 
-              {cols.diffMandatory && <th className="px-3 py-3.5 text-center">اختلاف با موظفی</th>}
-              {cols.diffAvg && <th className="px-3 py-3.5 text-center">اختلاف با میانگین کل</th>}
-              {cols.diffStudyAvg && <th className="px-3 py-3.5 text-center">اختلاف با میانگین مطالعه</th>}
-              {cols.diffDiscussionAvg && <th className="px-3 py-3.5 text-center">اختلاف با میانگین مباحثه</th>}
-              {cols.statusMandatory && <th className="px-3 py-3.5 text-center">وضعیت موظفی</th>}
-              {cols.statusAvg && <th className="px-3 py-3.5 text-center">وضعیت میانگین</th>}
+              {cols.diffCoreMandatory && (
+                <th className="px-3 py-3.5 text-center bg-amber-50/50 text-amber-900 whitespace-nowrap">
+                  کسر/مازاد درس اصلی (حداقل {mandatoryCoreMinutes}د)
+                </th>
+              )}
+
+              {cols.diffMandatory && (
+                <th className="px-3 py-3.5 text-center whitespace-nowrap">
+                  کسر/مازاد کل (موظفی {mandatoryTotalMinutes}د)
+                </th>
+              )}
+
+              {cols.statusMandatory && <th className="px-3 py-3.5 text-center whitespace-nowrap">ارزیابی نهایی</th>}
               {isLevel2User && <th className="px-3 py-3.5 text-center bg-indigo-50/80 text-indigo-900 font-extrabold whitespace-nowrap">کپی شماره تماس</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-            {filteredStudents.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={12} className="py-12 text-center text-slate-400 font-bold">
-                  هیچ طلبه‌ای یافت نشد.
+                <td colSpan={16} className="py-12 text-center text-slate-400 font-bold">
+                  هیچ طلبه‌ای با فیلترهای انتخابی یافت نشد.
                 </td>
               </tr>
             ) : (
-              filteredStudents.map((student, index) => {
-                const log = periodLogs.find(l => l.studentId === student.id);
-                const metrics = getLogMetrics(log);
-
-                // Student's grade peers averages
-                const gradeStudents = students.filter(s => s.grade === student.grade);
-                const gradeAvg = calculatePeriodAverages(period.id, allLogs, gradeStudents.map(s => s.id));
-
-                const isStudentIndividuallyExempt = (period.exemptStudentIds || []).includes(student.id);
-                const isGradeExempt = (period.exemptGrades || []).includes(student.grade || '');
-                const isAnyExempt = isStudentIndividuallyExempt || isGradeExempt;
-
-                const diffMandatory = isAnyExempt ? 0 : (metrics.totalMinutes - mandatoryMinutes);
-                const diffTotalAvg = metrics.totalMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.totalAvgMinutes : overallAvg.totalAvgMinutes);
-                const diffStudyAvg = metrics.studyMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.studyAvgMinutes : overallAvg.studyAvgMinutes);
-                const diffDiscAvg = metrics.discussionMinutes - (gradeAvg.activeCount > 0 ? gradeAvg.discussionAvgMinutes : overallAvg.discussionAvgMinutes);
-
-                const activeTodo = todos.find(t => 
-                  t.studentId === student.id && 
-                  !t.completed && 
-                  (t.isStudyFollowUp || (t.title && t.title.includes('[پیگیری مطالعه]'))) && 
-                  (t.periodId === period.id || (t.title && t.title.includes(period.title)))
-                );
-                const hasActiveFollowUp = !!activeTodo;
-
+              filteredRows.map(({
+                student,
+                log,
+                metrics,
+                warningStatus,
+                isStudentIndividuallyExempt,
+                isGradeExempt,
+                isAnyExempt,
+                diffTotalMandatory,
+                diffCoreMandatory,
+                hasActiveFollowUp,
+                activeTodo,
+                wfItem
+              }, index) => {
                 const isSelected = selectedStudentId === student.id;
 
                 return (
@@ -593,7 +1010,8 @@ export default function PeriodViewTable({
                     onClick={() => onSelectStudent(student.id)}
                     className={cn(
                       "cursor-pointer transition-colors",
-                      isSelected ? "bg-indigo-50/70 font-semibold" : "hover:bg-slate-50/80"
+                      isSelected ? "bg-indigo-50/70 font-semibold" : "hover:bg-slate-50/80",
+                      warningStatus.hasWarning && !isAnyExempt && "bg-rose-50/20"
                     )}
                   >
                     <td className="px-3 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -673,17 +1091,23 @@ export default function PeriodViewTable({
                           <span className="bg-purple-50 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-200 whitespace-nowrap">
                             {isStudentIndividuallyExempt ? '🛡️ معاف موردی' : 'معاف از موظفی'}
                           </span>
-                        ) : diffMandatory < 0 ? (
+                        ) : warningStatus.hasWarning ? (
                           <div className="flex flex-col items-center gap-1">
-                            <span className="text-[11px] font-bold text-rose-700 whitespace-nowrap">
-                              کسری {Math.abs(diffMandatory).toLocaleString('fa-IR')} د
+                            <span className="text-[10px] font-bold text-rose-700 whitespace-nowrap leading-tight">
+                              {warningStatus.warningType === 'deficit_both' ? (
+                                `کسری ۲گانه (${warningStatus.coreDeficitMinutes}د اصلی | ${warningStatus.totalDeficitMinutes}د کل)`
+                              ) : warningStatus.warningType === 'deficit_core_only' ? (
+                                `کسری درس اصلی: ${warningStatus.coreDeficitMinutes}د`
+                              ) : (
+                                `کسری کل: ${warningStatus.totalDeficitMinutes}د`
+                              )}
                             </span>
-                            {!workflowItems.some(w => w.category === 'study_deficit_warning' && w.studentId === student.id && (w.details?.periodId === period.id || w.title?.includes(period.title))) ? (
+                            {!wfItem ? (
                               <button
                                 type="button"
-                                onClick={() => handleRegisterWarning(student, Math.abs(diffMandatory))}
+                                onClick={() => handleRegisterWarning(student, warningStatus)}
                                 className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-black rounded-lg transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
-                                title="ثبت اخطار در جریان کار"
+                                title="ثبت اخطار رسمی در جریان کار"
                               >
                                 <AlertCircle size={11} />
                                 <span>ثبت اخطار</span>
@@ -693,78 +1117,132 @@ export default function PeriodViewTable({
                             )}
                           </div>
                         ) : (
-                          <span className="text-slate-400 text-[11px] font-medium">تکمیل موظفی</span>
+                          <span className="text-emerald-700 text-[11px] font-bold">تکمیل موظفی</span>
                         )}
                       </td>
                     )}
 
                     {/* Warning Status Column */}
-                    {cols.warningStatus && (() => {
-                      const wfItem = workflowItems.find(w => 
-                        w.category === 'study_deficit_warning' && 
-                        w.studentId === student.id && 
-                        (w.details?.periodId === period.id || w.title?.includes(period.title))
-                      );
-                      return (
-                        <td className="px-3 py-3.5 text-center">
-                          {wfItem ? (
-                            wfItem.status === 'approved' ? (
-                              <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
-                                ثبت قطعی
-                              </span>
-                            ) : wfItem.status === 'rejected' ? (
-                              <span className="bg-slate-100 text-slate-600 border border-slate-300 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
-                                رد اخطار
-                              </span>
-                            ) : (
-                              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
-                                در انتظار تایید
-                              </span>
-                            )
-                          ) : isAnyExempt ? (
-                            <span className="text-purple-600 text-[10px] font-bold">معاف</span>
-                          ) : diffMandatory < 0 ? (
-                            <span className="bg-slate-50 text-slate-500 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                              ثبت نشده
+                    {cols.warningStatus && (
+                      <td className="px-3 py-3.5 text-center">
+                        {wfItem ? (
+                          wfItem.status === 'approved' ? (
+                            <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
+                              ثبت قطعی اخطار
+                            </span>
+                          ) : wfItem.status === 'rejected' ? (
+                            <span className="bg-slate-100 text-slate-600 border border-slate-300 text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
+                              رد اخطار
                             </span>
                           ) : (
-                            <span className="text-emerald-600 text-[10px] font-bold">فاقد اخطار</span>
-                          )}
-                        </td>
-                      );
-                    })()}
+                            <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap">
+                              در انتظار تایید
+                            </span>
+                          )
+                        ) : isAnyExempt ? (
+                          <span className="text-purple-600 text-[10px] font-bold">معاف</span>
+                        ) : warningStatus.hasWarning ? (
+                          <span className={cn("text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap", warningStatus.badgeClass)}>
+                            {warningStatus.shortBadge}
+                          </span>
+                        ) : warningStatus.isCommended ? (
+                          <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap inline-flex items-center gap-1">
+                            <Sparkles size={11} className="text-amber-500" />
+                            <span>تشویقی</span>
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600 text-[10px] font-bold">فاقد اخطار</span>
+                        )}
+                      </td>
+                    )}
 
-                    {/* Study Minutes Column */}
-                    {cols.studyMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'STUDY_ONLY') && (
+                    {/* DETAILED COLUMNS: Each enrolled core course study and discussion */}
+                    {displayMode === 'ALL_SPLIT' && allEnrolledCourses.map(course => {
+                      const cb = log?.coursesBreakdown?.find(c => c.courseId === course.id || c.courseTitle === course.title);
+                      const sM = cb?.studyMinutes || 0;
+                      const dM = cb?.discussionMinutes || 0;
+
+                      return (
+                        <React.Fragment key={course.id}>
+                          <td className="px-3 py-3.5 text-center font-bold text-indigo-700 bg-indigo-50/20 border-r border-slate-100">
+                            {sM > 0 ? `${sM.toLocaleString('fa-IR')} د` : <span className="text-slate-300 font-normal">۰</span>}
+                          </td>
+                          <td className="px-3 py-3.5 text-center font-bold text-emerald-700 bg-emerald-50/20">
+                            {dM > 0 ? `${dM.toLocaleString('fa-IR')} د` : <span className="text-slate-300 font-normal">۰</span>}
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* CORE TOTALS (In both ALL_SPLIT and AGGREGATED_TOTALS) */}
+                    {(displayMode === 'ALL_SPLIT' || displayMode === 'AGGREGATED_TOTALS') && (
+                      <>
+                        {cols.coreStudyMinutes && (
+                          <td className="px-3 py-3.5 text-center font-bold text-indigo-800 bg-indigo-50/40">
+                            {metrics.coreStudyMinutes > 0 ? `${metrics.coreStudyMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300">۰</span>}
+                          </td>
+                        )}
+                        {cols.coreDiscussionMinutes && (
+                          <td className="px-3 py-3.5 text-center font-bold text-emerald-800 bg-emerald-50/40">
+                            {metrics.coreDiscussionMinutes > 0 ? `${metrics.coreDiscussionMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300">۰</span>}
+                          </td>
+                        )}
+                        {cols.coreTotalMinutes && (
+                          <td className={cn(
+                            "px-3 py-3.5 text-center font-black border-l border-amber-200",
+                            metrics.coreTotalMinutes >= mandatoryCoreMinutes ? "text-amber-950 bg-amber-50/80" : "text-rose-700 bg-rose-50/80"
+                          )}>
+                            {metrics.coreTotalMinutes > 0 ? `${metrics.coreTotalMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300">۰</span>}
+                          </td>
+                        )}
+                        {cols.freeStudyMinutes && (
+                          <td className="px-3 py-3.5 text-center font-bold text-teal-800 bg-teal-50/40">
+                            {metrics.freeStudyMinutes > 0 ? `${metrics.freeStudyMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300">۰</span>}
+                          </td>
+                        )}
+                      </>
+                    )}
+
+                    {/* STUDY ONLY MODE */}
+                    {displayMode === 'STUDY_ONLY' && (
                       <td className="px-3 py-3.5 text-center font-bold text-indigo-700 bg-indigo-50/30">
                         {metrics.studyMinutes > 0 ? `${metrics.studyMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300 font-normal">۰</span>}
                       </td>
                     )}
 
-                    {/* Discussion Minutes Column */}
-                    {cols.discussionMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'DISCUSSION_ONLY') && (
+                    {/* DISCUSSION ONLY MODE */}
+                    {displayMode === 'DISCUSSION_ONLY' && (
                       <td className="px-3 py-3.5 text-center font-bold text-emerald-700 bg-emerald-50/30">
                         {metrics.discussionMinutes > 0 ? `${metrics.discussionMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300 font-normal">۰</span>}
                       </td>
                     )}
 
-                    {/* Total Minutes Column */}
-                    {cols.totalMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'TOTAL_ONLY') && (
-                      <td className="px-3 py-3.5 text-center font-black text-slate-900 bg-slate-50">
-                        {metrics.totalMinutes > 0 ? `${metrics.totalMinutes.toLocaleString('fa-IR')} د` : <span className="text-slate-300 font-normal">۰</span>}
+                    {/* OVERALL TOTAL COLUMN */}
+                    {cols.totalMinutes && (
+                      <td className="px-3 py-3.5 text-center font-black bg-slate-50 text-slate-900">
+                        {metrics.totalMinutes > 0 ? (
+                          <div className="flex flex-col items-center">
+                            <span>{metrics.totalMinutes.toLocaleString('fa-IR')} دقیقه</span>
+                            <span className="text-[10px] text-slate-500 font-normal">
+                              ({(metrics.totalMinutes / 60).toFixed(1)} ساعت)
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300 font-normal">۰</span>
+                        )}
                       </td>
                     )}
 
-                    {/* Diff with Mandatory (Total vs Mandatory) */}
-                    {cols.diffMandatory && (
-                      <td className="px-3 py-3.5 text-center">
-                        {metrics.totalMinutes > 0 && mandatoryMinutes > 0 ? (
+                    {/* Diff Core Mandatory */}
+                    {cols.diffCoreMandatory && (
+                      <td className="px-3 py-3.5 text-center bg-amber-50/30">
+                        {metrics.coreTotalMinutes > 0 && mandatoryCoreMinutes > 0 ? (
                           <span className={cn(
                             "inline-flex items-center gap-0.5 font-bold text-[11px]",
-                            diffMandatory >= 0 ? "text-emerald-600" : "text-rose-600"
+                            diffCoreMandatory >= 0 ? "text-emerald-600" : "text-rose-600 font-black"
                           )}>
-                            {diffMandatory > 0 ? '+' : ''}{diffMandatory.toLocaleString('fa-IR')} د
-                            {diffMandatory >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                            {diffCoreMandatory > 0 ? '+' : ''}{diffCoreMandatory.toLocaleString('fa-IR')} د
+                            {diffCoreMandatory >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
                           </span>
                         ) : (
                           <span className="text-slate-300">---</span>
@@ -772,15 +1250,16 @@ export default function PeriodViewTable({
                       </td>
                     )}
 
-                    {/* Diff with Total Average */}
-                    {cols.diffAvg && (
+                    {/* Diff Total Mandatory */}
+                    {cols.diffMandatory && (
                       <td className="px-3 py-3.5 text-center">
-                        {metrics.totalMinutes > 0 ? (
+                        {metrics.totalMinutes > 0 && mandatoryTotalMinutes > 0 ? (
                           <span className={cn(
-                            "font-bold text-[11px]",
-                            diffTotalAvg >= 0 ? "text-emerald-600" : "text-amber-600"
+                            "inline-flex items-center gap-0.5 font-bold text-[11px]",
+                            diffTotalMandatory >= 0 ? "text-emerald-600" : "text-rose-600 font-black"
                           )}>
-                            {diffTotalAvg > 0 ? '+' : ''}{diffTotalAvg.toLocaleString('fa-IR')} د
+                            {diffTotalMandatory > 0 ? '+' : ''}{diffTotalMandatory.toLocaleString('fa-IR')} د
+                            {diffTotalMandatory >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
                           </span>
                         ) : (
                           <span className="text-slate-300">---</span>
@@ -788,75 +1267,29 @@ export default function PeriodViewTable({
                       </td>
                     )}
 
-                    {/* Diff with Study Average */}
-                    {cols.diffStudyAvg && (
-                      <td className="px-3 py-3.5 text-center">
-                        {metrics.studyMinutes > 0 ? (
-                          <span className={cn(
-                            "font-bold text-[11px]",
-                            diffStudyAvg >= 0 ? "text-indigo-600" : "text-amber-600"
-                          )}>
-                            {diffStudyAvg > 0 ? '+' : ''}{diffStudyAvg.toLocaleString('fa-IR')} د
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">---</span>
-                        )}
-                      </td>
-                    )}
-
-                    {/* Diff with Discussion Average */}
-                    {cols.diffDiscussionAvg && (
-                      <td className="px-3 py-3.5 text-center">
-                        {metrics.discussionMinutes > 0 ? (
-                          <span className={cn(
-                            "font-bold text-[11px]",
-                            diffDiscAvg >= 0 ? "text-emerald-600" : "text-amber-600"
-                          )}>
-                            {diffDiscAvg > 0 ? '+' : ''}{diffDiscAvg.toLocaleString('fa-IR')} د
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">---</span>
-                        )}
-                      </td>
-                    )}
-
-                    {/* Status Mandatory */}
+                    {/* Final Status */}
                     {cols.statusMandatory && (
                       <td className="px-3 py-3.5 text-center">
                         {isAnyExempt ? (
                           <span className="bg-purple-50 text-purple-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-purple-200 whitespace-nowrap">
                             معاف از موظفی
                           </span>
-                        ) : metrics.totalMinutes >= mandatoryMinutes && mandatoryMinutes > 0 ? (
+                        ) : warningStatus.hasWarning ? (
+                          <span className={cn("text-[10px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap", warningStatus.badgeClass)}>
+                            {warningStatus.shortBadge}
+                          </span>
+                        ) : warningStatus.isCommended ? (
+                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black px-2.5 py-1 rounded-full shadow-2xs whitespace-nowrap inline-flex items-center gap-1">
+                            <Sparkles size={11} className="text-amber-500" />
+                            <span>شایسته تشویق</span>
+                          </span>
+                        ) : metrics.totalMinutes > 0 ? (
                           <span className="bg-emerald-50 text-emerald-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-100 whitespace-nowrap">
-                            موفق موظفی
-                          </span>
-                        ) : metrics.totalMinutes === 0 ? (
-                          <span className="bg-slate-100 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-                            ثبت نشده
+                            تکمیل موظفی
                           </span>
                         ) : (
-                          <span className="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-0.5 rounded-full border border-rose-100 whitespace-nowrap">
-                            کسری موظفی
-                          </span>
-                        )}
-                      </td>
-                    )}
-
-                    {/* Status Average */}
-                    {cols.statusAvg && (
-                      <td className="px-3 py-3.5 text-center">
-                        {metrics.totalMinutes >= overallAvg.totalAvgMinutes && overallAvg.totalAvgMinutes > 0 ? (
-                          <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-indigo-100 whitespace-nowrap">
-                            بالای میانگین
-                          </span>
-                        ) : metrics.totalMinutes === 0 ? (
                           <span className="bg-slate-100 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
                             ثبت نشده
-                          </span>
-                        ) : (
-                          <span className="bg-amber-50 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-100 whitespace-nowrap">
-                            زیر میانگین
                           </span>
                         )}
                       </td>
@@ -886,34 +1319,12 @@ export default function PeriodViewTable({
             )}
           </tbody>
           <tfoot>
-            <tr className="bg-slate-100/80 font-black text-slate-800 text-xs border-t-2 border-slate-200">
-              <td colSpan={2 + (cols.grade ? 1 : 0) + (cols.needsFollowUp ? 1 : 0)} className="px-4 py-3.5">
+            <tr className="bg-slate-100/90 font-black text-slate-800 text-xs border-t-2 border-slate-200">
+              <td colSpan={3 + (cols.grade ? 1 : 0) + (cols.needsFollowUp ? 1 : 0) + (cols.individualExempt ? 1 : 0)} className="px-4 py-3.5">
                 میانگین دوره (مشارکت: {overallAvg.activeCount} نفر)
               </td>
-              {cols.studyMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'STUDY_ONLY') && (
-                <td className="px-3 py-3.5 text-center text-indigo-700 font-black">
-                  {overallAvg.studyAvgMinutes.toLocaleString('fa-IR')} د
-                </td>
-              )}
-              {cols.discussionMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'DISCUSSION_ONLY') && (
-                <td className="px-3 py-3.5 text-center text-emerald-700 font-black">
-                  {overallAvg.discussionAvgMinutes.toLocaleString('fa-IR')} د
-                </td>
-              )}
-              {cols.totalMinutes && (displayMode === 'ALL_SPLIT' || displayMode === 'TOTAL_ONLY') && (
-                <td className="px-3 py-3.5 text-center text-slate-900 font-black">
-                  {overallAvg.totalAvgMinutes.toLocaleString('fa-IR')} د
-                </td>
-              )}
-              <td colSpan={
-                (cols.diffMandatory ? 1 : 0) +
-                (cols.diffAvg ? 1 : 0) +
-                (cols.diffStudyAvg ? 1 : 0) +
-                (cols.diffDiscussionAvg ? 1 : 0) +
-                (cols.statusMandatory ? 1 : 0) +
-                (cols.statusAvg ? 1 : 0) || 1
-              } className="px-3 py-3.5 text-center text-slate-500 text-[11px] font-bold">
-                میزان موظفی این دوره: {mandatoryMinutes.toLocaleString('fa-IR')} دقیقه
+              <td colSpan={15} className="px-4 py-3.5 text-left text-slate-600 font-bold">
+                موظفی کل دوره: <b className="text-indigo-700">{mandatoryTotalMinutes.toLocaleString('fa-IR')} دقیقه</b> | حداقل موظفی دروس اصلی: <b className="text-amber-800">{mandatoryCoreMinutes.toLocaleString('fa-IR')} دقیقه</b>
               </td>
             </tr>
           </tfoot>
