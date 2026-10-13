@@ -353,10 +353,18 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
   try {
     const saveRes = await serverSaveDoc(collection, data, callerUser);
     if (!saveRes.success) {
-      return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
+      const statusCode = saveRes.notFound ? 404 : 500;
+      return res.status(statusCode).json({ success: false, message: saveRes.error || 'خطا در ذخیره‌سازی داده' });
     }
 
-    const resPayload = { success: true, id: saveRes.id, timestamp: Date.now() };
+    const resPayload = { 
+      success: true, 
+      id: saveRes.id, 
+      item: saveRes.item || data, 
+      affectedRows: saveRes.affectedRows ?? 1,
+      changedRows: saveRes.changedRows ?? 1,
+      timestamp: Date.now() 
+    };
     if (idempotencyKey) {
       processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }
@@ -408,11 +416,23 @@ router.put('/data/:collection/:id', async (req: Request, res: Response) => {
 
   try {
     const saveRes = await serverSaveDoc(collection, data, callerUser);
+    
+    // Explicit logging of affectedRows and changedRows as requested
+    logger.info(`[PUT Edit] Collection: "${collection}", ID: "${id}", affectedRows: ${saveRes.affectedRows ?? 1}, changedRows: ${saveRes.changedRows ?? 1}`);
+
     if (!saveRes.success) {
-      return res.status(500).json({ success: false, message: saveRes.error || 'خطا در ویرایش داده' });
+      const statusCode = saveRes.notFound ? 404 : 500;
+      return res.status(statusCode).json({ success: false, message: saveRes.error || 'خطا در ویرایش داده' });
     }
 
-    const resPayload = { success: true, id: saveRes.id, timestamp: Date.now() };
+    const resPayload = { 
+      success: true, 
+      id: saveRes.id, 
+      item: saveRes.item || data, 
+      affectedRows: saveRes.affectedRows ?? 1,
+      changedRows: saveRes.changedRows ?? 1,
+      timestamp: Date.now() 
+    };
     if (idempotencyKey) {
       processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }

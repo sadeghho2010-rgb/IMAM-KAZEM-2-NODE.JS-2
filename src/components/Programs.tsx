@@ -1179,6 +1179,7 @@ export default function Programs() {
         teacher: newProgram.teacher || '',
         madrasRoom: newProgram.madrasRoom || '',
         classroom: newProgram.madrasRoom || '',
+        parentProgramId: newProgram.type === 'مشاوره' ? (newProgram.parentProgramId || '') : '',
         representativeStudentIds: newProgram.representativeStudentIds || [],
         representativeNames: newProgram.representativeNames || [],
         subjectCategory: newProgram.type === 'اصلی' ? newProgram.subjectCategory : undefined,

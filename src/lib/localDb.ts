@@ -1375,9 +1375,12 @@ class LocalDatabase {
     this.notify();
 
     // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res) => {
+    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res: any) => {
       if (res.success) {
-        removePendingLocalDoc(resolvedCol, id);
+        if (res.item && typeof res.item === 'object') {
+          this.setLocalStorageDoc(resolvedCol, id, res.item);
+        }
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
@@ -1429,9 +1432,19 @@ class LocalDatabase {
     this.notify();
 
     // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res) => {
+    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res: any) => {
       if (res.success) {
-        removePendingLocalDoc(resolvedCol, id);
+        if (res.item && typeof res.item === 'object') {
+          this.setLocalStorageDoc(resolvedCol, res.item);
+          if (db.objectStoreNames.contains(resolvedCol)) {
+            try {
+              const transaction = db.transaction(resolvedCol, 'readwrite');
+              transaction.objectStore(resolvedCol).put(res.item);
+            } catch (e) {}
+          }
+        }
+        // Protect local write for 15s against immediate background revalidations
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);

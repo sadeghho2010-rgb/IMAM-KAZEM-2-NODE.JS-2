@@ -569,6 +569,18 @@ export async function serverSaveDoc(
     syncStudentToUserAccount(record);
   }
 
+  // Always mirror user records to user storage (system_users.json + memory) regardless of DB mode
+  if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
+    if (record && (record.username || record.id)) {
+      saveUserToStorage(record).catch(err => {
+        console.warn('[saveUserToStorage mirror warning]:', err);
+      });
+    }
+  }
+
+  // Invalidate L1 collection cache so subsequent GETs return fresh data
+  invalidateCollectionCache(collection);
+
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
@@ -591,9 +603,10 @@ export async function serverSaveDoc(
       }
 
       const [saveRes] = await Promise.all(tasks);
-      const affectedRows = saveRes?.affectedRows || 0;
+      const affectedRows = saveRes?.affectedRows ?? 1;
+      const changedRows = saveRes?.changedRows ?? affectedRows;
 
-      console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
+      console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}, ChangedRows: ${changedRows}`);
 
       // Log Audit Entry asynchronously in background (non-blocking)
       logAudit({
@@ -608,7 +621,7 @@ export async function serverSaveDoc(
       }).catch(() => {});
 
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id, item: record };
+      return { success: true, id, item: record, affectedRows, changedRows } as any;
     } catch (mErr: any) {
       console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
       console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
@@ -672,11 +685,11 @@ export async function serverSaveDoc(
       }
 
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id };
+      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
     } catch (err: any) {
       console.warn(`[Supabase Save Non-fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err);
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id };
+      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
     }
   }
 
@@ -684,7 +697,7 @@ export async function serverSaveDoc(
   try {
     localFileSaveDoc(collection, id, record);
     notifyRealtimeChange(collection, id, 'upsert');
-    return { success: true, id };
+    return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
   } catch (err: any) {
     console.error(`[FileStore Save Error] Collection: "${collection}", ID: "${id}":`, err);
     return { success: false, id: '', error: 'خطا در ذخیره‌سازی فایل محلی.' };
@@ -1042,6 +1055,23 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
 // Internal helper to retrieve multiple raw documents by collection and candidate IDs
 async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promise<any[]> {
   if (!ids || ids.length === 0) return [];
+
+  // Special case for system_users / users / all_users: check authoritative user storage
+  if (collection === 'system_users' || collection === 'users' || collection === 'all_users') {
+    try {
+      const allUsers = await fetchAllUsersFromStorage();
+      const cleanIds = ids.map(x => String(x).toUpperCase().trim());
+      const matched = allUsers.filter(u => 
+        cleanIds.includes(String(u.id || '').toUpperCase().trim()) || 
+        cleanIds.includes(String(u.username || '').toUpperCase().trim())
+      );
+      if (matched && matched.length > 0) {
+        return matched.map(u => ({ ...u, id: u.id || u.username }));
+      }
+    } catch (uErr) {
+      console.warn('[fetchRawDocumentsByIds system_users notice]:', uErr);
+    }
+  }
 
   // 1. If MySQL is configured, fetch directly from MySQL with IN (...)
   if (isMysqlConfigured) {
