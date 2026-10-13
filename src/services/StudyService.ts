@@ -4,6 +4,7 @@ import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
 import { StudyPeriod, PeriodicStudyLog } from '../types';
+import { isSameGrade } from '../lib/utils';
 
 export const StudyPeriodSchema = z.object({
   id: z.string().optional(),
@@ -230,7 +231,7 @@ export class StudyService {
           discussionHours: Number(log.discussionHours || 0)
         };
       })
-      .filter(item => !grade || item.grade === grade)
+      .filter(item => !grade || isSameGrade(item.grade, grade))
       .sort((a, b) => b.totalHours - a.totalHours)
       .map((item, index) => ({
         rank: index + 1,

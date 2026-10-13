@@ -400,33 +400,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const processIncomingUsers = (incomingList: Partial<AppUser>[]) => {
       if (!isMounted || !Array.isArray(incomingList) || incomingList.length === 0) return;
       setUsers(prev => {
-        const map = new Map<string, AppUser>();
-        DEFAULT_USERS.forEach(u => map.set(u.username.toUpperCase(), u));
-        prev.forEach(u => map.set(u.username.toUpperCase(), u));
+        const userById = new Map<string, AppUser>();
+        const userByUsername = new Map<string, AppUser>();
+
+        DEFAULT_USERS.forEach(u => {
+          userById.set(u.id, u);
+          userByUsername.set(u.username.toUpperCase(), u);
+        });
+
+        prev.forEach(u => {
+          if (u.id) userById.set(u.id, u);
+          if (u.username) userByUsername.set(u.username.toUpperCase(), u);
+        });
 
         incomingList.forEach((u: Partial<AppUser>) => {
           if (u && (u.username || u.id)) {
-            const uname = (u.username || u.id).toUpperCase();
-            const currentObj = map.get(uname);
+            const rawUname = (u.username || u.id || '').toUpperCase();
+            const existing = (u.id && userById.get(u.id)) || userByUsername.get(rawUname);
+
+            // If username changed, purge old username entry from map
+            if (existing && existing.username && existing.username.toUpperCase() !== rawUname) {
+              userByUsername.delete(existing.username.toUpperCase());
+            }
+
             const mergedUser: AppUser = {
-              ...currentObj,
+              ...(existing || {} as AppUser),
               ...u,
-              username: uname,
-              name: u.name || u.fullName || uname,
-              level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (currentObj?.level || 2))) as UserLevel),
-              role: u.role || currentObj?.role || 'custom',
-              roleTitle: u.roleTitle || currentObj?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
-              allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : currentObj?.allowedTabs || ['todos', 'students'],
-              editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : currentObj?.editableTabs || [],
-              modulePermissions: u.modulePermissions || currentObj?.modulePermissions || {},
-              isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (currentObj?.isReadOnly || false),
-              canEdit: u.canEdit !== undefined ? u.canEdit : (currentObj?.canEdit !== undefined ? currentObj.canEdit : true),
+              id: u.id || existing?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              username: rawUname,
+              name: u.name || u.fullName || existing?.name || rawUname,
+              level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (existing?.level || 2))) as UserLevel),
+              role: u.role || existing?.role || 'custom',
+              roleTitle: u.roleTitle || existing?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+              gradeLabel: u.gradeLabel || (u as any).grade || existing?.gradeLabel || '',
+              allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : existing?.allowedTabs || ['todos', 'students'],
+              editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : existing?.editableTabs || [],
+              modulePermissions: u.modulePermissions || existing?.modulePermissions || {},
+              isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (existing?.isReadOnly || false),
+              canEdit: u.canEdit !== undefined ? u.canEdit : (existing?.canEdit !== undefined ? existing.canEdit : true),
             };
-            map.set(uname, mergedUser);
+
+            userById.set(mergedUser.id, mergedUser);
+            userByUsername.set(rawUname, mergedUser);
           }
         });
 
-        const merged = Array.from(map.values());
+        const merged = Array.from(userById.values());
         let hasUsersChanged = false;
         try {
           const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
@@ -440,7 +459,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!hasUsersChanged) {
-          // If no user fields changed, retain previous array reference to prevent re-render cascades
           return prev;
         }
 

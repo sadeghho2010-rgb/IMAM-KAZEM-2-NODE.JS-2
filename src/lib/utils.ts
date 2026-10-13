@@ -34,33 +34,59 @@ export function normalizeGrade(val?: string | number | null): string {
   if (!str) return '';
   
   // Convert Persian/Arabic digits to English digits
-  const englishDigits = str.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
-                           .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
+  const englishDigits = str
+    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 1776))
+    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 1632));
   
   // Extract number if present
   const match = englishDigits.match(/\d+/);
   if (match) return match[0];
   
   // Words mapping
-  if (str.includes('هفت') || str.includes('۷')) return '7';
-  if (str.includes('هشت') || str.includes('۸')) return '8';
-  if (str.includes('نه') || str.includes('۹')) return '9';
-  if (str.includes('ده') || str.includes('۱۰')) return '10';
-  if (str.includes('یازده') || str.includes('۱۱')) return '11';
+  const lower = str.toLowerCase();
+  if (lower.includes('اول') || lower.includes('یک')) return '1';
+  if (lower.includes('دوم') || lower.includes('دو')) return '2';
+  if (lower.includes('سوم') || lower.includes('سه')) return '3';
+  if (lower.includes('چهارم') || lower.includes('چهار')) return '4';
+  if (lower.includes('پنجم') || lower.includes('پنج')) return '5';
+  if (lower.includes('ششم') || lower.includes('شش')) return '6';
+  if (lower.includes('هفتم') || lower.includes('هفت')) return '7';
+  if (lower.includes('هشتم') || lower.includes('هشت')) return '8';
+  if (lower.includes('نهم') || lower.includes('نه')) return '9';
+  if (lower.includes('دهم') || lower.includes('ده')) return '10';
+  if (lower.includes('یازدهم') || lower.includes('یازده')) return '11';
+  if (lower.includes('دوازدهم') || lower.includes('دوازده')) return '12';
+  
   return str;
 }
 
+export function isSameGrade(g1?: string | number | null, g2?: string | number | null): boolean {
+  if (g1 === g2) return true;
+  if (!g1 || !g2) return false;
+  
+  const norm1 = normalizeGrade(g1);
+  const norm2 = normalizeGrade(g2);
+  if (norm1 && norm2 && norm1 === norm2) return true;
+
+  const str1 = String(g1).trim();
+  const str2 = String(g2).trim();
+  return str1 === str2 || str1.includes(str2) || str2.includes(str1);
+}
+
 export function matchesGradeFilter(itemGrade?: string | number | null, filterValue?: string | number | null): boolean {
-  if (!filterValue || filterValue === 'all' || filterValue === 'همه') return true;
+  if (!filterValue || filterValue === 'all' || filterValue === 'همه' || filterValue === 'ALL') return true;
   if (!itemGrade) return false;
   
-  const normItem = normalizeGrade(itemGrade);
-  const normFilter = normalizeGrade(filterValue);
-
-  if (normItem && normFilter && normItem === normFilter) return true;
-
-  const itemStr = String(itemGrade).trim();
-  const filterStr = String(filterValue).trim();
-  return itemStr.includes(filterStr) || filterStr.includes(itemStr);
+  return isSameGrade(itemGrade, filterValue);
 }
+
+export function formatGradeLabel(val?: string | number | null): string {
+  if (!val) return 'پایه نامشخص';
+  const norm = normalizeGrade(val);
+  if (norm && /^\d+$/.test(norm)) {
+    return `پایه ${norm}`;
+  }
+  return String(val).trim();
+}
+
 

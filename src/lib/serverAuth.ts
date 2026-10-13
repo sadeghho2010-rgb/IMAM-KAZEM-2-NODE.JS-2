@@ -46,6 +46,9 @@ export interface SafeUser {
   roleTitle?: string;
   scope: string;
   gradeLabel: string;
+  grade?: string;
+  nationalCode?: string;
+  nationalId?: string;
   mentorId?: string;
   studentId?: string;
   studentName?: string;

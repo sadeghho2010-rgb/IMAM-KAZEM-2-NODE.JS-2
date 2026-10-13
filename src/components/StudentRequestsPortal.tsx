@@ -23,6 +23,7 @@ import {
   formatShamsiDate,
   parseShamsiDate
 } from '../lib/jalali';
+import { isSameGrade, normalizeGrade } from '../lib/utils';
 import { 
   Inbox, 
   PlusCircle, 
@@ -363,12 +364,8 @@ export default function StudentRequestsPortal() {
     const studentGrade = (currentUser?.gradeLabel || 'پایه ۷').trim();
     const sId = String(currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '').trim();
 
-    const normalizeGrade = (g: string) => g.replace(/7/g, '۷').replace(/8/g, '۸').replace(/9/g, '۹').replace(/10/g, '۱۰');
-    const normStudentGrade = normalizeGrade(studentGrade);
-
     const filtered = programs.filter(p => {
-      const pGrade = normalizeGrade(p.grade || '');
-      const matchesGrade = !p.grade || pGrade === normStudentGrade || p.grade === 'همه پایه‌ها' || pGrade.includes(normStudentGrade) || normStudentGrade.includes(pGrade);
+      const matchesGrade = !p.grade || p.grade === 'همه پایه‌ها' || isSameGrade(p.grade, studentGrade);
       const matchesEnrollment = sId && Array.isArray((p as any).studentIds) && (p as any).studentIds.map(String).includes(sId);
       const matchesRep = sId && Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.map(String).includes(sId);
       return matchesGrade || matchesEnrollment || matchesRep;

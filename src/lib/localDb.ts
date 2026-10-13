@@ -4,7 +4,7 @@
  * All photos are stored directly in the local database as Base64 data URLs.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
-import { dispatchDatabaseErrorToast } from './databaseToast';
+import { dispatchDatabaseErrorToast, dispatchDatabaseErrorToast as dispatchDatabaseToast } from './databaseToast';
 import { realtimeSync } from './realtimeSync';
 
 /**
@@ -1159,11 +1159,8 @@ class LocalDatabase {
             if (json.success && json.item) {
               const doc = json.item;
               const localDoc = await this.getDoc(resolvedCol, id);
-              const localTs = getDocTimestamp(localDoc);
-              const incomingTs = getDocTimestamp(doc);
-
-              // Only ignore if local edit has an un-synced newer timestamp
-              if (localDoc && localTs > incomingTs && incomingTs > 0) {
+              const pendingMap = getPendingLocalDocsMap();
+              if (pendingMap.has(`${resolvedCol}::${id}`)) {
                 return;
               }
 
@@ -1380,7 +1377,7 @@ class LocalDatabase {
     // 2. Non-blocking Background Server Write
     saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res) => {
       if (res.success) {
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        removePendingLocalDoc(resolvedCol, id);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
@@ -1434,7 +1431,7 @@ class LocalDatabase {
     // 2. Non-blocking Background Server Write
     saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res) => {
       if (res.success) {
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        removePendingLocalDoc(resolvedCol, id);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/AuthService';
 import { LoginInputSchema } from '../lib/validationSchemas';
-import { notifyRealtimeChange } from '../lib/serverDataApi';
+import { notifyRealtimeChange, serverQueryCollection, serverSaveDoc } from '../lib/serverDataApi';
 import { logAudit } from '../lib/auditLogger';
 import { recordLoginAuditInDb } from '../lib/databaseAbstraction';
 import {
@@ -306,15 +306,57 @@ export class AuthController {
       }
       delete safeUpdates.password;
 
+      const oldUsername = existing.username.toUpperCase();
+      const rawNewUsername = safeUpdates.username || safeUpdates.nationalCode || safeUpdates.nationalId || existing.username;
+      const newUsername = String(rawNewUsername).trim().toUpperCase();
+
+      const newGradeLabel = safeUpdates.gradeLabel || safeUpdates.grade || existing.gradeLabel || existing.grade;
+
       const updatedUser: StoredUser = {
         ...existing,
         ...safeUpdates,
-        username: existing.username.toUpperCase(),
+        id: existing.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        username: newUsername,
+        nationalCode: safeUpdates.nationalCode || safeUpdates.nationalId || newUsername,
+        nationalId: safeUpdates.nationalId || safeUpdates.nationalCode || newUsername,
+        gradeLabel: newGradeLabel,
+        grade: newGradeLabel,
         passwordHash
       };
       delete (updatedUser as any).password;
 
+      // If username (national code) changed, purge old username record so it does not revert or duplicate
+      if (newUsername !== oldUsername) {
+        await deleteUserFromStorage(oldUsername);
+      }
+
       await saveUserToStorage(updatedUser);
+
+      // Bidirectional sync: Update corresponding student record in 'students' collection if present
+      const studentId = updatedUser.linkedStudentId || updatedUser.studentId;
+      try {
+        const students = await serverQueryCollection('students');
+        const targetStudent = students.find((s: any) => 
+          (studentId && String(s.id) === String(studentId)) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === oldUsername) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === newUsername) ||
+          (s.name && String(s.name).trim() === String(existing.name).trim())
+        );
+        if (targetStudent) {
+          const studentPayload = {
+            ...targetStudent,
+            nationalId: newUsername,
+            grade: newGradeLabel || targetStudent.grade,
+            name: updatedUser.name || updatedUser.fullName || targetStudent.name,
+            isActive: updatedUser.isActive !== undefined ? updatedUser.isActive : targetStudent.isActive,
+            updatedAt: new Date().toISOString()
+          };
+          await serverSaveDoc('students', studentPayload);
+        }
+      } catch (sErr) {
+        console.warn('Non-fatal student sync error in updateUser:', sErr);
+      }
+
       notifyRealtimeChange('system_users', updatedUser.id, 'upsert');
 
       const caller = (req as any).user || AuthController.extractCaller(req);
@@ -324,7 +366,7 @@ export class AuthController {
         action: 'USER_UPDATED',
         entityType: 'system_users',
         entityId: updatedUser.id,
-        description: `ویرایش اطلاعات کاربر ${updatedUser.username}`,
+        description: `ویرایش اطلاعات کاربر ${updatedUser.username} (پایه: ${newGradeLabel})`,
         ipAddress: AuthController.getClientIp(req)
       }).catch(() => {});
 

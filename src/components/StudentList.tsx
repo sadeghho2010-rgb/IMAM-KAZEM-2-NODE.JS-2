@@ -499,13 +499,21 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     };
   }, [onlyActive]);
 
-  const syncStudentUserStatus = (studentId: string, isActive: boolean) => {
+  const syncStudentUserStatus = (studentId: string, isActive: boolean, updatedData?: Partial<Student>) => {
     try {
       const student = students.find(s => s.id === studentId);
-      if (!student) return;
-      const studentUser = getStudentAccount(student);
+      const studentUser = student ? getStudentAccount(student) : users.find(u => u.linkedStudentId === studentId || u.studentId === studentId);
       if (studentUser) {
-        updateUser(studentUser.id, { isActive });
+        const cleanNat = (updatedData?.nationalId || student?.nationalId || '').trim();
+        const gradeVal = updatedData?.grade || student?.grade;
+        const nameVal = updatedData?.name || student?.name;
+
+        updateUser(studentUser.id, {
+          isActive,
+          ...(cleanNat ? { username: cleanNat.toUpperCase(), nationalCode: cleanNat, nationalId: cleanNat } : {}),
+          ...(gradeVal ? { gradeLabel: gradeVal, grade: gradeVal } : {}),
+          ...(nameVal ? { name: nameVal, fullName: nameVal } : {})
+        });
       }
     } catch (e) {
       console.warn('Could not sync user status:', e);
@@ -571,7 +579,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           isActive: activeState,
           updatedAt: nowIso
         });
-        syncStudentUserStatus(editingStudent.id, activeState);
+        syncStudentUserStatus(editingStudent.id, activeState, updateData);
       } else {
         const tempId = `stu_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const newRecord = { ...studentPayload, id: tempId, createdAt: new Date().toISOString() };

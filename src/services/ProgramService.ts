@@ -4,6 +4,7 @@ import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
 import { Program, ProgramType } from '../types';
+import { isSameGrade } from '../lib/utils';
 
 export const ProgramInputSchema = z.object({
   id: z.string().optional(),
@@ -91,7 +92,7 @@ export class ProgramService {
       };
       const assignedGrade = gradeMap[callerUser.scope];
       if (assignedGrade) {
-        return programs.filter(p => !p.grade || p.grade === assignedGrade || p.grade === 'عمومی');
+        return programs.filter(p => !p.grade || isSameGrade(p.grade, assignedGrade) || p.grade === 'عمومی');
       }
     }
 
@@ -301,7 +302,7 @@ export class ProgramService {
   public static async getProgramsByGrade(grade: string, callerUser?: any): Promise<Program[]> {
     const all = await this.getAllPrograms(callerUser);
     const decodedGrade = decodeURIComponent(grade).trim();
-    return all.filter(p => p.grade && p.grade.trim() === decodedGrade);
+    return all.filter(p => p.grade && isSameGrade(p.grade, decodedGrade));
   }
 
   /**

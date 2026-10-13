@@ -4,6 +4,7 @@ import { AppError } from '../lib/errorHandler';
 import { logServerAudit } from '../lib/serverAuth';
 import { logger } from '../lib/logger';
 import { AttendanceSessionLog, StudentAttendanceDetail, AttendanceStatus } from '../types';
+import { isSameGrade } from '../lib/utils';
 
 export const StudentAttendanceSchema = z.object({
   studentId: z.string().min(1, 'شناسه طلبه الزامی است.'),
@@ -220,7 +221,7 @@ export class AttendanceService {
     let sessions = await this.getAllSessions(callerUser);
 
     if (filters?.grade) {
-      sessions = sessions.filter(s => s.grade === filters.grade);
+      sessions = sessions.filter(s => isSameGrade(s.grade, filters.grade));
     }
     if (filters?.programId) {
       sessions = sessions.filter(s => s.programId === filters.programId);

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser } from './serverAuth';
+import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 
@@ -494,6 +494,49 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
   return { row, dedicatedTable };
 }
 
+async function syncStudentToUserAccount(studentRecord: any) {
+  if (!studentRecord) return;
+  try {
+    const studentId = String(studentRecord.id || '');
+    const natId = (studentRecord.nationalId || studentRecord.national_id || '').trim().toUpperCase();
+    const studentGrade = studentRecord.grade ? String(studentRecord.grade).trim() : '';
+    const studentName = studentRecord.name ? String(studentRecord.name).trim() : '';
+
+    const users = await fetchAllUsersFromStorage();
+    const matchingUser = users.find(u => 
+      (u.linkedStudentId && String(u.linkedStudentId) === studentId) ||
+      (u.studentId && String(u.studentId) === studentId) ||
+      (natId && u.username.toUpperCase() === natId) ||
+      (studentName && (u.name?.trim() === studentName || u.fullName?.trim() === studentName))
+    );
+
+    if (matchingUser) {
+      const oldUsername = matchingUser.username.toUpperCase();
+      const newUsername = natId || oldUsername;
+
+      const updatedUser: StoredUser = {
+        ...matchingUser,
+        username: newUsername,
+        nationalCode: natId || matchingUser.nationalCode || newUsername,
+        nationalId: natId || matchingUser.nationalId || newUsername,
+        gradeLabel: studentGrade || matchingUser.gradeLabel || matchingUser.grade,
+        grade: studentGrade || matchingUser.grade || matchingUser.gradeLabel,
+        name: studentName || matchingUser.name,
+        fullName: studentName || matchingUser.fullName,
+        isActive: studentRecord.isActive !== undefined ? Boolean(studentRecord.isActive) : matchingUser.isActive
+      };
+
+      if (newUsername !== oldUsername) {
+        await deleteUserFromStorage(oldUsername);
+      }
+      await saveUserToStorage(updatedUser);
+      notifyRealtimeChange('system_users', updatedUser.id, 'upsert');
+    }
+  } catch (e) {
+    console.warn('Non-fatal syncStudentToUserAccount notice:', e);
+  }
+}
+
 // Server CRUD Handler: Save Document (Dedicated Table + App Collections Mirror)
 export async function serverSaveDoc(
   collection: string,
@@ -521,6 +564,10 @@ export async function serverSaveDoc(
 
   const id = String(record.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
   record.id = id;
+
+  if (collection === 'students') {
+    syncStudentToUserAccount(record);
+  }
 
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {

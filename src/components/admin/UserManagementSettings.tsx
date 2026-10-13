@@ -173,7 +173,7 @@ export default function UserManagementSettings() {
     setFormData({
       username: user.username,
       name: user.name,
-      password: user.password || user.nationalId || user.username || '',
+      password: user.password || '',
       level: user.level,
       role: user.role,
       roleTitle: user.roleTitle,
@@ -313,7 +313,7 @@ export default function UserManagementSettings() {
     updateUser(selectedUser.id, {
       username: cleanUsername,
       name: formData.name.trim(),
-      password: formData.password.trim() || selectedUser.password || '',
+      ...(formData.password.trim() ? { password: formData.password.trim() } : {}),
       level: formData.level,
       role: formData.role,
       roleTitle: formData.roleTitle,
@@ -714,13 +714,13 @@ export default function UserManagementSettings() {
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      رمز عبور {isEditModalOpen && <span className="text-[10px] text-slate-400 font-normal">(رمز عبور فعلی کاربر پیش‌فرض پر شده است)</span>}
+                      رمز عبور {isEditModalOpen && <span className="text-[10px] text-amber-600 font-normal">(در صورت عدم تغییر، خالی بگذارید)</span>}
                     </label>
                     <input
                       type="text"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="رمز عبور کاربر"
+                      placeholder={isEditModalOpen ? "رمز عبور جدید (در صورت نیاز به تغییر وارد کنید)" : "رمز عبور کاربر"}
                       required={isCreateModalOpen}
                       dir="ltr"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-500 text-right"
