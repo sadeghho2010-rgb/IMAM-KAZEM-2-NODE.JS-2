@@ -246,16 +246,16 @@ export class AuthController {
         editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
         modulePermissions: user.modulePermissions || {},
         isActive: user.isActive !== false,
-        passwordHash,
-        password: plainPassword
+        passwordHash
       };
+      delete (userToStore as any).password;
 
       await saveUserToStorage(userToStore);
       notifyRealtimeChange('system_users', userToStore.id, 'upsert');
 
-      const caller = AuthController.extractCaller(req);
+      const caller = (req as any).user || AuthController.extractCaller(req);
       logServerAudit({
-        userId: caller?.userId || 'system',
+        userId: caller?.userId || caller?.id || 'system',
         username: caller?.username || 'system',
         action: 'USER_CREATED',
         entityType: 'system_users',
@@ -290,24 +290,25 @@ export class AuthController {
       }
 
       let passwordHash = existing.passwordHash;
-      let plainPassword = existing.password;
-      if (updates.password && updates.password.trim() !== '') {
-        plainPassword = updates.password.trim();
+      const safeUpdates = { ...(updates || {}) };
+      if (safeUpdates.password && safeUpdates.password.trim() !== '') {
+        const plainPassword = safeUpdates.password.trim();
         passwordHash = await hashPassword(plainPassword);
       }
+      delete safeUpdates.password;
 
       const updatedUser: StoredUser = {
         ...existing,
-        ...updates,
+        ...safeUpdates,
         username: existing.username.toUpperCase(),
-        passwordHash,
-        password: plainPassword
+        passwordHash
       };
+      delete (updatedUser as any).password;
 
       await saveUserToStorage(updatedUser);
       notifyRealtimeChange('system_users', updatedUser.id, 'upsert');
 
-      const caller = AuthController.extractCaller(req);
+      const caller = (req as any).user || AuthController.extractCaller(req);
       logServerAudit({
         userId: caller?.userId || 'system',
         username: caller?.username || 'system',
@@ -339,9 +340,9 @@ export class AuthController {
       await deleteUserFromStorage(target);
       notifyRealtimeChange('system_users', String(target), 'delete');
 
-      const caller = AuthController.extractCaller(req);
+      const caller = (req as any).user || AuthController.extractCaller(req);
       logServerAudit({
-        userId: caller?.userId || 'system',
+        userId: caller?.userId || caller?.id || 'system',
         username: caller?.username || 'system',
         action: 'USER_DELETED',
         entityType: 'system_users',
@@ -375,13 +376,24 @@ export class AuthController {
 
       const passwordHash = await hashPassword(newPassword.trim());
       existing.passwordHash = passwordHash;
-      existing.password = newPassword.trim();
+      delete (existing as any).password;
       existing.mustChangePassword = false;
       existing.failedLoginAttempts = 0;
       existing.accountLockedUntil = undefined;
 
       await saveUserToStorage(existing);
       notifyRealtimeChange('system_users', existing.id, 'upsert');
+
+      const caller = (req as any).user || AuthController.extractCaller(req);
+      logServerAudit({
+        userId: caller?.userId || caller?.id || 'system',
+        username: caller?.username || 'system',
+        action: 'ADMIN_RESET_PASSWORD',
+        entityType: 'system_users',
+        entityId: existing.id,
+        description: `بازنشانی رمز عبور کاربر ${existing.username} توسط ${caller?.username || 'مدیر'}`,
+        ipAddress: AuthController.getClientIp(req)
+      }).catch(() => {});
 
       return res.status(200).json({
         success: true,

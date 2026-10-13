@@ -797,9 +797,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const adminResetPassword = async (targetUserId: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
     try {
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch('/api/auth/admin-reset-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ targetUserId, newPassword })
       });
