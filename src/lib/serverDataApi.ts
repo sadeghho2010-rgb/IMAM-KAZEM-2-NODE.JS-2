@@ -532,11 +532,15 @@ export async function serverSaveDoc(
       ];
 
       if (dedicatedTable) {
-        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch(() => {}));
+        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch((err: any) => {
+          console.error(`[STORAGE_FAILURE] Dedicated table "${dedicatedTable}" save failed for id "${id}" in collection "${collection}":`, err?.message || err);
+        }));
       }
 
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
-        tasks.push(MysqlRepository.saveUser(record).catch(() => {}));
+        tasks.push(MysqlRepository.saveUser(record).catch((err: any) => {
+          console.error(`[STORAGE_FAILURE] User mirror save failed for id "${id}" in collection "${collection}":`, err?.message || err);
+        }));
       }
 
       const [saveRes] = await Promise.all(tasks);

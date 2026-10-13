@@ -58,6 +58,49 @@ export interface SystemUserEntity {
   data?: any;
 }
 
+export class DbConnectionError extends Error {
+  public isDbConnectionError = true;
+  public code?: string;
+  public statusCode = 503;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'DbConnectionError';
+    this.code = code;
+  }
+}
+
+export function isConnectionError(err: any): boolean {
+  if (!err) return false;
+  if (err.isDbConnectionError) return true;
+  const code = err.code || '';
+  const msg = (err.message || '').toLowerCase();
+  const connErrorCodes = [
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'PROTOCOL_CONNECTION_LOST',
+    'ER_CON_COUNT_ERROR',
+    'ECONNRESET',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'EPIPE',
+    'EHOSTUNREACH',
+    'ER_GET_CONNECTION_TIMEOUT'
+  ];
+  if (connErrorCodes.includes(code)) return true;
+  if (
+    msg.includes('connection lost') ||
+    msg.includes('connect econnrefused') ||
+    msg.includes('etimedout') ||
+    msg.includes('pool initialization error') ||
+    msg.includes('ارتباط با سرور دیتابیس برقرار نشد') ||
+    msg.includes('too many connections') ||
+    msg.includes('connection error')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export interface AuditLogEntity {
   id?: string;
   userId?: string;
@@ -876,8 +919,12 @@ export function getMysqlPool(): mysql.Pool | null {
         connectionLimit: 15,
         queueLimit: 50,
         charset: 'utf8mb4_unicode_ci',
-        timezone: 'Z'
-      });
+        timezone: 'Z',
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
+        idleTimeout: 60000,
+        maxIdle: 10
+      } as any);
 
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
     } catch (err: any) {
@@ -1032,7 +1079,13 @@ export const MysqlRepository = {
   // 2b. Fetch Single User By Username (Fast O(1) Index Lookup)
   async getUserByUsername(username: string): Promise<SystemUserEntity | null> {
     const pool = getMysqlPool();
-    if (!pool || !username) return null;
+    if (!pool) {
+      if (isMysqlConfigured) {
+        throw new DbConnectionError('ارتباط با پایگاه داده MySQL برقرار نشد.');
+      }
+      return null;
+    }
+    if (!username) return null;
     const cleanUser = username.trim().toUpperCase();
 
     try {
@@ -1073,8 +1126,12 @@ export const MysqlRepository = {
         isActive: Boolean(u.isActive),
         mustChangePassword: Boolean(u.mustChangePassword)
       };
-    } catch (e) {
-      console.warn('[MySQL getUserByUsername Error]:', e);
+    } catch (e: any) {
+      if (isConnectionError(e)) {
+        console.error('[STORAGE_FAILURE] MySQL getUserByUsername DB connection error:', e?.message || e);
+        throw new DbConnectionError(`خطا در ارتباط با دیتابیس MySQL: ${e?.message || e}`, e?.code);
+      }
+      console.warn('[MySQL getUserByUsername Warning]:', e?.message || e);
       return null;
     }
   },
@@ -1159,7 +1216,9 @@ export const MysqlRepository = {
             role = VALUES(role),
             is_active = VALUES(is_active)
         `, [uId, uName, pHash, user.name, user.role, user.roleTitle || null, Number(user.level) || 3, user.gradeLabel || null, isActive]);
-      } catch (fallbackErr) {}
+      } catch (fallbackErr: any) {
+        console.error(`[STORAGE_FAILURE] MySQL saveUser all_users fallback failed for user "${uName}":`, fallbackErr?.message || fallbackErr);
+      }
     }
 
     // 2. Mirror into system_users (if table exists)
@@ -1181,12 +1240,16 @@ export const MysqlRepository = {
         user.studentId || null, user.linkedStudentId || null, user.avatarBg || null,
         allowedTabs, editableTabs, modulePerms, isActive, mustChange, userData
       ]);
-    } catch (e2) {}
+    } catch (e2: any) {
+      console.warn(`[STORAGE_FAILURE] MySQL saveUser system_users mirror notice for user "${uName}":`, e2?.message || e2);
+    }
 
     // 3. Mirror into app_collections for unified querying
     try {
       await this.saveDocument('all_users', uName, { ...user, id: uId, username: uName });
-    } catch (e3) {}
+    } catch (e3: any) {
+      console.warn(`[STORAGE_FAILURE] MySQL saveUser app_collections mirror notice for user "${uName}":`, e3?.message || e3);
+    }
   },
 
   // 4. Record Audit Log
@@ -1396,28 +1459,40 @@ export const MysqlRepository = {
         [collectionName, id]
       );
       affectedRows = Number(result?.affectedRows) || 0;
-    } catch (e) {}
+    } catch (e: any) {
+      console.error(`[STORAGE_FAILURE] MySQL deleteDocument app_collections error for collection "${collectionName}" id "${id}":`, e?.message || e);
+    }
 
     // Also delete from dedicated tables if applicable
     if (collectionName === 'students') {
       try {
         await pool.query(`DELETE FROM students WHERE id = ?`, [id]);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated students table error for id "${id}":`, e?.message || e);
+      }
     } else if (collectionName === 'teachers') {
       try {
         await pool.query(`DELETE FROM teachers WHERE id = ?`, [id]);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated teachers table error for id "${id}":`, e?.message || e);
+      }
     } else if (collectionName === 'classrooms') {
       try {
         await pool.query(`DELETE FROM classrooms WHERE id = ?`, [id]);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated classrooms table error for id "${id}":`, e?.message || e);
+      }
     } else if (collectionName === 'system_users' || collectionName === 'all_users') {
       try {
         await pool.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument all_users table error for id "${id}":`, e?.message || e);
+      }
       try {
         await pool.query(`DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument system_users table error for id "${id}":`, e?.message || e);
+      }
     }
 
     return { affectedRows };
@@ -1441,8 +1516,8 @@ export const MysqlRepository = {
         `DELETE FROM app_collections WHERE collection_name IN ('all_users', 'system_users') AND (id = ? OR UPPER(id) = UPPER(?))`,
         [userIdOrUsername, userIdOrUsername]
       );
-    } catch (e) {
-      console.warn('[MySQL deleteUser Error]:', e);
+    } catch (e: any) {
+      console.error(`[STORAGE_FAILURE] MySQL deleteUser Error for "${userIdOrUsername}":`, e?.message || e);
     }
   },
 
@@ -1462,7 +1537,9 @@ export const MysqlRepository = {
         const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
         return { ...parsed, id };
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
+    }
     return null;
   },
 

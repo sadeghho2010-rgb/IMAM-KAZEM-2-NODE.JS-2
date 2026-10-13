@@ -23,7 +23,9 @@ import {
   logServerAudit,
   StoredUser,
   SafeUser,
-  normalizeDigits
+  normalizeDigits,
+  DbConnectionError,
+  isConnectionError
 } from '../lib/serverAuth';
 import { AppError } from '../lib/errorHandler';
 import { logger } from '../lib/logger';
@@ -53,7 +55,15 @@ export class AuthService {
     }
 
     // High performance targeted user lookup O(1)
-    let user = await fetchUserByUsername(cleanUser);
+    let user: StoredUser | null = null;
+    try {
+      user = await fetchUserByUsername(cleanUser);
+    } catch (e: any) {
+      if (isConnectionError(e) || e?.isDbConnectionError || e?.statusCode === 503) {
+        throw new AppError('ارتباط با پایگاه داده برقرار نشد. لطفاً چند لحظه بعد مجدداً تلاش کنید.', { statusCode: 503 });
+      }
+      throw e;
+    }
 
     if (!user) {
       // Check default server users fallback

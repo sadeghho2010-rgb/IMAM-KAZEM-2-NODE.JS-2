@@ -23,32 +23,132 @@ export interface SyncQueueItem {
   data?: any;
   timestamp: number;
   attempts: number;
+  errorMsg?: string;
+  status?: 'pending' | 'failed';
 }
 
-const SYNC_QUEUE_KEY = 'madrasah_offline_sync_queue';
+const SYNC_QUEUE_KEY = 'madrasah_offline_sync_queue_v3';
+
+let syncQueueInMemoryCache: SyncQueueItem[] | null = null;
+
+async function writeSyncQueueToIndexedDB(queue: SyncQueueItem[]) {
+  if (typeof window === 'undefined' || !window.indexedDB) return;
+  try {
+    const db = await localDb.getDbInstance();
+    if (!db.objectStoreNames.contains('_sync_queue')) return;
+    const tx = db.transaction('_sync_queue', 'readwrite');
+    const store = tx.objectStore('_sync_queue');
+    store.clear();
+    for (const item of queue) {
+      if (item && item.id) {
+        store.put(item);
+      }
+    }
+  } catch (e) {
+    console.warn('[STORAGE_FAILURE] writeSyncQueueToIndexedDB error:', e);
+  }
+}
+
+async function readSyncQueueFromIndexedDB(): Promise<SyncQueueItem[]> {
+  if (typeof window === 'undefined' || !window.indexedDB) return [];
+  try {
+    const db = await localDb.getDbInstance();
+    if (!db.objectStoreNames.contains('_sync_queue')) return [];
+    return new Promise((resolve) => {
+      const tx = db.transaction('_sync_queue', 'readonly');
+      const store = tx.objectStore('_sync_queue');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  } catch (e) {
+    console.warn('[STORAGE_FAILURE] readSyncQueueFromIndexedDB error:', e);
+    return [];
+  }
+}
+
+async function writeFailedSyncItemToIndexedDB(item: SyncQueueItem) {
+  if (typeof window === 'undefined' || !window.indexedDB) return;
+  try {
+    const db = await localDb.getDbInstance();
+    if (!db.objectStoreNames.contains('_failed_sync_queue')) return;
+    const tx = db.transaction('_failed_sync_queue', 'readwrite');
+    const store = tx.objectStore('_failed_sync_queue');
+    store.put({ ...item, failedAt: Date.now() });
+  } catch (e) {
+    console.warn('[STORAGE_FAILURE] writeFailedSyncItemToIndexedDB error:', e);
+  }
+}
 
 export function getSyncQueue(): SyncQueueItem[] {
+  if (syncQueueInMemoryCache !== null) {
+    return syncQueueInMemoryCache;
+  }
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(SYNC_QUEUE_KEY) : null;
-    if (!raw) return [];
+    const raw = typeof window !== 'undefined'
+      ? (localStorage.getItem(SYNC_QUEUE_KEY) || localStorage.getItem('madrasah_offline_sync_queue'))
+      : null;
+    if (!raw) {
+      syncQueueInMemoryCache = [];
+      return [];
+    }
     const parsed: SyncQueueItem[] = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Keep items for up to 7 days across offline sessions
+    if (!Array.isArray(parsed)) {
+      syncQueueInMemoryCache = [];
+      return [];
+    }
     const now = Date.now();
-    return parsed.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 100);
+    const valid = parsed.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 5);
+    syncQueueInMemoryCache = valid;
+    return valid;
   } catch (e) {
+    syncQueueInMemoryCache = [];
     return [];
   }
 }
 
 export function saveSyncQueue(queue: SyncQueueItem[]) {
   try {
+    const now = Date.now();
+    const valid = queue.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 5);
+    syncQueueInMemoryCache = valid;
     if (typeof window !== 'undefined') {
-      const now = Date.now();
-      const valid = queue.filter(item => item && (now - (item.timestamp || 0)) < 7 * 24 * 60 * 60 * 1000 && (item.attempts || 0) < 100);
       localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(valid));
     }
-  } catch (e) {}
+    writeSyncQueueToIndexedDB(valid);
+  } catch (e) {
+    console.error('[STORAGE_FAILURE] saveSyncQueue error:', e);
+  }
+}
+
+// Initial async restore of sync queue from IndexedDB on startup
+export async function initSyncQueueFromStorage(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const idbItems = await readSyncQueueFromIndexedDB();
+    const lsItems = getSyncQueue();
+    const map = new Map<string, SyncQueueItem>();
+
+    for (const item of idbItems) {
+      if (item && item.collectionName && item.id) {
+        map.set(`${item.collectionName}::${item.id}`, item);
+      }
+    }
+    for (const item of lsItems) {
+      if (item && item.collectionName && item.id) {
+        const key = `${item.collectionName}::${item.id}`;
+        if (!map.has(key) || (item.timestamp || 0) > (map.get(key)?.timestamp || 0)) {
+          map.set(key, item);
+        }
+      }
+    }
+
+    const merged = Array.from(map.values());
+    syncQueueInMemoryCache = merged;
+    saveSyncQueue(merged);
+  } catch (e) {
+    console.warn('[STORAGE_FAILURE] initSyncQueueFromStorage warning:', e);
+  }
 }
 
 const PENDING_LOCAL_DOCS_KEY = 'app_local_pending_docs_v2';
@@ -116,7 +216,8 @@ export function enqueueSync(item: Omit<SyncQueueItem, 'attempts' | 'timestamp'>)
   const newItem: SyncQueueItem = {
     ...item,
     timestamp: Date.now(),
-    attempts: 0
+    attempts: 0,
+    status: 'pending'
   };
   if (existingIdx >= 0) {
     queue[existingIdx] = newItem;
@@ -124,6 +225,36 @@ export function enqueueSync(item: Omit<SyncQueueItem, 'attempts' | 'timestamp'>)
     queue.push(newItem);
   }
   saveSyncQueue(queue);
+  setTimeout(() => {
+    processSyncQueue().catch(() => {});
+  }, 100);
+}
+
+async function tryRefreshToken(): Promise<string | null> {
+  try {
+    const storedRefreshToken = typeof window !== 'undefined'
+      ? (localStorage.getItem('auth_refresh_token') || sessionStorage.getItem('auth_refresh_token'))
+      : null;
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ refreshToken: storedRefreshToken })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.token) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('auth_token', data.token);
+          sessionStorage.setItem('auth_token', data.token);
+        }
+        return data.token;
+      }
+    }
+  } catch (e) {
+    console.warn('[STORAGE_FAILURE] tryRefreshToken exception:', e);
+  }
+  return null;
 }
 
 export async function processSyncQueue(): Promise<{ synced: number; failed: number }> {
@@ -131,28 +262,25 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
   const queue = getSyncQueue();
   if (queue.length === 0) return { synced: 0, failed: 0 };
 
-  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
-                localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
-                localStorage.getItem('token') || sessionStorage.getItem('token');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  let token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
+              localStorage.getItem('access_token') || sessionStorage.getItem('access_token') ||
+              localStorage.getItem('token') || sessionStorage.getItem('token');
 
   const remaining: SyncQueueItem[] = [];
   let synced = 0;
   let failed = 0;
+  let hasAttemptedRefresh = false;
 
   for (const item of queue) {
     try {
       const idempotencyKey = `sync_${item.action}_${item.collectionName}_${item.id}_${item.timestamp}`;
       const itemHeaders: Record<string, string> = {
-        ...headers,
+        'Content-Type': 'application/json',
         'x-idempotency-key': idempotencyKey,
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       };
+      if (token) itemHeaders['Authorization'] = `Bearer ${token}`;
 
       let apiRes: Response;
       if (item.action === 'delete') {
@@ -174,21 +302,80 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
 
       if (apiRes.ok) {
         synced++;
-        // Keep in pendingLocalDocs protective buffer for 15s to prevent any stale poll overwrite
         setTimeout(() => removePendingLocalDoc(item.collectionName, item.id), 15000);
-      } else {
+      } else if (apiRes.status === 401) {
+        // Attempt automatic token refresh on 401 Unauthorized
+        if (!hasAttemptedRefresh) {
+          hasAttemptedRefresh = true;
+          const newToken = await tryRefreshToken();
+          if (newToken) {
+            token = newToken;
+            itemHeaders['Authorization'] = `Bearer ${token}`;
+            let retryRes: Response;
+            if (item.action === 'delete') {
+              retryRes = await fetch(`/api/data/${item.collectionName}/${item.id}?_t=${Date.now()}`, {
+                method: 'DELETE',
+                headers: itemHeaders,
+                cache: 'no-store',
+                credentials: 'include'
+              });
+            } else {
+              retryRes = await fetch(`/api/data/${item.collectionName}?_t=${Date.now()}`, {
+                method: 'POST',
+                headers: itemHeaders,
+                cache: 'no-store',
+                credentials: 'include',
+                body: JSON.stringify({ ...(item.data || {}), id: item.id, _synced: true, _idempotencyKey: idempotencyKey })
+              });
+            }
+            if (retryRes.ok) {
+              synced++;
+              setTimeout(() => removePendingLocalDoc(item.collectionName, item.id), 15000);
+              continue;
+            }
+          }
+        }
+        // If refresh failed or user is unauthenticated, preserve queue in IndexedDB
         item.attempts = (item.attempts || 0) + 1;
         remaining.push(item);
         failed++;
-        if (apiRes.status === 401 || apiRes.status === 403) {
-          // Token might be expired, break loop to prevent repeated 401s
-          break;
+        dispatchDatabaseToast('نشست کاری شما منقضی شده است. تغییرات شما به طور امن در دستگاه ذخیره شده و پس از ورود مجدد همگام‌سازی می‌شود.', 'warning', 7000);
+        break;
+      } else if (apiRes.status === 400 || apiRes.status === 403 || apiRes.status === 422) {
+        // Permanent error -> Isolate to failed queue, do not block the rest of the queue
+        const errJson = await apiRes.json().catch(() => ({}));
+        const errMsg = errJson.message || `خطای کد ${apiRes.status}`;
+        item.status = 'failed';
+        item.errorMsg = errMsg;
+        failed++;
+        writeFailedSyncItemToIndexedDB(item);
+        console.error(`[STORAGE_FAILURE] Permanent sync failure for collection "${item.collectionName}" id "${item.id}":`, errMsg);
+        dispatchDatabaseToast(`ثبت تغییرات بخش "${item.collectionName}" به دلیل خطای سرور (${apiRes.status}) انجام نشد: ${errMsg}`, 'warning', 8000);
+      } else {
+        // Transient network/5xx error -> Retry up to 5 times
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts >= 5) {
+          item.status = 'failed';
+          item.errorMsg = `تعداد تلاش‌های مجدد به حد مجاز رسید (کد ${apiRes.status})`;
+          failed++;
+          writeFailedSyncItemToIndexedDB(item);
+          console.error(`[STORAGE_FAILURE] Max sync retries reached for collection "${item.collectionName}" id "${item.id}"`);
+        } else {
+          remaining.push(item);
+          failed++;
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       item.attempts = (item.attempts || 0) + 1;
-      remaining.push(item);
-      failed++;
+      if (item.attempts >= 5) {
+        item.status = 'failed';
+        item.errorMsg = e?.message || 'خطای ارتباطی شبکه';
+        failed++;
+        writeFailedSyncItemToIndexedDB(item);
+      } else {
+        remaining.push(item);
+        failed++;
+      }
     }
   }
 
@@ -417,7 +604,7 @@ export interface StudentBackupPackage {
 }
 
 const DB_NAME = 'TOLAB_OFFLINE_LOCAL_DB';
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 export const COLLECTIONS = [
   'students',
@@ -639,6 +826,12 @@ class LocalDatabase {
             db.createObjectStore(resolved, { keyPath: 'id' });
           }
         }
+        if (!db.objectStoreNames.contains('_sync_queue')) {
+          db.createObjectStore('_sync_queue', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('_failed_sync_queue')) {
+          db.createObjectStore('_failed_sync_queue', { keyPath: 'id' });
+        }
       };
 
       request.onsuccess = async (event) => {
@@ -657,6 +850,10 @@ class LocalDatabase {
     });
 
     return this.dbPromise;
+  }
+
+  public async getDbInstance(): Promise<IDBDatabase> {
+    return this.initDb();
   }
 
   private async getDb(): Promise<IDBDatabase> {
@@ -1186,10 +1383,12 @@ class LocalDatabase {
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
       } else {
+        console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         // Guarantee: Keep data permanently applied in local database and queue for background sync
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
       }
-    }).catch(() => {
+    }).catch((err: any) => {
+      console.error(`[STORAGE_FAILURE] Client addDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
     });
 
@@ -1238,10 +1437,12 @@ class LocalDatabase {
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
       } else {
+        console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         // Guarantee: Never rollback on server errors or offline. Retain local edit and queue for retry.
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
       }
-    }).catch(() => {
+    }).catch((err: any) => {
+      console.error(`[STORAGE_FAILURE] Client updateDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
     });
   }
@@ -1276,9 +1477,11 @@ class LocalDatabase {
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
       } else {
+        console.error(`[STORAGE_FAILURE] Client deleteDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
       }
-    }).catch(() => {
+    }).catch((err: any) => {
+      console.error(`[STORAGE_FAILURE] Client deleteDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
     });
   }
@@ -2948,7 +3151,8 @@ class LocalDatabase {
 export const localDb = new LocalDatabase();
 
 if (typeof window !== 'undefined') {
-  setTimeout(() => {
+  setTimeout(async () => {
+    await initSyncQueueFromStorage();
     localDb.setupRealtimeSync();
     localDb.initCloudSync();
     processSyncQueue();

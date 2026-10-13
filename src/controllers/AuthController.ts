@@ -16,7 +16,9 @@ import {
   hashPassword,
   comparePassword,
   logServerAudit,
-  StoredUser
+  StoredUser,
+  isConnectionError,
+  DbConnectionError
 } from '../lib/serverAuth';
 
 export class AuthController {
@@ -112,23 +114,30 @@ export class AuthController {
         refreshToken: result.refreshToken
       });
     } catch (error: any) {
-      const statusCode = error?.statusCode || (error?.status ? Number(error.status) : 401);
-      const message = error?.message || 'نام کاربری یا رمز عبور اشتباه است.';
+      const isDbConnError = isConnectionError(error) || error?.isDbConnectionError || error?.statusCode === 503;
+      const statusCode = isDbConnError ? 503 : (error?.statusCode || (error?.status ? Number(error.status) : 401));
+      const message = isDbConnError
+        ? 'ارتباط با پایگاه داده برقرار نشد. لطفاً چند لحظه بعد مجدداً تلاش کنید.'
+        : (error?.message || 'نام کاربری یا رمز عبور اشتباه است.');
 
-      void logAudit({
-        action: 'login_failed',
-        userName: req.body?.username || 'unknown',
-        ipAddress: ip,
-        status: 'failed',
-        errorMessage: message
-      }).catch(() => {});
+      if (!isDbConnError) {
+        void logAudit({
+          action: 'login_failed',
+          userName: req.body?.username || 'unknown',
+          ipAddress: ip,
+          status: 'failed',
+          errorMessage: message
+        }).catch(() => {});
 
-      void recordLoginAuditInDb({
-        username: req.body?.username || 'unknown',
-        success: false,
-        ipAddress: ip,
-        userAgent: req.headers['user-agent']
-      }).catch(() => {});
+        void recordLoginAuditInDb({
+          username: req.body?.username || 'unknown',
+          success: false,
+          ipAddress: ip,
+          userAgent: req.headers['user-agent']
+        }).catch(() => {});
+      } else {
+        console.error(`[STORAGE_FAILURE] Login attempt interrupted by DB connection error for user "${req.body?.username}":`, error?.message || error);
+      }
 
       return res.status(statusCode).json({
         success: false,

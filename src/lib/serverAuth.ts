@@ -3,7 +3,9 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
+import { isMysqlConfigured, MysqlRepository, DbConnectionError, isConnectionError } from './databaseAbstraction';
+
+export { DbConnectionError, isConnectionError };
 
 dotenv.config();
 
@@ -850,7 +852,11 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
         } as StoredUser;
         serverMemoryUsers.set(cleanUser, user);
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (isConnectionError(e) || e?.isDbConnectionError) {
+        console.error('[STORAGE_FAILURE] fetchUserByUsername DB connection error:', e?.message || e);
+        throw e;
+      }
       console.warn('[MySQL fetchUserByUsername notice]:', e);
     }
   }
@@ -887,8 +893,8 @@ export async function saveUserToStorage(user: StoredUser): Promise<void> {
   if (isMysqlConfigured) {
     try {
       await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
-    } catch (mErr) {
-      console.warn('[MySQL saveUser notice]:', mErr);
+    } catch (mErr: any) {
+      console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
     }
   }
 
