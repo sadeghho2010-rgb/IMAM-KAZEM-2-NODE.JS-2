@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
+import { localDb } from './lib/localDb';
 
 // Lazy loading all tab components for maximum initial page load speed
 const StudentList = lazy(() => import('./components/StudentList'));
@@ -310,9 +311,7 @@ function AppContent() {
   // When user logs in or role changes, sync server collections into IndexedDB cache and default to dashboard
   useEffect(() => {
     if (currentUser) {
-      import('./lib/localDb').then(({ localDb }) => {
-        localDb.loadAllCollectionsFromServer().catch(() => {});
-      });
+      localDb.loadAllCollectionsFromServer().catch(() => {});
 
       if (!activeTab || activeTab === 'todos') {
         setActiveTab('dashboard');

@@ -401,8 +401,14 @@ export default function MainDashboard({
         // 1. Unread Requests
         const reqs = await localDb.getDocs<StudentRequest>('student_requests').catch(() => []);
         if (Array.isArray(reqs)) {
-          const pendingCount = reqs.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
-          setUnreadRequestsCount(pendingCount);
+          const isStudent = currentUser?.level === 3 || currentUser?.role === 'student';
+          const unreadCount = isStudent
+            ? reqs.filter(r => 
+                (r.studentId === (currentUser.studentId || currentUser.id) || r.studentName === currentUser.name) && 
+                r.isReadByStudent === false
+              ).length
+            : reqs.filter(r => r.isReadByOfficer === false).length;
+          setUnreadRequestsCount(unreadCount);
         }
 
         // 1.5 Pending Workflow items for destination officer

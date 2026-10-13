@@ -73,6 +73,8 @@ export interface StudentAttendanceDetail {
   hasEducationalWarning?: boolean;
   warningRegisteredBy?: string;
   warningRegisteredAt?: string;
+  recordedMethod?: 'representative' | 'self_reporting'; // شیوه ثبت: نماینده یا خوداظهاری
+  selfReportedAt?: string;
 }
 
 export interface AttendanceSessionLog {

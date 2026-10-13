@@ -266,6 +266,25 @@ export default function StudentRequestsPortal() {
   };
 
   useEffect(() => {
+    // Initial auto-purge of test requests per user request
+    const PURGE_KEY = 'purged_all_test_requests_v8';
+    if (localStorage.getItem(PURGE_KEY) !== 'true') {
+      localDb.getDocs<StudentRequest>('student_requests').then(list => {
+        if (Array.isArray(list) && list.length > 0) {
+          list.forEach(r => {
+            localDb.deleteDoc('student_requests', r.id).catch(() => {});
+            fetch(`/api/data/student_requests/${r.id}`, { method: 'DELETE' }).catch(() => {});
+          });
+          setRequests([]);
+          window.dispatchEvent(new CustomEvent('student_requests_updated'));
+          window.dispatchEvent(new CustomEvent('app_data_change'));
+        }
+        localStorage.setItem(PURGE_KEY, 'true');
+      }).catch(() => {
+        localStorage.setItem(PURGE_KEY, 'true');
+      });
+    }
+
     loadData(false);
 
     // Active polling interval every 4 seconds to guarantee real-time updates across browsers
@@ -602,16 +621,17 @@ export default function StudentRequestsPortal() {
   // Submit Officer Review / Quick Status / Full Reply & Automatic Attendance Sync
   const handleSaveOfficerReply = async (e?: React.FormEvent, overrideStatus?: StudentRequestStatus) => {
     if (e) e.preventDefault();
-    if (!selectedRequestForReview) return;
+    const targetReq = selectedRequestForReview || selectedRequestDetail;
+    if (!targetReq) return;
 
-    const finalStatus = overrideStatus || replyStatus;
+    let finalStatus = overrideStatus || replyStatus;
 
     if (finalStatus === 'rejected' && !rejectionReason.trim() && !officialReply.trim()) {
       alert('در صورت رد درخواست، ذکر دلیل برای آگاهی طلبه الزامی است.');
       return;
     }
 
-    const unitTitle = selectedRequestForReview.unit === 'education' ? 'واحد آموزش' : selectedRequestForReview.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی و رفاهی';
+    const unitTitle = targetReq.unit === 'education' ? 'واحد آموزش' : targetReq.unit === 'finance' ? 'واحد مالی' : 'واحد فرهنگی و رفاهی';
     const replierTitle = currentUser?.roleTitle || currentUser?.name || unitTitle;
     const replyText = officialReply.trim() || rejectionReason.trim() || '';
 
@@ -624,15 +644,15 @@ export default function StudentRequestsPortal() {
       createdAt: new Date().toISOString()
     } : null;
 
-    const existingMessages = selectedRequestForReview.messages || [];
+    const existingMessages = targetReq.messages || [];
     const updatedMessages = newOfficerMsg ? [...existingMessages, newOfficerMsg] : existingMessages;
 
     setIsReplying(true);
 
     // Leave request specific processing & Automatic Attendance Sync
-    let updatedLeaveDetails = selectedRequestForReview.leaveDetails;
-    if (selectedRequestForReview.isLeaveRequest && selectedRequestForReview.leaveDetails) {
-      const updatedClasses = selectedRequestForReview.leaveDetails.selectedClasses.map(c => {
+    let updatedLeaveDetails = targetReq.leaveDetails;
+    if (targetReq.isLeaveRequest && targetReq.leaveDetails) {
+      let updatedClasses = targetReq.leaveDetails.selectedClasses.map(c => {
         const key = `${c.programId}_${c.dateShamsi}`;
         const newClassStatus = leaveClassStatuses[key] || c.status;
         return {
@@ -641,8 +661,31 @@ export default function StudentRequestsPortal() {
         };
       });
 
+      // Automatically update classes based on finalStatus
+      if (finalStatus === 'resolved') {
+        updatedClasses = updatedClasses.map(c => ({
+          ...c,
+          status: c.status === 'rejected' ? 'rejected' : 'approved'
+        }));
+      } else if (finalStatus === 'rejected') {
+        updatedClasses = updatedClasses.map(c => ({
+          ...c,
+          status: 'rejected' as const
+        }));
+      } else if (!overrideStatus) {
+        const allApproved = updatedClasses.length > 0 && updatedClasses.every(c => c.status === 'approved');
+        const allRejected = updatedClasses.length > 0 && updatedClasses.every(c => c.status === 'rejected');
+        if (allApproved) {
+          finalStatus = 'resolved';
+        } else if (allRejected) {
+          finalStatus = 'rejected';
+        } else if (finalStatus === 'pending') {
+          finalStatus = 'in_progress';
+        }
+      }
+
       updatedLeaveDetails = {
-        ...selectedRequestForReview.leaveDetails,
+        ...targetReq.leaveDetails,
         selectedClasses: updatedClasses
       };
 
@@ -651,13 +694,13 @@ export default function StudentRequestsPortal() {
         const attendanceLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
         
         for (const cls of updatedClasses) {
-          const logId = `${cls.programId}_${cls.dateShamsi}`;
+          const logId = `${cls.programId}_${cls.dateShamsi.replace(/\//g, '-')}`;
           let existingLog = attendanceLogs.find(l => l.id === logId || (l.programId === cls.programId && l.date === cls.dateShamsi));
 
           const studentEntry: StudentAttendanceDetail = {
-            studentId: selectedRequestForReview.studentId,
-            studentName: selectedRequestForReview.studentName,
-            nationalId: selectedRequestForReview.nationalCode,
+            studentId: targetReq.studentId,
+            studentName: targetReq.studentName,
+            nationalId: targetReq.nationalCode,
             status: cls.status === 'approved' ? 'excused' : 'absent',
             isExcused: cls.status === 'approved',
             excuseReason: cls.status === 'approved' ? 'قبول سیستمی درخواست مرخصی' : 'رد درخواست مرخصی',
@@ -708,13 +751,21 @@ export default function StudentRequestsPortal() {
       } catch (attErr) {
         console.warn('Error syncing leave decision into attendance:', attErr);
       }
+    } else if (finalStatus === 'pending') {
+      finalStatus = 'in_progress';
     }
 
+    const finalTitle = finalStatus === 'resolved' 
+      ? (targetReq.isLeaveRequest ? 'موافقت با مرخصی (تکمیل شد)' : 'تکمیل و انجام شد')
+      : finalStatus === 'rejected'
+      ? (targetReq.isLeaveRequest ? 'عدم موافقت با مرخصی (رد شد)' : 'رد درخواست')
+      : 'در حال بررسی و اقدام';
+
     const updated: StudentRequest = {
-      ...selectedRequestForReview,
+      ...targetReq,
       status: finalStatus,
-      statusTitle: finalStatus === 'resolved' ? 'تکمیل و انجام شد' : finalStatus === 'rejected' ? 'رد درخواست' : 'در حال بررسی',
-      officialReply: officialReply.trim() || selectedRequestForReview.officialReply,
+      statusTitle: finalTitle,
+      officialReply: officialReply.trim() || targetReq.officialReply,
       rejectionReason: finalStatus === 'rejected' ? (rejectionReason.trim() || officialReply.trim()) : undefined,
       repliedBy: currentUser?.id,
       repliedByName: replierTitle,
@@ -728,6 +779,17 @@ export default function StudentRequestsPortal() {
 
     try {
       await localDb.saveDoc('student_requests', updated.id, updated);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(updated)
+        });
+      } catch (srvErr) {}
+
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
       if (selectedRequestDetail?.id === updated.id) {
         setSelectedRequestDetail(updated);
@@ -736,7 +798,7 @@ export default function StudentRequestsPortal() {
       setOfficialReply('');
       setRejectionReason('');
       triggerUpdateEvent();
-      alert('✅ پاسخ و وضعیت درخواست ثبت شد و تغییرات مرخصی به صورت اتوماتیک در سیستم حضور و غیاب اعمال گردید.');
+      alert('✅ پاسخ و وضعیت درخواست با موفقیت ذخیره شد و تغییرات در کارنامه حضور و غیاب اعمال گردید.');
     } catch (err: any) {
       alert('خطا در ذخیره پاسخ: ' + (err?.message || ''));
     } finally {
@@ -770,10 +832,22 @@ export default function StudentRequestsPortal() {
         createdAt: new Date().toISOString()
       };
 
+      const newStatus = isSenderStudent 
+        ? 'in_progress' 
+        : (req.status === 'pending' ? 'in_progress' : req.status);
+
+      const newStatusTitle = isSenderStudent 
+        ? 'در حال بررسی (پاسخ جدید طلبه)' 
+        : (newStatus === 'resolved' ? 'تکمیل و انجام شد' : 'در حال بررسی (پاسخ مسئول داده شد)');
+
       const updated: StudentRequest = {
         ...req,
-        status: isSenderStudent ? 'in_progress' : req.status,
-        statusTitle: isSenderStudent ? 'در حال بررسی (پاسخ جدید طلبه)' : req.statusTitle,
+        status: newStatus,
+        statusTitle: newStatusTitle,
+        officialReply: !isSenderStudent ? text : req.officialReply,
+        repliedBy: !isSenderStudent ? (currentUser?.id || 'officer') : req.repliedBy,
+        repliedByName: !isSenderStudent ? senderName : req.repliedByName,
+        repliedAt: !isSenderStudent ? new Date().toISOString() : req.repliedAt,
         isReadByOfficer: !isSenderStudent,
         isReadByStudent: isSenderStudent,
         messages: [...(req.messages || []), newMsg],
@@ -781,6 +855,17 @@ export default function StudentRequestsPortal() {
       };
 
       await localDb.saveDoc('student_requests', updated.id, updated);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(updated)
+        });
+      } catch (srvErr) {}
+
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
       if (selectedRequestDetail?.id === updated.id) {
         setSelectedRequestDetail(updated);
@@ -860,6 +945,16 @@ export default function StudentRequestsPortal() {
 
     try {
       await localDb.saveDoc('student_requests', updated.id, updated);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(updated)
+        });
+      } catch (srvErr) {}
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
       triggerUpdateEvent();
     } catch (e) {
@@ -870,9 +965,19 @@ export default function StudentRequestsPortal() {
   // Mark student request as read by student
   const handleMarkAsReadByStudent = async (req: StudentRequest) => {
     if (req.isReadByStudent !== false) return;
-    const updated = { ...req, isReadByStudent: true };
+    const updated = { ...req, isReadByStudent: true, updatedAt: new Date().toISOString() };
     try {
       await localDb.saveDoc('student_requests', req.id, updated);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(updated)
+        });
+      } catch (srvErr) {}
       setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
       triggerUpdateEvent();
     } catch (e) {}
@@ -881,12 +986,81 @@ export default function StudentRequestsPortal() {
   // Mark student request as read by officer
   const handleMarkAsReadByOfficer = async (req: StudentRequest) => {
     if (req.isReadByOfficer === true) return;
-    const updated = { ...req, isReadByOfficer: true };
+    const updated = { ...req, isReadByOfficer: true, updatedAt: new Date().toISOString() };
     try {
       await localDb.saveDoc('student_requests', req.id, updated);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(updated)
+        });
+      } catch (srvErr) {}
       setRequests(prev => prev.map(r => r.id === req.id ? updated : r));
       triggerUpdateEvent();
     } catch (e) {}
+  };
+
+  // Delete a specific request permanently (for officer & super admin)
+  const handleDeleteRequest = async (req: StudentRequest, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm(`آیا از حذف کامل این درخواست («${req.title}») اطمینان دارید؟\nاین درخواست به طور کامل هم برای شما و هم برای طلبه حذف خواهد شد.`)) {
+      return;
+    }
+
+    try {
+      await localDb.deleteDoc('student_requests', req.id);
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        await fetch(`/api/data/student_requests/${req.id}`, {
+          method: 'DELETE',
+          headers
+        });
+      } catch (srvErr) {}
+
+      setRequests(prev => prev.filter(r => r.id !== req.id));
+      if (selectedRequestDetail?.id === req.id) setSelectedRequestDetail(null);
+      if (selectedRequestForReview?.id === req.id) setSelectedRequestForReview(null);
+      triggerUpdateEvent();
+      alert('✅ درخواست با موفقیت به طور کامل حذف گردید.');
+    } catch (err: any) {
+      alert('خطا در حذف درخواست: ' + (err?.message || ''));
+    }
+  };
+
+  // Clear all test requests recorded so far
+  const handleClearAllTestRequests = async () => {
+    if (!window.confirm('آیا از پاک‌سازی تمامی درخواست‌های تستی موجود در سیستم اطمینان دارید؟\nاین عملیات کلیه درخواست‌های آزمایشی ثبت‌شده را هم در سمت مسئولین و هم در سمت طلاب به صورت کامل پاک خواهد کرد.')) {
+      return;
+    }
+
+    try {
+      const all = await localDb.getDocs<StudentRequest>('student_requests');
+      for (const r of all) {
+        await localDb.deleteDoc('student_requests', r.id);
+        try {
+          const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+          const headers: Record<string, string> = {};
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          await fetch(`/api/data/student_requests/${r.id}`, {
+            method: 'DELETE',
+            headers
+          });
+        } catch {}
+      }
+      setRequests([]);
+      setSelectedRequestDetail(null);
+      setSelectedRequestForReview(null);
+      triggerUpdateEvent();
+      alert('✅ کلیه درخواست‌های تستی با موفقیت از سیستم پاک‌سازی شدند.');
+    } catch (err: any) {
+      alert('خطا در پاک‌سازی درخواست‌ها: ' + (err?.message || ''));
+    }
   };
 
   // Convert all active requests for the officer to completed/done
@@ -919,6 +1093,16 @@ export default function StudentRequestsPortal() {
           updatedAt: nowIso
         };
         await localDb.saveDoc('student_requests', updated.id, updated);
+        try {
+          const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          await fetch(`/api/data/student_requests`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(updated)
+          });
+        } catch {}
       }
 
       const updatedAll = await localDb.getDocs<StudentRequest>('student_requests');
@@ -1187,14 +1371,25 @@ export default function StudentRequestsPortal() {
 
           {/* Bulk Resolve Active Requests Button for Officers */}
           {!isStudentUser && (
-            <button
-              onClick={handleResolveAllActiveRequests}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-              title="تبدیل کلیه درخواست‌های فعال به انجام شد و پاک‌سازی هشدارها"
-            >
-              <CheckSquare size={15} className="text-emerald-700" />
-              <span>تبدیل همه درخواست‌های فعال به انجام شد</span>
-            </button>
+            <>
+              <button
+                onClick={handleResolveAllActiveRequests}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                title="تبدیل کلیه درخواست‌های فعال به انجام شد و پاک‌سازی هشدارها"
+              >
+                <CheckSquare size={15} className="text-emerald-700" />
+                <span>تبدیل همه درخواست‌های فعال به انجام شد</span>
+              </button>
+
+              <button
+                onClick={handleClearAllTestRequests}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                title="پاک‌سازی تمامی درخواست‌های تستی موجود در سیستم"
+              >
+                <Trash2 size={15} className="text-rose-600" />
+                <span>پاک‌سازی درخواست‌های تستی</span>
+              </button>
+            </>
           )}
 
           {/* Refresh Data Button */}
@@ -1498,13 +1693,23 @@ export default function StudentRequestsPortal() {
               >
                 {/* Student Card Header */}
                 <div 
-                  onClick={() => setExpandedStudentKey(isExpanded ? null : group.studentKey)}
+                  onClick={() => {
+                    const nextExpanded = isExpanded ? null : group.studentKey;
+                    setExpandedStudentKey(nextExpanded);
+                    if (nextExpanded) {
+                      group.allRequests.forEach(req => {
+                        if (req.isReadByOfficer === false) {
+                          handleMarkAsReadByOfficer(req);
+                        }
+                      });
+                    }
+                  }}
                   className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer select-none"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className={cn(
                       "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 shadow-sm border",
-                      group.hasActiveRequest
+                      group.unreadCount > 0
                         ? "bg-amber-500 text-white border-amber-600 animate-pulse"
                         : "bg-indigo-100 text-indigo-900 border-indigo-200"
                     )}>
@@ -1523,9 +1728,9 @@ export default function StudentRequestsPortal() {
                           </span>
                         )}
 
-                        {group.hasActiveRequest && (
+                        {group.unreadCount > 0 && (
                           <span className="px-3 py-0.5 rounded-full text-[10.5px] font-black bg-rose-500 text-white animate-pulse shadow-xs flex items-center gap-1">
-                            <span>🔥 نیازمند رسیدگی و پاسخ</span>
+                            <span>🔥 {group.unreadCount} پیام جدید</span>
                           </span>
                         )}
                       </div>
@@ -1622,9 +1827,8 @@ export default function StudentRequestsPortal() {
                                 key={req.id}
                                 onClick={() => {
                                   handleMarkAsReadByOfficer(req);
-                                  setSelectedRequestForReview(req);
                                   setSelectedRequestDetail(req);
-                                  setReplyStatus(req.status);
+                                  setReplyStatus(req.status === 'pending' ? 'in_progress' : req.status);
                                   setOfficialReply(req.officialReply || '');
                                   setRejectionReason(req.rejectionReason || '');
                                   if (req.isLeaveRequest && req.leaveDetails) {
@@ -1694,6 +1898,14 @@ export default function StudentRequestsPortal() {
                                   </div>
 
                                   <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteRequest(req, e)}
+                                      className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-all cursor-pointer shadow-2xs"
+                                      title="حذف کامل این درخواست"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
                                     <span className="text-[11px] text-slate-400 font-mono">
                                       {new Date(req.createdAt).toLocaleDateString('fa-IR')}
                                     </span>
@@ -1753,6 +1965,17 @@ export default function StudentRequestsPortal() {
 
                 <div className="flex items-center gap-2 shrink-0">
                   {getStatusBadge(selectedRequestDetail.status, selectedRequestDetail.isTerminated)}
+                  {!isStudentUser && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteRequest(selectedRequestDetail, e)}
+                      className="p-1.5 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/40 border border-rose-400/40 transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
+                      title="حذف کامل این پرونده"
+                    >
+                      <Trash2 size={15} />
+                      <span className="hidden sm:inline">حذف پرونده</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setSelectedRequestDetail(null)}
                     className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer"
@@ -1783,11 +2006,46 @@ export default function StudentRequestsPortal() {
                 {/* 2. Leave Request Class Table Breakdown (If leave request) */}
                 {selectedRequestDetail.isLeaveRequest && selectedRequestDetail.leaveDetails && (
                   <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-3">
-                    <div className="flex items-center justify-between font-black text-xs text-amber-950 border-b border-amber-200/80 pb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between font-black text-xs text-amber-950 border-b border-amber-200/80 pb-2 gap-2">
                       <span className="flex items-center gap-1.5">
                         <CalendarCheck size={16} className="text-amber-700" />
-                        <span>جدول کلاس‌های انتخابی جهت مرخصی ({selectedRequestDetail.leaveDetails.weekStartShamsi} تا {selectedRequestDetail.leaveDetails.weekEndShamsi}):</span>
+                        <span>جدول کلاس‌های مرخصی ({selectedRequestDetail.leaveDetails.weekStartShamsi} تا {selectedRequestDetail.leaveDetails.weekEndShamsi}):</span>
                       </span>
+
+                      {!isStudentUser && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allAppr: Record<string, 'approved' | 'rejected'> = {};
+                              selectedRequestDetail.leaveDetails?.selectedClasses.forEach(c => {
+                                allAppr[`${c.programId}_${c.dateShamsi}`] = 'approved';
+                              });
+                              setLeaveClassStatuses(allAppr);
+                              setReplyStatus('resolved');
+                            }}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-black transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                          >
+                            <Check size={13} />
+                            <span>موافقت با تمام کلاس‌ها</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allRej: Record<string, 'approved' | 'rejected'> = {};
+                              selectedRequestDetail.leaveDetails?.selectedClasses.forEach(c => {
+                                allRej[`${c.programId}_${c.dateShamsi}`] = 'rejected';
+                              });
+                              setLeaveClassStatuses(allRej);
+                              setReplyStatus('rejected');
+                            }}
+                            className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                          >
+                            <X size={13} />
+                            <span>مخالفت با تمام کلاس‌ها</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1810,7 +2068,7 @@ export default function StudentRequestsPortal() {
                                     onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'approved' }))}
                                     className={cn(
                                       "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
-                                      currentSt === 'approved' ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      currentSt === 'approved' ? "bg-emerald-600 text-white shadow-xs" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                     )}
                                   >
                                     موافق
@@ -1820,7 +2078,7 @@ export default function StudentRequestsPortal() {
                                     onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'rejected' }))}
                                     className={cn(
                                       "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
-                                      currentSt === 'rejected' ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700 border border-rose-200"
+                                      currentSt === 'rejected' ? "bg-rose-600 text-white shadow-xs" : "bg-rose-50 text-rose-700 border border-rose-200"
                                     )}
                                   >
                                     مخالف
@@ -1840,6 +2098,26 @@ export default function StudentRequestsPortal() {
                         );
                       })}
                     </div>
+
+                    {!isStudentUser && (
+                      <div className="pt-2 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allAppr: Record<string, 'approved' | 'rejected'> = {};
+                            selectedRequestDetail.leaveDetails?.selectedClasses.forEach(c => {
+                              allAppr[`${c.programId}_${c.dateShamsi}`] = 'approved';
+                            });
+                            setLeaveClassStatuses(allAppr);
+                            handleSaveOfficerReply(undefined, 'resolved');
+                          }}
+                          className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                        >
+                          <CheckCircle2 size={15} />
+                          <span>تأیید سریع و موافقت با تمامی کلاس‌ها و ثبت در حضور و غیاب</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1900,61 +2178,96 @@ export default function StudentRequestsPortal() {
                       ثبت پاسخ رسمی و تعیین وضعیت توسط مسئول:
                     </span>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">تغییر وضعیت درخواست:</label>
-                        <select
-                          value={replyStatus}
-                          onChange={(e) => setReplyStatus(e.target.value as StudentRequestStatus)}
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-indigo-500"
+                    {/* Status quick buttons */}
+                    <div className="space-y-1.5">
+                      <label className="block font-bold text-slate-700">تعیین وضعیت نهایی پرونده:</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReplyStatus('resolved')}
+                          className={cn(
+                            "p-2.5 rounded-xl font-bold text-xs border transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                            replyStatus === 'resolved'
+                              ? "bg-emerald-600 text-white border-emerald-700 shadow-sm"
+                              : "bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50"
+                          )}
                         >
-                          <option value="in_progress">🔄 در حال بررسی و اقدام</option>
-                          <option value="resolved">✅ تکمیل و انجام شد</option>
-                          <option value="rejected">❌ رد درخواست</option>
-                        </select>
-                      </div>
+                          <CheckCircle2 size={15} />
+                          <span>تکمیل و انجام شد</span>
+                        </button>
 
-                      <div className="flex items-end gap-2">
-                        {!selectedRequestDetail.isTerminated && (
-                          <button
-                            type="button"
-                            onClick={() => handleTerminateRequest(selectedRequestDetail)}
-                            className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
-                          >
-                            <ShieldCheck size={15} />
-                            <span>ختم رسیدگی و بستن پرونده</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setReplyStatus('in_progress')}
+                          className={cn(
+                            "p-2.5 rounded-xl font-bold text-xs border transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                            replyStatus === 'in_progress'
+                              ? "bg-indigo-600 text-white border-indigo-700 shadow-sm"
+                              : "bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50"
+                          )}
+                        >
+                          <Clock size={15} />
+                          <span>در حال بررسی و اقدام</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setReplyStatus('rejected')}
+                          className={cn(
+                            "p-2.5 rounded-xl font-bold text-xs border transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                            replyStatus === 'rejected'
+                              ? "bg-rose-600 text-white border-rose-700 shadow-sm"
+                              : "bg-white text-rose-800 border-rose-200 hover:bg-rose-50"
+                          )}
+                        >
+                          <XCircle size={15} />
+                          <span>رد درخواست</span>
+                        </button>
                       </div>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">متن پاسخ رسمی / یادداشت مسئول:</label>
+                      <label className="block font-bold text-slate-700 mb-1">متن پاسخ رسمی / دستور مسئول:</label>
                       <textarea
                         rows={3}
                         value={officialReply}
                         onChange={(e) => setOfficialReply(e.target.value)}
-                        placeholder="متن پاسخ رسمی، دستور یا توضیحات برای اطلاع طلبه را بنویسید..."
+                        placeholder="متن پاسخ رسمی یا توضیحات لازم برای آگاهی طلبه را بنویسید..."
                         className="w-full p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:border-indigo-500 outline-none resize-none leading-relaxed"
                       />
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedRequestDetail(null)}
-                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 cursor-pointer"
-                      >
-                        بستن
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isReplying}
-                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-indigo-600/20 cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Send size={15} />
-                        <span>{isReplying ? 'در حال ثبت...' : 'ارسال پاسخ و بروزرسانی پرونده'}</span>
-                      </button>
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                      <div>
+                        {!selectedRequestDetail.isTerminated && (
+                          <button
+                            type="button"
+                            onClick={() => handleTerminateRequest(selectedRequestDetail)}
+                            className="py-2 px-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                          >
+                            <ShieldCheck size={14} />
+                            <span>مختومه‌سازی پرونده</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRequestDetail(null)}
+                          className="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 cursor-pointer"
+                        >
+                          بستن
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isReplying}
+                          className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold shadow-md shadow-indigo-600/20 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Send size={15} />
+                          <span>{isReplying ? 'در حال ثبت...' : 'ثبت پاسخ و اعمال قطعی وضعیت'}</span>
+                        </button>
+                      </div>
                     </div>
                   </form>
                 ) : (

@@ -17,6 +17,7 @@ import { cn } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Program, AttendanceSessionLog, Student } from '../../../types';
+import { StudentSelfReportingModal } from '../../attendance/StudentSelfReportingModal';
 
 interface StudentMobileAttendanceProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -27,10 +28,12 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 }) => {
   const { currentUser } = useAuth();
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [enrollments, setEnrollments] = useState<any[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceSessionLog[]>([]);
   const [studentObj, setStudentObj] = useState<Student | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'absent' | 'late' | 'excused'>('all');
   const [selectedProgramFilter, setSelectedProgramFilter] = useState<string>('all');
+  const [isSelfReportingModalOpen, setIsSelfReportingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,10 +43,11 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [allProgs, allRecords, allStudents] = await Promise.all([
+      const [allProgs, allRecords, allStudents, allEnrollments] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<AttendanceSessionLog>('attendance'),
-        localDb.getDocs<Student>('students')
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<any>('course_enrollments')
       ]);
 
       const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
@@ -60,6 +64,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
       }
 
       setPrograms(allProgs);
+      setEnrollments(allEnrollments || []);
       setAttendanceRecords(allRecords);
     } catch (err) {
       console.warn('Error loading student attendance:', err);
@@ -84,12 +89,27 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
   // Enrolled programs
   const enrolledPrograms = useMemo(() => {
     return programs.filter(p => {
-      const matchGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
+      const inEnroll = enrollments.some(e => 
+        String(e.programId) === String(p.id) && 
+        studentIdentifiers.some(id => String(e.studentId) === String(id))
+      );
+      if (inEnroll) return true;
+
       const inStudentIds = Array.isArray((p as any).studentIds) && 
         studentIdentifiers.some(id => (p as any).studentIds.includes(id));
-      return inStudentIds || matchGrade;
+      if (inStudentIds) return true;
+
+      const matchGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
+      return matchGrade;
     });
-  }, [programs, studentGrade, studentIdentifiers]);
+  }, [programs, studentGrade, studentIdentifiers, enrollments]);
+
+  // Programs with self-reporting enabled for this student
+  const selfReportingCourses = useMemo(() => {
+    return enrolledPrograms.filter(p => p.attendanceType === 'self_reporting');
+  }, [enrolledPrograms]);
+
+  const selfReportingPrograms = selfReportingCourses;
 
   // Extract individual attendance events for this student
   const studentEvents = useMemo(() => {
@@ -252,6 +272,31 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
           </div>
         </div>
       </div>
+
+      {/* Self-Reporting Attendance Button for Mobile - Strictly Placed Above Course Breakdown */}
+      {selfReportingCourses.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 border border-emerald-400/30">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center font-bold shrink-0 border border-white/20">
+              <CheckSquare size={19} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black block truncate">ثبت خوداظهاری حضور و غیاب</span>
+              <span className="text-[10.5px] text-emerald-100 truncate block">
+                {selfReportingCourses.length} درس دارای امکان خوداظهاری
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsSelfReportingModalOpen(true)}
+            className="px-3.5 py-2 bg-white text-emerald-800 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 cursor-pointer"
+          >
+            <Sparkles size={13} className="text-amber-500" />
+            <span>ثبت خوداظهاری</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Course-by-Course Attendance Breakdown */}
       <div className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-2.5">
@@ -448,6 +493,17 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
           </div>
         )}
       </div>
+
+      {/* Student Self-Reporting Modal */}
+      <StudentSelfReportingModal
+        isOpen={isSelfReportingModalOpen}
+        onClose={() => setIsSelfReportingModalOpen(false)}
+        currentUser={currentUser}
+        studentObj={studentObj}
+        programs={programs}
+        enrollments={enrollments}
+        onAttendanceSaved={() => loadData()}
+      />
     </div>
   );
 };

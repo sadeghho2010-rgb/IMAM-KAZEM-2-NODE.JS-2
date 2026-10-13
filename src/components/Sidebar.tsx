@@ -294,11 +294,19 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
       if (Array.isArray(allRequests)) {
         if (currentUser?.level === 3) {
           // For student: count requests with unread response from officers
-          const count = allRequests.filter(r => 
-            (r.studentId === (currentUser.studentId || currentUser.id) || r.studentName === currentUser.name) && 
-            r.isReadByStudent === false &&
-            (r.officialReply || r.status !== 'pending')
-          ).length;
+          const myId = String(currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '').trim();
+          const myUsername = String(currentUser?.username || '').trim().toUpperCase();
+          const myName = String(currentUser?.name || currentUser?.studentName || currentUser?.fullName || '').trim();
+
+          const count = allRequests.filter(r => {
+            const reqStudentId = String(r.studentId || (r as any).student_id || '').trim();
+            const reqNat = String(r.nationalCode || (r as any).national_id || '').trim().toUpperCase();
+            const reqName = String(r.studentName || (r as any).student_name || '').trim();
+            const isMine = (myId && reqStudentId === myId) ||
+                           (myUsername && (reqNat === myUsername || reqStudentId === myUsername)) ||
+                           (myName && reqName === myName);
+            return isMine && r.isReadByStudent === false && (Boolean(r.officialReply) || r.status !== 'pending');
+          }).length;
           setUnreadRequestsCount(count);
         } else {
           // For staff/officers: count pending / unread requests addressed to THEIR unit
@@ -309,15 +317,15 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
 
           let count = 0;
           if (isSuper) {
-            count = allRequests.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
+            count = allRequests.filter(r => r.isReadByOfficer === false).length;
           } else if (isEdu) {
-            count = allRequests.filter(r => r.unit === 'education' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+            count = allRequests.filter(r => r.unit === 'education' && r.isReadByOfficer === false).length;
           } else if (isFin) {
-            count = allRequests.filter(r => r.unit === 'finance' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+            count = allRequests.filter(r => r.unit === 'finance' && r.isReadByOfficer === false).length;
           } else if (isCult) {
-            count = allRequests.filter(r => r.unit === 'cultural_welfare' && (r.status === 'pending' || r.isReadByOfficer === false)).length;
+            count = allRequests.filter(r => r.unit === 'cultural_welfare' && r.isReadByOfficer === false).length;
           } else {
-            count = allRequests.filter(r => r.status === 'pending' || r.isReadByOfficer === false).length;
+            count = allRequests.filter(r => r.isReadByOfficer === false).length;
           }
 
           setUnreadRequestsCount(count);

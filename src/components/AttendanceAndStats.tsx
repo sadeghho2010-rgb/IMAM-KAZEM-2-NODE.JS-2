@@ -73,6 +73,7 @@ import {
   Program,
   StudentRequest
 } from '../types';
+import { StudentSelfReportingModal } from './attendance/StudentSelfReportingModal';
 
 export type AttendanceRecord = AttendanceSessionLog;
 export type StudentAttendanceItem = StudentAttendanceDetail;
@@ -105,6 +106,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [classStatusCategoryTab, setClassStatusCategoryTab] = useState<'all' | 'academic' | 'counseling'>('all');
   const [classStatusColorFilter, setClassStatusColorFilter] = useState<'all' | 'pending' | 'recorded' | 'substitute' | 'cancelled'>('all');
   const [attendanceMethodFilter, setAttendanceMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
+  const [rosterRecordMethodFilter, setRosterRecordMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
+  const [isStudentSelfReportingOpen, setIsStudentSelfReportingOpen] = useState<boolean>(false);
   const [isQuickAttendanceOpen, setIsQuickAttendanceOpen] = useState<boolean>(false);
   const [isCompactView, setIsCompactView] = useState<boolean>(() => {
     return localStorage.getItem('attendance_compact_view') === 'true';
@@ -186,7 +189,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportStartDate, setReportStartDate] = useState<string>('1403/07/01');
   const [reportEndDate, setReportEndDate] = useState<string>(getTodayShamsi());
   const [reportWarningOnlyFilter, setReportWarningOnlyFilter] = useState<boolean>(false);
-  const [reportShowAllStudents, setReportShowAllStudents] = useState<boolean>(false); // default false: show absents only!
+  const [reportShowAllStudents, setReportShowAllStudents] = useState<boolean>(true); // default true: show all students by default!
+  const [reportMethodFilter, setReportMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
   const [reportSortBy, setReportSortBy] = useState<'absent' | 'class'>('absent');
   const [reportCourseCategory, setReportCourseCategory] = useState<'all' | 'academic' | 'counseling' | 'thursday'>('all');
   const [reportViewMode, setReportViewMode] = useState<'student' | 'class' | 'summary'>('student');
@@ -544,9 +548,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     currentUser?.role === 'student' || currentUser?.level === 3 || !currentUser
   );
 
-  // Self-reporting programs for ordinary student
+  // Self-reporting programs for student (whether ordinary student or class representative participating in a self-reporting class)
   const studentSelfReportingPrograms = useMemo(() => {
-    if (!isOrdinaryStudent) return [];
+    const isAnyStudent = (currentUser?.role === 'student' || currentUser?.level === 3 || currentUser?.role === 'class_representative' || isOrdinaryStudent);
+    if (!isAnyStudent && !currentUser) return [];
     
     const loggedSid = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
     const loggedUsername = currentUser?.username;
@@ -735,6 +740,28 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     return result.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
   }, [selectedProgramId, enrollments, currentProgram, students, isRepresentative, representativePrograms]);
+
+  // Current Attendance Session Log for selected course & date
+  const currentSessionRecord = useMemo(() => {
+    return attendanceRecords.find(r => r.programId === selectedProgramId && r.date === selectedDate);
+  }, [attendanceRecords, selectedProgramId, selectedDate]);
+
+  // Filter enrolled students by recording method in roster (شیوه ثبت: همه / نماینده / خوداظهاری)
+  const filteredRosterStudents = useMemo(() => {
+    return enrolledStudents.filter(student => {
+      if (rosterRecordMethodFilter === 'all') return true;
+      const sessionDetail = currentSessionRecord?.students?.find(s => 
+        String(s.studentId) === String(student.id) || (s.nationalId && s.nationalId === student.nationalId)
+      );
+      const isSelfReported = sessionDetail?.recordedMethod === 'self_reporting' || (
+        currentProgram?.attendanceType === 'self_reporting' && Boolean(studentsAttendance[student.id] && studentsAttendance[student.id] !== 'unspecified')
+      );
+
+      if (rosterRecordMethodFilter === 'self_reporting') return isSelfReported;
+      if (rosterRecordMethodFilter === 'representative') return !isSelfReported && Boolean(studentsAttendance[student.id] && studentsAttendance[student.id] !== 'unspecified');
+      return true;
+    });
+  }, [enrolledStudents, rosterRecordMethodFilter, currentSessionRecord, currentProgram, studentsAttendance]);
 
   // Current Day of Week Name for selected date
   const dayOfWeekName = useMemo(() => {
@@ -1369,6 +1396,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 else entry.unspecifiedCount++;
               }
               if (stItem.hasEducationalWarning) entry.warningCount++;
+              if (stItem.recordedMethod === 'self_reporting' || (rec as any).attendanceType === 'self_reporting') {
+                (entry as any).selfReportedCount = ((entry as any).selfReportedCount || 0) + 1;
+              } else {
+                (entry as any).representativeCount = ((entry as any).representativeCount || 0) + 1;
+              }
             }
             entry.history.push({
               date: rec.date,
@@ -1377,8 +1409,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               isCancelled: rec.isCancelled,
               note: stItem.note,
               excuseReason: stItem.excuseReason,
-              hasWarning: stItem.hasEducationalWarning
-            });
+              hasWarning: stItem.hasEducationalWarning,
+              recordedMethod: stItem.recordedMethod || (rec as any).attendanceType || 'representative'
+            } as any);
           }
         });
       }
@@ -1386,6 +1419,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     // Compute program title summary and course breakdown for each student
     Object.values(studentMap).forEach(entry => {
+      const selfC = (entry as any).selfReportedCount || 0;
+      const repC = (entry as any).representativeCount || 0;
+      let method: 'representative' | 'self_reporting' | 'mixed' = 'representative';
+      if (selfC > 0 && repC === 0) method = 'self_reporting';
+      else if (selfC > 0 && repC > 0) method = 'mixed';
+      else method = 'representative';
+      (entry as any).recordingMethodSummary = method;
+
       const courseMap: Record<string, { absent: number; excused: number; late: number; present: number }> = {};
       entry.history.forEach(h => {
         if (h.isCancelled) return;
@@ -1426,6 +1467,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       list = list.filter(item => item.absentCount > 0 || item.excusedCount > 0);
     }
 
+    if (reportMethodFilter !== 'all') {
+      list = list.filter(item => {
+        const method = (item as any).recordingMethodSummary;
+        if (reportMethodFilter === 'self_reporting') return method === 'self_reporting' || method === 'mixed';
+        if (reportMethodFilter === 'representative') return method === 'representative' || method === 'mixed';
+        return true;
+      });
+    }
+
     if (reportWarningOnlyFilter) {
       const threshold = settings.unexcusedWarningThreshold || 3;
       list = list.filter(item => item.absentCount >= threshold || item.warningCount > 0);
@@ -1444,7 +1494,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
 
     return list;
-  }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportSortBy, settings, programs]);
+  }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs]);
 
   // Grouped by Class Report Data (for reportViewMode === 'class')
   const classGroupedReportList = useMemo(() => {
@@ -1453,6 +1503,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       programTitle: string;
       teacherName: string;
       grade: string;
+      attendanceType?: string;
       studentsMap: Record<string, {
         student: any;
         absentCount: number;
@@ -1467,13 +1518,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     filteredReportRecords.forEach(rec => {
       if (rec.isCancelled) return;
       const progKey = rec.programId || rec.programTitle || 'عمومی';
+      const matchingProg = programs.find(p => p.id === rec.programId);
+      const attType = matchingProg?.attendanceType || (rec as any).attendanceType || 'representative';
+      if (reportMethodFilter === 'self_reporting' && attType !== 'self_reporting') return;
+      if (reportMethodFilter === 'representative' && attType === 'self_reporting') return;
+
       if (!classMap[progKey]) {
-        const matchingProg = programs.find(p => p.id === rec.programId);
         classMap[progKey] = {
           programId: rec.programId,
           programTitle: rec.programTitle || 'کلاس درسی',
           teacherName: matchingProg?.teacher || matchingProg?.teacherName || (rec as any).teacherName || 'استاد محترم',
           grade: rec.grade || matchingProg?.grade || 'عمومی',
+          attendanceType: attType,
           studentsMap: {}
         };
       }
@@ -1938,6 +1994,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </p>
           </div>
         </div>
+
+        {/* Ordinary Student Action: Self-Declaration Button on Left Side of Header Banner */}
+        {isOrdinaryStudent && studentSelfReportingPrograms.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsStudentSelfReportingOpen(true)}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-500 via-teal-600 to-emerald-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-all cursor-pointer active:scale-95 border border-emerald-400/30 group"
+            >
+              <Sparkles size={15} className="text-amber-300 group-hover:rotate-12 transition-transform" />
+              <span>ثبت خوداظهاری حضور و غیاب</span>
+            </button>
+          </div>
+        )}
 
         {/* View Switcher & Settings (Only shown when multiple tabs/options exist) */}
         {!isOrdinaryStudent && (
@@ -3617,6 +3687,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     </div>
                   )}
 
+                  {/* Filter by Method of Recording (شیوه ثبت: همه / نماینده / خوداظهاری) */}
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[11px] font-bold text-slate-500">شیوه ثبت:</span>
+                    <select
+                      value={rosterRecordMethodFilter}
+                      onChange={(e) => setRosterRecordMethodFilter(e.target.value as any)}
+                      className="text-xs font-black bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-800 outline-none cursor-pointer"
+                    >
+                      <option value="all">همه طلاب ({enrolledStudents.length} نفر)</option>
+                      <option value="representative">👤 ثبت توسط نماینده</option>
+                      <option value="self_reporting">✍️ خوداظهاری توسط طلبه</option>
+                    </select>
+                  </div>
+
                   {/* Top Final Save Button */}
                   <button
                     type="button"
@@ -3649,14 +3733,26 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <AlertCircle size={36} className="text-slate-300 mx-auto" />
                   <p className="text-xs font-bold text-slate-600">هیچ طلبه‌ای برای این کلاس ثبت‌نام نشده است.</p>
                 </div>
+              ) : filteredRosterStudents.length === 0 ? (
+                <div className="p-10 text-center space-y-2 bg-slate-50/50 rounded-2xl m-4 border border-dashed border-slate-200">
+                  <AlertCircle size={32} className="text-slate-400 mx-auto" />
+                  <p className="text-xs font-bold text-slate-600">طلبه‌ای با شیوه ثبت انتخابی یافت نشد.</p>
+                </div>
               ) : (
                 <div className="divide-y divide-slate-100 px-3 sm:px-5">
-                  {enrolledStudents.map((student, index) => {
+                  {filteredRosterStudents.map((student, index) => {
                     const currentStatus = studentsAttendance[student.id]; // undefined if not chosen yet
                     const studentNote = studentNotes[student.id] || '';
                     const hasWarning = !!studentWarnings[student.id];
                     const isExc = studentExcused[student.id]?.isExcused;
                     const isHighlighted = initialStudentId && String(student.id) === String(initialStudentId);
+
+                    const sessionDetail = currentSessionRecord?.students?.find(s => 
+                      String(s.studentId) === String(student.id) || (s.nationalId && s.nationalId === student.nationalId)
+                    );
+                    const isSelf = sessionDetail?.recordedMethod === 'self_reporting' || (
+                      currentProgram?.attendanceType === 'self_reporting' && Boolean(currentStatus && currentStatus !== 'unspecified')
+                    );
 
                     return (
                       <div 
@@ -3677,7 +3773,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             {index + 1}
                           </span>
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-black text-slate-900">{student.name}</span>
                               {student.grade && (
                                 <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded border border-indigo-100">
@@ -3693,6 +3789,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 <span className="text-[10px] bg-rose-100 text-rose-800 font-black px-1.5 py-0.2 rounded border border-rose-200 flex items-center gap-0.5">
                                   <AlertTriangle size={10} />
                                   <span>اخطار آموزشی</span>
+                                </span>
+                              )}
+                              {/* شیوه ثبت badge (نماینده یا خوداظهاری) */}
+                              {currentStatus && currentStatus !== 'unspecified' ? (
+                                isSelf ? (
+                                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded-md border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                                    <Sparkles size={11} className="text-emerald-700" />
+                                    <span>شیوه ثبت: خوداظهاری</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] bg-indigo-50 text-indigo-800 font-bold px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1">
+                                    <UserCheck size={11} className="text-indigo-600" />
+                                    <span>شیوه ثبت: نماینده</span>
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-[10px] bg-slate-100 text-slate-400 font-medium px-1.5 py-0.2 rounded border border-slate-200">
+                                  شیوه ثبت: ثبت‌نشده
                                 </span>
                               )}
                             </div>
@@ -4220,11 +4334,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
                       : "bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200"
                   )}
-                  title="تغییر حالت نمایش بین فقط غایبین و یا همه طلاب"
+                  title="تغییر حالت نمایش بین همه طلاب و فقط غایبین"
                 >
                   <Users size={14} />
-                  <span>{reportShowAllStudents ? 'نمایش همه طلاب (حاضر، غایب و تاخیر)' : 'نمایش فقط غایبین (پیش‌فرض)'}</span>
+                  <span>{reportShowAllStudents ? 'نمایش همه طلاب (پیش‌فرض)' : 'نمایش فقط غایبین'}</span>
                 </button>
+
+                {/* Filter by Registration Method (شیوه ثبت: نماینده / خوداظهاری) */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500">شیوه ثبت:</span>
+                  <select
+                    value={reportMethodFilter}
+                    onChange={(e) => setReportMethodFilter(e.target.value as any)}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-800 outline-none cursor-pointer"
+                  >
+                    <option value="all">همه شیوه‌ها</option>
+                    <option value="representative">👥 نماینده</option>
+                    <option value="self_reporting">✨ خوداظهاری</option>
+                  </select>
+                </div>
 
                 {/* Sort selector */}
                 <div className="flex items-center gap-1.5">
@@ -4351,6 +4479,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <th className="p-3">ردیف</th>
                       <th className="p-3">نام طلبه</th>
                       <th className="p-3">پایه</th>
+                      <th className="p-3 text-center">شیوه ثبت</th>
                       <th className="p-3">خلاصه غیبت‌ها به تفکیک دروس</th>
                       <th className="p-3 text-center text-rose-700">کل غیرموجه</th>
                       <th className="p-3 text-center text-indigo-700">کل موجه</th>
@@ -4370,6 +4499,23 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
                           <td className="p-3 font-black text-slate-900">{item.student.name}</td>
                           <td className="p-3 text-slate-600 font-bold">{item.student.grade || '---'}</td>
+                          <td className="p-3 text-center">
+                            {(item as any).recordingMethodSummary === 'self_reporting' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                                <Sparkles size={11} className="text-emerald-700" />
+                                <span>خوداظهاری</span>
+                              </span>
+                            ) : (item as any).recordingMethodSummary === 'mixed' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <span>ترکیبی</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                <UserCheck size={11} className="text-indigo-600" />
+                                <span>نماینده</span>
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {Object.entries((item as any).courseBreakdown || {}).length === 0 ? (
@@ -4417,6 +4563,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <th className="p-3">نام طلبه</th>
                       <th className="p-3">پایه</th>
                       <th className="p-3">کلاس / درس</th>
+                      <th className="p-3 text-center">شیوه ثبت</th>
                       <th className="p-3 text-center">جلسات مشمول</th>
                       <th className="p-3 text-center text-emerald-800">حاضر</th>
                       <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
@@ -4450,6 +4597,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             <span className="bg-indigo-50/80 text-indigo-800 px-2 py-0.5 rounded-lg border border-indigo-100 text-[11px]">
                               {(item as any).programTitleSummary || 'عمومی'}
                             </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            {(item as any).recordingMethodSummary === 'self_reporting' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                                <Sparkles size={11} className="text-emerald-700" />
+                                <span>خوداظهاری</span>
+                              </span>
+                            ) : (item as any).recordingMethodSummary === 'mixed' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <Users size={11} className="text-amber-700" />
+                                <span>ترکیبی</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                <UserCheck size={11} className="text-indigo-600" />
+                                <span>نماینده</span>
+                              </span>
+                            )}
                           </td>
                           <td className="p-3 text-center font-mono font-bold">{item.heldSessionsEnrolled}</td>
                           <td className="p-3 text-center font-mono font-black text-emerald-700">{item.presentCount}</td>
@@ -5892,6 +6057,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           </div>
         )}
       </AnimatePresence>
+
+      {/* Student Self-Reporting Attendance Modal */}
+      <StudentSelfReportingModal
+        isOpen={isStudentSelfReportingOpen}
+        onClose={() => setIsStudentSelfReportingOpen(false)}
+        currentUser={currentUser}
+        studentObj={students.find(s => 
+          String(s.id) === String(currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id) || 
+          (currentUser?.username && (s.nationalId === currentUser.username || s.studentCode === currentUser.username)) ||
+          (currentUser?.name && s.name?.includes(currentUser.name))
+        )}
+        programs={programs}
+        enrollments={enrollments}
+        onAttendanceSaved={() => loadData()}
+      />
     </div>
   );
 }

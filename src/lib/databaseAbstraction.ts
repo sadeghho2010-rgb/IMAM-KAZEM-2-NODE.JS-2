@@ -155,6 +155,11 @@ export function validateMysqlConfig(): { isValid: boolean; errors: string[] } {
   const conf = parseMysqlConfig();
   const errors: string[] = [];
 
+  // If no MySQL configuration is provided at all, return gracefully without logging errors
+  if (!conf.isConfigured && !conf.host && !conf.database && !conf.user) {
+    return { isValid: false, errors: ['MySQL is not configured in this environment (using local JSON storage).'] };
+  }
+
   if (!conf.host) {
     errors.push('[MySQL Config Error] DB_HOST is empty or invalid');
   } else {
@@ -181,7 +186,7 @@ export function validateMysqlConfig(): { isValid: boolean; errors: string[] } {
   }
 
   const isValid = errors.length === 0;
-  if (!isValid) {
+  if (!isValid && (conf.host || conf.database)) {
     errors.forEach(err => console.error(err));
   }
   return { isValid, errors };
@@ -838,13 +843,16 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
 }
 
 export function getMysqlPool(): mysql.Pool | null {
+  const conf = parseMysqlConfig();
+  if (!conf.isConfigured && !conf.host && !conf.database) {
+    return null;
+  }
+
   const { isValid, errors } = validateMysqlConfig();
   if (!isValid) {
     lastConnectionError = errors.join(' | ');
     return null;
   }
-
-  const conf = parseMysqlConfig();
 
   if (!pool) {
     try {
