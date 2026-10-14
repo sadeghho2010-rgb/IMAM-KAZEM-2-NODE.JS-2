@@ -1378,7 +1378,7 @@ class LocalDatabase {
     saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res: any) => {
       if (res.success) {
         if (res.item && typeof res.item === 'object') {
-          this.setLocalStorageDoc(resolvedCol, id, res.item);
+          this.setLocalStorageDoc(resolvedCol, res.item);
         }
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);

@@ -17,6 +17,24 @@ import { logSlowQuery, logServerError } from './systemHealthMonitor';
 
 dotenv.config();
 
+export function parseGradeToNumericLevel(gradeInput: any): number {
+  if (typeof gradeInput === 'number') return isNaN(gradeInput) ? 3 : gradeInput;
+  if (!gradeInput || typeof gradeInput !== 'string') return 3;
+  const englishDigits = gradeInput.replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString());
+  const match = englishDigits.match(/\d+/);
+  if (match) {
+    const parsed = parseInt(match[0], 10);
+    return isNaN(parsed) ? 3 : parsed;
+  }
+  return 3;
+}
+
+export function cleanNullableStr(val: any): string | null {
+  if (val === undefined || val === null) return null;
+  const str = String(val).trim();
+  return str.length === 0 ? null : str;
+}
+
 export function sanitizeRecordForDb(data: any): any {
   if (!data || typeof data !== 'object') return data;
   if (Array.isArray(data)) return data.map(sanitizeRecordForDb);
@@ -1353,18 +1371,18 @@ export const MysqlRepository = {
         `;
         const params = [
           row.id,
-          row.student_code || null,
-          row.national_id || null,
+          cleanNullableStr(row.student_code),
+          cleanNullableStr(row.national_id),
           row.name || 'نامشخص',
-          row.father_name || null,
+          cleanNullableStr(row.father_name),
           row.grade || 'نامشخص',
-          row.phone || null,
-          row.address || null,
+          cleanNullableStr(row.phone),
+          cleanNullableStr(row.address),
           row.status || 'active',
           row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1,
-          row.entry_year || null,
-          row.mentor_id || null,
-          row.notes || null,
+          cleanNullableStr(row.entry_year),
+          cleanNullableStr(row.mentor_id),
+          cleanNullableStr(row.notes),
           JSON.stringify(row.data || {})
         ];
         try {
@@ -1397,6 +1415,9 @@ export const MysqlRepository = {
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
             await pool.query(sql, params);
+          } else {
+            console.error(`[STORAGE_FAILURE] Dedicated table students query error for id "${row.id}":`, sErr?.message || sErr);
+            throw sErr;
           }
         }
       } else if (tableName === 'classrooms') {

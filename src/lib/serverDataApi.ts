@@ -289,6 +289,8 @@ export function authorizeCollectionAccess(
       user.role === 'education_manager' ||
       user.role === 'education_officer' ||
       user.role === 'grade_mentor' ||
+      user.role === 'class_representative' ||
+      Boolean(user.isClassRep) ||
       user.role === 'mentor' ||
       Boolean(user.mentorId) ||
       uName === 'SHAH' ||
@@ -375,15 +377,17 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
   };
 
   switch (dedicatedTable) {
-    case 'students':
-      row.national_id = data.nationalId || data.national_id || null;
-      row.student_code = data.studentCode || data.student_code || null;
+    case 'students': {
+      const cleanStr = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
+      row.national_id = cleanStr(data.nationalId || data.national_id);
+      row.student_code = cleanStr(data.studentCode || data.student_code);
       row.name = data.name || 'نامشخص';
       row.grade = data.grade || 'نامشخص';
-      row.phone = data.phone || null;
-      row.father_name = data.fatherName || data.father_name || null;
+      row.phone = cleanStr(data.phone);
+      row.father_name = cleanStr(data.fatherName || data.father_name);
       row.is_active = data.isActive !== undefined ? Boolean(data.isActive) : true;
       break;
+    }
 
     case 'teachers':
       row.name = data.name || 'نامشخص';
@@ -542,7 +546,7 @@ export async function serverSaveDoc(
   collection: string,
   idOrData: any,
   dataOrCallerUser?: any
-): Promise<{ success: boolean; id: string; item?: any; error?: string }> {
+): Promise<{ success: boolean; id: string; item?: any; error?: string; affectedRows?: number; changedRows?: number; notFound?: boolean }> {
   if (!idOrData) return { success: false, id: '', error: 'داده‌های ارسالی نامعتبر است.' };
 
   let record: any;
@@ -591,15 +595,11 @@ export async function serverSaveDoc(
       ];
 
       if (dedicatedTable) {
-        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch((err: any) => {
-          console.error(`[STORAGE_FAILURE] Dedicated table "${dedicatedTable}" save failed for id "${id}" in collection "${collection}":`, err?.message || err);
-        }));
+        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row));
       }
 
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
-        tasks.push(MysqlRepository.saveUser(record).catch((err: any) => {
-          console.error(`[STORAGE_FAILURE] User mirror save failed for id "${id}" in collection "${collection}":`, err?.message || err);
-        }));
+        tasks.push(MysqlRepository.saveUser(record));
       }
 
       const [saveRes] = await Promise.all(tasks);
