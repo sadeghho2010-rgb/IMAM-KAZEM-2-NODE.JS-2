@@ -391,7 +391,7 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.national_id = cleanStr(data.nationalId || data.national_id);
       row.student_code = cleanStr(data.studentCode || data.student_code);
       row.name = data.name || 'نامشخص';
-      row.grade = data.grade || 'نامشخص';
+      row.grade = data.grade || data.gradeLabel || 'نامشخص';
       row.phone = cleanStr(data.phone || data.phoneNumber);
       row.father_name = cleanStr(data.fatherName || data.father_name);
       row.status = data.status || 'active';
@@ -399,7 +399,11 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.entry_year = cleanStr(data.entryYear || data.entry_year);
       row.mentor_id = cleanStr(data.mentorId || data.mentor_id);
       row.notes = cleanStr(data.notes);
-      row.data = data;
+      row.data = {
+        ...data,
+        grade: data.grade || data.gradeLabel || '',
+        updatedAt: now
+      };
       break;
     }
 
@@ -422,9 +426,10 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
 
     case 'programs': {
       const cleanStr = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
+      const parentId = cleanStr(data.parentProgramId || data.parent_program_id || data.linkedMainLessonId);
       row.title = data.title || 'برنامه بدون عنوان';
       row.type = data.type || 'اصلی';
-      row.parent_program_id = cleanStr(data.parentProgramId || data.parent_program_id);
+      row.parent_program_id = parentId;
       row.grade = data.grade || 'نامشخص';
       row.teacher_id = cleanStr(data.teacherId || data.teacher_id);
       row.teacher_name = cleanStr(data.teacherName || data.teacher_name || data.teacher);
@@ -432,8 +437,16 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.day_of_week = Array.isArray(data.days) ? data.days.join(' ، ') : cleanStr(data.day);
       row.start_time = cleanStr(data.startTime || (data.time ? String(data.time).split(' الی ')[0] : null));
       row.end_time = cleanStr(data.endTime || (data.time ? String(data.time).split(' الی ')[1] : null));
+      row.representative_student_ids = JSON.stringify(data.representativeStudentIds || []);
+      row.representative_names = JSON.stringify(data.representativeNames || []);
       row.term = cleanStr(data.term);
-      row.data = data;
+      row.data = {
+        ...data,
+        parentProgramId: parentId || '',
+        representativeStudentIds: data.representativeStudentIds || [],
+        representativeNames: data.representativeNames || [],
+        updatedAt: now
+      };
       break;
     }
 

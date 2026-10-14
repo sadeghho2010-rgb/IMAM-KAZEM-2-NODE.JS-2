@@ -1126,13 +1126,8 @@ class LocalDatabase {
               }
             }
           } else {
-            // Protect local doc if modified within last 30s or if local timestamp is newer
-            const isLocalDocRecentlyModified = localDoc && typeof localDoc._localModifiedAt === 'number' && (now - localDoc._localModifiedAt < 30000);
-            if (isLocalDocRecentlyModified || (localDoc && localTs > cloudTs)) {
-              mergedDocsMap.set(docId, localDoc);
-            } else {
-              mergedDocsMap.set(docId, doc);
-            }
+            // Authoritative server document takes precedence when this device has no local pending write
+            mergedDocsMap.set(docId, doc);
           }
         }
 
@@ -1468,7 +1463,7 @@ class LocalDatabase {
           } catch (e) {}
         }
         markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 1000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
@@ -1530,9 +1525,9 @@ class LocalDatabase {
             transaction.objectStore(resolvedCol).put(finalDoc);
           } catch (e) {}
         }
-        // Protect local write for 15s against immediate background revalidations
+        // Protect local write briefly, then release lock so real-time updates propagate freely
         markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 1000);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);

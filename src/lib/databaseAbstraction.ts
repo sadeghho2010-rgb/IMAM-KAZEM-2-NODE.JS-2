@@ -49,8 +49,8 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
   record.id = row.id || record.id;
 
   if (collection === 'students') {
-    if (row.name) record.name = row.name;
-    if (row.grade) record.grade = row.grade;
+    if (row.name && row.name !== 'نامشخص') record.name = row.name;
+    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
     if (row.national_id) {
       record.nationalId = row.national_id;
       record.national_id = row.national_id;
@@ -71,54 +71,79 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'classrooms' || collection === 'classes') {
-    if (row.title) record.title = row.title;
-    if (row.grade) record.grade = row.grade;
-    if (row.capacity !== undefined && row.capacity !== null) record.capacity = Number(row.capacity);
+    if (row.title && row.title !== 'کلاس بدون عنوان') record.title = row.title;
+    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
+    if (row.capacity) record.capacity = Number(row.capacity);
     if (row.location) record.location = row.location;
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'programs') {
-    if (row.title) record.title = row.title;
-    if (row.grade) record.grade = row.grade;
+    if (row.title && row.title !== 'برنامه بدون عنوان') record.title = row.title;
+    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
     if (row.type) record.type = row.type;
-    if (row.parent_program_id) record.parentProgramId = row.parent_program_id;
-    if (row.parentProgramId) record.parentProgramId = row.parentProgramId;
+    if (row.parent_program_id !== undefined && row.parent_program_id !== null) {
+      record.parentProgramId = row.parent_program_id || record.parentProgramId || '';
+    }
     if (row.teacher_id) record.teacherId = row.teacher_id;
     if (row.teacher_name) {
       record.teacherName = row.teacher_name;
-      if (!record.teacher) record.teacher = row.teacher_name;
+      record.teacher = row.teacher_name;
     }
     if (row.classroom_id) {
       record.classroomId = row.classroom_id;
-      if (!record.classroom) record.classroom = row.classroom_id;
-      if (!record.madrasRoom) record.madrasRoom = row.classroom_id;
+      record.classroom = row.classroom_id;
+      record.madrasRoom = row.classroom_id;
     }
-    if (row.day_of_week && !record.day) record.day = row.day_of_week;
-    if (row.start_time && row.end_time && !record.time) {
-      record.startTime = row.start_time;
-      record.endTime = row.end_time;
-      record.time = `${row.start_time} الی ${row.end_time}`;
+    if (row.day_of_week) {
+      record.day = row.day_of_week;
+      if (!record.days || !Array.isArray(record.days) || record.days.length === 0) {
+        record.days = row.day_of_week.split(' ، ').map((d: string) => d.trim()).filter(Boolean);
+      }
     }
+    if (row.start_time || row.end_time) {
+      record.startTime = row.start_time || record.startTime || '';
+      record.endTime = row.end_time || record.endTime || '';
+      if (row.start_time && row.end_time) {
+        record.time = `${row.start_time} الی ${row.end_time}`;
+      }
+    }
+    if (row.representative_student_ids) {
+      try {
+        const parsed = typeof row.representative_student_ids === 'string'
+          ? JSON.parse(row.representative_student_ids)
+          : row.representative_student_ids;
+        if (Array.isArray(parsed) && parsed.length > 0) record.representativeStudentIds = parsed;
+      } catch (e) {}
+    }
+    if (row.representative_names) {
+      try {
+        const parsed = typeof row.representative_names === 'string'
+          ? JSON.parse(row.representative_names)
+          : row.representative_names;
+        if (Array.isArray(parsed) && parsed.length > 0) record.representativeNames = parsed;
+      } catch (e) {}
+    }
+    if (row.term) record.term = row.term;
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'attendance') {
     if (row.student_id) record.studentId = row.student_id;
     if (row.date) record.date = row.date;
     if (row.program_id) record.programId = row.program_id;
-    if (row.grade) record.grade = row.grade;
+    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
     if (row.present_count !== undefined && row.present_count !== null) record.presentCount = Number(row.present_count);
     if (row.absent_count !== undefined && row.absent_count !== null) record.absentCount = Number(row.absent_count);
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'teachers') {
-    if (row.name) {
+    if (row.name && row.name !== 'نامشخص') {
       record.name = row.name;
-      if (!record.fullName) record.fullName = row.name;
+      record.fullName = row.name;
     }
     if (row.specialty) record.specialty = row.specialty;
     if (row.phone) {
       record.phone = row.phone;
-      if (!record.phoneNumber) record.phoneNumber = row.phone;
+      record.phoneNumber = row.phone;
     }
     if (row.email) record.email = row.email;
     if (row.is_active !== undefined && row.is_active !== null) record.isActive = Boolean(row.is_active);
@@ -127,7 +152,7 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
   } else if (collection === 'enrollments') {
     if (row.student_id) record.studentId = row.student_id;
     if (row.program_id) record.programId = row.program_id;
-    if (row.grade) record.grade = row.grade;
+    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
     if (row.status) record.status = row.status;
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
@@ -142,14 +167,14 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
     if (row.username) record.username = row.username;
     if (row.name) {
       record.name = row.name;
-      if (!record.fullName) record.fullName = row.name;
+      record.fullName = row.name;
     }
     if (row.role) record.role = row.role;
     if (row.role_title) record.roleTitle = row.role_title;
     if (row.level !== undefined && row.level !== null) record.level = Number(row.level);
     if (row.grade_label) {
       record.gradeLabel = row.grade_label;
-      if (!record.grade) record.grade = row.grade_label;
+      record.grade = row.grade_label;
     }
     if (row.mentor_id) record.mentorId = row.mentor_id;
     if (row.student_id) record.studentId = row.student_id;
@@ -188,21 +213,34 @@ export function mergeDedicatedAndDocumentRows(
     mergedMap.set(String(dRow.id), rec);
   }
 
-  // 2. Overlay app_collections documents:
-  // app_collections documents represent the complete, rich React JSON payload
-  // (with all arrays, nested objects, parentProgramId, representative lists, attendance sheets, etc.)
-  // It MUST overlay the dedicated columns to guarantee zero data loss!
+  // 2. Overlay app_collections documents safely
   for (const doc of appDocItems) {
     if (!doc || !doc.id) continue;
     const docId = String(doc.id);
     const existing = mergedMap.get(docId);
     if (existing) {
-      const merged = { ...existing, ...doc };
+      // Start with doc (complete JSON), then overlay non-empty/non-default existing fields
+      const merged: any = { ...doc };
+      for (const key of Object.keys(existing)) {
+        const val = existing[key];
+        if (val === undefined || val === null) continue;
+        if (typeof val === 'string' && (val === 'نامشخص' || val === 'کلاس بدون عنوان' || val === 'برنامه بدون عنوان') && doc[key] && doc[key] !== val) {
+          continue;
+        }
+        if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
+          continue;
+        }
+        merged[key] = val;
+      }
       delete merged._appUpdatedAt;
+      if (!merged.updatedAt) {
+        merged.updatedAt = doc.updatedAt || existing.updatedAt || new Date().toISOString();
+      }
       mergedMap.set(docId, merged);
     } else {
       const copy = { ...doc };
       delete copy._appUpdatedAt;
+      if (!copy.updatedAt) copy.updatedAt = new Date().toISOString();
       mergedMap.set(docId, copy);
     }
   }
@@ -1725,8 +1763,8 @@ export const MysqlRepository = {
         }
       } else if (tableName === 'programs') {
         const sql = `
-          INSERT INTO programs (id, title, grade, teacher_id, teacher_name, classroom_id, day_of_week, start_time, end_time, type, parent_program_id, data, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          INSERT INTO programs (id, title, grade, teacher_id, teacher_name, classroom_id, day_of_week, start_time, end_time, type, parent_program_id, representative_student_ids, representative_names, term, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
             title = ?,
             grade = ?,
@@ -1738,6 +1776,9 @@ export const MysqlRepository = {
             end_time = ?,
             type = ?,
             parent_program_id = ?,
+            representative_student_ids = ?,
+            representative_names = ?,
+            term = ?,
             data = ?,
             updated_at = NOW();
         `;
@@ -1750,12 +1791,15 @@ export const MysqlRepository = {
         const startTimeVal = cleanNullableStr(row.start_time || row.startTime);
         const endTimeVal = cleanNullableStr(row.end_time || row.endTime);
         const typeVal = cleanNullableStr(row.type) || 'اصلی';
-        const parentProgVal = cleanNullableStr(row.parent_program_id || row.parentProgramId);
+        const parentProgVal = cleanNullableStr(row.parent_program_id || row.parentProgramId || row.linkedMainLessonId);
+        const repIdsVal = typeof row.representative_student_ids === 'string' ? row.representative_student_ids : JSON.stringify(row.representative_student_ids || row.data?.representativeStudentIds || []);
+        const repNamesVal = typeof row.representative_names === 'string' ? row.representative_names : JSON.stringify(row.representative_names || row.data?.representativeNames || []);
+        const termVal = cleanNullableStr(row.term || row.data?.term);
         const dataJson = JSON.stringify(row.data || {});
 
         const params = [
-          row.id, titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, dataJson,
-          titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, dataJson
+          row.id, titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, repIdsVal, repNamesVal, termVal, dataJson,
+          titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, repIdsVal, repNamesVal, termVal, dataJson
         ];
 
         try {
@@ -1775,6 +1819,9 @@ export const MysqlRepository = {
                 \`end_time\` VARCHAR(20) NULL,
                 \`type\` VARCHAR(50) NULL DEFAULT 'اصلی',
                 \`parent_program_id\` VARCHAR(100) NULL,
+                \`representative_student_ids\` TEXT NULL,
+                \`representative_names\` TEXT NULL,
+                \`term\` VARCHAR(100) NULL,
                 \`data\` JSON NULL,
                 \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1788,6 +1835,9 @@ export const MysqlRepository = {
             // Auto-heal missing columns on live MySQL
             try { await pool.query('ALTER TABLE programs ADD COLUMN type VARCHAR(50) NULL DEFAULT "اصلی"'); } catch (e) {}
             try { await pool.query('ALTER TABLE programs ADD COLUMN parent_program_id VARCHAR(100) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs ADD COLUMN representative_student_ids TEXT NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs ADD COLUMN representative_names TEXT NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs ADD COLUMN term VARCHAR(100) NULL'); } catch (e) {}
             try { await pool.query('ALTER TABLE programs ADD COLUMN data JSON NULL'); } catch (e) {}
             await pool.query(sql, params);
           } else {
@@ -1946,6 +1996,9 @@ export const MysqlRepository = {
                 INDEX \`idx_enrollments_program\` (\`program_id\`)
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
+            await pool.query(sql, params);
+          } else if (eErr?.code === 'ER_BAD_FIELD_ERROR' || eErr?.message?.includes('Unknown column')) {
+            try { await pool.query('ALTER TABLE enrollments ADD COLUMN data JSON NULL'); } catch (e) {}
             await pool.query(sql, params);
           } else {
             throw eErr;
@@ -2111,8 +2164,8 @@ export const MysqlRepository = {
       try {
         const [dRows]: any = await pool.query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [id]);
         if (dRows && dRows.length > 0) {
-          const dedicatedRec = mapDedicatedRowToRecord(colName, dRows[0]);
-          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
+          const mergedList = mergeDedicatedAndDocumentRows(colName, [dRows[0]], appDoc ? [appDoc] : []);
+          return mergedList[0] || appDoc;
         }
       } catch (e) {}
       return appDoc;
@@ -2139,8 +2192,8 @@ export const MysqlRepository = {
           [id, id]
         );
         if (uRows && uRows.length > 0) {
-          const dedicatedRec = mapDedicatedRowToRecord('system_users', uRows[0]);
-          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
+          const mergedList = mergeDedicatedAndDocumentRows('system_users', [uRows[0]], appDoc ? [appDoc] : []);
+          return mergedList[0] || appDoc;
         }
       } catch (e) {}
     }
@@ -2157,7 +2210,7 @@ export const MysqlRepository = {
     let appDocItems: any[] = [];
     try {
       const placeholders = ids.map(() => '?').join(', ');
-      const [rows]: any = await pool.execute(
+      const [rows]: any = await pool.query(
         `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
         [collectionName, ...ids]
       );
