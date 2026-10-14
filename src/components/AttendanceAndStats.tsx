@@ -365,18 +365,23 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         localDb.getDocs('representative_notes'),
         localDb.getDocs<StudentRequest>('student_requests')
       ]);
-      setPrograms(progs || []);
-      setStudents(studs || []);
-      setTeachers(teaList || []);
-      setEnrollments(enrolls || []);
-      setAttendanceRecords(atts || []);
-      setAcademicHolidays(hols || []);
-      setAcademicPeriods(periods || []);
-      setUsers(userList || []);
+
+      const activeStudents = (studs || []).filter((s: any) => s.status !== 'deleted' && !s.isDeleted && !s.deletedAt);
+
+      const isDeepEqual = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+
+      setPrograms(prev => isDeepEqual(prev, progs || []) ? prev : (progs || []));
+      setStudents(prev => isDeepEqual(prev, activeStudents) ? prev : activeStudents);
+      setTeachers(prev => isDeepEqual(prev, teaList || []) ? prev : (teaList || []));
+      setEnrollments(prev => isDeepEqual(prev, enrolls || []) ? prev : (enrolls || []));
+      setAttendanceRecords(prev => isDeepEqual(prev, atts || []) ? prev : (atts || []));
+      setAcademicHolidays(prev => isDeepEqual(prev, hols || []) ? prev : (hols || []));
+      setAcademicPeriods(prev => isDeepEqual(prev, periods || []) ? prev : (periods || []));
+      setUsers(prev => isDeepEqual(prev, userList || []) ? prev : (userList || []));
 
       if (Array.isArray(reqList)) {
         const leaves = reqList.filter(r => r.isLeaveRequest || r.category === 'درخواست مرخصی');
-        setLeaveRequestsList(leaves);
+        setLeaveRequestsList(prev => isDeepEqual(prev, leaves) ? prev : leaves);
       }
 
       const notesMap: Record<string, string> = {};
@@ -385,10 +390,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           if (n.repId) notesMap[n.repId] = n.noteText || n.note || '';
         });
       }
-      setRepNotesMap(notesMap);
+      setRepNotesMap(prev => isDeepEqual(prev, notesMap) ? prev : notesMap);
 
       if (settList && settList.length > 0) {
-        setSettings(settList[0]);
+        setSettings(prev => isDeepEqual(prev, settList[0]) ? prev : settList[0]);
       }
     } catch (e) {
       console.error('Error loading attendance data:', e);
@@ -594,7 +599,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
   }, [isOrdinaryStudent, isRepresentative]);
 
-  // Set default selected program strictly constrained to represented classes for class representatives
+  // Set default selected program strictly constrained to represented classes for class representatives or self-reporting for students
   useEffect(() => {
     if (isRepresentative) {
       if (representativePrograms.length > 0) {
@@ -603,6 +608,17 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         }
       } else {
         setSelectedProgramId('');
+      }
+      return;
+    }
+
+    if (isOrdinaryStudent) {
+      if (studentSelfReportingPrograms.length > 0) {
+        if (!selectedProgramId || !studentSelfReportingPrograms.some(p => p.id === selectedProgramId)) {
+          setSelectedProgramId(studentSelfReportingPrograms[0].id);
+        }
+      } else if (!selectedProgramId && programs.length > 0) {
+        setSelectedProgramId(programs[0].id);
       }
       return;
     }
@@ -626,7 +642,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     if (!selectedProgramId && programs.length > 0) {
       setSelectedProgramId(programs[0].id);
     }
-  }, [isRepresentative, representativePrograms, programs, selectedProgramId, initialStudentId, enrollments]);
+  }, [isRepresentative, isOrdinaryStudent, representativePrograms, studentSelfReportingPrograms, programs, selectedProgramId, initialStudentId]);
 
   // Get active selected program - strictly limited to represented classes for representatives
   const currentProgram = useMemo(() => {
@@ -640,12 +656,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const enrolledStudents = useMemo(() => {
     if (!selectedProgramId) return [];
 
+    const activeStudents = students.filter(s => s.status !== 'deleted' && !s.isDeleted && !s.deletedAt);
+
     // If ordinary student, strictly return ONLY that logged-in student (cannot see other students or other classes)
     if (isOrdinaryStudent) {
       const loggedSid = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
       const loggedUsername = currentUser?.username;
       
-      const selfStudent = students.find(s => 
+      const selfStudent = activeStudents.find(s => 
         String(s.id) === String(loggedSid) || 
         s.nationalId === loggedUsername || 
         s.studentCode === loggedUsername ||
@@ -690,7 +708,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     const matchedStudentsMap = new Map<string, any>();
 
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       const sId = String(s.id || '').trim();
       const sCode = String(s.studentCode || '').trim();
       const sNat = String(s.nationalId || s.nationalCode || '').trim();
@@ -712,34 +730,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     });
 
-    // If an enrolled student ID is in studentIdSet but not yet populated in students list, ensure an entry exists
-    studentIdSet.forEach(sid => {
-      const alreadyMatched = Array.from(matchedStudentsMap.values()).some(s => 
-        String(s.id).toLowerCase() === sid.toLowerCase() || 
-        String(s.studentCode || '').toLowerCase() === sid.toLowerCase() || 
-        String(s.nationalId || '').toLowerCase() === sid.toLowerCase()
-      );
-      if (!alreadyMatched) {
-        const enr = enrollments.find(e => String(e.studentId) === sid && String(e.programId) === String(selectedProgramId));
-        const placeholderName = enr?.studentName || enr?.name || `طلبه (${sid})`;
-        matchedStudentsMap.set(sid, {
-          id: sid,
-          name: placeholderName,
-          grade: currentProgram?.grade || 'پایه ۷',
-          studentCode: sid
-        });
-      }
-    });
-
     let result = Array.from(matchedStudentsMap.values());
 
-    // Fallback: If no explicit enrollments were recorded in this program yet, match by grade
-    if (result.length === 0 && currentProgram?.grade && currentProgram.grade !== 'همه پایه‌ها') {
-      result = students.filter(s => String(s.grade || '').trim() === String(currentProgram.grade).trim());
+    // Only fallback to grade matching IF NO explicit enrollments or studentIds exist for this class
+    const hasExplicitEnrollment = enrollments.some(e => String(e.programId || e.program_id) === String(selectedProgramId)) ||
+      (currentProgram && Array.isArray(currentProgram.studentIds) && currentProgram.studentIds.length > 0) ||
+      Boolean((currentProgram as any)?.hasExplicitEnrollment);
+
+    if (!hasExplicitEnrollment && result.length === 0 && currentProgram?.grade && currentProgram.grade !== 'همه پایه‌ها') {
+      result = activeStudents.filter(s => String(s.grade || '').trim() === String(currentProgram.grade).trim());
     }
 
     return result.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
-  }, [selectedProgramId, enrollments, currentProgram, students, isRepresentative, representativePrograms]);
+  }, [selectedProgramId, enrollments, currentProgram, students, isRepresentative, isOrdinaryStudent, representativePrograms, currentUser]);
 
   // Current Attendance Session Log for selected course & date
   const currentSessionRecord = useMemo(() => {

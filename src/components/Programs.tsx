@@ -941,6 +941,12 @@ export default function Programs() {
         await localDb.deleteDoc('enrollments', enrollment.id);
       }
 
+      // Sync program document explicitly
+      await localDb.updateDoc('programs', selectedProgramId, {
+        studentIds: selectedEnrollments,
+        hasExplicitEnrollment: true
+      });
+
       await fetchData();
       setShowEnrollModal(false);
       alert('لیست طلاب با موفقیت بروزرسانی شد');

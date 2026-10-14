@@ -782,6 +782,27 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     setIsDeletingStudent(true);
     try {
       await localDb.deleteDoc('students', targetStudent.id);
+
+      // Clean up orphaned enrollments and program studentIds
+      try {
+        const [allEnrolls, allProgs] = await Promise.all([
+          localDb.getDocs<any>('enrollments'),
+          localDb.getDocs<any>('programs')
+        ]);
+        const matchedEnrolls = allEnrolls.filter(e => e.studentId === targetStudent.id || e.student_id === targetStudent.id);
+        for (const enr of matchedEnrolls) {
+          await localDb.deleteDoc('enrollments', enr.id);
+        }
+        for (const prog of allProgs) {
+          if (Array.isArray(prog.studentIds) && prog.studentIds.includes(targetStudent.id)) {
+            const updatedIds = prog.studentIds.filter((id: string) => id !== targetStudent.id);
+            await localDb.updateDoc('programs', prog.id, { studentIds: updatedIds });
+          }
+        }
+      } catch (cleanErr) {
+        console.warn("Non-fatal cleanup notice on student delete:", cleanErr);
+      }
+
       if (deleteUser) {
         const linkedAcc = getStudentAccount(targetStudent);
         if (linkedAcc) {
