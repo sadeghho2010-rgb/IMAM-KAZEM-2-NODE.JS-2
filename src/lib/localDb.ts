@@ -188,10 +188,12 @@ export function getPendingLocalDocsMap(): Map<string, PendingLocalDoc> {
 export function markPendingLocalDoc(collection: string, id: string, action: 'upsert' | 'delete', data?: any) {
   if (typeof window === 'undefined') return;
   try {
+    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
     const map = getPendingLocalDocsMap();
-    map.set(`${collection}::${id}`, {
-      collection,
-      id: String(id),
+    map.set(`${normCol}::${cleanId}`, {
+      collection: normCol,
+      id: cleanId,
       action,
       timestamp: Date.now(),
       data
@@ -203,11 +205,27 @@ export function markPendingLocalDoc(collection: string, id: string, action: 'ups
 export function removePendingLocalDoc(collection: string, id: string) {
   if (typeof window === 'undefined') return;
   try {
+    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
     const map = getPendingLocalDocsMap();
-    if (map.delete(`${collection}::${id}`)) {
+    if (map.delete(`${normCol}::${cleanId}`)) {
       localStorage.setItem(PENDING_LOCAL_DOCS_KEY, JSON.stringify(Array.from(map.values())));
     }
   } catch (e) {}
+}
+
+export function isPendingLocalDoc(collection: string, id: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
+    const map = getPendingLocalDocsMap();
+    const item = map.get(`${normCol}::${cleanId}`);
+    if (!item) return false;
+    return (Date.now() - (item.timestamp || 0)) < 15000;
+  } catch (e) {
+    return false;
+  }
 }
 
 export function enqueueSync(item: Omit<SyncQueueItem, 'attempts' | 'timestamp'>) {
@@ -386,6 +404,9 @@ export async function processSyncQueue(): Promise<{ synced: number; failed: numb
 export interface CloudWriteResult {
   success: boolean;
   status?: number;
+  item?: any;
+  affectedRows?: number;
+  changedRows?: number;
   isSessionExpired?: boolean;
   isClientError?: boolean;
   isServerError?: boolean;
@@ -442,9 +463,16 @@ export async function saveToCloudWithTimeout(
     clearTimeout(timeoutId);
 
     if (apiRes.ok) {
+      const resJson = await apiRes.json().catch(() => ({}));
       // Retain in protective pending buffer for 15 seconds to withstand any immediate poll loops
       setTimeout(() => removePendingLocalDoc(collectionName, id), 15000);
-      return { success: true, status: apiRes.status };
+      return { 
+        success: true, 
+        status: apiRes.status,
+        item: resJson.item || data,
+        affectedRows: resJson.affectedRows,
+        changedRows: resJson.changedRows
+      };
     }
 
     const errJson = await apiRes.json().catch(() => ({}));
@@ -1018,14 +1046,27 @@ class LocalDatabase {
 
         // 2. Collect pending upserts (local modifications)
         const pendingUpsertDocs = new Map<string, any>();
+        const pendingUpsertMeta = new Map<string, PendingLocalDoc>();
         pendingLocalMap.forEach(item => {
           if (item.collection === resolvedCol && item.action === 'upsert' && item.data) {
-            pendingUpsertDocs.set(String(item.id), item.data);
+            const sid = String(item.id);
+            pendingUpsertDocs.set(sid, item.data);
+            pendingUpsertMeta.set(sid, item);
           }
         });
         syncQueue.forEach(q => {
           if (q.collectionName === resolvedCol && q.action === 'upsert' && q.data) {
-            pendingUpsertDocs.set(String(q.id), q.data);
+            const sid = String(q.id);
+            pendingUpsertDocs.set(sid, q.data);
+            if (!pendingUpsertMeta.has(sid)) {
+              pendingUpsertMeta.set(sid, {
+                collection: resolvedCol,
+                id: sid,
+                action: 'upsert',
+                timestamp: q.timestamp || Date.now(),
+                data: q.data
+              });
+            }
           }
         });
 
@@ -1047,23 +1088,40 @@ class LocalDatabase {
 
           if (pendingUpsertDocs.has(docId)) {
             const pendingDoc = pendingUpsertDocs.get(docId);
-            const pendingTs = getDocTimestamp(pendingDoc);
-            if (cloudTs >= pendingTs && cloudTs > 0) {
-              mergedDocsMap.set(docId, doc);
-              removePendingLocalDoc(resolvedCol, docId);
-            } else {
+            const meta = pendingUpsertMeta.get(docId);
+            const isWithin15SecLock = meta ? (now - (meta.timestamp || 0)) < 15000 : false;
+
+            if (isWithin15SecLock) {
+              // Local modification is strictly protected for 15 seconds against stale background revalidations!
               mergedDocsMap.set(docId, pendingDoc);
+            } else {
+              const pendingTs = getDocTimestamp(pendingDoc);
+              if (cloudTs >= pendingTs && cloudTs > 0) {
+                mergedDocsMap.set(docId, doc);
+                removePendingLocalDoc(resolvedCol, docId);
+              } else {
+                mergedDocsMap.set(docId, pendingDoc);
+              }
             }
           } else {
-            // When no pending un-synced edit exists, cloud document from server is authoritative
-            mergedDocsMap.set(docId, doc);
+            // Protect local doc if modified within last 30s or if local timestamp is newer
+            const isLocalDocRecentlyModified = localDoc && typeof localDoc._localModifiedAt === 'number' && (now - localDoc._localModifiedAt < 30000);
+            if (isLocalDocRecentlyModified || (localDoc && localTs > cloudTs)) {
+              mergedDocsMap.set(docId, localDoc);
+            } else {
+              mergedDocsMap.set(docId, doc);
+            }
           }
         }
 
         // Also guarantee any newly added local doc not yet on cloud is preserved
         pendingUpsertDocs.forEach((localDoc, id) => {
           if (!pendingDeleteIds.has(id)) {
-            mergedDocsMap.set(id, localDoc);
+            const meta = pendingUpsertMeta.get(id);
+            const isWithinLock = meta ? (now - (meta.timestamp || 0)) < 15000 : false;
+            if (isWithinLock || !mergedDocsMap.has(id)) {
+              mergedDocsMap.set(id, localDoc);
+            }
           }
         });
 
@@ -1377,11 +1435,17 @@ class LocalDatabase {
     // 2. Non-blocking Background Server Write
     saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res: any) => {
       if (res.success) {
-        if (res.item && typeof res.item === 'object') {
-          this.setLocalStorageDoc(resolvedCol, res.item);
+        const finalDoc = res.item && typeof res.item === 'object' ? res.item : record;
+        this.setLocalStorageDoc(resolvedCol, finalDoc);
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          try {
+            const transaction = db.transaction(resolvedCol, 'readwrite');
+            transaction.objectStore(resolvedCol).put(finalDoc);
+          } catch (e) {}
         }
+        markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
-        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, record);
+        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         // Guarantee: Keep data permanently applied in local database and queue for background sync
@@ -1434,18 +1498,18 @@ class LocalDatabase {
     // 2. Non-blocking Background Server Write
     saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res: any) => {
       if (res.success) {
-        if (res.item && typeof res.item === 'object') {
-          this.setLocalStorageDoc(resolvedCol, res.item);
-          if (db.objectStoreNames.contains(resolvedCol)) {
-            try {
-              const transaction = db.transaction(resolvedCol, 'readwrite');
-              transaction.objectStore(resolvedCol).put(res.item);
-            } catch (e) {}
-          }
+        const finalDoc = res.item && typeof res.item === 'object' ? res.item : updated;
+        this.setLocalStorageDoc(resolvedCol, finalDoc);
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          try {
+            const transaction = db.transaction(resolvedCol, 'readwrite');
+            transaction.objectStore(resolvedCol).put(finalDoc);
+          } catch (e) {}
         }
         // Protect local write for 15s against immediate background revalidations
+        markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
-        this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, updated);
+        this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         // Guarantee: Never rollback on server errors or offline. Retain local edit and queue for retry.

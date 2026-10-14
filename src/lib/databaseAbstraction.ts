@@ -35,6 +35,103 @@ export function cleanNullableStr(val: any): string | null {
   return str.length === 0 ? null : str;
 }
 
+export function mapDedicatedRowToRecord(collection: string, row: any): any {
+  if (!row) return null;
+  let record: any = {};
+  if (row.data) {
+    try {
+      record = typeof row.data === 'string' ? JSON.parse(row.data) : { ...row.data };
+    } catch (e) {
+      record = {};
+    }
+  }
+
+  record.id = row.id || record.id;
+
+  if (collection === 'students') {
+    if (row.name) record.name = row.name;
+    if (row.grade) record.grade = row.grade;
+    if (row.national_id) {
+      record.nationalId = row.national_id;
+      record.national_id = row.national_id;
+    }
+    if (row.student_code) {
+      record.studentCode = row.student_code;
+      record.student_code = row.student_code;
+    }
+    if (row.phone) record.phone = row.phone;
+    if (row.father_name) record.fatherName = row.father_name;
+    if (row.is_active !== undefined && row.is_active !== null) {
+      record.isActive = Boolean(row.is_active);
+    }
+    if (row.status) record.status = row.status;
+    if (row.entry_year) record.entryYear = row.entry_year;
+    if (row.mentor_id) record.mentorId = row.mentor_id;
+    if (row.notes) record.notes = row.notes;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'classrooms' || collection === 'classes') {
+    if (row.title) record.title = row.title;
+    if (row.grade) record.grade = row.grade;
+    if (row.capacity !== undefined && row.capacity !== null) record.capacity = Number(row.capacity);
+    if (row.location) record.location = row.location;
+  }
+
+  return record;
+}
+
+function extractRecordTs(rec: any): number {
+  if (!rec) return 0;
+  const raw = rec.updatedAt || rec.updated_at || rec.createdAt || rec.created_at;
+  if (raw) {
+    const t = new Date(raw).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return 0;
+}
+
+export function mergeDedicatedAndDocumentRows(
+  collection: string,
+  dedicatedRows: any[],
+  appDocItems: any[]
+): any[] {
+  const mergedMap = new Map<string, any>();
+
+  // 1. Index dedicated table rows
+  for (const dRow of dedicatedRows) {
+    if (!dRow || !dRow.id) continue;
+    const rec = mapDedicatedRowToRecord(collection, dRow);
+    mergedMap.set(String(dRow.id), rec);
+  }
+
+  // 2. Overlay app_collections documents with timestamp awareness
+  for (const doc of appDocItems) {
+    if (!doc || !doc.id) continue;
+    const docId = String(doc.id);
+    const existing = mergedMap.get(docId);
+    if (existing) {
+      const existingTs = extractRecordTs(existing);
+      const docTs = extractRecordTs(doc);
+      if (docTs >= existingTs) {
+        const merged = { ...existing, ...doc };
+        delete merged._appUpdatedAt;
+        mergedMap.set(docId, merged);
+      } else {
+        const merged = { ...doc, ...existing };
+        delete merged._appUpdatedAt;
+        mergedMap.set(docId, merged);
+      }
+    } else {
+      const copy = { ...doc };
+      delete copy._appUpdatedAt;
+      mergedMap.set(docId, copy);
+    }
+  }
+
+  return Array.from(mergedMap.values());
+}
+
+
 export function sanitizeRecordForDb(data: any): any {
   if (!data || typeof data !== 'object') return data;
   if (Array.isArray(data)) return data.map(sanitizeRecordForDb);
@@ -1311,12 +1408,12 @@ export const MysqlRepository = {
       INSERT INTO app_collections (collection_name, id, data, updated_at)
       VALUES (?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
-        data = VALUES(data),
+        data = ?,
         updated_at = NOW();
     `;
 
     try {
-      const [result]: any = await pool.query(sql, [collectionName, id, jsonStr]);
+      const [result]: any = await pool.query(sql, [collectionName, id, jsonStr, jsonStr]);
       const affectedRows = Number(result?.affectedRows) || 0;
       return { affectedRows };
     } catch (err: any) {
@@ -1333,7 +1430,7 @@ export const MysqlRepository = {
               INDEX \`idx_col_updated\` (\`updated_at\`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
-          const [retryRes]: any = await pool.query(sql, [collectionName, id, jsonStr]);
+          const [retryRes]: any = await pool.query(sql, [collectionName, id, jsonStr, jsonStr]);
           return { affectedRows: Number(retryRes?.affectedRows) || 0 };
         } catch (createErr) {
           throw err;
@@ -1354,36 +1451,38 @@ export const MysqlRepository = {
           INSERT INTO students (id, student_code, national_id, name, father_name, grade, phone, address, status, is_active, entry_year, mentor_id, notes, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            student_code = VALUES(student_code),
-            national_id = VALUES(national_id),
-            name = VALUES(name),
-            father_name = VALUES(father_name),
-            grade = VALUES(grade),
-            phone = VALUES(phone),
-            address = VALUES(address),
-            status = VALUES(status),
-            is_active = VALUES(is_active),
-            entry_year = VALUES(entry_year),
-            mentor_id = VALUES(mentor_id),
-            notes = VALUES(notes),
-            data = VALUES(data),
+            student_code = ?,
+            national_id = ?,
+            name = ?,
+            father_name = ?,
+            grade = ?,
+            phone = ?,
+            address = ?,
+            status = ?,
+            is_active = ?,
+            entry_year = ?,
+            mentor_id = ?,
+            notes = ?,
+            data = ?,
             updated_at = NOW();
         `;
+        const codeVal = cleanNullableStr(row.student_code);
+        const natVal = cleanNullableStr(row.national_id);
+        const nameVal = row.name || 'نامشخص';
+        const fatherVal = cleanNullableStr(row.father_name);
+        const gradeVal = row.grade || 'نامشخص';
+        const phoneVal = cleanNullableStr(row.phone);
+        const addressVal = cleanNullableStr(row.address);
+        const statusVal = row.status || 'active';
+        const activeVal = row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1;
+        const entryVal = cleanNullableStr(row.entry_year);
+        const mentorVal = cleanNullableStr(row.mentor_id);
+        const notesVal = cleanNullableStr(row.notes);
+        const dataJson = JSON.stringify(row.data || {});
+
         const params = [
-          row.id,
-          cleanNullableStr(row.student_code),
-          cleanNullableStr(row.national_id),
-          row.name || 'نامشخص',
-          cleanNullableStr(row.father_name),
-          row.grade || 'نامشخص',
-          cleanNullableStr(row.phone),
-          cleanNullableStr(row.address),
-          row.status || 'active',
-          row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1,
-          cleanNullableStr(row.entry_year),
-          cleanNullableStr(row.mentor_id),
-          cleanNullableStr(row.notes),
-          JSON.stringify(row.data || {})
+          row.id, codeVal, natVal, nameVal, fatherVal, gradeVal, phoneVal, addressVal, statusVal, activeVal, entryVal, mentorVal, notesVal, dataJson,
+          codeVal, natVal, nameVal, fatherVal, gradeVal, phoneVal, addressVal, statusVal, activeVal, entryVal, mentorVal, notesVal, dataJson
         ];
         try {
           await pool.query(sql, params);
@@ -1425,20 +1524,22 @@ export const MysqlRepository = {
           INSERT INTO classrooms (id, title, grade, capacity, location, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            title = VALUES(title),
-            grade = VALUES(grade),
-            capacity = VALUES(capacity),
-            location = VALUES(location),
-            data = VALUES(data),
+            title = ?,
+            grade = ?,
+            capacity = ?,
+            location = ?,
+            data = ?,
             updated_at = NOW();
         `;
+        const titleVal = row.title || 'کلاس بدون عنوان';
+        const gradeVal = row.grade || null;
+        const capVal = Number(row.capacity) || 20;
+        const locVal = row.location || null;
+        const dataJson = JSON.stringify(row.data || {});
+
         const params = [
-          row.id,
-          row.title || 'کلاس بدون عنوان',
-          row.grade || null,
-          Number(row.capacity) || 20,
-          row.location || null,
-          JSON.stringify(row.data || {})
+          row.id, titleVal, gradeVal, capVal, locVal, dataJson,
+          titleVal, gradeVal, capVal, locVal, dataJson
         ];
         try {
           await pool.query(sql, params);
@@ -1458,11 +1559,14 @@ export const MysqlRepository = {
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
             await pool.query(sql, params);
+          } else {
+            throw cErr;
           }
         }
       }
     } catch (e: any) {
-      console.warn(`[MySQL Dedicated Table Notice] ${tableName}:`, e?.message || e);
+      console.error(`[MySQL Dedicated Table Error] ${tableName}:`, e?.message || e);
+      throw e;
     }
   },
 
@@ -1547,6 +1651,7 @@ export const MysqlRepository = {
     const pool = getMysqlPool();
     if (!pool) return null;
 
+    let appDoc: any = null;
     try {
       const [rows]: any = await pool.query(
         `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
@@ -1556,12 +1661,66 @@ export const MysqlRepository = {
       if (rows && rows.length > 0) {
         const r = rows[0];
         const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-        return { ...parsed, id };
+        appDoc = { ...parsed, id };
       }
     } catch (e: any) {
       console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
     }
-    return null;
+
+    // Check dedicated table and merge (JSON in app_collections takes absolute priority)
+    if (collectionName === 'students') {
+      try {
+        const [sRows]: any = await pool.query(`SELECT * FROM students WHERE id = ? LIMIT 1`, [id]);
+        if (sRows && sRows.length > 0) {
+          const dedicatedRec = mapDedicatedRowToRecord('students', sRows[0]);
+          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
+        }
+      } catch (e) {}
+    } else if (collectionName === 'classrooms' || collectionName === 'classes') {
+      try {
+        const [cRows]: any = await pool.query(`SELECT * FROM classrooms WHERE id = ? LIMIT 1`, [id]);
+        if (cRows && cRows.length > 0) {
+          const dedicatedRec = mapDedicatedRowToRecord('classrooms', cRows[0]);
+          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
+        }
+      } catch (e) {}
+    } else if (collectionName === 'system_users' || collectionName === 'all_users' || collectionName === 'users') {
+      try {
+        const [uRows]: any = await pool.query(
+          `SELECT * FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?) LIMIT 1`,
+          [id, id]
+        );
+        if (uRows && uRows.length > 0) {
+          const u = uRows[0];
+          const userRec = {
+            id: u.id,
+            username: u.username,
+            name: u.name,
+            fullName: u.name,
+            role: u.role,
+            roleTitle: u.role_title,
+            level: u.level,
+            gradeLabel: u.grade_label,
+            grade: u.grade_label,
+            mentorId: u.mentor_id,
+            studentId: u.student_id,
+            linkedStudentId: u.linked_student_id,
+            teacherId: u.teacher_id,
+            avatarBg: u.avatar_bg,
+            allowedTabs: typeof u.allowed_tabs === 'string' ? JSON.parse(u.allowed_tabs) : u.allowed_tabs,
+            editableTabs: typeof u.editable_tabs === 'string' ? JSON.parse(u.editable_tabs) : u.editable_tabs,
+            modulePermissions: typeof u.module_permissions === 'string' ? JSON.parse(u.module_permissions) : u.module_permissions,
+            isActive: Boolean(u.is_active),
+            isReadOnly: Boolean(u.is_read_only),
+            canEdit: Boolean(u.can_edit),
+            mustChangePassword: Boolean(u.must_change_password)
+          };
+          return appDoc ? { ...userRec, ...appDoc } : userRec;
+        }
+      } catch (e) {}
+    }
+
+    return appDoc;
   },
 
   // 8. Get Multiple Documents by Candidate IDs (Primary Keys)
@@ -1570,37 +1729,89 @@ export const MysqlRepository = {
     const pool = getMysqlPool();
     if (!pool) return [];
 
-    const placeholders = ids.map(() => '?').join(', ');
-    const [rows]: any = await pool.execute(
-      `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
-      [collectionName, ...ids]
-    );
+    let appDocItems: any[] = [];
+    try {
+      const placeholders = ids.map(() => '?').join(', ');
+      const [rows]: any = await pool.execute(
+        `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+        [collectionName, ...ids]
+      );
+      appDocItems = (rows || []).map((r: any) => {
+        const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        return { ...parsed, id: r.id };
+      });
+    } catch (e) {}
 
-    return (rows || []).map((r: any) => {
-      const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-      return { ...parsed, id: r.id };
-    });
+    if (collectionName === 'students') {
+      try {
+        const placeholders = ids.map(() => '?').join(', ');
+        const [studentRows]: any = await pool.query(
+          `SELECT * FROM students WHERE id IN (${placeholders})`,
+          ids
+        );
+        return mergeDedicatedAndDocumentRows('students', studentRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    } else if (collectionName === 'classrooms' || collectionName === 'classes') {
+      try {
+        const placeholders = ids.map(() => '?').join(', ');
+        const [classRows]: any = await pool.query(
+          `SELECT * FROM classrooms WHERE id IN (${placeholders})`,
+          ids
+        );
+        return mergeDedicatedAndDocumentRows('classrooms', classRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    }
+
+    return appDocItems;
   },
 
-  // 9. Query Documents
+  // 9. Query Documents with Dedicated Table Sync & Priority Merge
   async queryCollection(collectionName: string): Promise<any[]> {
     const pool = getMysqlPool();
     if (!pool) return [];
 
     const startTime = Date.now();
-    const [rows]: any = await pool.execute(
-      `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
-      [collectionName]
-    );
+    let appDocItems: any[] = [];
+    try {
+      const [rows]: any = await pool.execute(
+        `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
+        [collectionName]
+      );
+      appDocItems = (rows || []).map((r: any) => {
+        const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        return { ...parsed, id: r.id };
+      });
+    } catch (e: any) {
+      console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
+    }
+
+    // If this collection has a dedicated table, query it and merge (JSON in app_collections takes absolute priority)
+    if (collectionName === 'students') {
+      try {
+        const [studentRows]: any = await pool.query(`SELECT * FROM students ORDER BY updated_at DESC`);
+        return mergeDedicatedAndDocumentRows('students', studentRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    } else if (collectionName === 'classrooms' || collectionName === 'classes') {
+      try {
+        const [classRows]: any = await pool.query(`SELECT * FROM classrooms ORDER BY updated_at DESC`);
+        return mergeDedicatedAndDocumentRows('classrooms', classRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    }
+
     const duration = Date.now() - startTime;
     if (duration > 1000) {
       logSlowQuery(collectionName, duration, `SELECT id, data FROM app_collections WHERE collection_name = '${collectionName}' ORDER BY updated_at DESC`);
     }
 
-    return (rows || []).map((r: any) => {
-      const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-      return { ...parsed, id: r.id };
-    });
+    return appDocItems;
   }
 };
 

@@ -383,9 +383,14 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.student_code = cleanStr(data.studentCode || data.student_code);
       row.name = data.name || 'نامشخص';
       row.grade = data.grade || 'نامشخص';
-      row.phone = cleanStr(data.phone);
+      row.phone = cleanStr(data.phone || data.phoneNumber);
       row.father_name = cleanStr(data.fatherName || data.father_name);
+      row.status = data.status || 'active';
       row.is_active = data.isActive !== undefined ? Boolean(data.isActive) : true;
+      row.entry_year = cleanStr(data.entryYear || data.entry_year);
+      row.mentor_id = cleanStr(data.mentorId || data.mentor_id);
+      row.notes = cleanStr(data.notes);
+      row.data = data;
       break;
     }
 
@@ -603,6 +608,7 @@ export async function serverSaveDoc(
       }
 
       const [saveRes] = await Promise.all(tasks);
+      invalidateCollectionCache(collection);
       const affectedRows = saveRes?.affectedRows ?? 1;
       const changedRows = saveRes?.changedRows ?? affectedRows;
 
