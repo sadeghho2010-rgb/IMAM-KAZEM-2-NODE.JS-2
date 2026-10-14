@@ -98,8 +98,10 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   // Form State
   const [formTitle, setFormTitle] = useState<string>('');
   const [formProgramId, setFormProgramId] = useState<string>(''); // '' | 'other' | specific program ID
+  const [formProgramIds, setFormProgramIds] = useState<string[]>([]); // Multi-select program IDs
   const [customProgramTitle, setCustomProgramTitle] = useState<string>('');
   const [showOtherStudentsInModal, setShowOtherStudentsInModal] = useState<boolean>(false);
+  const [modalMemberFilterTab, setModalMemberFilterTab] = useState<'same_grade' | 'all_school'>('same_grade');
   const [formSubject, setFormSubject] = useState<string>('فقه و اصول');
   const [formSubjects, setFormSubjects] = useState<string[]>(['فقه', 'اصول']);
   const [formGrade, setFormGrade] = useState<string>(userGrade || 'پایه ۷');
@@ -108,6 +110,18 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const [formExternalMembers, setFormExternalMembers] = useState<string[]>([]);
   const [externalInput, setExternalInput] = useState<string>('');
   const [formDescription, setFormDescription] = useState<string>('');
+
+  // Helper: Find existing duplicate/overlapping discussion group
+  const findDuplicateGroup = (pIds: string[], mIds: string[], excludeId?: string) => {
+    if (!pIds.length || !mIds.length) return null;
+    return groups.find(g => {
+      if (excludeId && g.id === excludeId) return false;
+      const gPids = g.programIds || (g.programId ? [g.programId] : []);
+      const hasCourseMatch = pIds.some(id => gPids.includes(id));
+      const hasMemberMatch = mIds.some(id => g.memberStudentIds?.includes(id));
+      return hasCourseMatch && hasMemberMatch;
+    }) || null;
+  };
 
   // Identify logged student if student role
   const loggedStudent = useMemo(() => {
@@ -233,12 +247,24 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   }, [currentMentorId]);
 
   // Open Create Modal
-  const handleOpenCreateModal = (prefillStudentId?: string, prefillSubject?: string) => {
+  const handleOpenCreateModal = (prefillStudentId?: string, prefillSubject?: string, prefillProgramId?: string) => {
     setEditingGroup(null);
     setFormTitle('');
-    setFormProgramId('');
+    if (prefillProgramId) {
+      setFormProgramId(prefillProgramId);
+      setFormProgramIds([prefillProgramId]);
+      const prefillProg = programs.find(p => p.id === prefillProgramId);
+      if (prefillProg) {
+        setFormTitle(`گروه مباحثه ${prefillProg.title}`);
+        if (prefillProg.grade) setFormGrade(prefillProg.grade);
+      }
+    } else {
+      setFormProgramId('');
+      setFormProgramIds([]);
+    }
     setCustomProgramTitle('');
     setShowOtherStudentsInModal(false);
+    setModalMemberFilterTab('same_grade');
     setFormSubject(prefillSubject || 'فقه و اصول');
     setFormSubjects(prefillSubject ? [prefillSubject] : ['فقه', 'اصول']);
     const defaultGrade = loggedStudent?.grade || (userGrade || 'پایه ۷');
@@ -265,6 +291,9 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setFormGrade(group.grade || userGrade || 'پایه ۷');
     setFormRoom(group.room || '');
     
+    const existingPids = group.programIds || (group.programId ? [group.programId] : []);
+    setFormProgramIds(existingPids);
+
     if (group.programId) {
       setFormProgramId(group.programId);
       setCustomProgramTitle('');
@@ -278,11 +307,12 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         setCustomProgramTitle(group.programTitle);
       }
     } else {
-      setFormProgramId('');
+      setFormProgramId(existingPids[0] || '');
       setCustomProgramTitle('');
     }
 
     setShowOtherStudentsInModal(false);
+    setModalMemberFilterTab('same_grade');
     setModalGradeFilter('all');
     setModalSearchQuery('');
     
@@ -319,12 +349,23 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
 
     try {
       const now = new Date().toISOString();
-      const selectedProg = programs.find(p => p.id === formProgramId);
-      const effectiveProgramTitle = formProgramId === 'other'
-        ? customProgramTitle.trim()
-        : (selectedProg?.title || formSubject || '');
+      const effectiveProgramIds = formProgramIds.length > 0 
+        ? formProgramIds 
+        : (formProgramId && formProgramId !== 'other' ? [formProgramId] : []);
 
-      // STUDENT SUBMISSION: Send to Workflow Approval (Grade Supervisor + Education Manager)
+      const selProgs = programs.filter(p => effectiveProgramIds.includes(p.id));
+      const effectiveProgramTitlesList = selProgs.map(p => p.title);
+      if (formProgramIds.includes('other') || formProgramId === 'other') {
+        if (customProgramTitle.trim()) {
+          effectiveProgramTitlesList.push(customProgramTitle.trim());
+        }
+      }
+
+      const effectiveProgramTitle = effectiveProgramTitlesList.length > 0 
+        ? effectiveProgramTitlesList.join(' ، ') 
+        : (formSubject || 'درس اصلی');
+
+      // STUDENT SUBMISSION: Send to Workflow Approval
       if (isStudentUser && loggedStudent) {
         const studentGrade = loggedStudent.grade || formGrade || 'پایه ۷';
         const memberNames = allStudentsList.filter(s => formMemberStudentIds.includes(s.id)).map(s => s.name);
@@ -333,8 +374,8 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           id: `disc_req_${Date.now()}_${loggedStudent.id}`,
           type: 'approval',
           category: 'discussion_group_change',
-          title: `درخواست ثبت/ویرایش گروه مباحثه: ${loggedStudent.name} (${effectiveProgramTitle || 'درس اصلی'})`,
-          description: `طلبه گرامی ${loggedStudent.name} (${studentGrade}) درخواست ثبت/ویرایش گروه مباحثه با عنوان «${formTitle.trim()}» برای درس «${effectiveProgramTitle}» را با اعضای (${memberNames.join('، ')}) ثبت نموده است.`,
+          title: `درخواست ثبت/ویرایش گروه مباحثه: ${loggedStudent.name} (${effectiveProgramTitle})`,
+          description: `طلبه گرامی ${loggedStudent.name} (${studentGrade}) درخواست ثبت/ویرایش گروه مباحثه با عنوان «${formTitle.trim()}» برای دروس (${effectiveProgramTitle}) را با اعضای (${memberNames.join('، ')}) ثبت نموده است.`,
           status: 'pending',
           grade: studentGrade,
           studentId: loggedStudent.id,
@@ -343,8 +384,10 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           requiresEducationApproval: true,
           details: {
             targetGroupId: editingGroup?.id || null,
-            programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+            programId: effectiveProgramIds[0] || undefined,
+            programIds: effectiveProgramIds,
             programTitle: effectiveProgramTitle,
+            programTitles: effectiveProgramTitlesList,
             subject: formSubject || effectiveProgramTitle,
             grade: studentGrade,
             room: formRoom.trim(),
@@ -363,14 +406,16 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('workflow_items_updated'));
         }
-        setToastMessage('درخواست ویرایش گروه مباحثه با موفقیت به جریان کار ارسال شد و پس از تایید مسئول پایه و مسئول آموزش اعمال خواهد شد.');
+        setToastMessage('درخواست ثبت/ویرایش گروه مباحثه با موفقیت ارسال شد و پس از تایید مسئول پایه و آموزش اعمال خواهد شد.');
         setShowModal(false);
         await loadData();
         setTimeout(() => setToastMessage(''), 6000);
         return;
       }
 
-      // LEVEL 1 & 2 USERS: Direct Create / Update
+      // LEVEL 1 & 2 USERS: Direct Create / Update with Duplicate Merging
+      const existingDup = findDuplicateGroup(effectiveProgramIds, formMemberStudentIds, editingGroup?.id);
+
       if (editingGroup) {
         const updated: DiscussionGroup = {
           ...editingGroup,
@@ -380,8 +425,10 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           grade: formGrade,
           room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
-          programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+          programId: effectiveProgramIds[0] || undefined,
+          programIds: effectiveProgramIds,
           programTitle: effectiveProgramTitle || undefined,
+          programTitles: effectiveProgramTitlesList,
           memberStudentIds: formMemberStudentIds,
           externalMembers: formExternalMembers,
           description: formDescription.trim(),
@@ -389,6 +436,27 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         };
         await localDb.updateDoc('discussion_groups', editingGroup.id, updated);
         setToastMessage('گروه مباحثه با موفقیت ویرایش و بروزرسانی شد.');
+      } else if (existingDup) {
+        // MERGE with existing duplicate group rather than creating duplicate
+        const mergedMembers = Array.from(new Set([...(existingDup.memberStudentIds || []), ...formMemberStudentIds]));
+        const mergedExternals = Array.from(new Set([...(existingDup.externalMembers || []), ...formExternalMembers]));
+        const existingPids = existingDup.programIds || (existingDup.programId ? [existingDup.programId] : []);
+        const mergedPids = Array.from(new Set([...existingPids, ...effectiveProgramIds]));
+        const existingTitles = existingDup.programTitles || (existingDup.programTitle ? [existingDup.programTitle] : []);
+        const mergedTitles = Array.from(new Set([...existingTitles, ...effectiveProgramTitlesList]));
+
+        await localDb.updateDoc('discussion_groups', existingDup.id, {
+          ...existingDup,
+          memberStudentIds: mergedMembers,
+          externalMembers: mergedExternals,
+          programIds: mergedPids,
+          programId: mergedPids[0] || existingDup.programId,
+          programTitles: mergedTitles,
+          programTitle: mergedTitles.join(' ، ') || existingDup.programTitle,
+          room: formRoom.trim() || existingDup.room,
+          updatedAt: now
+        });
+        setToastMessage(`اطلاعات و اعضای جدید با گروه مباحثه موجود («${existingDup.title}») ادغام گردید.`);
       } else {
         const newGroup: DiscussionGroup = {
           id: `group_${Date.now()}`,
@@ -398,19 +466,22 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           grade: formGrade,
           room: formRoom.trim() || undefined,
           mentorId: currentMentorId,
-          programId: formProgramId && formProgramId !== 'other' ? formProgramId : undefined,
+          programId: effectiveProgramIds[0] || undefined,
+          programIds: effectiveProgramIds,
           programTitle: effectiveProgramTitle || undefined,
+          programTitles: effectiveProgramTitlesList,
           memberStudentIds: formMemberStudentIds,
           externalMembers: formExternalMembers,
           description: formDescription.trim(),
-          createdAt: now
+          createdAt: now,
+          updatedAt: now
         };
         await localDb.addDoc('discussion_groups', newGroup);
         setToastMessage('گروه مباحثه جدید با موفقیت ایجاد گردید.');
       }
       setShowModal(false);
       await loadData();
-      setTimeout(() => setToastMessage(''), 4000);
+      setTimeout(() => setToastMessage(''), 5000);
     } catch (err) {
       console.error('Error saving discussion group:', err);
       alert('خطا در ذخیره‌سازی گروه مباحثه!');
@@ -476,6 +547,92 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const calculateGroupStats = (group: DiscussionGroup) => {
     const activeMembers = allStudentsList.filter(s => group.memberStudentIds.includes(s.id) && isStudentActive(s));
     const memberCount = activeMembers.length;
+
+  // Memo: Candidate students for selection in discussion group modal
+  const candidateStudentsForModal = useMemo(() => {
+    const q = modalSearchQuery.trim().toLowerCase();
+    const targetGrade = formGrade || loggedStudent?.grade || 'پایه ۷';
+
+    return allStudentsList.filter(s => {
+      if (!isStudentActive(s)) return false;
+
+      if (modalMemberFilterTab === 'same_grade') {
+        const sGrade = s.grade || 'پایه ۷';
+        const normTarget = targetGrade.replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+        const normS = sGrade.replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+        if (normTarget !== normS) return false;
+      }
+
+      if (q) {
+        const mName = s.name?.toLowerCase().includes(q);
+        const mCode = s.studentCode?.toLowerCase().includes(q) || s.nationalId?.toLowerCase().includes(q);
+        if (!mName && !mCode) return false;
+      }
+
+      return true;
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
+  }, [allStudentsList, modalMemberFilterTab, formGrade, loggedStudent, modalSearchQuery]);
+
+  // Memo: Report of students missing a discussion group for their enrolled main courses (Requirement 6)
+  const studentsMissingDiscussionGroups = useMemo(() => {
+    const mainPrograms = programs.filter(p => p.type !== 'مشاوره' && (p as any).status !== 'deleted');
+    const activeStus = students.filter(s => isStudentActive(s));
+
+    const result: Array<{
+      student: Student;
+      missingPrograms: Program[];
+      enrolledPrograms: Program[];
+      hasAnyGroup: boolean;
+      existingGroups: DiscussionGroup[];
+    }> = [];
+
+    activeStus.forEach(student => {
+      if (selectedGradeFilter !== 'all' && student.grade && student.grade !== selectedGradeFilter) return;
+
+      const studentGrade = student.grade || 'پایه ۷';
+      const enrolledMainProgs = mainPrograms.filter(p => {
+        const inEnroll = enrollments.some(e => e.programId === p.id && String(e.studentId) === String(student.id));
+        if (inEnroll) return true;
+
+        const inStudentIds = Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(student.id);
+        if (inStudentIds) return true;
+
+        const hasExplicitList = Boolean((p as any).hasExplicitEnrollment) || (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
+        if (!hasExplicitList) {
+          return !p.grade || p.grade === 'همه پایه‌ها' || p.grade === studentGrade;
+        }
+
+        return false;
+      });
+
+      if (enrolledMainProgs.length === 0) return;
+
+      const studentGroups = groups.filter(g => g.memberStudentIds?.includes(student.id));
+
+      const missing = enrolledMainProgs.filter(prog => {
+        const hasGroupForProg = studentGroups.some(g => {
+          const gPids = g.programIds || (g.programId ? [g.programId] : []);
+          if (gPids.includes(prog.id)) return true;
+          if (g.programTitle && g.programTitle.includes(prog.title)) return true;
+          if (g.subject && (prog.title.includes(g.subject) || g.subject.includes(prog.title))) return true;
+          return false;
+        });
+        return !hasGroupForProg;
+      });
+
+      if (missing.length > 0) {
+        result.push({
+          student,
+          missingPrograms: missing,
+          enrolledPrograms: enrolledMainProgs,
+          hasAnyGroup: studentGroups.length > 0,
+          existingGroups: studentGroups
+        });
+      }
+    });
+
+    return result.sort((a, b) => (a.student.name || '').localeCompare(b.student.name || '', 'fa'));
+  }, [students, programs, enrollments, groups, selectedGradeFilter]);
 
     let totalStudyHours = 0;
     let totalDiscussionHours = 0;

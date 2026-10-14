@@ -996,6 +996,8 @@ export interface DiscussionGroup {
   mentorId?: string; // 'hayati' | 'hosseini' | 'soleimani' | 'asadi' | 'shahpoori'
   programId?: string; // شناسه درس اصلی یا برنامه آموزشی مرتبط
   programTitle?: string; // عنوان درس اصلی یا کلاس متفرقه
+  programIds?: string[]; // لیست شناسه‌های چند درس اصلی متصل (مثلاً هم فقه و هم اصول)
+  programTitles?: string[]; // لیست عناوین دروس متصل
   memberStudentIds: string[]; // Active students in this discussion group
   externalMembers?: string[]; // External discussion partners ("سایر" / custom names)
   room?: string; // محل مباحثه (مدرسه، حجره یا کلاس)

@@ -450,33 +450,83 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
     }
 
     try {
-      // If this is a discussion group change approval, persist the group to database
+      // If this is a discussion group change approval, persist or merge the group in database
       if (item.category === 'discussion_group_change' && item.details) {
         const details = item.details;
         const targetGroupId = details.targetGroupId;
         const now = new Date().toISOString();
         
-        const groupPayload = {
-          title: details.programTitle ? `گروه مباحثه ${details.programTitle}` : (details.title || `گروه مباحثه ${item.studentName}`),
-          subject: details.subject || details.programTitle || 'مباحثه درسی',
-          grade: details.grade || item.grade || 'پایه ۷',
-          programId: details.programId || undefined,
-          programTitle: details.programTitle || undefined,
-          memberStudentIds: details.memberStudentIds || (item.studentId ? [item.studentId] : []),
-          externalMembers: details.externalMembers || [],
-          room: details.room || undefined,
-          description: details.description || undefined,
-          updatedAt: now
-        };
+        const reqProgramIds: string[] = Array.isArray(details.programIds) && details.programIds.length > 0
+          ? details.programIds
+          : (details.programId ? [details.programId] : []);
+        
+        const reqProgramTitles: string[] = Array.isArray(details.programTitles) && details.programTitles.length > 0
+          ? details.programTitles
+          : (details.programTitle ? [details.programTitle] : []);
 
-        if (targetGroupId) {
-          await localDb.updateDoc('discussion_groups', targetGroupId, groupPayload);
-        } else {
-          await localDb.addDoc('discussion_groups', {
-            ...groupPayload,
-            id: `group_${Date.now()}_${item.studentId || 'new'}`,
-            createdAt: now
+        const reqMemberStudentIds: string[] = details.memberStudentIds || (item.studentId ? [item.studentId] : []);
+        const reqExternalMembers: string[] = details.externalMembers || [];
+
+        const existingGroups = await localDb.getDocs<any>('discussion_groups');
+        
+        // Find if an existing group matches the targetGroupId or overlaps in course & members
+        let existingGroup = targetGroupId ? existingGroups.find(g => g.id === targetGroupId) : null;
+        if (!existingGroup && reqProgramIds.length > 0) {
+          existingGroup = existingGroups.find(g => {
+            const gPids = g.programIds || (g.programId ? [g.programId] : []);
+            const hasCourseMatch = reqProgramIds.some(pid => gPids.includes(pid));
+            const hasMemberOverlap = reqMemberStudentIds.some(sid => g.memberStudentIds?.includes(sid));
+            return hasCourseMatch && hasMemberOverlap;
           });
+        }
+
+        if (existingGroup) {
+          // Merge member student IDs, external members, and program IDs
+          const mergedMembers = Array.from(new Set([...(existingGroup.memberStudentIds || []), ...reqMemberStudentIds]));
+          const mergedExternals = Array.from(new Set([...(existingGroup.externalMembers || []), ...reqExternalMembers]));
+          const existingPids = existingGroup.programIds || (existingGroup.programId ? [existingGroup.programId] : []);
+          const mergedPids = Array.from(new Set([...existingPids, ...reqProgramIds]));
+          
+          const existingTitles = existingGroup.programTitles || (existingGroup.programTitle ? [existingGroup.programTitle] : []);
+          const mergedTitles = Array.from(new Set([...existingTitles, ...reqProgramTitles]));
+
+          await localDb.updateDoc('discussion_groups', existingGroup.id, {
+            ...existingGroup,
+            title: existingGroup.title || details.title || `گروه مباحثه ${mergedTitles.join(' ، ')}`,
+            programIds: mergedPids,
+            programId: mergedPids[0] || existingGroup.programId,
+            programTitles: mergedTitles,
+            programTitle: mergedTitles.join(' ، ') || existingGroup.programTitle,
+            memberStudentIds: mergedMembers,
+            externalMembers: mergedExternals,
+            room: details.room || existingGroup.room,
+            description: details.description || existingGroup.description,
+            updatedAt: now
+          });
+        } else {
+          // Create new discussion group
+          const mainTitle = reqProgramTitles.length > 0 
+            ? `گروه مباحثه ${reqProgramTitles.join(' ، ')}`
+            : (details.title || `گروه مباحثه ${item.studentName}`);
+
+          const groupPayload = {
+            id: `group_${Date.now()}_${item.studentId || 'new'}`,
+            title: mainTitle,
+            subject: details.subject || reqProgramTitles.join(' و ') || 'مباحثه درسی',
+            grade: details.grade || item.grade || 'پایه ۷',
+            programId: reqProgramIds[0] || undefined,
+            programIds: reqProgramIds,
+            programTitle: reqProgramTitles.join(' ، ') || undefined,
+            programTitles: reqProgramTitles,
+            memberStudentIds: reqMemberStudentIds,
+            externalMembers: reqExternalMembers,
+            room: details.room || undefined,
+            description: details.description || undefined,
+            createdAt: now,
+            updatedAt: now
+          };
+
+          await localDb.addDoc('discussion_groups', groupPayload);
         }
       }
 
