@@ -371,6 +371,31 @@ export function authorizeCollectionAccess(
   return { allowed: true };
 }
 
+function parseTimesFromData(data: any): { startTime: string | null; endTime: string | null } {
+  if (!data) return { startTime: null, endTime: null };
+  const rawStart = data.startTime || data.start_time || data.classStartTime;
+  const rawEnd = data.endTime || data.end_time || data.classEndTime;
+  if (rawStart || rawEnd) {
+    return {
+      startTime: rawStart ? String(rawStart).trim().slice(0, 50) : null,
+      endTime: rawEnd ? String(rawEnd).trim().slice(0, 50) : null
+    };
+  }
+  const timeStr = typeof data.time === 'string' ? data.time : (typeof data.schedule === 'string' ? data.schedule : (typeof data.hours === 'string' ? data.hours : (typeof data.classTime === 'string' ? data.classTime : null)));
+  if (!timeStr) return { startTime: null, endTime: null };
+  const parts = timeStr.split(/ الی | تا | - | - | to /i);
+  if (parts.length >= 2) {
+    return {
+      startTime: parts[0].trim().slice(0, 50),
+      endTime: parts[1].trim().slice(0, 50)
+    };
+  }
+  return {
+    startTime: timeStr.trim().slice(0, 50),
+    endTime: null
+  };
+}
+
 // Convert JSON object into column-friendly fields for dedicated tables
 export function prepareRecordForDedicatedTable(collection: string, data: any): { row: any; dedicatedTable: string | null } {
   const dedicatedTable = COLLECTION_TABLE_MAP[collection] || null;
@@ -427,16 +452,17 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
     case 'programs': {
       const cleanStr = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
       const parentId = cleanStr(data.parentProgramId || data.parent_program_id || data.linkedMainLessonId);
+      const { startTime, endTime } = parseTimesFromData(data);
       row.title = data.title || 'برنامه بدون عنوان';
       row.type = data.type || 'اصلی';
       row.parent_program_id = parentId;
       row.grade = data.grade || 'نامشخص';
       row.teacher_id = cleanStr(data.teacherId || data.teacher_id);
-      row.teacher_name = cleanStr(data.teacherName || data.teacher_name || data.teacher);
+      row.teacher_name = cleanStr(data.teacherName || data.teacher_name || data.teacher || data.instructor);
       row.classroom_id = cleanStr(data.classroomId || data.classroom_id || data.classroom || data.madrasRoom);
       row.day_of_week = Array.isArray(data.days) ? data.days.join(' ، ') : cleanStr(data.day);
-      row.start_time = cleanStr(data.startTime || (data.time ? String(data.time).split(' الی ')[0] : null));
-      row.end_time = cleanStr(data.endTime || (data.time ? String(data.time).split(' الی ')[1] : null));
+      row.start_time = startTime;
+      row.end_time = endTime;
       row.representative_student_ids = JSON.stringify(data.representativeStudentIds || []);
       row.representative_names = JSON.stringify(data.representativeNames || []);
       row.term = cleanStr(data.term);
@@ -653,24 +679,31 @@ export async function serverSaveDoc(
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
 
-      const tasks: Promise<any>[] = [
-        MysqlRepository.saveDocument(collection, id, record)
-      ];
+      // Primary JSON document persistence
+      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
 
+      // Secondary dedicated table sync (non-fatal if column constraint/type mismatch occurs)
       if (dedicatedTable) {
-        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row));
+        try {
+          await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
+        } catch (dErr: any) {
+          console.warn(`[MySQL Dedicated Table Non-fatal Notice] ${dedicatedTable}:`, dErr?.message || dErr);
+        }
       }
 
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
-        tasks.push(MysqlRepository.saveUser(record));
+        try {
+          await MysqlRepository.saveUser(record);
+        } catch (uErr: any) {
+          console.warn('[MySQL SaveUser Non-fatal Notice]:', uErr?.message || uErr);
+        }
       }
 
-      const [saveRes] = await Promise.all(tasks);
       invalidateCollectionCache(collection);
       const affectedRows = saveRes?.affectedRows ?? 1;
       const changedRows = saveRes?.changedRows ?? affectedRows;
 
-      console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}, ChangedRows: ${changedRows}`);
+      console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
 
       // Log Audit Entry asynchronously in background (non-blocking)
       logAudit({
@@ -687,9 +720,7 @@ export async function serverSaveDoc(
       notifyRealtimeChange(collection, id, 'upsert');
       return { success: true, id, item: record, affectedRows, changedRows } as any;
     } catch (mErr: any) {
-      console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
-      console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
-      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}":`, mErr?.message || mErr);
 
       // Log Failed Audit Entry
       await logAudit({
@@ -701,7 +732,7 @@ export async function serverSaveDoc(
         userRole: callerUser?.role,
         status: 'error',
         errorMessage: mErr?.message || 'مشکل پایگاه داده'
-      });
+      }).catch(() => {});
 
       return {
         success: false,

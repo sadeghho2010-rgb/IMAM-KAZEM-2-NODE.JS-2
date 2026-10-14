@@ -1531,10 +1531,12 @@ class LocalDatabase {
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
+        removePendingLocalDoc(resolvedCol, id);
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
       }
     } catch (err: any) {
       console.error(`[STORAGE_FAILURE] Client updateDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
+      setTimeout(() => removePendingLocalDoc(resolvedCol, id), 2000);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
     }
   }
