@@ -105,9 +105,12 @@ export default function TeacherPortal() {
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync draft state with saved database grades when session date or grades update
+  // Sync draft state with saved database grades when session date changes
   useEffect(() => {
-    if (!selectedSessionDate) return;
+    if (!selectedSessionDate) {
+      setLocalDraftGrades({});
+      return;
+    }
     const initialMap: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
     
     grades.forEach(g => {
@@ -120,17 +123,8 @@ export default function TeacherPortal() {
       }
     });
 
-    setLocalDraftGrades(prev => {
-      const merged = { ...initialMap };
-      Object.keys(prev).forEach(studentId => {
-        merged[studentId] = {
-          ...initialMap[studentId],
-          ...prev[studentId]
-        };
-      });
-      return merged;
-    });
-  }, [selectedSessionDate, grades]);
+    setLocalDraftGrades(initialMap);
+  }, [selectedSessionDate]);
 
   // Helper to read local database cache directly into React state
   const loadLocalCachedData = useCallback(async () => {
@@ -565,10 +559,12 @@ export default function TeacherPortal() {
   const enrolledStudents = useMemo(() => {
     if (!activeCounselingCourse) return [];
 
+    const activeStudents = students.filter(s => s.isActive !== false && (s as any).status !== 'deleted' && !(s as any).isDeleted && !(s as any).deletedAt);
+
     // 1. Direct enrollments or explicit studentIds for this specific counseling class
     if (activeCounselingCourse.studentIds && activeCounselingCourse.studentIds.length > 0) {
       const ids = new Set(activeCounselingCourse.studentIds);
-      const direct = students.filter(s => ids.has(s.id) && s.isActive !== false);
+      const direct = activeStudents.filter(s => ids.has(s.id));
       if (direct.length > 0) {
         return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
       }
@@ -579,7 +575,7 @@ export default function TeacherPortal() {
     );
     if (courseEnrollments.length > 0) {
       const ids = new Set(courseEnrollments.map(e => e.studentId));
-      const direct = students.filter(s => ids.has(s.id) && s.isActive !== false);
+      const direct = activeStudents.filter(s => ids.has(s.id));
       if (direct.length > 0) {
         return direct.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
       }
@@ -587,8 +583,8 @@ export default function TeacherPortal() {
 
     // 2. Grade-based strict filtering (e.g. all students of 'پایه ۷', 'پایه 7', 'پایه هفتم')
     if (activeCounselingCourse.grade && activeCounselingCourse.grade !== 'عمومی' && activeCounselingCourse.grade !== 'همه') {
-      const gradeStudents = students.filter(s => 
-        isGradeMatch(s.grade, activeCounselingCourse.grade) && s.isActive !== false
+      const gradeStudents = activeStudents.filter(s => 
+        isGradeMatch(s.grade, activeCounselingCourse.grade)
       );
       if (gradeStudents.length > 0) {
         return gradeStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
@@ -604,7 +600,7 @@ export default function TeacherPortal() {
     ];
     for (const g of gradeMatches) {
       if (title.includes(g)) {
-        const found = students.filter(s => isGradeMatch(s.grade, g) && s.isActive !== false);
+        const found = activeStudents.filter(s => isGradeMatch(s.grade, g));
         if (found.length > 0) {
           return found.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fa'));
         }

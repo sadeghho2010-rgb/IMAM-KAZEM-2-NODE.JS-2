@@ -560,21 +560,45 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     
     const loggedSid = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
     const loggedUsername = currentUser?.username;
+    const stObj = students.find(s => 
+      String(s.id) === String(loggedSid) || 
+      (loggedUsername && (s.nationalId === loggedUsername || s.studentCode === loggedUsername))
+    );
+    const studentGrade = stObj?.grade || currentUser?.gradeLabel || '';
+
+    const isMatchingGrade = (pGrade?: string, sGrade?: string) => {
+      if (!pGrade || pGrade === 'همه پایه‌ها' || pGrade === 'همه') return true;
+      if (!sGrade) return true;
+      const pNorm = String(pGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+      const sNorm = String(sGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+      if (pNorm === sNorm) return true;
+      const digitsP = pNorm.match(/\d+/)?.[0];
+      const digitsS = sNorm.match(/\d+/)?.[0];
+      if (digitsP && digitsS && digitsP === digitsS) return true;
+      return false;
+    };
     
     return programs.filter(p => {
       if (p.attendanceType !== 'self_reporting') return false;
+
       const inEnroll = enrollments.some(e => String(e.programId) === String(p.id) && (
         String(e.studentId) === String(loggedSid) ||
         String(e.studentId) === String(loggedUsername)
       ));
+      if (inEnroll) return true;
+
       const inArray = Array.isArray(p.studentIds) && (
         p.studentIds.includes(String(loggedSid)) ||
         p.studentIds.includes(String(loggedUsername))
       );
-      const stObj = students.find(s => String(s.id) === String(loggedSid) || s.nationalId === loggedUsername);
-      const matchesGrade = Boolean(stObj?.grade && p.grade && String(stObj.grade).trim() === String(p.grade).trim());
+      if (inArray) return true;
 
-      return inEnroll || inArray || matchesGrade;
+      const hasExplicitList = Boolean((p as any).hasExplicitEnrollment) || (Array.isArray(p.studentIds) && p.studentIds.length > 0);
+      if (!hasExplicitList || isMatchingGrade(p.grade, studentGrade)) {
+        return isMatchingGrade(p.grade, studentGrade);
+      }
+
+      return false;
     });
   }, [isOrdinaryStudent, currentUser, programs, enrollments, students]);
 

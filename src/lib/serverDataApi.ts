@@ -701,7 +701,7 @@ export async function serverSaveDoc(
 
       invalidateCollectionCache(collection);
       const affectedRows = saveRes?.affectedRows ?? 1;
-      const changedRows = saveRes?.changedRows ?? affectedRows;
+      const changedRows = (saveRes as any)?.changedRows ?? affectedRows;
 
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
 

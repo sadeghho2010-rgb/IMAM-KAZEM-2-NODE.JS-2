@@ -59,13 +59,21 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
   // 1) attendanceType === 'self_reporting'
   // 2) The student is enrolled or assigned to it
   const selfReportingCourses = useMemo(() => {
-    if (!studentId && !studentUsername) return [];
+    const isMatchingGrade = (pGrade?: string, sGrade?: string) => {
+      if (!pGrade || pGrade === 'همه پایه‌ها' || pGrade === 'همه') return true;
+      if (!sGrade) return true;
+      const pNorm = String(pGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+      const sNorm = String(sGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
+      if (pNorm === sNorm) return true;
+      const digitsP = pNorm.match(/\d+/)?.[0];
+      const digitsS = sNorm.match(/\d+/)?.[0];
+      if (digitsP && digitsS && digitsP === digitsS) return true;
+      return false;
+    };
 
     return programs.filter(p => {
-      // Must be set to self-reporting
       if (p.attendanceType !== 'self_reporting') return false;
 
-      // 1. Check enrollment table
       const inEnroll = enrollments.some(e => 
         String(e.programId) === String(p.id) && (
           String(e.studentId) === String(studentId) ||
@@ -74,16 +82,15 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
       );
       if (inEnroll) return true;
 
-      // 2. Check studentIds array in program
       const inArray = Array.isArray((p as any).studentIds) && (
         (p as any).studentIds.includes(String(studentId)) ||
         (p as any).studentIds.includes(String(studentUsername))
       );
       if (inArray) return true;
 
-      // 3. Check grade match if program has grade and student has grade
-      if (p.grade && studentGrade && String(p.grade).trim() === studentGrade) {
-        return true;
+      const hasExplicitList = Boolean((p as any).hasExplicitEnrollment) || (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
+      if (!hasExplicitList || isMatchingGrade(p.grade, studentGrade)) {
+        return isMatchingGrade(p.grade, studentGrade);
       }
 
       return false;

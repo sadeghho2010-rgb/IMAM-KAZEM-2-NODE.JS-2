@@ -352,6 +352,8 @@ export class AuthController {
           level: safeUpdates.level || 3,
           roleTitle: safeUpdates.roleTitle || 'طلبه',
           scope: safeUpdates.scope || 'self',
+          gradeLabel: safeUpdates.gradeLabel || safeUpdates.grade || '',
+          allowedTabs: [],
           passwordHash,
           isActive: safeUpdates.isActive !== undefined ? safeUpdates.isActive : true,
           linkedStudentId: safeUpdates.linkedStudentId || safeUpdates.studentId,
