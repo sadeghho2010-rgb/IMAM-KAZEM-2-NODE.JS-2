@@ -16,12 +16,17 @@ import {
   ShieldCheck,
   Wallet,
   BrainCircuit,
-  CalendarDays
+  CalendarDays,
+  CheckCircle2,
+  X,
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { Program, StudentRequest } from '../../types';
 import { getTodayShamsi, getShamsiDayOfWeekName } from '../../lib/jalali';
+import { StudentSelfReportingModal } from '../attendance/StudentSelfReportingModal';
 
 interface StudentMobilePanelProps {
   onNavigateTab: (tab: string, studentId?: string) => void;
@@ -34,6 +39,12 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 }) => {
   const { currentUser, logout } = useAuth();
   const [todayPrograms, setTodayPrograms] = useState<Program[]>([]);
+  const [allProgramsList, setAllProgramsList] = useState<Program[]>([]);
+  const [enrollmentsList, setEnrollmentsList] = useState<any[]>([]);
+  const [matchedStudent, setMatchedStudent] = useState<any>(null);
+  const [hasSelfReporting, setHasSelfReporting] = useState(false);
+  const [isSelfReportingModalOpen, setIsSelfReportingModalOpen] = useState(false);
+  const [noticeModal, setNoticeModal] = useState<{ title: string; message: string; subtext: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [myRequestsCount, setMyRequestsCount] = useState(0);
 
@@ -60,11 +71,15 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   const loadStudentData = async () => {
     try {
       setIsLoading(true);
-      const [allProgs, allReqs, allStudents] = await Promise.all([
+      const [allProgs, allReqs, allStudents, allEnrs] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<StudentRequest>('student_requests'),
-        localDb.getDocs<any>('students')
+        localDb.getDocs<any>('students'),
+        localDb.getDocs<any>('course_enrollments')
       ]);
+
+      setAllProgramsList(allProgs || []);
+      setEnrollmentsList(allEnrs || []);
 
       const studentGrade = currentUser?.gradeLabel || 'پایه ۷';
       const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
@@ -73,10 +88,11 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
       // Match student record
       const matchedSt = allStudents.find(s => 
-        (sId && s.id === sId) ||
+        (sId && String(s.id) === String(sId)) ||
         (uName && (s.nationalId?.toLowerCase() === uName || s.studentCode?.toLowerCase() === uName)) ||
         (cName && s.name?.toLowerCase().includes(cName))
       );
+      setMatchedStudent(matchedSt || null);
 
       const candidateIds = [sId, currentUser?.id, matchedSt?.id, matchedSt?.studentCode, matchedSt?.nationalId].filter(Boolean);
       const candidateNames = [cName, matchedSt?.name?.toLowerCase()].filter(Boolean);
@@ -110,6 +126,16 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       }
 
       setTodayPrograms(filteredToday);
+
+      // Check self-reporting classes availability for this student
+      const selfProgs = allProgs.filter(p => {
+        if (p.attendanceType !== 'self_reporting') return false;
+        const matchesGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها' || p.grade === 'همه';
+        const matchesEnroll = Array.isArray((p as any).studentIds) && candidateIds.some(id => (p as any).studentIds.includes(id));
+        const inEnrollTable = (allEnrs || []).some((e: any) => String(e.programId) === String(p.id) && candidateIds.some(id => String(e.studentId) === String(id)));
+        return matchesGrade || matchesEnroll || inEnrollTable;
+      });
+      setHasSelfReporting(selfProgs.length > 0);
 
       if (Array.isArray(allReqs)) {
         const myReqs = allReqs.filter(r => 
@@ -236,7 +262,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           </div>
         )}
 
-        {/* 3. TWO CORE VIBRANT COLORFUL CARDS (۲ کارت اصلی و پرکاربرد: ساعت مطالعه من و ثبت تقاضا و درخواست) */}
+        {/* 3. FOUR CORE VIBRANT COLORFUL CARDS (۴ کارت اصلی: ساعت مطالعه، ثبت درخواست، ثبت حضور نماینده، ثبت خوداظهاری) */}
         <div>
           <div className="flex items-center justify-between px-1 mb-1.5">
             <h2 className="text-[11px] sm:text-xs font-black text-slate-800 flex items-center gap-1.5">
@@ -249,18 +275,18 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-2.5">
-            {/* Card 1: ساعت مطالعه من (Independent Ocean Wave Animation - No brown, No pink) */}
+            {/* Card 1: ساعت مطالعه من */}
             <div
               onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3.5 sm:p-4 text-white shadow-md shadow-slate-950/25 border border-cyan-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-study"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-cyan-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-study"
             >
               <div className="absolute -top-6 -right-6 w-16 h-16 bg-cyan-400/20 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <BookOpen size={17} />
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                  <BookOpen size={16} />
                 </div>
-                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
-                  مباحثه و مطالعه
+                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
+                  مطالعه
                 </span>
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
@@ -269,29 +295,89 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               </div>
             </div>
 
-            {/* Card 2: ثبت تقاضا و درخواست (Independent Jade/Teal Wave Animation - No brown, No pink) */}
+            {/* Card 2: ثبت تقاضا و درخواست */}
             <div
               onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3.5 sm:p-4 text-white shadow-md shadow-slate-950/25 border border-emerald-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-requests"
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-emerald-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-requests"
             >
               <div className="absolute -top-6 -right-6 w-16 h-16 bg-emerald-400/20 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-8 h-8 rounded-lg bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <Send size={16} />
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                  <Send size={15} />
                 </div>
                 {myRequestsCount > 0 ? (
-                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-2xs">
+                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-2xs">
                     {myRequestsCount} جاری
                   </span>
                 ) : (
-                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
+                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
                     کارتابل
                   </span>
                 )}
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت تقاضا و درخواست</h3>
-                <p className="text-[8.5px] text-emerald-100/90 font-medium truncate">مرخصی، گواهی و رفاهی</p>
+                <p className="text-[8.5px] text-emerald-100/90 font-medium truncate">مرخصی، گواهی و امور رفاهی</p>
+              </div>
+            </div>
+
+            {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
+            <div
+              onClick={() => {
+                if (isRepresentative) {
+                  onNavigateTab('attendance');
+                } else {
+                  setNoticeModal({
+                    title: 'اطلاعیه ثبت حضور و غیاب',
+                    message: 'شما نماینده هیچ کلاسی نیستید.',
+                    subtext: 'ثبت حضور و غیاب کلاس‌ها توسط نماینده منتخب هر کلاس انجام می‌پذیرد.'
+                  });
+                }
+              }}
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-purple-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900"
+            >
+              <div className="absolute -top-6 -right-6 w-16 h-16 bg-purple-400/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-purple-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                  <CheckSquare size={16} />
+                </div>
+                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/30 text-purple-100 border border-purple-400/40 backdrop-blur-xs">
+                  نمایندگان
+                </span>
+              </div>
+              <div className="relative z-10 space-y-0.5 pt-1">
+                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت حضور و غیاب</h3>
+                <p className="text-[8.5px] text-purple-200/90 font-bold truncate">مخصوص نمایندگان کلاس</p>
+              </div>
+            </div>
+
+            {/* Card 4: ثبت خوداظهاری (مخصوص دروس دارای خوداظهاری) */}
+            <div
+              onClick={() => {
+                if (hasSelfReporting) {
+                  setIsSelfReportingModalOpen(true);
+                } else {
+                  setNoticeModal({
+                    title: 'اطلاعیه ثبت خوداظهاری',
+                    message: 'همه کلاس‌های شما توسط نماینده حضور و غیاب می‌شود.',
+                    subtext: 'شما در حال حاضر در هیچ کلاسی با قابلیت خوداظهاری عضویت ندارید.'
+                  });
+                }
+              }}
+              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-teal-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
+            >
+              <div className="absolute -top-6 -right-6 w-16 h-16 bg-teal-400/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-teal-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                  <Sparkles size={16} />
+                </div>
+                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-teal-500/30 text-teal-100 border border-teal-400/40 backdrop-blur-xs">
+                  خوداظهاری
+                </span>
+              </div>
+              <div className="relative z-10 space-y-0.5 pt-1">
+                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت خوداظهاری</h3>
+                <p className="text-[8.5px] text-teal-100/90 font-medium truncate">اعلام آنلاین حضور جلسه</p>
               </div>
             </div>
           </div>
@@ -533,6 +619,44 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           <span className="text-[9px] font-bold">مطالعه</span>
         </button>
       </div>
+
+      {/* Notice Modal for Non-Rep / Non-SelfReporting Messages */}
+      {noticeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs font-vazir animate-fadeIn" dir="rtl">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 flex items-center justify-center mx-auto border border-amber-300">
+              <Info size={24} />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-black text-slate-900">{noticeModal.title}</h3>
+              <p className="text-xs font-bold text-slate-800 leading-relaxed bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/80">
+                {noticeModal.message}
+              </p>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {noticeModal.subtext}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNoticeModal(null)}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer active:scale-95 transition-all"
+            >
+              متوجه شدم
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Student Self-Reporting Modal */}
+      <StudentSelfReportingModal
+        isOpen={isSelfReportingModalOpen}
+        onClose={() => setIsSelfReportingModalOpen(false)}
+        currentUser={currentUser}
+        studentObj={matchedStudent}
+        programs={allProgramsList}
+        enrollments={enrollmentsList}
+        onAttendanceSaved={() => loadStudentData()}
+      />
     </div>
   );
 };

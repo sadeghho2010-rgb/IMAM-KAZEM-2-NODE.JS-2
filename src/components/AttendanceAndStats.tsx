@@ -3189,30 +3189,78 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   </span>
                 )}
               </div>
-              <select
-                value={selectedProgramId}
-                onChange={(e) => setSelectedProgramId(e.target.value)}
-                className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
-              >
-                {isOrdinaryStudent ? (
-                  studentSelfReportingPrograms.length === 0 ? (
-                    <option value="" disabled>هیچ کلاس خوداظهاری برای شما فعال نشده است</option>
+              {isRepresentative ? (
+                <div className="space-y-1.5 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {representativePrograms.length === 0 ? (
+                      <div className="p-3 bg-amber-50 text-amber-800 rounded-xl text-xs font-bold border border-amber-200 text-center col-span-2">
+                        هیچ کلاسی تحت نمایندگی شما یافت نشد.
+                      </div>
+                    ) : (
+                      representativePrograms.map(p => {
+                        const isSelected = p.id === selectedProgramId;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedProgramId(p.id)}
+                            className={cn(
+                              "p-2.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-2 shadow-2xs select-none active:scale-[0.98]",
+                              isSelected
+                                ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/40"
+                                : "bg-white hover:bg-slate-50 text-slate-800 border-slate-200"
+                            )}
+                          >
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-black truncate">{p.title || p.name}</span>
+                                <span className={cn(
+                                  "text-[9px] px-1.5 py-0.2 rounded-full font-bold",
+                                  isSelected ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                )}>
+                                  {p.grade || 'عمومی'}
+                                </span>
+                              </div>
+                              <p className={cn(
+                                "text-[10px] truncate font-medium",
+                                isSelected ? "text-emerald-100" : "text-slate-500"
+                              )}>
+                                استاد: {getProgramTeacherName(p)} {p.madrasRoom ? `• مَدرَس ${p.madrasRoom}` : ''}
+                              </p>
+                            </div>
+                            <div className={cn(
+                              "w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0",
+                              isSelected ? "bg-white text-emerald-800 shadow-2xs" : "bg-slate-100 text-slate-400"
+                            )}>
+                              {isSelected ? <CheckSquare size={14} /> : <BookOpen size={13} />}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <select
+                  value={selectedProgramId}
+                  onChange={(e) => setSelectedProgramId(e.target.value)}
+                  className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 cursor-pointer"
+                >
+                  {isOrdinaryStudent ? (
+                    studentSelfReportingPrograms.length === 0 ? (
+                      <option value="" disabled>هیچ کلاس خوداظهاری برای شما فعال نشده است</option>
+                    ) : (
+                      studentSelfReportingPrograms.map(p => {
+                        const titleStr = p.title || p.name || 'کلاس بدون عنوان';
+                        const gradeStr = p.grade ? ` (${p.grade})` : '';
+                        return (
+                          <option key={p.id} value={p.id}>
+                            {titleStr}{gradeStr} (کلاس خوداظهاری)
+                          </option>
+                        );
+                      })
+                    )
                   ) : (
-                    studentSelfReportingPrograms.map(p => {
-                      const titleStr = p.title || p.name || 'کلاس بدون عنوان';
-                      const gradeStr = p.grade ? ` (${p.grade})` : '';
-                      return (
-                        <option key={p.id} value={p.id}>
-                          {titleStr}{gradeStr} (کلاس خوداظهاری)
-                        </option>
-                      );
-                    })
-                  )
-                ) : isRepresentative ? (
-                  representativePrograms.length === 0 ? (
-                    <option value="" disabled>هیچ کلاسی تحت نمایندگی شما یافت نشد</option>
-                  ) : (
-                    representativePrograms.map(p => {
+                    programs.map(p => {
                       const titleStr = p.title || p.name || 'کلاس بدون عنوان';
                       const gradeStr = p.grade ? ` (${p.grade})` : '';
                       const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
@@ -3222,20 +3270,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                         </option>
                       );
                     })
-                  )
-                ) : (
-                  programs.map(p => {
-                    const titleStr = p.title || p.name || 'کلاس بدون عنوان';
-                    const gradeStr = p.grade ? ` (${p.grade})` : '';
-                    const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
-                    return (
-                      <option key={p.id} value={p.id}>
-                        {titleStr}{gradeStr}{teacherStr}
-                      </option>
-                    );
-                  })
-                )}
-              </select>
+                  )}
+                </select>
+              )}
 
               {currentProgram && (
                 <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
@@ -5965,23 +6002,55 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">کلاس تحت نمایندگی شما:</label>
-                  <select
-                    value={selectedProgramId}
-                    onChange={(e) => setSelectedProgramId(e.target.value)}
-                    className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 cursor-pointer"
-                  >
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700">کلاس‌های تحت نمایندگی شما (کلاس مورد نظر را انتخاب کنید):</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[140px] overflow-y-auto p-0.5">
                     {representativePrograms.length === 0 ? (
-                      <option value="" disabled>هیچ کلاسی تحت نمایندگی شما نیست</option>
+                      <div className="p-2.5 bg-amber-50 text-amber-800 text-xs font-bold rounded-xl border border-amber-200 text-center col-span-2">
+                        هیچ کلاسی تحت نمایندگی شما یافت نشد.
+                      </div>
                     ) : (
-                      representativePrograms.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.title} ({p.grade || 'عمومی'}) - استاد: {getProgramTeacherName(p)}
-                        </option>
-                      ))
+                      representativePrograms.map(p => {
+                        const isSelected = p.id === selectedProgramId;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedProgramId(p.id)}
+                            className={cn(
+                              "p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 shadow-2xs select-none active:scale-[0.98]",
+                              isSelected
+                                ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white border-emerald-400 ring-2 ring-emerald-500/40 shadow-xs"
+                                : "bg-white hover:bg-slate-100 text-slate-800 border-slate-200"
+                            )}
+                          >
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-black truncate">{p.title}</span>
+                                <span className={cn(
+                                  "text-[8.5px] px-1.5 py-0.2 rounded-full font-bold",
+                                  isSelected ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                )}>
+                                  {p.grade || 'عمومی'}
+                                </span>
+                              </div>
+                              <p className={cn(
+                                "text-[9.5px] truncate font-medium",
+                                isSelected ? "text-emerald-100" : "text-slate-500"
+                              )}>
+                                استاد: {getProgramTeacherName(p)}
+                              </p>
+                            </div>
+                            <div className={cn(
+                              "w-5 h-5 rounded-md flex items-center justify-center font-bold text-xs shrink-0",
+                              isSelected ? "bg-white text-emerald-800" : "bg-slate-100 text-slate-400"
+                            )}>
+                              {isSelected ? '✓' : '•'}
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
-                  </select>
+                  </div>
                 </div>
               </div>
 

@@ -463,6 +463,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
       if (item.id === 'student-meals') label = 'رزرو نهار و شام';
       if (item.id === 'student-payments') label = 'امور مالی و پرداختی‌ها';
       if (item.id === 'student-portal' || item.id === 'summary') label = 'کارنامه علمی من';
+      if (item.id === 'passed-courses') label = 'دروس گذرانده شده';
+      if (item.id === 'course-selection') label = 'سامانه انتخاب واحد';
+      if (item.id === 'discussion') label = 'گروه مباحثه من';
     } else {
       if (item.id === 'student-requests') {
         label = 'پنل رسیدگی به درخواست';

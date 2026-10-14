@@ -1687,55 +1687,104 @@ export default function MainDashboard({
           </div>
 
           {/* 
-            Grid of 2 Core Cards for Students:
-            Card 1: [ساعت مطالعه من] (Wave Animation: Ocean/Sapphire/Teal - Independent, No brown, No pink)
-            Card 2: [ثبت تقاضا و درخواست] (Wave Animation: Jade/Teal/Indigo - Independent, No brown, No pink)
-            Note: "کارنامه علمی" and "رزرو نهار و شام" have moved to the lower section cards per request.
+            Grid of 4 Core Cards for Students:
+            Card 1: [ساعات مطالعه من]
+            Card 2: [ثبت تقاضا و درخواست]
+            Card 3: [ثبت حضور و غیاب] (مخصوص نمایندگان کلاس)
+            Card 4: [ثبت خوداظهاری] (ثبت حضور دروس خوداظهاری)
           */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Card 1: ساعت مطالعه من (Independent Ocean/Teal Wave Animation) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: ساعت مطالعه من */}
             <div
               onClick={() => onNavigateTab('stats')}
               className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-cyan-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none student-card-wave-study"
             >
               <div className="absolute -top-10 -right-10 w-28 h-28 bg-cyan-400/15 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <BookOpen size={22} />
+                <div className="w-10 h-10 rounded-xl bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <BookOpen size={20} />
                 </div>
                 <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
-                  مباحثه و ساعات مطالعه
+                  مطالعه
                 </span>
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ساعت مطالعه من</h3>
-                <p className="text-xs text-cyan-100/90 font-medium truncate">ثبت گزارش کارکرد روزانه، پیش‌مطالعه، مباحثه و پژوهش علمی (بدون سقف و محدودیت)</p>
+                <p className="text-xs text-cyan-100/90 font-medium truncate">ثبت کارکرد و گزارش روزانه ساعات</p>
               </div>
             </div>
 
-            {/* Card 2: ثبت تقاضا و درخواست (Independent Jade/Teal/Indigo Wave Animation) */}
+            {/* Card 2: ثبت تقاضا و درخواست */}
             <div
               onClick={() => onNavigateTab('student-requests')}
               className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-emerald-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none student-card-wave-requests"
             >
               <div className="absolute -top-10 -right-10 w-28 h-28 bg-emerald-400/15 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
-                <div className="w-11 h-11 rounded-xl bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
-                  <Send size={21} />
+                <div className="w-10 h-10 rounded-xl bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <Send size={20} />
                 </div>
                 {unreadRequestsCount > 0 ? (
                   <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-slate-950 shadow-sm font-mono">
-                    {unreadRequestsCount} درخواست جاری
+                    {unreadRequestsCount} جاری
                   </span>
                 ) : (
                   <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
-                    کارتابل آنلاین
+                    کارتابل
                   </span>
                 )}
               </div>
               <div className="relative z-10 space-y-1 pt-2">
                 <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ثبت تقاضا و درخواست</h3>
-                <p className="text-xs text-emerald-100/90 font-medium truncate">ارسال فرم مرخصی، درخواست گواهی اشتغال، امور رفاهی و تسهیلات</p>
+                <p className="text-xs text-emerald-100/90 font-medium truncate">فرم مرخصی، گواهی اشتغال و امور رفاهی</p>
+              </div>
+            </div>
+
+            {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
+            <div
+              onClick={() => {
+                if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) {
+                  onNavigateTab('attendance');
+                } else {
+                  alert('اطلاعیه: شما نماینده هیچ کلاسی نیستید. ثبت حضور و غیاب توسط نماینده منتخب کلاس انجام می‌پذیرد.');
+                }
+              }}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-purple-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-purple-400/15 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-10 h-10 rounded-xl bg-white/20 text-purple-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <CheckSquare size={20} />
+                </div>
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-purple-500/30 text-purple-100 border border-purple-400/40 backdrop-blur-xs">
+                  نمایندگان
+                </span>
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ثبت حضور و غیاب</h3>
+                <p className="text-xs text-purple-200/90 font-bold truncate">مخصوص نمایندگان کلاس</p>
+              </div>
+            </div>
+
+            {/* Card 4: ثبت خوداظهاری (مخصوص دروس دارای خوداظهاری) */}
+            <div
+              onClick={() => {
+                onNavigateTab('attendance');
+              }}
+              className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-teal-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
+            >
+              <div className="absolute -top-10 -right-10 w-28 h-28 bg-teal-400/15 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="w-10 h-10 rounded-xl bg-white/20 text-teal-200 backdrop-blur-md flex items-center justify-center font-black shadow-md border border-white/30 group-hover:scale-110 transition-transform">
+                  <Sparkles size={20} />
+                </div>
+                <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-teal-500/30 text-teal-100 border border-teal-400/40 backdrop-blur-xs">
+                  خوداظهاری
+                </span>
+              </div>
+              <div className="relative z-10 space-y-1 pt-2">
+                <h3 className="text-base sm:text-lg font-black text-white truncate drop-shadow-xs">ثبت خوداظهاری</h3>
+                <p className="text-xs text-teal-100/90 font-medium truncate">اعلام آنلاین حضور در جلسات درس</p>
               </div>
             </div>
           </div>
