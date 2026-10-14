@@ -160,12 +160,36 @@ export default function UserManagement() {
 
     setIsSubmittingUser(true);
     try {
+      const cleanUsername = formUsername.trim().toUpperCase();
+      const cleanFullName = formFullName.trim();
+
+      // Find matching student in localDb if level is 3 or role is student or username matches nationalId
+      let matchedStudentId: string | undefined = editingUser?.linkedStudentId || editingUser?.studentId;
+      try {
+        const allStudents = await localDb.getDocs<any>('students');
+        const st = allStudents.find(s => 
+          (matchedStudentId && String(s.id) === String(matchedStudentId)) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === cleanUsername) ||
+          (s.studentCode && String(s.studentCode).trim().toUpperCase() === cleanUsername) ||
+          (s.name && String(s.name).trim() === cleanFullName)
+        );
+        if (st) {
+          matchedStudentId = st.id;
+          await localDb.updateDoc('students', st.id, {
+            hasUserAccount: true,
+            userAccountUsername: cleanUsername,
+            name: cleanFullName
+          });
+        }
+      } catch (e) {}
+
       if (editingUser) {
         // Update
         updateUser(editingUser.id, {
-          username: formUsername.trim().toUpperCase(),
+          username: cleanUsername,
           password: formPassword.trim(),
-          fullName: formFullName.trim(),
+          fullName: cleanFullName,
+          name: cleanFullName,
           level: formLevel,
           role: formRole,
           roleTitle: formRoleTitle,
@@ -173,6 +197,8 @@ export default function UserManagement() {
           gradeLabel: formGradeLabel,
           managedGrades: formManagedGrades,
           managedClassId: formManagedClassId || undefined,
+          linkedStudentId: matchedStudentId,
+          studentId: matchedStudentId,
           isReadOnly: formIsReadOnly,
           allowedModules: formAllowedModules,
         });
@@ -182,7 +208,7 @@ export default function UserManagement() {
             if (prog) {
               const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
               const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
-              if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+              if (!repNames.includes(cleanFullName)) repNames.push(cleanFullName);
               if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
               await localDb.updateDoc('programs', formManagedClassId, {
                 representativeNames: repNames,
@@ -197,9 +223,10 @@ export default function UserManagement() {
       } else {
         // Create
         const res = await addUser({
-          username: formUsername.trim().toUpperCase(),
+          username: cleanUsername,
           password: formPassword.trim(),
-          fullName: formFullName.trim(),
+          fullName: cleanFullName,
+          name: cleanFullName,
           level: formLevel,
           role: formRole,
           roleTitle: formRoleTitle,
@@ -207,6 +234,8 @@ export default function UserManagement() {
           gradeLabel: formGradeLabel,
           managedGrades: formManagedGrades,
           managedClassId: formManagedClassId || undefined,
+          linkedStudentId: matchedStudentId,
+          studentId: matchedStudentId,
           isReadOnly: formIsReadOnly,
           isActive: true,
           allowedModules: formAllowedModules,
@@ -218,7 +247,7 @@ export default function UserManagement() {
             if (prog) {
               const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
               const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
-              if (!repNames.includes(formFullName.trim())) repNames.push(formFullName.trim());
+              if (!repNames.includes(cleanFullName)) repNames.push(cleanFullName);
               if (res.user?.id && !repIds.includes(res.user.id)) repIds.push(res.user.id);
               await localDb.updateDoc('programs', formManagedClassId, {
                 representativeNames: repNames,

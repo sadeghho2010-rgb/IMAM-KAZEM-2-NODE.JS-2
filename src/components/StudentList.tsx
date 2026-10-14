@@ -107,8 +107,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
     if (found) return found;
 
-    // Fallback: If student has userAccountUsername or hasUserAccount flag saved on student document
-    if ((student as any).hasUserAccount && (student as any).userAccountUsername) {
+    // Fallback: If allUsers list has not loaded yet (e.g. length === 0) and student has hasUserAccount flag saved
+    if (allUsers.length === 0 && (student as any).hasUserAccount && (student as any).userAccountUsername) {
       return {
         id: `user_fallback_${student.id}`,
         username: (student as any).userAccountUsername,
@@ -2899,23 +2899,52 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   </div>
                 )}
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStudentForCredentials(null)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    بستن صفحه
-                  </button>
-                  {isAuthorizedToManage && (
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                  {isAuthorizedToManage && editingCredUser ? (
                     <button
-                      type="submit"
-                      disabled={!credUsername.trim() || !credPassword.trim() || isSavingCreds}
-                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
+                      type="button"
+                      onClick={async () => {
+                        if (window.confirm(`آیا از حذف حساب کاربری این طلبه ("${editingCredUser.username}") اطمینان دارید؟`)) {
+                          setIsSavingCreds(true);
+                          try {
+                            deleteUser(editingCredUser.id);
+                            await localDb.updateDoc('students', selectedStudentForCredentials.id, {
+                              hasUserAccount: false,
+                              userAccountUsername: null
+                            });
+                            alert('حساب کاربری این طلبه با موفقیت حذف گردید.');
+                            setSelectedStudentForCredentials(null);
+                            fetchStudents(true);
+                          } finally {
+                            setIsSavingCreds(false);
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
                     >
-                      {isSavingCreds ? 'در حال ثبت حساب...' : (editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری')}
+                      <Trash2 size={14} />
+                      <span>حذف حساب کاربری</span>
                     </button>
-                  )}
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentForCredentials(null)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      بستن صفحه
+                    </button>
+                    {isAuthorizedToManage && (
+                      <button
+                        type="submit"
+                        disabled={!credUsername.trim() || !credPassword.trim() || isSavingCreds}
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-600/10 cursor-pointer"
+                      >
+                        {isSavingCreds ? 'در حال ثبت حساب...' : (editingCredUser ? 'ذخیره تغییرات' : 'ایجاد حساب کاربری')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </form>
             </motion.div>

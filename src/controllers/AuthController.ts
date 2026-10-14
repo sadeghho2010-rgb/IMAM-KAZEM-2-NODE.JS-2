@@ -259,6 +259,34 @@ export class AuthController {
       };
       delete (userToStore as any).password;
 
+      // Bidirectional sync: Check if this user belongs to a student and update student record
+      const studentId = userToStore.linkedStudentId || userToStore.studentId;
+      try {
+        const students = await serverQueryCollection('students');
+        const targetStudent = students.find((s: any) =>
+          (studentId && String(s.id) === String(studentId)) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === cleanUsername) ||
+          (s.studentCode && String(s.studentCode).trim().toUpperCase() === cleanUsername) ||
+          (s.name && String(s.name).trim() === String(userToStore.name || userToStore.fullName).trim())
+        );
+
+        if (targetStudent) {
+          userToStore.linkedStudentId = targetStudent.id;
+          userToStore.studentId = targetStudent.id;
+
+          const studentPayload = {
+            ...targetStudent,
+            hasUserAccount: true,
+            userAccountUsername: cleanUsername,
+            updatedAt: new Date().toISOString()
+          };
+          await serverSaveDoc('students', studentPayload);
+          notifyRealtimeChange('students', studentPayload.id, 'upsert');
+        }
+      } catch (sErr) {
+        console.warn('Non-fatal student sync error in addUser:', sErr);
+      }
+
       await saveUserToStorage(userToStore);
       notifyRealtimeChange('system_users', userToStore.id, 'upsert');
 
@@ -360,6 +388,8 @@ export class AuthController {
         const students = await serverQueryCollection('students');
         const targetStudent = students.find((s: any) => 
           (studentId && String(s.id) === String(studentId)) ||
+          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === oldUsername) ||
+          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === newUsername) ||
           (s.nationalId && String(s.nationalId).trim().toUpperCase() === oldUsername) ||
           (s.nationalId && String(s.nationalId).trim().toUpperCase() === newUsername) ||
           (s.name && String(s.name).trim() === String(existing?.name).trim())
@@ -413,8 +443,40 @@ export class AuthController {
         return res.status(400).json({ success: false, message: 'شناسه کاربر الزامی است.' });
       }
 
+      const users = await fetchAllUsersFromStorage();
+      const targetUser = users.find(u => 
+        u.id === target || 
+        u.username.toUpperCase() === String(target).toUpperCase()
+      );
+
       await deleteUserFromStorage(target);
       notifyRealtimeChange('system_users', String(target), 'delete');
+
+      // Unlink student in 'students' collection so student management instantly reflects "without user account"
+      const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+      const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
+
+      try {
+        const students = await serverQueryCollection('students');
+        const targetStudent = students.find((s: any) =>
+          (studentId && String(s.id) === String(studentId)) ||
+          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername)
+        );
+
+        if (targetStudent) {
+          const updatedStudent = {
+            ...targetStudent,
+            hasUserAccount: false,
+            userAccountUsername: null,
+            updatedAt: new Date().toISOString()
+          };
+          await serverSaveDoc('students', updatedStudent);
+          notifyRealtimeChange('students', updatedStudent.id, 'upsert');
+        }
+      } catch (sErr) {
+        console.warn('Non-fatal student unlink error in deleteUser:', sErr);
+      }
 
       const caller = (req as any).user || AuthController.extractCaller(req);
       logServerAudit({

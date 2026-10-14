@@ -918,6 +918,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return updated;
       });
 
+      // Synchronize student document locally in localDb if linked
+      const studentId = user.linkedStudentId || user.studentId;
+      if (studentId) {
+        localDb.updateDoc('students', studentId, {
+          hasUserAccount: true,
+          userAccountUsername: username
+        }).catch(() => {});
+      } else {
+        localDb.getDocs<any>('students').then(students => {
+          const st = students.find(s => 
+            (s.nationalId && String(s.nationalId).trim().toUpperCase() === username) ||
+            (s.name && String(s.name).trim() === String(user.name || user.fullName).trim())
+          );
+          if (st) {
+            localDb.updateDoc('students', st.id, {
+              hasUserAccount: true,
+              userAccountUsername: username
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_users_updated', { detail: users }));
+        window.dispatchEvent(new CustomEvent('collection_change_students', { detail: { collection: 'students' } }));
+      }
+
       return { success: true, user };
     } catch (e: any) {
       return { success: false, error: 'خطا در ارتباط با سرور هنگام ثبت کاربر.' };
@@ -1059,6 +1086,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
       } catch (e) {}
 
+      // Synchronize student document locally in localDb if linked
+      const targetStudentId = targetUser.linkedStudentId || targetUser.studentId;
+      if (targetStudentId) {
+        localDb.updateDoc('students', targetStudentId, {
+          hasUserAccount: true,
+          userAccountUsername: targetUser.username
+        }).catch(() => {});
+      }
+
       if (targetUser) {
         fetch('/api/auth/update-user', {
           method: 'POST',
@@ -1080,6 +1116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_users_updated', { detail: updatedList }));
+        window.dispatchEvent(new CustomEvent('collection_change_students', { detail: { collection: 'students' } }));
       }
 
       return updatedList;
@@ -1093,6 +1130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const target = users.find(u => u.id === id || u.username.toUpperCase() === id.toUpperCase());
     const usernameToDelete = target ? target.username.toUpperCase() : id.toUpperCase();
+    const linkedStudentId = target?.linkedStudentId || target?.studentId;
 
     setUsers(prev => {
       const filtered = prev.filter(u => u.id !== id && u.username.toUpperCase() !== id.toUpperCase());
@@ -1104,6 +1142,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
       logout();
+    }
+
+    // Immediately unlink student in localDb
+    if (linkedStudentId) {
+      localDb.updateDoc('students', linkedStudentId, {
+        hasUserAccount: false,
+        userAccountUsername: null
+      }).catch(() => {});
+    } else {
+      localDb.getDocs<any>('students').then(students => {
+        const targetStudent = students.find(s => 
+          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === usernameToDelete) ||
+          (s.nationalId && String(s.nationalId).trim().toUpperCase() === usernameToDelete)
+        );
+        if (targetStudent) {
+          localDb.updateDoc('students', targetStudent.id, {
+            hasUserAccount: false,
+            userAccountUsername: null
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('app_users_updated', { detail: users.filter(u => u.id !== id && u.username.toUpperCase() !== id.toUpperCase()) }));
+      window.dispatchEvent(new CustomEvent('collection_change_students', { detail: { collection: 'students' } }));
     }
 
     fetch('/api/auth/delete-user', {
