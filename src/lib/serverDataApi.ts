@@ -82,6 +82,15 @@ const RAW_CACHE_TTL_MS = 25 * 1000; // 25s TTL
 export function invalidateCollectionCache(collection?: string) {
   if (collection) {
     rawCollectionCache.delete(collection);
+    if (collection === 'users' || collection === 'all_users' || collection === 'system_users') {
+      rawCollectionCache.delete('users');
+      rawCollectionCache.delete('all_users');
+      rawCollectionCache.delete('system_users');
+    }
+    if (collection === 'classrooms' || collection === 'classes') {
+      rawCollectionCache.delete('classrooms');
+      rawCollectionCache.delete('classes');
+    }
   } else {
     rawCollectionCache.clear();
   }
@@ -395,32 +404,65 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
     }
 
     case 'teachers':
-      row.name = data.name || 'نامشخص';
-      row.phone = data.phone || null;
+      row.name = data.name || data.fullName || 'نامشخص';
+      row.phone = data.phone || data.phoneNumber || null;
       row.specialty = data.specialty || null;
+      row.email = data.email || null;
       row.is_active = data.isActive !== undefined ? Boolean(data.isActive) : true;
+      row.data = data;
       break;
 
     case 'classrooms':
       row.title = data.title || 'کلاس بدون عنوان';
       row.grade = data.grade || null;
       row.capacity = Number(data.capacity) || 20;
+      row.location = data.location || null;
+      row.data = data;
       break;
 
-    case 'programs':
+    case 'programs': {
+      const cleanStr = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
       row.title = data.title || 'برنامه بدون عنوان';
+      row.type = data.type || 'اصلی';
+      row.parent_program_id = cleanStr(data.parentProgramId || data.parent_program_id);
       row.grade = data.grade || 'نامشخص';
-      row.teacher_id = data.teacherId || data.teacher_id || null;
-      row.teacher_name = data.teacherName || data.teacher_name || null;
-      row.term = data.term || null;
+      row.teacher_id = cleanStr(data.teacherId || data.teacher_id);
+      row.teacher_name = cleanStr(data.teacherName || data.teacher_name || data.teacher);
+      row.classroom_id = cleanStr(data.classroomId || data.classroom_id || data.classroom || data.madrasRoom);
+      row.day_of_week = Array.isArray(data.days) ? data.days.join(' ، ') : cleanStr(data.day);
+      row.start_time = cleanStr(data.startTime || (data.time ? String(data.time).split(' الی ')[0] : null));
+      row.end_time = cleanStr(data.endTime || (data.time ? String(data.time).split(' الی ')[1] : null));
+      row.term = cleanStr(data.term);
+      row.data = data;
       break;
+    }
 
-    case 'attendance':
+    case 'attendance': {
+      const cleanStr = (v: any) => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
+      row.student_id = cleanStr(data.studentId || data.student_id);
       row.date = data.date || now.split('T')[0];
       row.grade = data.grade || 'نامشخص';
-      row.program_id = data.programId || data.program_id || null;
-      row.present_count = Number(data.presentCount) || 0;
-      row.absent_count = Number(data.absentCount) || 0;
+      row.program_id = cleanStr(data.programId || data.program_id);
+      row.present_count = Number(data.presentCount ?? data.present_count) || 0;
+      row.absent_count = Number(data.absentCount ?? data.absent_count) || 0;
+      row.data = data;
+      break;
+    }
+
+    case 'enrollments':
+      row.student_id = data.studentId || data.student_id || 'unknown';
+      row.program_id = data.programId || data.program_id || 'unknown';
+      row.grade = data.grade || null;
+      row.status = data.status || 'enrolled';
+      row.data = data;
+      break;
+
+    case 'student_requests':
+      row.student_id = data.studentId || data.student_id || 'unknown';
+      row.unit = data.unit || data.category || 'آموزش';
+      row.type = data.type || data.requestType || 'عمومی';
+      row.status = data.status || 'pending';
+      row.data = data;
       break;
 
     case 'received_articles':
@@ -431,6 +473,7 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.field = data.field || null;
       row.word_count = Number(data.wordCount) || 0;
       row.status = data.status || 'submitted';
+      row.data = data;
       break;
 
     case 'article_evaluations':
@@ -441,6 +484,7 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.grade = data.grade || null;
       row.session_date = data.sessionDate || data.session_date || null;
       row.status = data.status || 'scheduled';
+      row.data = data;
       break;
 
     case 'evaluation_requests':
@@ -451,6 +495,7 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.grade = data.grade || null;
       row.request_type = data.requestType || data.request_type || 'article_evaluation';
       row.status = data.status || 'pending';
+      row.data = data;
       break;
 
     case 'personal_todos':

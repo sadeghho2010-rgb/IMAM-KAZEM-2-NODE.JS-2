@@ -75,6 +75,90 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
     if (row.grade) record.grade = row.grade;
     if (row.capacity !== undefined && row.capacity !== null) record.capacity = Number(row.capacity);
     if (row.location) record.location = row.location;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'programs') {
+    if (row.title) record.title = row.title;
+    if (row.grade) record.grade = row.grade;
+    if (row.type) record.type = row.type;
+    if (row.parent_program_id) record.parentProgramId = row.parent_program_id;
+    if (row.parentProgramId) record.parentProgramId = row.parentProgramId;
+    if (row.teacher_id) record.teacherId = row.teacher_id;
+    if (row.teacher_name) {
+      record.teacherName = row.teacher_name;
+      if (!record.teacher) record.teacher = row.teacher_name;
+    }
+    if (row.classroom_id) {
+      record.classroomId = row.classroom_id;
+      if (!record.classroom) record.classroom = row.classroom_id;
+      if (!record.madrasRoom) record.madrasRoom = row.classroom_id;
+    }
+    if (row.day_of_week && !record.day) record.day = row.day_of_week;
+    if (row.start_time && row.end_time && !record.time) {
+      record.startTime = row.start_time;
+      record.endTime = row.end_time;
+      record.time = `${row.start_time} الی ${row.end_time}`;
+    }
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'attendance') {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.date) record.date = row.date;
+    if (row.program_id) record.programId = row.program_id;
+    if (row.grade) record.grade = row.grade;
+    if (row.present_count !== undefined && row.present_count !== null) record.presentCount = Number(row.present_count);
+    if (row.absent_count !== undefined && row.absent_count !== null) record.absentCount = Number(row.absent_count);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'teachers') {
+    if (row.name) {
+      record.name = row.name;
+      if (!record.fullName) record.fullName = row.name;
+    }
+    if (row.specialty) record.specialty = row.specialty;
+    if (row.phone) {
+      record.phone = row.phone;
+      if (!record.phoneNumber) record.phoneNumber = row.phone;
+    }
+    if (row.email) record.email = row.email;
+    if (row.is_active !== undefined && row.is_active !== null) record.isActive = Boolean(row.is_active);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'enrollments') {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.program_id) record.programId = row.program_id;
+    if (row.grade) record.grade = row.grade;
+    if (row.status) record.status = row.status;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'student_requests') {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.unit) record.unit = row.unit;
+    if (row.type) record.type = row.type;
+    if (row.status) record.status = row.status;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === 'system_users' || collection === 'all_users' || collection === 'users') {
+    if (row.username) record.username = row.username;
+    if (row.name) {
+      record.name = row.name;
+      if (!record.fullName) record.fullName = row.name;
+    }
+    if (row.role) record.role = row.role;
+    if (row.role_title) record.roleTitle = row.role_title;
+    if (row.level !== undefined && row.level !== null) record.level = Number(row.level);
+    if (row.grade_label) {
+      record.gradeLabel = row.grade_label;
+      if (!record.grade) record.grade = row.grade_label;
+    }
+    if (row.mentor_id) record.mentorId = row.mentor_id;
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.linked_student_id) record.linkedStudentId = row.linked_student_id;
+    if (row.teacher_id) record.teacherId = row.teacher_id;
+    if (row.avatar_bg) record.avatarBg = row.avatar_bg;
+    if (row.is_active !== undefined && row.is_active !== null) record.isActive = Boolean(row.is_active);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   }
 
   return record;
@@ -104,23 +188,18 @@ export function mergeDedicatedAndDocumentRows(
     mergedMap.set(String(dRow.id), rec);
   }
 
-  // 2. Overlay app_collections documents with timestamp awareness
+  // 2. Overlay app_collections documents:
+  // app_collections documents represent the complete, rich React JSON payload
+  // (with all arrays, nested objects, parentProgramId, representative lists, attendance sheets, etc.)
+  // It MUST overlay the dedicated columns to guarantee zero data loss!
   for (const doc of appDocItems) {
     if (!doc || !doc.id) continue;
     const docId = String(doc.id);
     const existing = mergedMap.get(docId);
     if (existing) {
-      const existingTs = extractRecordTs(existing);
-      const docTs = extractRecordTs(doc);
-      if (docTs >= existingTs) {
-        const merged = { ...existing, ...doc };
-        delete merged._appUpdatedAt;
-        mergedMap.set(docId, merged);
-      } else {
-        const merged = { ...doc, ...existing };
-        delete merged._appUpdatedAt;
-        mergedMap.set(docId, merged);
-      }
+      const merged = { ...existing, ...doc };
+      delete merged._appUpdatedAt;
+      mergedMap.set(docId, merged);
     } else {
       const copy = { ...doc };
       delete copy._appUpdatedAt;
@@ -950,6 +1029,50 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       console.warn('[MySQL Schema Notice - audit_logs]:', e?.message || e);
     }
 
+    // Column migrations for programs table (counseling link, program types, json data)
+    try {
+      const progAlters = [
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS type VARCHAR(50) NULL DEFAULT "اصلی"',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS parent_program_id VARCHAR(100) NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS data JSON NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_category VARCHAR(150) NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_book VARCHAR(150) NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_chapter VARCHAR(150) NULL'
+      ];
+      for (const sql of progAlters) {
+        try { await mysqlPool.query(sql); } catch (e) {
+          const rawSql = sql.replace(' IF NOT EXISTS', '');
+          try { await mysqlPool.query(rawSql); } catch (e2) {}
+        }
+      }
+    } catch (e) {}
+
+    // Column migrations for attendance table (support session logs with student_id nullable)
+    try {
+      const attAlters = [
+        'ALTER TABLE attendance MODIFY COLUMN student_id VARCHAR(100) NULL',
+        'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS grade VARCHAR(100) NULL',
+        'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS present_count INT NOT NULL DEFAULT 0',
+        'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS absent_count INT NOT NULL DEFAULT 0',
+        'ALTER TABLE attendance ADD COLUMN IF NOT EXISTS data JSON NULL'
+      ];
+      for (const sql of attAlters) {
+        try { await mysqlPool.query(sql); } catch (e) {
+          const rawSql = sql.replace(' IF NOT EXISTS', '');
+          try { await mysqlPool.query(rawSql); } catch (e2) {}
+        }
+      }
+    } catch (e) {}
+
+    // Ensure data JSON column exists on all other dedicated tables
+    for (const tbl of ['students', 'classrooms', 'teachers', 'enrollments', 'student_requests']) {
+      try {
+        await mysqlPool.query(`ALTER TABLE \`${tbl}\` ADD COLUMN IF NOT EXISTS data JSON NULL`);
+      } catch (e) {
+        try { await mysqlPool.query(`ALTER TABLE \`${tbl}\` ADD COLUMN data JSON NULL`); } catch (e2) {}
+      }
+    }
+
     try {
       await mysqlPool.query(`
         CREATE TABLE IF NOT EXISTS \`audit_chain_logs\` (
@@ -1274,47 +1397,64 @@ export const MysqlRepository = {
     const lockedUntil = user.accountLockedUntil ? new Date(user.accountLockedUntil) : null;
     const lastLogin = user.lastLogin ? new Date(user.lastLogin) : null;
 
-    // 1. Direct UPSERT into all_users (supporting both the user's custom schema and standard schema)
+    // 1. Direct UPSERT into all_users (supporting both custom and standard schema)
     try {
       const sqlAllUsers = `
         INSERT INTO all_users (
           id, username, password_hash, password, name, role, role_title, level, grade_label,
           mentor_id, student_id, linked_student_id, teacher_id, avatar_bg, allowed_tabs,
           editable_tabs, module_permissions, is_active, is_read_only, can_edit, must_change_password,
-          failed_login_attempts, account_locked_until, last_login, data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          failed_login_attempts, account_locked_until, last_login, data, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
-          name = VALUES(name),
-          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-          password = COALESCE(NULLIF(VALUES(password), ''), password),
-          role = VALUES(role),
-          role_title = VALUES(role_title),
-          level = VALUES(level),
-          grade_label = VALUES(grade_label),
-          mentor_id = VALUES(mentor_id),
-          student_id = VALUES(student_id),
-          linked_student_id = VALUES(linked_student_id),
-          teacher_id = VALUES(teacher_id),
-          avatar_bg = VALUES(avatar_bg),
-          allowed_tabs = VALUES(allowed_tabs),
-          editable_tabs = VALUES(editable_tabs),
-          module_permissions = VALUES(module_permissions),
-          is_active = VALUES(is_active),
-          is_read_only = VALUES(is_read_only),
-          can_edit = VALUES(can_edit),
-          must_change_password = VALUES(must_change_password),
-          failed_login_attempts = VALUES(failed_login_attempts),
-          account_locked_until = VALUES(account_locked_until),
-          last_login = VALUES(last_login),
-          data = VALUES(data),
+          name = ?,
+          password_hash = COALESCE(NULLIF(?, ''), password_hash),
+          password = COALESCE(NULLIF(?, ''), password),
+          role = ?,
+          role_title = ?,
+          level = ?,
+          grade_label = ?,
+          mentor_id = ?,
+          student_id = ?,
+          linked_student_id = ?,
+          teacher_id = ?,
+          avatar_bg = ?,
+          allowed_tabs = ?,
+          editable_tabs = ?,
+          module_permissions = ?,
+          is_active = ?,
+          is_read_only = ?,
+          can_edit = ?,
+          must_change_password = ?,
+          failed_login_attempts = ?,
+          account_locked_until = ?,
+          last_login = ?,
+          data = ?,
           updated_at = NOW();
       `;
 
+      const userRole = user.role || 'student';
+      const userLevel = Number(user.level) || 3;
+      const userGrade = cleanNullableStr(user.gradeLabel || (user as any).grade);
+      const teacherId = cleanNullableStr((user as any).teacherId);
+      const userName = cleanNullableStr(user.name || (user as any).fullName) || uName;
+      const mentorId = cleanNullableStr(user.mentorId);
+      const studentId = cleanNullableStr(user.studentId);
+      const linkedStudentId = cleanNullableStr(user.linkedStudentId);
+      const avatarBg = cleanNullableStr(user.avatarBg);
+      const roleTitle = cleanNullableStr(user.roleTitle);
+
       await pool.query(sqlAllUsers, [
-        uId, uName, pHash, plainPass, user.name, user.role, user.roleTitle || null,
-        Number(user.level) || 3, user.gradeLabel || null, user.mentorId || null,
-        user.studentId || null, user.linkedStudentId || null, (user as any).teacherId || null,
-        user.avatarBg || null, allowedTabs, editableTabs, modulePerms, isActive,
+        uId, uName, pHash, plainPass, userName, userRole, roleTitle,
+        userLevel, userGrade, mentorId,
+        studentId, linkedStudentId, teacherId,
+        avatarBg, allowedTabs, editableTabs, modulePerms, isActive,
+        isReadOnly, canEdit, mustChange, failedAttempts, lockedUntil, lastLogin, userData,
+        // UPDATE params
+        userName, pHash, plainPass, userRole, roleTitle,
+        userLevel, userGrade, mentorId,
+        studentId, linkedStudentId, teacherId,
+        avatarBg, allowedTabs, editableTabs, modulePerms, isActive,
         isReadOnly, canEdit, mustChange, failedAttempts, lockedUntil, lastLogin, userData
       ]);
       console.log(`[MySQL saveUser] ✅ کاربر ${uName} با موفقیت در جدول all_users ذخیره شد.`);
@@ -1322,15 +1462,22 @@ export const MysqlRepository = {
       console.warn('[MySQL saveUser all_users notice]:', e1?.message || e1);
       // Fallback with minimal columns if some columns are missing
       try {
+        const userName = cleanNullableStr(user.name || (user as any).fullName) || uName;
+        const userRole = user.role || 'student';
+        const roleTitle = cleanNullableStr(user.roleTitle);
         await pool.query(`
-          INSERT INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, is_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, is_active, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-            role = VALUES(role),
-            is_active = VALUES(is_active)
-        `, [uId, uName, pHash, user.name, user.role, user.roleTitle || null, Number(user.level) || 3, user.gradeLabel || null, isActive]);
+            name = ?,
+            password_hash = COALESCE(NULLIF(?, ''), password_hash),
+            role = ?,
+            is_active = ?,
+            updated_at = NOW();
+        `, [
+          uId, uName, pHash, userName, userRole, roleTitle, Number(user.level) || 3, cleanNullableStr(user.gradeLabel || (user as any).grade), isActive,
+          userName, pHash, userRole, isActive
+        ]);
       } catch (fallbackErr: any) {
         console.error(`[STORAGE_FAILURE] MySQL saveUser all_users fallback failed for user "${uName}":`, fallbackErr?.message || fallbackErr);
       }
@@ -1338,30 +1485,43 @@ export const MysqlRepository = {
 
     // 2. Mirror into system_users (if table exists)
     try {
+      const userName = cleanNullableStr(user.name || (user as any).fullName) || uName;
+      const userRole = user.role || 'student';
+      const roleTitle = cleanNullableStr(user.roleTitle);
+      const mentorId = cleanNullableStr(user.mentorId);
+      const studentId = cleanNullableStr(user.studentId);
+      const linkedStudentId = cleanNullableStr(user.linkedStudentId);
+      const avatarBg = cleanNullableStr(user.avatarBg);
+      const userGrade = cleanNullableStr(user.gradeLabel || (user as any).grade);
+
       await pool.query(`
         INSERT INTO system_users (
           id, username, password_hash, name, role, role_title, level, grade_label,
           mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs,
-          editable_tabs, module_permissions, is_active, must_change_password, data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          editable_tabs, module_permissions, is_active, must_change_password, data, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
-          name = VALUES(name),
-          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-          role = VALUES(role),
-          is_active = VALUES(is_active)
+          name = ?,
+          password_hash = COALESCE(NULLIF(?, ''), password_hash),
+          role = ?,
+          is_active = ?,
+          updated_at = NOW();
       `, [
-        uId, uName, pHash, user.name, user.role, user.roleTitle || null,
-        Number(user.level) || 3, user.gradeLabel || null, user.mentorId || null,
-        user.studentId || null, user.linkedStudentId || null, user.avatarBg || null,
-        allowedTabs, editableTabs, modulePerms, isActive, mustChange, userData
+        uId, uName, pHash, userName, userRole, roleTitle,
+        Number(user.level) || 3, userGrade, mentorId,
+        studentId, linkedStudentId, avatarBg,
+        allowedTabs, editableTabs, modulePerms, isActive, mustChange, userData,
+        userName, pHash, userRole, isActive
       ]);
     } catch (e2: any) {
       console.warn(`[STORAGE_FAILURE] MySQL saveUser system_users mirror notice for user "${uName}":`, e2?.message || e2);
     }
 
-    // 3. Mirror into app_collections for unified querying
+    // 3. Mirror into app_collections for unified querying under both names
     try {
-      await this.saveDocument('all_users', uName, { ...user, id: uId, username: uName });
+      const userDoc = { ...user, id: uId, username: uName };
+      await this.saveDocument('all_users', uId, userDoc);
+      await this.saveDocument('system_users', uId, userDoc);
     } catch (e3: any) {
       console.warn(`[STORAGE_FAILURE] MySQL saveUser app_collections mirror notice for user "${uName}":`, e3?.message || e3);
     }
@@ -1563,6 +1723,282 @@ export const MysqlRepository = {
             throw cErr;
           }
         }
+      } else if (tableName === 'programs') {
+        const sql = `
+          INSERT INTO programs (id, title, grade, teacher_id, teacher_name, classroom_id, day_of_week, start_time, end_time, type, parent_program_id, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            title = ?,
+            grade = ?,
+            teacher_id = ?,
+            teacher_name = ?,
+            classroom_id = ?,
+            day_of_week = ?,
+            start_time = ?,
+            end_time = ?,
+            type = ?,
+            parent_program_id = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+        const titleVal = row.title || 'برنامه بدون عنوان';
+        const gradeVal = row.grade || 'نامشخص';
+        const teacherIdVal = cleanNullableStr(row.teacher_id);
+        const teacherNameVal = cleanNullableStr(row.teacher_name || row.teacher);
+        const classroomIdVal = cleanNullableStr(row.classroom_id || row.classroom || row.madrasRoom);
+        const dayVal = cleanNullableStr(row.day_of_week || row.day);
+        const startTimeVal = cleanNullableStr(row.start_time || row.startTime);
+        const endTimeVal = cleanNullableStr(row.end_time || row.endTime);
+        const typeVal = cleanNullableStr(row.type) || 'اصلی';
+        const parentProgVal = cleanNullableStr(row.parent_program_id || row.parentProgramId);
+        const dataJson = JSON.stringify(row.data || {});
+
+        const params = [
+          row.id, titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, dataJson,
+          titleVal, gradeVal, teacherIdVal, teacherNameVal, classroomIdVal, dayVal, startTimeVal, endTimeVal, typeVal, parentProgVal, dataJson
+        ];
+
+        try {
+          await pool.query(sql, params);
+        } catch (pErr: any) {
+          if (pErr?.code === 'ER_NO_SUCH_TABLE' || pErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`programs\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`title\` VARCHAR(255) NOT NULL,
+                \`grade\` VARCHAR(100) NOT NULL,
+                \`teacher_id\` VARCHAR(100) NULL,
+                \`teacher_name\` VARCHAR(255) NULL,
+                \`classroom_id\` VARCHAR(100) NULL,
+                \`day_of_week\` VARCHAR(50) NULL,
+                \`start_time\` VARCHAR(20) NULL,
+                \`end_time\` VARCHAR(20) NULL,
+                \`type\` VARCHAR(50) NULL DEFAULT 'اصلی',
+                \`parent_program_id\` VARCHAR(100) NULL,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_programs_grade\` (\`grade\`),
+                INDEX \`idx_programs_teacher\` (\`teacher_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          } else if (pErr?.code === 'ER_BAD_FIELD_ERROR' || pErr?.message?.includes('Unknown column')) {
+            // Auto-heal missing columns on live MySQL
+            try { await pool.query('ALTER TABLE programs ADD COLUMN type VARCHAR(50) NULL DEFAULT "اصلی"'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs ADD COLUMN parent_program_id VARCHAR(100) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs ADD COLUMN data JSON NULL'); } catch (e) {}
+            await pool.query(sql, params);
+          } else {
+            throw pErr;
+          }
+        }
+      } else if (tableName === 'attendance') {
+        const sql = `
+          INSERT INTO attendance (id, student_id, date, program_id, grade, present_count, absent_count, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            date = ?,
+            program_id = ?,
+            grade = ?,
+            present_count = ?,
+            absent_count = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+        const studentIdVal = cleanNullableStr(row.student_id);
+        const dateVal = row.date || new Date().toISOString().split('T')[0];
+        const programIdVal = cleanNullableStr(row.program_id || row.programId);
+        const gradeVal = row.grade || 'نامشخص';
+        const presentCountVal = Number(row.present_count ?? row.presentCount) || 0;
+        const absentCountVal = Number(row.absent_count ?? row.absentCount) || 0;
+        const dataJson = JSON.stringify(row.data || {});
+
+        const params = [
+          row.id, studentIdVal, dateVal, programIdVal, gradeVal, presentCountVal, absentCountVal, dataJson,
+          studentIdVal, dateVal, programIdVal, gradeVal, presentCountVal, absentCountVal, dataJson
+        ];
+
+        try {
+          await pool.query(sql, params);
+        } catch (aErr: any) {
+          if (aErr?.code === 'ER_NO_SUCH_TABLE' || aErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`attendance\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NULL,
+                \`date\` VARCHAR(50) NOT NULL,
+                \`program_id\` VARCHAR(100) NULL,
+                \`grade\` VARCHAR(100) NULL,
+                \`present_count\` INT NOT NULL DEFAULT 0,
+                \`absent_count\` INT NOT NULL DEFAULT 0,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_attendance_date\` (\`date\`),
+                INDEX \`idx_attendance_program\` (\`program_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          } else if (aErr?.code === 'ER_BAD_FIELD_ERROR' || aErr?.message?.includes('Unknown column') || aErr?.message?.includes("doesn't have a default value")) {
+            // Auto-heal missing columns on live MySQL
+            try { await pool.query('ALTER TABLE attendance MODIFY COLUMN student_id VARCHAR(100) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE attendance ADD COLUMN grade VARCHAR(100) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE attendance ADD COLUMN present_count INT NOT NULL DEFAULT 0'); } catch (e) {}
+            try { await pool.query('ALTER TABLE attendance ADD COLUMN absent_count INT NOT NULL DEFAULT 0'); } catch (e) {}
+            try { await pool.query('ALTER TABLE attendance ADD COLUMN data JSON NULL'); } catch (e) {}
+            await pool.query(sql, params);
+          } else {
+            throw aErr;
+          }
+        }
+      } else if (tableName === 'teachers') {
+        const sql = `
+          INSERT INTO teachers (id, name, specialty, phone, email, is_active, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            name = ?,
+            specialty = ?,
+            phone = ?,
+            email = ?,
+            is_active = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+        const nameVal = row.name || 'نامشخص';
+        const specialtyVal = cleanNullableStr(row.specialty);
+        const phoneVal = cleanNullableStr(row.phone);
+        const emailVal = cleanNullableStr(row.email);
+        const activeVal = row.is_active !== undefined ? (row.is_active ? 1 : 0) : 1;
+        const dataJson = JSON.stringify(row.data || {});
+
+        const params = [
+          row.id, nameVal, specialtyVal, phoneVal, emailVal, activeVal, dataJson,
+          nameVal, specialtyVal, phoneVal, emailVal, activeVal, dataJson
+        ];
+
+        try {
+          await pool.query(sql, params);
+        } catch (tErr: any) {
+          if (tErr?.code === 'ER_NO_SUCH_TABLE' || tErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`teachers\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`name\` VARCHAR(255) NOT NULL,
+                \`specialty\` VARCHAR(255) NULL,
+                \`phone\` VARCHAR(50) NULL,
+                \`email\` VARCHAR(150) NULL,
+                \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_teacher_active\` (\`is_active\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          } else {
+            throw tErr;
+          }
+        }
+      } else if (tableName === 'enrollments') {
+        const sql = `
+          INSERT INTO enrollments (id, student_id, program_id, grade, status, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            program_id = ?,
+            grade = ?,
+            status = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+        const studentIdVal = row.student_id || row.studentId || 'unknown';
+        const programIdVal = row.program_id || row.programId || 'unknown';
+        const gradeVal = cleanNullableStr(row.grade);
+        const statusVal = row.status || 'enrolled';
+        const dataJson = JSON.stringify(row.data || {});
+
+        const params = [
+          row.id, studentIdVal, programIdVal, gradeVal, statusVal, dataJson,
+          studentIdVal, programIdVal, gradeVal, statusVal, dataJson
+        ];
+
+        try {
+          await pool.query(sql, params);
+        } catch (eErr: any) {
+          if (eErr?.code === 'ER_NO_SUCH_TABLE' || eErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`enrollments\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NOT NULL,
+                \`program_id\` VARCHAR(100) NOT NULL,
+                \`grade\` VARCHAR(100) NULL,
+                \`status\` VARCHAR(50) NOT NULL DEFAULT 'enrolled',
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_enrollments_student\` (\`student_id\`),
+                INDEX \`idx_enrollments_program\` (\`program_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          } else {
+            throw eErr;
+          }
+        }
+      } else if (tableName === 'student_requests') {
+        const sql = `
+          INSERT INTO student_requests (id, student_id, unit, type, status, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            unit = ?,
+            type = ?,
+            status = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+        const studentIdVal = row.student_id || row.studentId || 'unknown';
+        const unitVal = row.unit || 'آموزش';
+        const typeVal = row.type || 'عمومی';
+        const statusVal = row.status || 'pending';
+        const dataJson = JSON.stringify(row.data || {});
+
+        const params = [
+          row.id, studentIdVal, unitVal, typeVal, statusVal, dataJson,
+          studentIdVal, unitVal, typeVal, statusVal, dataJson
+        ];
+
+        try {
+          await pool.query(sql, params);
+        } catch (srErr: any) {
+          if (srErr?.code === 'ER_NO_SUCH_TABLE' || srErr?.message?.includes("doesn't exist")) {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS \`student_requests\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NOT NULL,
+                \`unit\` VARCHAR(100) NOT NULL,
+                \`type\` VARCHAR(100) NOT NULL,
+                \`status\` VARCHAR(50) NOT NULL DEFAULT 'pending',
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_req_student\` (\`student_id\`),
+                INDEX \`idx_req_unit\` (\`unit\`),
+                INDEX \`idx_req_status\` (\`status\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            await pool.query(sql, params);
+          } else {
+            throw srErr;
+          }
+        }
       }
     } catch (e: any) {
       console.error(`[MySQL Dedicated Table Error] ${tableName}:`, e?.message || e);
@@ -1589,24 +2025,28 @@ export const MysqlRepository = {
     }
 
     // Also delete from dedicated tables if applicable
+    const delTable = async (table: string) => {
+      try {
+        await pool.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] MySQL deleteDocument ${table} table error for id "${id}":`, e?.message || e);
+      }
+    };
+
     if (collectionName === 'students') {
-      try {
-        await pool.query(`DELETE FROM students WHERE id = ?`, [id]);
-      } catch (e: any) {
-        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated students table error for id "${id}":`, e?.message || e);
-      }
+      await delTable('students');
     } else if (collectionName === 'teachers') {
-      try {
-        await pool.query(`DELETE FROM teachers WHERE id = ?`, [id]);
-      } catch (e: any) {
-        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated teachers table error for id "${id}":`, e?.message || e);
-      }
-    } else if (collectionName === 'classrooms') {
-      try {
-        await pool.query(`DELETE FROM classrooms WHERE id = ?`, [id]);
-      } catch (e: any) {
-        console.error(`[STORAGE_FAILURE] MySQL deleteDocument dedicated classrooms table error for id "${id}":`, e?.message || e);
-      }
+      await delTable('teachers');
+    } else if (collectionName === 'classrooms' || collectionName === 'classes') {
+      await delTable('classrooms');
+    } else if (collectionName === 'programs') {
+      await delTable('programs');
+    } else if (collectionName === 'attendance') {
+      await delTable('attendance');
+    } else if (collectionName === 'enrollments') {
+      await delTable('enrollments');
+    } else if (collectionName === 'student_requests') {
+      await delTable('student_requests');
     } else if (collectionName === 'system_users' || collectionName === 'all_users') {
       try {
         await pool.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
@@ -1667,23 +2107,31 @@ export const MysqlRepository = {
       console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
     }
 
-    // Check dedicated table and merge (JSON in app_collections takes absolute priority)
+    const checkDedicated = async (table: string, colName: string) => {
+      try {
+        const [dRows]: any = await pool.query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [id]);
+        if (dRows && dRows.length > 0) {
+          const dedicatedRec = mapDedicatedRowToRecord(colName, dRows[0]);
+          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
+        }
+      } catch (e) {}
+      return appDoc;
+    };
+
     if (collectionName === 'students') {
-      try {
-        const [sRows]: any = await pool.query(`SELECT * FROM students WHERE id = ? LIMIT 1`, [id]);
-        if (sRows && sRows.length > 0) {
-          const dedicatedRec = mapDedicatedRowToRecord('students', sRows[0]);
-          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
-        }
-      } catch (e) {}
+      return checkDedicated('students', 'students');
     } else if (collectionName === 'classrooms' || collectionName === 'classes') {
-      try {
-        const [cRows]: any = await pool.query(`SELECT * FROM classrooms WHERE id = ? LIMIT 1`, [id]);
-        if (cRows && cRows.length > 0) {
-          const dedicatedRec = mapDedicatedRowToRecord('classrooms', cRows[0]);
-          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
-        }
-      } catch (e) {}
+      return checkDedicated('classrooms', 'classrooms');
+    } else if (collectionName === 'programs') {
+      return checkDedicated('programs', 'programs');
+    } else if (collectionName === 'attendance') {
+      return checkDedicated('attendance', 'attendance');
+    } else if (collectionName === 'teachers') {
+      return checkDedicated('teachers', 'teachers');
+    } else if (collectionName === 'enrollments') {
+      return checkDedicated('enrollments', 'enrollments');
+    } else if (collectionName === 'student_requests') {
+      return checkDedicated('student_requests', 'student_requests');
     } else if (collectionName === 'system_users' || collectionName === 'all_users' || collectionName === 'users') {
       try {
         const [uRows]: any = await pool.query(
@@ -1691,31 +2139,8 @@ export const MysqlRepository = {
           [id, id]
         );
         if (uRows && uRows.length > 0) {
-          const u = uRows[0];
-          const userRec = {
-            id: u.id,
-            username: u.username,
-            name: u.name,
-            fullName: u.name,
-            role: u.role,
-            roleTitle: u.role_title,
-            level: u.level,
-            gradeLabel: u.grade_label,
-            grade: u.grade_label,
-            mentorId: u.mentor_id,
-            studentId: u.student_id,
-            linkedStudentId: u.linked_student_id,
-            teacherId: u.teacher_id,
-            avatarBg: u.avatar_bg,
-            allowedTabs: typeof u.allowed_tabs === 'string' ? JSON.parse(u.allowed_tabs) : u.allowed_tabs,
-            editableTabs: typeof u.editable_tabs === 'string' ? JSON.parse(u.editable_tabs) : u.editable_tabs,
-            modulePermissions: typeof u.module_permissions === 'string' ? JSON.parse(u.module_permissions) : u.module_permissions,
-            isActive: Boolean(u.is_active),
-            isReadOnly: Boolean(u.is_read_only),
-            canEdit: Boolean(u.can_edit),
-            mustChangePassword: Boolean(u.must_change_password)
-          };
-          return appDoc ? { ...userRec, ...appDoc } : userRec;
+          const dedicatedRec = mapDedicatedRowToRecord('system_users', uRows[0]);
+          return appDoc ? { ...dedicatedRec, ...appDoc } : dedicatedRec;
         }
       } catch (e) {}
     }
@@ -1742,28 +2167,35 @@ export const MysqlRepository = {
       });
     } catch (e) {}
 
+    const queryDedicatedByIds = async (table: string, colName: string) => {
+      try {
+        const placeholders = ids.map(() => '?').join(', ');
+        const [dRows]: any = await pool.query(
+          `SELECT * FROM ${table} WHERE id IN (${placeholders})`,
+          ids
+        );
+        return mergeDedicatedAndDocumentRows(colName, dRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    };
+
     if (collectionName === 'students') {
-      try {
-        const placeholders = ids.map(() => '?').join(', ');
-        const [studentRows]: any = await pool.query(
-          `SELECT * FROM students WHERE id IN (${placeholders})`,
-          ids
-        );
-        return mergeDedicatedAndDocumentRows('students', studentRows || [], appDocItems);
-      } catch (e) {
-        return appDocItems;
-      }
+      return queryDedicatedByIds('students', 'students');
     } else if (collectionName === 'classrooms' || collectionName === 'classes') {
-      try {
-        const placeholders = ids.map(() => '?').join(', ');
-        const [classRows]: any = await pool.query(
-          `SELECT * FROM classrooms WHERE id IN (${placeholders})`,
-          ids
-        );
-        return mergeDedicatedAndDocumentRows('classrooms', classRows || [], appDocItems);
-      } catch (e) {
-        return appDocItems;
-      }
+      return queryDedicatedByIds('classrooms', 'classrooms');
+    } else if (collectionName === 'programs') {
+      return queryDedicatedByIds('programs', 'programs');
+    } else if (collectionName === 'attendance') {
+      return queryDedicatedByIds('attendance', 'attendance');
+    } else if (collectionName === 'teachers') {
+      return queryDedicatedByIds('teachers', 'teachers');
+    } else if (collectionName === 'enrollments') {
+      return queryDedicatedByIds('enrollments', 'enrollments');
+    } else if (collectionName === 'student_requests') {
+      return queryDedicatedByIds('student_requests', 'student_requests');
+    } else if (collectionName === 'system_users' || collectionName === 'all_users' || collectionName === 'users') {
+      return queryDedicatedByIds('all_users', 'system_users');
     }
 
     return appDocItems;
@@ -1789,21 +2221,32 @@ export const MysqlRepository = {
       console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
     }
 
-    // If this collection has a dedicated table, query it and merge (JSON in app_collections takes absolute priority)
+    const queryDedicatedAll = async (table: string, colName: string) => {
+      try {
+        const [dRows]: any = await pool.query(`SELECT * FROM ${table} ORDER BY updated_at DESC`);
+        return mergeDedicatedAndDocumentRows(colName, dRows || [], appDocItems);
+      } catch (e) {
+        return appDocItems;
+      }
+    };
+
+    let result = appDocItems;
     if (collectionName === 'students') {
-      try {
-        const [studentRows]: any = await pool.query(`SELECT * FROM students ORDER BY updated_at DESC`);
-        return mergeDedicatedAndDocumentRows('students', studentRows || [], appDocItems);
-      } catch (e) {
-        return appDocItems;
-      }
+      result = await queryDedicatedAll('students', 'students');
     } else if (collectionName === 'classrooms' || collectionName === 'classes') {
-      try {
-        const [classRows]: any = await pool.query(`SELECT * FROM classrooms ORDER BY updated_at DESC`);
-        return mergeDedicatedAndDocumentRows('classrooms', classRows || [], appDocItems);
-      } catch (e) {
-        return appDocItems;
-      }
+      result = await queryDedicatedAll('classrooms', 'classrooms');
+    } else if (collectionName === 'programs') {
+      result = await queryDedicatedAll('programs', 'programs');
+    } else if (collectionName === 'attendance') {
+      result = await queryDedicatedAll('attendance', 'attendance');
+    } else if (collectionName === 'teachers') {
+      result = await queryDedicatedAll('teachers', 'teachers');
+    } else if (collectionName === 'enrollments') {
+      result = await queryDedicatedAll('enrollments', 'enrollments');
+    } else if (collectionName === 'student_requests') {
+      result = await queryDedicatedAll('student_requests', 'student_requests');
+    } else if (collectionName === 'system_users' || collectionName === 'all_users' || collectionName === 'users') {
+      result = await queryDedicatedAll('all_users', 'system_users');
     }
 
     const duration = Date.now() - startTime;
@@ -1811,7 +2254,7 @@ export const MysqlRepository = {
       logSlowQuery(collectionName, duration, `SELECT id, data FROM app_collections WHERE collection_name = '${collectionName}' ORDER BY updated_at DESC`);
     }
 
-    return appDocItems;
+    return result;
   }
 };
 

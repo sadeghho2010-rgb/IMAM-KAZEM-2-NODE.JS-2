@@ -185,10 +185,31 @@ export function getPendingLocalDocsMap(): Map<string, PendingLocalDoc> {
   return new Map();
 }
 
+export function normalizeCollectionName(name: string): string {
+  if (!name) return name;
+  const n = String(name).trim().toLowerCase();
+  if (n === 'users' || n === 'all_users' || n === 'user') return 'system_users';
+  if (n === 'classes' || n === 'classroom') return 'classrooms';
+  if (n === 'student') return 'students';
+  if (n === 'teacher') return 'teachers';
+  if (n === 'program') return 'programs';
+  if (n === 'research_records') return 'research';
+  if (n === 'student_claims') return 'finance_student_claims';
+  if (n === 'destination_accounts') return 'finance_destination_accounts';
+  if (n === 'loans') return 'finance_loans';
+  if (n === 'fund_contributions') return 'finance_fund_contributions';
+  if (n === 'lunch_students') return 'finance_lunch_students';
+  if (n === 'lunch_periods' || n === 'meal_reservation_periods') return 'finance_meal_periods';
+  if (n === 'lunch_reservations' || n === 'meal_reservations') return 'finance_student_meal_reservations';
+  if (n === 'operational_expenses' || n === 'expenses') return 'finance_operational_expenses';
+  if (n === 'lockers') return 'student_lockers';
+  return name;
+}
+
 export function markPendingLocalDoc(collection: string, id: string, action: 'upsert' | 'delete', data?: any) {
   if (typeof window === 'undefined') return;
   try {
-    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const normCol = normalizeCollectionName(collection);
     const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
     const map = getPendingLocalDocsMap();
     map.set(`${normCol}::${cleanId}`, {
@@ -205,7 +226,7 @@ export function markPendingLocalDoc(collection: string, id: string, action: 'ups
 export function removePendingLocalDoc(collection: string, id: string) {
   if (typeof window === 'undefined') return;
   try {
-    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const normCol = normalizeCollectionName(collection);
     const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
     const map = getPendingLocalDocsMap();
     if (map.delete(`${normCol}::${cleanId}`)) {
@@ -217,7 +238,7 @@ export function removePendingLocalDoc(collection: string, id: string) {
 export function isPendingLocalDoc(collection: string, id: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const normCol = collection === 'student' ? 'students' : (collection === 'teacher' ? 'teachers' : (collection === 'classroom' || collection === 'class' ? 'classrooms' : collection));
+    const normCol = normalizeCollectionName(collection);
     const cleanId = String(id).includes('::') ? String(id).split('::')[1] : String(id);
     const map = getPendingLocalDocsMap();
     const item = map.get(`${normCol}::${cleanId}`);
@@ -1032,14 +1053,15 @@ class LocalDatabase {
         const pendingLocalMap = getPendingLocalDocsMap();
 
         // 1. Collect pending deletions
+        const normCol = normalizeCollectionName(resolvedCol);
         const pendingDeleteIds = new Set<string>();
         syncQueue.forEach(q => {
-          if (q.collectionName === resolvedCol && q.action === 'delete') {
+          if (normalizeCollectionName(q.collectionName) === normCol && q.action === 'delete') {
             pendingDeleteIds.add(String(q.id));
           }
         });
         pendingLocalMap.forEach(item => {
-          if (item.collection === resolvedCol && item.action === 'delete') {
+          if (normalizeCollectionName(item.collection) === normCol && item.action === 'delete') {
             pendingDeleteIds.add(String(item.id));
           }
         });
@@ -1048,19 +1070,19 @@ class LocalDatabase {
         const pendingUpsertDocs = new Map<string, any>();
         const pendingUpsertMeta = new Map<string, PendingLocalDoc>();
         pendingLocalMap.forEach(item => {
-          if (item.collection === resolvedCol && item.action === 'upsert' && item.data) {
+          if (normalizeCollectionName(item.collection) === normCol && item.action === 'upsert' && item.data) {
             const sid = String(item.id);
             pendingUpsertDocs.set(sid, item.data);
             pendingUpsertMeta.set(sid, item);
           }
         });
         syncQueue.forEach(q => {
-          if (q.collectionName === resolvedCol && q.action === 'upsert' && q.data) {
+          if (normalizeCollectionName(q.collectionName) === normCol && q.action === 'upsert' && q.data) {
             const sid = String(q.id);
             pendingUpsertDocs.set(sid, q.data);
             if (!pendingUpsertMeta.has(sid)) {
               pendingUpsertMeta.set(sid, {
-                collection: resolvedCol,
+                collection: normCol,
                 id: sid,
                 action: 'upsert',
                 timestamp: q.timestamp || Date.now(),
@@ -1218,7 +1240,8 @@ class LocalDatabase {
               const doc = json.item;
               const localDoc = await this.getDoc(resolvedCol, id);
               const pendingMap = getPendingLocalDocsMap();
-              if (pendingMap.has(`${resolvedCol}::${id}`)) {
+              const normKey = `${normalizeCollectionName(resolvedCol)}::${id}`;
+              if (pendingMap.has(normKey) || pendingMap.has(`${resolvedCol}::${id}`)) {
                 return;
               }
 
@@ -1432,8 +1455,9 @@ class LocalDatabase {
     }
     this.notify();
 
-    // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000).then((res: any) => {
+    // 2. Synchronous Server Write Await (Eliminating Race Conditions with immediate caller refetches)
+    try {
+      const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, record, 12000);
       if (res.success) {
         const finalDoc = res.item && typeof res.item === 'object' ? res.item : record;
         this.setLocalStorageDoc(resolvedCol, finalDoc);
@@ -1448,18 +1472,17 @@ class LocalDatabase {
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
-        // Guarantee: Keep data permanently applied in local database and queue for background sync
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
       }
-    }).catch((err: any) => {
+    } catch (err: any) {
       console.error(`[STORAGE_FAILURE] Client addDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
-    });
+    }
 
     return id;
   }
 
-  // Update existing document (Optimistic UI: Local Cache First, Background Server Sync, Zero Rollback)
+  // Update existing document (Optimistic UI: Local Cache First, Awaited Server Sync, Zero Rollback)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1495,8 +1518,9 @@ class LocalDatabase {
     }
     this.notify();
 
-    // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000).then((res: any) => {
+    // 2. Synchronous Server Write Await (Eliminating Race Conditions with immediate caller refetches)
+    try {
+      const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000);
       if (res.success) {
         const finalDoc = res.item && typeof res.item === 'object' ? res.item : updated;
         this.setLocalStorageDoc(resolvedCol, finalDoc);
@@ -1512,16 +1536,15 @@ class LocalDatabase {
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
-        // Guarantee: Never rollback on server errors or offline. Retain local edit and queue for retry.
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
       }
-    }).catch((err: any) => {
+    } catch (err: any) {
       console.error(`[STORAGE_FAILURE] Client updateDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
-    });
+    }
   }
 
-  // Delete a document (Optimistic UI: Instant 0ms Purge, Background Cloud Sync)
+  // Delete a document (Optimistic UI: Instant 0ms Purge, Awaited Cloud Sync)
   async deleteDoc(collectionName: CollectionName, id: string): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -1545,8 +1568,9 @@ class LocalDatabase {
     }
     this.notify();
 
-    // 2. Non-blocking Background Server Write
-    saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 12000).then((res) => {
+    // 2. Synchronous Server Write Await
+    try {
+      const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 12000);
       if (res.success) {
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
@@ -1554,10 +1578,10 @@ class LocalDatabase {
         console.error(`[STORAGE_FAILURE] Client deleteDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
       }
-    }).catch((err: any) => {
+    } catch (err: any) {
       console.error(`[STORAGE_FAILURE] Client deleteDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
       enqueueSync({ action: 'delete', collectionName: resolvedCol, id, data: undefined });
-    });
+    }
   }
 
   // Fetch authoritative collections from Server in 1 optimized bootstrap request on startup / login

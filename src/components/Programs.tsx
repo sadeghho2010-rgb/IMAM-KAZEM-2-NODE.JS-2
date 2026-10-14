@@ -1119,6 +1119,7 @@ export default function Programs() {
         );
         if (u) {
           await localDb.updateDoc('users', u.id, {
+            ...u,
             role: 'class_representative',
             roleTitle: 'نماینده کلاس',
             scope: 'class'
