@@ -931,8 +931,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setUsers(prev => {
       let targetUser: AppUser | undefined;
+      const cleanId = String(id).toUpperCase();
+      const studentId = updates.linkedStudentId || updates.studentId || (id.startsWith('user_fallback_') ? id.replace('user_fallback_', '') : undefined);
+      const cleanUsername = (updates.username || '').trim().toUpperCase();
+
       const updatedList = prev.map(u => {
-        if (u.id === id || u.username.toUpperCase() === id.toUpperCase()) {
+        const uId = String(u.id);
+        const uUname = (u.username || '').trim().toUpperCase();
+        const uStudentId = String(u.linkedStudentId || u.studentId || '');
+
+        const matchesId = uId === id || uUname === cleanId;
+        const matchesStudent = Boolean(studentId && uStudentId && uStudentId === String(studentId));
+        const matchesUsername = Boolean(cleanUsername && uUname === cleanUsername);
+
+        if (matchesId || matchesStudent || matchesUsername) {
           let finalModulePermissions: Record<string, 'none' | 'view' | 'edit'> = {};
           let finalAllowedTabs: string[] = [];
           let finalEditableTabs: string[] = [];
@@ -978,6 +990,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const updated: AppUser = { 
             ...u, 
             ...updates,
+            id: u.id && !u.id.startsWith('user_fallback_') ? u.id : (id.startsWith('user_fallback_') ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : id),
+            username: cleanUsername || uUname || cleanId,
+            linkedStudentId: studentId || u.linkedStudentId || u.studentId,
+            studentId: studentId || u.studentId || u.linkedStudentId,
             allowedTabs: finalAllowedTabs,
             editableTabs: finalEditableTabs,
             modulePermissions: finalModulePermissions,
@@ -997,6 +1013,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return u;
       });
 
+      if (!targetUser) {
+        const fallbackUname = cleanUsername || cleanId;
+        const realUserId = id.startsWith('user_fallback_') ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : id;
+        const defaultAllowed = updates.allowedTabs || ['todos', 'students'];
+        const defaultEditable = updates.editableTabs || [];
+        const defaultPerms: Record<string, 'none' | 'view' | 'edit'> = {};
+        ALL_SYSTEM_TABS.forEach(tab => {
+          if (defaultAllowed.includes(tab.id)) {
+            defaultPerms[tab.id] = defaultEditable.includes(tab.id) ? 'edit' : 'view';
+          } else {
+            defaultPerms[tab.id] = 'none';
+          }
+        });
+
+        targetUser = {
+          id: realUserId,
+          username: fallbackUname,
+          name: updates.name || updates.fullName || fallbackUname,
+          fullName: updates.fullName || updates.name || fallbackUname,
+          level: updates.level || 3,
+          role: updates.role || 'student',
+          roleTitle: updates.roleTitle || 'طلبه',
+          scope: updates.scope || 'self',
+          gradeLabel: updates.gradeLabel || '',
+          linkedStudentId: studentId,
+          studentId: studentId,
+          studentName: updates.studentName || updates.name,
+          isActive: updates.isActive !== undefined ? updates.isActive : true,
+          isReadOnly: updates.isReadOnly || false,
+          canEdit: updates.canEdit !== undefined ? updates.canEdit : true,
+          allowedTabs: defaultAllowed,
+          editableTabs: defaultEditable,
+          modulePermissions: updates.modulePermissions || defaultPerms,
+          avatarBg: updates.avatarBg || 'bg-emerald-600',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...updates
+        } as AppUser;
+
+        updatedList.push(targetUser);
+      }
+
       try {
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
       } catch (e) {}
@@ -1006,12 +1064,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           method: 'POST',
           headers,
           credentials: 'include',
-          body: JSON.stringify({ targetUserId: targetUser.id, updates: targetUser })
+          body: JSON.stringify({ 
+            targetUserId: id, 
+            updates: {
+              ...targetUser,
+              ...(updates.password ? { password: updates.password } : {})
+            } 
+          })
         }).then(res => {
           if (res.status === 401 || res.status === 403) logout();
         }).catch(err => {
           console.warn('Backend update-user warning:', err);
         });
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_users_updated', { detail: updatedList }));
       }
 
       return updatedList;

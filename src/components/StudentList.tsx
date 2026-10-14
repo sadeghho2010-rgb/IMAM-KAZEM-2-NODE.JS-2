@@ -146,7 +146,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     try {
       if (editingCredUser) {
         // Update
-        updateUser(editingCredUser.id, {
+        await updateUser(editingCredUser.id, {
           username: cleanUsername,
           password: credPassword.trim(),
           name: selectedStudentForCredentials.name,
@@ -154,6 +154,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           linkedStudentId: selectedStudentForCredentials.id,
           studentId: selectedStudentForCredentials.id,
           studentName: selectedStudentForCredentials.name,
+          level: 3,
+          role: 'student',
+          roleTitle: 'طلبه',
+          gradeLabel: selectedStudentForCredentials.grade || '',
+          isActive: true
         });
 
         // Synchronize student document directly so change emits across all clients

@@ -292,24 +292,46 @@ export class AuthController {
       }
 
       const users = await fetchAllUsersFromStorage();
-      const existing = users.find(u => u.id === target || u.username.toUpperCase() === String(target).toUpperCase());
+      let existing = users.find(u => 
+        u.id === target || 
+        u.username.toUpperCase() === String(target).toUpperCase() ||
+        (updates?.username && u.username.toUpperCase() === String(updates.username).toUpperCase()) ||
+        (updates?.linkedStudentId && (String(u.linkedStudentId) === String(updates.linkedStudentId) || String(u.studentId) === String(updates.linkedStudentId))) ||
+        (updates?.studentId && (String(u.linkedStudentId) === String(updates.studentId) || String(u.studentId) === String(updates.studentId))) ||
+        (String(target).startsWith('user_fallback_') && (String(u.linkedStudentId) === String(target).replace('user_fallback_', '') || String(u.studentId) === String(target).replace('user_fallback_', '')))
+      );
 
-      if (!existing) {
-        return res.status(404).json({ success: false, message: 'کاربر مورد نظر یافت نشد.' });
-      }
-
-      let passwordHash = existing.passwordHash;
       const safeUpdates = { ...(updates || {}) };
-      if (safeUpdates.password && safeUpdates.password.trim() !== '') {
-        const plainPassword = safeUpdates.password.trim();
+      const rawNewUsername = safeUpdates.username || safeUpdates.nationalCode || safeUpdates.nationalId || (existing ? existing.username : target);
+      const newUsername = String(rawNewUsername).trim().toUpperCase();
+
+      let passwordHash = existing ? existing.passwordHash : '';
+      if (safeUpdates.password && String(safeUpdates.password).trim() !== '') {
+        const plainPassword = String(safeUpdates.password).trim();
         passwordHash = await hashPassword(plainPassword);
+      } else if (!passwordHash) {
+        passwordHash = await hashPassword('123456');
       }
       delete safeUpdates.password;
 
-      const oldUsername = existing.username.toUpperCase();
-      const rawNewUsername = safeUpdates.username || safeUpdates.nationalCode || safeUpdates.nationalId || existing.username;
-      const newUsername = String(rawNewUsername).trim().toUpperCase();
+      if (!existing) {
+        existing = {
+          id: String(target).startsWith('user_fallback_') ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : String(target),
+          username: newUsername,
+          name: safeUpdates.name || safeUpdates.fullName || newUsername,
+          fullName: safeUpdates.fullName || safeUpdates.name || newUsername,
+          role: safeUpdates.role || 'student',
+          level: safeUpdates.level || 3,
+          roleTitle: safeUpdates.roleTitle || 'طلبه',
+          scope: safeUpdates.scope || 'self',
+          passwordHash,
+          isActive: safeUpdates.isActive !== undefined ? safeUpdates.isActive : true,
+          linkedStudentId: safeUpdates.linkedStudentId || safeUpdates.studentId,
+          studentId: safeUpdates.studentId || safeUpdates.linkedStudentId,
+        };
+      }
 
+      const oldUsername = existing.username.toUpperCase();
       const newGradeLabel = safeUpdates.gradeLabel || safeUpdates.grade || existing.gradeLabel || existing.grade;
 
       const updatedUser: StoredUser = {
@@ -326,32 +348,35 @@ export class AuthController {
       delete (updatedUser as any).password;
 
       // If username (national code) changed, purge old username record so it does not revert or duplicate
-      if (newUsername !== oldUsername) {
+      if (newUsername !== oldUsername && oldUsername && !oldUsername.startsWith('USER_FALLBACK_')) {
         await deleteUserFromStorage(oldUsername);
       }
 
       await saveUserToStorage(updatedUser);
 
       // Bidirectional sync: Update corresponding student record in 'students' collection if present
-      const studentId = updatedUser.linkedStudentId || updatedUser.studentId;
+      const studentId = updatedUser.linkedStudentId || updatedUser.studentId || (String(target).startsWith('user_fallback_') ? String(target).replace('user_fallback_', '') : undefined);
       try {
         const students = await serverQueryCollection('students');
         const targetStudent = students.find((s: any) => 
           (studentId && String(s.id) === String(studentId)) ||
           (s.nationalId && String(s.nationalId).trim().toUpperCase() === oldUsername) ||
           (s.nationalId && String(s.nationalId).trim().toUpperCase() === newUsername) ||
-          (s.name && String(s.name).trim() === String(existing.name).trim())
+          (s.name && String(s.name).trim() === String(existing?.name).trim())
         );
         if (targetStudent) {
           const studentPayload = {
             ...targetStudent,
-            nationalId: newUsername,
+            hasUserAccount: true,
+            userAccountUsername: newUsername,
+            nationalId: targetStudent.nationalId || newUsername,
             grade: newGradeLabel || targetStudent.grade,
             name: updatedUser.name || updatedUser.fullName || targetStudent.name,
             isActive: updatedUser.isActive !== undefined ? updatedUser.isActive : targetStudent.isActive,
             updatedAt: new Date().toISOString()
           };
           await serverSaveDoc('students', studentPayload);
+          notifyRealtimeChange('students', studentPayload.id, 'upsert');
         }
       } catch (sErr) {
         console.warn('Non-fatal student sync error in updateUser:', sErr);
