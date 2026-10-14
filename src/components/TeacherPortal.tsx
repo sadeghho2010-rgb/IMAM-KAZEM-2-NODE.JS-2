@@ -101,8 +101,36 @@ export default function TeacherPortal() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedSessionDate, setSelectedSessionDate] = useState<string>('');
   const [teacherNotesMap, setTeacherNotesMap] = useState<Record<string, string>>({});
+  const [localDraftGrades, setLocalDraftGrades] = useState<Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }>>({});
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Sync draft state with saved database grades when session date or grades update
+  useEffect(() => {
+    if (!selectedSessionDate) return;
+    const initialMap: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
+    
+    grades.forEach(g => {
+      if (g.sessionDate === selectedSessionDate) {
+        initialMap[g.studentId] = {
+          participationScore: g.participationScore,
+          researchScore: g.researchScore,
+          counselorFeedback: g.counselorFeedback || ''
+        };
+      }
+    });
+
+    setLocalDraftGrades(prev => {
+      const merged = { ...initialMap };
+      Object.keys(prev).forEach(studentId => {
+        merged[studentId] = {
+          ...initialMap[studentId],
+          ...prev[studentId]
+        };
+      });
+      return merged;
+    });
+  }, [selectedSessionDate, grades]);
 
   // Helper to read local database cache directly into React state
   const loadLocalCachedData = useCallback(async () => {
@@ -645,80 +673,25 @@ export default function TeacherPortal() {
 
   /**
    * Separate factor grading handler for Participation and Research/Summary scores.
-   * Completely decoupled: setting participation does not force research, and vice versa.
+   * Completely decoupled and kept strictly in local draft state until master save.
    */
-  const handleSetStudentFactorScore = async (
+  const handleSetStudentFactorScore = (
     student: Student,
     factor: 'participation' | 'research',
     score: CounselingScore
   ) => {
     if (!activeCounselingCourse || !selectedSessionDate) return;
 
-    try {
-      const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
-      
-      // Find ALL matching existing records for this student on this session date
-      const matchingExisting = grades.filter(g => 
-        g.studentId === student.id &&
-        g.sessionDate === selectedSessionDate
-      );
-
-      const existingPrimary = matchingExisting[0] || null;
-
-      // Delete any extra duplicate old records if multiple exist
-      if (matchingExisting.length > 1) {
-        for (let i = 1; i < matchingExisting.length; i++) {
-          await localDb.deleteDoc('counseling_session_grades', matchingExisting[i].id);
+    setLocalDraftGrades(prev => {
+      const existing = prev[student.id] || {};
+      return {
+        ...prev,
+        [student.id]: {
+          ...existing,
+          [factor === 'participation' ? 'participationScore' : 'researchScore']: score
         }
-      }
-
-      const feedback = teacherNotesMap[student.id] !== undefined 
-        ? teacherNotesMap[student.id] 
-        : (existingPrimary?.counselorFeedback || '');
-
-      const docId = existingPrimary?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}`;
-
-      const updatedParticipation = factor === 'participation' 
-        ? score 
-        : existingPrimary?.participationScore;
-
-      const updatedResearch = factor === 'research' 
-        ? score 
-        : existingPrimary?.researchScore;
-
-      const gradeDoc: CounselingSessionGrade = {
-        id: docId,
-        studentId: student.id,
-        studentName: student.name,
-        grade: student.grade || activeCounselingCourse.grade || 'عمومی',
-        counselorTeacherName: teacherName,
-        courseTitle: activeCounselingCourse.title,
-        sessionDate: selectedSessionDate,
-        sessionNumber: `جلسه ${classSessionDates.find(s => s.date === selectedSessionDate)?.sessionNumber || 1}`,
-        participationScore: updatedParticipation as CounselingScore,
-        researchScore: updatedResearch as CounselingScore,
-        counselorFeedback: feedback.trim() || undefined,
-        createdAt: existingPrimary?.createdAt || new Date().toISOString(),
-        createdByName: currentUser?.name || teacherName,
-        createdByRole: 'استاد',
-        updatedAt: new Date().toISOString()
       };
-
-      await localDb.setDoc('counseling_session_grades', gradeDoc);
-
-      const removedIds = new Set(matchingExisting.map(m => m.id));
-      setGrades(prev => [...prev.filter(g => !removedIds.has(g.id) && g.id !== docId), gradeDoc]);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
-      }
-
-      setFeedbackSavedStudentId(student.id);
-      setTimeout(() => setFeedbackSavedStudentId(null), 1500);
-    } catch (err) {
-      console.error('Error saving counseling factor score:', err);
-      showToast('خطا در ثبت نمره ارزیابی');
-    }
+    });
   };
 
   /**
@@ -745,16 +718,22 @@ export default function TeacherPortal() {
       const allRemovedIds: string[] = [];
 
       for (const student of enrolledStudents) {
+        const draft = localDraftGrades[student.id];
         const matchingExisting = grades.filter(g => 
           g.studentId === student.id &&
           g.sessionDate === selectedSessionDate
         );
 
         const existingPrimary = matchingExisting[0] || null;
-        const pendingNote = teacherNotesMap[student.id];
-        const feedback = pendingNote !== undefined ? pendingNote.trim() : (existingPrimary?.counselorFeedback || '');
 
-        if (existingPrimary || pendingNote !== undefined || existingPrimary?.participationScore || existingPrimary?.researchScore) {
+        const partScore = draft?.participationScore ?? existingPrimary?.participationScore;
+        const resScore = draft?.researchScore ?? existingPrimary?.researchScore;
+        const pendingNote = teacherNotesMap[student.id];
+        const feedback = draft?.counselorFeedback !== undefined 
+          ? draft.counselorFeedback 
+          : (pendingNote !== undefined ? pendingNote.trim() : (existingPrimary?.counselorFeedback || ''));
+
+        if (partScore || resScore || feedback.trim()) {
           if (matchingExisting.length > 1) {
             for (let i = 1; i < matchingExisting.length; i++) {
               await localDb.deleteDoc('counseling_session_grades', matchingExisting[i].id);
@@ -775,9 +754,9 @@ export default function TeacherPortal() {
             courseTitle: activeCounselingCourse.title,
             sessionDate: selectedSessionDate,
             sessionNumber: sessionLabel,
-            participationScore: existingPrimary?.participationScore as CounselingScore,
-            researchScore: existingPrimary?.researchScore as CounselingScore,
-            counselorFeedback: feedback || undefined,
+            participationScore: partScore || 'الف',
+            researchScore: resScore || 'الف',
+            counselorFeedback: feedback.trim() || undefined,
             createdAt: existingPrimary?.createdAt || new Date().toISOString(),
             createdByName: currentUser?.name || teacherName,
             createdByRole: 'استاد',
@@ -1251,7 +1230,13 @@ export default function TeacherPortal() {
                       </span>
                     </span>
                     <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
-                      {toPersianDigits(sessionGradesMap.size)} از {toPersianDigits(enrolledStudents.length)} ارزیابی شدند
+                      {toPersianDigits(
+                        enrolledStudents.filter(s => {
+                          const d = localDraftGrades[s.id];
+                          const eg = sessionGradesMap.get(s.id);
+                          return Boolean(d?.participationScore || d?.researchScore || eg?.participationScore || eg?.researchScore);
+                        }).length
+                      )} از {toPersianDigits(enrolledStudents.length)} ارزیابی شدند
                     </span>
                   </div>
 
@@ -1267,9 +1252,10 @@ export default function TeacherPortal() {
                     </div>
                   ) : (
                     enrolledStudents.map(student => {
+                      const draft = localDraftGrades[student.id];
                       const existingGrade = sessionGradesMap.get(student.id);
-                      const partScore = existingGrade?.participationScore;
-                      const resScore = existingGrade?.researchScore;
+                      const partScore = draft?.participationScore !== undefined ? draft.participationScore : existingGrade?.participationScore;
+                      const resScore = draft?.researchScore !== undefined ? draft.researchScore : existingGrade?.researchScore;
                       const isFeedbackSaved = feedbackSavedStudentId === student.id;
 
                       return (
@@ -1384,9 +1370,19 @@ export default function TeacherPortal() {
                               <input
                                 type="text"
                                 placeholder="یادداشت یا ملاحظه استاد درباره طلبه (اختیاری)..."
-                                value={teacherNotesMap[student.id] !== undefined ? teacherNotesMap[student.id] : (existingGrade?.counselorFeedback || '')}
-                                onChange={(e) => setTeacherNotesMap({ ...teacherNotesMap, [student.id]: e.target.value })}
-                                onBlur={() => handleSaveStudentNote(student.id, student.name)}
+                                value={draft?.counselorFeedback !== undefined 
+                                  ? draft.counselorFeedback 
+                                  : (teacherNotesMap[student.id] !== undefined ? teacherNotesMap[student.id] : (existingGrade?.counselorFeedback || ''))}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setLocalDraftGrades(prev => ({
+                                    ...prev,
+                                    [student.id]: {
+                                      ...(prev[student.id] || {}),
+                                      counselorFeedback: val
+                                    }
+                                  }));
+                                }}
                                 className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                               />
                               {isFeedbackSaved && (
