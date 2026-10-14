@@ -373,8 +373,7 @@ export default function CounselingClasses() {
       for (const row of batchStudentsList) {
         const matchingDocs = allExistingGrades.filter(g => 
           g.studentId === row.studentId &&
-          g.sessionDate === sessionDate &&
-          (g.courseTitle === courseTitle || !g.courseTitle || g.counselorTeacherName === teacherName)
+          g.sessionDate === sessionDate
         );
 
         // Delete all old/previous evaluation records for this student on this session date

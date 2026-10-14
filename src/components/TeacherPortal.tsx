@@ -592,7 +592,6 @@ export default function TeacherPortal() {
     if (!activeCounselingCourse || !selectedSessionDate) return new Map<string, CounselingSessionGrade>();
 
     const map = new Map<string, CounselingSessionGrade>();
-    const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name;
 
     // Sort grades by newest updatedAt/createdAt first
     const sortedGrades = [...grades].sort((a, b) => 
@@ -600,21 +599,14 @@ export default function TeacherPortal() {
     );
 
     sortedGrades.forEach(g => {
-      if (
-        g.sessionDate === selectedSessionDate &&
-        (
-          g.courseTitle === activeCounselingCourse.title || 
-          !g.courseTitle ||
-          (teacherName && g.counselorTeacherName === teacherName)
-        )
-      ) {
+      if (g.sessionDate === selectedSessionDate) {
         if (!map.has(g.studentId)) {
           map.set(g.studentId, g);
         }
       }
     });
     return map;
-  }, [grades, activeCounselingCourse, selectedSessionDate, currentTeacherObj]);
+  }, [grades, activeCounselingCourse, selectedSessionDate]);
 
   // Grade completion status for each held session date
   const sessionGradingStats = useMemo(() => {
@@ -624,10 +616,7 @@ export default function TeacherPortal() {
     classSessionDates.forEach(session => {
       let graded = 0;
       grades.forEach(g => {
-        if (
-          g.sessionDate === session.date &&
-          (g.courseTitle === activeCounselingCourse?.title || !g.courseTitle)
-        ) {
+        if (g.sessionDate === session.date) {
           if (enrolledStudents.some(s => s.id === g.studentId)) {
             if (g.participationScore || g.researchScore) {
               graded++;
@@ -643,7 +632,7 @@ export default function TeacherPortal() {
     });
 
     return stats;
-  }, [classSessionDates, enrolledStudents, grades, activeCounselingCourse]);
+  }, [classSessionDates, enrolledStudents, grades]);
 
   const getSessionRelativeLabel = (session: { date: string; isToday?: boolean }, idx: number) => {
     if (session.isToday) return 'کلاس همان روز (امروز)';
@@ -671,12 +660,7 @@ export default function TeacherPortal() {
       // Find ALL matching existing records for this student on this session date
       const matchingExisting = grades.filter(g => 
         g.studentId === student.id &&
-        g.sessionDate === selectedSessionDate &&
-        (
-          g.courseTitle === activeCounselingCourse.title || 
-          !g.courseTitle || 
-          g.counselorTeacherName === teacherName
-        )
+        g.sessionDate === selectedSessionDate
       );
 
       const existingPrimary = matchingExisting[0] || null;
@@ -763,12 +747,7 @@ export default function TeacherPortal() {
       for (const student of enrolledStudents) {
         const matchingExisting = grades.filter(g => 
           g.studentId === student.id &&
-          g.sessionDate === selectedSessionDate &&
-          (
-            g.courseTitle === activeCounselingCourse.title || 
-            !g.courseTitle || 
-            g.counselorTeacherName === teacherName
-          )
+          g.sessionDate === selectedSessionDate
         );
 
         const existingPrimary = matchingExisting[0] || null;
