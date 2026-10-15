@@ -219,24 +219,34 @@ export function mergeDedicatedAndDocumentRows(
     const docId = String(doc.id);
     const existing = mergedMap.get(docId);
     if (existing) {
-      // Start with doc (complete JSON), then overlay non-empty/non-default existing fields
-      const merged: any = { ...doc };
-      for (const key of Object.keys(existing)) {
-        const val = existing[key];
-        if (val === undefined || val === null) continue;
-        if (typeof val === 'string' && (val === 'نامشخص' || val === 'کلاس بدون عنوان' || val === 'برنامه بدون عنوان') && doc[key] && doc[key] !== val) {
-          continue;
+      const docTs = extractRecordTs(doc);
+      const existingTs = extractRecordTs(existing);
+
+      if (docTs >= existingTs) {
+        // Updated JSON document is newer or equal: JSON document takes priority!
+        const merged: any = { ...existing, ...doc };
+        delete merged._appUpdatedAt;
+        mergedMap.set(docId, merged);
+      } else {
+        // Dedicated row is newer: overlay non-empty existing fields onto doc
+        const merged: any = { ...doc };
+        for (const key of Object.keys(existing)) {
+          const val = existing[key];
+          if (val === undefined || val === null) continue;
+          if (typeof val === 'string' && (val === 'نامشخص' || val === 'کلاس بدون عنوان' || val === 'برنامه بدون عنوان') && doc[key] && doc[key] !== val) {
+            continue;
+          }
+          if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
+            continue;
+          }
+          merged[key] = val;
         }
-        if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
-          continue;
+        delete merged._appUpdatedAt;
+        if (!merged.updatedAt) {
+          merged.updatedAt = doc.updatedAt || existing.updatedAt || new Date().toISOString();
         }
-        merged[key] = val;
+        mergedMap.set(docId, merged);
       }
-      delete merged._appUpdatedAt;
-      if (!merged.updatedAt) {
-        merged.updatedAt = doc.updatedAt || existing.updatedAt || new Date().toISOString();
-      }
-      mergedMap.set(docId, merged);
     } else {
       const copy = { ...doc };
       delete copy._appUpdatedAt;

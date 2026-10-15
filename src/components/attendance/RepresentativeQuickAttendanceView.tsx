@@ -66,6 +66,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const loadedLogKeyRef = React.useRef<string>('');
 
   useEffect(() => {
     loadData();
@@ -289,6 +290,13 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
     const cleanDate = selectedDate.replace(/\//g, '-');
     const expectedLogId = `${currentProgram.id}_${cleanDate}`;
+    const sessionKey = `${currentProgram.id}_${selectedDate}`;
+
+    if (loadedLogKeyRef.current === sessionKey && !isSaving) {
+      // Already initialized for this class session. Preserve user's live edits!
+      return;
+    }
+    loadedLogKeyRef.current = sessionKey;
 
     const existing = attendanceLogs.find(l => 
       l.id === expectedLogId || 
@@ -315,10 +323,9 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       setCancellationReason('');
       setHasSubstituteTeacher(false);
       setSubstituteTeacherName('');
-      // Default: empty or present
       setDraftAttendance({});
     }
-  }, [currentProgram, selectedDate, attendanceLogs]);
+  }, [currentProgram?.id, selectedDate, attendanceLogs, isSaving]);
 
   // Fast attendance status updater
   const handleSetStudentStatus = (studentId: string, status: AttendanceStatus) => {
@@ -421,6 +428,9 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         const filtered = prev.filter(l => l.id !== logId && !(l.programId === currentProgram.id && l.date === selectedDate));
         return [sessionLog, ...filtered];
       });
+
+      // Reset log key ref so fresh saved session log is acknowledged
+      loadedLogKeyRef.current = `${currentProgram.id}_${selectedDate}`;
 
       setSaveSuccessMsg(`حضور و غیاب کلاس «${currentProgram.title}» برای تاریخ ${selectedDate} با موفقیت ثبت و ذخیره گردید.`);
       setTimeout(() => setSaveSuccessMsg(''), 4500);
