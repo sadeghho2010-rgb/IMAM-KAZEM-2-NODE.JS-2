@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
-import { Student, StudyPeriod, PeriodicStudyLog } from '../types';
+import { Student, StudyPeriod, PeriodicStudyLog, StudyDailyEntry, CourseStudyDetail } from '../types';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -157,8 +157,81 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         setSelectedPeriodId(null);
       }
 
-      const rawLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
-      setAllLogs(rawLogs);
+      const [rawLogs, rawDailyEntries] = await Promise.all([
+        localDb.getDocs<PeriodicStudyLog>('periodic_study_logs'),
+        localDb.getDocs<StudyDailyEntry>('study_daily_entries')
+      ]);
+
+      // Automatically synthesize and merge any daily entries into periodic logs map
+      const mergedLogsMap = new Map<string, PeriodicStudyLog>();
+      (rawLogs || []).forEach(l => {
+        mergedLogsMap.set(`${l.periodId}_${l.studentId}`, l);
+      });
+
+      // Group daily entries by period and student
+      const entriesByPeriodStudent = new Map<string, StudyDailyEntry[]>();
+      (rawDailyEntries || []).forEach(e => {
+        if (!e.periodId || !e.studentId) return;
+        const key = `${e.periodId}_${e.studentId}`;
+        const existing = entriesByPeriodStudent.get(key) || [];
+        existing.push(e);
+        entriesByPeriodStudent.set(key, existing);
+      });
+
+      entriesByPeriodStudent.forEach((entries, key) => {
+        const [pId, stId] = key.split('_');
+        let cStudy = 0;
+        let cDisc = 0;
+        let free = 0;
+        const coursesMap = new Map<string, CourseStudyDetail>();
+
+        entries.forEach(e => {
+          free += (e.freeStudyMinutes || 0);
+          if (Array.isArray(e.coursesBreakdown) && e.coursesBreakdown.length > 0) {
+            e.coursesBreakdown.forEach(c => {
+              cStudy += (c.studyMinutes || 0);
+              cDisc += (c.discussionMinutes || 0);
+              const ex = coursesMap.get(c.courseId) || {
+                courseId: c.courseId,
+                courseTitle: c.courseTitle,
+                studyMinutes: 0,
+                discussionMinutes: 0
+              };
+              ex.studyMinutes += (c.studyMinutes || 0);
+              ex.discussionMinutes += (c.discussionMinutes || 0);
+              coursesMap.set(c.courseId, ex);
+            });
+          } else {
+            cStudy += Math.round((e.studyHours || 0) * 60);
+            cDisc += Math.round((e.discussionHours || 0) * 60);
+          }
+        });
+
+        const coreTotal = cStudy + cDisc;
+        const totalMin = coreTotal + free;
+        const existingLog = mergedLogsMap.get(key);
+
+        if (totalMin > 0) {
+          mergedLogsMap.set(key, {
+            id: existingLog?.id || `synth_${pId}_${stId}`,
+            periodId: pId,
+            studentId: stId,
+            hours: Math.round((totalMin / 60) * 100) / 100,
+            studyHours: Math.round((cStudy / 60) * 100) / 100,
+            discussionHours: Math.round((cDisc / 60) * 100) / 100,
+            totalMinutes: totalMin,
+            coreStudyMinutes: cStudy,
+            coreDiscussionMinutes: cDisc,
+            coreTotalMinutes: coreTotal,
+            freeStudyMinutes: free,
+            coursesBreakdown: Array.from(coursesMap.values()),
+            submittedBy: existingLog?.submittedBy || 'student',
+            lastModifiedAt: existingLog?.lastModifiedAt || new Date().toISOString()
+          });
+        }
+      });
+
+      setAllLogs(Array.from(mergedLogsMap.values()));
     } catch (error) {
       console.error("Error fetching study stats data:", error);
     }

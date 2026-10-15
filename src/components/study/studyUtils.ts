@@ -580,6 +580,10 @@ export async function addStudyDailyEntry(entry: {
   const newDoc = await localDb.addDoc('study_daily_entries', {
     periodId: entry.periodId,
     studentId: entry.studentId,
+    student_id: entry.studentId,
+    nationalId: (entry as any).nationalId || '',
+    studentName: (entry as any).studentName || '',
+    userId: (entry as any).userId || '',
     studyHours,
     discussionHours,
     totalHours,
@@ -712,6 +716,8 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
   );
 
   const payload: Partial<PeriodicStudyLog> = {
+    periodId,
+    studentId: targetStudentId,
     hours: totalSumHours,
     totalMinutes: totalMinutesSum,
     studyHours: totalStudyHours,
@@ -728,11 +734,7 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
   if (existingLog) {
     await localDb.updateDoc('periodic_study_logs', existingLog.id, payload);
   } else if (studentEntries.length > 0) {
-    await localDb.addDoc('periodic_study_logs', {
-      periodId,
-      studentId,
-      ...payload
-    });
+    await localDb.addDoc('periodic_study_logs', payload);
   }
 
   // Broadcast change event to trigger localDb listeners and active UI subscribers

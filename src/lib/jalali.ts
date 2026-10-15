@@ -232,3 +232,16 @@ export function getShamsi21To20Cycle(todayShamsi: string, monthOffset: number = 
 
   return { start, end, title };
 }
+
+// Subtract days from a Shamsi date string e.g. "1405/06/15" -> "1405/06/12"
+export function subtractDaysShamsi(shamsiStr: string, days: number): string {
+  if (!days || days <= 0) return shamsiStr;
+  try {
+    const d = shamsiToDate(shamsiStr);
+    d.setDate(d.getDate() - days);
+    return dateToShamsi(d);
+  } catch (e) {
+    return shamsiStr;
+  }
+}
+

@@ -159,7 +159,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
     });
 
     // Sort newest date first
-    return events.sort((a, b) => b.date.localeCompare(a.date));
+    return events.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   }, [attendanceRecords, studentIdentifiers, studentObj]);
 
   // Aggregate stats

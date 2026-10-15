@@ -335,7 +335,13 @@ export default function PeriodViewTable({
   // Precompute row data with warning statuses for filtering and rendering
   const studentRows = useMemo(() => {
     return students.map(student => {
-      const log = periodLogs.find(l => l.studentId === student.id);
+      const stIdStr = String(student.id || '').trim();
+      const stNat = String(student.nationalId || '').trim();
+      const log = periodLogs.find(l => {
+        const lStId = String(l.studentId || (l as any).student_id || '').trim();
+        const lNat = String((l as any).nationalId || (l as any).nationalCode || '').trim();
+        return (stIdStr && lStId === stIdStr) || (stNat && lNat === stNat) || (stNat && lStId === stNat);
+      });
       const metrics = getLogMetrics(log);
       const warningStatus = getStudyWarningStatus(period, log, student);
       const studentCourses = getStudentCourses(student.id, student.grade);

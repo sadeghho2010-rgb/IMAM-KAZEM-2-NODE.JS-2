@@ -68,69 +68,80 @@ export default function StudyEntryModal({
 
   const studyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const discussionInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const lastInitializedPeriodKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setExcelImportResult(null);
-      setShowExcelPreviewModal(false);
-      setExcelRows(null);
-      setManualStudentOverrides({});
-      setSelectedGradeFilter('all');
-      setManualGradeFilter('all');
-      setManualSearchQuery('');
+    if (!isOpen) {
+      lastInitializedPeriodKeyRef.current = null;
+      return;
+    }
 
-      // Fetch all active students from localDb to ensure no active student is missed regardless of UI filters
-      localDb.getDocs<Student>('students').then(list => {
-        const active = list.filter(s => s.isActive !== false);
-        const mergedMap = new Map<string, Student>();
-        students.forEach(s => mergedMap.set(s.id, s));
-        active.forEach(s => mergedMap.set(s.id, s));
-        setAllActiveStudents(Array.from(mergedMap.values()));
-      }).catch(err => {
-        console.error("Error fetching all active students:", err);
-        setAllActiveStudents(students);
+    const currentKey = editingPeriod ? `edit_${editingPeriod.id}` : 'new_period';
+    if (lastInitializedPeriodKeyRef.current === currentKey) {
+      // Already initialized for this period session. Do not wipe user's live keystrokes on background sync!
+      return;
+    }
+    lastInitializedPeriodKeyRef.current = currentKey;
+
+    setExcelImportResult(null);
+    setShowExcelPreviewModal(false);
+    setExcelRows(null);
+    setManualStudentOverrides({});
+    setSelectedGradeFilter('all');
+    setManualGradeFilter('all');
+    setManualSearchQuery('');
+
+    // Fetch all active students from localDb to ensure no active student is missed regardless of UI filters
+    localDb.getDocs<Student>('students').then(list => {
+      const active = list.filter(s => s.isActive !== false);
+      const mergedMap = new Map<string, Student>();
+      students.forEach(s => mergedMap.set(s.id, s));
+      active.forEach(s => mergedMap.set(s.id, s));
+      setAllActiveStudents(Array.from(mergedMap.values()));
+    }).catch(err => {
+      console.error("Error fetching all active students:", err);
+      setAllActiveStudents(students);
+    });
+
+    if (editingPeriod) {
+      setPeriodTitle(editingPeriod.title || '');
+      setStartDate(editingPeriod.startDate || '');
+      setEndDate(editingPeriod.endDate || '');
+      setDeadlineDate(editingPeriod.deadlineDate || '');
+      setIsClosed(editingPeriod.isClosed || false);
+      const totMins = editingPeriod.mandatoryMinutes ? editingPeriod.mandatoryMinutes : Math.round((editingPeriod.mandatoryHours || 0) * 60);
+      setMandatoryHours(totMins);
+      setMandatoryCoreMinutes(editingPeriod.mandatoryCoreMinutes ?? Math.round(totMins * 0.75));
+      setTargetGrades(editingPeriod.targetGrades && editingPeriod.targetGrades.length > 0 ? editingPeriod.targetGrades : ALL_SYSTEM_GRADES);
+      setWarningRule(editingPeriod.warningRule || 'none');
+
+      const pLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
+      const studyMap: Record<string, string> = {};
+      const discMap: Record<string, string> = {};
+
+      pLogs.forEach(l => {
+        const sMin = l.studyHours !== undefined ? Math.round(l.studyHours * 60) : Math.round((l.hours || 0) * 60);
+        const dMin = l.discussionHours !== undefined ? Math.round(l.discussionHours * 60) : 0;
+        if (sMin > 0) studyMap[l.studentId] = sMin.toString();
+        if (dMin > 0) discMap[l.studentId] = dMin.toString();
       });
 
-      if (editingPeriod) {
-        setPeriodTitle(editingPeriod.title || '');
-        setStartDate(editingPeriod.startDate || '');
-        setEndDate(editingPeriod.endDate || '');
-        setDeadlineDate(editingPeriod.deadlineDate || '');
-        setIsClosed(editingPeriod.isClosed || false);
-        const totMins = editingPeriod.mandatoryMinutes ? editingPeriod.mandatoryMinutes : Math.round((editingPeriod.mandatoryHours || 0) * 60);
-        setMandatoryHours(totMins);
-        setMandatoryCoreMinutes(editingPeriod.mandatoryCoreMinutes ?? Math.round(totMins * 0.75));
-        setTargetGrades(editingPeriod.targetGrades && editingPeriod.targetGrades.length > 0 ? editingPeriod.targetGrades : ALL_SYSTEM_GRADES);
-        setWarningRule(editingPeriod.warningRule || 'none');
-
-        const pLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
-        const studyMap: Record<string, string> = {};
-        const discMap: Record<string, string> = {};
-
-        pLogs.forEach(l => {
-          const sMin = l.studyHours !== undefined ? Math.round(l.studyHours * 60) : Math.round((l.hours || 0) * 60);
-          const dMin = l.discussionHours !== undefined ? Math.round(l.discussionHours * 60) : 0;
-          if (sMin > 0) studyMap[l.studentId] = sMin.toString();
-          if (dMin > 0) discMap[l.studentId] = dMin.toString();
-        });
-
-        setEntryStudyValues(studyMap);
-        setEntryDiscussionValues(discMap);
-      } else {
-        setPeriodTitle('');
-        setStartDate('');
-        setEndDate('');
-        setDeadlineDate('');
-        setIsClosed(false);
-        setMandatoryHours(1200);
-        setMandatoryCoreMinutes(900);
-        setTargetGrades(ALL_SYSTEM_GRADES);
-        setWarningRule('none');
-        setEntryStudyValues({});
-        setEntryDiscussionValues({});
-      }
+      setEntryStudyValues(studyMap);
+      setEntryDiscussionValues(discMap);
+    } else {
+      setPeriodTitle('');
+      setStartDate('');
+      setEndDate('');
+      setDeadlineDate('');
+      setIsClosed(false);
+      setMandatoryHours(1200);
+      setMandatoryCoreMinutes(900);
+      setTargetGrades(ALL_SYSTEM_GRADES);
+      setWarningRule('none');
+      setEntryStudyValues({});
+      setEntryDiscussionValues({});
     }
-  }, [isOpen, editingPeriod, allLogs, students]);
+  }, [isOpen, editingPeriod?.id]);
 
   const normalizePhone = (val: any): string => {
     if (val === null || val === undefined) return '';
@@ -224,7 +235,7 @@ export default function StudyEntryModal({
       });
     }
 
-    return Array.from(setG).sort((a, b) => a.localeCompare(b, 'fa'));
+    return Array.from(setG).sort((a, b) => String(a || '').localeCompare(String(b || ''), 'fa'));
   }, [allActiveStudents, excelRows, selectedGradeCol]);
 
   const isGradeMatchFilter = (excelGradeVal: any, studentGradeVal: string, filter: string): boolean => {

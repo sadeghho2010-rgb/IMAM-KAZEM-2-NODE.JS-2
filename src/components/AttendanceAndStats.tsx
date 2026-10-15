@@ -1510,14 +1510,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     if (reportSortBy === 'class') {
       list.sort((a, b) => {
-        const titleA = (a as any).programTitleSummary || '';
-        const titleB = (b as any).programTitleSummary || '';
-        const comp = titleA.localeCompare(titleB, 'fa');
+        const titleA = (a as any)?.programTitleSummary || '';
+        const titleB = (b as any)?.programTitleSummary || '';
+        const comp = String(titleA).localeCompare(String(titleB), 'fa');
         if (comp !== 0) return comp;
-        return b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa');
+        return (b?.absentCount || 0) - (a?.absentCount || 0) || String(a?.student?.name || '').localeCompare(String(b?.student?.name || ''), 'fa');
       });
     } else {
-      list.sort((a, b) => b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa'));
+      list.sort((a, b) => (b?.absentCount || 0) - (a?.absentCount || 0) || String(a?.student?.name || '').localeCompare(String(b?.student?.name || ''), 'fa'));
     }
 
     return list;
@@ -1609,7 +1609,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       if (!reportShowAllStudents) {
         stList = stList.filter(s => s.absentCount > 0 || s.excusedCount > 0);
       }
-      stList.sort((a, b) => b.absentCount - a.absentCount || a.student.name.localeCompare(b.student.name, 'fa'));
+      stList.sort((a, b) => (b?.absentCount || 0) - (a?.absentCount || 0) || String(a?.student?.name || '').localeCompare(String(b?.student?.name || ''), 'fa'));
       return {
         ...cGroup,
         studentsList: stList
@@ -1797,7 +1797,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       );
     }
 
-    return list.sort((a, b) => b.commitmentPercent - a.commitmentPercent || a.name.localeCompare(b.name, 'fa'));
+    return list.sort((a, b) => (b?.commitmentPercent || 0) - (a?.commitmentPercent || 0) || String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
   }, [programs, students, users, attendanceRecords, repSearchQuery]);
 
   // Handler to save Education Manager note for a representative

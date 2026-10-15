@@ -1743,11 +1743,7 @@ export default function MainDashboard({
             {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
             <div
               onClick={() => {
-                if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) {
-                  onNavigateTab('attendance');
-                } else {
-                  alert('اطلاعیه: شما نماینده هیچ کلاسی نیستید. ثبت حضور و غیاب توسط نماینده منتخب کلاس انجام می‌پذیرد.');
-                }
+                onNavigateTab('rep-attendance');
               }}
               className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-purple-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900"
             >
@@ -1769,7 +1765,7 @@ export default function MainDashboard({
             {/* Card 4: ثبت خوداظهاری (مخصوص دروس دارای خوداظهاری) */}
             <div
               onClick={() => {
-                onNavigateTab('attendance');
+                onNavigateTab('self-reporting');
               }}
               className="relative overflow-hidden rounded-2xl p-4 sm:p-5 text-white shadow-lg shadow-slate-950/30 border border-teal-400/30 cursor-pointer active:scale-[0.98] hover:shadow-xl transition-all duration-300 group flex flex-col justify-between min-h-[125px] sm:min-h-[135px] select-none bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
             >

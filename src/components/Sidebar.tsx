@@ -99,6 +99,8 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'students',
       'active-students',
       'passed-courses',
+      'rep-attendance',
+      'self-reporting',
       'attendance',
       'discussion',
       'stats',
@@ -181,6 +183,8 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
   { id: 'article-evaluations', label: 'ارزیابی مقالات', icon: Award },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
+  { id: 'rep-attendance', label: 'ثبت حضور و غیاب (مخصوص نمایندگان)', icon: UserCheck },
+  { id: 'self-reporting', label: 'ثبت خوداظهاری حضور در کلاس', icon: CheckSquare },
   { id: 'course-selection', label: 'سامانه انتخاب واحد', icon: BookOpenCheck },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', icon: Award },
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', icon: BookCheck },
@@ -457,7 +461,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
     if (currentUser?.level === 3) {
       if (item.id === 'student-requests') label = 'پنل ثبت درخواست';
       if (item.id === 'student-schedule') label = 'برنامه درسی من';
-      if (item.id === 'attendance') label = (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.managedClassId) || Boolean((currentUser as any)?.representativeProgramIds?.length)) ? 'ثبت حضور و غیاب کلاس' : 'کارنامه حضور و غیاب من';
+      if (item.id === 'attendance') label = 'کارنامه حضور و غیاب من';
+      if (item.id === 'rep-attendance') label = 'ثبت حضور و غیاب (مخصوص نمایندگان)';
+      if (item.id === 'self-reporting') label = 'ثبت خوداظهاری حضور در کلاس';
       if (item.id === 'stats') label = 'ساعات مطالعه من';
       if (item.id === 'research') label = 'پژوهش و مقالات من';
       if (item.id === 'student-meals') label = 'رزرو نهار و شام';

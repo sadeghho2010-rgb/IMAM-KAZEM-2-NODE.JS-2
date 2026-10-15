@@ -324,15 +324,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
             <div
               onClick={() => {
-                if (isRepresentative) {
-                  onNavigateTab('attendance');
-                } else {
-                  setNoticeModal({
-                    title: 'اطلاعیه ثبت حضور و غیاب',
-                    message: 'شما نماینده هیچ کلاسی نیستید.',
-                    subtext: 'ثبت حضور و غیاب کلاس‌ها توسط نماینده منتخب هر کلاس انجام می‌پذیرد.'
-                  });
-                }
+                onNavigateTab('rep-attendance');
               }}
               className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-purple-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900"
             >
@@ -354,15 +346,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             {/* Card 4: ثبت خوداظهاری (مخصوص دروس دارای خوداظهاری) */}
             <div
               onClick={() => {
-                if (hasSelfReporting) {
-                  setIsSelfReportingModalOpen(true);
-                } else {
-                  setNoticeModal({
-                    title: 'اطلاعیه ثبت خوداظهاری',
-                    message: 'همه کلاس‌های شما توسط نماینده حضور و غیاب می‌شود.',
-                    subtext: 'شما در حال حاضر در هیچ کلاسی با قابلیت خوداظهاری عضویت ندارید.'
-                  });
-                }
+                onNavigateTab('self-reporting');
               }}
               className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-teal-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
             >

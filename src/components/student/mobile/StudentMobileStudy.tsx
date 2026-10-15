@@ -21,7 +21,7 @@ import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Student, StudyPeriod, StudyDailyEntry, Program, Enrollment, PeriodicStudyLog, CourseStudyDetail } from '../../../types';
 import { getTodayShamsi } from '../../../lib/jalali';
-import { formatMinutesToHoursAndMinutes, getStudyWarningStatus } from '../../study/studyUtils';
+import { formatMinutesToHoursAndMinutes, getStudyWarningStatus, syncAggregatePeriodicStudyLog } from '../../study/studyUtils';
 import FreeStudyRulesModal from '../../study/FreeStudyRulesModal';
 
 interface StudentMobileStudyProps {
@@ -93,8 +93,28 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       setEnrollments(allEnrolls);
       setAllLogs(allL);
 
-      const studentId = matched?.id || sId || currentUser?.id;
-      const myEntries = allDaily.filter(e => e.studentId === studentId);
+      const targetStudentId = matched?.id || sId || currentUser?.id;
+      const candidateIds = [
+        targetStudentId,
+        matched?.id,
+        matched?.studentCode,
+        matched?.nationalId,
+        sId,
+        currentUser?.id,
+        currentUser?.username
+      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+
+      const myEntries = allDaily.filter(e => {
+        const eIds = [
+          e.studentId,
+          (e as any).student_id,
+          (e as any).userId,
+          (e as any).nationalId,
+          (e as any).studentCode
+        ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+        return candidateIds.some(cid => eIds.includes(cid));
+      });
+
       setDailyEntries(myEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
     } catch (e) {
       console.warn('Error loading study data:', e);
@@ -281,9 +301,10 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     try {
       setIsSaving(true);
 
+      const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
       const newEntry: StudyDailyEntry = {
         id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        studentId,
+        studentId: effectiveStudentId,
         periodId: activePeriod.id,
         entryDate,
         studyHours: Math.round((totalCoreStudyMin / 60) * 10) / 10,
@@ -294,10 +315,24 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         coursesBreakdown: breakdown,
         freeStudyMinutes: parsedFreeMin,
         note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : `ثبت کارکرد روزانه دروس اصلی`,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        studentCode: studentObj?.studentCode || currentUser?.username,
+        nationalId: studentObj?.nationalId || currentUser?.username,
+        studentName: studentObj?.name || currentUser?.name || currentUser?.fullName || '',
+        userId: currentUser?.id
       };
 
       await localDb.setDoc('study_daily_entries', newEntry);
+
+      // Re-aggregate and update periodic_study_logs so Education Manager tables update immediately
+      try {
+        await syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student');
+        if (studentObj?.id && String(studentObj.id) !== effectiveStudentId) {
+          await syncAggregatePeriodicStudyLog(activePeriod.id, String(studentObj.id), 'student');
+        }
+      } catch (aggErr) {
+        console.warn('Error syncing aggregate periodic log:', aggErr);
+      }
 
       // Update state
       setDailyEntries(prev => [newEntry, ...prev]);
@@ -321,6 +356,10 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     try {
       await localDb.deleteDoc('study_daily_entries', entryId);
       setDailyEntries(prev => prev.filter(e => e.id !== entryId));
+      if (activePeriod) {
+        const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
+        await syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student');
+      }
     } catch (err) {
       console.warn('Error deleting daily entry:', err);
     }
@@ -646,50 +685,67 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         ) : (
           <div className="space-y-2 max-h-[350px] overflow-y-auto pr-0.5">
             {currentPeriodEntries.map(entry => {
-              const detail = entry.coursesBreakdown?.[0];
-              const cStudy = detail?.studyMinutes || (entry.studyHours ? Math.round(entry.studyHours * 60) : 0);
-              const cDisc = detail?.discussionMinutes || (entry.discussionHours ? Math.round(entry.discussionHours * 60) : 0);
+              const activeBreakdown = (entry.coursesBreakdown || []).filter(c => (c.studyMinutes || 0) > 0 || (c.discussionMinutes || 0) > 0);
+              const cStudy = (entry.coursesBreakdown || []).reduce((sum, c) => sum + (c.studyMinutes || 0), 0) || (entry.studyHours ? Math.round(entry.studyHours * 60) : 0);
+              const cDisc = (entry.coursesBreakdown || []).reduce((sum, c) => sum + (c.discussionMinutes || 0), 0) || (entry.discussionHours ? Math.round(entry.discussionHours * 60) : 0);
               const cFree = entry.freeStudyMinutes || 0;
-              const cTotal = cStudy + cDisc + cFree;
+              const cTotal = entry.totalMinutes || (cStudy + cDisc + cFree);
+
+              const courseSummaryTitle = activeBreakdown.length > 0 
+                ? activeBreakdown.map(c => c.courseTitle).join(' و ')
+                : (entry.note || 'کارکرد روزانه');
 
               return (
                 <div 
                   key={entry.id} 
                   className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/80 flex items-center justify-between gap-2"
                 >
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-1.5">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-black text-slate-900 truncate">
-                        {detail?.courseTitle || 'درس اصلی'}
+                        {courseSummaryTitle}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500 font-bold">
-                        {entry.entryDate || entry.createdAt.slice(0, 10)}
+                      <span className="text-[10px] font-mono text-slate-500 font-bold bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                        {entry.entryDate || (entry.createdAt ? entry.createdAt.slice(0, 10) : '')}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-600 font-medium">
-                      <span>مطالعه: {cStudy} د</span>
-                      <span>•</span>
-                      <span>مباحثه: {cDisc} د</span>
-                      {cFree > 0 && (
+
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-600 font-medium">
+                      {activeBreakdown.length > 0 ? (
+                        activeBreakdown.map((ab, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 bg-indigo-50/60 text-indigo-900 px-1.5 py-0.5 rounded border border-indigo-100">
+                            <span className="font-bold">{ab.courseTitle}:</span>
+                            <span>مطالعه {ab.studyMinutes || 0}د</span>
+                            <span>/</span>
+                            <span>مباحثه {ab.discussionMinutes || 0}د</span>
+                          </span>
+                        ))
+                      ) : (
                         <>
+                          <span>مطالعه: {cStudy} د</span>
                           <span>•</span>
-                          <span className="text-teal-700 font-bold">آزاد: {cFree} د</span>
+                          <span>مباحثه: {cDisc} د</span>
                         </>
+                      )}
+                      {cFree > 0 && (
+                        <span className="text-teal-700 font-bold bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                          آزاد: {cFree} د
+                        </span>
                       )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg">
+                    <span className="text-xs font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-lg">
                       {cTotal} د
                     </span>
                     <button
                       type="button"
                       onClick={() => handleDeleteEntry(entry.id)}
                       className="p-1 rounded-lg text-rose-500 hover:bg-rose-50 cursor-pointer transition-all"
-                      title="حذف"
+                      title="حذف این رکورد"
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>

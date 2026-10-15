@@ -181,7 +181,19 @@ export default function StudentStudyPortal({
   const loadDailyEntries = async () => {
     try {
       const allDaily = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
-      const filtered = allDaily.filter(e => e.studentId === student.id && e.periodId === activePeriodId);
+      const stIdStr = String(student.id || '').trim();
+      const stNat = String(student.nationalId || '').trim();
+
+      const filtered = allDaily.filter(e => {
+        const pMatch = String(e.periodId || (e as any).period_id || '').trim() === String(activePeriodId || '').trim();
+        if (!pMatch) return false;
+
+        const eStId = String(e.studentId || (e as any).student_id || '').trim();
+        const eNat = String((e as any).nationalId || (e as any).nationalCode || '').trim();
+
+        return (stIdStr && eStId === stIdStr) || (stNat && eNat === stNat) || (stNat && eStId === stNat);
+      });
+
       // Sort newest first
       const sorted = filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setDailyEntries(sorted);
@@ -214,8 +226,19 @@ export default function StudentStudyPortal({
   // Find existing aggregated log for current student & active period
   const currentPeriodLog = useMemo(() => {
     if (!currentPeriod) return null;
-    return allLogs.find(l => l.studentId === student.id && l.periodId === currentPeriod.id) || null;
-  }, [allLogs, student.id, currentPeriod]);
+    const stIdStr = String(student.id || '').trim();
+    const stNat = String(student.nationalId || '').trim();
+
+    return allLogs.find(l => {
+      const pMatch = String(l.periodId || (l as any).period_id || '').trim() === String(currentPeriod.id || '').trim();
+      if (!pMatch) return false;
+
+      const lStId = String(l.studentId || (l as any).student_id || '').trim();
+      const lNat = String((l as any).nationalId || (l as any).nationalCode || '').trim();
+
+      return (stIdStr && lStId === stIdStr) || (stNat && lNat === stNat) || (stNat && lStId === stNat);
+    }) || null;
+  }, [allLogs, student.id, student.nationalId, currentPeriod]);
 
   // Parsed minutes per course and free study
   const calculatedCoreStudyMinutes = useMemo(() => {
@@ -289,6 +312,9 @@ export default function StudentStudyPortal({
       await addStudyDailyEntry({
         periodId: currentPeriod.id,
         studentId: student.id,
+        nationalId: student.nationalId || currentUser?.username,
+        studentName: student.name || currentUser?.name,
+        userId: currentUser?.id,
         studyHours: calculatedCoreStudyMinutes / 60,
         discussionHours: calculatedCoreDiscussionMinutes / 60,
         coursesBreakdown,
@@ -297,7 +323,7 @@ export default function StudentStudyPortal({
         totalMinutes: calculatedTotalMinutes,
         submittedBy: currentUser?.level === 3 ? 'student' : 'officer',
         note: entryNoteInput.trim()
-      });
+      } as any);
 
       // Clear input boxes immediately after success
       setCourseStudyMinutes({});

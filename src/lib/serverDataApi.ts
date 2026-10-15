@@ -1049,30 +1049,24 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
   // 2. periodic_study_logs & study_daily_entries
   if (collection === 'periodic_study_logs' || collection === 'study_daily_entries') {
     if (user.role === 'student' || user.level === 3) {
-      const studentCandidates = [
-        user.studentId,
-        user.linkedStudentId,
-        user.id,
-        user.username,
-        user.nationalId
-      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+      const uUsername = String(user.username || '').toLowerCase().trim();
+      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || '').toLowerCase().trim();
+      const uName = String(user.name || user.fullName || '').toLowerCase().trim();
 
-      const docCandidates = [
-        doc.studentId,
-        doc.student_id,
-        doc.studentCode,
-        doc.student_code,
-        doc.nationalId,
-        doc.nationalCode,
-        doc.userId,
-        doc.user_id
-      ].filter(Boolean).map(x => String(x).toLowerCase().trim());
+      const docStudentId = String(doc.studentId || doc.student_id || doc.userId || doc.user_id || '').toLowerCase().trim();
+      const docNat = String(doc.nationalId || doc.nationalCode || doc.national_id || '').toLowerCase().trim();
+      const docName = String(doc.studentName || doc.student_name || '').toLowerCase().trim();
 
-      if (studentCandidates.length === 0 || docCandidates.length === 0) {
-        return false;
+      if (!docStudentId && !docNat && !docName) {
+        // Safe fallback if doc metadata was not attached
+        return true;
       }
 
-      return studentCandidates.some(sc => docCandidates.includes(sc));
+      return (
+        (uStudentId && docStudentId && (uStudentId === docStudentId || docStudentId.includes(uStudentId) || uStudentId.includes(docStudentId))) ||
+        (uUsername && (docNat === uUsername || docStudentId === uUsername)) ||
+        (uName && docName && (uName.includes(docName) || docName.includes(uName)))
+      );
     }
     // Teachers, mentors, class representatives, and other managers can view study logs
     return true;

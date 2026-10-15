@@ -72,6 +72,8 @@ import { StudentMobileStudy } from './components/student/mobile/StudentMobileStu
 import { StudentMobileSchedule } from './components/student/mobile/StudentMobileSchedule';
 import { StudentMobileSummary } from './components/student/mobile/StudentMobileSummary';
 import { StudentMobileDiscussion } from './components/student/mobile/StudentMobileDiscussion';
+import { RepresentativeQuickAttendanceView } from './components/attendance/RepresentativeQuickAttendanceView';
+import { StudentQuickSelfReportingView } from './components/attendance/StudentQuickSelfReportingView';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, LogOut, Settings, Eye, Palette, Bug, Sparkles, Sliders, ArrowRight, LayoutDashboard, ChevronLeft, ChevronRight, KeyRound } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -121,6 +123,8 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'lockers': 'students_group',
   'discussion': 'students_group',
   'counseling-classes': 'students_group',
+  'rep-attendance': 'students_group',
+  'self-reporting': 'students_group',
 
   'finance-tuition': 'finance_group',
   'finance-teachers': 'finance_group',
@@ -265,6 +269,8 @@ function AppContent() {
       case 'research': return 'پژوهش و مقالات علمی';
       case 'article-evaluations': return 'ارزیابی مقالات علمی';
       case 'attendance': return 'حضور و غیاب طلاب';
+      case 'rep-attendance': return 'ثبت حضور و غیاب (مخصوص نمایندگان)';
+      case 'self-reporting': return 'ثبت خوداظهاری حضور در کلاس';
       case 'course-selection': return 'سامانه انتخاب واحد';
       case 'oral-exams': return 'سامانه آزمون شفاهی فقه و اصول';
       case 'counseling-classes': return 'کلاس‌های مشاوره';
@@ -381,6 +387,10 @@ function AppContent() {
           return <StudentMobileAttendance onNavigateTab={handleNavigate} />;
         }
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
+      case 'rep-attendance':
+        return <RepresentativeQuickAttendanceView onNavigateTab={handleNavigate} />;
+      case 'self-reporting':
+        return <StudentQuickSelfReportingView onNavigateTab={handleNavigate} />;
       case 'course-selection':
         return <CourseSelection />;
       case 'oral-exams':

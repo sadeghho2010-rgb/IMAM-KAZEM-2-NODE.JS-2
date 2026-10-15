@@ -408,6 +408,8 @@ export interface Student {
   phone?: string;
   studentCode?: string;
   grade?: string;
+  status?: 'active' | 'inactive' | 'deleted' | string;
+  isDeleted?: boolean;
 
   // اطلاعات آموزشی
   managementCenterCode?: string; // کد مرکز مدیریت
@@ -816,6 +818,10 @@ export interface StudyDailyEntry {
   updatedAt?: string;
   submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer' | string;
   note?: string;
+  studentCode?: string;
+  nationalId?: string;
+  studentName?: string;
+  userId?: string;
 }
 
 export type CommentPriority = 'high' | 'medium' | 'low' | 'info';
