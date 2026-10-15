@@ -159,9 +159,17 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     return dates;
   }, [todayShamsi, allowedDaysCount]);
 
+  const loadedDateKeyRef = React.useRef<string>('');
+
   // Populate draft status for each course on date change or log change
   useEffect(() => {
     if (selfReportingPrograms.length === 0 || !selectedDate) return;
+
+    const sessionKey = `${selectedDate}_${selfReportingPrograms.map(p => p.id).sort().join('_')}`;
+    if (loadedDateKeyRef.current === sessionKey) {
+      return;
+    }
+    loadedDateKeyRef.current = sessionKey;
 
     const newDraft: Record<string, { status: AttendanceStatus; lateMinutes: number; note: string }> = {};
 

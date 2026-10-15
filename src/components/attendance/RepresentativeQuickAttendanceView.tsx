@@ -292,7 +292,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     const expectedLogId = `${currentProgram.id}_${cleanDate}`;
     const sessionKey = `${currentProgram.id}_${selectedDate}`;
 
-    if (loadedLogKeyRef.current === sessionKey && !isSaving) {
+    if (loadedLogKeyRef.current === sessionKey) {
       // Already initialized for this class session. Preserve user's live edits!
       return;
     }
@@ -325,7 +325,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       setSubstituteTeacherName('');
       setDraftAttendance({});
     }
-  }, [currentProgram?.id, selectedDate, attendanceLogs, isSaving]);
+  }, [currentProgram?.id, selectedDate, attendanceLogs]);
 
   // Fast attendance status updater
   const handleSetStudentStatus = (studentId: string, status: AttendanceStatus) => {

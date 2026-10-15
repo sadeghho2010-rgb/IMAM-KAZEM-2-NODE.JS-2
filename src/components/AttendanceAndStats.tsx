@@ -407,7 +407,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     const unsub = localDb.subscribe(() => {
       loadData(false);
     });
-    return () => unsub();
+
+    const handleDataEvent = () => {
+      loadData(false);
+    };
+
+    window.addEventListener('app_data_change', handleDataEvent);
+    window.addEventListener('attendance_updated', handleDataEvent);
+
+    // Guaranteed fast sync polling (every 3 seconds) for Education Manager
+    const fastSyncTimer = setInterval(() => {
+      loadData(false);
+    }, 3000);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataEvent);
+      window.removeEventListener('attendance_updated', handleDataEvent);
+      clearInterval(fastSyncTimer);
+    };
   }, []);
 
   // Save Settings
@@ -1737,40 +1755,42 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         const repMobile = u.phone || u.mobile || st?.fatherMobile || st?.mobile || '';
 
         const userProgs = programs.filter(p => 
-          p.representativeStudentIds?.includes(repId) ||
-          p.representativeStudentIds?.includes(u.studentId) ||
-          p.representativeNames?.includes(repName) ||
+          (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(repId) || p.representativeStudentIds.includes(u.studentId))) ||
+          (Array.isArray(p.representativeNames) && p.representativeNames.includes(repName)) ||
+          p.customRepresentative === repName ||
           p.id === u.managedClassId ||
-          p.grade === st?.grade
+          (Array.isArray((u as any).representativeProgramIds) && (u as any).representativeProgramIds.includes(p.id))
         );
 
-        if (!repMap.has(repId)) {
-          repMap.set(repId, {
-            id: repId,
-            name: repName,
-            studentCode: st?.studentCode,
-            nationalId: st?.nationalId || u.username,
-            mobile: repMobile,
-            grade: st?.grade,
-            managedClasses: userProgs,
-            totalSessionsExpected: 0,
-            recordedSessionsCount: 0,
-            commitmentPercent: 100
-          });
-        } else {
-          const item = repMap.get(repId)!;
-          if (!item.mobile && repMobile) item.mobile = repMobile;
-          userProgs.forEach(p => {
-            if (!item.managedClasses.some(cp => cp.id === p.id)) {
-              item.managedClasses.push(p);
-            }
-          });
+        if (userProgs.length > 0) {
+          if (!repMap.has(repId)) {
+            repMap.set(repId, {
+              id: repId,
+              name: repName,
+              studentCode: st?.studentCode,
+              nationalId: st?.nationalId || u.username,
+              mobile: repMobile,
+              grade: st?.grade,
+              managedClasses: userProgs,
+              totalSessionsExpected: 0,
+              recordedSessionsCount: 0,
+              commitmentPercent: 100
+            });
+          } else {
+            const item = repMap.get(repId)!;
+            if (!item.mobile && repMobile) item.mobile = repMobile;
+            userProgs.forEach(p => {
+              if (!item.managedClasses.some(cp => cp.id === p.id)) {
+                item.managedClasses.push(p);
+              }
+            });
+          }
         }
       }
     });
 
-    // Calculate commitment metrics for each rep
-    const list = Array.from(repMap.values());
+    // Calculate commitment metrics for each rep, filtering out those with zero active managed classes
+    const list = Array.from(repMap.values()).filter(r => r.managedClasses.length > 0);
     list.forEach(rep => {
       let expected = 0;
       let recorded = 0;
@@ -4087,6 +4107,32 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ===================================================================== */}
       {activeTab === 'report' && (
         <div className="space-y-6">
+          {/* Active Date Range Indicator Banner */}
+          <div className="bg-indigo-50 border border-indigo-200/80 rounded-2xl p-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-bold text-indigo-950 shadow-2xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <CalendarIcon size={16} className="text-indigo-600 shrink-0" />
+              <span>آمار و شاخص‌های آموزشی مربوط به بازه زمانی:</span>
+              <span className="bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 text-indigo-700 font-mono font-black">
+                {reportStartDate} تا {reportEndDate}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const today = getTodayShamsi();
+                  setReportStartDate(today);
+                  setReportEndDate(today);
+                  showToast('بازه آمار به «امروز» تغییر یافت.');
+                }}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+              >
+                <CalendarIcon size={13} />
+                <span>امروز</span>
+              </button>
+            </div>
+          </div>
+
           {/* Summary Metric Cards - 4 Modern Sleek Boxes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             {/* 1. Total Held Sessions */}
@@ -4353,22 +4399,37 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </select>
               </div>
 
-              {/* Start Date */}
-              <div>
-                <ShamsiDatePicker
-                  value={reportStartDate}
-                  onChange={(d) => setReportStartDate(d)}
-                  placeholder="از تاریخ..."
-                />
-              </div>
-
-              {/* End Date */}
-              <div>
-                <ShamsiDatePicker
-                  value={reportEndDate}
-                  onChange={(d) => setReportEndDate(d)}
-                  placeholder="تا تاریخ..."
-                />
+              {/* Start Date & End Date Filter with Today Button */}
+              <div className="col-span-1 sm:col-span-2 flex items-center gap-1.5">
+                <div className="flex-1">
+                  <ShamsiDatePicker
+                    value={reportStartDate}
+                    onChange={(d) => setReportStartDate(d)}
+                    placeholder="از تاریخ..."
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-400 shrink-0">تا</span>
+                <div className="flex-1">
+                  <ShamsiDatePicker
+                    value={reportEndDate}
+                    onChange={(d) => setReportEndDate(d)}
+                    placeholder="تا تاریخ..."
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = getTodayShamsi();
+                    setReportStartDate(today);
+                    setReportEndDate(today);
+                    showToast('بازه زمانی به «امروز» تغییر یافت.');
+                  }}
+                  className="px-2.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
+                  title="تنظیم بازه زمانی به تاریخ امروز"
+                >
+                  <CalendarIcon size={14} />
+                  <span>امروز</span>
+                </button>
               </div>
             </div>
           </div>
@@ -4827,133 +4888,102 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {representativesList.map(rep => {
                 const noteVal = repNotesMap[rep.id] || '';
                 return (
-                  <div key={rep.id} className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4 hover:border-indigo-200 transition-all">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                      {/* Rep Info & Phone Number with Copy Button */}
-                      <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center font-black text-indigo-700 text-sm shrink-0">
-                          <UserCheck size={22} />
+                  <div key={rep.id} className="bg-white rounded-xl p-3 border border-slate-200 shadow-2xs space-y-2.5 hover:border-indigo-300 transition-all text-xs">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                      {/* Rep Info */}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-black text-indigo-700 text-xs shrink-0">
+                          <UserCheck size={16} />
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm font-black text-slate-900">{rep.name}</h3>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="text-xs font-black text-slate-900 truncate">{rep.name}</h3>
                             {rep.grade && (
-                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-lg border border-slate-200">
+                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 text-[9.5px] font-bold rounded border border-slate-200">
                                 {rep.grade}
                               </span>
                             )}
-                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">
-                              نماینده کلاس
-                            </span>
                           </div>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium mt-1 flex-wrap">
-                            {rep.nationalId && <span>کد ملی / شناسه: <strong className="font-mono text-slate-700">{rep.nationalId}</strong></span>}
-                            {/* Copyable Phone Button */}
+                          <div className="flex items-center gap-2 text-[10.5px] text-slate-500 font-medium mt-0.5 flex-wrap">
                             {rep.mobile ? (
                               <button
                                 type="button"
                                 onClick={() => {
                                   navigator.clipboard.writeText(rep.mobile || '');
-                                  showToast(`شماره همراه ${rep.name} (${rep.mobile}) کپی گردید.`);
+                                  showToast(`شماره همراه ${rep.name} (${rep.mobile}) کپی شد.`);
                                 }}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-200 transition-all cursor-pointer shadow-2xs"
-                                title="کلیک کنید تا شماره همراه کپی شود"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold border border-emerald-200 transition-all cursor-pointer"
+                                title="کپی شماره همراه"
                               >
-                                <PhoneCall size={12} className="text-emerald-600" />
+                                <PhoneCall size={10} className="text-emerald-600" />
                                 <span className="font-mono dir-ltr">{rep.mobile}</span>
-                                <Copy size={12} className="text-emerald-600 shrink-0 ml-0.5" />
+                                <Copy size={10} className="text-emerald-600 ml-0.5" />
                               </button>
                             ) : (
-                              <span className="text-slate-400 italic text-[11px]">بدون شماره همراه ثبت‌شده</span>
+                              <span className="text-slate-400 text-[10px]">بدون شماره</span>
                             )}
                           </div>
                         </div>
                       </div>
 
                       {/* Commitment Rating Badge */}
-                      <div className="flex items-center gap-3 self-start lg:self-center bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-                        <div>
-                          <span className="text-[10px] font-bold text-slate-500 block">میزان تعهد نماینده به ثبت:</span>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className={cn(
-                              "px-2.5 py-0.5 rounded-lg text-xs font-black border font-mono",
-                              rep.commitmentPercent >= 90 
-                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                : rep.commitmentPercent >= 70
-                                ? "bg-amber-100 text-amber-900 border-amber-300"
-                                : "bg-rose-100 text-rose-800 border-rose-300"
-                            )}>
-                              {rep.commitmentPercent}٪ تعهد
-                            </span>
-                            <span className="text-[11px] text-slate-600 font-bold font-mono">
-                              ({rep.recordedSessionsCount} از {rep.totalSessionsExpected} جلسه)
-                            </span>
-                          </div>
-                        </div>
+                      <div className="shrink-0 text-left">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-[10px] font-black border font-mono inline-block",
+                          rep.commitmentPercent >= 90 
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : rep.commitmentPercent >= 70
+                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                            : "bg-rose-100 text-rose-800 border-rose-300"
+                        )}>
+                          {rep.commitmentPercent}٪ تعهد
+                        </span>
+                        <span className="text-[9.5px] text-slate-500 font-bold font-mono block mt-0.5">
+                          ({rep.recordedSessionsCount} از {rep.totalSessionsExpected})
+                        </span>
                       </div>
                     </div>
 
-                    {/* Side-by-side Managed Classes List */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                        <BookOpen size={14} className="text-indigo-600" />
-                        <span>کلاس‌های تحت مدیریت این نماینده ({rep.managedClasses.length} کلاس):</span>
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
+                    {/* Compact Managed Classes List */}
+                    <div className="space-y-1">
+                      <div className="text-[10.5px] font-bold text-slate-700 flex items-center gap-1">
+                        <BookOpen size={12} className="text-indigo-600" />
+                        <span>کلاس‌های فعال تحت نمایندگی ({rep.managedClasses.length}):</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
                         {rep.managedClasses.map(p => (
-                          <div
+                          <span
                             key={p.id}
-                            className="p-2 px-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs font-bold flex items-center gap-2 shadow-2xs"
+                            className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 text-[10px] font-bold border border-indigo-100 inline-flex items-center gap-1"
                           >
-                            <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
                             <span>{p.title}</span>
-                            {p.grade && (
-                              <span className="px-1.5 py-0.5 bg-indigo-200/80 text-indigo-900 text-[10px] font-extrabold rounded-md">
-                                {p.grade}
-                              </span>
-                            )}
-                            {(p.teacher || (p as any).teacherName) && (
-                              <span className="text-[10px] text-indigo-700 font-medium">
-                                (استاد {p.teacher || (p as any).teacherName})
-                              </span>
-                            )}
-                          </div>
+                            {p.grade && <span className="text-indigo-600 text-[9px]">({p.grade})</span>}
+                          </span>
                         ))}
                       </div>
                     </div>
 
                     {/* Education Manager Editable Notes Area (Saved to DB) */}
-                    <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                          <FileText size={13} className="text-indigo-600" />
-                          <span>توضیحات و یادداشت مسئول آموزش درباره این نماینده:</span>
-                        </label>
-                        <span className="text-[10px] text-slate-400 font-normal">
-                          (ذخیره‌سازی در دیتابیس)
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <textarea
-                          rows={2}
-                          placeholder="توضیحات انضباطی، تذکرات، نحوه عملکرد یا پیگیری‌های انجام‌شده برای این نماینده را بنویسید..."
-                          className="flex-1 p-2.5 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/60 focus:bg-white transition-all font-medium text-slate-800 leading-relaxed resize-y"
-                          value={noteVal}
-                          onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
-                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer flex items-center gap-1 shrink-0 self-end"
-                        >
-                          <Save size={14} />
-                          <span>ثبت توضیحات</span>
-                        </button>
-                      </div>
+                    <div className="pt-1.5 border-t border-slate-100 flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="یادداشت مسئول آموزش..."
+                        className="flex-1 px-2 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/80 focus:bg-white font-medium text-slate-800"
+                        value={noteVal}
+                        onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10.5px] font-black transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
+                      >
+                        <Save size={11} />
+                        <span>ذخیره</span>
+                      </button>
                     </div>
                   </div>
                 );
