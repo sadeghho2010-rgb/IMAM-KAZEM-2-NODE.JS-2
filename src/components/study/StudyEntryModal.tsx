@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Clock, ChevronDown, CheckCircle2, Info, BookOpen, MessageSquare, Calculator, FileSpreadsheet, Upload, Filter, AlertTriangle, ShieldAlert, CheckSquare, Square, Search, Users, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import DatePicker from "react-multi-date-picker";
-import persian from "react-date-object/calendars/persian";
-import persian_fa from "react-date-object/locales/persian_fa";
+import { ShamsiDatePicker } from '../ShamsiDatePicker';
 import * as XLSX from 'xlsx';
 import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
 import { localDb } from '../../lib/localDb';
@@ -853,24 +851,18 @@ export default function StudyEntryModal({
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-slate-600">تاریخ شروع</label>
-                <DatePicker
-                  calendar={persian}
-                  locale={persian_fa}
-                  calendarPosition="bottom-right"
-                  inputClass="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-slate-800 text-sm"
+                <ShamsiDatePicker
                   value={startDate}
-                  onChange={(date) => setStartDate(date?.toDate?.().toISOString() || '')}
+                  onChange={(val) => setStartDate(val)}
+                  placeholder="1403/08/01"
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-slate-600">تاریخ پایان</label>
-                <DatePicker
-                  calendar={persian}
-                  locale={persian_fa}
-                  calendarPosition="bottom-right"
-                  inputClass="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-slate-800 text-sm"
+                <ShamsiDatePicker
                   value={endDate}
-                  onChange={(date) => setEndDate(date?.toDate?.().toISOString() || '')}
+                  onChange={(val) => setEndDate(val)}
+                  placeholder="1403/08/07"
                 />
               </div>
               <div className="space-y-1.5">
@@ -916,13 +908,9 @@ export default function StudyEntryModal({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-slate-600">مهلت ثبت توسط طلاب (ددلاین خودکار)</label>
-                <DatePicker
-                  calendar={persian}
-                  locale={persian_fa}
-                  calendarPosition="bottom-right"
-                  inputClass="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold text-slate-800 text-sm"
+                <ShamsiDatePicker
                   value={deadlineDate}
-                  onChange={(date) => setDeadlineDate(date?.toDate?.().toISOString() || '')}
+                  onChange={(val) => setDeadlineDate(val)}
                   placeholder="اختیاری - تاریخ انقضا"
                 />
               </div>

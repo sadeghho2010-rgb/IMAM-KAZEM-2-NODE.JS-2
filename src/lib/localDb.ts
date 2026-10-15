@@ -986,7 +986,7 @@ class LocalDatabase {
 
     const now = Date.now();
     const lastSync = this.lastSyncTimestamps.get(resolvedCol) || 0;
-    if (!force && now - lastSync < 1500) {
+    if (!force && now - lastSync < 10000) {
       return this.getLocalStorageDocs(resolvedCol);
     }
     this.lastSyncTimestamps.set(resolvedCol, now);
@@ -1176,12 +1176,16 @@ class LocalDatabase {
 
         // Overwrite localStorage fallback strictly with merged authoritative list
         const key = `fallback_idb_${resolvedCol}`;
+        const prevJson = localStorage.getItem(key) || '[]';
+        const nextJson = JSON.stringify(validDocs);
         try {
-          localStorage.setItem(key, JSON.stringify(validDocs));
+          localStorage.setItem(key, nextJson);
         } catch (e) {}
 
         this.syncedCollections.add(resolvedCol);
-        this.notify();
+        if (prevJson !== nextJson) {
+          this.notify();
+        }
         return validDocs;
       }
 

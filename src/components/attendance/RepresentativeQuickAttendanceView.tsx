@@ -192,19 +192,33 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           return true;
         }
       }
-      // 6. If user role is class_representative and program attendanceType is representative/default
+      // 6. Enrollment + Representative Role Fallback (Main & Counseling Classes)
       if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.isClassRep)) {
-        // If student is enrolled in this program and program is set to representative attendance
         if (p.attendanceType === 'representative' || !p.attendanceType) {
-          const pStudentIds = Array.isArray((p as any).studentIds) ? (p as any).studentIds.map(String) : [];
-          if (matchedStudent?.id && pStudentIds.includes(String(matchedStudent.id))) {
+          const stIdStr = String(matchedStudent?.id || currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '');
+          const inEnroll = enrollments.some(e => 
+            String(e.programId) === String(p.id) && 
+            (candidateIds.includes(normalizeClean(String(e.studentId))) || String(e.studentId) === stIdStr) &&
+            e.status !== 'deleted' && 
+            e.status !== 'inactive'
+          );
+          if (inEnroll) return true;
+
+          const pStudentIds = Array.isArray((p as any).studentIds) ? (p as any).studentIds.map((x: any) => normalizeClean(String(x))) : [];
+          if (candidateIds.some(cid => pStudentIds.includes(cid))) {
+            return true;
+          }
+
+          // Grade match fallback for class representative
+          const stGrade = matchedStudent?.grade || currentUser?.gradeLabel || '';
+          if (stGrade && (p.grade === stGrade || p.grade === 'همه پایه‌ها' || p.grade === 'همه')) {
             return true;
           }
         }
       }
       return false;
     });
-  }, [programs, currentUser, candidateIds, candidateNames, matchedStudent]);
+  }, [programs, enrollments, currentUser, candidateIds, candidateNames, matchedStudent]);
 
   // Select first represented program by default
   useEffect(() => {
@@ -266,7 +280,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       // Grade-based matching fallback
       if (!programGrade || programGrade === 'همه پایه‌ها' || programGrade === 'همه') return true;
       return s.grade === programGrade;
-    }).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
   }, [currentProgram, students, enrollments]);
 
   // Load existing session log for the selected program and date
@@ -366,7 +380,16 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         };
       });
 
+      const presentCount = isCancelled ? 0 : studentsDetailList.filter(s => s.status === 'present').length;
+      const absentCount = isCancelled ? 0 : studentsDetailList.filter(s => s.status === 'absent').length;
+      const lateCount = isCancelled ? 0 : studentsDetailList.filter(s => s.status === 'late').length;
+
+      const existingInDb = (attendanceLogs || []).find(l => 
+        l.id === logId || (l.programId === currentProgram.id && l.date === selectedDate)
+      );
+
       const sessionLog: AttendanceSessionLog = {
+        ...(existingInDb || {}),
         id: logId,
         programId: currentProgram.id,
         programTitle: currentProgram.title,
@@ -379,11 +402,19 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         substituteTeacherName: hasSubstituteTeacher ? substituteTeacherName : undefined,
         recordedByUserId: currentUser?.id,
         recordedByName: currentUser?.name || currentUser?.fullName || 'نماینده کلاس',
-        recordedAt: nowIso,
-        students: studentsDetailList
+        recordedAt: existingInDb?.recordedAt || nowIso,
+        updatedAt: nowIso,
+        students: studentsDetailList,
+        presentCount,
+        absentCount,
+        lateCount
       };
 
-      await localDb.setDoc('attendance', sessionLog);
+      if (existingInDb) {
+        await localDb.updateDoc('attendance', existingInDb.id, sessionLog);
+      } else {
+        await localDb.setDoc('attendance', sessionLog);
+      }
 
       // Update local state
       setAttendanceLogs(prev => {
@@ -394,8 +425,8 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       setSaveSuccessMsg(`حضور و غیاب کلاس «${currentProgram.title}» برای تاریخ ${selectedDate} با موفقیت ثبت و ذخیره گردید.`);
       setTimeout(() => setSaveSuccessMsg(''), 4500);
 
-      window.dispatchEvent(new CustomEvent('app_data_change'));
-      window.dispatchEvent(new CustomEvent('attendance_updated'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: logId } }));
+      window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: currentProgram.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving representative attendance:', e);
       alert('خطا در ذخیره حضور و غیاب: ' + (e?.message || 'مجدداً تلاش فرمایید'));

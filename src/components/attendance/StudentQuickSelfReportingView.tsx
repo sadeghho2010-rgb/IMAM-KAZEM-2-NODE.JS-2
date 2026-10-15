@@ -289,7 +289,22 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         } as any;
       }
 
-      await localDb.setDoc('attendance', updatedLog);
+      const presentCount = (updatedLog.students || []).filter(s => s.status === 'present').length;
+      const absentCount = (updatedLog.students || []).filter(s => s.status === 'absent').length;
+      const lateCount = (updatedLog.students || []).filter(s => s.status === 'late').length;
+
+      updatedLog = {
+        ...updatedLog,
+        presentCount,
+        absentCount,
+        lateCount
+      };
+
+      if (existingLog) {
+        await localDb.updateDoc('attendance', existingLog.id, updatedLog);
+      } else {
+        await localDb.setDoc('attendance', updatedLog);
+      }
 
       setAttendanceLogs(prev => {
         const filtered = prev.filter(l => l.id !== logId && !(l.programId === prog.id && l.date === selectedDate));
@@ -309,8 +324,8 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         });
       }, 4000);
 
-      window.dispatchEvent(new CustomEvent('app_data_change'));
-      window.dispatchEvent(new CustomEvent('attendance_updated'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: logId } }));
+      window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: prog.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving self-reporting:', e);
       alert('خطا در ثبت خوداظهاری: ' + (e?.message || 'لطفاً مجدداً امتحان کنید'));

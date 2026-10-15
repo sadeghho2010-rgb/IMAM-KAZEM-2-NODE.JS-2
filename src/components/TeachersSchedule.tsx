@@ -511,7 +511,7 @@ export default function TeachersSchedule() {
       const pA = Number(a.teacherObj.priority) || 3;
       const pB = Number(b.teacherObj.priority) || 3;
       if (pA !== pB) return pA - pB;
-      return a.name.localeCompare(b.name, 'fa');
+      return String(a?.name || '').localeCompare(String(b?.name || ''), 'fa');
     });
   }, [teachers, allScheduledItems]);
 

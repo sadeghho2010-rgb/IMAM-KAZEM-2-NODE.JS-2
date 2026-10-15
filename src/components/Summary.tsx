@@ -183,7 +183,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
           }
         }
 
-        list.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+        list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
         setStudents(list);
 
         const targetId = selectedStudentId || initialStudentId;

@@ -147,7 +147,7 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
       // Fetch students
       const studentsListRaw = await localDb.getDocs<Student>('students');
       const studentsList = filterStudents(studentsListRaw, true);
-      studentsList.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+      studentsList.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
       setStudents(studentsList);
 
       if (initialStudentId) {

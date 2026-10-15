@@ -709,7 +709,7 @@ export default function Programs() {
       result = students.filter(s => isProgramMatchingGradeFilter(s as any, targetEvalProgram.grade || ''));
     }
 
-    return result.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    return result.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
   }, [targetEvalProgram, enrollments, students]);
 
   // Export PDF Document for Teacher Evaluations
