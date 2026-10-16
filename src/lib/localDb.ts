@@ -3112,6 +3112,74 @@ class LocalDatabase {
     };
   }
 
+  // Purge test data while strictly preserving Super Admin, Level 2 users, Course Bank, Teachers, and Classrooms
+  async purgeTestData(): Promise<void> {
+    const colsToClear: CollectionName[] = [
+      'students',
+      'course_enrollments',
+      'attendance',
+      'study_stats',
+      'periodic_study_logs',
+      'study_daily_entries',
+      'oral_exams',
+      'counseling_session_grades',
+      'student_comments',
+      'student_requests',
+      'todos',
+      'personal_todos',
+      'assigned_todos',
+      'user_todo_categories',
+      'student_financial_profiles',
+      'finance_loans',
+      'finance_fund_contributions',
+      'finance_student_claims',
+      'finance_student_meal_reservations',
+      'finance_expenses',
+      'finance_operational_expenses',
+      'finance_budget_rows',
+      'discussion_groups',
+      'research',
+      'research_history',
+      'student_research_skills',
+      'manager_files',
+      'conversation_archives',
+      'audit_logs',
+      'site_audit_logs',
+      'db_save_errors'
+    ];
+
+    for (const col of colsToClear) {
+      try {
+        const docs = await this.getDocs(col);
+        for (const doc of docs) {
+          if (doc && doc.id) {
+            await this.deleteDoc(col, doc.id);
+          }
+        }
+      } catch (e) {
+        console.warn(`Error clearing collection ${col}:`, e);
+      }
+    }
+
+    // Clean users: keep only super_admin and level 2 users
+    try {
+      const users = await this.getDocs<any>('users');
+      for (const u of users) {
+        const isSuper = u.role === 'super_admin' || u.username === 'SADEGH' || u.level === 1 || u.isSuperAdmin;
+        const isLevel2 = u.role === 'level2' || u.level === 2;
+        if (!isSuper && !isLevel2) {
+          await this.deleteDoc('users', u.id);
+        }
+      }
+    } catch (e) {
+      console.warn('Error purging users:', e);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('app_data_change'));
+    }
+  }
+
   // Get statistics on database size and photos
   async getStorageStats(): Promise<{
     totalStudents: number;
