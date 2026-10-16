@@ -187,7 +187,7 @@ export default function UserManagement() {
         // Update
         updateUser(editingUser.id, {
           username: cleanUsername,
-          password: formPassword.trim(),
+          ...(formPassword.trim() ? { password: formPassword.trim() } : {}),
           fullName: cleanFullName,
           name: cleanFullName,
           level: formLevel,
@@ -450,6 +450,7 @@ export default function UserManagement() {
             <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3.5 px-4 sm:px-6">کاربر و نام کاربری</th>
+                <th className="py-3.5 px-4">کلمه عبور</th>
                 <th className="py-3.5 px-4">سطح و نقش</th>
                 <th className="py-3.5 px-4">حوزه دسترسی (Scope)</th>
                 <th className="py-3.5 px-4">نوع دسترسی</th>
@@ -479,6 +480,12 @@ export default function UserManagement() {
                           </div>
                         </div>
                       </div>
+                    </td>
+
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-700" dir="ltr">
+                      <span className="bg-slate-100 px-2 py-1 rounded-md text-xs border border-slate-200 text-indigo-900">
+                        {u.password || '---'}
+                      </span>
                     </td>
 
                     <td className="py-3.5 px-4">

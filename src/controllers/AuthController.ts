@@ -255,9 +255,9 @@ export class AuthController {
         editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
         modulePermissions: user.modulePermissions || {},
         isActive: user.isActive !== false,
+        password: plainPassword,
         passwordHash
       };
-      delete (userToStore as any).password;
 
       // Bidirectional sync: Check if this user belongs to a student and update student record
       const studentId = userToStore.linkedStudentId || userToStore.studentId;
@@ -334,13 +334,14 @@ export class AuthController {
       const newUsername = String(rawNewUsername).trim().toUpperCase();
 
       let passwordHash = existing ? existing.passwordHash : '';
+      let persistentPassword = existing?.password || '';
       if (safeUpdates.password && String(safeUpdates.password).trim() !== '') {
-        const plainPassword = String(safeUpdates.password).trim();
-        passwordHash = await hashPassword(plainPassword);
+        persistentPassword = String(safeUpdates.password).trim();
+        passwordHash = await hashPassword(persistentPassword);
       } else if (!passwordHash) {
-        passwordHash = await hashPassword('123456');
+        if (!persistentPassword) persistentPassword = '123456';
+        passwordHash = await hashPassword(persistentPassword);
       }
-      delete safeUpdates.password;
 
       if (!existing) {
         existing = {
@@ -354,6 +355,7 @@ export class AuthController {
           scope: safeUpdates.scope || 'self',
           gradeLabel: safeUpdates.gradeLabel || safeUpdates.grade || '',
           allowedTabs: [],
+          password: persistentPassword,
           passwordHash,
           isActive: safeUpdates.isActive !== undefined ? safeUpdates.isActive : true,
           linkedStudentId: safeUpdates.linkedStudentId || safeUpdates.studentId,
@@ -373,9 +375,9 @@ export class AuthController {
         nationalId: safeUpdates.nationalId || safeUpdates.nationalCode || newUsername,
         gradeLabel: newGradeLabel,
         grade: newGradeLabel,
+        password: persistentPassword,
         passwordHash
       };
-      delete (updatedUser as any).password;
 
       // If username (national code) changed, purge old username record so it does not revert or duplicate
       if (newUsername !== oldUsername && oldUsername && !oldUsername.startsWith('USER_FALLBACK_')) {
@@ -516,7 +518,7 @@ export class AuthController {
 
       const passwordHash = await hashPassword(newPassword.trim());
       existing.passwordHash = passwordHash;
-      delete (existing as any).password;
+      existing.password = newPassword.trim();
       existing.mustChangePassword = false;
       existing.failedLoginAttempts = 0;
       existing.accountLockedUntil = undefined;

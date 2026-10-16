@@ -50,8 +50,11 @@ import { fetchAllUsersFromStorage, comparePassword, normalizeDigits } from "./sr
 
 dotenv.config();
 
-// Enforce port 3000 as default for Runflare container and development
-const PORT = parseInt(process.env.PORT || "3000", 10);
+// Enforce port 3000 as default for AI Studio / Runflare dev environment, honoring --port CLI args
+const portArgIndex = process.argv.indexOf('--port');
+const portFromArg = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? parseInt(process.argv[portArgIndex + 1], 10) : null;
+const envPort = process.env.APP_PORT || (process.env.PORT && process.env.PORT !== '8080' ? process.env.PORT : null);
+const PORT = portFromArg || (envPort ? parseInt(envPort, 10) : 3000);
 
 async function startServer() {
   const app = express();

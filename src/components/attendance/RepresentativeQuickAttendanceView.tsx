@@ -26,7 +26,8 @@ import {
   AttendanceSessionLog, 
   StudentAttendanceDetail, 
   AttendanceStatus, 
-  AttendanceSettings 
+  AttendanceSettings,
+  AcademicHolidayItem 
 } from '../../types';
 import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi } from '../../lib/jalali';
 
@@ -66,6 +67,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
   const loadedLogKeyRef = React.useRef<string>('');
 
   useEffect(() => {
@@ -75,13 +77,16 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [allProgs, allStudents, allEnrolls, allSettings, allLogs] = await Promise.all([
+      const [allProgs, allStudents, allEnrolls, allSettings, allLogs, allHols] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<Student>('students'),
         localDb.getDocs<any>('course_enrollments'),
         localDb.getDocs<AttendanceSettings>('attendance_settings'),
-        localDb.getDocs<AttendanceSessionLog>('attendance')
+        localDb.getDocs<AttendanceSessionLog>('attendance'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays')
       ]);
+
+      setAcademicHolidays(allHols || []);
 
       const normalizeClean = (str?: string): string => {
         if (!str) return '';
@@ -361,9 +366,29 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     setDraftAttendance(nextDraft);
   };
 
+  // Check if selected date is an official school holiday according to Academic Calendar
+  const currentHoliday = useMemo(() => {
+    if (!selectedDate || academicHolidays.length === 0) return null;
+    const progGrade = currentProgram?.grade;
+    return academicHolidays.find(h => {
+      const isDateMatch = (h.startDate && h.endDate) 
+        ? (selectedDate >= h.startDate && selectedDate <= h.endDate) 
+        : (h.startDate === selectedDate);
+      if (!isDateMatch) return false;
+      if (!h.grades || h.grades.length === 0 || h.grades.includes('all')) return true;
+      if (!progGrade) return true;
+      return h.grades.some(g => g === 'all' || g === progGrade || progGrade.includes(g) || g.includes(progGrade));
+    }) || null;
+  }, [selectedDate, academicHolidays, currentProgram]);
+
   // Submit and save attendance
   const handleSaveAttendance = async () => {
     if (!currentProgram) return;
+
+    if (currentHoliday) {
+      alert(`تاریخ ${selectedDate} در تقویم آموزشی به عنوان روز تعطیل («${currentHoliday.title}») ثبت شده است و امکان ایجاد یا ثبت حضور و غیاب برای این روز وجود ندارد.`);
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -620,6 +645,21 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
             })}
           </div>
         </div>
+
+        {/* Official Holiday Notice */}
+        {currentHoliday && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0" size={22} />
+            <div>
+              <p className="font-black text-amber-950 text-sm">
+                این تاریخ در تقویم آموزشی به عنوان روز تعطیل («{currentHoliday.title}») ثبت شده است
+              </p>
+              <p className="text-[11px] text-amber-800 mt-1">
+                طبق تقویم آموزشی، این روز تعطیل رسمی است و حضور و غیاب برای آن ایجاد یا ثبت نمی‌شود.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Quick Class Status Actions: کلاس تعطیل بود / استاد جایگزین آمد */}
         <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">

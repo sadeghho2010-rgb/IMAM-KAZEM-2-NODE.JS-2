@@ -350,7 +350,7 @@ export default function PassedCoursesManagement() {
     }
   };
 
-  // Handlers for Curriculum Bank Modals
+  // Handlers for Curriculum Bank Modals with full cascading sync & real-time notification
   const handleSaveSubject = async () => {
     if (!editingSubject?.title?.trim()) {
       alert('لطفاً عنوان ماده درسی را وارد کنید.');
@@ -358,9 +358,13 @@ export default function PassedCoursesManagement() {
     }
 
     try {
+      const oldSubject = subjects.find(s => s.id === editingSubject.id);
+      const oldTitle = oldSubject?.title;
+      const newTitle = editingSubject.title.trim();
+
       const doc: CurriculumSubject = {
         id: editingSubject.id || `subj_${Date.now()}`,
-        title: editingSubject.title.trim(),
+        title: newTitle,
         code: editingSubject.code || '',
         description: editingSubject.description || '',
         orderIndex: editingSubject.orderIndex || subjects.length + 1,
@@ -370,6 +374,42 @@ export default function PassedCoursesManagement() {
       };
 
       await localDb.setDoc('curriculum_subjects', doc);
+
+      // Cascading update if title changed
+      if (oldTitle && oldTitle !== newTitle) {
+        // 1. Update books
+        const allBooks = await localDb.getDocs<CurriculumBook>('curriculum_books');
+        for (const b of allBooks) {
+          if (b.subjectId === doc.id || b.subjectTitle === oldTitle) {
+            await localDb.setDoc('curriculum_books', { ...b, subjectTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 2. Update chapters
+        const allChapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
+        for (const ch of allChapters) {
+          if (ch.subjectId === doc.id || ch.subjectTitle === oldTitle) {
+            await localDb.setDoc('curriculum_chapters', { ...ch, subjectTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 3. Update student course progress
+        const allProgress = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+        for (const p of allProgress) {
+          if (p.subjectId === doc.id || p.subjectTitle === oldTitle) {
+            await localDb.setDoc('student_course_progress', { ...p, subjectTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 4. Update programs
+        const allPrograms = await localDb.getDocs<Program>('programs');
+        for (const pr of allPrograms) {
+          if (pr.subjectCategory === oldTitle) {
+            await localDb.setDoc('programs', { ...pr, subjectCategory: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('collection_change_curriculum_subjects'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
       setIsSubjectModalOpen(false);
       setEditingSubject(null);
       await loadAllData();
@@ -388,11 +428,15 @@ export default function PassedCoursesManagement() {
     const parentSubj = subjects.find(s => s.id === editingBook.subjectId);
 
     try {
+      const oldBook = books.find(b => b.id === editingBook.id);
+      const oldTitle = oldBook?.title;
+      const newTitle = editingBook.title.trim();
+
       const doc: CurriculumBook = {
         id: editingBook.id || `book_${Date.now()}`,
         subjectId: editingBook.subjectId,
-        subjectTitle: parentSubj?.title || editingBook.subjectTitle || 'اصول فقه',
-        title: editingBook.title.trim(),
+        subjectTitle: parentSubj?.title || editingBook.subjectTitle || 'اصول',
+        title: newTitle,
         credits: 1,
         orderIndex: editingBook.orderIndex || books.length + 1,
         description: editingBook.description || '',
@@ -401,6 +445,35 @@ export default function PassedCoursesManagement() {
       };
 
       await localDb.setDoc('curriculum_books', doc);
+
+      // Cascading update if title changed
+      if (oldTitle && oldTitle !== newTitle) {
+        // 1. Update chapters
+        const allChapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
+        for (const ch of allChapters) {
+          if (ch.bookId === doc.id || ch.bookTitle === oldTitle) {
+            await localDb.setDoc('curriculum_chapters', { ...ch, bookTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 2. Update student course progress
+        const allProgress = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+        for (const p of allProgress) {
+          if (p.bookId === doc.id || p.bookTitle === oldTitle) {
+            await localDb.setDoc('student_course_progress', { ...p, bookTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 3. Update programs
+        const allPrograms = await localDb.getDocs<Program>('programs');
+        for (const pr of allPrograms) {
+          if (pr.subjectBook === oldTitle) {
+            await localDb.setDoc('programs', { ...pr, subjectBook: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('collection_change_curriculum_books'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
       setIsBookModalOpen(false);
       setEditingBook(null);
       await loadAllData();
@@ -419,13 +492,17 @@ export default function PassedCoursesManagement() {
     const parentBook = books.find(b => b.id === editingChapter.bookId);
 
     try {
+      const oldChapter = chapters.find(c => c.id === editingChapter.id);
+      const oldTitle = oldChapter?.title;
+      const newTitle = editingChapter.title.trim();
+
       const doc: CurriculumChapter = {
         id: editingChapter.id || `chap_${Date.now()}`,
         bookId: editingChapter.bookId,
         bookTitle: parentBook?.title || editingChapter.bookTitle || '',
         subjectId: parentBook?.subjectId || editingChapter.subjectId || '',
         subjectTitle: parentBook?.subjectTitle || editingChapter.subjectTitle || '',
-        title: editingChapter.title.trim(),
+        title: newTitle,
         credits: 1,
         orderIndex: editingChapter.orderIndex || chapters.length + 1,
         description: editingChapter.description || '',
@@ -434,6 +511,28 @@ export default function PassedCoursesManagement() {
       };
 
       await localDb.setDoc('curriculum_chapters', doc);
+
+      // Cascading update if title changed
+      if (oldTitle && oldTitle !== newTitle) {
+        // 1. Update student course progress
+        const allProgress = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+        for (const p of allProgress) {
+          if (p.chapterId === doc.id || p.chapterTitle === oldTitle) {
+            await localDb.setDoc('student_course_progress', { ...p, chapterTitle: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+        // 2. Update programs
+        const allPrograms = await localDb.getDocs<Program>('programs');
+        for (const pr of allPrograms) {
+          if (pr.chapterId === doc.id || pr.subjectChapter === oldTitle) {
+            await localDb.setDoc('programs', { ...pr, subjectChapter: newTitle, updatedAt: new Date().toISOString() });
+          }
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('collection_change_curriculum_chapters'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
       setIsChapterModalOpen(false);
       setEditingChapter(null);
       await loadAllData();
@@ -447,6 +546,26 @@ export default function PassedCoursesManagement() {
     if (!window.confirm(`آیا از حذف «${title}» اطمینان دارید؟`)) return;
     try {
       await localDb.deleteDoc(collection, id);
+
+      if (collection === 'curriculum_subjects') {
+        const childBooks = books.filter(b => b.subjectId === id || b.subjectTitle === title);
+        for (const b of childBooks) {
+          await localDb.deleteDoc('curriculum_books', b.id);
+          const childChaps = chapters.filter(c => c.bookId === b.id || c.bookTitle === b.title);
+          for (const ch of childChaps) {
+            await localDb.deleteDoc('curriculum_chapters', ch.id);
+          }
+        }
+      } else if (collection === 'curriculum_books') {
+        const childChaps = chapters.filter(c => c.bookId === id || c.bookTitle === title);
+        for (const ch of childChaps) {
+          await localDb.deleteDoc('curriculum_chapters', ch.id);
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent(`collection_change_${collection}`));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
       await loadAllData();
     } catch (err) {
       console.error(err);

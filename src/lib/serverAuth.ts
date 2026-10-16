@@ -58,6 +58,7 @@ export interface SafeUser {
   canManageUsers?: boolean;
   canBackup?: boolean;
   avatarBg?: string;
+  password?: string;
   allowedTabs: string[];
   editableTabs?: string[];
   modulePermissions?: Record<string, 'none' | 'view' | 'edit'>;
@@ -515,6 +516,7 @@ export function sanitizeUser(user: StoredUser | any): SafeUser {
     canManageUsers: Boolean(user.canManageUsers),
     canBackup: user.canBackup !== undefined ? Boolean(user.canBackup) : true,
     avatarBg: user.avatarBg,
+    password: user.password || user.plainPassword || '',
     allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : [],
     editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
     modulePermissions: user.modulePermissions || {},
@@ -1056,17 +1058,12 @@ export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; 
 
     if (plain && (!currentHash || (!currentHash.startsWith('$2a$') && !currentHash.startsWith('$2b$')))) {
       user.passwordHash = await hashPassword(plain);
-      delete user.password; // Remove plain text completely!
       modified = true;
       migratedCount += 1;
     } else if (currentHash && !currentHash.startsWith('$2a$') && !currentHash.startsWith('$2b$')) {
       user.passwordHash = await hashPassword(currentHash);
-      delete user.password;
       modified = true;
       migratedCount += 1;
-    } else if (user.password) {
-      delete user.password;
-      modified = true;
     }
 
     if (modified) {

@@ -48,7 +48,8 @@ import {
   Program,
   TeacherCoursePresenceItem,
   TeacherCourseType,
-  TeacherDebtCategory
+  TeacherDebtCategory,
+  AcademicHolidayItem
 } from '../../types';
 import { TeacherCompensationTabbedView } from './teachers/TeacherCompensationTabbedView';
 import { TeacherCompensationSlipModal } from './teachers/TeacherCompensationSlipModal';
@@ -101,6 +102,7 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
   const [transportTrips, setTransportTrips] = useState<TeacherTransportSingleTrip[]>([]);
   const [transportRoutines, setTransportRoutines] = useState<TeacherWeeklyTransportRoutine[]>([]);
   const [fundDonationConfigs, setFundDonationConfigs] = useState<any[]>([]);
+  const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
 
   // Archived Periods
   const [periods, setPeriods] = useState<TeacherCompensationPeriod[]>([]);
@@ -152,7 +154,8 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
         storedLunches,
         storedTrips,
         storedRoutines,
-        storedDonations
+        storedDonations,
+        storedHolidays
       ] = await Promise.all([
         localDb.getDocs<Teacher>('teachers'),
         localDb.getDocs<TeacherCompensationPeriod>('finance_teachers_periods'),
@@ -162,8 +165,11 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
         localDb.getDocs<LunchReservation>('lunch_reservations'),
         localDb.getDocs<TeacherTransportSingleTrip>('teacher_transport_trips'),
         localDb.getDocs<TeacherWeeklyTransportRoutine>('teacher_transport_routines'),
-        localDb.getDocs<any>('fund_donation_configs')
+        localDb.getDocs<any>('fund_donation_configs'),
+        localDb.getDocs<AcademicHolidayItem>('academic_holidays')
       ]);
+
+      setAcademicHolidays(storedHolidays || []);
 
       const baseTeachers = storedTeachers || [];
       // Combine with users marked as Grade Professors by Super Admin
@@ -295,6 +301,22 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
       const isMainTeacher = session.recordedByName?.includes(teacherName) || session.programTitle?.includes(teacherName);
       const isSubTeacher = session.hasSubstituteTeacher && (session.substituteTeacherId === teacherId || session.substituteTeacherName?.includes(teacherName));
 
+      const prog = programsList.find(p => p.id === session.programId || p.title === session.programTitle);
+      const isCalendarHoliday = academicHolidays.some(h => {
+        const matchesDate = (h.startDate && h.endDate) 
+          ? (session.date >= h.startDate && session.date <= h.endDate) 
+          : (h.startDate === session.date);
+        if (!matchesDate) return false;
+        if (!h.grades || h.grades.length === 0 || h.grades.includes('all')) return true;
+        if (!prog?.grade) return true;
+        return h.grades.some(g => g === 'all' || g === prog.grade || prog.grade.includes(g) || g.includes(prog.grade));
+      });
+
+      // Educational calendar holidays are excluded from taught hours and teacher absences
+      if (isCalendarHoliday) {
+        return;
+      }
+
       if (session.isCancelled) {
         if (isMainTeacher) cancelledDaysCount++;
         return;
@@ -365,6 +387,21 @@ export default function TeachersCompensation({ onNavigateTab }: TeachersCompensa
 
       if (courseSessions.length > 0) {
         courseSessions.forEach(s => {
+          const sProg = programsList.find(p => p.id === s.programId || p.title === s.programTitle);
+          const isSessHoliday = academicHolidays.some(h => {
+            const matchesDate = (h.startDate && h.endDate) 
+              ? (s.date >= h.startDate && s.date <= h.endDate) 
+              : (h.startDate === s.date);
+            if (!matchesDate) return false;
+            if (!h.grades || h.grades.length === 0 || h.grades.includes('all')) return true;
+            if (!sProg?.grade) return true;
+            return h.grades.some(g => g === 'all' || g === sProg.grade || sProg.grade.includes(g) || g.includes(sProg.grade));
+          });
+
+          if (isSessHoliday) {
+            return;
+          }
+
           if (s.isCancelled) cCancelled++;
           else if (s.hasSubstituteTeacher) cSubstitute++;
           else cRegular++;

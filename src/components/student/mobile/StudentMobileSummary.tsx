@@ -108,7 +108,7 @@ export const StudentMobileSummary: React.FC<StudentMobileSummaryProps> = ({
 
     return {
       average: avg,
-      passedUnits: myPassed.length * 3 || 24,
+      passedCoursesCount: myPassed.length || 0,
       totalExams: myOralExams.length,
       status: parseFloat(avg) >= 17 ? 'ممتاز' : 'عادی'
     };
@@ -151,8 +151,8 @@ export const StudentMobileSummary: React.FC<StudentMobileSummaryProps> = ({
             <div className="text-[9px] text-slate-300 font-medium">معدل تحصیلی</div>
           </div>
           <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-400/20">
-            <div className="text-base font-black text-emerald-300 font-mono">{stats.passedUnits}</div>
-            <div className="text-[9px] text-emerald-200 font-medium">واحدهای مصوب</div>
+            <div className="text-base font-black text-emerald-300 font-mono">{stats.passedCoursesCount}</div>
+            <div className="text-[9px] text-emerald-200 font-medium">دروس گذرانده شده</div>
           </div>
           <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
             <div className="text-base font-black text-indigo-300 font-mono">{stats.totalExams || '۳'}</div>

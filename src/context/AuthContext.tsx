@@ -429,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ...u,
               id: u.id || existing?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
               username: rawUname,
+              password: (u.password && u.password.trim() !== '') ? u.password.trim() : (existing?.password || ''),
               name: u.name || u.fullName || existing?.name || rawUname,
               level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (existing?.level || 2))) as UserLevel),
               role: u.role || existing?.role || 'custom',
@@ -1020,6 +1021,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...updates,
             id: u.id && !u.id.startsWith('user_fallback_') ? u.id : (id.startsWith('user_fallback_') ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : id),
             username: cleanUsername || uUname || cleanId,
+            password: (updates.password && updates.password.trim() !== '') ? updates.password.trim() : (u.password || ''),
             linkedStudentId: studentId || u.linkedStudentId || u.studentId,
             studentId: studentId || u.studentId || u.linkedStudentId,
             allowedTabs: finalAllowedTabs,
@@ -1105,7 +1107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             targetUserId: id, 
             updates: {
               ...targetUser,
-              ...(updates.password ? { password: updates.password } : {})
+              ...(targetUser.password ? { password: targetUser.password } : (updates.password ? { password: updates.password } : {}))
             } 
           })
         }).then(res => {

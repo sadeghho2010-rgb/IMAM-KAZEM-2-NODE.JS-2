@@ -140,11 +140,13 @@ export class AuthService {
       user.canEdit = true;
       user.canManageUsers = true;
       user.canBackup = true;
+      user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
-      delete user.password;
     } else if (!user.passwordHash || (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$'))) {
+      user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
-      delete user.password;
+    } else if (!user.password) {
+      user.password = cleanPass;
     }
 
     // Reset failed attempts & mark activity

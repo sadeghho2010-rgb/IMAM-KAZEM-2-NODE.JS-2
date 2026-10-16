@@ -34,7 +34,7 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
-import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumBook, CurriculumChapter } from '../types';
+import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumSubject, CurriculumBook, CurriculumChapter } from '../types';
 import { localDb } from '../lib/localDb';
 import { StudentCourseProgressService } from '../services/StudentCourseProgressService';
 import { dispatchDatabaseToast } from '../lib/databaseToast';
@@ -507,21 +507,76 @@ export default function Programs() {
   const [students, setStudents] = useState<Student[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [rooms, setRooms] = useState<MadrasRoom[]>([]);
+  const [curriculumSubjects, setCurriculumSubjects] = useState<CurriculumSubject[]>([]);
   const [curriculumBooks, setCurriculumBooks] = useState<CurriculumBook[]>([]);
   const [curriculumChapters, setCurriculumChapters] = useState<CurriculumChapter[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const loadCurriculumBank = async () => {
+    try {
+      const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
+      const [subs, bks, chs] = await Promise.all([
+        localDb.getDocs<CurriculumSubject>('curriculum_subjects'),
+        localDb.getDocs<CurriculumBook>('curriculum_books'),
+        localDb.getDocs<CurriculumChapter>('curriculum_chapters')
+      ]);
+      setCurriculumSubjects(subs.length > 0 ? subs : seed.subjects);
+      setCurriculumBooks(bks.length > 0 ? bks : seed.books);
+      setCurriculumChapters(chs.length > 0 ? chs : seed.chapters);
+    } catch (err) {
+      console.warn('Error loading curriculum bank in Programs:', err);
+    }
+  };
+
+  // Dynamically compute subject categories directly from Curriculum Bank
+  const dynamicSubjectCategories = useMemo(() => {
+    const loadedTitles = curriculumSubjects.map(s => s.title?.trim()).filter(Boolean);
+    const defaults = ['اصول', 'فقه', 'فلسفه'];
+    return Array.from(new Set([...loadedTitles, ...defaults, 'سایر']));
+  }, [curriculumSubjects]);
+
+  // Dynamically compute books for a selected category directly from Curriculum Bank
+  const getBooksForCategory = (catName?: string): string[] => {
+    if (!catName || catName === 'سایر') return ['سایر (دستی)'];
+
+    const parentSubj = curriculumSubjects.find(s => 
+      s.title?.trim() === catName.trim() || 
+      (catName.trim().length > 2 && s.title?.trim().includes(catName.trim()))
+    );
+
+    const matchedBooks = curriculumBooks.filter(b => 
+      (parentSubj && b.subjectId === parentSubj.id) || 
+      b.subjectTitle?.trim() === catName.trim() ||
+      (catName.trim().length > 2 && b.subjectTitle?.trim().includes(catName.trim()))
+    );
+
+    const bookTitles = Array.from(new Set(matchedBooks.map(b => b.title.trim()).filter(Boolean)));
+    return [...bookTitles, 'سایر (دستی)'];
+  };
+
   useEffect(() => {
-    const loadCurriculumBank = async () => {
-      try {
-        const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
-        setCurriculumBooks(seed.books);
-        setCurriculumChapters(seed.chapters);
-      } catch (err) {
-        console.warn('Error loading curriculum bank in Programs:', err);
-      }
-    };
     loadCurriculumBank();
+
+    const unsub = localDb.subscribe(() => {
+      loadCurriculumBank();
+    });
+
+    const handleDataChange = () => {
+      loadCurriculumBank();
+    };
+
+    window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_curriculum_subjects', handleDataChange);
+    window.addEventListener('collection_change_curriculum_books', handleDataChange);
+    window.addEventListener('collection_change_curriculum_chapters', handleDataChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_subjects', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_books', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_chapters', handleDataChange);
+    };
   }, []);
 
   // Helper to match program grade with active filter
@@ -2977,14 +3032,15 @@ export default function Programs() {
                         <span>رشته / شاخه درس اصلی:</span>
                       </label>
                       <div className="grid grid-cols-4 gap-1.5">
-                        {SUBJECT_CATEGORY_OPTIONS.map(cat => {
-                          const isSel = (newProgram.subjectCategory || 'اصول') === cat;
+                        {dynamicSubjectCategories.map(cat => {
+                          const isSel = (newProgram.subjectCategory || dynamicSubjectCategories[0] || 'اصول') === cat;
                           return (
                             <button
                               key={cat}
                               type="button"
                               onClick={() => {
-                                const defaultBook = cat === 'اصول' ? 'رسائل' : cat === 'فقه' ? 'مکاسب (محرمه / بیع / خیارات)' : cat === 'فلسفه' ? 'بدایة الحکمة' : '';
+                                const catBooks = getBooksForCategory(cat);
+                                const defaultBook = catBooks.find(b => b !== 'سایر (دستی)') || '';
                                 setNewProgram({
                                   ...newProgram,
                                   subjectCategory: cat,
@@ -3008,14 +3064,14 @@ export default function Programs() {
                       </div>
                     </div>
 
-                    {/* Book selection for اصول / فقه / فلسفه / سایر */}
+                    {/* Book selection dynamically rendered from Curriculum Bank */}
                     {newProgram.subjectCategory && newProgram.subjectCategory !== 'سایر' && (
                       <div>
                         <label className="block text-[11px] font-bold text-indigo-900 mb-1">
                           کتاب / سرفصل درسی «{newProgram.subjectCategory}»:
                         </label>
                         <div className="flex flex-wrap gap-1.5">
-                          {SUBJECT_BOOKS_MAP[newProgram.subjectCategory as 'اصول' | 'فقه' | 'فلسفه']?.map(book => {
+                          {getBooksForCategory(newProgram.subjectCategory).map(book => {
                             const isSel = newProgram.subjectBook === book;
                             return (
                               <button
@@ -3099,7 +3155,7 @@ export default function Programs() {
                                             : "bg-white text-amber-950 border-amber-200/90 hover:bg-amber-50"
                                         )}
                                       >
-                                        {chap.title} ({chap.credits} واحد)
+                                        {chap.title}
                                       </button>
                                     );
                                   })}
@@ -3614,7 +3670,7 @@ export default function Programs() {
                         <span>رشته / شاخه درس اصلی:</span>
                       </label>
                       <div className="grid grid-cols-4 gap-1.5">
-                        {SUBJECT_CATEGORY_OPTIONS.map(cat => {
+                        {dynamicSubjectCategories.map(cat => {
                           const currentCat = editingProgram.subjectCategory || getCourseSubjectCategory(editingProgram);
                           const isSel = currentCat === cat;
                           return (
@@ -3622,7 +3678,8 @@ export default function Programs() {
                               key={cat}
                               type="button"
                               onClick={() => {
-                                const defaultBook = cat === 'اصول' ? 'رسائل' : cat === 'فقه' ? 'مکاسب (محرمه / بیع / خیارات)' : cat === 'فلسفه' ? 'بدایة الحکمة' : '';
+                                const catBooks = getBooksForCategory(cat);
+                                const defaultBook = catBooks.find(b => b !== 'سایر (دستی)') || '';
                                 setEditingProgram({
                                   ...editingProgram,
                                   subjectCategory: cat,
@@ -3643,14 +3700,14 @@ export default function Programs() {
                       </div>
                     </div>
 
-                    {/* Book selection for Edit */}
+                    {/* Book selection dynamically rendered from Curriculum Bank */}
                     {editingProgram.subjectCategory && editingProgram.subjectCategory !== 'سایر' && (
                       <div>
                         <label className="block text-[11px] font-bold text-indigo-900 mb-1">
                           کتاب / سرفصل درسی «{editingProgram.subjectCategory}»:
                         </label>
                         <div className="flex flex-wrap gap-1.5">
-                          {SUBJECT_BOOKS_MAP[editingProgram.subjectCategory as 'اصول' | 'فقه' | 'فلسفه']?.map(book => {
+                          {getBooksForCategory(editingProgram.subjectCategory).map(book => {
                             const isSel = editingProgram.subjectBook === book;
                             return (
                               <button
@@ -3730,7 +3787,7 @@ export default function Programs() {
                                             : "bg-white text-amber-950 border-amber-200/90 hover:bg-amber-50"
                                         )}
                                       >
-                                        {chap.title} ({chap.credits} واحد)
+                                        {chap.title}
                                       </button>
                                     );
                                   })}

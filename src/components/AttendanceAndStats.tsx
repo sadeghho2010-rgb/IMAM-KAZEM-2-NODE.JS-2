@@ -346,9 +346,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     return 'بدون نماینده';
   };
 
+  const initialLoadDoneRef = React.useRef(false);
+
   // Load all initial data from localDb
   const loadData = async (isInitial = false) => {
-    if (isInitial || programs.length === 0) {
+    if (isInitial && !initialLoadDoneRef.current) {
       setIsLoading(true);
     }
     try {
@@ -398,6 +400,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     } catch (e) {
       console.error('Error loading attendance data:', e);
     } finally {
+      initialLoadDoneRef.current = true;
       setIsLoading(false);
     }
   };
@@ -415,10 +418,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     window.addEventListener('app_data_change', handleDataEvent);
     window.addEventListener('attendance_updated', handleDataEvent);
 
-    // Guaranteed fast sync polling (every 3 seconds) for Education Manager
-    const fastSyncTimer = setInterval(() => {
-      loadData(false);
-    }, 3000);
+    // Fast sync polling (every 5 seconds) for Education Manager to fetch fresh attendance changes
+    const fastSyncTimer = setInterval(async () => {
+      try {
+        const freshAtt = await localDb.getDocs<AttendanceSessionLog>('attendance');
+        const isDeepEqual = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+        setAttendanceRecords(prev => isDeepEqual(prev, freshAtt || []) ? prev : (freshAtt || []));
+      } catch (e) {}
+    }, 5000);
 
     return () => {
       unsub();
@@ -626,6 +633,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Enforce default tab access once on user role resolution
   const hasEnforcedInitialTabRef = React.useRef(false);
+  const hasScrolledToInitialStudentRef = React.useRef(false);
   useEffect(() => {
     if (hasEnforcedInitialTabRef.current) return;
     if (isRepresentative) {
@@ -665,7 +673,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return;
     }
 
-    if (initialStudentId && programs.length > 0) {
+    if (initialStudentId && programs.length > 0 && !hasScrolledToInitialStudentRef.current) {
+      hasScrolledToInitialStudentRef.current = true;
       const progWithStudent = programs.find(p => {
         const inEnroll = enrollments.some(e => e.programId === p.id && String(e.studentId) === String(initialStudentId));
         const inArray = Array.isArray(p.studentIds) && p.studentIds.includes(initialStudentId);
@@ -673,10 +682,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       });
       if (progWithStudent) {
         setSelectedProgramId(progWithStudent.id);
-        setTimeout(() => {
-          const el = document.getElementById(`attendance-student-${initialStudentId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 400);
+        if (activeTab === 'record') {
+          setTimeout(() => {
+            const el = document.getElementById(`attendance-student-${initialStudentId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 500);
+        }
         return;
       }
     }
@@ -684,7 +695,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     if (!selectedProgramId && programs.length > 0) {
       setSelectedProgramId(programs[0].id);
     }
-  }, [isRepresentative, isOrdinaryStudent, representativePrograms, studentSelfReportingPrograms, programs, selectedProgramId, initialStudentId]);
+  }, [isRepresentative, isOrdinaryStudent, representativePrograms, studentSelfReportingPrograms, programs, selectedProgramId, initialStudentId, activeTab]);
 
   // Get active selected program - strictly limited to represented classes for representatives
   const currentProgram = useMemo(() => {
@@ -813,25 +824,35 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     return getShamsiDayOfWeekName(selectedDate);
   }, [selectedDate]);
 
+  // Helper to verify if holiday item applies to specific grade
+  const isHolidayApplicableToGrade = (h: AcademicHolidayItem, progGrade?: string) => {
+    if (!h.grades || h.grades.length === 0 || h.grades.includes('all')) return true;
+    if (!progGrade) return true;
+    return h.grades.some(g => g === 'all' || g === progGrade || progGrade.includes(g) || g.includes(progGrade));
+  };
+
   // Check if selected date is an official school holiday according to Academic Calendar
   const currentHoliday = useMemo(() => {
     if (!selectedDate || academicHolidays.length === 0) return null;
+    const progGrade = currentProgram?.grade;
     return academicHolidays.find(h => {
-      if (h.startDate && h.endDate) {
-        return selectedDate >= h.startDate && selectedDate <= h.endDate;
-      }
-      return h.startDate === selectedDate;
+      const isDateMatch = (h.startDate && h.endDate) 
+        ? (selectedDate >= h.startDate && selectedDate <= h.endDate) 
+        : (h.startDate === selectedDate);
+      if (!isDateMatch) return false;
+      return isHolidayApplicableToGrade(h, progGrade);
     }) || null;
-  }, [selectedDate, academicHolidays]);
+  }, [selectedDate, academicHolidays, currentProgram]);
 
-  // Helper to check holiday for any given Shamsi date string
-  const getHolidayForDate = (dateStr: string) => {
+  // Helper to check holiday for any given Shamsi date string and optional grade
+  const getHolidayForDate = (dateStr: string, progGrade?: string) => {
     if (!dateStr || academicHolidays.length === 0) return null;
     return academicHolidays.find(h => {
-      if (h.startDate && h.endDate) {
-        return dateStr >= h.startDate && dateStr <= h.endDate;
-      }
-      return h.startDate === dateStr;
+      const isDateMatch = (h.startDate && h.endDate) 
+        ? (dateStr >= h.startDate && dateStr <= h.endDate) 
+        : (h.startDate === dateStr);
+      if (!isDateMatch) return false;
+      return isHolidayApplicableToGrade(h, progGrade);
     }) || null;
   };
 
@@ -1036,6 +1057,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Save Attendance to Database
   const handleSaveAttendance = async () => {
     if (!currentProgram || !selectedDate) return;
+    if (currentHoliday) {
+      alert(`تاریخ ${selectedDate} در تقویم آموزشی به عنوان روز تعطیل («${currentHoliday.title}») ثبت شده است و امکان ایجاد یا ثبت حضور و غیاب برای این روز وجود ندارد.`);
+      return;
+    }
     if (isDateLockedForRepresentative) {
       alert("مهلت ثبت و ویرایش توسط نماینده کلاس به پایان رسیده است.");
       return;
@@ -1334,8 +1359,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Overall Report Metrics
   const overallReportMetrics = useMemo(() => {
     let totalSessions = filteredReportRecords.length;
-    let heldSessions = filteredReportRecords.filter(r => !r.isCancelled).length;
-    let cancelledSessions = filteredReportRecords.filter(r => r.isCancelled).length;
+    let heldSessions = 0;
+    let cancelledSessions = 0; // Teacher absence / session cancelled
+    let officialHolidaySessions = 0; // Educational calendar holidays
 
     let totalPresents = 0;
     let totalAbsents = 0;
@@ -1345,7 +1371,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     let totalWarnings = 0;
 
     filteredReportRecords.forEach(r => {
-      if (!r.isCancelled && Array.isArray(r.students)) {
+      const prog = programs.find(p => p.id === r.programId);
+      const isCalendarHoliday = Boolean(getHolidayForDate(r.date, prog?.grade));
+
+      if (isCalendarHoliday) {
+        officialHolidaySessions++;
+      } else if (r.isCancelled) {
+        cancelledSessions++;
+      } else {
+        heldSessions++;
+      }
+
+      // Do NOT count student absences or attendance stats on official educational holidays
+      if (!r.isCancelled && !isCalendarHoliday && Array.isArray(r.students)) {
         r.students.forEach(s => {
           if (s.status === 'present') totalPresents++;
           else if (s.status === 'absent') totalAbsents++;
@@ -1361,6 +1399,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       totalSessions,
       heldSessions,
       cancelledSessions,
+      officialHolidaySessions,
       totalPresents,
       totalAbsents,
       totalLates,
@@ -1368,7 +1407,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       totalUnspecified,
       totalWarnings
     };
-  }, [filteredReportRecords]);
+  }, [filteredReportRecords, programs, academicHolidays]);
 
   // Aggregated Per-Student Report Data
   const studentReportList = useMemo(() => {
@@ -1390,7 +1429,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       excusedCount: number;
       unspecifiedCount: number;
       warningCount: number;
-      history: { date: string; programTitle: string; status: AttendanceStatus; isCancelled: boolean; note?: string; excuseReason?: string; hasWarning?: boolean }[];
+      history: { date: string; programTitle: string; status: AttendanceStatus | 'holiday'; isCancelled: boolean; note?: string; excuseReason?: string; hasWarning?: boolean }[];
     }> = {};
 
     // Initialize students matching filter
@@ -1424,11 +1463,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     });
 
     filteredReportRecords.forEach(rec => {
+      const prog = programs.find(p => p.id === rec.programId);
+      const isCalendarHoliday = Boolean(getHolidayForDate(rec.date, prog?.grade));
+
       if (Array.isArray(rec.students)) {
         rec.students.forEach(stItem => {
           if (studentMap[stItem.studentId]) {
             const entry = studentMap[stItem.studentId];
-            if (!rec.isCancelled) {
+            if (!rec.isCancelled && !isCalendarHoliday) {
               entry.heldSessionsEnrolled++;
               if (stItem.status === 'present') entry.presentCount++;
               else if (stItem.status === 'absent') entry.absentCount++;
@@ -1450,11 +1492,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             entry.history.push({
               date: rec.date,
               programTitle: rec.programTitle,
-              status: stItem.status,
+              status: isCalendarHoliday ? ('holiday' as any) : stItem.status,
               isCancelled: rec.isCancelled,
-              note: stItem.note,
+              isHoliday: isCalendarHoliday,
+              note: isCalendarHoliday ? 'تعطیلی تقویم آموزشی' : stItem.note,
               excuseReason: stItem.excuseReason,
-              hasWarning: stItem.hasEducationalWarning,
+              hasWarning: isCalendarHoliday ? false : stItem.hasEducationalWarning,
               recordedMethod: stItem.recordedMethod || (rec as any).attendanceType || 'representative'
             } as any);
           }

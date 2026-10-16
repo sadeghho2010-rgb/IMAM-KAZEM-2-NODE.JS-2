@@ -215,9 +215,7 @@ function AppContent() {
   const isStudentMobile = Boolean(currentUser?.level === 3 && isMobileDevice && !forceDesktopMode);
 
   const navigateToTab = (tab: string, studentId?: string) => {
-    if (studentId) {
-      setSelectedStudentIdForTab(studentId);
-    }
+    setSelectedStudentIdForTab(studentId || undefined);
     setNavigationHistory(prev => {
       if (prev[prev.length - 1] === tab) return prev;
       return [...prev, tab];

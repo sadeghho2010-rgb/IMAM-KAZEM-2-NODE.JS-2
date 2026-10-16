@@ -325,12 +325,20 @@ export default function AcademicCalendar() {
   });
 
   // Form States for Holiday Modal
-  const [holidayForm, setHolidayForm] = useState({
+  const [holidayForm, setHolidayForm] = useState<{
+    title: string;
+    typeId: string;
+    startDate: string;
+    endDate: string;
+    description: string;
+    grades: string[];
+  }>({
     title: '',
     typeId: '',
     startDate: getTodayShamsi(),
     endDate: getTodayShamsi(),
-    description: ''
+    description: '',
+    grades: ['all']
   });
 
   // Form States for Sub-period Modal (هفته پژوهش، کارگاه‌ها و...)
@@ -1609,7 +1617,8 @@ export default function AcademicCalendar() {
       typeId: defaultType,
       startDate: initialDate,
       endDate: initialDate,
-      description: ''
+      description: '',
+      grades: ['all']
     });
     setShowHolidayModal(true);
   };
@@ -1621,7 +1630,8 @@ export default function AcademicCalendar() {
       typeId: h.typeId,
       startDate: h.startDate,
       endDate: h.endDate || h.startDate,
-      description: h.description || ''
+      description: h.description || '',
+      grades: h.grades && h.grades.length > 0 ? h.grades : ['all']
     });
     setShowHolidayModal(true);
   };
@@ -1646,6 +1656,7 @@ export default function AcademicCalendar() {
           typeName,
           startDate: holidayForm.startDate.trim(),
           endDate: (holidayForm.endDate || holidayForm.startDate).trim(),
+          grades: holidayForm.grades,
           description: holidayForm.description.trim(),
           updatedAt: new Date().toISOString()
         };
@@ -1661,6 +1672,7 @@ export default function AcademicCalendar() {
           typeName,
           startDate: holidayForm.startDate.trim(),
           endDate: (holidayForm.endDate || holidayForm.startDate).trim(),
+          grades: holidayForm.grades,
           description: holidayForm.description.trim(),
           createdAt: new Date().toISOString()
         };
@@ -4047,6 +4059,58 @@ export default function AcademicCalendar() {
                       placeholder="همان روز یا تاریخ پایان"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1.5">
+                    پایه‌های مشمول تعطیلی
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setHolidayForm({ ...holidayForm, grades: ['all'] })}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl font-bold text-xs border transition-all cursor-pointer",
+                        (!holidayForm.grades || holidayForm.grades.length === 0 || holidayForm.grades.includes('all'))
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      )}
+                    >
+                      همگانی (تمام پایه‌ها)
+                    </button>
+                    {['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].map(grd => {
+                      const isSelected = holidayForm.grades && !holidayForm.grades.includes('all') && holidayForm.grades.includes(grd);
+                      return (
+                        <button
+                          key={grd}
+                          type="button"
+                          onClick={() => {
+                            let nextGrades: string[] = [];
+                            if (!holidayForm.grades || holidayForm.grades.includes('all')) {
+                              nextGrades = [grd];
+                            } else if (holidayForm.grades.includes(grd)) {
+                              nextGrades = holidayForm.grades.filter(g => g !== grd);
+                              if (nextGrades.length === 0) nextGrades = ['all'];
+                            } else {
+                              nextGrades = [...holidayForm.grades, grd];
+                            }
+                            setHolidayForm({ ...holidayForm, grades: nextGrades });
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl font-bold text-xs border transition-all cursor-pointer",
+                            isSelected
+                              ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          اختصاصی {grd}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-1">
+                    در صورتی که تعطیلی فقط برای پایه خاصی باشد، حضور و غیاب و ساعات تدریس فقط برای آن پایه متوقف می‌شود.
+                  </p>
                 </div>
 
                 <div>

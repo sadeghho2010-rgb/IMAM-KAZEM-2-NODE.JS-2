@@ -95,7 +95,11 @@ export interface AttendanceSessionLog {
   recordedByUserId?: string;
   recordedByName?: string;
   recordedAt: string;
+  updatedAt?: string;
   students: StudentAttendanceDetail[];
+  presentCount?: number;
+  absentCount?: number;
+  lateCount?: number;
 }
 
 export interface AttendanceSettings {
@@ -1082,6 +1086,7 @@ export interface AcademicHolidayItem {
   typeName: string;
   startDate: string; // Shamsi YYYY/MM/DD
   endDate: string; // Shamsi YYYY/MM/DD
+  grades?: string[]; // e.g. ['all'] or specific grades: ['پایه ۷', 'پایه ۸', ...]
   description?: string;
   createdAt: string;
   updatedAt?: string;

@@ -67,33 +67,11 @@ export class StudentCourseProgressService {
     books: CurriculumBook[];
     chapters: CurriculumChapter[];
   }> {
-    const ALLOWED_SUBJECT_TITLES = ['اصول', 'فقه', 'فلسفه'];
-
     let subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
     let books = await localDb.getDocs<CurriculumBook>('curriculum_books');
     let chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
 
-    // Helper normalize subject
-    const normSubj = (t: string) => {
-      const clean = (t || '').trim();
-      if (clean.includes('اصول')) return 'اصول';
-      if (clean.includes('فقه')) return 'فقه';
-      if (clean.includes('فلسفه')) return 'فلسفه';
-      return clean;
-    };
-
-    // 1. Purge non-allowed subjects (e.g. logic, arabic) from DB if present & normalize titles
-    for (const s of subjects) {
-      const normalized = normSubj(s.title);
-      if (!ALLOWED_SUBJECT_TITLES.includes(normalized)) {
-        await localDb.deleteDoc('curriculum_subjects', s.id);
-      } else if (s.title !== normalized) {
-        await localDb.setDoc('curriculum_subjects', { ...s, title: normalized });
-      }
-    }
-
-    subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
-
+    // 1. Seed default subjects ONLY if curriculum_subjects table is completely empty
     if (subjects.length === 0) {
       console.log('Seeding default curriculum subjects...');
       for (const s of DEFAULT_CURRICULUM_SUBJECTS) {
@@ -107,10 +85,10 @@ export class StudentCourseProgressService {
       subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
     }
 
-    // Deduplicate subjects
+    // Deduplicate subjects by clean title
     const seenSubjects = new Map<string, CurriculumSubject>();
     for (const s of subjects) {
-      const cleanTitle = normSubj(s.title);
+      const cleanTitle = (s.title || '').trim();
       if (seenSubjects.has(cleanTitle)) {
         await localDb.deleteDoc('curriculum_subjects', s.id);
       } else {
@@ -119,18 +97,7 @@ export class StudentCourseProgressService {
     }
     subjects = Array.from(seenSubjects.values());
 
-    // Purge orphaned books or non-allowed subject books
-    const validSubjectIds = new Set(subjects.map(s => s.id));
-    const validSubjectTitles = new Set(subjects.map(s => s.title.trim()));
-
-    for (const b of books) {
-      if (!validSubjectIds.has(b.subjectId) && !validSubjectTitles.has(b.subjectTitle?.trim())) {
-        await localDb.deleteDoc('curriculum_books', b.id);
-      }
-    }
-
-    books = await localDb.getDocs<CurriculumBook>('curriculum_books');
-
+    // 2. Seed default books ONLY if curriculum_books table is completely empty
     if (books.length === 0) {
       console.log('Seeding default curriculum books...');
       for (const b of DEFAULT_CURRICULUM_BOOKS) {
@@ -154,7 +121,7 @@ export class StudentCourseProgressService {
     // Deduplicate books
     const seenBooks = new Map<string, CurriculumBook>();
     for (const b of books) {
-      const key = `${b.subjectTitle.trim()}_${b.title.trim()}`;
+      const key = `${(b.subjectTitle || '').trim()}_${(b.title || '').trim()}`;
       if (seenBooks.has(key)) {
         await localDb.deleteDoc('curriculum_books', b.id);
       } else {
@@ -163,18 +130,7 @@ export class StudentCourseProgressService {
     }
     books = Array.from(seenBooks.values());
 
-    // Purge orphaned chapters
-    const validBookIds = new Set(books.map(b => b.id));
-    const validBookTitles = new Set(books.map(b => b.title.trim()));
-
-    for (const ch of chapters) {
-      if (!validBookIds.has(ch.bookId) && !validBookTitles.has(ch.bookTitle?.trim())) {
-        await localDb.deleteDoc('curriculum_chapters', ch.id);
-      }
-    }
-
-    chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
-
+    // 3. Seed default chapters ONLY if curriculum_chapters table is completely empty
     if (chapters.length === 0) {
       console.log('Seeding default curriculum chapters...');
       for (const ch of DEFAULT_CURRICULUM_CHAPTERS) {
@@ -200,7 +156,7 @@ export class StudentCourseProgressService {
     // Deduplicate chapters
     const seenChapters = new Map<string, CurriculumChapter>();
     for (const ch of chapters) {
-      const key = `${ch.bookTitle.trim()}_${ch.title.trim()}`;
+      const key = `${(ch.bookTitle || '').trim()}_${(ch.title || '').trim()}`;
       if (seenChapters.has(key)) {
         await localDb.deleteDoc('curriculum_chapters', ch.id);
       } else {
