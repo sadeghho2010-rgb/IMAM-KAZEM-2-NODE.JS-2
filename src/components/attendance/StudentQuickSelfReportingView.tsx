@@ -121,14 +121,14 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     return Array.from(new Set(list)).map(x => x.trim().toLowerCase());
   }, [currentUser, matchedStudent]);
 
-  // Strict Filter: ONLY active programs that have attendanceType === 'self_reporting' AND this student is explicitly enrolled in
+  // Strict Filter: ONLY active programs that have attendanceType === 'self_reporting' AND this student is enrolled in or matched by grade
   const selfReportingPrograms = useMemo(() => {
     const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
 
     return activeProgs.filter(p => {
       if (p.attendanceType !== 'self_reporting') return false;
 
-      // Check course_enrollments
+      // 1. Check course_enrollments
       const inEnroll = enrollments.some(e => 
         String(e.programId) === String(p.id) && 
         candidateIds.includes(String(e.studentId).trim().toLowerCase()) &&
@@ -137,7 +137,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       );
       if (inEnroll) return true;
 
-      // Check program studentIds array
+      // 2. Check program studentIds array
       if (Array.isArray((p as any).studentIds)) {
         const pStudentIds = (p as any).studentIds.map((x: any) => String(x).trim().toLowerCase());
         if (candidateIds.some(cid => pStudentIds.includes(cid))) {
@@ -145,9 +145,19 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         }
       }
 
+      // 3. Grade-based fallback when explicit enrollments or studentIds are not specified for the program
+      const hasExplicitEnrollment = enrollments.some(e => String(e.programId) === String(p.id) && e.status !== 'deleted') ||
+        (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
+
+      if (!hasExplicitEnrollment && matchedStudent?.grade) {
+        if (!p.grade || p.grade === matchedStudent.grade || p.grade === 'همه' || p.grade === 'همه پایه‌ها') {
+          return true;
+        }
+      }
+
       return false;
     });
-  }, [programs, enrollments, candidateIds]);
+  }, [programs, enrollments, candidateIds, matchedStudent]);
 
   // Helper: check if a course is scheduled to meet on a specific date (matching day of week)
   const isCourseHeldOnDate = (prog: Program, dateStr: string): boolean => {
@@ -204,21 +214,18 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     return dates;
   }, [todayShamsi, allowedDaysCount, selfReportingPrograms]);
 
-  // Smart date default: If today is Friday or an off-day without held classes, default to most recent held class date
+  // Smart date default: If today or selectedDate is an off-day without held classes, auto-select most recent held class date (e.g. Wednesday)
   useEffect(() => {
     if (allowedDates.length === 0) return;
 
-    if (selectedDate && allowedDates.some(ad => ad.dateStr === selectedDate)) {
-      return;
+    const isCurrentDateClassDay = selfReportingPrograms.some(p => isCourseHeldOnDate(p, selectedDate));
+    if (!isCurrentDateClassDay) {
+      const firstClassDay = allowedDates.find(ad => ad.isClassDay);
+      if (firstClassDay) {
+        setSelectedDate(firstClassDay.dateStr);
+      }
     }
-
-    const firstClassDay = allowedDates.find(ad => ad.isClassDay);
-    if (firstClassDay) {
-      setSelectedDate(firstClassDay.dateStr);
-    } else {
-      setSelectedDate(todayShamsi);
-    }
-  }, [allowedDates, selectedDate, todayShamsi]);
+  }, [allowedDates, selfReportingPrograms]);
 
   const loadedDateKeyRef = React.useRef<string>('');
 

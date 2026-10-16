@@ -132,14 +132,15 @@ export default function StudentStudyPortal({
 
   // Compute student's main classes
   const studentMainCourses = useMemo(() => {
-    const studentEnrollments = enrollments.filter(e => e.studentId === student.id);
-    const enrolledProgramIds = new Set(studentEnrollments.map(e => e.programId));
+    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+    const activeEnrolls = enrollments.filter(e => e.studentId === student.id && e.status !== 'deleted' && e.status !== 'inactive');
+    const enrolledProgramIds = new Set(activeEnrolls.map(e => e.programId));
 
-    let userProgs = programs.filter(p => 
+    let userProgs = activeProgs.filter(p => 
       enrolledProgramIds.has(p.id) || 
-      p.grade === student.grade || 
-      (p as any).studentIds?.includes(student.id) ||
-      (p as any).studentId === student.id
+      (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(student.id)) ||
+      (p as any).studentId === student.id ||
+      (enrolledProgramIds.size === 0 && (!p.grade || p.grade === student.grade || p.grade === 'همه پایه‌ها'))
     );
 
     // Filter main courses strictly (ONLY core courses 'اصلی')
@@ -164,12 +165,7 @@ export default function StudentStudyPortal({
       return list;
     }
 
-    // Default seminary core courses matching student's grade or standard curriculum:
-    return [
-      { id: 'c_usul', title: 'اصول {حلقه ثالثه}' },
-      { id: 'c_fiqh', title: 'فقه {مکاسب خیارات}' },
-      { id: 'c_falsafa', title: 'فلسفه {قسمت دوم نهایه}' }
-    ];
+    return [];
   }, [programs, enrollments, student]);
 
   // Active period object
