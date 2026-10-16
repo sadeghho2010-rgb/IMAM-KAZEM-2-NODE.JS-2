@@ -1071,43 +1071,28 @@ export default function Programs() {
     setRepModalCustomInput('');
   };
 
-  const handleRemoveRepName = async (nameToRemove: string, isFromModal: boolean, isEditForm?: boolean) => {
+  const handleRemoveRepName = (nameToRemove: string, isFromModal: boolean, isEditForm?: boolean) => {
     if (isFromModal) {
-      const nextNames = repModalNames.filter(n => n !== nameToRemove);
-      setRepModalNames(nextNames);
-      const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
-      const nextIds = matchedStudent 
-        ? repModalStudentIds.filter(id => id !== matchedStudent.id)
-        : repModalStudentIds;
-      setRepModalStudentIds(nextIds);
+      setRepModalNames(repModalNames.filter(n => n !== nameToRemove));
+      const matchedStudent = students.find(s => nameToRemove.startsWith(s.name));
+      if (matchedStudent) {
+        setRepModalStudentIds(repModalStudentIds.filter(id => id !== matchedStudent.id));
+      }
     } else {
       if (isEditForm && editingProgram) {
         const nextNames = (editingProgram.representativeNames || []).filter(n => n !== nameToRemove);
-        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
+        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name));
         const nextIds = matchedStudent 
           ? (editingProgram.representativeStudentIds || []).filter(id => id !== matchedStudent.id)
           : (editingProgram.representativeStudentIds || []);
-
-        const updated = {
+        setEditingProgram({
           ...editingProgram,
           representativeNames: nextNames,
           representativeStudentIds: nextIds
-        };
-        setEditingProgram(updated);
-
-        // Immediate DB persistence to prevent 1-second revert by background refetch
-        try {
-          await localDb.updateDoc('programs', editingProgram.id, {
-            representativeNames: nextNames,
-            representativeStudentIds: nextIds
-          });
-          await syncRepresentativeUsers();
-        } catch (e) {
-          console.warn('Error persisting representative removal:', e);
-        }
+        });
       } else {
         const nextNames = (newProgram.representativeNames || []).filter(n => n !== nameToRemove);
-        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
+        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name));
         const nextIds = matchedStudent 
           ? (newProgram.representativeStudentIds || []).filter(id => id !== matchedStudent.id)
           : (newProgram.representativeStudentIds || []);
@@ -1128,19 +1113,20 @@ export default function Programs() {
         representativeNames: repModalNames
       });
     } else if (editingProgram) {
-      const updated = {
+      setEditingProgram({
         ...editingProgram,
         representativeStudentIds: repModalStudentIds,
         representativeNames: repModalNames
-      };
-      setEditingProgram(updated);
-      // Persist immediately to database and sync user roles
+      });
+      // Persist immediately to database and promote user to class representative
       try {
         await localDb.updateDoc('programs', editingProgram.id, {
           representativeStudentIds: repModalStudentIds,
           representativeNames: repModalNames
         });
-        await syncRepresentativeUsers();
+        if (repModalStudentIds.length > 0) {
+          await syncRepresentativeUsers(repModalStudentIds);
+        }
         await fetchData();
       } catch (err) {
         console.warn('Error saving representative immediately:', err);
@@ -1178,46 +1164,26 @@ export default function Programs() {
     }
   };
 
-  const syncRepresentativeUsers = async (_studentIds?: string[]) => {
+  const syncRepresentativeUsers = async (studentIds: string[]) => {
+    if (!studentIds || studentIds.length === 0) return;
     try {
       const allUsers = await localDb.getDocs<any>('users');
       const allStudents = await localDb.getDocs<any>('students');
-      const allPrograms = await localDb.getDocs<any>('programs');
-      const activePrograms = allPrograms.filter(p => p.status !== 'deleted' && !p.isDeleted);
-
-      // Collect ALL student IDs currently assigned as representatives in active programs
-      const activeRepStudentIds = new Set<string>();
-      activePrograms.forEach(p => {
-        if (Array.isArray(p.representativeStudentIds)) {
-          p.representativeStudentIds.forEach((id: any) => activeRepStudentIds.add(String(id)));
-        }
-      });
-
-      for (const u of allUsers) {
-        const uStudentId = u.studentId || u.linkedStudentId || u.id;
-        const st = allStudents.find(s => s.id === uStudentId || s.nationalId === u.username || s.studentCode === u.username);
-        const effectiveStudentId = st?.id || uStudentId;
-
-        const isCurrentlyRep = activeRepStudentIds.has(String(effectiveStudentId)) || activeRepStudentIds.has(String(u.id));
-
-        if (isCurrentlyRep) {
-          if (u.role !== 'class_representative' || !u.isClassRep) {
-            await localDb.updateDoc('users', u.id, {
-              ...u,
-              role: 'class_representative',
-              roleTitle: 'نماینده کلاس',
-              scope: 'class',
-              isClassRep: true
-            });
-          }
-        } else if (u.role === 'class_representative' || u.isClassRep) {
-          // No longer assigned to ANY active program! Reset role back to student
+      
+      for (const sid of studentIds) {
+        const st = allStudents.find(s => s.id === sid);
+        const u = allUsers.find(usr => 
+          usr.studentId === sid || 
+          usr.linkedStudentId === sid || 
+          usr.id === sid ||
+          (st && (usr.username === st.nationalId || usr.username === st.studentCode || (usr.name && st.name && usr.name.includes(st.name))))
+        );
+        if (u) {
           await localDb.updateDoc('users', u.id, {
             ...u,
-            role: 'student',
-            roleTitle: 'طلبه',
-            scope: 'student',
-            isClassRep: false
+            role: 'class_representative',
+            roleTitle: 'نماینده کلاس',
+            scope: 'class'
           });
         }
       }
@@ -1327,7 +1293,7 @@ export default function Programs() {
       });
 
       if (newProgram.representativeStudentIds && newProgram.representativeStudentIds.length > 0) {
-        await syncRepresentativeUsers();
+        await syncRepresentativeUsers(newProgram.representativeStudentIds);
       }
 
       fetchData();
@@ -1406,7 +1372,9 @@ export default function Programs() {
 
       await localDb.updateDoc('programs', editingProgram.id, updatedProgram);
 
-      await syncRepresentativeUsers();
+      if (editingProgram.representativeStudentIds && editingProgram.representativeStudentIds.length > 0) {
+        await syncRepresentativeUsers(editingProgram.representativeStudentIds);
+      }
 
       fetchData();
     } catch (error: any) {
@@ -1433,19 +1401,6 @@ export default function Programs() {
 
     try {
       await localDb.deleteDoc('programs', id);
-
-      // Clean up enrollments for this deleted program
-      const allEnrolls = await localDb.getDocs<any>('course_enrollments');
-      for (const e of allEnrolls) {
-        if (String(e.programId) === String(id)) {
-          await localDb.deleteDoc('course_enrollments', e.id);
-        }
-      }
-
-      window.dispatchEvent(new CustomEvent('collection_change_programs'));
-      window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
-      window.dispatchEvent(new CustomEvent('app_data_change'));
-
       dispatchDatabaseToast(`برنامه «${title}» با موفقیت از سیستم پاک شد.`, 'success');
       fetchData();
     } catch (error) {

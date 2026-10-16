@@ -57,20 +57,6 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
   useEffect(() => {
     loadData();
-
-    const unsub = localDb.subscribe(() => loadData());
-    const handleDataChange = () => loadData();
-
-    window.addEventListener('app_data_change', handleDataChange);
-    window.addEventListener('collection_change_programs', handleDataChange);
-    window.addEventListener('collection_change_enrollments', handleDataChange);
-
-    return () => {
-      unsub();
-      window.removeEventListener('app_data_change', handleDataChange);
-      window.removeEventListener('collection_change_programs', handleDataChange);
-      window.removeEventListener('collection_change_enrollments', handleDataChange);
-    };
   }, [currentUser]);
 
   const loadData = async () => {
@@ -95,7 +81,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       );
       setMatchedStudent(matchedSt || null);
 
-      setPrograms((allProgs || []).filter(p => p.status !== 'deleted' && !(p as any).isDeleted));
+      setPrograms(allProgs || []);
       setStudents(allStudents || []);
       setEnrollments(allEnrolls || []);
       setAttendanceLogs(allLogs || []);
@@ -121,14 +107,14 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     return Array.from(new Set(list)).map(x => x.trim().toLowerCase());
   }, [currentUser, matchedStudent]);
 
-  // Strict Filter: ONLY active programs that have attendanceType === 'self_reporting' AND this student is enrolled in or matched by grade
-  const selfReportingPrograms = useMemo(() => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+  const studentGrade = matchedStudent?.grade || currentUser?.gradeLabel || '';
 
-    return activeProgs.filter(p => {
+  // Filter ONLY programs that have attendanceType === 'self_reporting' and this student is enrolled in
+  const selfReportingPrograms = useMemo(() => {
+    return programs.filter(p => {
       if (p.attendanceType !== 'self_reporting') return false;
 
-      // 1. Check course_enrollments
+      // Check course_enrollments
       const inEnroll = enrollments.some(e => 
         String(e.programId) === String(p.id) && 
         candidateIds.includes(String(e.studentId).trim().toLowerCase()) &&
@@ -137,7 +123,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       );
       if (inEnroll) return true;
 
-      // 2. Check program studentIds array
+      // Check program studentIds array
       if (Array.isArray((p as any).studentIds)) {
         const pStudentIds = (p as any).studentIds.map((x: any) => String(x).trim().toLowerCase());
         if (candidateIds.some(cid => pStudentIds.includes(cid))) {
@@ -145,95 +131,41 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         }
       }
 
-      // 3. Grade-based fallback when explicit enrollments or studentIds are not specified for the program
-      const hasExplicitEnrollment = enrollments.some(e => String(e.programId) === String(p.id) && e.status !== 'deleted') ||
-        (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
-
-      if (!hasExplicitEnrollment && matchedStudent?.grade) {
-        if (!p.grade || p.grade === matchedStudent.grade || p.grade === 'همه' || p.grade === 'همه پایه‌ها') {
+      // If program has no explicit enrollment table, check grade
+      if (!Array.isArray((p as any).studentIds) || (p as any).studentIds.length === 0) {
+        if (!p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها' || p.grade === 'همه') {
           return true;
         }
       }
 
       return false;
     });
-  }, [programs, enrollments, candidateIds, matchedStudent]);
-
-  // Helper: check if a course is scheduled to meet on a specific date (matching day of week)
-  const isCourseHeldOnDate = (prog: Program, dateStr: string): boolean => {
-    if (!prog) return false;
-    if ((prog as any).status === 'deleted' || (prog as any).isDeleted) return false;
-
-    const days = (prog.days && Array.isArray(prog.days) && prog.days.length > 0)
-      ? prog.days
-      : (prog.day ? (prog.day.includes('شنبه تا چهارشنبه') || prog.day.includes('هر روز')
-          ? ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']
-          : [prog.day]) : []);
-
-    if (!days || days.length === 0) return true; // Default open if unspecified
-
-    const dayName = getShamsiDayOfWeekName(dateStr); // e.g. 'شنبه', 'پنج‌شنبه', 'جمعه'
-    const norm = (s: string) => s.replace(/[\u200c\s]/g, '').trim().toLowerCase();
-    const targetNorm = norm(dayName);
-
-    return days.some(d => {
-      const dNorm = norm(d);
-      return dNorm === targetNorm || dNorm.includes(targetNorm) || targetNorm.includes(dNorm);
-    });
-  };
-
-  // Filter programs held on the selectedDate
-  const selfReportingProgramsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return [];
-    return selfReportingPrograms.filter(p => isCourseHeldOnDate(p, selectedDate));
-  }, [selfReportingPrograms, selectedDate]);
+  }, [programs, enrollments, candidateIds, studentGrade]);
 
   // Allowed days window from education settings
   const allowedDaysCount = attendanceSettings?.studentSelfReportingWindowDays || 
     attendanceSettings?.representativeEditWindowDays || 7;
 
   const allowedDates = useMemo(() => {
-    const dates: { dateStr: string; label: string; dayName: string; isClassDay: boolean }[] = [];
+    const dates: { dateStr: string; label: string }[] = [];
     for (let i = 0; i < allowedDaysCount; i++) {
       const d = subtractDaysShamsi(todayShamsi, i);
-      const dayName = getShamsiDayOfWeekName(d);
-      const hasClass = selfReportingPrograms.some(p => isCourseHeldOnDate(p, d));
-
       let lbl = d;
       if (i === 0) lbl = 'امروز';
       else if (i === 1) lbl = 'دیروز';
       else lbl = `${i} روز پیش`;
-
-      dates.push({ 
-        dateStr: d, 
-        label: lbl, 
-        dayName,
-        isClassDay: hasClass
-      });
+      dates.push({ dateStr: d, label: lbl });
     }
     return dates;
-  }, [todayShamsi, allowedDaysCount, selfReportingPrograms]);
-
-  // Smart date default: If today or selectedDate is an off-day without held classes, auto-select most recent held class date (e.g. Wednesday)
-  useEffect(() => {
-    if (allowedDates.length === 0) return;
-
-    const isCurrentDateClassDay = selfReportingPrograms.some(p => isCourseHeldOnDate(p, selectedDate));
-    if (!isCurrentDateClassDay) {
-      const firstClassDay = allowedDates.find(ad => ad.isClassDay);
-      if (firstClassDay) {
-        setSelectedDate(firstClassDay.dateStr);
-      }
-    }
-  }, [allowedDates, selfReportingPrograms]);
+  }, [todayShamsi, allowedDaysCount]);
 
   const loadedDateKeyRef = React.useRef<string>('');
 
   // Populate draft status for each course on date change or log change
   useEffect(() => {
-    if (selfReportingProgramsForSelectedDate.length === 0 || !selectedDate) return;
+    if (selfReportingPrograms.length === 0 || !selectedDate) return;
 
-    const sessionKey = `${selectedDate}_${selfReportingProgramsForSelectedDate.map(p => p.id).sort().join('_')}`;
+    const sessionKey = `${selectedDate}_${selfReportingPrograms.map(p => p.id).sort().join('_')}`;
     if (loadedDateKeyRef.current === sessionKey) {
       return;
     }
@@ -241,7 +173,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
     const newDraft: Record<string, { status: AttendanceStatus; lateMinutes: number; note: string }> = {};
 
-    selfReportingProgramsForSelectedDate.forEach(prog => {
+    selfReportingPrograms.forEach(prog => {
       const cleanDate = selectedDate.replace(/\//g, '-');
       const expectedLogId = `${prog.id}_${cleanDate}`;
 
@@ -272,7 +204,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     });
 
     setDraftCourseStatus(newDraft);
-  }, [selfReportingProgramsForSelectedDate, selectedDate, attendanceLogs, candidateIds, matchedStudent, currentUser]);
+  }, [selfReportingPrograms, selectedDate, attendanceLogs, candidateIds, matchedStudent, currentUser]);
 
   const handleSetStatus = (progId: string, status: AttendanceStatus) => {
     setDraftCourseStatus(prev => ({
@@ -494,7 +426,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
-          {allowedDates.map(({ dateStr, label, dayName, isClassDay }) => {
+          {allowedDates.map(({ dateStr, label }) => {
             const isDateSelected = dateStr === selectedDate;
             return (
               <button
@@ -502,61 +434,32 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
                 type="button"
                 onClick={() => setSelectedDate(dateStr)}
                 className={cn(
-                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
+                  "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
                   isDateSelected
-                    ? "bg-teal-600 text-white border-teal-600 shadow-xs font-black"
-                    : isClassDay
-                      ? "bg-teal-50/80 hover:bg-teal-100/80 text-teal-900 border-teal-200/90"
-                      : "bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200"
+                    ? "bg-teal-600 text-white border-teal-600 shadow-xs"
+                    : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
                 )}
               >
                 <span>{label}</span>
-                <span className="text-[10px] opacity-85 font-mono">({dayName})</span>
-                {!isClassDay && <span className="text-[9px] px-1 bg-slate-200/80 text-slate-600 rounded">تعطیل</span>}
+                <span className="text-[10px] font-mono opacity-80">({dateStr.slice(5)})</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 3. Self-Reporting Course Cards (Only courses that meet on the selected date) */}
+      {/* 3. Self-Reporting Course Cards (Ultra-simple: only this student's self-reporting courses) */}
       <div className="space-y-3.5">
-        {selfReportingProgramsForSelectedDate.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 sm:p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
-              <Calendar size={24} />
-            </div>
-            <h3 className="text-sm font-black text-slate-800">
-              در تاریخ {selectedDate} ({getShamsiDayOfWeekName(selectedDate)}) کلاسی برای خوداظهاری تشکیل نمی‌شود
-            </h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-              کلاس‌های شما در این روز برنامه تشکیل جلسه ندارند. جهت ثبت خوداظهاری حضور، لطفا روزهای تشکیل کلاس (مانند شنبه تا چهارشنبه) را از نوار بالای تاریخ انتخاب نمایید.
-            </p>
-            {allowedDates.find(ad => ad.isClassDay) && (
-              <button
-                type="button"
-                onClick={() => {
-                  const lastHeld = allowedDates.find(ad => ad.isClassDay);
-                  if (lastHeld) setSelectedDate(lastHeld.dateStr);
-                }}
-                className="mt-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Clock size={14} />
-                <span>انتقال به آخرین جلسه تشکیل شده ({allowedDates.find(ad => ad.isClassDay)?.dayName} {allowedDates.find(ad => ad.isClassDay)?.dateStr})</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          selfReportingProgramsForSelectedDate.map(prog => {
-            const draft = draftCourseStatus[prog.id] || { status: 'present', lateMinutes: 10, note: '' };
-            const isSavingThis = savingProgramId === prog.id;
-            const successMsg = successMessages[prog.id];
+        {selfReportingPrograms.map(prog => {
+          const draft = draftCourseStatus[prog.id] || { status: 'present', lateMinutes: 10, note: '' };
+          const isSavingThis = savingProgramId === prog.id;
+          const successMsg = successMessages[prog.id];
 
-            return (
-              <div 
-                key={prog.id}
-                className="bg-white rounded-3xl border border-slate-200 shadow-xs p-4 sm:p-6 space-y-4"
-              >
+          return (
+            <div 
+              key={prog.id}
+              className="bg-white rounded-3xl border border-slate-200 shadow-xs p-4 sm:p-6 space-y-4"
+            >
               {/* Course Title & Teacher */}
               <div className="flex items-start justify-between border-b border-slate-100 pb-3 gap-2">
                 <div className="flex items-center gap-3">
@@ -663,22 +566,21 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
                 )}
               </div>
 
-                {/* Save Button for this course */}
-                <div className="pt-2 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={isSavingThis}
-                    onClick={() => handleSaveCourseAttendance(prog)}
-                    className="w-full sm:w-auto px-6 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-black text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40"
-                  >
-                    <Save size={15} />
-                    <span>{isSavingThis ? 'در حال ثبت...' : 'ثبت خوداظهاری این درس'}</span>
-                  </button>
-                </div>
+              {/* Save Button for this course */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={isSavingThis}
+                  onClick={() => handleSaveCourseAttendance(prog)}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-black text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40"
+                >
+                  <Save size={15} />
+                  <span>{isSavingThis ? 'در حال ثبت...' : 'ثبت خوداظهاری این درس'}</span>
+                </button>
               </div>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

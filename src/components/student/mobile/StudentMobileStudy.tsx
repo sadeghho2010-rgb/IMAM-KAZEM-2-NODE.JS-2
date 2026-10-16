@@ -127,15 +127,18 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
 
   // Student's core seminary courses
   const studentCourses = useMemo(() => {
-    if (!studentObj) return [];
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-    const myEnrolls = enrollments.filter(e => e.studentId === studentObj.id && e.status !== 'deleted' && e.status !== 'inactive');
+    if (!studentObj) return [
+      { id: 'c_usul', title: 'اصول فقه' },
+      { id: 'c_fiqh', title: 'فقه' },
+      { id: 'c_falsafa', title: 'فلسفه و کلام' }
+    ];
+    const myEnrolls = enrollments.filter(e => e.studentId === studentObj.id);
     const enrolledProgIds = new Set(myEnrolls.map(e => e.programId));
 
-    const matchedProgs = activeProgs.filter(p => 
+    const matchedProgs = programs.filter(p => 
       enrolledProgIds.has(p.id) || 
-      (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(studentObj.id)) ||
-      (enrolledProgIds.size === 0 && (!p.grade || p.grade === studentObj.grade || p.grade === 'همه پایه‌ها'))
+      p.grade === studentObj.grade ||
+      (p as any).studentIds?.includes(studentObj.id)
     );
 
     const mainOnly = matchedProgs.filter(p => {
@@ -159,7 +162,11 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       return list;
     }
 
-    return [];
+    return [
+      { id: 'c_usul', title: 'اصول فقه' },
+      { id: 'c_fiqh', title: 'فقه' },
+      { id: 'c_falsafa', title: 'فلسفه و کلام' }
+    ];
   }, [programs, enrollments, studentObj]);
 
   const activePeriod = useMemo(() => {

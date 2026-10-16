@@ -486,8 +486,6 @@ export interface Program {
   subjectChapter?: string; // مجلد / بخش / سرفصل درسی (مثلا بخش قطع و ظن، بخش استصحاب)
   chapterId?: string; // شناسه بخش در بانک دروس
   attendanceType?: 'representative' | 'self_reporting'; // نحوه ثبت حضور و غیاب: ثبت توسط نماینده (پیش‌فرض) یا خوداظهاری توسط طلبه
-  status?: 'active' | 'deleted' | 'inactive' | string;
-  isDeleted?: boolean;
 }
 
 export interface ClassSessionAttendance {

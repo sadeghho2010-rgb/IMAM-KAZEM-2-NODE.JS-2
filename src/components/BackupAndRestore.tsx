@@ -137,23 +137,6 @@ export default function BackupAndRestore() {
     });
   };
 
-  const [isPurging, setIsPurging] = useState<boolean>(false);
-  const handlePurgeTestData = async () => {
-    if (!window.confirm('هشدار مهم و نهایی: آیا می‌خواهید تمامی داده‌های تستی (طلاب، حضور و غیاب، نمرات، درخواست‌ها و سوابق) پاک شوند تا نرم‌افزار برای بهره‌برداری نهایی آماده شود؟\n\nبخش‌هایی که کاملاً حفظ خواهند شد:\n۱. سوپر ادمین\n۲. کاربران سطح ۲\n۳. بانک دروس\n۴. مدرس‌ها و کلاس‌های درس')) {
-      return;
-    }
-    try {
-      setIsPurging(true);
-      await localDb.purgeTestData();
-      alert('پاکسازی اطلاعات تستی با موفقیت انجام شد. اطلاعات پایه (سوپر ادمین، کاربران سطح ۲، بانک دروس، مدرس‌ها و کلاس‌ها) با موفقیت محافظت و حفظ شدند.');
-      window.location.reload();
-    } catch (e: any) {
-      alert('خطا در پاکسازی اطلاعات: ' + (e?.message || e));
-    } finally {
-      setIsPurging(false);
-    }
-  };
-
   const [students, setStudents] = useState<Student[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportingMentorId, setExportingMentorId] = useState<string | null>(null);
@@ -1433,32 +1416,6 @@ export default function BackupAndRestore() {
               ⚡ سیستم روی حالت «ثبت برخط و مستقیم در پایگاه داده» تنظیم است. هرگونه قطعی اینترنت یا تأخیر بیش از ۴ ثانیه بلافاصله توسط سیستم لغو شده و خطای عدم ثبت نمایش داده می‌شود.
             </div>
           )}
-        </div>
-
-        {/* DATA PURGE FOR PRODUCTION (پاکسازی اطلاعات تستی) */}
-        <div className="bg-gradient-to-br from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30 rounded-2xl p-5 space-y-4 text-right" dir="rtl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-500/20 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center">
-                <Trash2 size={18} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">آماده‌سازی نهایی و پاکسازی داده‌های تستی (پایان دوران تست)</h3>
-                <p className="text-[11px] text-rose-300/80">
-                  حذف کامل تمام اطلاعات تستی طلاب، حضور و غیاب، نمرات و سوابق با حفظ دقیق سوپر ادمین، کاربران سطح ۲، بانک دروس، مدرس‌ها و کلاس‌های درس.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handlePurgeTestData}
-              disabled={isPurging}
-              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-rose-950/50 flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
-            >
-              {isPurging ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              <span>{isPurging ? 'در حال پاکسازی...' : 'پاکسازی اطلاعات تستی و آماده‌سازی'}</span>
-            </button>
-          </div>
         </div>
       </div>
 

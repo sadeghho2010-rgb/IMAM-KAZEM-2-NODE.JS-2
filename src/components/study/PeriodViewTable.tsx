@@ -315,13 +315,12 @@ export default function PeriodViewTable({
 
   // Helper to map student to their main enrolled courses
   const getStudentCourses = (studentId: string, studentGrade?: string) => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
     const enrolledProgIds = new Set(
-      enrollments.filter(e => e.studentId === studentId && e.status !== 'deleted' && e.status !== 'inactive').map(e => e.programId)
+      enrollments.filter(e => e.studentId === studentId && (e.status === 'enrolled' || !e.status)).map(e => e.programId)
     );
-    let myCourses = activeProgs.filter(p => enrolledProgIds.has(p.id));
+    let myCourses = programs.filter(p => enrolledProgIds.has(p.id));
     if (myCourses.length === 0 && studentGrade) {
-      myCourses = activeProgs.filter(p => !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها');
+      myCourses = programs.filter(p => p.grade === studentGrade);
     }
     return myCourses.filter(p => {
       if (p.type && p.type !== 'اصلی') return false;
