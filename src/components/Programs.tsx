@@ -1401,6 +1401,19 @@ export default function Programs() {
 
     try {
       await localDb.deleteDoc('programs', id);
+
+      // Clean up enrollments for this deleted program
+      const allEnrolls = await localDb.getDocs<any>('course_enrollments');
+      for (const e of allEnrolls) {
+        if (String(e.programId) === String(id)) {
+          await localDb.deleteDoc('course_enrollments', e.id);
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
       dispatchDatabaseToast(`برنامه «${title}» با موفقیت از سیستم پاک شد.`, 'success');
       fetchData();
     } catch (error) {

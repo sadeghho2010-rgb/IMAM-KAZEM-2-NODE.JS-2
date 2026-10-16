@@ -88,10 +88,13 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 
   // Enrolled programs
   const enrolledPrograms = useMemo(() => {
-    return programs.filter(p => {
+    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+
+    return activeProgs.filter(p => {
       const inEnroll = enrollments.some(e => 
         String(e.programId) === String(p.id) && 
-        studentIdentifiers.some(id => String(e.studentId) === String(id))
+        studentIdentifiers.some(id => String(e.studentId) === String(id)) &&
+        e.status !== 'deleted' && e.status !== 'inactive'
       );
       if (inEnroll) return true;
 
@@ -99,10 +102,9 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
         studentIdentifiers.some(id => (p as any).studentIds.includes(id));
       if (inStudentIds) return true;
 
-      const matchGrade = !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها';
-      return matchGrade;
+      return false;
     });
-  }, [programs, studentGrade, studentIdentifiers, enrollments]);
+  }, [programs, studentIdentifiers, enrollments]);
 
   // Programs with self-reporting enabled for this student
   const selfReportingCourses = useMemo(() => {

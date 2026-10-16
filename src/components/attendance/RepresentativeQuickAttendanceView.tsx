@@ -72,6 +72,20 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   useEffect(() => {
     loadData();
+
+    const unsub = localDb.subscribe(() => loadData());
+    const handleDataChange = () => loadData();
+
+    window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_programs', handleDataChange);
+    window.addEventListener('collection_change_enrollments', handleDataChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_programs', handleDataChange);
+      window.removeEventListener('collection_change_enrollments', handleDataChange);
+    };
   }, [currentUser]);
 
   const loadData = async () => {
@@ -116,7 +130,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       });
       setMatchedStudent(matchedSt || null);
 
-      setPrograms(allProgs || []);
+      setPrograms((allProgs || []).filter(p => p.status !== 'deleted' && !(p as any).isDeleted));
       setStudents((allStudents || []).filter(s => s.status !== 'deleted'));
       setEnrollments(allEnrolls || []);
       setAttendanceLogs(allLogs || []);
@@ -161,14 +175,16 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     return Array.from(new Set(list)).map(x => normalizeClean(x)).filter(Boolean);
   }, [currentUser, matchedStudent]);
 
-  // Identify all classes where current user is a representative (Main, Counseling, Research, etc.)
+  // Identify all active classes where current user is an assigned representative
   const representedPrograms = useMemo(() => {
+    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+
     // If Level 1 or 2 manager, return all active programs for full management access
     if (currentUser?.level && currentUser.level < 3) {
-      return programs;
+      return activeProgs;
     }
 
-    return programs.filter(p => {
+    return activeProgs.filter(p => {
       // 1. Direct managedClassId
       if ((currentUser as any)?.managedClassId && String(p.id) === String((currentUser as any).managedClassId)) {
         return true;
@@ -198,7 +214,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           return true;
         }
       }
-      // 6. Enrollment + Representative Role Fallback (Main & Counseling Classes)
+      // 6. Enrollment + Representative Role Fallback (Only if explicitly assigned in program or enrollment)
       if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.isClassRep)) {
         if (p.attendanceType === 'representative' || !p.attendanceType) {
           const stIdStr = String(matchedStudent?.id || currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '');
@@ -212,12 +228,6 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
           const pStudentIds = Array.isArray((p as any).studentIds) ? (p as any).studentIds.map((x: any) => normalizeClean(String(x))) : [];
           if (candidateIds.some(cid => pStudentIds.includes(cid))) {
-            return true;
-          }
-
-          // Grade match fallback for class representative
-          const stGrade = matchedStudent?.grade || currentUser?.gradeLabel || '';
-          if (stGrade && (p.grade === stGrade || p.grade === 'همه پایه‌ها' || p.grade === 'همه')) {
             return true;
           }
         }
