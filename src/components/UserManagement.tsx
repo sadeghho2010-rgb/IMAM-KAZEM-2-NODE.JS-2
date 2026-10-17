@@ -203,7 +203,8 @@ export default function UserManagement() {
           allowedModules: formAllowedModules,
         });
 
-        if (formManagedClassId) {
+        const previousClassId = editingUser.managedClassId;
+        if (formRole === 'class_representative' && formManagedClassId) {
           localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
             if (prog) {
               const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
@@ -214,6 +215,20 @@ export default function UserManagement() {
                 representativeNames: repNames,
                 representativeStudentIds: repIds
               });
+            }
+          }).catch(console.warn);
+        } else if (previousClassId || editingUser.role === 'class_representative') {
+          // If role changed away from class_representative or managedClassId cleared, remove from all programs
+          localDb.getDocs<any>('programs').then(async (progs) => {
+            for (const p of progs) {
+              if (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(editingUser.id) || p.representativeStudentIds.includes(editingUser.studentId))) {
+                const nextIds = p.representativeStudentIds.filter((id: string) => id !== editingUser.id && id !== editingUser.studentId);
+                const nextNames = Array.isArray(p.representativeNames) ? p.representativeNames.filter((n: string) => n !== editingUser.fullName && n !== editingUser.name) : [];
+                await localDb.updateDoc('programs', p.id, {
+                  representativeStudentIds: nextIds,
+                  representativeNames: nextNames
+                });
+              }
             }
           }).catch(console.warn);
         }

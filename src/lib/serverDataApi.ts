@@ -1388,7 +1388,7 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
         return false;
       });
 
-      // If user is designated as class_representative but program hasn't stored rep ID yet, match through their enrolled classes
+      // If user is designated as class_representative but program hasn't stored rep ID yet, match through their enrolled classes (ONLY for legacy programs without explicit representative configuration)
       if (repPrograms.length === 0 && (user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId)) {
         const enrolledProgIds = new Set<string>();
         enrollments.forEach((enr: any) => {
@@ -1399,13 +1399,16 @@ export async function serverQueryCollection(collection: string, user?: any): Pro
         });
         programs.forEach((p: any) => {
           const pid = String(p.id).trim();
-          if (enrolledProgIds.has(pid) || (Array.isArray(p.studentIds) && p.studentIds.some((sid: any) => candidateIds.includes(String(sid).toLowerCase().trim())))) {
-            repPrograms.push(p);
+          const hasExplicitRepArray = Array.isArray(p.representativeStudentIds);
+          if (!hasExplicitRepArray) {
+            if (enrolledProgIds.has(pid) || (Array.isArray(p.studentIds) && p.studentIds.some((sid: any) => candidateIds.includes(String(sid).toLowerCase().trim())))) {
+              repPrograms.push(p);
+            }
           }
         });
       }
 
-      if (repPrograms.length > 0 || user.role === 'class_representative' || user.roleTitle?.includes('نماینده') || managedClassId) {
+      if (repPrograms.length > 0) {
         const repProgIds = new Set(repPrograms.map((p: any) => String(p.id).trim()));
         if (managedClassId) repProgIds.add(managedClassId);
 

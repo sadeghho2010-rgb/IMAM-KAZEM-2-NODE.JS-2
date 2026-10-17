@@ -1180,47 +1180,74 @@ export default function Programs() {
 
   const syncRepresentativeUsers = async (_studentIds?: string[]) => {
     try {
-      const allUsers = await localDb.getDocs<any>('users');
-      const allStudents = await localDb.getDocs<any>('students');
-      const allPrograms = await localDb.getDocs<any>('programs');
+      const [allUsersList, systemUsersList, legacyUsersList, allStudents, allPrograms] = await Promise.all([
+        localDb.getDocs<any>('all_users'),
+        localDb.getDocs<any>('system_users'),
+        localDb.getDocs<any>('users'),
+        localDb.getDocs<any>('students'),
+        localDb.getDocs<any>('programs')
+      ]);
+
+      const mergedUsersMap = new Map<string, any>();
+      [...legacyUsersList, ...allUsersList, ...systemUsersList].forEach(u => {
+        if (u && u.id) mergedUsersMap.set(u.id, u);
+      });
+      const allUsers = Array.from(mergedUsersMap.values());
+
       const activePrograms = allPrograms.filter(p => p.status !== 'deleted' && !p.isDeleted);
 
       // Collect ALL student IDs currently assigned as representatives in active programs
       const activeRepStudentIds = new Set<string>();
       activePrograms.forEach(p => {
         if (Array.isArray(p.representativeStudentIds)) {
-          p.representativeStudentIds.forEach((id: any) => activeRepStudentIds.add(String(id)));
+          p.representativeStudentIds.forEach((id: any) => activeRepStudentIds.add(String(id).toLowerCase().trim()));
         }
       });
 
       for (const u of allUsers) {
         const uStudentId = u.studentId || u.linkedStudentId || u.id;
-        const st = allStudents.find(s => s.id === uStudentId || s.nationalId === u.username || s.studentCode === u.username);
+        const st = allStudents.find(s => 
+          s.id === uStudentId || 
+          (s.nationalId && u.username && String(s.nationalId).toLowerCase().trim() === String(u.username).toLowerCase().trim()) || 
+          (s.studentCode && u.username && String(s.studentCode).toLowerCase().trim() === String(u.username).toLowerCase().trim())
+        );
         const effectiveStudentId = st?.id || uStudentId;
 
-        const isCurrentlyRep = activeRepStudentIds.has(String(effectiveStudentId)) || activeRepStudentIds.has(String(u.id));
+        const isCurrentlyRep = activeRepStudentIds.has(String(effectiveStudentId).toLowerCase().trim()) || activeRepStudentIds.has(String(u.id).toLowerCase().trim());
 
         if (isCurrentlyRep) {
           if (u.role !== 'class_representative' || !u.isClassRep) {
-            await localDb.updateDoc('users', u.id, {
+            const updated = {
               ...u,
               role: 'class_representative',
               roleTitle: 'نماینده کلاس',
               scope: 'class',
               isClassRep: true
-            });
+            };
+            await localDb.setDoc('all_users', updated);
+            await localDb.setDoc('system_users', updated);
+            try { await localDb.setDoc('users', updated); } catch {}
           }
         } else if (u.role === 'class_representative' || u.isClassRep) {
           // No longer assigned to ANY active program! Reset role back to student
-          await localDb.updateDoc('users', u.id, {
+          const updated = {
             ...u,
             role: 'student',
             roleTitle: 'طلبه',
             scope: 'student',
-            isClassRep: false
-          });
+            isClassRep: false,
+            managedClassId: null,
+            representativeProgramIds: []
+          };
+          await localDb.setDoc('all_users', updated);
+          await localDb.setDoc('system_users', updated);
+          try { await localDb.setDoc('users', updated); } catch {}
         }
       }
+
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+      window.dispatchEvent(new CustomEvent('collection_change_all_users'));
+      window.dispatchEvent(new CustomEvent('collection_change_system_users'));
     } catch (e) {
       console.warn('Error syncing representative user roles:', e);
     }

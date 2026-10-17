@@ -841,11 +841,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Check if today is a scheduled day of week for current program
   const isScheduledDayForProgram = useMemo(() => {
     if (!currentProgram) return true;
-    if (!Array.isArray(currentProgram.daysOfWeek) || currentProgram.daysOfWeek.length === 0) {
-      // Default: Saturday to Wednesday are class days
-      return dayOfWeekName !== 'جمعه';
+    const progDays = getProgramDays(currentProgram);
+    if (progDays && progDays.length > 0) {
+      const norm = (s: string) => s.replace(/[\u200c\s]/g, '').trim().toLowerCase();
+      const tNorm = norm(dayOfWeekName);
+      return progDays.some(d => {
+        const dNorm = norm(d);
+        return dNorm === tNorm || dNorm.includes(tNorm) || tNorm.includes(dNorm);
+      });
     }
-    return currentProgram.daysOfWeek.includes(dayOfWeekName as any);
+    return dayOfWeekName !== 'جمعه' && dayOfWeekName !== 'پنج‌شنبه';
   }, [currentProgram, dayOfWeekName]);
 
   // Recent / Upcoming Class Sessions based on school schedule and calendar

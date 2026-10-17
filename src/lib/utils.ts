@@ -13,19 +13,27 @@ export function normalizeDigits(input?: string | number | null): string {
     .replace(/[٠-٩]/g, d => String.fromCharCode(d.charCodeAt(0) - 1584));
 }
 
-export const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه'];
+export const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
 export function getProgramDays(p: { day?: string; days?: string[] }): string[] {
   if (p.days && Array.isArray(p.days) && p.days.length > 0) {
     return p.days;
   }
-  if (!p.day) return [];
-  if (p.day.includes('هر روز') || p.day.includes('شنبه تا چهارشنبه')) {
+  if (!p.day) return ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
+  const raw = p.day.trim();
+  if (!raw) return ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
+
+  if (/شنبه\s*(تا|الی|-)\s*(پنج‌شنبه|پنجشنبه|۵شنبه|5شنبه)/i.test(raw)) {
+    return ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه'];
+  }
+  if (/شنبه\s*(تا|الی|-)\s*(چهارشنبه|۴شنبه|4شنبه)|هر\s*روز|روزهای\s*درسی/i.test(raw)) {
     return ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
   }
-  const matched = WEEK_DAYS.filter(d => p.day?.includes(d));
+
+  const matched = WEEK_DAYS.filter(d => raw.includes(d));
   if (matched.length > 0) return matched;
-  return [p.day];
+
+  return [raw];
 }
 
 export function normalizeGrade(val?: string | number | null): string {

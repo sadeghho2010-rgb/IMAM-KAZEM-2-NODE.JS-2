@@ -235,19 +235,19 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     if (!prog) return false;
     if ((prog as any).status === 'deleted' || (prog as any).isDeleted) return false;
 
-    const days = (prog.days && Array.isArray(prog.days) && prog.days.length > 0)
-      ? prog.days
-      : (prog.day ? (prog.day.includes('شنبه تا چهارشنبه') || prog.day.includes('هر روز')
-          ? ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']
-          : [prog.day]) : []);
-
-    if (!days || days.length === 0) return true;
-
     const dayName = getShamsiDayOfWeekName(dateStr);
     const norm = (s: string) => s.replace(/[\u200c\s]/g, '').trim().toLowerCase();
     const targetNorm = norm(dayName);
 
-    return days.some(d => {
+    const isFriday = targetNorm === 'جمعه' || targetNorm.includes('جمعه');
+
+    const progDays = getProgramDays(prog);
+
+    if (!progDays || progDays.length === 0) {
+      return !isFriday && !targetNorm.includes('پنجشنبه');
+    }
+
+    return progDays.some(d => {
       const dNorm = norm(d);
       return dNorm === targetNorm || dNorm.includes(targetNorm) || targetNorm.includes(dNorm);
     });
@@ -420,6 +420,13 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
     if (currentHoliday) {
       alert(`تاریخ ${selectedDate} در تقویم آموزشی به عنوان روز تعطیل («${currentHoliday.title}») ثبت شده است و امکان ایجاد یا ثبت حضور و غیاب برای این روز وجود ندارد.`);
+      return;
+    }
+
+    const isClassDay = isCourseHeldOnDate(currentProgram, selectedDate);
+    if (!isClassDay) {
+      const dayName = getShamsiDayOfWeekName(selectedDate);
+      alert(`تاریخ ${selectedDate} (${dayName}) روز درسی برای کلاس «${currentProgram.title}» نیست و امکان ثبت حضور و غیاب برای آن وجود ندارد.`);
       return;
     }
 
@@ -953,7 +960,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           <button
             type="button"
             onClick={handleSaveAttendance}
-            disabled={isSaving || classStudents.length === 0}
+            disabled={isSaving || classStudents.length === 0 || !isCourseHeldOnDate(currentProgram, selectedDate) || !!currentHoliday}
             className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-40"
           >
             <Save size={16} />
