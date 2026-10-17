@@ -1474,16 +1474,23 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods'
   ];
 
-  const results = await Promise.all(
-    collections.map(async (col) => {
-      try {
-        const items = await serverQueryCollection(col, callerUser);
-        return { col, items };
-      } catch (e) {
-        return { col, items: [] };
-      }
-    })
-  );
+  const BATCH_SIZE = 6;
+  const results: { col: string; items: any[] }[] = [];
+
+  for (let i = 0; i < collections.length; i += BATCH_SIZE) {
+    const batch = collections.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (col) => {
+        try {
+          const items = await serverQueryCollection(col, callerUser);
+          return { col, items };
+        } catch (e) {
+          return { col, items: [] };
+        }
+      })
+    );
+    results.push(...batchResults);
+  }
 
   const result: Record<string, any[]> = {};
   for (const { col, items } of results) {

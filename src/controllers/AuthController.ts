@@ -58,7 +58,31 @@ export class AuthController {
         return res.status(400).json({ success: false, message: errorMsg });
       }
 
-      const result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+      let result;
+      try {
+        result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+      } catch (firstErr: any) {
+        const errMsg = firstErr?.message || String(firstErr);
+        const isConnErr = errMsg.includes('DbConnectionError') ||
+          errMsg.includes('ECONNREFUSED') ||
+          errMsg.includes('ETIMEDOUT') ||
+          firstErr?.code === 'ECONNREFUSED' ||
+          firstErr?.code === 'ETIMEDOUT';
+
+        if (isConnErr) {
+          console.error('[DB_ERROR]', firstErr);
+          // Retry automatically after 500ms
+          await new Promise(r => setTimeout(r, 500));
+          try {
+            result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+          } catch (retryErr: any) {
+            console.error('[DB_ERROR]', retryErr);
+            return res.status(503).json({ error: 'سرور موقتاً در دسترس نیست' });
+          }
+        } else {
+          throw firstErr;
+        }
+      }
 
       // Force change password on first login: Do NOT issue tokens
       if (result.user && result.user.mustChangePassword) {
@@ -114,11 +138,18 @@ export class AuthController {
         refreshToken: result.refreshToken
       });
     } catch (error: any) {
-      const isDbConnError = isConnectionError(error) || error?.isDbConnectionError || error?.statusCode === 503;
-      const statusCode = isDbConnError ? 503 : (error?.statusCode || (error?.status ? Number(error.status) : 401));
-      const message = isDbConnError
-        ? 'ارتباط با پایگاه داده برقرار نشد. لطفاً چند لحظه بعد مجدداً تلاش کنید.'
-        : (error?.message || 'نام کاربری یا رمز عبور اشتباه است.');
+      const isDbConnError = isConnectionError(error) ||
+        error?.isDbConnectionError ||
+        error?.statusCode === 503 ||
+        (error?.message && error.message.includes('DbConnectionError'));
+
+      if (isDbConnError) {
+        console.error('[DB_ERROR]', error);
+        return res.status(503).json({ error: 'سرور موقتاً در دسترس نیست' });
+      }
+
+      const statusCode = error?.statusCode || (error?.status ? Number(error.status) : 401);
+      const message = error?.message || 'نام کاربری یا رمز عبور اشتباه است.';
 
       if (!isDbConnError) {
         void logAudit({

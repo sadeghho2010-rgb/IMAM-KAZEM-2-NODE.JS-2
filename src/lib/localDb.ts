@@ -3313,6 +3313,10 @@ class LocalDatabase {
       console.warn('Error during initCloudSync:', e);
     }
   }
+
+  public async flushSyncQueue(): Promise<{ synced: number; failed: number }> {
+    return processSyncQueue();
+  }
 }
 
 export const localDb = new LocalDatabase();

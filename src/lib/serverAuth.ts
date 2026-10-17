@@ -866,10 +866,11 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
     }
   }
 
-  // 3. Fallback to full storage if not found
-  if (!user) {
-    const allUsers = await fetchAllUsersFromStorage();
-    user = allUsers.find(u => u.username?.toUpperCase() === cleanUser);
+  // 3. Fallback to file storage if not found
+  // Login: Single query per auth cycle - performance critical
+  if (!user && !isMysqlConfigured) {
+    const fileUsers = loadUsersFromFile();
+    user = fileUsers.find(u => u.username?.toUpperCase() === cleanUser) || null;
   }
 
   if (user) {
@@ -886,124 +887,49 @@ export function invalidateUserCache(usernameInput: string) {
   }
 }
 
-export async function saveUserToStorage(user: StoredUser): Promise<void> {
+export async function saveUserToStorage(user: StoredUser, options: { isLogin?: boolean } = {}): Promise<void> {
   const cleanId = (user.username || '').trim().toUpperCase();
   if (cleanId) {
     serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
     userCache.set(cleanId, { user: { ...user, username: cleanId }, cachedAt: Date.now() });
+  }
+
+  const performAsyncStorage = async () => {
+    if (options.isLogin) {
+      // Lightweight UPDATE on all_users only
+      if (isMysqlConfigured) {
+        try {
+          const pool = (await import('./databaseAbstraction')).getMysqlPool();
+          if (pool) {
+            await pool.execute(
+              `UPDATE all_users SET last_login = NOW(), failed_login_attempts = 0 WHERE UPPER(username) = ?`,
+              [cleanId]
+            );
+          }
+        } catch (err) {
+          console.error('[STORAGE_FAILURE] Login last_login update failed:', err);
+        }
+      }
+      return;
+    }
+
+    // First-time signup / full admin user save
     saveUsersToFile(Array.from(serverMemoryUsers.values()));
-  }
 
-  // 1. If MySQL is configured, execute prepared upsert via MySQL Repository
-  if (isMysqlConfigured) {
-    try {
-      await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
-    } catch (mErr: any) {
-      console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
-    }
-  }
-
-  if (!isServerSupabaseConfigured) {
-    return;
-  }
-  try {
-    const isSuperAdmin = cleanId === 'SADEGH' || user.role === 'super_admin';
-
-    if (!isSuperAdmin) {
-      // 1. PRIMARY: Save user directly into the dedicated 'all_users' collection in the cloud database
-      await querySupabaseWithTimeout(
-        serverSupabase.from('app_collections').upsert({
-          collection_name: 'all_users',
-          id: cleanId,
-          data: user,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }),
-        2000
-      );
-
-      // Also update the summary list in all_users
-      const allNonAdmins = Array.from(serverMemoryUsers.values())
-        .filter(u => u.username?.toUpperCase() !== 'SADEGH' && u.role !== 'super_admin');
-      await querySupabaseWithTimeout(
-        serverSupabase.from('app_collections').upsert({
-          collection_name: 'all_users',
-          id: 'users_list',
-          data: { count: allNonAdmins.length, users: allNonAdmins },
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }),
-        2000
-      );
-
-      // Try dedicated all_users SQL table if exists
+    if (isMysqlConfigured) {
       try {
-        await querySupabaseWithTimeout(
-          serverSupabase.from('all_users').upsert({
-            id: user.id || cleanId,
-            username: cleanId,
-            password_hash: user.passwordHash || '',
-            name: user.name || '',
-            role: user.role || 'student',
-            level: user.level || 3,
-            role_title: user.roleTitle || '',
-            allowed_tabs: user.allowedTabs || [],
-            editable_tabs: user.editableTabs || [],
-            module_permissions: user.modulePermissions || {},
-            is_read_only: user.isReadOnly || false,
-            can_edit: user.canEdit !== undefined ? user.canEdit : true,
-            must_change_password: !!user.mustChangePassword,
-            failed_login_attempts: user.failedLoginAttempts || 0,
-            account_locked_until: user.accountLockedUntil || null,
-            last_login: user.lastLogin || null,
-            data: user,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'username' }),
-          1200
-        );
-      } catch {}
+        await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
+      } catch (mErr: any) {
+        console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
+      }
     }
+  };
 
-    // 2. Also keep mirror in system_users for backward compatibility & super admin
-    try {
-      await querySupabaseWithTimeout(
-        serverSupabase.from('app_collections').upsert({
-          collection_name: 'system_users',
-          id: cleanId,
-          data: user,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' }),
-        1500
-      );
-    } catch {}
-
-    // Save to dedicated system_users table if it exists
-    try {
-      await querySupabaseWithTimeout(
-        serverSupabase.from('system_users').upsert({
-          id: user.id || cleanId,
-          username: cleanId,
-          password_hash: user.passwordHash || '',
-          name: user.name || '',
-          role: user.role || 'student',
-          level: user.level || 3,
-          role_title: user.roleTitle || '',
-          allowed_tabs: user.allowedTabs || [],
-          editable_tabs: user.editableTabs || [],
-          module_permissions: user.modulePermissions || {},
-          is_read_only: user.isReadOnly || false,
-          can_edit: user.canEdit !== undefined ? user.canEdit : true,
-          must_change_password: !!user.mustChangePassword,
-          failed_login_attempts: user.failedLoginAttempts || 0,
-          account_locked_until: user.accountLockedUntil || null,
-          last_login: user.lastLogin || null,
-          data: user,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'username' }),
-        1200
-      );
-    } catch {}
-
-  } catch (e: unknown) {
-    console.error('Error saving user to storage:', e);
+  if (options.isLogin) {
+    // Run async in background without delaying HTTP login response to user
+    void performAsyncStorage();
+  } else {
+    await performAsyncStorage();
   }
 }
 

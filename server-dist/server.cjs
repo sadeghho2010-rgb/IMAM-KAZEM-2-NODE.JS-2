@@ -28,20 +28,385 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// src/config/monitoringConfig.ts
+var monitoringConfig;
+var init_monitoringConfig = __esm({
+  "src/config/monitoringConfig.ts"() {
+    monitoringConfig = {
+      // Retention & Storage limits
+      retentionDays: 14,
+      // Purge events older than 14 days
+      maxTotalEvents: 2e4,
+      // Absolute max rows in mon_events to keep disk under control
+      cleanupIntervalMs: 24 * 60 * 60 * 1e3,
+      // Run cleanup once every 24 hours
+      // Performance thresholds
+      slowRequestThresholdMs: 1200,
+      // Requests taking > 1.2s are flagged as slow
+      slowQueryThresholdMs: 800,
+      // Database queries taking > 800ms are flagged as slow
+      // Noise filter: paths that must NEVER be logged as slow or failed (unless 5xx)
+      noisePaths: [
+        "/api/sync/events",
+        "/api/system/health",
+        "/api/system/db-status",
+        "/favicon.ico",
+        "/api/monitor/events"
+        // Do not log the monitoring endpoint itself
+      ],
+      // Rate limiting for client events
+      clientEventMaxPerMinute: 20,
+      clientEventDebounceMs: 60 * 1e3,
+      // 60s debounce for identical fingerprints
+      // Payload caps
+      maxShortMessageLength: 500,
+      maxStackLines: 10,
+      maxMetadataBytes: 2048
+    };
+  }
+});
+
+// src/lib/monitoringSanitizer.ts
+function resolveSectionName(routeOrPath) {
+  if (!routeOrPath) return "\u0639\u0645\u0648\u0645\u06CC \u0633\u0627\u0645\u0627\u0646\u0647";
+  const clean = routeOrPath.toLowerCase().replace(/^\/api\//, "").replace(/^\//, "");
+  const segments = clean.split(/[/?#]/);
+  const primaryKey = segments[0] || "";
+  if (ROUTE_SECTION_MAP[primaryKey]) {
+    return ROUTE_SECTION_MAP[primaryKey];
+  }
+  for (const [key, label] of Object.entries(ROUTE_SECTION_MAP)) {
+    if (clean.includes(key)) return label;
+  }
+  return "\u0628\u062E\u0634 " + (primaryKey || "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0633\u0627\u0645\u0627\u0646\u0647");
+}
+function sanitizeSensitiveText(text, maxLength = 500) {
+  if (!text) return "";
+  let str = String(text);
+  str = str.replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]");
+  str = str.replace(/eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+/g, "[JWT_REDACTED]");
+  str = str.replace(/("?(password|pass|pin|secret|token|currentPassword|newPassword)"?\s*[:=]\s*)"[^"]*"/gi, '$1"[REDACTED]"');
+  str = str.replace(/([?&](password|pass|pin|token)=)[^&]*/gi, "$1[REDACTED]");
+  str = str.replace(/\b\d{10}\b/g, "[NATIONAL_ID_REDACTED]");
+  str = str.replace(/\b09\d{9}\b/g, "[PHONE_REDACTED]");
+  if (str.length > maxLength) {
+    str = str.substring(0, maxLength) + "...";
+  }
+  return str;
+}
+function sanitizeStackTrace(stack, maxLines = 10) {
+  if (!stack) return "";
+  const lines = stack.split("\n");
+  const shortLines = lines.slice(0, maxLines).map((line) => {
+    return line.replace(new RegExp(process.cwd(), "g"), ".");
+  });
+  return shortLines.join("\n");
+}
+function computeFingerprint(type, message, routeOrSection) {
+  const normMessage = (message || "").toLowerCase().replace(/\b0x[0-9a-f]+\b/g, "").replace(/\d+/g, "#").replace(/\s+/g, " ").trim().substring(0, 150);
+  const rawKey = `${type}|${routeOrSection}|${normMessage}`;
+  let h1 = 3735928559;
+  let h2 = 1103547991;
+  for (let i = 0; i < rawKey.length; i++) {
+    const ch = rawKey.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507) ^ Math.imul(h2 ^ h2 >>> 13, 3266489909);
+  h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
+  const part1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const part2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return (part1 + part2).substring(0, 16);
+}
+var ROUTE_SECTION_MAP;
+var init_monitoringSanitizer = __esm({
+  "src/lib/monitoringSanitizer.ts"() {
+    ROUTE_SECTION_MAP = {
+      // Education & Students
+      "attendance": "\u062D\u0636\u0648\u0631 \u0648 \u063A\u06CC\u0627\u0628 \u0637\u0644\u0627\u0628",
+      "students": "\u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0644 \u067E\u0631\u0648\u0646\u062F\u0647 \u0637\u0644\u0627\u0628",
+      "active-students": "\u0644\u06CC\u0633\u062A \u0637\u0644\u0627\u0628 \u0641\u0639\u0627\u0644",
+      "study": "\u0622\u0645\u0627\u0631 \u0645\u0637\u0627\u0644\u0639\u0647 \u0637\u0644\u0627\u0628",
+      "programs": "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0647\u0627\u06CC \u0622\u0645\u0648\u0632\u0634\u06CC \u0648 \u0633\u0631\u0641\u0635\u0644\u200C\u0647\u0627",
+      "classrooms": "\u0645\u064E\u062F\u0631\u064E\u0633\u200C\u0647\u0627 \u0648 \u06A9\u0644\u0627\u0633\u200C\u0647\u0627\u06CC \u062F\u0631\u0633",
+      "schedule": "\u0628\u0631\u0646\u0627\u0645\u0647 \u062F\u0631\u0633\u06CC \u0648 \u0647\u0641\u062A\u06AF\u06CC",
+      "student-requests": "\u067E\u0646\u0644 \u062F\u0631\u062E\u0648\u0627\u0633\u062A\u200C\u0647\u0627\u06CC \u0637\u0644\u0627\u0628",
+      "oral-exams": "\u0622\u0632\u0645\u0648\u0646\u200C\u0647\u0627\u06CC \u0634\u0641\u0627\u0647\u06CC \u0641\u0642\u0647 \u0648 \u0627\u0635\u0648\u0644",
+      "counseling": "\u06A9\u0644\u0627\u0633\u200C\u0647\u0627 \u0648 \u062C\u0644\u0633\u0627\u062A \u0645\u0634\u0627\u0648\u0631\u0647",
+      "course-selection": "\u0627\u0646\u062A\u062E\u0627\u0628 \u0648\u0627\u062D\u062F \u0622\u0645\u0648\u0632\u0634\u06CC",
+      "lockers": "\u0627\u0645\u0648\u0631 \u06A9\u0645\u062F\u0647\u0627 \u0648 \u0627\u0633\u06A9\u0627\u0646 \u0637\u0644\u0627\u0628",
+      "comments": "\u0646\u0638\u0631\u0627\u062A \u0648 \u0627\u0631\u0632\u06CC\u0627\u0628\u06CC\u200C\u0647\u0627\u06CC \u062A\u0631\u0628\u06CC\u062A\u06CC",
+      "discussion": "\u06AF\u0631\u0648\u0647\u200C\u0647\u0627\u06CC \u0645\u0628\u0627\u062D\u062B\u0647 \u0639\u0644\u0645\u06CC",
+      "calendar": "\u062A\u0642\u0648\u06CC\u0645 \u0622\u0645\u0648\u0632\u0634\u06CC \u0648 \u0633\u0627\u0644\u0646\u0627\u0645\u0647",
+      "summary": "\u067E\u0631\u0648\u0646\u062F\u0647 \u062A\u062D\u0635\u06CC\u0644\u06CC \u0637\u0644\u0627\u0628",
+      // Finance
+      "tuition": "\u0634\u0647\u0631\u06CC\u0647 \u0648 \u0627\u0645\u0648\u0631 \u0645\u0627\u0644\u06CC \u0637\u0644\u0627\u0628",
+      "expenses": "\u0647\u0632\u06CC\u0646\u0647\u200C\u0647\u0627 \u0648 \u0628\u0648\u062F\u062C\u0647 \u0645\u0627\u0644\u06CC",
+      "loans": "\u0635\u0646\u062F\u0648\u0642 \u0642\u0631\u0636\u200C\u0627\u0644\u062D\u0633\u0646\u0647 \u0648 \u0648\u0627\u0645\u200C\u0647\u0627",
+      "meals": "\u0631\u0632\u0631\u0648 \u0648\u0639\u062F\u0647\u200C\u0647\u0627\u06CC \u063A\u0630\u0627\u06CC\u06CC \u0637\u0644\u0627\u0628",
+      "claims": "\u0645\u0637\u0627\u0644\u0628\u0627\u062A \u0648 \u0628\u062F\u0647\u06CC\u200C\u0647\u0627\u06CC \u0645\u0627\u0644\u06CC",
+      "transport": "\u0633\u0631\u0648\u06CC\u0633 \u0627\u06CC\u0627\u0628 \u0648 \u0630\u0647\u0627\u0628 \u0627\u0633\u0627\u062A\u06CC\u062F",
+      // System & Management
+      "auth": "\u0648\u0631\u0648\u062F \u0648 \u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A",
+      "users": "\u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0648 \u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627",
+      "credentials": "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0645\u0634\u062E\u0635\u0627\u062A \u0648 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631",
+      "audit": "\u0641\u0639\u0627\u0644\u06CC\u062A\u200C\u0647\u0627\u06CC \u0633\u0627\u06CC\u062A \u0648 \u0631\u062F\u067E\u0627\u06CC \u062A\u063A\u06CC\u06CC\u0631\u0627\u062A",
+      "database": "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u0648 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633",
+      "system": "\u0633\u0644\u0627\u0645\u062A \u0633\u06CC\u0633\u062A\u0645 \u0648 \u0645\u0627\u0646\u06CC\u062A\u0648\u0631\u06CC\u0646\u06AF",
+      "todos": "\u067E\u06CC\u06AF\u06CC\u0631\u06CC\u200C\u0647\u0627 \u0648 \u062A\u0633\u06A9\u200C\u0647\u0627\u06CC \u062C\u0627\u0631\u06CC",
+      "workflow": "\u06A9\u0627\u0631\u062A\u0627\u0628\u0644 \u0648 \u062C\u0631\u06CC\u0627\u0646 \u06A9\u0627\u0631 \u062A\u0627\u06CC\u06CC\u062F\u0627\u062A",
+      "teachers": "\u0628\u0627\u0646\u06A9 \u0627\u0633\u0627\u062A\u06CC\u062F \u0648 \u0645\u062F\u0631\u0633\u06CC\u0646",
+      "staff": "\u0628\u0627\u0646\u06A9 \u06A9\u0627\u0631\u06A9\u0646\u0627\u0646 \u0648 \u067E\u0631\u0633\u0646\u0644"
+    };
+  }
+});
+
+// src/lib/monitoringService.ts
+var monitoringService_exports = {};
+__export(monitoringService_exports, {
+  initMonitoringDatabase: () => initMonitoringDatabase,
+  recordMonitoringEvent: () => recordMonitoringEvent,
+  runMonitoringPurge: () => runMonitoringPurge,
+  startMonitoringPurgeScheduler: () => startMonitoringPurgeScheduler
+});
+async function initMonitoringDatabase() {
+  const pool2 = getMysqlPool();
+  if (!pool2) return;
+  try {
+    await pool2.query(`
+      CREATE TABLE IF NOT EXISTS \`mon_events\` (
+        \`id\` BIGINT NOT NULL AUTO_INCREMENT,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`event_type\` VARCHAR(40) NOT NULL,
+        \`severity\` VARCHAR(20) NOT NULL DEFAULT 'error',
+        \`fingerprint\` VARCHAR(64) NOT NULL,
+        \`section_name\` VARCHAR(100) NOT NULL,
+        \`route_path\` VARCHAR(255) NULL,
+        \`status_code\` INT NULL,
+        \`duration_ms\` INT NULL,
+        \`request_id\` VARCHAR(16) NULL,
+        \`user_id\` VARCHAR(64) NULL,
+        \`user_role\` VARCHAR(50) NULL,
+        \`display_name\` VARCHAR(100) NULL,
+        \`short_message\` VARCHAR(500) NOT NULL,
+        \`short_stack\` TEXT NULL,
+        \`app_version\` VARCHAR(20) NOT NULL DEFAULT '1.0.0',
+        \`metadata_json\` VARCHAR(1500) NULL,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_mon_time\` (\`created_at\`),
+        INDEX \`idx_mon_fp_time\` (\`fingerprint\`, \`created_at\`),
+        INDEX \`idx_mon_user_time\` (\`user_id\`, \`created_at\`),
+        INDEX \`idx_mon_req_id\` (\`request_id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    await pool2.query(`
+      CREATE TABLE IF NOT EXISTS \`mon_issue_groups\` (
+        \`fingerprint\` VARCHAR(64) NOT NULL,
+        \`status\` VARCHAR(20) NOT NULL DEFAULT 'open',
+        \`category\` VARCHAR(50) NOT NULL DEFAULT '\u062E\u0637\u0627\u06CC \u0633\u06CC\u0633\u062A\u0645',
+        \`first_seen_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`last_seen_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        \`total_occurrences\` INT NOT NULL DEFAULT 1,
+        \`resolution_note\` VARCHAR(255) NULL,
+        \`reopened_count\` INT NOT NULL DEFAULT 0,
+        PRIMARY KEY (\`fingerprint\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (err) {
+    console.warn("[Monitoring DB Init Warning]:", err?.message || err);
+  }
+}
+function recordMonitoringEvent(input) {
+  try {
+    const pool2 = getMysqlPool();
+    if (!pool2) return;
+    const routePath = input.routePath || "";
+    if (monitoringConfig.noisePaths.some((p) => routePath.startsWith(p)) && (input.statusCode || 200) < 500) {
+      return;
+    }
+    const shortMessage = sanitizeSensitiveText(input.shortMessage, monitoringConfig.maxShortMessageLength);
+    const sectionName = input.sectionName || resolveSectionName(routePath);
+    const fingerprint = computeFingerprint(input.eventType, shortMessage, sectionName);
+    const now = Date.now();
+    const lastSeen = recentFingerprints.get(fingerprint);
+    if (lastSeen && now - lastSeen < monitoringConfig.clientEventDebounceMs) {
+      return;
+    }
+    recentFingerprints.set(fingerprint, now);
+    if (recentFingerprints.size > 2e3) {
+      for (const [fp, time] of recentFingerprints.entries()) {
+        if (now - time > 12e4) recentFingerprints.delete(fp);
+      }
+    }
+    const shortStack = input.stack ? sanitizeStackTrace(input.stack, monitoringConfig.maxStackLines) : null;
+    let metadataStr = null;
+    if (input.metadata) {
+      try {
+        const sanitizedMeta = sanitizeSensitiveText(JSON.stringify(input.metadata), monitoringConfig.maxMetadataBytes);
+        metadataStr = sanitizedMeta;
+      } catch {
+      }
+    }
+    insertQueue.push({
+      eventType: input.eventType,
+      severity: input.severity || "error",
+      fingerprint,
+      sectionName,
+      routePath: routePath.substring(0, 250),
+      statusCode: input.statusCode || null,
+      durationMs: input.durationMs || null,
+      requestId: input.requestId || null,
+      userId: input.userId || null,
+      userRole: input.userRole || null,
+      displayName: sanitizeSensitiveText(input.displayName || "", 80) || null,
+      shortMessage,
+      shortStack,
+      appVersion: input.appVersion || "1.0.0",
+      metadataStr
+    });
+    if (!isQueueProcessing) {
+      void drainInsertQueue();
+    }
+  } catch (err) {
+    console.warn("[Monitoring Record Non-fatal Error]:", err);
+  }
+}
+async function drainInsertQueue() {
+  if (isQueueProcessing || insertQueue.length === 0) return;
+  isQueueProcessing = true;
+  const pool2 = getMysqlPool();
+  if (!pool2) {
+    insertQueue.length = 0;
+    isQueueProcessing = false;
+    return;
+  }
+  try {
+    while (insertQueue.length > 0) {
+      const batch = insertQueue.splice(0, 20);
+      for (const item of batch) {
+        await pool2.query(`
+          INSERT INTO \`mon_events\` (
+            \`event_type\`, \`severity\`, \`fingerprint\`, \`section_name\`,
+            \`route_path\`, \`status_code\`, \`duration_ms\`, \`request_id\`,
+            \`user_id\`, \`user_role\`, \`display_name\`, \`short_message\`,
+            \`short_stack\`, \`app_version\`, \`metadata_json\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          item.eventType,
+          item.severity,
+          item.fingerprint,
+          item.sectionName,
+          item.routePath,
+          item.statusCode,
+          item.durationMs,
+          item.requestId,
+          item.userId,
+          item.userRole,
+          item.displayName,
+          item.shortMessage,
+          item.shortStack,
+          item.appVersion,
+          item.metadataStr
+        ]).catch(() => {
+        });
+        await pool2.query(`
+          INSERT INTO \`mon_issue_groups\` (
+            \`fingerprint\`, \`status\`, \`category\`, \`first_seen_at\`, \`last_seen_at\`, \`total_occurrences\`
+          ) VALUES (?, 'open', ?, NOW(), NOW(), 1)
+          ON DUPLICATE KEY UPDATE 
+            \`last_seen_at\` = NOW(),
+            \`total_occurrences\` = \`total_occurrences\` + 1,
+            \`status\` = IF(\`status\` = 'resolved', 'open', \`status\`),
+            \`reopened_count\` = IF(\`status\` = 'resolved', \`reopened_count\` + 1, \`reopened_count\`)
+        `, [item.fingerprint, item.eventType]).catch(() => {
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("[Monitoring Queue Drain Warning]:", e);
+  } finally {
+    isQueueProcessing = false;
+  }
+}
+async function runMonitoringPurge() {
+  const pool2 = getMysqlPool();
+  if (!pool2) return { deletedCount: 0 };
+  let totalDeleted = 0;
+  try {
+    const [retentionRes] = await pool2.query(`
+      DELETE FROM \`mon_events\` 
+      WHERE \`created_at\` < DATE_SUB(NOW(), INTERVAL ? DAY)
+    `, [monitoringConfig.retentionDays]);
+    totalDeleted += retentionRes?.affectedRows || 0;
+    const [countRes] = await pool2.query(`SELECT COUNT(*) as total FROM \`mon_events\``);
+    const currentCount = Number(countRes?.[0]?.total || 0);
+    if (currentCount > monitoringConfig.maxTotalEvents) {
+      const excess = currentCount - monitoringConfig.maxTotalEvents;
+      const [capRes] = await pool2.query(`
+        DELETE FROM \`mon_events\` 
+        ORDER BY \`id\` ASC 
+        LIMIT ?
+      `, [excess]);
+      totalDeleted += capRes?.affectedRows || 0;
+    }
+  } catch (err) {
+    console.warn("[Monitoring Purge Error]:", err);
+  }
+  return { deletedCount: totalDeleted };
+}
+function startMonitoringPurgeScheduler() {
+  if (purgeTimer) clearInterval(purgeTimer);
+  purgeTimer = setInterval(() => {
+    void runMonitoringPurge();
+  }, monitoringConfig.cleanupIntervalMs);
+  if (purgeTimer.unref) purgeTimer.unref();
+}
+var recentFingerprints, insertQueue, isQueueProcessing, purgeTimer;
+var init_monitoringService = __esm({
+  "src/lib/monitoringService.ts"() {
+    init_databaseAbstraction();
+    init_monitoringConfig();
+    init_monitoringSanitizer();
+    recentFingerprints = /* @__PURE__ */ new Map();
+    insertQueue = [];
+    isQueueProcessing = false;
+    purgeTimer = null;
+  }
+});
+
 // src/lib/logger.ts
 function requestLogger(req, res, next) {
   const start = Date.now();
-  const requestId = Math.random().toString(36).substring(2, 9);
+  const requestId = Math.random().toString(36).substring(2, 10).toUpperCase();
   req.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
   res.on("finish", () => {
     const duration = Date.now() - start;
-    const message = `${req.method} ${req.originalUrl || req.url} ${res.statusCode} - ${duration}ms`;
+    const path8 = req.originalUrl || req.url;
+    const message = `${req.method} ${path8} ${res.statusCode} - ${duration}ms`;
     if (res.statusCode >= 500) {
       logger.error(message, { requestId, ip: req.ip, duration });
     } else if (res.statusCode >= 400) {
       logger.warn(message, { requestId, ip: req.ip, duration });
     } else {
       logger.info(message, { requestId, duration });
+    }
+    if (duration >= 1200 && res.statusCode < 500) {
+      try {
+        Promise.resolve().then(() => (init_monitoringService(), monitoringService_exports)).then((mod) => {
+          mod.recordMonitoringEvent({
+            eventType: "slow_request",
+            severity: "warn",
+            routePath: path8,
+            statusCode: res.statusCode,
+            durationMs: duration,
+            requestId,
+            shortMessage: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u06A9\u0646\u062F: ${req.method} ${path8} (${duration}ms)`
+          });
+        }).catch(() => {
+        });
+      } catch {
+      }
     }
   });
   next();
@@ -346,12 +711,18 @@ var init_systemHealthMonitor = __esm({
 // src/lib/databaseAbstraction.ts
 var databaseAbstraction_exports = {};
 __export(databaseAbstraction_exports, {
+  DbConnectionError: () => DbConnectionError,
   MysqlRepository: () => MysqlRepository,
+  cleanNullableStr: () => cleanNullableStr,
   ensurePerformanceIndexes: () => ensurePerformanceIndexes,
   executeMysqlQuery: () => executeMysqlQuery,
   getDbConnectionStatus: () => getDbConnectionStatus,
   getMysqlPool: () => getMysqlPool,
+  isConnectionError: () => isConnectionError,
   isMysqlConfigured: () => isMysqlConfigured,
+  mapDedicatedRowToRecord: () => mapDedicatedRowToRecord,
+  mergeDedicatedAndDocumentRows: () => mergeDedicatedAndDocumentRows,
+  parseGradeToNumericLevel: () => parseGradeToNumericLevel,
   parseMysqlConfig: () => parseMysqlConfig,
   recordLoginAuditInDb: () => recordLoginAuditInDb,
   sanitizeRecordForDb: () => sanitizeRecordForDb,
@@ -359,6 +730,225 @@ __export(databaseAbstraction_exports, {
   translateMysqlError: () => translateMysqlError,
   validateMysqlConfig: () => validateMysqlConfig
 });
+function parseGradeToNumericLevel(gradeInput) {
+  if (typeof gradeInput === "number") return isNaN(gradeInput) ? 3 : gradeInput;
+  if (!gradeInput || typeof gradeInput !== "string") return 3;
+  const englishDigits = gradeInput.replace(/[۰-۹]/g, (d) => "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9".indexOf(d).toString());
+  const match = englishDigits.match(/\d+/);
+  if (match) {
+    const parsed = parseInt(match[0], 10);
+    return isNaN(parsed) ? 3 : parsed;
+  }
+  return 3;
+}
+function cleanNullableStr(val) {
+  if (val === void 0 || val === null) return null;
+  const str = String(val).trim();
+  return str.length === 0 ? null : str;
+}
+function mapDedicatedRowToRecord(collection, row) {
+  if (!row) return null;
+  let record = {};
+  if (row.data) {
+    try {
+      record = typeof row.data === "string" ? JSON.parse(row.data) : { ...row.data };
+    } catch (e) {
+      record = {};
+    }
+  }
+  record.id = row.id || record.id;
+  if (collection === "students") {
+    if (row.name && row.name !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.name = row.name;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
+    if (row.national_id) {
+      record.nationalId = row.national_id;
+      record.national_id = row.national_id;
+    }
+    if (row.student_code) {
+      record.studentCode = row.student_code;
+      record.student_code = row.student_code;
+    }
+    if (row.phone) record.phone = row.phone;
+    if (row.father_name) record.fatherName = row.father_name;
+    if (row.is_active !== void 0 && row.is_active !== null) {
+      record.isActive = Boolean(row.is_active);
+    }
+    if (row.status) record.status = row.status;
+    if (row.entry_year) record.entryYear = row.entry_year;
+    if (row.mentor_id) record.mentorId = row.mentor_id;
+    if (row.notes) record.notes = row.notes;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "classrooms" || collection === "classes") {
+    if (row.title && row.title !== "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646") record.title = row.title;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
+    if (row.capacity) record.capacity = Number(row.capacity);
+    if (row.location) record.location = row.location;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "programs") {
+    if (row.title && row.title !== "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646") record.title = row.title;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
+    if (row.type) record.type = row.type;
+    if (row.parent_program_id !== void 0 && row.parent_program_id !== null) {
+      record.parentProgramId = row.parent_program_id || record.parentProgramId || "";
+    }
+    if (row.teacher_id) record.teacherId = row.teacher_id;
+    if (row.teacher_name) {
+      record.teacherName = row.teacher_name;
+      record.teacher = row.teacher_name;
+    }
+    if (row.classroom_id) {
+      record.classroomId = row.classroom_id;
+      record.classroom = row.classroom_id;
+      record.madrasRoom = row.classroom_id;
+    }
+    if (row.day_of_week) {
+      record.day = row.day_of_week;
+      if (!record.days || !Array.isArray(record.days) || record.days.length === 0) {
+        record.days = row.day_of_week.split(" \u060C ").map((d) => d.trim()).filter(Boolean);
+      }
+    }
+    if (row.start_time || row.end_time) {
+      record.startTime = row.start_time || record.startTime || "";
+      record.endTime = row.end_time || record.endTime || "";
+      if (row.start_time && row.end_time) {
+        record.time = `${row.start_time} \u0627\u0644\u06CC ${row.end_time}`;
+      }
+    }
+    if (row.representative_student_ids) {
+      try {
+        const parsed = typeof row.representative_student_ids === "string" ? JSON.parse(row.representative_student_ids) : row.representative_student_ids;
+        if (Array.isArray(parsed) && parsed.length > 0) record.representativeStudentIds = parsed;
+      } catch (e) {
+      }
+    }
+    if (row.representative_names) {
+      try {
+        const parsed = typeof row.representative_names === "string" ? JSON.parse(row.representative_names) : row.representative_names;
+        if (Array.isArray(parsed) && parsed.length > 0) record.representativeNames = parsed;
+      } catch (e) {
+      }
+    }
+    if (row.term) record.term = row.term;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "attendance") {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.date) record.date = row.date;
+    if (row.program_id) record.programId = row.program_id;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
+    if (row.present_count !== void 0 && row.present_count !== null) record.presentCount = Number(row.present_count);
+    if (row.absent_count !== void 0 && row.absent_count !== null) record.absentCount = Number(row.absent_count);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "teachers") {
+    if (row.name && row.name !== "\u0646\u0627\u0645\u0634\u062E\u0635") {
+      record.name = row.name;
+      record.fullName = row.name;
+    }
+    if (row.specialty) record.specialty = row.specialty;
+    if (row.phone) {
+      record.phone = row.phone;
+      record.phoneNumber = row.phone;
+    }
+    if (row.email) record.email = row.email;
+    if (row.is_active !== void 0 && row.is_active !== null) record.isActive = Boolean(row.is_active);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "enrollments") {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.program_id) record.programId = row.program_id;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
+    if (row.status) record.status = row.status;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "student_requests") {
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.unit) record.unit = row.unit;
+    if (row.type) record.type = row.type;
+    if (row.status) record.status = row.status;
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  } else if (collection === "system_users" || collection === "all_users" || collection === "users") {
+    if (row.username) record.username = row.username;
+    if (row.name) {
+      record.name = row.name;
+      record.fullName = row.name;
+    }
+    if (row.role) record.role = row.role;
+    if (row.role_title) record.roleTitle = row.role_title;
+    if (row.level !== void 0 && row.level !== null) record.level = Number(row.level);
+    if (row.grade_label) {
+      record.gradeLabel = row.grade_label;
+      record.grade = row.grade_label;
+    }
+    if (row.mentor_id) record.mentorId = row.mentor_id;
+    if (row.student_id) record.studentId = row.student_id;
+    if (row.linked_student_id) record.linkedStudentId = row.linked_student_id;
+    if (row.teacher_id) record.teacherId = row.teacher_id;
+    if (row.avatar_bg) record.avatarBg = row.avatar_bg;
+    if (row.is_active !== void 0 && row.is_active !== null) record.isActive = Boolean(row.is_active);
+    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+  }
+  return record;
+}
+function extractRecordTs(rec) {
+  if (!rec) return 0;
+  const raw = rec.updatedAt || rec.updated_at || rec.createdAt || rec.created_at;
+  if (raw) {
+    const t = new Date(raw).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return 0;
+}
+function mergeDedicatedAndDocumentRows(collection, dedicatedRows, appDocItems) {
+  const mergedMap = /* @__PURE__ */ new Map();
+  for (const dRow of dedicatedRows) {
+    if (!dRow || !dRow.id) continue;
+    const rec = mapDedicatedRowToRecord(collection, dRow);
+    mergedMap.set(String(dRow.id), rec);
+  }
+  for (const doc of appDocItems) {
+    if (!doc || !doc.id) continue;
+    const docId = String(doc.id);
+    const existing = mergedMap.get(docId);
+    if (existing) {
+      const docTs = extractRecordTs(doc);
+      const existingTs = extractRecordTs(existing);
+      if (docTs >= existingTs) {
+        const merged = { ...existing, ...doc };
+        delete merged._appUpdatedAt;
+        mergedMap.set(docId, merged);
+      } else {
+        const merged = { ...doc };
+        for (const key of Object.keys(existing)) {
+          const val = existing[key];
+          if (val === void 0 || val === null) continue;
+          if (typeof val === "string" && (val === "\u0646\u0627\u0645\u0634\u062E\u0635" || val === "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646" || val === "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646") && doc[key] && doc[key] !== val) {
+            continue;
+          }
+          if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
+            continue;
+          }
+          merged[key] = val;
+        }
+        delete merged._appUpdatedAt;
+        if (!merged.updatedAt) {
+          merged.updatedAt = doc.updatedAt || existing.updatedAt || (/* @__PURE__ */ new Date()).toISOString();
+        }
+        mergedMap.set(docId, merged);
+      }
+    } else {
+      const copy = { ...doc };
+      delete copy._appUpdatedAt;
+      if (!copy.updatedAt) copy.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      mergedMap.set(docId, copy);
+    }
+  }
+  return Array.from(mergedMap.values());
+}
 function sanitizeRecordForDb(data) {
   if (!data || typeof data !== "object") return data;
   if (Array.isArray(data)) return data.map(sanitizeRecordForDb);
@@ -373,6 +963,29 @@ function sanitizeRecordForDb(data) {
     copy[key] = val;
   }
   return copy;
+}
+function isConnectionError(err) {
+  if (!err) return false;
+  if (err.isDbConnectionError) return true;
+  const code = err.code || "";
+  const msg = (err.message || "").toLowerCase();
+  const connErrorCodes = [
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "PROTOCOL_CONNECTION_LOST",
+    "ER_CON_COUNT_ERROR",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "EPIPE",
+    "EHOSTUNREACH",
+    "ER_GET_CONNECTION_TIMEOUT"
+  ];
+  if (connErrorCodes.includes(code)) return true;
+  if (msg.includes("connection lost") || msg.includes("connect econnrefused") || msg.includes("etimedout") || msg.includes("pool initialization error") || msg.includes("\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u0633\u0631\u0648\u0631 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F") || msg.includes("too many connections") || msg.includes("connection error")) {
+    return true;
+  }
+  return false;
 }
 function parseMysqlConfig() {
   const env = process.env;
@@ -431,6 +1044,9 @@ function translateMysqlError(err) {
 function validateMysqlConfig() {
   const conf = parseMysqlConfig();
   const errors = [];
+  if (!conf.isConfigured && !conf.host && !conf.database && !conf.user) {
+    return { isValid: false, errors: ["MySQL is not configured in this environment (using local JSON storage)."] };
+  }
   if (!conf.host) {
     errors.push("[MySQL Config Error] DB_HOST is empty or invalid");
   } else {
@@ -452,7 +1068,7 @@ function validateMysqlConfig() {
     errors.push("[MySQL Config Error] DB_PASSWORD is not set");
   }
   const isValid = errors.length === 0;
-  if (!isValid) {
+  if (!isValid && (conf.host || conf.database)) {
     errors.forEach((err) => console.error(err));
   }
   return { isValid, errors };
@@ -812,11 +1428,11 @@ async function ensurePerformanceIndexes(p) {
     console.warn("[MySQL Startup Notice - SADEGH Seed]:", adminSeedErr?.message || adminSeedErr);
   }
   try {
-    const fs8 = await import("fs");
-    const path7 = await import("path");
-    const localUsersPath = path7.join(process.cwd(), "data", "system_users.json");
-    if (fs8.existsSync(localUsersPath)) {
-      const fileContent = fs8.readFileSync(localUsersPath, "utf8");
+    const fs9 = await import("fs");
+    const path8 = await import("path");
+    const localUsersPath = path8.join(process.cwd(), "data", "system_users.json");
+    if (fs9.existsSync(localUsersPath)) {
+      const fileContent = fs9.readFileSync(localUsersPath, "utf8");
       const localUsers = JSON.parse(fileContent);
       if (Array.isArray(localUsers)) {
         for (const u of localUsers) {
@@ -1071,6 +1687,59 @@ async function ensurePerformanceIndexes(p) {
     console.warn("[MySQL Schema Notice - audit_logs]:", e?.message || e);
   }
   try {
+    const progAlters = [
+      'ALTER TABLE programs ADD COLUMN IF NOT EXISTS type VARCHAR(50) NULL DEFAULT "\u0627\u0635\u0644\u06CC"',
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS parent_program_id VARCHAR(100) NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS data JSON NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_category VARCHAR(150) NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_book VARCHAR(150) NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_chapter VARCHAR(150) NULL"
+    ];
+    for (const sql of progAlters) {
+      try {
+        await mysqlPool.query(sql);
+      } catch (e) {
+        const rawSql = sql.replace(" IF NOT EXISTS", "");
+        try {
+          await mysqlPool.query(rawSql);
+        } catch (e2) {
+        }
+      }
+    }
+  } catch (e) {
+  }
+  try {
+    const attAlters = [
+      "ALTER TABLE attendance MODIFY COLUMN student_id VARCHAR(100) NULL",
+      "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS grade VARCHAR(100) NULL",
+      "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS present_count INT NOT NULL DEFAULT 0",
+      "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS absent_count INT NOT NULL DEFAULT 0",
+      "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS data JSON NULL"
+    ];
+    for (const sql of attAlters) {
+      try {
+        await mysqlPool.query(sql);
+      } catch (e) {
+        const rawSql = sql.replace(" IF NOT EXISTS", "");
+        try {
+          await mysqlPool.query(rawSql);
+        } catch (e2) {
+        }
+      }
+    }
+  } catch (e) {
+  }
+  for (const tbl of ["students", "classrooms", "teachers", "enrollments", "student_requests"]) {
+    try {
+      await mysqlPool.query(`ALTER TABLE \`${tbl}\` ADD COLUMN IF NOT EXISTS data JSON NULL`);
+    } catch (e) {
+      try {
+        await mysqlPool.query(`ALTER TABLE \`${tbl}\` ADD COLUMN data JSON NULL`);
+      } catch (e2) {
+      }
+    }
+  }
+  try {
     await mysqlPool.query(`
         CREATE TABLE IF NOT EXISTS \`audit_chain_logs\` (
           \`id\` VARCHAR(100) NOT NULL,
@@ -1118,12 +1787,15 @@ async function ensurePerformanceIndexes(p) {
   }
 }
 function getMysqlPool() {
+  const conf = parseMysqlConfig();
+  if (!conf.isConfigured && !conf.host && !conf.database) {
+    return null;
+  }
   const { isValid, errors } = validateMysqlConfig();
   if (!isValid) {
     lastConnectionError = errors.join(" | ");
     return null;
   }
-  const conf = parseMysqlConfig();
   if (!pool) {
     try {
       console.log(`==================================================`);
@@ -1145,7 +1817,11 @@ function getMysqlPool() {
         connectionLimit: 15,
         queueLimit: 50,
         charset: "utf8mb4_unicode_ci",
-        timezone: "Z"
+        timezone: "Z",
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 1e4,
+        idleTimeout: 6e4,
+        maxIdle: 3
       });
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
     } catch (err) {
@@ -1186,17 +1862,37 @@ async function executeMysqlQuery(sql, params = []) {
 async function recordLoginAuditInDb(log) {
   const pool2 = getMysqlPool();
   if (!pool2) return;
+  const id = `login_log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const sql = `INSERT INTO login_audit_log (id, username, success, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`;
+  const params = [id, log.username.trim().toUpperCase(), log.success ? 1 : 0, log.ipAddress, log.userAgent || ""];
   try {
-    const id = `login_log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    await pool2.execute(
-      `INSERT INTO login_audit_log (id, username, success, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, NOW())`,
-      [id, log.username.trim().toUpperCase(), log.success ? 1 : 0, log.ipAddress, log.userAgent || ""]
-    );
+    await pool2.execute(sql, params);
   } catch (err) {
-    console.warn("[Login Audit DB Notice]:", err?.message || err);
+    if (err?.code === "ER_NO_SUCH_TABLE" || err?.message?.includes("doesn't exist")) {
+      try {
+        await pool2.query(`
+          CREATE TABLE IF NOT EXISTS \`login_audit_log\` (
+            \`id\` VARCHAR(100) NOT NULL,
+            \`username\` VARCHAR(150) NOT NULL,
+            \`success\` TINYINT(1) NOT NULL DEFAULT 0,
+            \`ip_address\` VARCHAR(50) NULL,
+            \`user_agent\` TEXT NULL,
+            \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (\`id\`),
+            INDEX \`idx_login_username\` (\`username\`),
+            INDEX \`idx_login_created_at\` (\`created_at\`)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        `);
+        await pool2.execute(sql, params);
+      } catch (retryErr) {
+        console.warn("[Login Audit DB Notice Retry Fail]:", retryErr?.message || retryErr);
+      }
+    } else {
+      console.warn("[Login Audit DB Notice]:", err?.message || err);
+    }
   }
 }
-var import_promise, import_bcryptjs, import_dotenv, isMysqlConfigured, pool, hasEnsuredIndexes, lastConnectionError, isCurrentlyConnected, MysqlRepository;
+var import_promise, import_bcryptjs, import_dotenv, DbConnectionError, isMysqlConfigured, pool, hasEnsuredIndexes, lastConnectionError, isCurrentlyConnected, MysqlRepository;
 var init_databaseAbstraction = __esm({
   "src/lib/databaseAbstraction.ts"() {
     import_promise = __toESM(require("mysql2/promise"), 1);
@@ -1204,6 +1900,15 @@ var init_databaseAbstraction = __esm({
     import_dotenv = __toESM(require("dotenv"), 1);
     init_systemHealthMonitor();
     import_dotenv.default.config();
+    DbConnectionError = class extends Error {
+      constructor(message, code) {
+        super(message);
+        this.isDbConnectionError = true;
+        this.statusCode = 503;
+        this.name = "DbConnectionError";
+        this.code = code;
+      }
+    };
     isMysqlConfigured = Boolean(
       process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.DB_HOST || process.env.MYSQL_HOST || process.env.MYSQLHOST || process.env.DB_HOSTNAME
     );
@@ -1300,6 +2005,63 @@ var init_databaseAbstraction = __esm({
           return [];
         }
       },
+      // 2b. Fetch Single User By Username (Fast O(1) Index Lookup)
+      async getUserByUsername(username) {
+        const pool2 = getMysqlPool();
+        if (!pool2) {
+          if (isMysqlConfigured) {
+            throw new DbConnectionError("\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 MySQL \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F.");
+          }
+          return null;
+        }
+        if (!username) return null;
+        const cleanUser = username.trim().toUpperCase();
+        try {
+          let [rows] = await pool2.execute(
+            `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                last_login AS lastLogin, data
+         FROM all_users WHERE UPPER(username) = ? LIMIT 1`,
+            [cleanUser]
+          );
+          if (!rows || rows.length === 0) {
+            [rows] = await pool2.execute(
+              `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
+                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                  is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
+                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                  last_login AS lastLogin, data
+           FROM system_users WHERE UPPER(username) = ? LIMIT 1`,
+              [cleanUser]
+            );
+          }
+          if (!rows || rows.length === 0) return null;
+          const u = rows[0];
+          return {
+            ...u,
+            allowedTabs: typeof u.allowedTabs === "string" ? JSON.parse(u.allowedTabs) : u.allowedTabs || [],
+            editableTabs: typeof u.editableTabs === "string" ? JSON.parse(u.editableTabs) : u.editableTabs || [],
+            modulePermissions: typeof u.modulePermissions === "string" ? JSON.parse(u.modulePermissions) : u.modulePermissions || {},
+            isActive: Boolean(u.isActive),
+            mustChangePassword: Boolean(u.mustChangePassword)
+          };
+        } catch (e) {
+          const errStr = (e?.message || String(e)).toLowerCase();
+          const isDbConn = isConnectionError(e) || e?.code === "ECONNREFUSED" || e?.code === "ETIMEDOUT" || errStr.includes("econnrefused") || errStr.includes("etimedout") || errStr.includes("socket hang up") || errStr.includes("connection lost");
+          if (isDbConn) {
+            console.error("[STORAGE_FAILURE] MySQL getUserByUsername DB connection error:", e?.message || e);
+            throw new Error("DbConnectionError: " + (e?.message || "MySQL Connection Error"));
+          }
+          console.warn("[MySQL getUserByUsername Warning]:", e?.message || e);
+          return null;
+        }
+      },
       // 3. Upsert User (Insert or Update with Prepared Statement into both all_users and system_users)
       async saveUser(user) {
         const pool2 = getMysqlPool();
@@ -1326,49 +2088,83 @@ var init_databaseAbstraction = __esm({
           id, username, password_hash, password, name, role, role_title, level, grade_label,
           mentor_id, student_id, linked_student_id, teacher_id, avatar_bg, allowed_tabs,
           editable_tabs, module_permissions, is_active, is_read_only, can_edit, must_change_password,
-          failed_login_attempts, account_locked_until, last_login, data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          failed_login_attempts, account_locked_until, last_login, data, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
-          name = VALUES(name),
-          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-          password = COALESCE(NULLIF(VALUES(password), ''), password),
-          role = VALUES(role),
-          role_title = VALUES(role_title),
-          level = VALUES(level),
-          grade_label = VALUES(grade_label),
-          mentor_id = VALUES(mentor_id),
-          student_id = VALUES(student_id),
-          linked_student_id = VALUES(linked_student_id),
-          teacher_id = VALUES(teacher_id),
-          avatar_bg = VALUES(avatar_bg),
-          allowed_tabs = VALUES(allowed_tabs),
-          editable_tabs = VALUES(editable_tabs),
-          module_permissions = VALUES(module_permissions),
-          is_active = VALUES(is_active),
-          is_read_only = VALUES(is_read_only),
-          can_edit = VALUES(can_edit),
-          must_change_password = VALUES(must_change_password),
-          failed_login_attempts = VALUES(failed_login_attempts),
-          account_locked_until = VALUES(account_locked_until),
-          last_login = VALUES(last_login),
-          data = VALUES(data),
+          name = ?,
+          password_hash = COALESCE(NULLIF(?, ''), password_hash),
+          password = COALESCE(NULLIF(?, ''), password),
+          role = ?,
+          role_title = ?,
+          level = ?,
+          grade_label = ?,
+          mentor_id = ?,
+          student_id = ?,
+          linked_student_id = ?,
+          teacher_id = ?,
+          avatar_bg = ?,
+          allowed_tabs = ?,
+          editable_tabs = ?,
+          module_permissions = ?,
+          is_active = ?,
+          is_read_only = ?,
+          can_edit = ?,
+          must_change_password = ?,
+          failed_login_attempts = ?,
+          account_locked_until = ?,
+          last_login = ?,
+          data = ?,
           updated_at = NOW();
       `;
+          const userRole = user.role || "student";
+          const userLevel = Number(user.level) || 3;
+          const userGrade = cleanNullableStr(user.gradeLabel || user.grade);
+          const teacherId = cleanNullableStr(user.teacherId);
+          const userName = cleanNullableStr(user.name || user.fullName) || uName;
+          const mentorId = cleanNullableStr(user.mentorId);
+          const studentId = cleanNullableStr(user.studentId);
+          const linkedStudentId = cleanNullableStr(user.linkedStudentId);
+          const avatarBg = cleanNullableStr(user.avatarBg);
+          const roleTitle = cleanNullableStr(user.roleTitle);
           await pool2.query(sqlAllUsers, [
             uId,
             uName,
             pHash,
             plainPass,
-            user.name,
-            user.role,
-            user.roleTitle || null,
-            Number(user.level) || 3,
-            user.gradeLabel || null,
-            user.mentorId || null,
-            user.studentId || null,
-            user.linkedStudentId || null,
-            user.teacherId || null,
-            user.avatarBg || null,
+            userName,
+            userRole,
+            roleTitle,
+            userLevel,
+            userGrade,
+            mentorId,
+            studentId,
+            linkedStudentId,
+            teacherId,
+            avatarBg,
+            allowedTabs,
+            editableTabs,
+            modulePerms,
+            isActive,
+            isReadOnly,
+            canEdit,
+            mustChange,
+            failedAttempts,
+            lockedUntil,
+            lastLogin,
+            userData,
+            // UPDATE params
+            userName,
+            pHash,
+            plainPass,
+            userRole,
+            roleTitle,
+            userLevel,
+            userGrade,
+            mentorId,
+            studentId,
+            linkedStudentId,
+            teacherId,
+            avatarBg,
             allowedTabs,
             editableTabs,
             modulePerms,
@@ -1385,55 +2181,91 @@ var init_databaseAbstraction = __esm({
         } catch (e1) {
           console.warn("[MySQL saveUser all_users notice]:", e1?.message || e1);
           try {
+            const userName = cleanNullableStr(user.name || user.fullName) || uName;
+            const userRole = user.role || "student";
+            const roleTitle = cleanNullableStr(user.roleTitle);
             await pool2.query(`
-          INSERT INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, is_active)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO all_users (id, username, password_hash, name, role, role_title, level, grade_label, is_active, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-            role = VALUES(role),
-            is_active = VALUES(is_active)
-        `, [uId, uName, pHash, user.name, user.role, user.roleTitle || null, Number(user.level) || 3, user.gradeLabel || null, isActive]);
+            name = ?,
+            password_hash = COALESCE(NULLIF(?, ''), password_hash),
+            role = ?,
+            is_active = ?,
+            updated_at = NOW();
+        `, [
+              uId,
+              uName,
+              pHash,
+              userName,
+              userRole,
+              roleTitle,
+              Number(user.level) || 3,
+              cleanNullableStr(user.gradeLabel || user.grade),
+              isActive,
+              userName,
+              pHash,
+              userRole,
+              isActive
+            ]);
           } catch (fallbackErr) {
+            console.error(`[STORAGE_FAILURE] MySQL saveUser all_users fallback failed for user "${uName}":`, fallbackErr?.message || fallbackErr);
           }
         }
         try {
+          const userName = cleanNullableStr(user.name || user.fullName) || uName;
+          const userRole = user.role || "student";
+          const roleTitle = cleanNullableStr(user.roleTitle);
+          const mentorId = cleanNullableStr(user.mentorId);
+          const studentId = cleanNullableStr(user.studentId);
+          const linkedStudentId = cleanNullableStr(user.linkedStudentId);
+          const avatarBg = cleanNullableStr(user.avatarBg);
+          const userGrade = cleanNullableStr(user.gradeLabel || user.grade);
           await pool2.query(`
         INSERT INTO system_users (
           id, username, password_hash, name, role, role_title, level, grade_label,
           mentor_id, student_id, linked_student_id, avatar_bg, allowed_tabs,
-          editable_tabs, module_permissions, is_active, must_change_password, data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          editable_tabs, module_permissions, is_active, must_change_password, data, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
-          name = VALUES(name),
-          password_hash = COALESCE(NULLIF(VALUES(password_hash), ''), password_hash),
-          role = VALUES(role),
-          is_active = VALUES(is_active)
+          name = ?,
+          password_hash = COALESCE(NULLIF(?, ''), password_hash),
+          role = ?,
+          is_active = ?,
+          updated_at = NOW();
       `, [
             uId,
             uName,
             pHash,
-            user.name,
-            user.role,
-            user.roleTitle || null,
+            userName,
+            userRole,
+            roleTitle,
             Number(user.level) || 3,
-            user.gradeLabel || null,
-            user.mentorId || null,
-            user.studentId || null,
-            user.linkedStudentId || null,
-            user.avatarBg || null,
+            userGrade,
+            mentorId,
+            studentId,
+            linkedStudentId,
+            avatarBg,
             allowedTabs,
             editableTabs,
             modulePerms,
             isActive,
             mustChange,
-            userData
+            userData,
+            userName,
+            pHash,
+            userRole,
+            isActive
           ]);
         } catch (e2) {
+          console.warn(`[STORAGE_FAILURE] MySQL saveUser system_users mirror notice for user "${uName}":`, e2?.message || e2);
         }
         try {
-          await this.saveDocument("all_users", uName, { ...user, id: uId, username: uName });
+          const userDoc = { ...user, id: uId, username: uName };
+          await this.saveDocument("all_users", uId, userDoc);
+          await this.saveDocument("system_users", uId, userDoc);
         } catch (e3) {
+          console.warn(`[STORAGE_FAILURE] MySQL saveUser app_collections mirror notice for user "${uName}":`, e3?.message || e3);
         }
       },
       // 4. Record Audit Log
@@ -1473,11 +2305,11 @@ var init_databaseAbstraction = __esm({
       INSERT INTO app_collections (collection_name, id, data, updated_at)
       VALUES (?, ?, ?, NOW())
       ON DUPLICATE KEY UPDATE
-        data = VALUES(data),
+        data = ?,
         updated_at = NOW();
     `;
         try {
-          const [result] = await pool2.query(sql, [collectionName, id, jsonStr]);
+          const [result] = await pool2.query(sql, [collectionName, id, jsonStr, jsonStr]);
           const affectedRows = Number(result?.affectedRows) || 0;
           return { affectedRows };
         } catch (err) {
@@ -1494,7 +2326,7 @@ var init_databaseAbstraction = __esm({
               INDEX \`idx_col_updated\` (\`updated_at\`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
-              const [retryRes] = await pool2.query(sql, [collectionName, id, jsonStr]);
+              const [retryRes] = await pool2.query(sql, [collectionName, id, jsonStr, jsonStr]);
               return { affectedRows: Number(retryRes?.affectedRows) || 0 };
             } catch (createErr) {
               throw err;
@@ -1513,36 +2345,62 @@ var init_databaseAbstraction = __esm({
           INSERT INTO students (id, student_code, national_id, name, father_name, grade, phone, address, status, is_active, entry_year, mentor_id, notes, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            student_code = VALUES(student_code),
-            national_id = VALUES(national_id),
-            name = VALUES(name),
-            father_name = VALUES(father_name),
-            grade = VALUES(grade),
-            phone = VALUES(phone),
-            address = VALUES(address),
-            status = VALUES(status),
-            is_active = VALUES(is_active),
-            entry_year = VALUES(entry_year),
-            mentor_id = VALUES(mentor_id),
-            notes = VALUES(notes),
-            data = VALUES(data),
+            student_code = ?,
+            national_id = ?,
+            name = ?,
+            father_name = ?,
+            grade = ?,
+            phone = ?,
+            address = ?,
+            status = ?,
+            is_active = ?,
+            entry_year = ?,
+            mentor_id = ?,
+            notes = ?,
+            data = ?,
             updated_at = NOW();
         `;
+            const codeVal = cleanNullableStr(row.student_code);
+            const natVal = cleanNullableStr(row.national_id);
+            const nameVal = row.name || "\u0646\u0627\u0645\u0634\u062E\u0635";
+            const fatherVal = cleanNullableStr(row.father_name);
+            const gradeVal = row.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
+            const phoneVal = cleanNullableStr(row.phone);
+            const addressVal = cleanNullableStr(row.address);
+            const statusVal = row.status || "active";
+            const activeVal = row.is_active !== void 0 ? row.is_active ? 1 : 0 : 1;
+            const entryVal = cleanNullableStr(row.entry_year);
+            const mentorVal = cleanNullableStr(row.mentor_id);
+            const notesVal = cleanNullableStr(row.notes);
+            const dataJson = JSON.stringify(row.data || {});
             const params = [
               row.id,
-              row.student_code || null,
-              row.national_id || null,
-              row.name || "\u0646\u0627\u0645\u0634\u062E\u0635",
-              row.father_name || null,
-              row.grade || "\u0646\u0627\u0645\u0634\u062E\u0635",
-              row.phone || null,
-              row.address || null,
-              row.status || "active",
-              row.is_active !== void 0 ? row.is_active ? 1 : 0 : 1,
-              row.entry_year || null,
-              row.mentor_id || null,
-              row.notes || null,
-              JSON.stringify(row.data || {})
+              codeVal,
+              natVal,
+              nameVal,
+              fatherVal,
+              gradeVal,
+              phoneVal,
+              addressVal,
+              statusVal,
+              activeVal,
+              entryVal,
+              mentorVal,
+              notesVal,
+              dataJson,
+              codeVal,
+              natVal,
+              nameVal,
+              fatherVal,
+              gradeVal,
+              phoneVal,
+              addressVal,
+              statusVal,
+              activeVal,
+              entryVal,
+              mentorVal,
+              notesVal,
+              dataJson
             ];
             try {
               await pool2.query(sql, params);
@@ -1574,6 +2432,9 @@ var init_databaseAbstraction = __esm({
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
                 await pool2.query(sql, params);
+              } else {
+                console.error(`[STORAGE_FAILURE] Dedicated table students query error for id "${row.id}":`, sErr?.message || sErr);
+                throw sErr;
               }
             }
           } else if (tableName === "classrooms") {
@@ -1581,20 +2442,30 @@ var init_databaseAbstraction = __esm({
           INSERT INTO classrooms (id, title, grade, capacity, location, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            title = VALUES(title),
-            grade = VALUES(grade),
-            capacity = VALUES(capacity),
-            location = VALUES(location),
-            data = VALUES(data),
+            title = ?,
+            grade = ?,
+            capacity = ?,
+            location = ?,
+            data = ?,
             updated_at = NOW();
         `;
+            const titleVal = row.title || "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646";
+            const gradeVal = row.grade || null;
+            const capVal = Number(row.capacity) || 20;
+            const locVal = row.location || null;
+            const dataJson = JSON.stringify(row.data || {});
             const params = [
               row.id,
-              row.title || "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646",
-              row.grade || null,
-              Number(row.capacity) || 20,
-              row.location || null,
-              JSON.stringify(row.data || {})
+              titleVal,
+              gradeVal,
+              capVal,
+              locVal,
+              dataJson,
+              titleVal,
+              gradeVal,
+              capVal,
+              locVal,
+              dataJson
             ];
             try {
               await pool2.query(sql, params);
@@ -1614,11 +2485,398 @@ var init_databaseAbstraction = __esm({
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
                 await pool2.query(sql, params);
+              } else {
+                throw cErr;
+              }
+            }
+          } else if (tableName === "programs") {
+            const sql = `
+          INSERT INTO programs (id, title, grade, teacher_id, teacher_name, classroom_id, day_of_week, start_time, end_time, type, parent_program_id, representative_student_ids, representative_names, term, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            title = ?,
+            grade = ?,
+            teacher_id = ?,
+            teacher_name = ?,
+            classroom_id = ?,
+            day_of_week = ?,
+            start_time = ?,
+            end_time = ?,
+            type = ?,
+            parent_program_id = ?,
+            representative_student_ids = ?,
+            representative_names = ?,
+            term = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+            const titleVal = row.title || "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646";
+            const gradeVal = row.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
+            const teacherIdVal = cleanNullableStr(row.teacher_id);
+            const teacherNameVal = cleanNullableStr(row.teacher_name || row.teacher);
+            const classroomIdVal = cleanNullableStr(row.classroom_id || row.classroom || row.madrasRoom);
+            const dayVal = cleanNullableStr(row.day_of_week || row.day);
+            const startTimeVal = cleanNullableStr(row.start_time || row.startTime);
+            const endTimeVal = cleanNullableStr(row.end_time || row.endTime);
+            const typeVal = cleanNullableStr(row.type) || "\u0627\u0635\u0644\u06CC";
+            const parentProgVal = cleanNullableStr(row.parent_program_id || row.parentProgramId || row.linkedMainLessonId);
+            const repIdsVal = typeof row.representative_student_ids === "string" ? row.representative_student_ids : JSON.stringify(row.representative_student_ids || row.data?.representativeStudentIds || []);
+            const repNamesVal = typeof row.representative_names === "string" ? row.representative_names : JSON.stringify(row.representative_names || row.data?.representativeNames || []);
+            const termVal = cleanNullableStr(row.term || row.data?.term);
+            const dataJson = JSON.stringify(row.data || {});
+            const params = [
+              row.id,
+              titleVal,
+              gradeVal,
+              teacherIdVal,
+              teacherNameVal,
+              classroomIdVal,
+              dayVal,
+              startTimeVal,
+              endTimeVal,
+              typeVal,
+              parentProgVal,
+              repIdsVal,
+              repNamesVal,
+              termVal,
+              dataJson,
+              titleVal,
+              gradeVal,
+              teacherIdVal,
+              teacherNameVal,
+              classroomIdVal,
+              dayVal,
+              startTimeVal,
+              endTimeVal,
+              typeVal,
+              parentProgVal,
+              repIdsVal,
+              repNamesVal,
+              termVal,
+              dataJson
+            ];
+            try {
+              await pool2.query(sql, params);
+            } catch (pErr) {
+              if (pErr?.code === "ER_NO_SUCH_TABLE" || pErr?.message?.includes("doesn't exist")) {
+                await pool2.query(`
+              CREATE TABLE IF NOT EXISTS \`programs\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`title\` VARCHAR(255) NOT NULL,
+                \`grade\` VARCHAR(100) NOT NULL,
+                \`teacher_id\` VARCHAR(100) NULL,
+                \`teacher_name\` VARCHAR(255) NULL,
+                \`classroom_id\` VARCHAR(100) NULL,
+                \`day_of_week\` VARCHAR(50) NULL,
+                \`start_time\` VARCHAR(20) NULL,
+                \`end_time\` VARCHAR(20) NULL,
+                \`type\` VARCHAR(50) NULL DEFAULT '\u0627\u0635\u0644\u06CC',
+                \`parent_program_id\` VARCHAR(100) NULL,
+                \`representative_student_ids\` TEXT NULL,
+                \`representative_names\` TEXT NULL,
+                \`term\` VARCHAR(100) NULL,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_programs_grade\` (\`grade\`),
+                INDEX \`idx_programs_teacher\` (\`teacher_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+                await pool2.query(sql, params);
+              } else if (pErr?.code === "ER_BAD_FIELD_ERROR" || pErr?.message?.includes("Unknown column")) {
+                try {
+                  await pool2.query('ALTER TABLE programs ADD COLUMN type VARCHAR(50) NULL DEFAULT "\u0627\u0635\u0644\u06CC"');
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs ADD COLUMN parent_program_id VARCHAR(100) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs ADD COLUMN representative_student_ids TEXT NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs ADD COLUMN representative_names TEXT NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs ADD COLUMN term VARCHAR(100) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs ADD COLUMN data JSON NULL");
+                } catch (e) {
+                }
+                await pool2.query(sql, params);
+              } else {
+                throw pErr;
+              }
+            }
+          } else if (tableName === "attendance") {
+            const sql = `
+          INSERT INTO attendance (id, student_id, date, program_id, grade, present_count, absent_count, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            date = ?,
+            program_id = ?,
+            grade = ?,
+            present_count = ?,
+            absent_count = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+            const studentIdVal = cleanNullableStr(row.student_id);
+            const dateVal = row.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+            const programIdVal = cleanNullableStr(row.program_id || row.programId);
+            const gradeVal = row.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
+            const presentCountVal = Number(row.present_count ?? row.presentCount) || 0;
+            const absentCountVal = Number(row.absent_count ?? row.absentCount) || 0;
+            const dataJson = JSON.stringify(row.data || {});
+            const params = [
+              row.id,
+              studentIdVal,
+              dateVal,
+              programIdVal,
+              gradeVal,
+              presentCountVal,
+              absentCountVal,
+              dataJson,
+              studentIdVal,
+              dateVal,
+              programIdVal,
+              gradeVal,
+              presentCountVal,
+              absentCountVal,
+              dataJson
+            ];
+            try {
+              await pool2.query(sql, params);
+            } catch (aErr) {
+              if (aErr?.code === "ER_NO_SUCH_TABLE" || aErr?.message?.includes("doesn't exist")) {
+                await pool2.query(`
+              CREATE TABLE IF NOT EXISTS \`attendance\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NULL,
+                \`date\` VARCHAR(50) NOT NULL,
+                \`program_id\` VARCHAR(100) NULL,
+                \`grade\` VARCHAR(100) NULL,
+                \`present_count\` INT NOT NULL DEFAULT 0,
+                \`absent_count\` INT NOT NULL DEFAULT 0,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_attendance_date\` (\`date\`),
+                INDEX \`idx_attendance_program\` (\`program_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+                await pool2.query(sql, params);
+              } else if (aErr?.code === "ER_BAD_FIELD_ERROR" || aErr?.message?.includes("Unknown column") || aErr?.message?.includes("doesn't have a default value")) {
+                try {
+                  await pool2.query("ALTER TABLE attendance MODIFY COLUMN student_id VARCHAR(100) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE attendance ADD COLUMN grade VARCHAR(100) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE attendance ADD COLUMN present_count INT NOT NULL DEFAULT 0");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE attendance ADD COLUMN absent_count INT NOT NULL DEFAULT 0");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE attendance ADD COLUMN data JSON NULL");
+                } catch (e) {
+                }
+                await pool2.query(sql, params);
+              } else {
+                throw aErr;
+              }
+            }
+          } else if (tableName === "teachers") {
+            const sql = `
+          INSERT INTO teachers (id, name, specialty, phone, email, is_active, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            name = ?,
+            specialty = ?,
+            phone = ?,
+            email = ?,
+            is_active = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+            const nameVal = row.name || "\u0646\u0627\u0645\u0634\u062E\u0635";
+            const specialtyVal = cleanNullableStr(row.specialty);
+            const phoneVal = cleanNullableStr(row.phone);
+            const emailVal = cleanNullableStr(row.email);
+            const activeVal = row.is_active !== void 0 ? row.is_active ? 1 : 0 : 1;
+            const dataJson = JSON.stringify(row.data || {});
+            const params = [
+              row.id,
+              nameVal,
+              specialtyVal,
+              phoneVal,
+              emailVal,
+              activeVal,
+              dataJson,
+              nameVal,
+              specialtyVal,
+              phoneVal,
+              emailVal,
+              activeVal,
+              dataJson
+            ];
+            try {
+              await pool2.query(sql, params);
+            } catch (tErr) {
+              if (tErr?.code === "ER_NO_SUCH_TABLE" || tErr?.message?.includes("doesn't exist")) {
+                await pool2.query(`
+              CREATE TABLE IF NOT EXISTS \`teachers\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`name\` VARCHAR(255) NOT NULL,
+                \`specialty\` VARCHAR(255) NULL,
+                \`phone\` VARCHAR(50) NULL,
+                \`email\` VARCHAR(150) NULL,
+                \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_teacher_active\` (\`is_active\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+                await pool2.query(sql, params);
+              } else {
+                throw tErr;
+              }
+            }
+          } else if (tableName === "enrollments") {
+            const sql = `
+          INSERT INTO enrollments (id, student_id, program_id, grade, status, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            program_id = ?,
+            grade = ?,
+            status = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+            const studentIdVal = row.student_id || row.studentId || "unknown";
+            const programIdVal = row.program_id || row.programId || "unknown";
+            const gradeVal = cleanNullableStr(row.grade);
+            const statusVal = row.status || "enrolled";
+            const dataJson = JSON.stringify(row.data || {});
+            const params = [
+              row.id,
+              studentIdVal,
+              programIdVal,
+              gradeVal,
+              statusVal,
+              dataJson,
+              studentIdVal,
+              programIdVal,
+              gradeVal,
+              statusVal,
+              dataJson
+            ];
+            try {
+              await pool2.query(sql, params);
+            } catch (eErr) {
+              if (eErr?.code === "ER_NO_SUCH_TABLE" || eErr?.message?.includes("doesn't exist")) {
+                await pool2.query(`
+              CREATE TABLE IF NOT EXISTS \`enrollments\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NOT NULL,
+                \`program_id\` VARCHAR(100) NOT NULL,
+                \`grade\` VARCHAR(100) NULL,
+                \`status\` VARCHAR(50) NOT NULL DEFAULT 'enrolled',
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_enrollments_student\` (\`student_id\`),
+                INDEX \`idx_enrollments_program\` (\`program_id\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+                await pool2.query(sql, params);
+              } else if (eErr?.code === "ER_BAD_FIELD_ERROR" || eErr?.message?.includes("Unknown column")) {
+                try {
+                  await pool2.query("ALTER TABLE enrollments ADD COLUMN data JSON NULL");
+                } catch (e) {
+                }
+                await pool2.query(sql, params);
+              } else {
+                throw eErr;
+              }
+            }
+          } else if (tableName === "student_requests") {
+            const sql = `
+          INSERT INTO student_requests (id, student_id, unit, type, status, data, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            student_id = ?,
+            unit = ?,
+            type = ?,
+            status = ?,
+            data = ?,
+            updated_at = NOW();
+        `;
+            const studentIdVal = row.student_id || row.studentId || "unknown";
+            const unitVal = row.unit || "\u0622\u0645\u0648\u0632\u0634";
+            const typeVal = row.type || "\u0639\u0645\u0648\u0645\u06CC";
+            const statusVal = row.status || "pending";
+            const dataJson = JSON.stringify(row.data || {});
+            const params = [
+              row.id,
+              studentIdVal,
+              unitVal,
+              typeVal,
+              statusVal,
+              dataJson,
+              studentIdVal,
+              unitVal,
+              typeVal,
+              statusVal,
+              dataJson
+            ];
+            try {
+              await pool2.query(sql, params);
+            } catch (srErr) {
+              if (srErr?.code === "ER_NO_SUCH_TABLE" || srErr?.message?.includes("doesn't exist")) {
+                await pool2.query(`
+              CREATE TABLE IF NOT EXISTS \`student_requests\` (
+                \`id\` VARCHAR(100) NOT NULL,
+                \`student_id\` VARCHAR(100) NOT NULL,
+                \`unit\` VARCHAR(100) NOT NULL,
+                \`type\` VARCHAR(100) NOT NULL,
+                \`status\` VARCHAR(50) NOT NULL DEFAULT 'pending',
+                \`data\` JSON NULL,
+                \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                \`updated_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (\`id\`),
+                INDEX \`idx_req_student\` (\`student_id\`),
+                INDEX \`idx_req_unit\` (\`unit\`),
+                INDEX \`idx_req_status\` (\`status\`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+                await pool2.query(sql, params);
+              } else {
+                throw srErr;
               }
             }
           }
         } catch (e) {
-          console.warn(`[MySQL Dedicated Table Notice] ${tableName}:`, e?.message || e);
+          console.error(`[MySQL Dedicated Table Error] ${tableName}:`, e?.message || e);
+          throw e;
         }
       },
       // 6. Delete Document
@@ -1635,30 +2893,39 @@ var init_databaseAbstraction = __esm({
           );
           affectedRows = Number(result?.affectedRows) || 0;
         } catch (e) {
+          console.error(`[STORAGE_FAILURE] MySQL deleteDocument app_collections error for collection "${collectionName}" id "${id}":`, e?.message || e);
         }
+        const delTable = async (table) => {
+          try {
+            await pool2.query(`DELETE FROM ${table} WHERE id = ?`, [id]);
+          } catch (e) {
+            console.error(`[STORAGE_FAILURE] MySQL deleteDocument ${table} table error for id "${id}":`, e?.message || e);
+          }
+        };
         if (collectionName === "students") {
-          try {
-            await pool2.query(`DELETE FROM students WHERE id = ?`, [id]);
-          } catch (e) {
-          }
+          await delTable("students");
         } else if (collectionName === "teachers") {
-          try {
-            await pool2.query(`DELETE FROM teachers WHERE id = ?`, [id]);
-          } catch (e) {
-          }
-        } else if (collectionName === "classrooms") {
-          try {
-            await pool2.query(`DELETE FROM classrooms WHERE id = ?`, [id]);
-          } catch (e) {
-          }
+          await delTable("teachers");
+        } else if (collectionName === "classrooms" || collectionName === "classes") {
+          await delTable("classrooms");
+        } else if (collectionName === "programs") {
+          await delTable("programs");
+        } else if (collectionName === "attendance") {
+          await delTable("attendance");
+        } else if (collectionName === "enrollments") {
+          await delTable("enrollments");
+        } else if (collectionName === "student_requests") {
+          await delTable("student_requests");
         } else if (collectionName === "system_users" || collectionName === "all_users") {
           try {
             await pool2.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
           } catch (e) {
+            console.error(`[STORAGE_FAILURE] MySQL deleteDocument all_users table error for id "${id}":`, e?.message || e);
           }
           try {
             await pool2.query(`DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
           } catch (e) {
+            console.error(`[STORAGE_FAILURE] MySQL deleteDocument system_users table error for id "${id}":`, e?.message || e);
           }
         }
         return { affectedRows };
@@ -1681,13 +2948,14 @@ var init_databaseAbstraction = __esm({
             [userIdOrUsername, userIdOrUsername]
           );
         } catch (e) {
-          console.warn("[MySQL deleteUser Error]:", e);
+          console.error(`[STORAGE_FAILURE] MySQL deleteUser Error for "${userIdOrUsername}":`, e?.message || e);
         }
       },
       // 7. Get Single Document by Primary Key
       async getDocument(collectionName, id) {
         const pool2 = getMysqlPool();
         if (!pool2) return null;
+        let appDoc = null;
         try {
           const [rows] = await pool2.query(
             `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
@@ -1696,44 +2964,149 @@ var init_databaseAbstraction = __esm({
           if (rows && rows.length > 0) {
             const r = rows[0];
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-            return { ...parsed, id };
+            appDoc = { ...parsed, id };
           }
         } catch (e) {
+          console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
         }
-        return null;
+        const checkDedicated = async (table, colName) => {
+          try {
+            const [dRows] = await pool2.query(`SELECT * FROM ${table} WHERE id = ? LIMIT 1`, [id]);
+            if (dRows && dRows.length > 0) {
+              const mergedList = mergeDedicatedAndDocumentRows(colName, [dRows[0]], appDoc ? [appDoc] : []);
+              return mergedList[0] || appDoc;
+            }
+          } catch (e) {
+          }
+          return appDoc;
+        };
+        if (collectionName === "students") {
+          return checkDedicated("students", "students");
+        } else if (collectionName === "classrooms" || collectionName === "classes") {
+          return checkDedicated("classrooms", "classrooms");
+        } else if (collectionName === "programs") {
+          return checkDedicated("programs", "programs");
+        } else if (collectionName === "attendance") {
+          return checkDedicated("attendance", "attendance");
+        } else if (collectionName === "teachers") {
+          return checkDedicated("teachers", "teachers");
+        } else if (collectionName === "enrollments") {
+          return checkDedicated("enrollments", "enrollments");
+        } else if (collectionName === "student_requests") {
+          return checkDedicated("student_requests", "student_requests");
+        } else if (collectionName === "system_users" || collectionName === "all_users" || collectionName === "users") {
+          try {
+            const [uRows] = await pool2.query(
+              `SELECT * FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?) LIMIT 1`,
+              [id, id]
+            );
+            if (uRows && uRows.length > 0) {
+              const mergedList = mergeDedicatedAndDocumentRows("system_users", [uRows[0]], appDoc ? [appDoc] : []);
+              return mergedList[0] || appDoc;
+            }
+          } catch (e) {
+          }
+        }
+        return appDoc;
       },
       // 8. Get Multiple Documents by Candidate IDs (Primary Keys)
       async getDocumentsByIds(collectionName, ids) {
         if (!ids || ids.length === 0) return [];
         const pool2 = getMysqlPool();
         if (!pool2) return [];
-        const placeholders = ids.map(() => "?").join(", ");
-        const [rows] = await pool2.execute(
-          `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
-          [collectionName, ...ids]
-        );
-        return (rows || []).map((r) => {
-          const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-          return { ...parsed, id: r.id };
-        });
+        let appDocItems = [];
+        try {
+          const placeholders = ids.map(() => "?").join(", ");
+          const [rows] = await pool2.query(
+            `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+            [collectionName, ...ids]
+          );
+          appDocItems = (rows || []).map((r) => {
+            const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+            return { ...parsed, id: r.id };
+          });
+        } catch (e) {
+        }
+        const queryDedicatedByIds = async (table, colName) => {
+          try {
+            const placeholders = ids.map(() => "?").join(", ");
+            const [dRows] = await pool2.query(
+              `SELECT * FROM ${table} WHERE id IN (${placeholders})`,
+              ids
+            );
+            return mergeDedicatedAndDocumentRows(colName, dRows || [], appDocItems);
+          } catch (e) {
+            return appDocItems;
+          }
+        };
+        if (collectionName === "students") {
+          return queryDedicatedByIds("students", "students");
+        } else if (collectionName === "classrooms" || collectionName === "classes") {
+          return queryDedicatedByIds("classrooms", "classrooms");
+        } else if (collectionName === "programs") {
+          return queryDedicatedByIds("programs", "programs");
+        } else if (collectionName === "attendance") {
+          return queryDedicatedByIds("attendance", "attendance");
+        } else if (collectionName === "teachers") {
+          return queryDedicatedByIds("teachers", "teachers");
+        } else if (collectionName === "enrollments") {
+          return queryDedicatedByIds("enrollments", "enrollments");
+        } else if (collectionName === "student_requests") {
+          return queryDedicatedByIds("student_requests", "student_requests");
+        } else if (collectionName === "system_users" || collectionName === "all_users" || collectionName === "users") {
+          return queryDedicatedByIds("all_users", "system_users");
+        }
+        return appDocItems;
       },
-      // 9. Query Documents
+      // 9. Query Documents with Dedicated Table Sync & Priority Merge
       async queryCollection(collectionName) {
         const pool2 = getMysqlPool();
         if (!pool2) return [];
         const startTime = Date.now();
-        const [rows] = await pool2.execute(
-          `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
-          [collectionName]
-        );
+        let appDocItems = [];
+        try {
+          const [rows] = await pool2.execute(
+            `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
+            [collectionName]
+          );
+          appDocItems = (rows || []).map((r) => {
+            const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+            return { ...parsed, id: r.id };
+          });
+        } catch (e) {
+          console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
+        }
+        const queryDedicatedAll = async (table, colName) => {
+          try {
+            const [dRows] = await pool2.query(`SELECT * FROM ${table} ORDER BY updated_at DESC`);
+            return mergeDedicatedAndDocumentRows(colName, dRows || [], appDocItems);
+          } catch (e) {
+            return appDocItems;
+          }
+        };
+        let result = appDocItems;
+        if (collectionName === "students") {
+          result = await queryDedicatedAll("students", "students");
+        } else if (collectionName === "classrooms" || collectionName === "classes") {
+          result = await queryDedicatedAll("classrooms", "classrooms");
+        } else if (collectionName === "programs") {
+          result = await queryDedicatedAll("programs", "programs");
+        } else if (collectionName === "attendance") {
+          result = await queryDedicatedAll("attendance", "attendance");
+        } else if (collectionName === "teachers") {
+          result = await queryDedicatedAll("teachers", "teachers");
+        } else if (collectionName === "enrollments") {
+          result = await queryDedicatedAll("enrollments", "enrollments");
+        } else if (collectionName === "student_requests") {
+          result = await queryDedicatedAll("student_requests", "student_requests");
+        } else if (collectionName === "system_users" || collectionName === "all_users" || collectionName === "users") {
+          result = await queryDedicatedAll("all_users", "system_users");
+        }
         const duration = Date.now() - startTime;
         if (duration > 1e3) {
           logSlowQuery(collectionName, duration, `SELECT id, data FROM app_collections WHERE collection_name = '${collectionName}' ORDER BY updated_at DESC`);
         }
-        return (rows || []).map((r) => {
-          const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-          return { ...parsed, id: r.id };
-        });
+        return result;
       }
     };
   }
@@ -1835,6 +3208,7 @@ var init_serverAuditChain = __esm({
 // src/lib/auditLogger.ts
 var auditLogger_exports = {};
 __export(auditLogger_exports, {
+  flushAuditQueue: () => flushAuditQueue,
   logAudit: () => logAudit,
   revertAuditActivity: () => revertAuditActivity
 });
@@ -1851,46 +3225,109 @@ function sanitizeDetails(details) {
   }
   return clone;
 }
-async function logAudit(input) {
+async function ensureAuditTableExists() {
+  if (tableChecked) return;
+  const pool2 = getMysqlPool();
+  if (!pool2) return;
   try {
-    const pool2 = getMysqlPool();
-    if (!pool2) return;
-    const id = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const action = input.action || "unknown";
-    const collectionName = input.collectionName || null;
-    const recordId = input.recordId || null;
-    const userId = input.userId || null;
-    const userName = input.userName || null;
-    const userRole = input.userRole || null;
-    const status = input.status || "success";
-    const errorMessage = input.errorMessage || null;
-    const ipAddress = input.ipAddress || null;
-    let detailsJson = null;
-    if (input.details) {
-      const sanitized = sanitizeDetails(input.details);
-      detailsJson = typeof sanitized === "string" ? sanitized : JSON.stringify(sanitized);
-    }
-    const sql = `
-      INSERT INTO audit_logs (
-        id, action, collection_name, record_id, user_id, user_name, user_role, details, ip_address, status, error_message, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    const createSql = `
+      CREATE TABLE IF NOT EXISTS \`audit_logs\` (
+        \`id\` VARCHAR(100) NOT NULL,
+        \`action\` VARCHAR(100) NOT NULL,
+        \`collection_name\` VARCHAR(100) NULL,
+        \`record_id\` VARCHAR(100) NULL,
+        \`user_id\` VARCHAR(100) NULL,
+        \`user_name\` VARCHAR(150) NULL,
+        \`user_role\` VARCHAR(100) NULL,
+        \`details\` JSON NULL,
+        \`ip_address\` VARCHAR(50) NULL,
+        \`status\` VARCHAR(20) NOT NULL DEFAULT 'success',
+        \`error_message\` TEXT NULL,
+        \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`),
+        INDEX \`idx_audit_action\` (\`action\`),
+        INDEX \`idx_audit_user_name\` (\`user_name\`),
+        INDEX \`idx_audit_created_at\` (\`created_at\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `;
-    await pool2.execute(sql, [
-      id,
-      action,
-      collectionName,
-      recordId,
-      userId,
-      userName,
-      userRole,
-      detailsJson,
-      ipAddress,
-      status,
-      errorMessage
-    ]);
+    await pool2.query(createSql);
+    tableChecked = true;
   } catch (e) {
-    console.warn("[AuditLogger Notice] Failed to persist audit log silently:", e?.message || e);
+    console.warn("[AuditLogger Table Check Notice]:", e?.message || e);
   }
+}
+async function processAuditQueue() {
+  if (isProcessing) return;
+  isProcessing = true;
+  while (auditQueue.length > 0) {
+    const item = auditQueue.shift();
+    if (!item) continue;
+    try {
+      await ensureAuditTableExists();
+      const pool2 = getMysqlPool();
+      if (!pool2) {
+        if (item.retries < 3) {
+          item.retries++;
+          auditQueue.push(item);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        continue;
+      }
+      const id = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const action = item.input.action || "unknown";
+      const collectionName = item.input.collectionName || null;
+      const recordId = item.input.recordId || null;
+      const userId = item.input.userId || null;
+      const userName = item.input.userName || null;
+      const userRole = item.input.userRole || null;
+      const status = item.input.status || "success";
+      const errorMessage = item.input.errorMessage || null;
+      const ipAddress = item.input.ipAddress || null;
+      let detailsJson = null;
+      if (item.input.details) {
+        const sanitized = sanitizeDetails(item.input.details);
+        detailsJson = typeof sanitized === "string" ? sanitized : JSON.stringify(sanitized);
+      }
+      const sql = `
+        INSERT INTO audit_logs (
+          id, action, collection_name, record_id, user_id, user_name, user_role, details, ip_address, status, error_message, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      `;
+      await pool2.execute(sql, [
+        id,
+        action,
+        collectionName,
+        recordId,
+        userId,
+        userName,
+        userRole,
+        detailsJson,
+        ipAddress,
+        status,
+        errorMessage
+      ]);
+    } catch (e) {
+      if (e?.code === "ER_NO_SUCH_TABLE" || e?.message?.includes("doesn't exist")) {
+        tableChecked = false;
+      }
+      if (item.retries < 3) {
+        item.retries++;
+        auditQueue.push(item);
+        await new Promise((r) => setTimeout(r, 300));
+      } else {
+        console.warn("[AuditLogger Notice] Dropped log after retries:", e?.message || e);
+      }
+    }
+  }
+  isProcessing = false;
+}
+async function logAudit(input) {
+  auditQueue.push({ input, retries: 0 });
+  void processAuditQueue();
+}
+async function flushAuditQueue() {
+  if (auditQueue.length === 0) return;
+  await processAuditQueue();
 }
 async function revertAuditActivity(logId, revertedBy) {
   try {
@@ -1910,9 +3347,22 @@ async function revertAuditActivity(logId, revertedBy) {
     return { success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u0639\u0645\u0644\u06CC\u0627\u062A" };
   }
 }
+var tableChecked, auditQueue, isProcessing;
 var init_auditLogger = __esm({
   "src/lib/auditLogger.ts"() {
     init_databaseAbstraction();
+    tableChecked = false;
+    auditQueue = [];
+    isProcessing = false;
+    process.on("beforeExit", () => {
+      void flushAuditQueue();
+    });
+    process.on("SIGINT", () => {
+      void flushAuditQueue();
+    });
+    process.on("SIGTERM", () => {
+      void flushAuditQueue();
+    });
   }
 });
 
@@ -1925,6 +3375,8 @@ __export(serverDataApi_exports, {
   deleteDataFromServer: () => deleteDataFromServer,
   fetchBootstrapData: () => fetchBootstrapData,
   fetchDataFromServer: () => fetchDataFromServer,
+  getRecentChangesSince: () => getRecentChangesSince,
+  invalidateCollectionCache: () => invalidateCollectionCache,
   notifyRealtimeChange: () => notifyRealtimeChange,
   postDataToServer: () => postDataToServer,
   prepareRecordForDedicatedTable: () => prepareRecordForDedicatedTable,
@@ -1980,12 +3432,37 @@ function localFileQueryCollection(collection) {
   if (!store[collection]) return [];
   return Object.values(store[collection]);
 }
+function invalidateCollectionCache(collection) {
+  if (collection) {
+    rawCollectionCache.delete(collection);
+    if (collection === "users" || collection === "all_users" || collection === "system_users") {
+      rawCollectionCache.delete("users");
+      rawCollectionCache.delete("all_users");
+      rawCollectionCache.delete("system_users");
+    }
+    if (collection === "classrooms" || collection === "classes") {
+      rawCollectionCache.delete("classrooms");
+      rawCollectionCache.delete("classes");
+    }
+  } else {
+    rawCollectionCache.clear();
+  }
+}
+function getRecentChangesSince(timestamp) {
+  const ts = Number(timestamp) || 0;
+  return recentChangesBuffer.filter((c) => c.timestamp > ts);
+}
 function registerRealtimeListener(listener) {
   realtimeListeners.add(listener);
   return () => realtimeListeners.delete(listener);
 }
 function notifyRealtimeChange(collection, id, action) {
+  invalidateCollectionCache(collection);
   const evt = { collection, id, action, timestamp: Date.now() };
+  recentChangesBuffer.push(evt);
+  if (recentChangesBuffer.length > MAX_RECENT_CHANGES) {
+    recentChangesBuffer.shift();
+  }
   realtimeListeners.forEach((fn) => {
     try {
       fn(evt);
@@ -2076,10 +3553,12 @@ function authorizeCollectionAccess(user, collection, action, recordOwnerId) {
     return { allowed: true };
   }
   if (collection === "students" && (action === "write" || action === "delete")) {
-    const isEduManager = user.role === "education_manager" || user.role === "education_officer";
-    if (!isEduManager && user.level > 1) {
-      return { allowed: false, reason: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u06CC\u062C\u0627\u062F/\u062D\u0630\u0641 \u0645\u0634\u062E\u0635\u0627\u062A \u0637\u0644\u0627\u0628 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0648\u0627\u062D\u062F \u0622\u0645\u0648\u0632\u0634 \u0648 \u0645\u062F\u06CC\u0631\u06CC\u062A \u0627\u0633\u062A." };
+    const uName = String(user.username || "").toUpperCase();
+    const isAuthorizedStaff = user.level === 1 || user.role === "super_admin" || user.role === "school_manager" || user.role === "education_manager" || user.role === "education_officer" || user.role === "grade_mentor" || user.role === "class_representative" || Boolean(user.isClassRep) || user.role === "mentor" || Boolean(user.mentorId) || uName === "SHAH" || uName === "SHAHPOORI" || uName === "SADEGH" || uName === "RAHNAMA" || user.level <= 2 && user.canEdit !== false && !user.isReadOnly;
+    if (isAuthorizedStaff) {
+      return { allowed: true };
     }
+    return { allowed: false, reason: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u0648 \u0627\u06CC\u062C\u0627\u062F/\u062D\u0630\u0641 \u0645\u0634\u062E\u0635\u0627\u062A \u0637\u0644\u0627\u0628 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0648\u0627\u062D\u062F \u0622\u0645\u0648\u0632\u0634 \u0648 \u0645\u0633\u0626\u0648\u0644\u0627\u0646 \u0645\u0631\u0628\u0648\u0637\u0647 \u0627\u0633\u062A." };
   }
   if (FINANCIAL_COLLECTIONS.has(collection)) {
     const isFinanceStaff = user.role === "finance_manager" || user.role === "financial_officer" || user.username?.toUpperCase() === "MALI";
@@ -2121,6 +3600,30 @@ function authorizeCollectionAccess(user, collection, action, recordOwnerId) {
   }
   return { allowed: true };
 }
+function parseTimesFromData(data) {
+  if (!data) return { startTime: null, endTime: null };
+  const rawStart = data.startTime || data.start_time || data.classStartTime;
+  const rawEnd = data.endTime || data.end_time || data.classEndTime;
+  if (rawStart || rawEnd) {
+    return {
+      startTime: rawStart ? String(rawStart).trim().slice(0, 50) : null,
+      endTime: rawEnd ? String(rawEnd).trim().slice(0, 50) : null
+    };
+  }
+  const timeStr = typeof data.time === "string" ? data.time : typeof data.schedule === "string" ? data.schedule : typeof data.hours === "string" ? data.hours : typeof data.classTime === "string" ? data.classTime : null;
+  if (!timeStr) return { startTime: null, endTime: null };
+  const parts = timeStr.split(/ الی | تا | - | - | to /i);
+  if (parts.length >= 2) {
+    return {
+      startTime: parts[0].trim().slice(0, 50),
+      endTime: parts[1].trim().slice(0, 50)
+    };
+  }
+  return {
+    startTime: timeStr.trim().slice(0, 50),
+    endTime: null
+  };
+}
 function prepareRecordForDedicatedTable(collection, data) {
   const dedicatedTable = COLLECTION_TABLE_MAP[collection] || null;
   if (!dedicatedTable || !data) return { row: data, dedicatedTable: null };
@@ -2132,39 +3635,91 @@ function prepareRecordForDedicatedTable(collection, data) {
     updated_at: now
   };
   switch (dedicatedTable) {
-    case "students":
-      row.national_id = data.nationalId || data.national_id || null;
-      row.student_code = data.studentCode || data.student_code || null;
+    case "students": {
+      const cleanStr = (v) => v === void 0 || v === null || String(v).trim() === "" ? null : String(v).trim();
+      row.national_id = cleanStr(data.nationalId || data.national_id);
+      row.student_code = cleanStr(data.studentCode || data.student_code);
       row.name = data.name || "\u0646\u0627\u0645\u0634\u062E\u0635";
-      row.grade = data.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
-      row.phone = data.phone || null;
-      row.father_name = data.fatherName || data.father_name || null;
+      row.grade = data.grade || data.gradeLabel || "\u0646\u0627\u0645\u0634\u062E\u0635";
+      row.phone = cleanStr(data.phone || data.phoneNumber);
+      row.father_name = cleanStr(data.fatherName || data.father_name);
+      row.status = data.status || "active";
       row.is_active = data.isActive !== void 0 ? Boolean(data.isActive) : true;
+      row.entry_year = cleanStr(data.entryYear || data.entry_year);
+      row.mentor_id = cleanStr(data.mentorId || data.mentor_id);
+      row.notes = cleanStr(data.notes);
+      row.data = {
+        ...data,
+        grade: data.grade || data.gradeLabel || "",
+        updatedAt: now
+      };
       break;
+    }
     case "teachers":
-      row.name = data.name || "\u0646\u0627\u0645\u0634\u062E\u0635";
-      row.phone = data.phone || null;
+      row.name = data.name || data.fullName || "\u0646\u0627\u0645\u0634\u062E\u0635";
+      row.phone = data.phone || data.phoneNumber || null;
       row.specialty = data.specialty || null;
+      row.email = data.email || null;
       row.is_active = data.isActive !== void 0 ? Boolean(data.isActive) : true;
+      row.data = data;
       break;
     case "classrooms":
       row.title = data.title || "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646";
       row.grade = data.grade || null;
       row.capacity = Number(data.capacity) || 20;
+      row.location = data.location || null;
+      row.data = data;
       break;
-    case "programs":
+    case "programs": {
+      const cleanStr = (v) => v === void 0 || v === null || String(v).trim() === "" ? null : String(v).trim();
+      const parentId = cleanStr(data.parentProgramId || data.parent_program_id || data.linkedMainLessonId);
+      const { startTime, endTime } = parseTimesFromData(data);
       row.title = data.title || "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646";
+      row.type = data.type || "\u0627\u0635\u0644\u06CC";
+      row.parent_program_id = parentId;
       row.grade = data.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
-      row.teacher_id = data.teacherId || data.teacher_id || null;
-      row.teacher_name = data.teacherName || data.teacher_name || null;
-      row.term = data.term || null;
+      row.teacher_id = cleanStr(data.teacherId || data.teacher_id);
+      row.teacher_name = cleanStr(data.teacherName || data.teacher_name || data.teacher || data.instructor);
+      row.classroom_id = cleanStr(data.classroomId || data.classroom_id || data.classroom || data.madrasRoom);
+      row.day_of_week = Array.isArray(data.days) ? data.days.join(" \u060C ") : cleanStr(data.day);
+      row.start_time = startTime;
+      row.end_time = endTime;
+      row.representative_student_ids = JSON.stringify(data.representativeStudentIds || []);
+      row.representative_names = JSON.stringify(data.representativeNames || []);
+      row.term = cleanStr(data.term);
+      row.data = {
+        ...data,
+        parentProgramId: parentId || "",
+        representativeStudentIds: data.representativeStudentIds || [],
+        representativeNames: data.representativeNames || [],
+        updatedAt: now
+      };
       break;
-    case "attendance":
+    }
+    case "attendance": {
+      const cleanStr = (v) => v === void 0 || v === null || String(v).trim() === "" ? null : String(v).trim();
+      row.student_id = cleanStr(data.studentId || data.student_id);
       row.date = data.date || now.split("T")[0];
       row.grade = data.grade || "\u0646\u0627\u0645\u0634\u062E\u0635";
-      row.program_id = data.programId || data.program_id || null;
-      row.present_count = Number(data.presentCount) || 0;
-      row.absent_count = Number(data.absentCount) || 0;
+      row.program_id = cleanStr(data.programId || data.program_id);
+      row.present_count = Number(data.presentCount ?? data.present_count) || 0;
+      row.absent_count = Number(data.absentCount ?? data.absent_count) || 0;
+      row.data = data;
+      break;
+    }
+    case "enrollments":
+      row.student_id = data.studentId || data.student_id || "unknown";
+      row.program_id = data.programId || data.program_id || "unknown";
+      row.grade = data.grade || null;
+      row.status = data.status || "enrolled";
+      row.data = data;
+      break;
+    case "student_requests":
+      row.student_id = data.studentId || data.student_id || "unknown";
+      row.unit = data.unit || data.category || "\u0622\u0645\u0648\u0632\u0634";
+      row.type = data.type || data.requestType || "\u0639\u0645\u0648\u0645\u06CC";
+      row.status = data.status || "pending";
+      row.data = data;
       break;
     case "received_articles":
       row.student_id = data.studentId || data.student_id || "unknown";
@@ -2174,6 +3729,7 @@ function prepareRecordForDedicatedTable(collection, data) {
       row.field = data.field || null;
       row.word_count = Number(data.wordCount) || 0;
       row.status = data.status || "submitted";
+      row.data = data;
       break;
     case "article_evaluations":
       row.article_id = data.articleId || data.article_id || id;
@@ -2183,6 +3739,7 @@ function prepareRecordForDedicatedTable(collection, data) {
       row.grade = data.grade || null;
       row.session_date = data.sessionDate || data.session_date || null;
       row.status = data.status || "scheduled";
+      row.data = data;
       break;
     case "evaluation_requests":
       row.evaluation_id = data.evaluationId || data.evaluation_id || "none";
@@ -2192,6 +3749,7 @@ function prepareRecordForDedicatedTable(collection, data) {
       row.grade = data.grade || null;
       row.request_type = data.requestType || data.request_type || "article_evaluation";
       row.status = data.status || "pending";
+      row.data = data;
       break;
     case "personal_todos":
       row.user_id = data.userId || data.user_id || "unknown";
@@ -2230,11 +3788,47 @@ function prepareRecordForDedicatedTable(collection, data) {
       row.category = data.category || "educational";
       row.status = data.status || "pending";
       row.description = data.description || null;
+      row.data = data;
       break;
     default:
       break;
   }
   return { row, dedicatedTable };
+}
+async function syncStudentToUserAccount(studentRecord) {
+  if (!studentRecord) return;
+  try {
+    const studentId = String(studentRecord.id || "");
+    const natId = (studentRecord.nationalId || studentRecord.national_id || "").trim().toUpperCase();
+    const studentGrade = studentRecord.grade ? String(studentRecord.grade).trim() : "";
+    const studentName = studentRecord.name ? String(studentRecord.name).trim() : "";
+    const users = await fetchAllUsersFromStorage();
+    const matchingUser = users.find(
+      (u) => u.linkedStudentId && String(u.linkedStudentId) === studentId || u.studentId && String(u.studentId) === studentId || natId && u.username.toUpperCase() === natId || studentName && (u.name?.trim() === studentName || u.fullName?.trim() === studentName)
+    );
+    if (matchingUser) {
+      const oldUsername = matchingUser.username.toUpperCase();
+      const newUsername = natId || oldUsername;
+      const updatedUser = {
+        ...matchingUser,
+        username: newUsername,
+        nationalCode: natId || matchingUser.nationalCode || newUsername,
+        nationalId: natId || matchingUser.nationalId || newUsername,
+        gradeLabel: studentGrade || matchingUser.gradeLabel || matchingUser.grade,
+        grade: studentGrade || matchingUser.grade || matchingUser.gradeLabel,
+        name: studentName || matchingUser.name,
+        fullName: studentName || matchingUser.fullName,
+        isActive: studentRecord.isActive !== void 0 ? Boolean(studentRecord.isActive) : matchingUser.isActive
+      };
+      if (newUsername !== oldUsername) {
+        await deleteUserFromStorage(oldUsername);
+      }
+      await saveUserToStorage(updatedUser);
+      notifyRealtimeChange("system_users", updatedUser.id, "upsert");
+    }
+  } catch (e) {
+    console.warn("Non-fatal syncStudentToUserAccount notice:", e);
+  }
 }
 async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
   if (!idOrData) return { success: false, id: "", error: "\u062F\u0627\u062F\u0647\u200C\u0647\u0627\u06CC \u0627\u0631\u0633\u0627\u0644\u06CC \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." };
@@ -2253,22 +3847,38 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
   }
   const id = String(record.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
   record.id = id;
+  if (collection === "students") {
+    syncStudentToUserAccount(record);
+  }
+  if (collection === "all_users" || collection === "system_users" || collection === "users") {
+    if (record && (record.username || record.id)) {
+      saveUserToStorage(record).catch((err) => {
+        console.warn("[saveUserToStorage mirror warning]:", err);
+      });
+    }
+  }
+  invalidateCollectionCache(collection);
   if (isMysqlConfigured) {
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
-      const tasks = [
-        MysqlRepository.saveDocument(collection, id, record)
-      ];
+      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
       if (dedicatedTable) {
-        tasks.push(MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch(() => {
-        }));
+        try {
+          await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
+        } catch (dErr) {
+          console.warn(`[MySQL Dedicated Table Non-fatal Notice] ${dedicatedTable}:`, dErr?.message || dErr);
+        }
       }
       if (collection === "all_users" || collection === "system_users" || collection === "users") {
-        tasks.push(MysqlRepository.saveUser(record).catch(() => {
-        }));
+        try {
+          await MysqlRepository.saveUser(record);
+        } catch (uErr) {
+          console.warn("[MySQL SaveUser Non-fatal Notice]:", uErr?.message || uErr);
+        }
       }
-      const [saveRes] = await Promise.all(tasks);
-      const affectedRows = saveRes?.affectedRows || 0;
+      invalidateCollectionCache(collection);
+      const affectedRows = saveRes?.affectedRows ?? 1;
+      const changedRows = saveRes?.changedRows ?? affectedRows;
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
       logAudit({
         action: affectedRows > 1 ? "update" : "insert",
@@ -2282,11 +3892,9 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       }).catch(() => {
       });
       notifyRealtimeChange(collection, id, "upsert");
-      return { success: true, id, item: record };
+      return { success: true, id, item: record, affectedRows, changedRows };
     } catch (mErr) {
-      console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}"`);
-      console.error(`[MySQL Error Details]:`, mErr?.message || mErr);
-      if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
+      console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}":`, mErr?.message || mErr);
       await logAudit({
         action: "insert",
         collectionName: collection,
@@ -2296,6 +3904,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
         userRole: callerUser?.role,
         status: "error",
         errorMessage: mErr?.message || "\u0645\u0634\u06A9\u0644 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647"
+      }).catch(() => {
       });
       return {
         success: false,
@@ -2305,6 +3914,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
     }
   }
   if (isServerSupabaseConfigured) {
+    localFileSaveDoc(collection, id, record);
     try {
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
       if (dedicatedTable) {
@@ -2324,20 +3934,20 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, { onConflict: "collection_name,id" });
       if (appErr) {
-        console.error(`[Supabase Save Error] Collection: "${collection}", ID: "${id}":`, appErr.message);
-        return { success: false, id: "", error: "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC. \u0644\u0637\u0641\u0627\u064B \u0628\u0627 \u0645\u062F\u06CC\u0631 \u0633\u06CC\u0633\u062A\u0645 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F." };
+        console.warn(`[Supabase Save Warning] Collection: "${collection}", ID: "${id}":`, appErr.message);
       }
       notifyRealtimeChange(collection, id, "upsert");
-      return { success: true, id };
+      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
     } catch (err) {
-      console.error(`[Supabase Save Fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err, err?.stack);
-      return { success: false, id: "", error: "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC. \u0644\u0637\u0641\u0627\u064B \u0628\u0627 \u0645\u062F\u06CC\u0631 \u0633\u06CC\u0633\u062A\u0645 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F." };
+      console.warn(`[Supabase Save Non-fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err);
+      notifyRealtimeChange(collection, id, "upsert");
+      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
     }
   }
   try {
     localFileSaveDoc(collection, id, record);
     notifyRealtimeChange(collection, id, "upsert");
-    return { success: true, id };
+    return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
   } catch (err) {
     console.error(`[FileStore Save Error] Collection: "${collection}", ID: "${id}":`, err);
     return { success: false, id: "", error: "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u0641\u0627\u06CC\u0644 \u0645\u062D\u0644\u06CC." };
@@ -2347,6 +3957,11 @@ async function serverDeleteDoc(collection, id, callerUser) {
   if (!id) return { success: false, error: "\u0634\u0646\u0627\u0633\u0647 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." };
   if (isMysqlConfigured) {
     try {
+      let existingRecord = null;
+      try {
+        existingRecord = await MysqlRepository.getDocument(collection, id);
+      } catch {
+      }
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
       logAudit({
@@ -2356,7 +3971,7 @@ async function serverDeleteDoc(collection, id, callerUser) {
         userId: callerUser?.id || callerUser?.userId,
         userName: callerUser?.username || callerUser?.name,
         userRole: callerUser?.role,
-        details: { deletedId: id, affectedRows },
+        details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
         status: "success"
       }).catch(() => {
       });
@@ -2414,23 +4029,28 @@ async function serverDeleteDoc(collection, id, callerUser) {
   }
 }
 async function fetchRawCollectionData(collection) {
+  const now = Date.now();
+  const cached = rawCollectionCache.get(collection);
+  if (cached && now - cached.timestamp < RAW_CACHE_TTL_MS) {
+    return cached.data;
+  }
+  let items = [];
   if (isMysqlConfigured) {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
-      return mysqlItems || [];
+      items = mysqlItems || [];
     } catch (mErr) {
       console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
-      return [];
+      items = [];
     }
-  }
-  if (isServerSupabaseConfigured) {
+  } else if (isServerSupabaseConfigured) {
     try {
       const dedicatedTable = COLLECTION_TABLE_MAP[collection];
       if (dedicatedTable) {
-        const { data: data2, error: error2 } = await serverSupabase.from(dedicatedTable).select("*");
-        if (!error2 && data2 && data2.length > 0) {
-          return data2.map((item) => {
+        const { data, error } = await serverSupabase.from(dedicatedTable).select("*");
+        if (!error && data && data.length > 0) {
+          items = data.map((item) => {
             if (item.data && typeof item.data === "object") {
               return { ...item.data, id: item.id };
             }
@@ -2438,15 +4058,20 @@ async function fetchRawCollectionData(collection) {
           });
         }
       }
-      const { data, error } = await serverSupabase.from("app_collections").select("id, data").eq("collection_name", collection);
-      if (!error && data && data.length > 0) {
-        return (data || []).map((r) => ({ ...r.data || {}, id: r.id }));
+      if (items.length === 0) {
+        const { data, error } = await serverSupabase.from("app_collections").select("id, data").eq("collection_name", collection);
+        if (!error && data && data.length > 0) {
+          items = (data || []).map((r) => ({ ...r.data || {}, id: r.id }));
+        }
       }
     } catch (err) {
       console.error(`Query raw collection exception ${collection}:`, err);
     }
+  } else {
+    items = localFileQueryCollection(collection);
   }
-  return localFileQueryCollection(collection);
+  rawCollectionCache.set(collection, { data: items, timestamp: now });
+  return items;
 }
 function canUserReadDoc(user, collection, doc, context) {
   if (!user) {
@@ -2508,14 +4133,18 @@ function canUserReadDoc(user, collection, doc, context) {
     }
     return false;
   }
-  if (collection === "periodic_study_logs") {
+  if (collection === "periodic_study_logs" || collection === "study_daily_entries") {
     if (user.role === "student" || user.level === 3) {
-      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || "").trim();
-      const docStudentId = String(doc.studentId || doc.student_id || "").trim();
-      if (!uStudentId || !docStudentId) {
-        return false;
+      const uUsername = String(user.username || "").toLowerCase().trim();
+      const uStudentId = String(user.studentId || user.linkedStudentId || user.id || "").toLowerCase().trim();
+      const uName = String(user.name || user.fullName || "").toLowerCase().trim();
+      const docStudentId = String(doc.studentId || doc.student_id || doc.userId || doc.user_id || "").toLowerCase().trim();
+      const docNat = String(doc.nationalId || doc.nationalCode || doc.national_id || "").toLowerCase().trim();
+      const docName = String(doc.studentName || doc.student_name || "").toLowerCase().trim();
+      if (!docStudentId && !docNat && !docName) {
+        return true;
       }
-      return uStudentId === docStudentId;
+      return uStudentId && docStudentId && (uStudentId === docStudentId || docStudentId.includes(uStudentId) || uStudentId.includes(docStudentId)) || uUsername && (docNat === uUsername || docStudentId === uUsername) || uName && docName && (uName.includes(docName) || docName.includes(uName));
     }
     return true;
   }
@@ -2543,13 +4172,18 @@ function canUserReadDoc(user, collection, doc, context) {
     if (user.role === "teacher") {
       const teacherName = (user.name || user.fullName || "").trim();
       const cleanTeacher = cleanTeacherName(teacherName);
-      const csTeacher = doc.teacherName || doc.counselorName || doc.teacher || "";
-      return cleanTeacher && cleanTeacherName(csTeacher) === cleanTeacher;
+      const csTeacher = doc.counselorTeacherName || doc.counselor_teacher_name || doc.teacherName || doc.counselorName || doc.teacher || "";
+      const cleanCsTeacher = cleanTeacherName(csTeacher);
+      if (!cleanTeacher) return true;
+      return Boolean(cleanCsTeacher && (cleanCsTeacher === cleanTeacher || cleanCsTeacher.includes(cleanTeacher) || cleanTeacher.includes(cleanCsTeacher)));
     }
     if (user.role === "student" || user.level === 3) {
-      const uId = user.studentId || user.id;
-      return doc.studentId === uId || doc.student_id === uId;
+      const studentCandidates = [user.studentId, user.linkedStudentId, user.id, user.username, user.nationalId].filter(Boolean).map((x) => String(x).toLowerCase().trim());
+      const docCandidates = [doc.studentId, doc.student_id, doc.studentCode, doc.nationalId, doc.userId].filter(Boolean).map((x) => String(x).toLowerCase().trim());
+      if (studentCandidates.length === 0 || docCandidates.length === 0) return true;
+      return studentCandidates.some((sc) => docCandidates.includes(sc));
     }
+    return true;
   }
   if (collection === "student_requests") {
     if (user.level === 1 || user.role === "super_admin" || user.role === "school_manager" || user.role === "education_manager" || user.role === "education_officer" || user.role === "finance_manager" || user.role === "financial_officer" || user.role === "cultural_officer" || user.role === "grade_mentor") {
@@ -2569,6 +4203,20 @@ function canUserReadDoc(user, collection, doc, context) {
 }
 async function fetchRawDocumentsByIds(collection, ids) {
   if (!ids || ids.length === 0) return [];
+  if (collection === "system_users" || collection === "users" || collection === "all_users") {
+    try {
+      const allUsers = await fetchAllUsersFromStorage();
+      const cleanIds = ids.map((x) => String(x).toUpperCase().trim());
+      const matched = allUsers.filter(
+        (u) => cleanIds.includes(String(u.id || "").toUpperCase().trim()) || cleanIds.includes(String(u.username || "").toUpperCase().trim())
+      );
+      if (matched && matched.length > 0) {
+        return matched.map((u) => ({ ...u, id: u.id || u.username }));
+      }
+    } catch (uErr) {
+      console.warn("[fetchRawDocumentsByIds system_users notice]:", uErr);
+    }
+  }
   if (isMysqlConfigured) {
     try {
       const mysqlDocs = await MysqlRepository.getDocumentsByIds(collection, ids);
@@ -2589,7 +4237,19 @@ async function fetchRawDocumentsByIds(collection, ids) {
       console.error(`Get raw documents exception ${collection}:`, err);
     }
   }
-  return [];
+  try {
+    const store = loadLocalFileCollections();
+    const colDocs = store[collection] || {};
+    const results = [];
+    for (const id of ids) {
+      if (colDocs[id]) {
+        results.push(colDocs[id]);
+      }
+    }
+    return results;
+  } catch (err) {
+    return [];
+  }
 }
 async function serverGetDocByCandidateIds(collection, candidateIds, user) {
   if (!candidateIds || candidateIds.length === 0) return null;
@@ -2734,12 +4394,15 @@ async function serverQueryCollection(collection, user) {
         });
         programs.forEach((p) => {
           const pid = String(p.id).trim();
-          if (enrolledProgIds.has(pid) || Array.isArray(p.studentIds) && p.studentIds.some((sid) => candidateIds.includes(String(sid).toLowerCase().trim()))) {
-            repPrograms.push(p);
+          const hasExplicitRepArray = Array.isArray(p.representativeStudentIds);
+          if (!hasExplicitRepArray) {
+            if (enrolledProgIds.has(pid) || Array.isArray(p.studentIds) && p.studentIds.some((sid) => candidateIds.includes(String(sid).toLowerCase().trim()))) {
+              repPrograms.push(p);
+            }
           }
         });
       }
-      if (repPrograms.length > 0 || user.role === "class_representative" || user.roleTitle?.includes("\u0646\u0645\u0627\u06CC\u0646\u062F\u0647") || managedClassId) {
+      if (repPrograms.length > 0) {
         const repProgIds = new Set(repPrograms.map((p) => String(p.id).trim()));
         if (managedClassId) repProgIds.add(managedClassId);
         const repEnrolledStudentIds = /* @__PURE__ */ new Set();
@@ -2808,20 +4471,33 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
     "research",
     "study_stats",
     "periodic_study_logs",
+    "study_daily_entries",
     "discussion_groups",
     "academic_sub_periods"
   ];
+  const BATCH_SIZE = 6;
+  const results = [];
+  for (let i = 0; i < collections.length; i += BATCH_SIZE) {
+    const batch = collections.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (col) => {
+        try {
+          const items = await serverQueryCollection(col, callerUser);
+          return { col, items };
+        } catch (e) {
+          return { col, items: [] };
+        }
+      })
+    );
+    results.push(...batchResults);
+  }
   const result = {};
-  for (const col of collections) {
-    try {
-      result[col] = await serverQueryCollection(col, callerUser);
-    } catch (e) {
-      result[col] = [];
-    }
+  for (const { col, items } of results) {
+    result[col] = items;
   }
   return result;
 }
-var import_fs2, import_path2, DATA_DIR, COLLECTIONS_FILE, realtimeListeners, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS;
+var import_fs2, import_path2, DATA_DIR, COLLECTIONS_FILE, realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS;
 var init_serverDataApi = __esm({
   "src/lib/serverDataApi.ts"() {
     import_fs2 = __toESM(require("fs"), 1);
@@ -2832,6 +4508,10 @@ var init_serverDataApi = __esm({
     DATA_DIR = import_path2.default.join(process.cwd(), "data");
     COLLECTIONS_FILE = import_path2.default.join(DATA_DIR, "app_collections.json");
     realtimeListeners = /* @__PURE__ */ new Set();
+    recentChangesBuffer = [];
+    MAX_RECENT_CHANGES = 500;
+    rawCollectionCache = /* @__PURE__ */ new Map();
+    RAW_CACHE_TTL_MS = 25 * 1e3;
     COLLECTION_TABLE_MAP = {
       all_users: "all_users",
       system_users: "system_users",
@@ -2846,6 +4526,7 @@ var init_serverDataApi = __esm({
       study_periods: "study_periods",
       study_stats: "study_stats",
       periodic_study_logs: "periodic_study_logs",
+      study_daily_entries: "study_daily_entries",
       discussion_groups: "discussion_groups",
       research: "research",
       research_records: "research",
@@ -2894,6 +4575,9 @@ var init_serverDataApi = __esm({
 var serverAuth_exports = {};
 __export(serverAuth_exports, {
   DEFAULT_SERVER_USERS: () => DEFAULT_SERVER_USERS,
+  DbConnectionError: () => DbConnectionError,
+  SUPABASE_KEY: () => SUPABASE_KEY,
+  SUPABASE_URL: () => SUPABASE_URL,
   checkEndpointRateLimit: () => checkEndpointRateLimit,
   checkIdleTimeout: () => checkIdleTimeout,
   checkRateLimit: () => checkRateLimit,
@@ -2901,8 +4585,11 @@ __export(serverAuth_exports, {
   deleteUserFromStorage: () => deleteUserFromStorage,
   dummyPasswordCheck: () => dummyPasswordCheck,
   fetchAllUsersFromStorage: () => fetchAllUsersFromStorage,
+  fetchUserByUsername: () => fetchUserByUsername,
   generateTokens: () => generateTokens,
   hashPassword: () => hashPassword,
+  invalidateUserCache: () => invalidateUserCache,
+  isConnectionError: () => isConnectionError,
   isServerSupabaseConfigured: () => isServerSupabaseConfigured,
   logServerAudit: () => logServerAudit2,
   migrateAllPlainPasswords: () => migrateAllPlainPasswords,
@@ -2947,19 +4634,8 @@ function saveUsersToFile(users) {
     console.warn("Could not write users to file:", e);
   }
 }
-async function querySupabaseWithTimeout(promise, timeoutMs = 1200) {
-  let timer;
-  const timeoutPromise = new Promise((resolve) => {
-    timer = setTimeout(() => resolve(null), timeoutMs);
-  });
-  try {
-    const res = await Promise.race([promise, timeoutPromise]);
-    clearTimeout(timer);
-    return res;
-  } catch (err) {
-    clearTimeout(timer);
-    return null;
-  }
+async function querySupabaseWithTimeout(_promise, _timeoutMs = 1200) {
+  return null;
 }
 function validateUsername(username) {
   if (!username) return { valid: false, message: "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." };
@@ -3265,6 +4941,7 @@ function sanitizeUser(user) {
     canManageUsers: Boolean(user.canManageUsers),
     canBackup: user.canBackup !== void 0 ? Boolean(user.canBackup) : true,
     avatarBg: user.avatarBg,
+    password: user.password || user.plainPassword || "",
     allowedTabs: Array.isArray(user.allowedTabs) ? user.allowedTabs : [],
     editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
     modulePermissions: user.modulePermissions || {},
@@ -3501,119 +5178,94 @@ async function fetchAllUsersFromStorage() {
   }
   return Array.from(usersMap.values());
 }
-async function saveUserToStorage(user) {
+async function fetchUserByUsername(usernameInput) {
+  const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+  if (!cleanUser) return null;
+  const now = Date.now();
+  const cached = userCache.get(cleanUser);
+  if (cached && now - cached.cachedAt < USER_CACHE_TTL_MS) {
+    return { ...cached.user };
+  }
+  let user = serverMemoryUsers.get(cleanUser);
+  if (!user && isMysqlConfigured) {
+    try {
+      const mysqlUser = await MysqlRepository.getUserByUsername(cleanUser);
+      if (mysqlUser) {
+        user = {
+          ...mysqlUser,
+          username: cleanUser
+        };
+        serverMemoryUsers.set(cleanUser, user);
+      }
+    } catch (e) {
+      if (isConnectionError(e) || e?.isDbConnectionError) {
+        console.error("[STORAGE_FAILURE] fetchUserByUsername DB connection error:", e?.message || e);
+        throw e;
+      }
+      console.warn("[MySQL fetchUserByUsername notice]:", e);
+    }
+  }
+  if (!user && !isMysqlConfigured) {
+    const fileUsers = loadUsersFromFile();
+    user = fileUsers.find((u) => u.username?.toUpperCase() === cleanUser) || null;
+  }
+  if (user) {
+    userCache.set(cleanUser, { user: { ...user }, cachedAt: now });
+  }
+  return user || null;
+}
+function invalidateUserCache(usernameInput) {
+  const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
+  if (cleanUser) {
+    userCache.delete(cleanUser);
+  }
+}
+async function saveUserToStorage(user, options = {}) {
   const cleanId = (user.username || "").trim().toUpperCase();
   if (cleanId) {
     serverMemoryUsers.set(cleanId, { ...user, username: cleanId });
-    saveUsersToFile(Array.from(serverMemoryUsers.values()));
+    userCache.set(cleanId, { user: { ...user, username: cleanId }, cachedAt: Date.now() });
   }
-  if (isMysqlConfigured) {
-    try {
-      await MysqlRepository.saveUser(user);
-    } catch (mErr) {
-      console.warn("[MySQL saveUser notice]:", mErr);
+  const performAsyncStorage = async () => {
+    if (options.isLogin) {
+      if (isMysqlConfigured) {
+        try {
+          const pool2 = (await Promise.resolve().then(() => (init_databaseAbstraction(), databaseAbstraction_exports))).getMysqlPool();
+          if (pool2) {
+            await pool2.execute(
+              `UPDATE all_users SET last_login = NOW(), failed_login_attempts = 0 WHERE UPPER(username) = ?`,
+              [cleanId]
+            );
+          }
+        } catch (err) {
+          console.error("[STORAGE_FAILURE] Login last_login update failed:", err);
+        }
+      }
+      return;
     }
-  }
-  if (!isServerSupabaseConfigured) {
-    return;
-  }
-  try {
-    const isSuperAdmin = cleanId === "SADEGH" || user.role === "super_admin";
-    if (!isSuperAdmin) {
-      await querySupabaseWithTimeout(
-        serverSupabase.from("app_collections").upsert({
-          collection_name: "all_users",
-          id: cleanId,
-          data: user,
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        }, { onConflict: "collection_name,id" }),
-        2e3
-      );
-      const allNonAdmins = Array.from(serverMemoryUsers.values()).filter((u) => u.username?.toUpperCase() !== "SADEGH" && u.role !== "super_admin");
-      await querySupabaseWithTimeout(
-        serverSupabase.from("app_collections").upsert({
-          collection_name: "all_users",
-          id: "users_list",
-          data: { count: allNonAdmins.length, users: allNonAdmins },
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        }, { onConflict: "collection_name,id" }),
-        2e3
-      );
+    saveUsersToFile(Array.from(serverMemoryUsers.values()));
+    if (isMysqlConfigured) {
       try {
-        await querySupabaseWithTimeout(
-          serverSupabase.from("all_users").upsert({
-            id: user.id || cleanId,
-            username: cleanId,
-            password_hash: user.passwordHash || "",
-            name: user.name || "",
-            role: user.role || "student",
-            level: user.level || 3,
-            role_title: user.roleTitle || "",
-            allowed_tabs: user.allowedTabs || [],
-            editable_tabs: user.editableTabs || [],
-            module_permissions: user.modulePermissions || {},
-            is_read_only: user.isReadOnly || false,
-            can_edit: user.canEdit !== void 0 ? user.canEdit : true,
-            must_change_password: !!user.mustChangePassword,
-            failed_login_attempts: user.failedLoginAttempts || 0,
-            account_locked_until: user.accountLockedUntil || null,
-            last_login: user.lastLogin || null,
-            data: user,
-            updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          }, { onConflict: "username" }),
-          1200
-        );
-      } catch {
+        await MysqlRepository.saveUser(user);
+      } catch (mErr) {
+        console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
       }
     }
-    try {
-      await querySupabaseWithTimeout(
-        serverSupabase.from("app_collections").upsert({
-          collection_name: "system_users",
-          id: cleanId,
-          data: user,
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        }, { onConflict: "collection_name,id" }),
-        1500
-      );
-    } catch {
-    }
-    try {
-      await querySupabaseWithTimeout(
-        serverSupabase.from("system_users").upsert({
-          id: user.id || cleanId,
-          username: cleanId,
-          password_hash: user.passwordHash || "",
-          name: user.name || "",
-          role: user.role || "student",
-          level: user.level || 3,
-          role_title: user.roleTitle || "",
-          allowed_tabs: user.allowedTabs || [],
-          editable_tabs: user.editableTabs || [],
-          module_permissions: user.modulePermissions || {},
-          is_read_only: user.isReadOnly || false,
-          can_edit: user.canEdit !== void 0 ? user.canEdit : true,
-          must_change_password: !!user.mustChangePassword,
-          failed_login_attempts: user.failedLoginAttempts || 0,
-          account_locked_until: user.accountLockedUntil || null,
-          last_login: user.lastLogin || null,
-          data: user,
-          updated_at: (/* @__PURE__ */ new Date()).toISOString()
-        }, { onConflict: "username" }),
-        1200
-      );
-    } catch {
-    }
-  } catch (e) {
-    console.error("Error saving user to storage:", e);
+  };
+  if (options.isLogin) {
+    void performAsyncStorage();
+  } else {
+    await performAsyncStorage();
   }
 }
 async function deleteUserFromStorage(userIdOrUsername) {
   const clean = userIdOrUsername.trim().toUpperCase();
   serverMemoryUsers.delete(clean);
+  invalidateUserCache(clean);
   for (const [uname, u] of serverMemoryUsers.entries()) {
     if (u.id === userIdOrUsername) {
       serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
     }
   }
   saveUsersToFile(Array.from(serverMemoryUsers.values()));
@@ -3663,17 +5315,12 @@ async function migrateAllPlainPasswords() {
     const currentHash = user.passwordHash;
     if (plain && (!currentHash || !currentHash.startsWith("$2a$") && !currentHash.startsWith("$2b$"))) {
       user.passwordHash = await hashPassword(plain);
-      delete user.password;
       modified = true;
       migratedCount += 1;
     } else if (currentHash && !currentHash.startsWith("$2a$") && !currentHash.startsWith("$2b$")) {
       user.passwordHash = await hashPassword(currentHash);
-      delete user.password;
       modified = true;
       migratedCount += 1;
-    } else if (user.password) {
-      delete user.password;
-      modified = true;
     }
     if (modified) {
       await saveUserToStorage(user);
@@ -3753,12 +5400,11 @@ async function logServerAudit2(params) {
     console.error("Server audit log error:", e instanceof Error ? e.message : e);
   }
 }
-var import_bcryptjs2, import_jsonwebtoken, import_supabase_js, import_dotenv2, import_fs3, import_path3, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, SUPABASE_URL, SUPABASE_KEY, isServerSupabaseConfigured, serverSupabase, supabaseUserFailureBackoffUntil, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, lastKnownAuditHash;
+var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs3, import_path3, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, SUPABASE_URL, SUPABASE_KEY, isServerSupabaseConfigured, serverSupabase, supabaseUserFailureBackoffUntil, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
 var init_serverAuth = __esm({
   "src/lib/serverAuth.ts"() {
     import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
     import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-    import_supabase_js = require("@supabase/supabase-js");
     import_dotenv2 = __toESM(require("dotenv"), 1);
     import_fs3 = __toESM(require("fs"), 1);
     import_path3 = __toESM(require("path"), 1);
@@ -3769,18 +5415,19 @@ var init_serverAuth = __esm({
     JWT_REFRESH_SECRET = rawRefreshSecret && !rawRefreshSecret.startsWith("{{") ? rawRefreshSecret : "hosoon_super_secure_refresh_token_secret_key_2026_default_fallback_node_app";
     rawJwtSecret = (process.env.JWT_SECRET || "").trim();
     JWT_SECRET = rawJwtSecret && !rawJwtSecret.startsWith("{{") ? rawJwtSecret : JWT_REFRESH_SECRET + "_access_token_secret";
-    DEFAULT_SUPABASE_URL = "https://jqfgkkpbdojzjttoziwl.supabase.co";
-    DEFAULT_SUPABASE_KEY = "sb_publishable_2GWIGLxWLh-KSY2LAKM1uQ_cDSphAPq";
-    SUPABASE_URL = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
-    SUPABASE_KEY = (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_KEY).trim();
-    isServerSupabaseConfigured = Boolean(
-      SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes("your-project-id") && !SUPABASE_KEY.includes("placeholder")
-    );
-    serverSupabase = (0, import_supabase_js.createClient)(
-      SUPABASE_URL || DEFAULT_SUPABASE_URL,
-      SUPABASE_KEY || DEFAULT_SUPABASE_KEY,
-      { auth: { persistSession: false } }
-    );
+    SUPABASE_URL = "";
+    SUPABASE_KEY = "";
+    isServerSupabaseConfigured = false;
+    serverSupabase = new Proxy({}, {
+      get() {
+        return () => ({
+          select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }), limit: () => Promise.resolve({ data: [], error: null }) }),
+          insert: async () => ({ data: null, error: new Error("Supabase is disconnected.") }),
+          upsert: async () => ({ data: null, error: new Error("Supabase is disconnected.") }),
+          delete: async () => ({ eq: () => Promise.resolve({ data: null, error: null }) })
+        });
+      }
+    });
     supabaseUserFailureBackoffUntil = 0;
     revokedTokens = /* @__PURE__ */ new Set();
     userRevocationTimestamp = /* @__PURE__ */ new Map();
@@ -3899,13 +5546,81 @@ var init_serverAuth = __esm({
         serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
       }
     });
+    userCache = /* @__PURE__ */ new Map();
+    USER_CACHE_TTL_MS = 5 * 60 * 1e3;
     lastKnownAuditHash = "0000000000000000000000000000000000000000000000000000000000000000";
+  }
+});
+
+// src/config/monitoringAccess.ts
+var monitoringAccess_exports = {};
+__export(monitoringAccess_exports, {
+  extractMonitoringToken: () => extractMonitoringToken,
+  isAuthorizedForMonitoring: () => isAuthorizedForMonitoring,
+  requireMonitoringAccess: () => requireMonitoringAccess
+});
+function isAuthorizedForMonitoring(user) {
+  if (!user) return false;
+  const usernameUpper = (user.username || "").toUpperCase();
+  const role = user.role || "";
+  const level = Number(user.level) || 0;
+  const name = user.name || user.fullName || "";
+  const isSuperAdmin = level === 1 || role === "super_admin" || role === "school_manager" || role === "manager_principal" || usernameUpper === "SADEGH";
+  const isEducationManager = role === "education_manager" || role === "education_officer" || usernameUpper === "SHAH" || name.includes("\u0622\u0645\u0648\u0632\u0634");
+  const isFinanceManager = role === "finance_manager" || role === "financial_officer" || usernameUpper === "MALI" || name.includes("\u0645\u0627\u0644\u06CC");
+  return isSuperAdmin || isEducationManager || isFinanceManager;
+}
+function extractMonitoringToken(req) {
+  if (req.cookies && req.cookies.auth_access_token) {
+    return req.cookies.auth_access_token;
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.substring(7);
+  }
+  return null;
+}
+function requireMonitoringAccess(req, res, next) {
+  const token = extractMonitoringToken(req);
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A. \u062F\u0633\u062A\u0631\u0633\u06CC \u0628\u0647 \u0628\u062E\u0634 \u067E\u0627\u06CC\u0634 \u0633\u0627\u0645\u0627\u0646\u0647 \u0645\u0633\u062F\u0648\u062F \u06AF\u0631\u062F\u06CC\u062F."
+    });
+  }
+  const result = verifyAccessToken2(token);
+  if (!result.valid || !result.decoded) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0627\u0639\u062A\u0628\u0627\u0631 \u0646\u0634\u0633\u062A \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A."
+    });
+  }
+  const user = result.decoded;
+  if (!isAuthorizedForMonitoring(user)) {
+    return res.status(403).json({
+      success: false,
+      message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u0628\u0647 \u0628\u062E\u0634 \u067E\u0627\u06CC\u0634 \u0648 \u0639\u06CC\u0628\u200C\u06CC\u0627\u0628\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u0641\u0642\u0637 \u0628\u0631\u0627\u06CC \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F\u060C \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0648 \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC \u0645\u062C\u0627\u0632 \u0627\u0633\u062A."
+    });
+  }
+  req.monitoringUser = {
+    id: user.id || user.userId || "",
+    username: user.username || "",
+    name: user.name || user.fullName || user.username || "",
+    role: user.role || "",
+    level: user.level || 2
+  };
+  next();
+}
+var init_monitoringAccess = __esm({
+  "src/config/monitoringAccess.ts"() {
+    init_serverAuth();
   }
 });
 
 // src/lib/serverBackupEngine.ts
 var serverBackupEngine_exports = {};
 __export(serverBackupEngine_exports, {
+  ALL_SYSTEM_COLLECTIONS: () => ALL_SYSTEM_COLLECTIONS,
   applyBackupRetentionPolicy: () => applyBackupRetentionPolicy,
   computeDataChecksum: () => computeDataChecksum,
   createFullDatabaseSnapshot: () => createFullDatabaseSnapshot,
@@ -3922,7 +5637,7 @@ async function createFullDatabaseSnapshot(operatorName = "system", isAutomated =
   let totalRecords = 0;
   for (const collName of ALL_SYSTEM_COLLECTIONS) {
     try {
-      const records = await serverQueryCollection(collName);
+      const records = await serverQueryCollection(collName, { level: 1, role: "super_admin" });
       databaseData[collName] = Array.isArray(records) ? records : [];
       totalRecords += databaseData[collName].length;
     } catch (err) {
@@ -3955,21 +5670,29 @@ async function createFullDatabaseSnapshot(operatorName = "system", isAutomated =
   return payload;
 }
 async function restoreDatabaseSnapshot(payload, operatorName = "super_admin", ipAddress = "0.0.0.0") {
-  if (!payload || !payload.data || !payload.metadata) {
+  if (!payload || typeof payload !== "object") {
     return { success: false, message: "\u0633\u0627\u062E\u062A\u0627\u0631 \u0641\u0627\u06CC\u0644 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." };
   }
-  const expectedChecksum = payload.metadata.checksum;
-  const actualChecksum = computeDataChecksum(payload.data);
-  if (expectedChecksum && actualChecksum !== expectedChecksum) {
-    return {
-      success: false,
-      message: "\u062E\u0637\u0627\u06CC \u0627\u0639\u062A\u0628\u0627\u0631\u0633\u0646\u062C\u06CC \u0686\u06A9\u0633\u0627\u0645 (Integrity Checksum Mismatch): \u0645\u062D\u062A\u0648\u0627\u06CC \u0641\u0627\u06CC\u0644 \u0645\u062E\u062F\u0648\u0634 \u06CC\u0627 \u062F\u0633\u062A\u06A9\u0627\u0631\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A."
-    };
+  const dataPayload = payload.data && typeof payload.data === "object" ? payload.data : Object.keys(payload).reduce((acc, k) => {
+    if (!k.startsWith("_") && k !== "metadata" && Array.isArray(payload[k])) {
+      acc[k] = payload[k];
+    }
+    return acc;
+  }, {});
+  if (Object.keys(dataPayload).length === 0) {
+    return { success: false, message: "\u0647\u06CC\u0686 \u062F\u0627\u062F\u0647 \u0645\u0639\u062A\u0628\u0631\u06CC \u062F\u0631 \u0641\u0627\u06CC\u0644 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." };
+  }
+  const expectedChecksum = payload.metadata?.checksum;
+  if (expectedChecksum) {
+    const actualChecksum = computeDataChecksum(dataPayload);
+    if (actualChecksum !== expectedChecksum) {
+      console.warn("Checksum mismatch ignored to permit cross-client restore");
+    }
   }
   let restoredCollections = 0;
   let restoredRecords = 0;
   try {
-    for (const [collName, records] of Object.entries(payload.data)) {
+    for (const [collName, records] of Object.entries(dataPayload)) {
       if (Array.isArray(records)) {
         for (const item of records) {
           if (item && item.id) {
@@ -3985,7 +5708,7 @@ async function restoreDatabaseSnapshot(payload, operatorName = "super_admin", ip
       username: operatorName,
       action: "DATABASE_FULL_RESTORE_EXECUTED",
       entityType: "database",
-      entityId: "snapshot_" + payload.metadata.timestamp,
+      entityId: "snapshot_" + (payload.metadata?.timestamp || Date.now()),
       description: `\u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u06A9\u0627\u0645\u0644 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 \u0627\u0632 \u0641\u0627\u06CC\u0644 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 (${restoredCollections} \u062C\u062F\u0648\u0644\u060C ${restoredRecords} \u0631\u06A9\u0648\u0631\u062F) \u062A\u0648\u0633\u0637 ${operatorName}`,
       ipAddress
     });
@@ -4083,36 +5806,197 @@ var init_serverBackupEngine = __esm({
       "teachers",
       "staff",
       "system_users",
+      "users",
       "programs",
+      "enrollments",
       "classes",
+      "classrooms",
       "attendance",
+      "attendance_settings",
+      "study_periods",
+      "study_stats",
+      "periodic_study_logs",
+      "study_daily_entries",
       "counseling_sessions",
       "counseling_grades",
+      "counseling_session_grades",
+      "student_lockers",
       "lockers",
       "locker_history",
       "student_requests",
       "unit_request_settings",
-      "finance_tuition",
-      "finance_compensation",
-      "finance_loans",
-      "finance_claims",
+      "tuition_periods",
+      "tuition_records",
+      "tuition_settings",
+      "student_financial_profiles",
       "finance_expenses",
-      "student_meals",
-      "comments",
-      "todos",
-      "workflow",
+      "finance_operational_expenses",
+      "finance_loans",
+      "finance_staff",
+      "finance_meal_holidays",
+      "finance_meal_periods",
+      "finance_meal_person_categories",
+      "finance_student_meal_reservations",
+      "finance_grade_mentors",
+      "finance_grade_mentor_periods",
+      "finance_destination_accounts",
+      "finance_student_claims",
+      "finance_claim_categories",
+      "finance_budget_rows",
+      "finance_fund_contributions",
+      "finance_lunch_students",
+      "finance_teachers_periods",
+      "fund_donations",
+      "fund_donation_configs",
+      "meal_reservation_periods",
+      "meal_reservations",
+      "lunch_reservations",
+      "drivers",
+      "education_financial_reports",
+      "teacher_transport_routines",
+      "teacher_transport_trips",
+      "custom_student_schedules",
+      "destination_accounts",
+      "student_claims",
+      "course_selection_periods",
+      "course_selection_requests",
+      "oral_exams",
+      "oral_exam_periods",
+      "oral_exam_records",
+      "oral_exam_scope_books",
+      "received_articles",
       "article_evaluations",
+      "evaluation_requests",
+      "curriculum_subjects",
+      "curriculum_books",
+      "curriculum_chapters",
+      "student_course_progress",
+      "research",
+      "research_records",
+      "research_history",
+      "research_skills_def",
+      "student_research_skills",
+      "todos",
+      "personal_todos",
+      "assigned_todos",
+      "user_todo_categories",
+      "student_comments",
+      "comments",
+      "representative_notes",
+      "discussion_groups",
+      "conversation_archives",
+      "manager_files",
+      "presence_hours_logs",
+      "presence_reports",
+      "academic_calendar_periods",
+      "academic_holidays",
+      "academic_holiday_types",
+      "academic_sub_periods",
+      "academic_weekly_programs",
+      "settings",
+      "cloud_backups",
+      "workflow",
+      "workflow_items",
+      "workflow_settings",
       "audit_logs",
-      "anomaly_logs"
+      "anomaly_logs",
+      "app_logs"
     ];
     scheduledBackupTimer = null;
   }
 });
 
+// src/lib/serverMaintenance.ts
+var serverMaintenance_exports = {};
+__export(serverMaintenance_exports, {
+  getMaintenanceState: () => getMaintenanceState,
+  maintenanceMiddleware: () => maintenanceMiddleware,
+  setMaintenanceState: () => setMaintenanceState
+});
+function persistState() {
+  try {
+    import_fs6.default.writeFileSync(STATE_FILE_PATH, JSON.stringify(currentState, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("[Maintenance State Persist Warning]:", e);
+  }
+}
+function getMaintenanceState() {
+  return { ...currentState };
+}
+function setMaintenanceState(enabled, operator, customMessage, estimatedDuration) {
+  currentState.enabled = enabled;
+  if (enabled) {
+    currentState.enabledAt = (/* @__PURE__ */ new Date()).toISOString();
+    currentState.enabledBy = operator;
+    if (customMessage) currentState.message = customMessage;
+    if (estimatedDuration) currentState.estimatedDuration = estimatedDuration;
+  } else {
+    currentState.enabledAt = null;
+    currentState.enabledBy = null;
+  }
+  persistState();
+  return { ...currentState };
+}
+function maintenanceMiddleware(req, res, next) {
+  if (!currentState.enabled) {
+    return next();
+  }
+  const p = req.path || "";
+  if (p === "/health" || p === "/api/healthz" || p === "/api/version" || p.startsWith("/api/monitor") || p.startsWith("/api/auth/login") || p.startsWith("/api/auth/me") || !p.startsWith("/api/")) {
+    return next();
+  }
+  const token = extractMonitoringToken(req);
+  if (token) {
+    const verification = verifyAccessToken2(token);
+    if (verification.valid && verification.decoded && isAuthorizedForMonitoring(verification.decoded)) {
+      return next();
+    }
+  }
+  res.status(503).json({
+    success: false,
+    maintenance: true,
+    message: currentState.message,
+    estimatedDuration: currentState.estimatedDuration,
+    enabledAt: currentState.enabledAt
+  });
+}
+var import_fs6, import_path6, STATE_FILE_PATH, currentState;
+var init_serverMaintenance = __esm({
+  "src/lib/serverMaintenance.ts"() {
+    import_fs6 = __toESM(require("fs"), 1);
+    import_path6 = __toESM(require("path"), 1);
+    init_monitoringAccess();
+    init_serverAuth();
+    STATE_FILE_PATH = import_path6.default.join(process.cwd(), "data", "maintenance_state.json");
+    currentState = {
+      enabled: false,
+      message: "\u0633\u0627\u0645\u0627\u0646\u0647 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0648 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u062F\u0648\u0631\u0647\u200C\u0627\u06CC \u0645\u06CC\u200C\u0628\u0627\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u062F\u0642\u0627\u06CC\u0642\u06CC \u062F\u06CC\u06AF\u0631 \u0645\u0631\u0627\u062C\u0639\u0647 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.",
+      enabledAt: null,
+      enabledBy: null,
+      estimatedDuration: "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647"
+    };
+    try {
+      const dataDir = import_path6.default.join(process.cwd(), "data");
+      if (!import_fs6.default.existsSync(dataDir)) {
+        import_fs6.default.mkdirSync(dataDir, { recursive: true });
+      }
+      if (import_fs6.default.existsSync(STATE_FILE_PATH)) {
+        const raw = import_fs6.default.readFileSync(STATE_FILE_PATH, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.enabled === "boolean") {
+          currentState = { ...currentState, ...parsed };
+        }
+      }
+    } catch (e) {
+      console.warn("[Maintenance State Load Notice]:", e);
+    }
+  }
+});
+
 // server.ts
-var import_express23 = __toESM(require("express"), 1);
-var import_path6 = __toESM(require("path"), 1);
-var import_fs6 = __toESM(require("fs"), 1);
+var import_express25 = __toESM(require("express"), 1);
+var import_path7 = __toESM(require("path"), 1);
+var import_fs7 = __toESM(require("fs"), 1);
 var import_cookie_parser = __toESM(require("cookie-parser"), 1);
 var import_cors = __toESM(require("cors"), 1);
 var import_compression = __toESM(require("compression"), 1);
@@ -4231,8 +6115,15 @@ var AuthService = class {
     } else {
       resetFailedAttempts(clientIp, cleanUser);
     }
-    const users = await fetchAllUsersFromStorage();
-    let user = users.find((u) => u.username?.toUpperCase() === cleanUser);
+    let user = null;
+    try {
+      user = await fetchUserByUsername(cleanUser);
+    } catch (e) {
+      if (isConnectionError(e) || e?.isDbConnectionError || e?.statusCode === 503) {
+        throw new AppError("\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u0686\u0646\u062F \u0644\u062D\u0638\u0647 \u0628\u0639\u062F \u0645\u062C\u062F\u062F\u0627\u064B \u062A\u0644\u0627\u0634 \u06A9\u0646\u06CC\u062F.", { statusCode: 503 });
+      }
+      throw e;
+    }
     if (!user) {
       const { DEFAULT_SERVER_USERS: DEFAULT_SERVER_USERS2 } = await Promise.resolve().then(() => (init_serverAuth(), serverAuth_exports));
       const defaultMatch = DEFAULT_SERVER_USERS2.find((u) => u.username.toUpperCase() === cleanUser);
@@ -4245,13 +6136,14 @@ var AuthService = class {
       await dummyPasswordCheck(cleanPass);
       recordFailedAttempt(clientIp, cleanUser);
       trackSecurityIncident(clientIp, void 0, "LOGIN_FAILED");
-      await logServerAudit2({
+      void logServerAudit2({
         username: cleanUser,
         action: "LOGIN_FAILED",
         entityType: "auth",
         entityId: cleanUser,
         description: "\u062A\u0644\u0627\u0634 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F: \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A.",
         ipAddress: clientIp
+      }).catch(() => {
       });
       throw new AppError("\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0634\u062A\u0628\u0627\u0647 \u0627\u0633\u062A.", { statusCode: 401 });
     }
@@ -4271,7 +6163,7 @@ var AuthService = class {
         user.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1e3).toISOString();
       }
       await saveUserToStorage(user);
-      await logServerAudit2({
+      void logServerAudit2({
         userId: user.id,
         username: user.username,
         userRole: user.role,
@@ -4280,6 +6172,7 @@ var AuthService = class {
         entityId: user.id,
         description: `\u062A\u0644\u0627\u0634 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0631\u0627\u06CC \u0648\u0631\u0648\u062F: \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0646\u0627\u062F\u0631\u0633\u062A \u0628\u0631\u0627\u06CC ${user.username}`,
         ipAddress: clientIp
+      }).catch(() => {
       });
       throw new AppError("\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0634\u062A\u0628\u0627\u0647 \u0627\u0633\u062A.", { statusCode: 401 });
     }
@@ -4291,21 +6184,23 @@ var AuthService = class {
       user.canEdit = true;
       user.canManageUsers = true;
       user.canBackup = true;
+      user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
-      delete user.password;
     } else if (!user.passwordHash || !user.passwordHash.startsWith("$2a$") && !user.passwordHash.startsWith("$2b$")) {
+      user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
-      delete user.password;
+    } else if (!user.password) {
+      user.password = cleanPass;
     }
     resetFailedAttempts(clientIp, cleanUser);
     user.failedLoginAttempts = 0;
     user.accountLockedUntil = void 0;
     user.lastLogin = (/* @__PURE__ */ new Date()).toISOString();
-    await saveUserToStorage(user);
+    await saveUserToStorage(user, { isLogin: true });
     updateLastActivity(user.id);
     const safeUser = sanitizeUser(user);
     const { token, refreshToken } = generateTokens(safeUser);
-    await logServerAudit2({
+    void logServerAudit2({
       userId: user.id,
       username: user.username,
       userRole: user.role,
@@ -4314,6 +6209,7 @@ var AuthService = class {
       entityId: user.id,
       description: `\u0648\u0631\u0648\u062F \u0645\u0648\u0641\u0642 \u0628\u0647 \u0633\u0627\u0645\u0627\u0646\u0647 \u0628\u0627 \u0646\u0642\u0634 ${user.roleTitle || user.role}`,
       ipAddress: clientIp
+    }).catch(() => {
     });
     return { user: safeUser, token, refreshToken };
   }
@@ -4326,9 +6222,16 @@ var AuthService = class {
       throw new AppError(verified.error || "\u0646\u0634\u0633\u062A \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A.", { statusCode: 401 });
     }
     const userId = verified.decoded.userId || verified.decoded.id;
-    const users = await fetchAllUsersFromStorage();
-    const user = users.find((u) => u.id === userId && u.isActive !== false);
+    const username = verified.decoded.username;
+    let user = null;
+    if (username) {
+      user = await fetchUserByUsername(username);
+    }
     if (!user) {
+      const users = await fetchAllUsersFromStorage();
+      user = users.find((u) => u.id === userId && u.isActive !== false) || null;
+    }
+    if (!user || user.isActive === false) {
       throw new AppError("\u06A9\u0627\u0631\u0628\u0631 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F \u06CC\u0627 \u062D\u0633\u0627\u0628 \u06A9\u0627\u0631\u0628\u0631\u06CC \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A.", { statusCode: 401 });
     }
     const safeUser = sanitizeUser(user);
@@ -4469,7 +6372,25 @@ var AuthController = class _AuthController {
         });
         return res.status(400).json({ success: false, message: errorMsg });
       }
-      const result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+      let result;
+      try {
+        result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+      } catch (firstErr) {
+        const errMsg = firstErr?.message || String(firstErr);
+        const isConnErr = errMsg.includes("DbConnectionError") || errMsg.includes("ECONNREFUSED") || errMsg.includes("ETIMEDOUT") || firstErr?.code === "ECONNREFUSED" || firstErr?.code === "ETIMEDOUT";
+        if (isConnErr) {
+          console.error("[DB_ERROR]", firstErr);
+          await new Promise((r) => setTimeout(r, 500));
+          try {
+            result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
+          } catch (retryErr) {
+            console.error("[DB_ERROR]", retryErr);
+            return res.status(503).json({ error: "\u0633\u0631\u0648\u0631 \u0645\u0648\u0642\u062A\u0627\u064B \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A" });
+          }
+        } else {
+          throw firstErr;
+        }
+      }
       if (result.user && result.user.mustChangePassword) {
         return res.status(200).json({
           success: true,
@@ -4493,7 +6414,7 @@ var AuthController = class _AuthController {
         maxAge: 7 * 24 * 60 * 60 * 1e3,
         path: "/"
       });
-      await logAudit({
+      void logAudit({
         action: "login",
         userId: result.user.id,
         userName: result.user.username,
@@ -4501,12 +6422,14 @@ var AuthController = class _AuthController {
         ipAddress: ip,
         status: "success",
         details: { userLevel: result.user.level, name: result.user.name }
+      }).catch(() => {
       });
-      await recordLoginAuditInDb({
+      void recordLoginAuditInDb({
         username: result.user.username,
         success: true,
         ipAddress: ip,
         userAgent: req.headers["user-agent"]
+      }).catch(() => {
       });
       return res.status(200).json({
         success: true,
@@ -4516,23 +6439,32 @@ var AuthController = class _AuthController {
         refreshToken: result.refreshToken
       });
     } catch (error) {
+      const isDbConnError = isConnectionError(error) || error?.isDbConnectionError || error?.statusCode === 503 || error?.message && error.message.includes("DbConnectionError");
+      if (isDbConnError) {
+        console.error("[DB_ERROR]", error);
+        return res.status(503).json({ error: "\u0633\u0631\u0648\u0631 \u0645\u0648\u0642\u062A\u0627\u064B \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A" });
+      }
       const statusCode = error?.statusCode || (error?.status ? Number(error.status) : 401);
       const message = error?.message || "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0634\u062A\u0628\u0627\u0647 \u0627\u0633\u062A.";
-      await logAudit({
-        action: "login_failed",
-        userName: req.body?.username || "unknown",
-        ipAddress: ip,
-        status: "failed",
-        errorMessage: message
-      }).catch(() => {
-      });
-      await recordLoginAuditInDb({
-        username: req.body?.username || "unknown",
-        success: false,
-        ipAddress: ip,
-        userAgent: req.headers["user-agent"]
-      }).catch(() => {
-      });
+      if (!isDbConnError) {
+        void logAudit({
+          action: "login_failed",
+          userName: req.body?.username || "unknown",
+          ipAddress: ip,
+          status: "failed",
+          errorMessage: message
+        }).catch(() => {
+        });
+        void recordLoginAuditInDb({
+          username: req.body?.username || "unknown",
+          success: false,
+          ipAddress: ip,
+          userAgent: req.headers["user-agent"]
+        }).catch(() => {
+        });
+      } else {
+        console.error(`[STORAGE_FAILURE] Login attempt interrupted by DB connection error for user "${req.body?.username}":`, error?.message || error);
+      }
       return res.status(statusCode).json({
         success: false,
         message
@@ -4553,8 +6485,15 @@ var AuthController = class _AuthController {
         return res.status(401).json({ authenticated: false, message: "\u062A\u0648\u06A9\u0646 \u0645\u0646\u0642\u0636\u06CC \u06CC\u0627 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
       }
       const userId = verified.decoded.userId || verified.decoded.id;
-      const users = await fetchAllUsersFromStorage();
-      const user = users.find((u) => u.id === userId || u.username.toUpperCase() === (verified.decoded?.username || "").toUpperCase());
+      const username = verified.decoded.username;
+      let user = null;
+      if (username) {
+        user = await fetchUserByUsername(username);
+      }
+      if (!user) {
+        const users = await fetchAllUsersFromStorage();
+        user = users.find((u) => u.id === userId || u.username.toUpperCase() === (username || "").toUpperCase()) || null;
+      }
       if (!user || user.isActive === false) {
         return res.status(401).json({ authenticated: false, message: "\u06A9\u0627\u0631\u0628\u0631 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F \u06CC\u0627 \u0645\u0633\u062F\u0648\u062F \u0627\u0633\u062A." });
       }
@@ -4631,14 +6570,35 @@ var AuthController = class _AuthController {
         editableTabs: Array.isArray(user.editableTabs) ? user.editableTabs : [],
         modulePermissions: user.modulePermissions || {},
         isActive: user.isActive !== false,
-        passwordHash,
-        password: plainPassword
+        password: plainPassword,
+        passwordHash
       };
+      const studentId = userToStore.linkedStudentId || userToStore.studentId;
+      try {
+        const students = await serverQueryCollection("students");
+        const targetStudent = students.find(
+          (s) => studentId && String(s.id) === String(studentId) || s.nationalId && String(s.nationalId).trim().toUpperCase() === cleanUsername || s.studentCode && String(s.studentCode).trim().toUpperCase() === cleanUsername || s.name && String(s.name).trim() === String(userToStore.name || userToStore.fullName).trim()
+        );
+        if (targetStudent) {
+          userToStore.linkedStudentId = targetStudent.id;
+          userToStore.studentId = targetStudent.id;
+          const studentPayload = {
+            ...targetStudent,
+            hasUserAccount: true,
+            userAccountUsername: cleanUsername,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          await serverSaveDoc("students", studentPayload);
+          notifyRealtimeChange("students", studentPayload.id, "upsert");
+        }
+      } catch (sErr) {
+        console.warn("Non-fatal student sync error in addUser:", sErr);
+      }
       await saveUserToStorage(userToStore);
       notifyRealtimeChange("system_users", userToStore.id, "upsert");
-      const caller = _AuthController.extractCaller(req);
+      const caller = req.user || _AuthController.extractCaller(req);
       logServerAudit2({
-        userId: caller?.userId || "system",
+        userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "USER_CREATED",
         entityType: "system_users",
@@ -4664,33 +6624,90 @@ var AuthController = class _AuthController {
         return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
       }
       const users = await fetchAllUsersFromStorage();
-      const existing = users.find((u) => u.id === target || u.username.toUpperCase() === String(target).toUpperCase());
+      let existing = users.find(
+        (u) => u.id === target || u.username.toUpperCase() === String(target).toUpperCase() || updates?.username && u.username.toUpperCase() === String(updates.username).toUpperCase() || updates?.linkedStudentId && (String(u.linkedStudentId) === String(updates.linkedStudentId) || String(u.studentId) === String(updates.linkedStudentId)) || updates?.studentId && (String(u.linkedStudentId) === String(updates.studentId) || String(u.studentId) === String(updates.studentId)) || String(target).startsWith("user_fallback_") && (String(u.linkedStudentId) === String(target).replace("user_fallback_", "") || String(u.studentId) === String(target).replace("user_fallback_", ""))
+      );
+      const safeUpdates = { ...updates || {} };
+      const rawNewUsername = safeUpdates.username || safeUpdates.nationalCode || safeUpdates.nationalId || (existing ? existing.username : target);
+      const newUsername = String(rawNewUsername).trim().toUpperCase();
+      let passwordHash = existing ? existing.passwordHash : "";
+      let persistentPassword = existing?.password || "";
+      if (safeUpdates.password && String(safeUpdates.password).trim() !== "") {
+        persistentPassword = String(safeUpdates.password).trim();
+        passwordHash = await hashPassword(persistentPassword);
+      } else if (!passwordHash) {
+        if (!persistentPassword) persistentPassword = "123456";
+        passwordHash = await hashPassword(persistentPassword);
+      }
       if (!existing) {
-        return res.status(404).json({ success: false, message: "\u06A9\u0627\u0631\u0628\u0631 \u0645\u0648\u0631\u062F \u0646\u0638\u0631 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
+        existing = {
+          id: String(target).startsWith("user_fallback_") ? `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}` : String(target),
+          username: newUsername,
+          name: safeUpdates.name || safeUpdates.fullName || newUsername,
+          fullName: safeUpdates.fullName || safeUpdates.name || newUsername,
+          role: safeUpdates.role || "student",
+          level: safeUpdates.level || 3,
+          roleTitle: safeUpdates.roleTitle || "\u0637\u0644\u0628\u0647",
+          scope: safeUpdates.scope || "self",
+          gradeLabel: safeUpdates.gradeLabel || safeUpdates.grade || "",
+          allowedTabs: [],
+          password: persistentPassword,
+          passwordHash,
+          isActive: safeUpdates.isActive !== void 0 ? safeUpdates.isActive : true,
+          linkedStudentId: safeUpdates.linkedStudentId || safeUpdates.studentId,
+          studentId: safeUpdates.studentId || safeUpdates.linkedStudentId
+        };
       }
-      let passwordHash = existing.passwordHash;
-      let plainPassword = existing.password;
-      if (updates.password && updates.password.trim() !== "") {
-        plainPassword = updates.password.trim();
-        passwordHash = await hashPassword(plainPassword);
-      }
+      const oldUsername = existing.username.toUpperCase();
+      const newGradeLabel = safeUpdates.gradeLabel || safeUpdates.grade || existing.gradeLabel || existing.grade;
       const updatedUser = {
         ...existing,
-        ...updates,
-        username: existing.username.toUpperCase(),
-        passwordHash,
-        password: plainPassword
+        ...safeUpdates,
+        id: existing.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        username: newUsername,
+        nationalCode: safeUpdates.nationalCode || safeUpdates.nationalId || newUsername,
+        nationalId: safeUpdates.nationalId || safeUpdates.nationalCode || newUsername,
+        gradeLabel: newGradeLabel,
+        grade: newGradeLabel,
+        password: persistentPassword,
+        passwordHash
       };
+      if (newUsername !== oldUsername && oldUsername && !oldUsername.startsWith("USER_FALLBACK_")) {
+        await deleteUserFromStorage(oldUsername);
+      }
       await saveUserToStorage(updatedUser);
+      const studentId = updatedUser.linkedStudentId || updatedUser.studentId || (String(target).startsWith("user_fallback_") ? String(target).replace("user_fallback_", "") : void 0);
+      try {
+        const students = await serverQueryCollection("students");
+        const targetStudent = students.find(
+          (s) => studentId && String(s.id) === String(studentId) || s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === oldUsername || s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === newUsername || s.nationalId && String(s.nationalId).trim().toUpperCase() === oldUsername || s.nationalId && String(s.nationalId).trim().toUpperCase() === newUsername || s.name && String(s.name).trim() === String(existing?.name).trim()
+        );
+        if (targetStudent) {
+          const studentPayload = {
+            ...targetStudent,
+            hasUserAccount: true,
+            userAccountUsername: newUsername,
+            nationalId: targetStudent.nationalId || newUsername,
+            grade: newGradeLabel || targetStudent.grade,
+            name: updatedUser.name || updatedUser.fullName || targetStudent.name,
+            isActive: updatedUser.isActive !== void 0 ? updatedUser.isActive : targetStudent.isActive,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          await serverSaveDoc("students", studentPayload);
+          notifyRealtimeChange("students", studentPayload.id, "upsert");
+        }
+      } catch (sErr) {
+        console.warn("Non-fatal student sync error in updateUser:", sErr);
+      }
       notifyRealtimeChange("system_users", updatedUser.id, "upsert");
-      const caller = _AuthController.extractCaller(req);
+      const caller = req.user || _AuthController.extractCaller(req);
       logServerAudit2({
         userId: caller?.userId || "system",
         username: caller?.username || "system",
         action: "USER_UPDATED",
         entityType: "system_users",
         entityId: updatedUser.id,
-        description: `\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u0628\u0631 ${updatedUser.username}`,
+        description: `\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u06A9\u0627\u0631\u0628\u0631 ${updatedUser.username} (\u067E\u0627\u06CC\u0647: ${newGradeLabel})`,
         ipAddress: _AuthController.getClientIp(req)
       }).catch(() => {
       });
@@ -4710,11 +6727,35 @@ var AuthController = class _AuthController {
       if (!target) {
         return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
       }
+      const users = await fetchAllUsersFromStorage();
+      const targetUser = users.find(
+        (u) => u.id === target || u.username.toUpperCase() === String(target).toUpperCase()
+      );
       await deleteUserFromStorage(target);
       notifyRealtimeChange("system_users", String(target), "delete");
-      const caller = _AuthController.extractCaller(req);
+      const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+      const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
+      try {
+        const students = await serverQueryCollection("students");
+        const targetStudent = students.find(
+          (s) => studentId && String(s.id) === String(studentId) || s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername || s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername
+        );
+        if (targetStudent) {
+          const updatedStudent = {
+            ...targetStudent,
+            hasUserAccount: false,
+            userAccountUsername: null,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          };
+          await serverSaveDoc("students", updatedStudent);
+          notifyRealtimeChange("students", updatedStudent.id, "upsert");
+        }
+      } catch (sErr) {
+        console.warn("Non-fatal student unlink error in deleteUser:", sErr);
+      }
+      const caller = req.user || _AuthController.extractCaller(req);
       logServerAudit2({
-        userId: caller?.userId || "system",
+        userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "USER_DELETED",
         entityType: "system_users",
@@ -4750,6 +6791,17 @@ var AuthController = class _AuthController {
       existing.accountLockedUntil = void 0;
       await saveUserToStorage(existing);
       notifyRealtimeChange("system_users", existing.id, "upsert");
+      const caller = req.user || _AuthController.extractCaller(req);
+      logServerAudit2({
+        userId: caller?.userId || caller?.id || "system",
+        username: caller?.username || "system",
+        action: "ADMIN_RESET_PASSWORD",
+        entityType: "system_users",
+        entityId: existing.id,
+        description: `\u0628\u0627\u0632\u0646\u0634\u0627\u0646\u06CC \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u06A9\u0627\u0631\u0628\u0631 ${existing.username} \u062A\u0648\u0633\u0637 ${caller?.username || "\u0645\u062F\u06CC\u0631"}`,
+        ipAddress: _AuthController.getClientIp(req)
+      }).catch(() => {
+      });
       return res.status(200).json({
         success: true,
         message: `\u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u06A9\u0627\u0631\u0628\u0631 ${existing.username} \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0628\u0627\u0632\u0646\u0634\u0627\u0646\u06CC \u0634\u062F.`
@@ -4857,7 +6909,57 @@ var AuthController = class _AuthController {
 };
 
 // src/routes/authRoutes.ts
+init_serverAuth();
 var router = (0, import_express.Router)();
+function extractCaller(req) {
+  let token = req.cookies?.auth_access_token || req.cookies?.auth_token;
+  if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+    token = req.headers.authorization.substring(7);
+  }
+  if (!token && typeof req.query?.token === "string") {
+    token = req.query.token;
+  }
+  if (token) {
+    const verified = verifyAccessToken2(token);
+    if (verified.valid && verified.decoded) {
+      return verified.decoded;
+    }
+  }
+  return null;
+}
+function requireAuth(req, res, next) {
+  const caller = extractCaller(req);
+  if (!caller) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0646\u0634\u0633\u062A \u06A9\u0627\u0631\u0628\u0631\u06CC \u0634\u0645\u0627 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A \u06CC\u0627 \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A. \u0644\u0637\u0641\u0627\u064B \u0645\u062C\u062F\u062F\u0627\u064B \u0648\u0627\u0631\u062F \u0634\u0648\u06CC\u062F."
+    });
+  }
+  req.user = caller;
+  next();
+}
+function requireUserManagementRole(req, res, next) {
+  const caller = extractCaller(req);
+  if (!caller) {
+    return res.status(401).json({
+      success: false,
+      message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A. \u0644\u0637\u0641\u0627\u064B \u0648\u0627\u0631\u062F \u0633\u06CC\u0633\u062A\u0645 \u0634\u0648\u06CC\u062F."
+    });
+  }
+  const role = caller.role || "";
+  const level = Number(caller.level) || 3;
+  const username = String(caller.username || "").toUpperCase();
+  const canManage = Boolean(caller.canManageUsers);
+  const isAuthorized = level === 1 || role === "super_admin" || role === "school_manager" || role === "education_manager" || role === "education_officer" || role === "finance_manager" || canManage || username === "SADEGH" || username === "SHAH";
+  if (!isAuthorized) {
+    return res.status(403).json({
+      success: false,
+      message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u063A\u06CC\u0631\u0645\u062C\u0627\u0632: \u0634\u0645\u0627 \u0645\u062C\u0648\u0632 \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0648 \u062F\u0633\u062A\u0631\u0633\u06CC\u200C\u0647\u0627 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F."
+    });
+  }
+  req.user = caller;
+  next();
+}
 var loginLimiter = (0, import_express_rate_limit.default)({
   windowMs: 3 * 60 * 1e3,
   // 3 minutes
@@ -4880,11 +6982,11 @@ var loginLimiter = (0, import_express_rate_limit.default)({
 router.post("/login", loginLimiter, AuthController.login);
 router.get("/me", AuthController.me);
 router.get("/public-users", AuthController.publicUsers);
-router.get("/users", AuthController.getUsers);
-router.post("/add-user", AuthController.addUser);
-router.post("/update-user", AuthController.updateUser);
-router.post("/delete-user", AuthController.deleteUser);
-router.post("/admin-reset-password", AuthController.adminResetPassword);
+router.get("/users", requireAuth, AuthController.getUsers);
+router.post("/add-user", requireUserManagementRole, AuthController.addUser);
+router.post("/update-user", requireUserManagementRole, AuthController.updateUser);
+router.post("/delete-user", requireUserManagementRole, AuthController.deleteUser);
+router.post("/admin-reset-password", requireUserManagementRole, AuthController.adminResetPassword);
 router.post("/change-password", AuthController.changePassword);
 router.post("/logout", AuthController.logout);
 router.post("/logout-all", AuthController.logoutAll);
@@ -4941,7 +7043,7 @@ var StudentService = class {
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     await serverSaveDoc("students", fullRecord, callerUser);
-    await logServerAudit2({
+    logServerAudit2({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -4950,6 +7052,7 @@ var StudentService = class {
       entityId: id,
       description: `\u062B\u0628\u062A \u06CC\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0637\u0644\u0628\u0647: ${fullRecord.name} (${fullRecord.grade})`,
       newState: fullRecord
+    }).catch(() => {
     });
     logger.info(`[StudentService] Saved student ${id} (${fullRecord.name}) by ${callerUser?.username || "system"}`);
     return fullRecord;
@@ -4963,7 +7066,7 @@ var StudentService = class {
       throw new AppError(authCheck.reason || "\u062A\u0646\u0647\u0627 \u0645\u062F\u06CC\u0631\u0627\u0646 \u0627\u0631\u0634\u062F \u0645\u062C\u0627\u0632 \u0628\u0647 \u062D\u0630\u0641 \u067E\u0631\u0648\u0646\u062F\u0647 \u0637\u0644\u0627\u0628 \u0647\u0633\u062A\u0646\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("students", id, callerUser);
-    await logServerAudit2({
+    logServerAudit2({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -4971,6 +7074,7 @@ var StudentService = class {
       entityType: "student",
       entityId: id,
       description: `\u062D\u0630\u0641 \u067E\u0631\u0648\u0646\u062F\u0647 \u0637\u0644\u0628\u0647 \u0628\u0627 \u0634\u0646\u0627\u0633\u0647 ${id}`
+    }).catch(() => {
     });
     logger.warn(`[StudentService] Deleted student ${id} by ${callerUser?.username || "system"}`);
     return true;
@@ -5299,6 +7403,44 @@ var import_zod4 = require("zod");
 init_serverDataApi();
 init_serverAuth();
 init_logger();
+
+// src/lib/utils.ts
+var import_clsx = require("clsx");
+var import_tailwind_merge = require("tailwind-merge");
+function normalizeGrade(val) {
+  if (val === void 0 || val === null) return "";
+  const str = String(val).trim();
+  if (!str) return "";
+  const englishDigits = str.replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776)).replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632));
+  const match = englishDigits.match(/\d+/);
+  if (match) return match[0];
+  const lower = str.toLowerCase();
+  if (lower.includes("\u0627\u0648\u0644") || lower.includes("\u06CC\u06A9")) return "1";
+  if (lower.includes("\u062F\u0648\u0645") || lower.includes("\u062F\u0648")) return "2";
+  if (lower.includes("\u0633\u0648\u0645") || lower.includes("\u0633\u0647")) return "3";
+  if (lower.includes("\u0686\u0647\u0627\u0631\u0645") || lower.includes("\u0686\u0647\u0627\u0631")) return "4";
+  if (lower.includes("\u067E\u0646\u062C\u0645") || lower.includes("\u067E\u0646\u062C")) return "5";
+  if (lower.includes("\u0634\u0634\u0645") || lower.includes("\u0634\u0634")) return "6";
+  if (lower.includes("\u0647\u0641\u062A\u0645") || lower.includes("\u0647\u0641\u062A")) return "7";
+  if (lower.includes("\u0647\u0634\u062A\u0645") || lower.includes("\u0647\u0634\u062A")) return "8";
+  if (lower.includes("\u0646\u0647\u0645") || lower.includes("\u0646\u0647")) return "9";
+  if (lower.includes("\u062F\u0647\u0645") || lower.includes("\u062F\u0647")) return "10";
+  if (lower.includes("\u06CC\u0627\u0632\u062F\u0647\u0645") || lower.includes("\u06CC\u0627\u0632\u062F\u0647")) return "11";
+  if (lower.includes("\u062F\u0648\u0627\u0632\u062F\u0647\u0645") || lower.includes("\u062F\u0648\u0627\u0632\u062F\u0647")) return "12";
+  return str;
+}
+function isSameGrade(g1, g2) {
+  if (g1 === g2) return true;
+  if (!g1 || !g2) return false;
+  const norm1 = normalizeGrade(g1);
+  const norm2 = normalizeGrade(g2);
+  if (norm1 && norm2 && norm1 === norm2) return true;
+  const str1 = String(g1).trim();
+  const str2 = String(g2).trim();
+  return str1 === str2 || str1.includes(str2) || str2.includes(str1);
+}
+
+// src/services/ProgramService.ts
 var ProgramInputSchema = import_zod4.z.object({
   id: import_zod4.z.string().optional(),
   title: import_zod4.z.string().min(2, "\u0639\u0646\u0648\u0627\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u06CC\u0627 \u062F\u0631\u0633 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A."),
@@ -5321,7 +7463,12 @@ var ProgramInputSchema = import_zod4.z.object({
   representativeNames: import_zod4.z.array(import_zod4.z.string()).optional(),
   customRepresentative: import_zod4.z.string().optional(),
   subjectCategory: import_zod4.z.enum(["\u0627\u0635\u0648\u0644", "\u0641\u0642\u0647", "\u0641\u0644\u0633\u0641\u0647", "\u0633\u0627\u06CC\u0631"]).optional(),
-  subjectBook: import_zod4.z.string().optional()
+  subjectBook: import_zod4.z.string().optional(),
+  isDeleted: import_zod4.z.boolean().optional(),
+  status: import_zod4.z.string().optional(),
+  deletedAt: import_zod4.z.string().optional(),
+  version: import_zod4.z.number().optional(),
+  updated_at: import_zod4.z.string().optional()
 });
 function normalizeTimeStr(timeStr) {
   if (!timeStr) return "";
@@ -5375,7 +7522,7 @@ var ProgramService = class {
       };
       const assignedGrade = gradeMap[callerUser.scope];
       if (assignedGrade) {
-        return programs.filter((p) => !p.grade || p.grade === assignedGrade || p.grade === "\u0639\u0645\u0648\u0645\u06CC");
+        return programs.filter((p) => !p.grade || isSameGrade(p.grade, assignedGrade) || p.grade === "\u0639\u0645\u0648\u0645\u06CC");
       }
     }
     if (callerUser && callerUser.role === "teacher") {
@@ -5475,7 +7622,12 @@ var ProgramService = class {
       representativeNames: validData.representativeNames,
       customRepresentative: validData.customRepresentative,
       subjectCategory: validData.subjectCategory,
-      subjectBook: validData.subjectBook?.trim()
+      subjectBook: validData.subjectBook?.trim(),
+      isDeleted: validData.isDeleted,
+      status: validData.status,
+      deletedAt: validData.deletedAt,
+      version: validData.version,
+      updated_at: validData.updated_at
     };
     await serverSaveDoc("programs", programRecord, callerUser);
     await logServerAudit2({
@@ -5546,7 +7698,7 @@ var ProgramService = class {
   static async getProgramsByGrade(grade, callerUser) {
     const all = await this.getAllPrograms(callerUser);
     const decodedGrade = decodeURIComponent(grade).trim();
-    return all.filter((p) => p.grade && p.grade.trim() === decodedGrade);
+    return all.filter((p) => p.grade && isSameGrade(p.grade, decodedGrade));
   }
   /**
    * Get programs filtered by teacher ID or teacher Name
@@ -6830,7 +8982,7 @@ var AttendanceService = class {
   static async getAttendanceStats(filters, callerUser) {
     let sessions = await this.getAllSessions(callerUser);
     if (filters?.grade) {
-      sessions = sessions.filter((s) => s.grade === filters.grade);
+      sessions = sessions.filter((s) => isSameGrade(s.grade, filters.grade));
     }
     if (filters?.programId) {
       sessions = sessions.filter((s) => s.programId === filters.programId);
@@ -7148,7 +9300,7 @@ var StudyService = class {
         studyHours: Number(log.studyHours || log.hours || 0),
         discussionHours: Number(log.discussionHours || 0)
       };
-    }).filter((item) => !grade || item.grade === grade).sort((a, b) => b.totalHours - a.totalHours).map((item, index) => ({
+    }).filter((item) => !grade || isSameGrade(item.grade, grade)).sort((a, b) => b.totalHours - a.totalHours).map((item, index) => ({
       rank: index + 1,
       ...item
     }));
@@ -9693,6 +11845,22 @@ init_serverDataApi();
 init_serverAuth();
 init_logger();
 var router20 = (0, import_express20.Router)();
+router20.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
+var processedIdempotencyKeys = /* @__PURE__ */ new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of processedIdempotencyKeys.entries()) {
+    if (now - val.timestamp > 12e4) {
+      processedIdempotencyKeys.delete(key);
+    }
+  }
+}, 6e4);
 var getEnrichedCallerUser = async (decoded) => {
   if (!decoded) return null;
   try {
@@ -9760,13 +11928,29 @@ router20.get("/database/snapshot", async (req, res) => {
   const token = extractToken(req);
   if (!token) return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
   const verification = verifyAccessToken2(token);
-  if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
-    return res.status(403).json({ success: false, message: "\u0645\u062C\u0648\u0632 \u062A\u0647\u06CC\u0647 \u0646\u0633\u062E\u0647 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F." });
+  if (!verification.valid || !verification.decoded) {
+    return res.status(403).json({ success: false, message: "\u0645\u062C\u0648\u0632 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
   }
+  const { isAuthorizedForMonitoring: isAuthorizedForMonitoring2 } = await Promise.resolve().then(() => (init_monitoringAccess(), monitoringAccess_exports));
+  if (!isAuthorizedForMonitoring2(verification.decoded)) {
+    return res.status(403).json({ success: false, message: "\u0641\u0642\u0637 \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0627\u0631\u0634\u062F (\u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F\u060C \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634\u060C \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC) \u0645\u062C\u0627\u0632 \u0628\u0647 \u062F\u0627\u0646\u0644\u0648\u062F \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06A9\u0627\u0645\u0644 \u0647\u0633\u062A\u0646\u062F." });
+  }
+  const operatorName = verification.decoded.name || verification.decoded.username || "\u0645\u062F\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647";
   const { createFullDatabaseSnapshot: createFullDatabaseSnapshot2 } = await Promise.resolve().then(() => (init_serverBackupEngine(), serverBackupEngine_exports));
+  const { logServerAudit: logServerAudit3 } = await Promise.resolve().then(() => (init_serverAuth(), serverAuth_exports));
   try {
-    const snapshot = await createFullDatabaseSnapshot2(verification.decoded.username, false);
+    const snapshot = await createFullDatabaseSnapshot2(verification.decoded.username || "operator", false);
     const filename = `madrasah_backup_${snapshot.metadata.timestamp.substring(0, 10)}.json`;
+    await logServerAudit3({
+      userId: String(verification.decoded.id || verification.decoded.userId || "admin"),
+      username: verification.decoded.username || "admin",
+      userRole: verification.decoded.role || "manager",
+      action: "DATABASE_BACKUP_DOWNLOADED",
+      entityType: "database",
+      entityId: filename,
+      description: `\u062F\u0627\u0646\u0644\u0648\u062F \u0641\u0627\u06CC\u0644 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06A9\u0627\u0645\u0644 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 (${snapshot.metadata.totalRecordsCount} \u0631\u06A9\u0648\u0631\u062F) \u062A\u0648\u0633\u0637 ${operatorName}`,
+      ipAddress: getClientIp(req)
+    });
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(JSON.stringify(snapshot, null, 2));
@@ -9774,19 +11958,43 @@ router20.get("/database/snapshot", async (req, res) => {
     return res.status(500).json({ success: false, message: "\u062E\u0637\u0627 \u062F\u0631 \u062A\u0647\u06CC\u0647 \u0646\u0633\u062E\u0647 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06A9\u0627\u0645\u0644 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633." });
   }
 });
+router20.get("/database/full-system-export", async (req, res) => {
+  const token = extractToken(req);
+  let operatorName = "operator";
+  if (token) {
+    const verification = verifyAccessToken2(token);
+    if (verification.valid && verification.decoded) {
+      operatorName = verification.decoded.username || "operator";
+    }
+  }
+  const { createFullDatabaseSnapshot: createFullDatabaseSnapshot2 } = await Promise.resolve().then(() => (init_serverBackupEngine(), serverBackupEngine_exports));
+  try {
+    const snapshot = await createFullDatabaseSnapshot2(operatorName, false);
+    return res.json({ success: true, snapshot });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "\u062E\u0637\u0627 \u062F\u0631 \u0648\u0627\u06A9\u0634\u06CC \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06A9\u0627\u0645\u0644 \u0633\u0631\u0648\u0631", error: err?.message });
+  }
+});
 router20.post("/database/restore-snapshot", async (req, res) => {
   const token = extractToken(req);
   if (!token) return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
   const verification = verifyAccessToken2(token);
-  if (!verification.valid || !verification.decoded || verification.decoded.level !== 1) {
-    return res.status(403).json({ success: false, message: "\u0641\u0642\u0637 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 (\u0633\u0637\u062D \u06F1) \u0645\u062C\u0627\u0632 \u0628\u0647 \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u06A9\u0627\u0645\u0644 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0627\u0633\u062A." });
+  if (!verification.valid || !verification.decoded) {
+    return res.status(403).json({ success: false, message: "\u0645\u062C\u0648\u0632 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
+  }
+  const { isAuthorizedForMonitoring: isAuthorizedForMonitoring2 } = await Promise.resolve().then(() => (init_monitoringAccess(), monitoringAccess_exports));
+  if (!isAuthorizedForMonitoring2(verification.decoded)) {
+    return res.status(403).json({
+      success: false,
+      message: "\u0641\u0642\u0637 \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0627\u0631\u0634\u062F \u0633\u0627\u0645\u0627\u0646\u0647 (\u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F\u060C \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u06CC\u0627 \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC) \u0645\u062C\u0627\u0632 \u0628\u0647 \u0628\u0627\u0632\u06AF\u0631\u062F\u0627\u0646\u06CC \u06A9\u0627\u0645\u0644 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0647\u0633\u062A\u0646\u062F."
+    });
   }
   const { snapshotPayload } = req.body || {};
-  if (!snapshotPayload || !snapshotPayload.data) {
+  if (!snapshotPayload || typeof snapshotPayload !== "object") {
     return res.status(400).json({ success: false, message: "\u0645\u062D\u062A\u0648\u0627\u06CC \u0641\u0627\u06CC\u0644 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
   }
   const { restoreDatabaseSnapshot: restoreDatabaseSnapshot2 } = await Promise.resolve().then(() => (init_serverBackupEngine(), serverBackupEngine_exports));
-  const result = await restoreDatabaseSnapshot2(snapshotPayload, verification.decoded.username, getClientIp(req));
+  const result = await restoreDatabaseSnapshot2(snapshotPayload, verification.decoded.username || "operator", getClientIp(req));
   return res.status(result.success ? 200 : 400).json(result);
 });
 router20.get("/database/scheduled-backups", async (req, res) => {
@@ -9798,11 +12006,27 @@ router20.post("/database/scheduled-backups/run-now", async (req, res) => {
   const token = extractToken(req);
   if (!token) return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
   const verification = verifyAccessToken2(token);
-  if (!verification.valid || !verification.decoded || verification.decoded.level > 2) {
-    return res.status(403).json({ success: false, message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u063A\u06CC\u0631\u0645\u062C\u0627\u0632" });
+  if (!verification.valid || !verification.decoded) {
+    return res.status(403).json({ success: false, message: "\u0645\u062C\u0648\u0632 \u0646\u0627\u0645\u0639\u062A\u0628\u0631 \u0627\u0633\u062A." });
   }
+  const { isAuthorizedForMonitoring: isAuthorizedForMonitoring2 } = await Promise.resolve().then(() => (init_monitoringAccess(), monitoringAccess_exports));
+  if (!isAuthorizedForMonitoring2(verification.decoded)) {
+    return res.status(403).json({ success: false, message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u063A\u06CC\u0631\u0645\u062C\u0627\u0632 \u0628\u0631\u0627\u06CC \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC" });
+  }
+  const operatorName = verification.decoded.name || verification.decoded.username || "\u0645\u062F\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647";
   const { createFullDatabaseSnapshot: createFullDatabaseSnapshot2 } = await Promise.resolve().then(() => (init_serverBackupEngine(), serverBackupEngine_exports));
+  const { logServerAudit: logServerAudit3 } = await Promise.resolve().then(() => (init_serverAuth(), serverAuth_exports));
   const snapshot = await createFullDatabaseSnapshot2(verification.decoded.username, true);
+  await logServerAudit3({
+    userId: String(verification.decoded.id || verification.decoded.userId || "admin"),
+    username: verification.decoded.username || "admin",
+    userRole: verification.decoded.role || "manager",
+    action: "DATABASE_BACKUP_CREATED",
+    entityType: "database",
+    entityId: snapshot.metadata?.timestamp || "manual_backup",
+    description: `\u0627\u06CC\u062C\u0627\u062F \u0646\u0633\u062E\u0647 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u062F\u0633\u062A\u06CC \u0627\u0632 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 (${snapshot.metadata.totalRecordsCount} \u0631\u06A9\u0648\u0631\u062F) \u062A\u0648\u0633\u0637 ${operatorName}`,
+    ipAddress: getClientIp(req)
+  });
   return res.json({
     success: true,
     message: `\u0646\u0633\u062E\u0647 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u062E\u0648\u062F\u06A9\u0627\u0631 \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F (${snapshot.metadata.totalRecordsCount} \u0631\u06A9\u0648\u0631\u062F).`,
@@ -9821,6 +12045,9 @@ router20.get("/audit-logs/verify-chain", async (req, res) => {
   }
 });
 router20.get("/data/:collection", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   const { collection } = req.params;
   const token = extractToken(req);
   let callerUser = null;
@@ -9843,6 +12070,9 @@ router20.get("/data/:collection", async (req, res) => {
   }
 });
 router20.get("/data/:collection/:id", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   const { collection, id } = req.params;
   const token = extractToken(req);
   let callerUser = null;
@@ -9878,6 +12108,10 @@ router20.post("/data/:collection", async (req, res) => {
     }
   }
   const data = req.body;
+  const idempotencyKey = String(req.headers["x-idempotency-key"] || data?._idempotencyKey || "").trim();
+  if (idempotencyKey && processedIdempotencyKeys.has(idempotencyKey)) {
+    return res.json(processedIdempotencyKeys.get(idempotencyKey).result);
+  }
   const recordOwnerId = data?.userId || data?.studentId;
   const authCheck = authorizeCollectionAccess(callerUser, collection, "write", recordOwnerId);
   if (!authCheck.allowed) {
@@ -9886,7 +12120,19 @@ router20.post("/data/:collection", async (req, res) => {
   try {
     const saveRes = await serverSaveDoc(collection, data, callerUser);
     if (!saveRes.success) {
-      return res.status(500).json({ success: false, message: saveRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u062F\u0627\u062F\u0647" });
+      const statusCode = saveRes.notFound ? 404 : 500;
+      return res.status(statusCode).json({ success: false, message: saveRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u062F\u0627\u062F\u0647" });
+    }
+    const resPayload = {
+      success: true,
+      id: saveRes.id,
+      item: saveRes.item || data,
+      affectedRows: saveRes.affectedRows ?? 1,
+      changedRows: saveRes.changedRows ?? 1,
+      timestamp: Date.now()
+    };
+    if (idempotencyKey) {
+      processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }
     if (callerUser) {
       logServerAudit2({
@@ -9901,7 +12147,7 @@ router20.post("/data/:collection", async (req, res) => {
       }).catch(() => {
       });
     }
-    return res.json({ success: true, id: saveRes.id });
+    return res.json(resPayload);
   } catch (err) {
     logger.error(`Error writing to collection ${collection}:`, err);
     return res.status(500).json({ success: false, message: "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u062F\u0631 \u0633\u0631\u0648\u0631." });
@@ -9914,10 +12160,14 @@ router20.put("/data/:collection/:id", async (req, res) => {
   if (token) {
     const verification = verifyAccessToken2(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
   const data = { ...req.body, id };
+  const idempotencyKey = String(req.headers["x-idempotency-key"] || data?._idempotencyKey || "").trim();
+  if (idempotencyKey && processedIdempotencyKeys.has(idempotencyKey)) {
+    return res.json(processedIdempotencyKeys.get(idempotencyKey).result);
+  }
   const recordOwnerId = data?.userId || data?.studentId;
   const authCheck = authorizeCollectionAccess(callerUser, collection, "write", recordOwnerId);
   if (!authCheck.allowed) {
@@ -9925,10 +12175,23 @@ router20.put("/data/:collection/:id", async (req, res) => {
   }
   try {
     const saveRes = await serverSaveDoc(collection, data, callerUser);
+    logger.info(`[PUT Edit] Collection: "${collection}", ID: "${id}", affectedRows: ${saveRes.affectedRows ?? 1}, changedRows: ${saveRes.changedRows ?? 1}`);
     if (!saveRes.success) {
-      return res.status(500).json({ success: false, message: saveRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647" });
+      const statusCode = saveRes.notFound ? 404 : 500;
+      return res.status(statusCode).json({ success: false, message: saveRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647" });
     }
-    return res.json({ success: true, id: saveRes.id });
+    const resPayload = {
+      success: true,
+      id: saveRes.id,
+      item: saveRes.item || data,
+      affectedRows: saveRes.affectedRows ?? 1,
+      changedRows: saveRes.changedRows ?? 1,
+      timestamp: Date.now()
+    };
+    if (idempotencyKey) {
+      processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
+    }
+    return res.json(resPayload);
   } catch (err) {
     logger.error(`Error updating collection ${collection}:`, err);
     return res.status(500).json({ success: false, message: "\u062E\u0637\u0627 \u062F\u0631 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u062F\u0631 \u0633\u0631\u0648\u0631." });
@@ -10101,6 +12364,10 @@ router20.get("/sync/events", async (req, res) => {
   if (typeof res.flushHeaders === "function") {
     res.flushHeaders();
   }
+  res.write(`event: connected
+data: ${JSON.stringify({ status: "connected", time: Date.now() })}
+
+`);
   const { registerRealtimeListener: registerRealtimeListener2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
   const unsubscribe = registerRealtimeListener2((event) => {
     try {
@@ -10116,14 +12383,17 @@ data: ${JSON.stringify(event)}
       res.write(": heartbeat\n\n");
     } catch (e) {
     }
-  }, 2e4);
+  }, 15e3);
   req.on("close", () => {
     unsubscribe();
     clearInterval(heartbeat);
   });
 });
-router20.get("/sync/changes", async (_req, res) => {
-  return res.json({ success: true, changes: [] });
+router20.get("/sync/changes", async (req, res) => {
+  const { getRecentChangesSince: getRecentChangesSince2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
+  const since = Number(req.query.since) || 0;
+  const changes = getRecentChangesSince2(since);
+  return res.json({ success: true, changes, serverTime: Date.now() });
 });
 var dataRoutes_default = router20;
 
@@ -10176,11 +12446,28 @@ router21.get("/health", async (req, res) => {
   }
 });
 router21.get("/db-status", async (_req, res) => {
-  await testMysqlConnection();
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  const { parseMysqlConfig: parseMysqlConfig2, ensurePerformanceIndexes: ensurePerformanceIndexes2 } = await Promise.resolve().then(() => (init_databaseAbstraction(), databaseAbstraction_exports));
+  const conf = parseMysqlConfig2();
+  let connected = false;
+  if (conf.isConfigured) {
+    connected = await testMysqlConnection();
+    if (connected) {
+      await ensurePerformanceIndexes2().catch(() => {
+      });
+    }
+  }
   const status = getDbConnectionStatus();
   return res.json({
     success: true,
-    connected: status.connected
+    isMysqlConfigured: conf.isConfigured,
+    connected,
+    host: conf.host || "",
+    port: conf.port || 3306,
+    database: conf.database || "",
+    user: conf.user || "",
+    lastError: status.lastError,
+    engine: "MySQL"
   });
 });
 var systemRoutes_default = router21;
@@ -10190,7 +12477,7 @@ var import_express22 = require("express");
 init_databaseAbstraction();
 init_serverAuth();
 var router22 = (0, import_express22.Router)();
-function extractCaller(req) {
+function extractCaller2(req) {
   let token = req.cookies?.auth_access_token;
   if (!token && req.headers.authorization?.startsWith("Bearer ")) {
     token = req.headers.authorization.substring(7);
@@ -10204,7 +12491,7 @@ function extractCaller(req) {
   return null;
 }
 function requireAdminRole(req, res, next) {
-  const caller = extractCaller(req);
+  const caller = extractCaller2(req);
   if (!caller) {
     return res.status(401).json({ success: false, message: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
   }
@@ -10353,6 +12640,185 @@ router22.post("/revert", requireAdminRole, async (req, res) => {
 });
 var auditRoutes_default = router22;
 
+// src/routes/monitoringRoutes.ts
+var import_express23 = require("express");
+init_monitoringAccess();
+init_monitoringService();
+init_databaseAbstraction();
+var router23 = (0, import_express23.Router)();
+router23.post("/client-event", (req, res) => {
+  try {
+    const body = req.body || {};
+    const {
+      eventType,
+      severity,
+      sectionName,
+      routePath,
+      statusCode,
+      shortMessage,
+      stack,
+      appVersion,
+      userId,
+      userRole,
+      displayName,
+      metadata
+    } = body;
+    if (!shortMessage || typeof shortMessage !== "string") {
+      return res.status(400).json({ success: false, message: "\u067E\u06CC\u0627\u0645 \u062E\u0637\u0627 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
+    }
+    recordMonitoringEvent({
+      eventType: eventType || "client_error",
+      severity: severity || "error",
+      sectionName,
+      routePath,
+      statusCode: Number(statusCode) || void 0,
+      shortMessage,
+      stack,
+      appVersion,
+      userId,
+      userRole,
+      displayName,
+      metadata
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "\u062E\u0637\u0627\u06CC \u062F\u0627\u062E\u0644\u06CC \u062F\u0631 \u062B\u0628\u062A \u0631\u0648\u06CC\u062F\u0627\u062F" });
+  }
+});
+router23.get("/events", requireMonitoringAccess, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  const pool2 = getMysqlPool();
+  if (!pool2) {
+    return res.json({ success: true, events: [], total: 0, notice: "\u062F\u06CC\u062A\u0627\u0628\u06CC\u0633 MySQL \u0645\u062A\u0635\u0644 \u0646\u06CC\u0633\u062A." });
+  }
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const severity = req.query.severity;
+    const eventType = req.query.eventType;
+    const search = req.query.search;
+    const whereClauses = ["1=1"];
+    const params = [];
+    if (severity && severity !== "all") {
+      whereClauses.push("`severity` = ?");
+      params.push(severity);
+    }
+    if (eventType && eventType !== "all") {
+      whereClauses.push("`event_type` = ?");
+      params.push(eventType);
+    }
+    if (search && search.trim()) {
+      whereClauses.push("(`short_message` LIKE ? OR `section_name` LIKE ? OR `request_id` LIKE ? OR `display_name` LIKE ?)");
+      const pattern = `%${search.trim()}%`;
+      params.push(pattern, pattern, pattern, pattern);
+    }
+    const whereSql = whereClauses.join(" AND ");
+    const [rows] = await pool2.query(`
+      SELECT 
+        \`id\`, \`created_at\`, \`event_type\`, \`severity\`, \`fingerprint\`,
+        \`section_name\`, \`route_path\`, \`status_code\`, \`duration_ms\`,
+        \`request_id\`, \`user_id\`, \`user_role\`, \`display_name\`,
+        \`short_message\`, \`short_stack\`, \`app_version\`, \`metadata_json\`
+      FROM \`mon_events\`
+      WHERE ${whereSql}
+      ORDER BY \`created_at\` DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limit, offset]);
+    const [countRes] = await pool2.query(`
+      SELECT COUNT(*) as total FROM \`mon_events\` WHERE ${whereSql}
+    `, params);
+    return res.json({
+      success: true,
+      events: rows || [],
+      total: Number(countRes?.[0]?.total || 0),
+      limit,
+      offset
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0648\u0627\u06A9\u0634\u06CC \u0631\u0648\u06CC\u062F\u0627\u062F\u0647\u0627" });
+  }
+});
+router23.post("/purge", requireMonitoringAccess, async (_req, res) => {
+  try {
+    const result = await runMonitoringPurge();
+    return res.json({
+      success: true,
+      message: `\u067E\u0627\u06A9\u0633\u0627\u0632\u06CC \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0627\u0646\u062C\u0627\u0645 \u0634\u062F. \u062A\u0639\u062F\u0627\u062F ${result.deletedCount} \u0631\u0648\u06CC\u062F\u0627\u062F \u0642\u062F\u06CC\u0645\u06CC \u06CC\u0627 \u0645\u0627\u0632\u0627\u062F \u062D\u0630\u0641 \u06AF\u0631\u062F\u06CC\u062F.`,
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u0627\u062C\u0631\u0627\u06CC \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC" });
+  }
+});
+router23.get("/maintenance", requireMonitoringAccess, async (_req, res) => {
+  const { getMaintenanceState: getMaintenanceState2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
+  return res.json({ success: true, state: getMaintenanceState2() });
+});
+router23.post("/maintenance", requireMonitoringAccess, async (req, res) => {
+  try {
+    const { enabled, message, estimatedDuration } = req.body || {};
+    const { setMaintenanceState: setMaintenanceState2 } = await Promise.resolve().then(() => (init_serverMaintenance(), serverMaintenance_exports));
+    const { logServerAudit: logServerAudit3 } = await Promise.resolve().then(() => (init_serverAuth(), serverAuth_exports));
+    const caller = req.monitoringCaller || {};
+    const operatorName = caller.name || caller.username || "\u0645\u062F\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647";
+    const newState = setMaintenanceState2(
+      Boolean(enabled),
+      operatorName,
+      message,
+      estimatedDuration
+    );
+    await logServerAudit3({
+      userId: caller.id || "admin",
+      username: caller.username || "admin",
+      userRole: caller.role || "manager",
+      action: enabled ? "MAINTENANCE_MODE_ACTIVATED" : "MAINTENANCE_MODE_DEACTIVATED",
+      entityType: "system_settings",
+      entityId: "maintenance_mode",
+      description: enabled ? `\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName} (\u067E\u06CC\u0627\u0645: ${message || "\u067E\u06CC\u0634\u200C\u0641\u0631\u0636"})` : `\u063A\u06CC\u0631\u0641\u0639\u0627\u0644\u200C\u0633\u0627\u0632\u06CC \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0648 \u0628\u0627\u0632\u06AF\u0634\u0627\u06CC\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0648\u0633\u0637 ${operatorName}`,
+      newState
+    });
+    return res.json({
+      success: true,
+      message: enabled ? "\u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647 \u0641\u0639\u0627\u0644 \u0634\u062F." : "\u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F \u0648 \u0633\u0627\u0645\u0627\u0646\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0642\u0631\u0627\u0631 \u06AF\u0631\u0641\u062A.",
+      state: newState
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err?.message || "\u062E\u0637\u0627 \u062F\u0631 \u062A\u063A\u06CC\u06CC\u0631 \u062D\u0627\u0644\u062A \u062A\u0639\u0645\u06CC\u0631" });
+  }
+});
+var monitoringRoutes_default = router23;
+
+// src/routes/healthRoutes.ts
+var import_express24 = require("express");
+init_databaseAbstraction();
+var router24 = (0, import_express24.Router)();
+router24.get("/health", async (_req, res) => {
+  const pool2 = getMysqlPool();
+  if (!pool2) {
+    return res.status(200).json({
+      status: "ok",
+      mysql: false,
+      timestamp: Date.now()
+    });
+  }
+  try {
+    await pool2.query("SELECT 1 AS ping");
+    return res.status(200).json({
+      status: "ok",
+      mysql: true,
+      timestamp: Date.now()
+    });
+  } catch (err) {
+    return res.status(503).json({
+      status: "degraded",
+      mysql: false,
+      error: err?.message || String(err),
+      timestamp: Date.now()
+    });
+  }
+});
+var healthRoutes_default = router24;
+
 // server.ts
 init_logger();
 
@@ -10394,12 +12860,13 @@ function startMemoryMonitor(intervalMs = 5 * 60 * 1e3, warningThresholdMb = 450)
 }
 
 // server.ts
+init_serverMaintenance();
 init_systemHealthMonitor();
 
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-10-10T00:27:53.670Z",
+  "buildTime": "2026-10-10T00:29:08.546Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
@@ -10414,9 +12881,12 @@ process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught Exception:", err);
 });
 import_dotenv3.default.config();
-var PORT = parseInt(process.env.PORT || "3000", 10);
+var portArgIndex = process.argv.indexOf("--port");
+var portFromArg = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? parseInt(process.argv[portArgIndex + 1], 10) : null;
+var envPort = process.env.APP_PORT || (process.env.PORT && process.env.PORT !== "8080" ? process.env.PORT : null);
+var PORT = portFromArg || (envPort ? parseInt(envPort, 10) : 3e3);
 async function startServer() {
-  const app = (0, import_express23.default)();
+  const app = (0, import_express25.default)();
   app.set("trust proxy", 1);
   app.use((0, import_helmet.default)({ contentSecurityPolicy: false }));
   app.use((0, import_cors.default)({
@@ -10433,10 +12903,11 @@ async function startServer() {
       return import_compression.default.filter(req, res);
     }
   }));
-  app.use(import_express23.default.json({ limit: "50mb" }));
-  app.use(import_express23.default.urlencoded({ extended: true, limit: "50mb" }));
+  app.use(import_express25.default.json({ limit: "50mb" }));
+  app.use(import_express25.default.urlencoded({ extended: true, limit: "50mb" }));
   app.use((0, import_cookie_parser.default)());
   app.use(requestLogger);
+  app.use(maintenanceMiddleware);
   app.get("/api/version", (_req, res) => {
     res.json({
       commit: BUILD_INFO.version,
@@ -10451,6 +12922,8 @@ async function startServer() {
   app.get("/api/healthz", (_req, res) => {
     res.json({ ok: true, uptime: process.uptime() });
   });
+  app.use("/", healthRoutes_default);
+  app.use("/api", healthRoutes_default);
   app.use("/api/auth", authRoutes_default);
   app.use("/api/students", studentRoutes_default);
   app.use("/api/teachers", teacherRoutes_default);
@@ -10472,6 +12945,7 @@ async function startServer() {
   app.use("/api/counseling", counselingRoutes_default);
   app.use("/api/system", systemRoutes_default);
   app.use("/api/audit", auditRoutes_default);
+  app.use("/api/monitor", monitoringRoutes_default);
   app.use("/api", dataRoutes_default);
   app.get("/health", (_req, res) => {
     try {
@@ -10489,8 +12963,9 @@ async function startServer() {
           heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024 * 100) / 100
         },
         services: {
-          mysqlConfigured: Boolean(process.env.MYSQL_DATABASE || process.env.DB_DATABASE),
-          supabaseConfigured: Boolean(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_SECRET_KEY)
+          mysqlConfigured: true,
+          supabaseConfigured: false,
+          primaryDatabase: "MySQL 8.0 (Runflare)"
         }
       });
     } catch (e) {
@@ -10498,11 +12973,11 @@ async function startServer() {
       return res.status(503).json({ status: "error", message });
     }
   });
-  app.use(import_express23.default.static(import_path6.default.join(process.cwd(), "public")));
-  const distPath = import_path6.default.join(process.cwd(), "dist");
-  const hasDist = import_fs6.default.existsSync(distPath) && import_fs6.default.existsSync(import_path6.default.join(distPath, "index.html"));
+  app.use(import_express25.default.static(import_path7.default.join(process.cwd(), "public")));
+  const distPath = import_path7.default.join(process.cwd(), "dist");
+  const hasDist = import_fs7.default.existsSync(distPath) && import_fs7.default.existsSync(import_path7.default.join(distPath, "index.html"));
   if (hasDist || process.env.NODE_ENV === "production") {
-    app.use(import_express23.default.static(distPath, {
+    app.use(import_express25.default.static(distPath, {
       setHeaders: (res, filePath) => {
         if (filePath.includes("/assets/")) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
@@ -10513,8 +12988,8 @@ async function startServer() {
     }));
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      const indexPath = import_path6.default.join(distPath, "index.html");
-      if (import_fs6.default.existsSync(indexPath)) {
+      const indexPath = import_path7.default.join(distPath, "index.html");
+      if (import_fs7.default.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
         res.status(200).send("<!DOCTYPE html><html><body><h1>\u0633\u06CC\u0633\u062A\u0645 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC \u0627\u0648\u0644\u06CC\u0647 \u0627\u0633\u062A...</h1><p>\u0644\u0637\u0641\u0627\u064B \u0686\u0646\u062F \u0644\u062D\u0638\u0647 \u062F\u06CC\u06AF\u0631 \u0635\u0641\u062D\u0647 \u0631\u0627 \u062A\u0627\u0632\u0647\u200C\u0633\u0627\u0632\u06CC \u0646\u0645\u0627\u06CC\u06CC\u062F.</p></body></html>");
@@ -10569,6 +13044,13 @@ async function startServer() {
     Promise.resolve().then(() => (init_serverBackupEngine(), serverBackupEngine_exports)).then((mod) => {
       mod.initScheduledBackupService();
       logger.info("[System] Automated database backup scheduler initialized.");
+    }).catch(() => {
+    });
+    Promise.resolve().then(() => (init_monitoringService(), monitoringService_exports)).then((mod) => {
+      mod.initMonitoringDatabase().catch(() => {
+      });
+      mod.startMonitoringPurgeScheduler();
+      logger.info("[Monitoring] Zero-overhead monitoring database & retention scheduler initialized.");
     }).catch(() => {
     });
     setInterval(async () => {

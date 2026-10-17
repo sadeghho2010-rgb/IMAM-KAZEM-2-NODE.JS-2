@@ -1209,7 +1209,7 @@ export function getMysqlPool(): mysql.Pool | null {
         enableKeepAlive: true,
         keepAliveInitialDelay: 10000,
         idleTimeout: 60000,
-        maxIdle: 10
+        maxIdle: 3
       } as any);
 
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
@@ -1413,9 +1413,18 @@ export const MysqlRepository = {
         mustChangePassword: Boolean(u.mustChangePassword)
       };
     } catch (e: any) {
-      if (isConnectionError(e)) {
+      const errStr = (e?.message || String(e)).toLowerCase();
+      const isDbConn = isConnectionError(e) ||
+        e?.code === 'ECONNREFUSED' ||
+        e?.code === 'ETIMEDOUT' ||
+        errStr.includes('econnrefused') ||
+        errStr.includes('etimedout') ||
+        errStr.includes('socket hang up') ||
+        errStr.includes('connection lost');
+
+      if (isDbConn) {
         console.error('[STORAGE_FAILURE] MySQL getUserByUsername DB connection error:', e?.message || e);
-        throw new DbConnectionError(`خطا در ارتباط با دیتابیس MySQL: ${e?.message || e}`, e?.code);
+        throw new Error('DbConnectionError: ' + (e?.message || 'MySQL Connection Error'));
       }
       console.warn('[MySQL getUserByUsername Warning]:', e?.message || e);
       return null;

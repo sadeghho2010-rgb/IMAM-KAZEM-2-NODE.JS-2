@@ -793,6 +793,10 @@ export interface PeriodicStudyLog {
   id: string;
   periodId: string;
   studentId: string;
+  studentName?: string;
+  studentCode?: string;
+  nationalId?: string;
+  grade?: string;
   hours: number;
   totalMinutes?: number;
   studyHours?: number;
@@ -1453,11 +1457,13 @@ export interface CounselingSessionGrade {
   grade?: string; // پایه تحصیلی مثلاً 'پایه ۷'
   counselorTeacherName: string; // نام استاد مشاور
   courseTitle: string; // عنوان درس / کلاس مشاوره
+  programId?: string; // شناسه برنامه/کلاس مشاوره مرتبط
   sessionDate: string; // تاریخ جلسه (شمسی)
   sessionNumber?: number | string; // شماره یا عنوان جلسه
   participationScore: CounselingScore; // نمره مشارکت
   researchScore: CounselingScore; // نمره پژوهش و تقریر
   counselorFeedback?: string; // نظرات و ملاحظات استاد مشاور
+  version?: number;
   createdAt: string;
   createdByName?: string;
   createdByRole?: string;

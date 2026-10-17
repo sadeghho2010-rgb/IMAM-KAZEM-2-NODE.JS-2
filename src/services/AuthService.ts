@@ -156,7 +156,7 @@ export class AuthService {
     user.lastLogin = new Date().toISOString();
     
     // Save user update asynchronously or await fast memory sync
-    await saveUserToStorage(user);
+    await saveUserToStorage(user, { isLogin: true });
     updateLastActivity(user.id);
 
     const safeUser = sanitizeUser(user);

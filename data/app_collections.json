@@ -1,1 +1,24 @@
-{}
+{
+  "audit_logs": {
+    "audit_1792272318732_8ol5u6": {
+      "id": "audit_1792272318732_8ol5u6",
+      "timestamp": "2026-10-17T21:25:18.732Z",
+      "user_id": "user_sadegh",
+      "user_name": "SADEGH",
+      "role": "super_admin",
+      "action": "LOGIN_SUCCESS",
+      "module": "auth",
+      "target_id": "user_sadegh",
+      "target_type": "auth",
+      "entity_type": "auth",
+      "entity_id": "user_sadegh",
+      "description": "ورود موفق به سامانه با نقش سوپر ادمین (مدیر کل سیستم)",
+      "ip_address": "127.0.0.1",
+      "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "current_hash": "5b1cea763db8b1beffa7b0550cfd2bab54a88b4acbab40aa3eed4d23baad2159",
+      "old_values": null,
+      "new_values": null,
+      "created_at": "2026-10-17T21:25:18.732Z"
+    }
+  }
+}

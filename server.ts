@@ -38,6 +38,7 @@ import dataRoutes from "./src/routes/dataRoutes";
 import systemRoutes from "./src/routes/systemRoutes";
 import auditRoutes from "./src/routes/auditRoutes";
 import monitoringRoutes from "./src/routes/monitoringRoutes";
+import healthRoutes from "./src/routes/healthRoutes";
 
 // 2. Cross-cutting Infrastructure
 import { logger, requestLogger } from "./src/lib/logger";
@@ -110,6 +111,9 @@ async function startServer() {
   app.get('/api/healthz', (_req, res) => {
     res.json({ ok: true, uptime: process.uptime() });
   });
+
+  app.use('/', healthRoutes);
+  app.use('/api', healthRoutes);
 
   // Mount Modular Application Routers
   app.use('/api/auth', authRoutes);
