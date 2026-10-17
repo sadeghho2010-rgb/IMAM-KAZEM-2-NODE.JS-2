@@ -51,7 +51,8 @@ import {
   generateShamsiDateRange,
   toPersianDigits,
   shamsiToDate,
-  dateToShamsi
+  dateToShamsi,
+  normalizeShamsiDateStr
 } from '../lib/jalali';
 import { cn, getProgramDays } from '../lib/utils';
 import { 
@@ -616,6 +617,7 @@ export default function TeacherPortal() {
     if (!activeCounselingCourse || !selectedSessionDate) return new Map<string, CounselingSessionGrade>();
 
     const map = new Map<string, CounselingSessionGrade>();
+    const normSelectedDate = normalizeShamsiDateStr(selectedSessionDate);
 
     // Sort grades by newest updatedAt/createdAt first
     const sortedGrades = [...grades].sort((a, b) => 
@@ -623,7 +625,7 @@ export default function TeacherPortal() {
     );
 
     sortedGrades.forEach(g => {
-      if (g.sessionDate === selectedSessionDate) {
+      if (normalizeShamsiDateStr(g.sessionDate) === normSelectedDate) {
         if (!map.has(g.studentId)) {
           map.set(g.studentId, g);
         }
@@ -639,8 +641,9 @@ export default function TeacherPortal() {
 
     classSessionDates.forEach(session => {
       let graded = 0;
+      const normSessionDate = normalizeShamsiDateStr(session.date);
       grades.forEach(g => {
-        if (g.sessionDate === session.date) {
+        if (normalizeShamsiDateStr(g.sessionDate) === normSessionDate) {
           if (enrolledStudents.some(s => s.id === g.studentId)) {
             if (g.participationScore || g.researchScore) {
               graded++;
@@ -648,6 +651,7 @@ export default function TeacherPortal() {
           }
         }
       });
+
       stats[session.date] = {
         gradedCount: graded,
         totalCount,
@@ -693,6 +697,7 @@ export default function TeacherPortal() {
   /**
    * Master Save Action (دکمه ثبت نهایی بالا و پایین صفحه):
    * Explicitly commits all evaluations, attendance, and notes to database & cloud.
+   * Treats updates as in-place edits of previous records for that student and session date.
    */
   const handleSaveAllEvaluations = async () => {
     if (!activeCounselingCourse || !selectedSessionDate) {
@@ -709,38 +714,45 @@ export default function TeacherPortal() {
       const teacherName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
       const sessionInfo = classSessionDates.find(s => s.date === selectedSessionDate);
       const sessionLabel = `جلسه ${sessionInfo?.sessionNumber || 1}`;
+      const normSelectedDate = normalizeShamsiDateStr(selectedSessionDate);
+
+      // Fetch fresh existing grades directly from localDb to guarantee exact match
+      const freshAllGrades = await localDb.getDocs<CounselingSessionGrade>('counseling_session_grades');
 
       const updates: CounselingSessionGrade[] = [];
       const allRemovedIds: string[] = [];
 
       for (const student of enrolledStudents) {
         const draft = localDraftGrades[student.id];
-        const matchingExisting = grades.filter(g => 
+        
+        // Match existing grade in fresh DB or in-memory grades
+        const matchingExisting = freshAllGrades.filter(g => 
           g.studentId === student.id &&
-          g.sessionDate === selectedSessionDate
+          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate
         );
+        const existingPrimary = matchingExisting[0] || grades.find(g => 
+          g.studentId === student.id &&
+          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate
+        ) || null;
 
-        const existingPrimary = matchingExisting[0] || null;
-
-        const partScore = draft?.participationScore ?? existingPrimary?.participationScore;
-        const resScore = draft?.researchScore ?? existingPrimary?.researchScore;
+        const partScore = draft?.participationScore !== undefined ? draft.participationScore : existingPrimary?.participationScore;
+        const resScore = draft?.researchScore !== undefined ? draft.researchScore : existingPrimary?.researchScore;
         const pendingNote = teacherNotesMap[student.id];
         const feedback = draft?.counselorFeedback !== undefined 
           ? draft.counselorFeedback 
           : (pendingNote !== undefined ? pendingNote.trim() : (existingPrimary?.counselorFeedback || ''));
 
         if (partScore || resScore || feedback.trim()) {
+          // Clean up any extra duplicates for this student on this date
           if (matchingExisting.length > 1) {
             for (let i = 1; i < matchingExisting.length; i++) {
               await localDb.deleteDoc('counseling_session_grades', matchingExisting[i].id);
               allRemovedIds.push(matchingExisting[i].id);
             }
           }
-          if (existingPrimary) {
-            allRemovedIds.push(existingPrimary.id);
-          }
 
-          const docId = existingPrimary?.id || `csg-${student.id}-${selectedSessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+          // In-place edit / upsert of existing record
+          const docId = existingPrimary?.id || `csg-${student.id}-${normSelectedDate.replace(/\//g, '-')}`;
           const gradeDoc: CounselingSessionGrade = {
             id: docId,
             studentId: student.id,
@@ -748,7 +760,7 @@ export default function TeacherPortal() {
             grade: student.grade || activeCounselingCourse.grade || 'عمومی',
             counselorTeacherName: teacherName,
             courseTitle: activeCounselingCourse.title,
-            sessionDate: selectedSessionDate,
+            sessionDate: normSelectedDate,
             sessionNumber: sessionLabel,
             participationScore: partScore || 'الف',
             researchScore: resScore || 'الف',
@@ -756,8 +768,10 @@ export default function TeacherPortal() {
             createdAt: existingPrimary?.createdAt || new Date().toISOString(),
             createdByName: currentUser?.name || teacherName,
             createdByRole: 'استاد',
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            version: ((existingPrimary as any)?.version || 0) + 1
           };
+
           await localDb.setDoc('counseling_session_grades', gradeDoc);
           updates.push(gradeDoc);
         }
@@ -765,14 +779,26 @@ export default function TeacherPortal() {
 
       if (updates.length > 0) {
         const removedSet = new Set(allRemovedIds);
-        setGrades(prev => {
-          const newUpdatesSet = new Set(updates.map(u => u.id));
-          return [...prev.filter(g => !removedSet.has(g.id) && !newUpdatesSet.has(g.id)), ...updates];
-        });
+        const updatedIds = new Set(updates.map(u => u.id));
+        setGrades(prev => [
+          ...prev.filter(g => !removedSet.has(g.id) && !updatedIds.has(g.id)),
+          ...updates
+        ]);
+
+        // Clear local drafts so UI seamlessly reflects the saved records
+        setLocalDraftGrades({});
+
+        await localDb.flushSyncQueue();
+
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+          window.dispatchEvent(new CustomEvent('collection_change_counseling_session_grades'));
+          try {
+            localStorage.setItem('counseling_session_grades_updated_at', String(Date.now()));
+          } catch (e) {}
         }
-        showToast(`✓ ارزیابی ${toPersianDigits(updates.length)} طلبه برای جلسه ${selectedSessionDate} با موفقیت در دیتابیس ثبت شد.`);
+
+        showToast(`✓ ارزیابی و ویرایش نمرات ${toPersianDigits(updates.length)} طلبه برای جلسه ${normSelectedDate} با موفقیت در دیتابیس ثبت شد.`);
       } else {
         showToast('لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.');
       }

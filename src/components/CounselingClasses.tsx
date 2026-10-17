@@ -50,6 +50,14 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { 
+  getTodayShamsi, 
+  parseShamsiDate, 
+  formatShamsiDate, 
+  getDaysInShamsiMonth, 
+  normalizeShamsiDateStr, 
+  toEnglishDigits 
+} from '../lib/jalali';
 
 const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string; bg: string }> = {
   'الف': { label: 'الف (عالی)', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black', bg: 'bg-emerald-50' },
@@ -136,14 +144,11 @@ export default function CounselingClasses() {
   const [statusDisplayLayout, setStatusDisplayLayout] = useState<'two_column' | 'single_list'>('two_column');
   const [statusDatePreset, setStatusDatePreset] = useState<'current_month' | 'last_month' | 'all_year' | 'custom'>('current_month');
   
-  const todayShamsi = useMemo(() => new Date().toLocaleDateString('fa-IR'), []);
+  const todayShamsi = useMemo(() => getTodayShamsi(), []);
+  const todayParts = useMemo(() => parseShamsiDate(todayShamsi), [todayShamsi]);
   const startOfCurrentMonthShamsi = useMemo(() => {
-    const parts = todayShamsi.split('/');
-    if (parts.length === 3) {
-      return `${parts[0]}/${parts[1]}/01`;
-    }
-    return todayShamsi;
-  }, [todayShamsi]);
+    return formatShamsiDate(todayParts.year, todayParts.month, 1);
+  }, [todayParts]);
 
   const [statusStartDate, setStatusStartDate] = useState<string>(startOfCurrentMonthShamsi);
   const [statusEndDate, setStatusEndDate] = useState<string>(todayShamsi);
@@ -171,7 +176,7 @@ export default function CounselingClasses() {
   const [batchCourseTitle, setBatchCourseTitle] = useState<string>('');
   const [batchTeacherName, setBatchTeacherName] = useState<string>('');
   const [batchGrade, setBatchGrade] = useState<string>('پایه ۷');
-  const [batchSessionDate, setBatchSessionDate] = useState<string>(() => new Date().toLocaleDateString('fa-IR'));
+  const [batchSessionDate, setBatchSessionDate] = useState<string>(() => getTodayShamsi());
   const [batchSessionNumber, setBatchSessionNumber] = useState<string>('جلسه ۱');
   const [batchSessionTopic, setBatchSessionTopic] = useState<string>('');
   const [batchStudentsList, setBatchStudentsList] = useState<StudentBatchRow[]>([]);
@@ -183,7 +188,7 @@ export default function CounselingClasses() {
   const [formStudentId, setFormStudentId] = useState('');
   const [formTeacherName, setFormTeacherName] = useState('');
   const [formCourseTitle, setFormCourseTitle] = useState(DEFAULT_COURSES[0]);
-  const [formSessionDate, setFormSessionDate] = useState(() => new Date().toLocaleDateString('fa-IR'));
+  const [formSessionDate, setFormSessionDate] = useState(() => getTodayShamsi());
   const [formSessionNumber, setFormSessionNumber] = useState('جلسه ۱');
   const [formParticipationScore, setFormParticipationScore] = useState<CounselingScore>('الف');
   const [formResearchScore, setFormResearchScore] = useState<CounselingScore>('الف');
@@ -192,10 +197,13 @@ export default function CounselingClasses() {
   // Modal 3: Teacher History Detail Drawer/Modal
   const [selectedTeacherForHistory, setSelectedTeacherForHistory] = useState<string | null>(null);
 
-  // Fetch initial data
+  // Fetch initial data + Purge orphan sediment (deleted students & test classes)
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Force sync fresh counseling grades from cloud so updates are immediately visible without hard refresh!
+      await localDb.syncCollectionFromCloud('counseling_session_grades', true).catch(() => {});
+
       const [fetchedGrades, fetchedStudents, fetchedTeachers, fetchedPrograms, fetchedEnrollments, fetchedAttendance] = await Promise.all([
         localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'),
         localDb.getDocs<Student>('students'),
@@ -205,11 +213,60 @@ export default function CounselingClasses() {
         localDb.getDocs<ClassSessionAttendance>('attendance')
       ]);
 
-      setGrades(fetchedGrades.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-      setStudents(fetchedStudents.filter(s => s.isActive));
+      // 1. Identify active students (permanently purge any inactive, deleted, or test residue)
+      const inactiveOrDeletedTestStudents = fetchedStudents.filter(s => 
+        s.isActive === false || 
+        s.isDeleted === true || 
+        (s as any).status === 'deleted' || 
+        (s as any).status === 'inactive'
+      );
+      for (const st of inactiveOrDeletedTestStudents) {
+        await localDb.deleteDoc('students', st.id);
+      }
+
+      const activeStudents = fetchedStudents.filter(s => 
+        s.isActive !== false && 
+        !s.isDeleted && 
+        (s as any).status !== 'deleted' && 
+        (s as any).status !== 'inactive'
+      );
+      const activeStudentIds = new Set(activeStudents.map(s => String(s.id)));
+
+      // 2. Identify active programs
+      const activePrograms = (fetchedPrograms || []).filter(p => 
+        !p.isDeleted && 
+        p.status !== 'inactive' && 
+        p.status !== 'deleted'
+      );
+      const activeProgramTitles = new Set(activePrograms.map(p => p.title));
+      const activeProgramIds = new Set(activePrograms.map(p => p.id));
+
+      // 3. Purge all orphan counseling grades that reference deleted students or deleted test classes
+      const cleanGrades: CounselingSessionGrade[] = [];
+      for (const g of (fetchedGrades || [])) {
+        const isStudentValid = activeStudentIds.has(String(g.studentId));
+        const isCourseValid = !g.courseTitle || activeProgramTitles.has(g.courseTitle) || (g.programId && activeProgramIds.has(g.programId));
+        
+        if (!isStudentValid || !isCourseValid) {
+          // Permanently purge orphan test grade
+          await localDb.deleteDoc('counseling_session_grades', g.id);
+        } else {
+          cleanGrades.push(g);
+        }
+      }
+
+      // 4. Purge orphan enrollments belonging to deleted students or deleted programs
+      for (const en of (fetchedEnrollments || [])) {
+        if (!activeStudentIds.has(String(en.studentId)) || (en.programId && !activeProgramIds.has(en.programId))) {
+          await localDb.deleteDoc('enrollments', en.id);
+        }
+      }
+
+      setGrades(cleanGrades.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setStudents(activeStudents);
       setTeachers(fetchedTeachers.filter(t => t.isActive));
-      setPrograms(fetchedPrograms || []);
-      setEnrollments(fetchedEnrollments || []);
+      setPrograms(activePrograms);
+      setEnrollments((fetchedEnrollments || []).filter(e => activeStudentIds.has(String(e.studentId))));
       setAttendanceSessions(fetchedAttendance || []);
     } catch (err) {
       console.error('Error fetching counseling grades:', err);
@@ -218,35 +275,57 @@ export default function CounselingClasses() {
     }
   };
 
-  // Real-time synchronization (اصلاح ۲)
+  // Real-time synchronization without hard refresh (Live polling + event listeners)
   useEffect(() => {
     fetchData();
 
+    // 1. localDb reactive subscription
     const unsub = localDb.subscribe(() => {
       fetchData();
     });
 
+    // 2. Custom app data events
     const handleDataChange = (e: any) => {
-      if (!e.detail || e.detail.collection === 'counseling_session_grades' || e.detail.collection === 'all') {
+      if (!e.detail || e.detail.collection === 'counseling_session_grades' || e.detail.collection === 'counseling_grades' || e.detail.collection === 'all') {
         fetchData();
       }
     };
-
     window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_counseling_session_grades', fetchData);
+
+    // 3. Storage event for cross-tab realtime sync
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'counseling_session_grades_updated_at' || (e.key && e.key.includes('counseling_session_grades'))) {
+        fetchData();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // 4. Active live polling (every 3 seconds) so managers see teacher evaluations immediately without hard refresh
+    const pollInterval = setInterval(() => {
+      localDb.syncCollectionFromCloud('counseling_session_grades', true)
+        .then(() => fetchData())
+        .catch(() => {});
+    }, 3000);
 
     return () => {
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_counseling_session_grades', fetchData);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
     };
   }, []);
 
-  // Filtered Counseling Programs (Classes) in the System
+  // Filtered Counseling Programs (Classes) in the System (Active only, strictly no hardcoded mock fallbacks)
   const counselingClassesList = useMemo(() => {
-    // 1. Programs explicitly marked with type='مشاوره' or title including 'مشاوره'
-    let foundPrograms = programs.filter(p => 
+    // Only active programs (exclude deleted/inactive)
+    const activePrograms = programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+
+    let foundPrograms = activePrograms.filter(p => 
       p.type === 'مشاوره' || 
       (p.title && p.title.includes('مشاوره')) ||
-      (p.title && (p.title.includes('کارگاه') || p.title.includes('پژوهش') || p.title.includes('هدایت')))
+      (p.title && (p.title.includes('کارگاه') || p.title.includes('هدایت')))
     );
 
     // If teacher is logged in (not super_admin or education_manager), strictly show only their own counseling classes
@@ -258,18 +337,7 @@ export default function CounselingClasses() {
       });
     }
 
-    // If programs exist, use them; otherwise provide default fallbacks
-    if (foundPrograms.length > 0) {
-      return foundPrograms;
-    }
-
-    // Fallback: create mock-like representation from default courses and active teachers
-    return [
-      { id: 'prog_counseling_1', title: 'مشاوره اصول و روش فقهی', teacher: 'استاد مشاور فقه و اصول', grade: 'پایه ۷', type: 'مشاوره' as any },
-      { id: 'prog_counseling_2', title: 'مشاوره فقه و استنباط', teacher: 'استاد مشاور فقه', grade: 'پایه ۸', type: 'مشاوره' as any },
-      { id: 'prog_counseling_3', title: 'مشاوره فلسفه و منطق', teacher: 'استاد مشاور فلسفه', grade: 'پایه ۹', type: 'مشاوره' as any },
-      { id: 'prog_counseling_4', title: 'مشاوره پژوهش و مقاله‌نویسی', teacher: 'استاد مشاور پژوهش', grade: 'پایه ۱۰', type: 'مشاوره' as any }
-    ] as Program[];
+    return foundPrograms;
   }, [programs, isSuperAdmin, isEducationManager, isResearchManager, currentUser]);
 
   // Handle Class Selection in Batch Modal
@@ -335,7 +403,7 @@ export default function CounselingClasses() {
       setBatchStudentsList(rows);
     }
 
-    setBatchSessionDate(new Date().toLocaleDateString('fa-IR'));
+    setBatchSessionDate(getTodayShamsi());
     setBatchSessionNumber('جلسه ۱');
     setBatchSessionTopic('');
     setIsClassBatchModalOpen(true);
@@ -363,7 +431,7 @@ export default function CounselingClasses() {
       const now = new Date().toISOString();
       const currentUserName = currentUser?.name || currentUser?.username || 'مسئول پژوهش';
       const currentUserRole = currentUser?.roleTitle || 'مسئول واحد پژوهش';
-      const sessionDate = batchSessionDate.trim() || new Date().toLocaleDateString('fa-IR');
+      const sessionDate = normalizeShamsiDateStr(batchSessionDate.trim()) || getTodayShamsi();
       const courseTitle = batchCourseTitle.trim() || 'کلاس مشاوره';
       const teacherName = batchTeacherName.trim() || 'استاد مشاور';
 
@@ -373,10 +441,10 @@ export default function CounselingClasses() {
       for (const row of batchStudentsList) {
         const matchingDocs = allExistingGrades.filter(g => 
           g.studentId === row.studentId &&
-          g.sessionDate === sessionDate
+          normalizeShamsiDateStr(g.sessionDate) === sessionDate
         );
 
-        // Delete all old/previous evaluation records for this student on this session date
+        // Delete all old/previous duplicate evaluation records for this student on this session date
         for (const oldDoc of matchingDocs) {
           await localDb.deleteDoc('counseling_session_grades', oldDoc.id);
         }
@@ -413,8 +481,13 @@ export default function CounselingClasses() {
         createdAt: now
       });
 
+      await localDb.flushSyncQueue();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_counseling_session_grades'));
+        try {
+          localStorage.setItem('counseling_session_grades_updated_at', String(Date.now()));
+        } catch (e) {}
       }
 
       setIsClassBatchModalOpen(false);
@@ -430,11 +503,15 @@ export default function CounselingClasses() {
 
   // Status Monitoring Computations (Evaluated vs Not Evaluated in date range)
   const statusAnalysis = useMemo(() => {
-    // Filter grades in the chosen date range
+    const normStartDate = normalizeShamsiDateStr(statusStartDate);
+    const normEndDate = normalizeShamsiDateStr(statusEndDate);
+
+    // Filter grades in the chosen date range using normalized dates
     const filteredGradesInRange = grades.filter(g => {
       if (!g.sessionDate) return true;
       if (statusDatePreset === 'all_year') return true;
-      return g.sessionDate >= statusStartDate && g.sessionDate <= statusEndDate;
+      const d = normalizeShamsiDateStr(g.sessionDate);
+      return (!normStartDate || d >= normStartDate) && (!normEndDate || d <= normEndDate);
     });
 
     const evaluatedClassesMap = new Map<string, {
@@ -447,17 +524,16 @@ export default function CounselingClasses() {
       gradesList: CounselingSessionGrade[];
     }>();
 
-    // Populate evaluated classes
+    // Populate evaluated classes - strictly for active programs in counselingClassesList
     filteredGradesInRange.forEach(g => {
-      const prog = counselingClassesList.find(p => p.title === g.courseTitle || (g.courseTitle && g.courseTitle.includes(p.title))) || {
-        id: `prog_custom_${g.courseTitle}`,
-        title: g.courseTitle,
-        teacher: g.counselorTeacherName,
-        grade: g.grade || 'پایه ۷',
-        type: 'مشاوره' as any
-      } as Program;
+      const prog = counselingClassesList.find(p => 
+        (g.programId && p.id === g.programId) ||
+        p.title === g.courseTitle || 
+        (g.courseTitle && (g.courseTitle.includes(p.title) || p.title.includes(g.courseTitle)))
+      );
+      if (!prog) return;
 
-      const key = prog.title;
+      const key = prog.id || prog.title;
       if (!evaluatedClassesMap.has(key)) {
         evaluatedClassesMap.set(key, {
           program: prog,
@@ -473,7 +549,8 @@ export default function CounselingClasses() {
       const item = evaluatedClassesMap.get(key)!;
       item.gradesCount++;
       item.gradesList.push(g);
-      if (g.sessionDate && !item.dates.includes(g.sessionDate)) item.dates.push(g.sessionDate);
+      const cleanDate = normalizeShamsiDateStr(g.sessionDate);
+      if (cleanDate && !item.dates.includes(cleanDate)) item.dates.push(cleanDate);
       if (g.counselorTeacherName && !item.teachers.includes(g.counselorTeacherName)) item.teachers.push(g.counselorTeacherName);
 
       if (g.participationScore === 'الف') item.avgScores.excellent++;
@@ -550,8 +627,11 @@ export default function CounselingClasses() {
       if (p.grade && !tData.grades.includes(p.grade)) tData.grades.push(p.grade);
     });
 
-    // 2. Aggregate from recorded grades
+    // 2. Aggregate from recorded grades (active counseling classes only)
     grades.forEach(g => {
+      const hasClass = counselingClassesList.some(p => p.title === g.courseTitle || (g.courseTitle && g.courseTitle.includes(p.title)));
+      if (!hasClass) return;
+
       const tName = g.counselorTeacherName || 'استاد مشاور';
       if (!teacherMap.has(tName)) {
         teacherMap.set(tName, {
@@ -611,6 +691,10 @@ export default function CounselingClasses() {
       await localDb.deleteDoc('counseling_session_grades', id);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'counseling_session_grades' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_counseling_session_grades'));
+        try {
+          localStorage.setItem('counseling_session_grades_updated_at', String(Date.now()));
+        } catch (e) {}
       }
       await fetchData();
     } catch (err) {
@@ -786,8 +870,11 @@ export default function CounselingClasses() {
                     type="button"
                     onClick={() => {
                       setStatusDatePreset('last_month');
-                      setStatusStartDate('1403/06/01');
-                      setStatusEndDate('1403/06/31');
+                      const prevYear = todayParts.month === 1 ? todayParts.year - 1 : todayParts.year;
+                      const prevMonth = todayParts.month === 1 ? 12 : todayParts.month - 1;
+                      const daysInPrev = getDaysInShamsiMonth(prevYear, prevMonth);
+                      setStatusStartDate(formatShamsiDate(prevYear, prevMonth, 1));
+                      setStatusEndDate(formatShamsiDate(prevYear, prevMonth, daysInPrev));
                     }}
                     className={cn(
                       "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
@@ -800,7 +887,8 @@ export default function CounselingClasses() {
                     type="button"
                     onClick={() => {
                       setStatusDatePreset('all_year');
-                      setStatusStartDate('1403/07/01');
+                      const academicStartYear = todayParts.month < 7 ? todayParts.year - 1 : todayParts.year;
+                      setStatusStartDate(formatShamsiDate(academicStartYear, 7, 1));
                       setStatusEndDate(todayShamsi);
                     }}
                     className={cn(
@@ -877,7 +965,7 @@ export default function CounselingClasses() {
 
             {/* Custom Dates bar using ShamsiDatePicker (اصلاح ۳ و ۴) */}
             <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-100 text-xs">
-              <span className="text-slate-600 font-black">انتخاب دقیق بازه (شمسی):</span>
+              <span className="text-slate-600 font-black">انتخاب دقیق بازه (شمسی - ارقام انگلیسی):</span>
               <div className="w-44">
                 <ShamsiDatePicker
                   label="از تاریخ:"

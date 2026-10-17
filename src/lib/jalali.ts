@@ -76,6 +76,28 @@ export function formatShamsiDate(year: number, month: number, day: number): stri
   return `${yStr}/${mStr}/${dStr}`;
 }
 
+// Normalize Shamsi Date into standard English digits YYYY/MM/DD with leading zeroes
+// Handles: "1405/7/22", "22/7/1405", "۱۴۰۵/۰۷/۲۲", "1405-7-22", etc.
+export function normalizeShamsiDateStr(raw?: string): string {
+  if (!raw) return '';
+  const eng = toEnglishDigits(raw).trim().replace(/-/g, '/');
+  const parts = eng.split('/').map(p => p.trim());
+  if (parts.length === 3) {
+    // If format is DD/MM/YYYY (day first, 4-digit year last)
+    if (parts[0].length <= 2 && parts[2].length === 4) {
+      const d = parts[0].padStart(2, '0');
+      const m = parts[1].padStart(2, '0');
+      const y = parts[2];
+      return `${y}/${m}/${d}`;
+    }
+    const y = parts[0].padStart(4, '0');
+    const m = parts[1].padStart(2, '0');
+    const d = parts[2].padStart(2, '0');
+    return `${y}/${m}/${d}`;
+  }
+  return eng;
+}
+
 // Convert Shamsi string "1405/06/15" to JS Date
 export function shamsiToDate(shamsiStr: string): Date {
   try {

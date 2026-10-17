@@ -7,7 +7,8 @@ import {
   getShamsiDayOfWeek, 
   SHAMSI_MONTH_NAMES, 
   SHAMSI_WEEKDAY_NAMES_SHORT, 
-  getTodayShamsi 
+  getTodayShamsi,
+  toEnglishDigits
 } from '../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -121,13 +122,13 @@ export const ShamsiDatePicker: React.FC<ShamsiDatePickerProps> = ({
         <input
           type="text"
           id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={toEnglishDigits(value || '')}
+          onChange={(e) => onChange(toEnglishDigits(e.target.value))}
           placeholder={placeholder}
           required={required}
           disabled={disabled}
           onClick={() => !disabled && setIsOpen(true)}
-          className={`w-full p-3 pl-10 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-center text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all ${className}`}
+          className={`w-full p-3 pl-10 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-center text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all font-mono ${className}`}
           dir="ltr"
         />
         <button

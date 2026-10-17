@@ -383,8 +383,16 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
         updatedAt: new Date().toISOString()
       };
 
-      if (editingOralExam) {
-        await localDb.updateDoc('oral_exams', editingOralExam.id, examData);
+      // Find existing oral exam for this student on this date and subject/title
+      const allOralExams = await localDb.getDocs<OralExam>('oral_exams');
+      const existingSameExam = editingOralExam || allOralExams.find(ox => 
+        ox.studentId === selectedStudent.id &&
+        (ox.date === examDate || (ox as any).examDate === examDate) &&
+        (ox.subjectType === examSubjectType || ox.title === examTitle.trim())
+      );
+
+      if (existingSameExam) {
+        await localDb.updateDoc('oral_exams', existingSameExam.id, examData);
       } else {
         await localDb.addDoc('oral_exams', {
           ...examData,
