@@ -788,10 +788,8 @@ export default function StudentRequestsPortal() {
       } catch (srvErr) {}
 
       setRequests(prev => prev.map(r => r.id === updated.id ? updated : r));
-      if (selectedRequestDetail?.id === updated.id) {
-        setSelectedRequestDetail(updated);
-      }
       setSelectedRequestForReview(null);
+      setSelectedRequestDetail(null);
       setOfficialReply('');
       setRejectionReason('');
       triggerUpdateEvent();

@@ -545,26 +545,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return false;
     });
 
-    if (matchedProgs.length > 0) {
-      return matchedProgs;
-    }
-
-    // If user's role is class_representative or title contains نماینده, but program hasn't stored ID yet,
-    // link strictly through enrolled classes of this student (NEVER return all classes of the grade)
-    if (currentUser.role === 'class_representative' || currentUser.roleTitle?.includes('نماینده')) {
-      const studentId = matchedStudent?.id || currentStudentId || currentUserId;
-      if (studentId) {
-        const enrolled = programs.filter(p => {
-          const inEnroll = enrollments.some(e => e.programId === p.id && e.studentId === studentId);
-          const inArray = Array.isArray(p.studentIds) && p.studentIds.includes(studentId);
-          return inEnroll || inArray;
-        });
-        if (enrolled.length > 0) return enrolled;
-      }
-    }
-
-    return [];
-  }, [currentUser, programs, students, enrollments, isSuperAdmin, isEducationManager, isGradeSupervisor]);
+    return matchedProgs;
+  }, [currentUser, programs, students]);
 
   // Determine if the user is a class representative vs ordinary student
   const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && (

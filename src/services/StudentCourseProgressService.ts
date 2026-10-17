@@ -11,56 +11,15 @@ import {
  * DEFAULT HAWZA CURRICULUM SEED DATA
  * Pre-populates standard subjects, books, and chapters for Hawza Level 1 & 2
  */
-export const DEFAULT_CURRICULUM_SUBJECTS: Omit<CurriculumSubject, 'id'>[] = [
-  { title: 'اصول', code: 'USUL', description: 'مبانی، مباحث الفاظ و ادله عقلية و شرعیة', color: 'indigo', orderIndex: 1 },
-  { title: 'فقه', code: 'FIQH', description: 'ابواب فقهی عبادات، معاملات و احکام', color: 'emerald', orderIndex: 2 },
-  { title: 'فلسفه', code: 'PHIL', description: 'حکمت متعالیه و فلسفه اسلامی', color: 'amber', orderIndex: 3 },
-];
+export const DEFAULT_CURRICULUM_SUBJECTS: Omit<CurriculumSubject, 'id'>[] = [];
 
-export const DEFAULT_CURRICULUM_BOOKS: { subjectTitle: string; title: string; credits: number; orderIndex: number }[] = [
-  // اصول
-  { subjectTitle: 'اصول', title: 'رسائل', credits: 1, orderIndex: 1 },
-  { subjectTitle: 'اصول', title: 'کفایة الاصول', credits: 1, orderIndex: 2 },
-  { subjectTitle: 'اصول', title: 'حلقه ثالثه', credits: 1, orderIndex: 3 },
-  { subjectTitle: 'اصول', title: 'اصول فقه مظفر', credits: 1, orderIndex: 4 },
+export const DEFAULT_CURRICULUM_BOOKS: { subjectTitle: string; title: string; credits: number; orderIndex: number }[] = [];
 
-  // فقه
-  { subjectTitle: 'فقه', title: 'مکاسب', credits: 1, orderIndex: 1 },
-  { subjectTitle: 'فقه', title: 'شرح لمعه', credits: 1, orderIndex: 2 },
-  { subjectTitle: 'فقه', title: 'عروة الوثقی', credits: 1, orderIndex: 3 },
-
-  // فلسفه
-  { subjectTitle: 'فلسفه', title: 'بدایة الحکمة', credits: 1, orderIndex: 1 },
-  { subjectTitle: 'فلسفه', title: 'نهایة الحکمة', credits: 1, orderIndex: 2 },
-];
-
-export const DEFAULT_CURRICULUM_CHAPTERS: { bookTitle: string; title: string; credits: number; orderIndex: number }[] = [
-  // رسائل
-  { bookTitle: 'رسائل', title: 'قطع و ظن', credits: 1, orderIndex: 1 },
-  { bookTitle: 'رسائل', title: 'استصحاب', credits: 1, orderIndex: 2 },
-  { bookTitle: 'رسائل', title: 'تعادل و تراجیح', credits: 1, orderIndex: 3 },
-
-  // کفایة الاصول
-  { bookTitle: 'کفایة الاصول', title: 'مباحث الفاظ', credits: 1, orderIndex: 1 },
-  { bookTitle: 'کفایة الاصول', title: 'مباحث امارات و اصول عملیه', credits: 1, orderIndex: 2 },
-
-  // مکاسب
-  { bookTitle: 'مکاسب', title: 'مکاسب محرمه', credits: 1, orderIndex: 1 },
-  { bookTitle: 'مکاسب', title: 'کتاب البيع', credits: 1, orderIndex: 2 },
-  { bookTitle: 'مکاسب', title: 'خیارات', credits: 1, orderIndex: 3 },
-
-  // شرح لمعه
-  { bookTitle: 'شرح لمعه', title: 'عبادات', credits: 1, orderIndex: 1 },
-  { bookTitle: 'شرح لمعه', title: 'معاملات', credits: 1, orderIndex: 2 },
-
-  // بدایة الحکمة
-  { bookTitle: 'بدایة الحکمة', title: 'مراحل ۱ تا ۶', credits: 1, orderIndex: 1 },
-  { bookTitle: 'بدایة الحکمة', title: 'مراحل ۷ تا ۱۲', credits: 1, orderIndex: 2 },
-];
+export const DEFAULT_CURRICULUM_CHAPTERS: { bookTitle: string; title: string; credits: number; orderIndex: number }[] = [];
 
 export class StudentCourseProgressService {
   /**
-   * Seeds initial default curriculum if database tables are empty and cleans up invalid subjects/duplicates
+   * Fetches current curriculum subjects, books, and chapters from localDb
    */
   static async ensureDefaultCurriculumData(): Promise<{
     subjects: CurriculumSubject[];
@@ -70,20 +29,6 @@ export class StudentCourseProgressService {
     let subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
     let books = await localDb.getDocs<CurriculumBook>('curriculum_books');
     let chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
-
-    // 1. Seed default subjects ONLY if curriculum_subjects table is completely empty
-    if (subjects.length === 0) {
-      console.log('Seeding default curriculum subjects...');
-      for (const s of DEFAULT_CURRICULUM_SUBJECTS) {
-        const doc: CurriculumSubject = {
-          id: `subj_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          ...s,
-          createdAt: new Date().toISOString()
-        };
-        await localDb.setDoc('curriculum_subjects', doc);
-      }
-      subjects = await localDb.getDocs<CurriculumSubject>('curriculum_subjects');
-    }
 
     // Deduplicate subjects by clean title
     const seenSubjects = new Map<string, CurriculumSubject>();
@@ -97,27 +42,6 @@ export class StudentCourseProgressService {
     }
     subjects = Array.from(seenSubjects.values());
 
-    // 2. Seed default books ONLY if curriculum_books table is completely empty
-    if (books.length === 0) {
-      console.log('Seeding default curriculum books...');
-      for (const b of DEFAULT_CURRICULUM_BOOKS) {
-        const parentSubj = subjects.find(s => s.title === b.subjectTitle) || subjects[0];
-        if (parentSubj) {
-          const doc: CurriculumBook = {
-            id: `book_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-            subjectId: parentSubj.id,
-            subjectTitle: parentSubj.title,
-            title: b.title,
-            credits: 1,
-            orderIndex: b.orderIndex,
-            createdAt: new Date().toISOString()
-          };
-          await localDb.setDoc('curriculum_books', doc);
-        }
-      }
-      books = await localDb.getDocs<CurriculumBook>('curriculum_books');
-    }
-
     // Deduplicate books
     const seenBooks = new Map<string, CurriculumBook>();
     for (const b of books) {
@@ -129,29 +53,6 @@ export class StudentCourseProgressService {
       }
     }
     books = Array.from(seenBooks.values());
-
-    // 3. Seed default chapters ONLY if curriculum_chapters table is completely empty
-    if (chapters.length === 0) {
-      console.log('Seeding default curriculum chapters...');
-      for (const ch of DEFAULT_CURRICULUM_CHAPTERS) {
-        const parentBook = books.find(b => b.title === ch.bookTitle);
-        if (parentBook) {
-          const doc: CurriculumChapter = {
-            id: `chap_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-            bookId: parentBook.id,
-            bookTitle: parentBook.title,
-            subjectId: parentBook.subjectId,
-            subjectTitle: parentBook.subjectTitle,
-            title: ch.title,
-            credits: 1,
-            orderIndex: ch.orderIndex,
-            createdAt: new Date().toISOString()
-          };
-          await localDb.setDoc('curriculum_chapters', doc);
-        }
-      }
-      chapters = await localDb.getDocs<CurriculumChapter>('curriculum_chapters');
-    }
 
     // Deduplicate chapters
     const seenChapters = new Map<string, CurriculumChapter>();
@@ -166,6 +67,23 @@ export class StudentCourseProgressService {
     chapters = Array.from(seenChapters.values());
 
     return { subjects, books, chapters };
+  }
+
+  /**
+   * Completely purges all curriculum subjects, books, chapters, and student course progress from the database
+   */
+  static async clearAllCurriculumBankData(): Promise<void> {
+    const [subs, bks, chs, progs] = await Promise.all([
+      localDb.getDocs<CurriculumSubject>('curriculum_subjects'),
+      localDb.getDocs<CurriculumBook>('curriculum_books'),
+      localDb.getDocs<CurriculumChapter>('curriculum_chapters'),
+      localDb.getDocs<StudentCourseProgress>('student_course_progress'),
+    ]);
+
+    for (const s of subs) { await localDb.deleteDoc('curriculum_subjects', s.id); }
+    for (const b of bks) { await localDb.deleteDoc('curriculum_books', b.id); }
+    for (const c of chs) { await localDb.deleteDoc('curriculum_chapters', c.id); }
+    for (const p of progs) { await localDb.deleteDoc('student_course_progress', p.id); }
   }
 
   /**

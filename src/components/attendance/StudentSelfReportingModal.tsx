@@ -53,32 +53,18 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
   const studentName = String(studentObj?.name || currentUser?.studentName || currentUser?.fullName || currentUser?.name || 'طلبه گرامی').trim();
   const studentGrade = String(studentObj?.grade || currentUser?.gradeLabel || '').trim();
 
-  // Strict Course Filter:
-  // A student CANNOT see other courses they do not participate in!
-  // ONLY programs where:
-  // 1) attendanceType === 'self_reporting'
-  // 2) The student is enrolled or assigned to it
+  // Strict Course Filter: ONLY active self-reporting courses this student is explicitly enrolled in
   const selfReportingCourses = useMemo(() => {
-    const isMatchingGrade = (pGrade?: string, sGrade?: string) => {
-      if (!pGrade || pGrade === 'همه پایه‌ها' || pGrade === 'همه') return true;
-      if (!sGrade) return true;
-      const pNorm = String(pGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
-      const sNorm = String(sGrade).replace(/[0-9]/g, d => String.fromCharCode(d.charCodeAt(0) + 1728)).trim();
-      if (pNorm === sNorm) return true;
-      const digitsP = pNorm.match(/\d+/)?.[0];
-      const digitsS = sNorm.match(/\d+/)?.[0];
-      if (digitsP && digitsS && digitsP === digitsS) return true;
-      return false;
-    };
+    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
 
-    return programs.filter(p => {
+    return activeProgs.filter(p => {
       if (p.attendanceType !== 'self_reporting') return false;
 
       const inEnroll = enrollments.some(e => 
         String(e.programId) === String(p.id) && (
           String(e.studentId) === String(studentId) ||
           String(e.studentId) === String(studentUsername)
-        )
+        ) && e.status !== 'deleted' && e.status !== 'inactive'
       );
       if (inEnroll) return true;
 
@@ -88,14 +74,9 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
       );
       if (inArray) return true;
 
-      const hasExplicitList = Boolean((p as any).hasExplicitEnrollment) || (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
-      if (!hasExplicitList || isMatchingGrade(p.grade, studentGrade)) {
-        return isMatchingGrade(p.grade, studentGrade);
-      }
-
       return false;
     });
-  }, [programs, enrollments, studentId, studentUsername, studentGrade]);
+  }, [programs, enrollments, studentId, studentUsername]);
 
   // Set default selected program
   useEffect(() => {

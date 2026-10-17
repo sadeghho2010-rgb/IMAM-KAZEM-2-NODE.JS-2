@@ -164,12 +164,7 @@ export default function StudentStudyPortal({
       return list;
     }
 
-    // Default seminary core courses matching student's grade or standard curriculum:
-    return [
-      { id: 'c_usul', title: 'اصول {حلقه ثالثه}' },
-      { id: 'c_fiqh', title: 'فقه {مکاسب خیارات}' },
-      { id: 'c_falsafa', title: 'فلسفه {قسمت دوم نهایه}' }
-    ];
+    return [];
   }, [programs, enrollments, student]);
 
   // Active period object

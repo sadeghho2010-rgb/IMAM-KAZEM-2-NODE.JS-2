@@ -72,6 +72,20 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   useEffect(() => {
     loadData();
+
+    const unsub = localDb.subscribe(() => loadData());
+    const handleDataChange = () => loadData();
+
+    window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_programs', handleDataChange);
+    window.addEventListener('collection_change_enrollments', handleDataChange);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_programs', handleDataChange);
+      window.removeEventListener('collection_change_enrollments', handleDataChange);
+    };
   }, [currentUser]);
 
   const loadData = async () => {
@@ -116,7 +130,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       });
       setMatchedStudent(matchedSt || null);
 
-      setPrograms(allProgs || []);
+      setPrograms((allProgs || []).filter(p => p.status !== 'deleted' && !(p as any).isDeleted));
       setStudents((allStudents || []).filter(s => s.status !== 'deleted'));
       setEnrollments(allEnrolls || []);
       setAttendanceLogs(allLogs || []);
@@ -161,14 +175,16 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     return Array.from(new Set(list)).map(x => normalizeClean(x)).filter(Boolean);
   }, [currentUser, matchedStudent]);
 
-  // Identify all classes where current user is a representative (Main, Counseling, Research, etc.)
+  // Identify all active classes where current user is an assigned representative
   const representedPrograms = useMemo(() => {
+    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+
     // If Level 1 or 2 manager, return all active programs for full management access
     if (currentUser?.level && currentUser.level < 3) {
-      return programs;
+      return activeProgs;
     }
 
-    return programs.filter(p => {
+    return activeProgs.filter(p => {
       // 1. Direct managedClassId
       if ((currentUser as any)?.managedClassId && String(p.id) === String((currentUser as any).managedClassId)) {
         return true;
@@ -198,33 +214,10 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           return true;
         }
       }
-      // 6. Enrollment + Representative Role Fallback (Main & Counseling Classes)
-      if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || Boolean((currentUser as any)?.isClassRep)) {
-        if (p.attendanceType === 'representative' || !p.attendanceType) {
-          const stIdStr = String(matchedStudent?.id || currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id || '');
-          const inEnroll = enrollments.some(e => 
-            String(e.programId) === String(p.id) && 
-            (candidateIds.includes(normalizeClean(String(e.studentId))) || String(e.studentId) === stIdStr) &&
-            e.status !== 'deleted' && 
-            e.status !== 'inactive'
-          );
-          if (inEnroll) return true;
 
-          const pStudentIds = Array.isArray((p as any).studentIds) ? (p as any).studentIds.map((x: any) => normalizeClean(String(x))) : [];
-          if (candidateIds.some(cid => pStudentIds.includes(cid))) {
-            return true;
-          }
-
-          // Grade match fallback for class representative
-          const stGrade = matchedStudent?.grade || currentUser?.gradeLabel || '';
-          if (stGrade && (p.grade === stGrade || p.grade === 'همه پایه‌ها' || p.grade === 'همه')) {
-            return true;
-          }
-        }
-      }
       return false;
     });
-  }, [programs, enrollments, currentUser, candidateIds, candidateNames, matchedStudent]);
+  }, [programs, currentUser, candidateIds, candidateNames]);
 
   // Select first represented program by default
   useEffect(() => {
@@ -237,22 +230,62 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     return representedPrograms.find(p => p.id === selectedProgramId) || representedPrograms[0] || null;
   }, [representedPrograms, selectedProgramId]);
 
+  // Helper: check if a course is scheduled to meet on a specific date (matching day of week)
+  const isCourseHeldOnDate = (prog: Program | null, dateStr: string): boolean => {
+    if (!prog) return false;
+    if ((prog as any).status === 'deleted' || (prog as any).isDeleted) return false;
+
+    const days = (prog.days && Array.isArray(prog.days) && prog.days.length > 0)
+      ? prog.days
+      : (prog.day ? (prog.day.includes('شنبه تا چهارشنبه') || prog.day.includes('هر روز')
+          ? ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه']
+          : [prog.day]) : []);
+
+    if (!days || days.length === 0) return true;
+
+    const dayName = getShamsiDayOfWeekName(dateStr);
+    const norm = (s: string) => s.replace(/[\u200c\s]/g, '').trim().toLowerCase();
+    const targetNorm = norm(dayName);
+
+    return days.some(d => {
+      const dNorm = norm(d);
+      return dNorm === targetNorm || dNorm.includes(targetNorm) || targetNorm.includes(dNorm);
+    });
+  };
+
   // Allowed days window from education settings (default: 7 days)
   const allowedDaysCount = attendanceSettings?.representativeEditWindowDays || 7;
 
-  // Allowed quick dates list
+  // Allowed quick dates list with class day check
   const allowedDates = useMemo(() => {
-    const dates: { dateStr: string; label: string }[] = [];
+    const dates: { dateStr: string; label: string; dayName: string; isClassDay: boolean }[] = [];
     for (let i = 0; i < allowedDaysCount; i++) {
       const d = subtractDaysShamsi(todayShamsi, i);
+      const dayName = getShamsiDayOfWeekName(d);
+      const isClassDay = isCourseHeldOnDate(currentProgram, d);
+
       let lbl = d;
       if (i === 0) lbl = 'امروز';
       else if (i === 1) lbl = 'دیروز';
       else lbl = `${i} روز پیش`;
-      dates.push({ dateStr: d, label: lbl });
+
+      dates.push({ dateStr: d, label: lbl, dayName, isClassDay });
     }
     return dates;
-  }, [todayShamsi, allowedDaysCount]);
+  }, [todayShamsi, allowedDaysCount, currentProgram]);
+
+  // Smart date selection: Auto-select most recent held class day if current selected date is an off-day (e.g. Friday)
+  useEffect(() => {
+    if (allowedDates.length === 0 || !currentProgram) return;
+
+    const isCurrentDateClassDay = isCourseHeldOnDate(currentProgram, selectedDate);
+    if (!isCurrentDateClassDay) {
+      const firstClassDay = allowedDates.find(ad => ad.isClassDay);
+      if (firstClassDay) {
+        setSelectedDate(firstClassDay.dateStr);
+      }
+    }
+  }, [allowedDates, currentProgram]);
 
   // Get enrolled students for the currently selected program
   const classStudents = useMemo(() => {
@@ -624,7 +657,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {allowedDates.map(({ dateStr, label }) => {
+            {allowedDates.map(({ dateStr, label, dayName, isClassDay }) => {
               const isDateSelected = dateStr === selectedDate;
               return (
                 <button
@@ -632,19 +665,54 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                   type="button"
                   onClick={() => setSelectedDate(dateStr)}
                   className={cn(
-                    "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                    "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5",
                     isDateSelected
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                      : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs font-black"
+                      : isClassDay
+                        ? "bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200"
                   )}
                 >
                   <span>{label}</span>
-                  <span className="text-[10px] font-mono opacity-80">({dateStr.slice(5)})</span>
+                  <span className="text-[10px] font-mono opacity-80">({dayName})</span>
+                  {!isClassDay && <span className="text-[9px] px-1 bg-slate-200 text-slate-600 rounded font-medium">تعطیل</span>}
                 </button>
               );
             })}
           </div>
         </div>
+
+        {/* Off-day Notice (when selected date is not a class day for currentProgram) */}
+        {!isCourseHeldOnDate(currentProgram, selectedDate) && (
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-slate-200/80 text-slate-600 flex items-center justify-center shrink-0">
+                <Calendar size={18} />
+              </div>
+              <div>
+                <p className="font-black text-slate-900 text-sm">
+                  در روز {getShamsiDayOfWeekName(selectedDate)} ({selectedDate}) کلاسی برای «{currentProgram?.title}» تشکیل نمی‌شود
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  برنامه این درس شامل روز {getShamsiDayOfWeekName(selectedDate)} نمی‌باشد. جهت ثبت حضور، روزهای تشکیل کلاس را انتخاب نمایید.
+                </p>
+              </div>
+            </div>
+            {allowedDates.find(ad => ad.isClassDay) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const lastHeld = allowedDates.find(ad => ad.isClassDay);
+                  if (lastHeld) setSelectedDate(lastHeld.dateStr);
+                }}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
+              >
+                <Clock size={14} />
+                <span>آخرین جلسه برگزارشده ({allowedDates.find(ad => ad.isClassDay)?.dayName} {allowedDates.find(ad => ad.isClassDay)?.dateStr})</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Official Holiday Notice */}
         {currentHoliday && (

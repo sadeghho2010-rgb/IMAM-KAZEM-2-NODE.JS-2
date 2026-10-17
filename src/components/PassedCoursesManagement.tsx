@@ -96,9 +96,9 @@ export default function PassedCoursesManagement() {
       ]);
 
       setStudents(stList.filter(s => s.isActive !== false));
-      setSubjects(subList.length > 0 ? subList : seed.subjects);
-      setBooks(bkList.length > 0 ? bkList : seed.books);
-      setChapters(chList.length > 0 ? chList : seed.chapters);
+      setSubjects(subList);
+      setBooks(bkList);
+      setChapters(chList);
       setProgressRecords(prgList);
       setEnrollments(enrList);
       setPrograms(progList);
@@ -170,7 +170,7 @@ export default function PassedCoursesManagement() {
       const customPassed = studentProgs.filter(p => p.status === 'passed' && !chapters.some(ch => ch.id === p.chapterId));
       passedCount += customPassed.length;
 
-      const remainingCount = Math.max(0, totalChaptersCount - passedCount - inProgressCount);
+      const remainingCount = Math.max(0, totalChaptersCount - passedCount);
       const denominator = Math.max(1, totalChaptersCount);
       const percentCompleted = Math.min(100, Math.round((passedCount / denominator) * 100));
 
@@ -549,12 +549,13 @@ export default function PassedCoursesManagement() {
 
       if (collection === 'curriculum_subjects') {
         const childBooks = books.filter(b => b.subjectId === id || b.subjectTitle === title);
+        const childBookIds = new Set(childBooks.map(b => b.id));
         for (const b of childBooks) {
           await localDb.deleteDoc('curriculum_books', b.id);
-          const childChaps = chapters.filter(c => c.bookId === b.id || c.bookTitle === b.title);
-          for (const ch of childChaps) {
-            await localDb.deleteDoc('curriculum_chapters', ch.id);
-          }
+        }
+        const childChaps = chapters.filter(c => c.subjectId === id || c.subjectTitle === title || childBookIds.has(c.bookId));
+        for (const ch of childChaps) {
+          await localDb.deleteDoc('curriculum_chapters', ch.id);
         }
       } else if (collection === 'curriculum_books') {
         const childChaps = chapters.filter(c => c.bookId === id || c.bookTitle === title);
@@ -570,6 +571,22 @@ export default function PassedCoursesManagement() {
     } catch (err) {
       console.error(err);
       alert('خطا در حذف آیتم.');
+    }
+  };
+
+  const handleClearAllBankData = async () => {
+    if (!window.confirm('آیا از پاکسازی کامل تمامی عناوین، کتب، سرفصل‌ها و سوابق دروس گذرانده شده اطمینان دارید؟ این عملیات تمامی اطلاعات این بخش را پاک می‌کند.')) return;
+    try {
+      setIsLoading(true);
+      await StudentCourseProgressService.clearAllCurriculumBankData();
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+      await loadAllData();
+      alert('تمامی محتوای بانک دروس و سوابق گذرانده شده با موفقیت پاکسازی شد.');
+    } catch (err) {
+      console.error(err);
+      alert('خطا در پاکسازی بانک دروس.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -872,6 +889,16 @@ export default function PassedCoursesManagement() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleClearAllBankData}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                title="پاکسازی کامل بانک دروس و سوابق"
+              >
+                <Trash2 size={15} />
+                <span>پاکسازی کامل بانک دروس</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
