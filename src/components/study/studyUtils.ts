@@ -661,10 +661,24 @@ export async function deleteStudyDailyEntry(entryId: string, periodId: string, s
 
 export async function syncAggregatePeriodicStudyLog(periodId: string, studentId: string, submittedBy?: string) {
   const targetStudentId = String(studentId || '').trim();
-  const allEntries = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
+
+  const [allEntries, allStudents] = await Promise.all([
+    localDb.getDocs<StudyDailyEntry>('study_daily_entries'),
+    localDb.getDocs<Student>('students')
+  ]);
+
+  const studentObj = allStudents.find(s => 
+    String(s.id) === targetStudentId || 
+    (s.nationalId && String(s.nationalId) === targetStudentId) ||
+    (s.studentCode && String(s.studentCode) === targetStudentId)
+  );
+
+  const canonicalId = studentObj ? String(studentObj.id) : targetStudentId;
+
   const studentEntries = allEntries.filter(e => 
     e.periodId === periodId && 
-    String(e.studentId || (e as any).student_id || '').trim() === targetStudentId
+    (String(e.studentId || (e as any).student_id || '').trim() === targetStudentId ||
+     String(e.studentId || (e as any).student_id || '').trim() === canonicalId)
   );
 
   let totalMinutesSum = 0;
@@ -716,12 +730,17 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
   const existingLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
   const existingLog = existingLogs.find(l => 
     l.periodId === periodId && 
-    String(l.studentId || (l as any).student_id || '').trim() === targetStudentId
+    (String(l.studentId || (l as any).student_id || '').trim() === targetStudentId ||
+     String(l.studentId || (l as any).student_id || '').trim() === canonicalId)
   );
 
   const payload: Partial<PeriodicStudyLog> = {
     periodId,
-    studentId: targetStudentId,
+    studentId: canonicalId,
+    studentName: studentObj?.name || existingLog?.studentName || '',
+    studentCode: studentObj?.studentCode || existingLog?.studentCode || '',
+    nationalId: studentObj?.nationalId || existingLog?.nationalId || '',
+    grade: studentObj?.grade || existingLog?.grade || '',
     hours: totalSumHours,
     totalMinutes: totalMinutesSum,
     studyHours: totalStudyHours,
@@ -741,9 +760,16 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
     await localDb.addDoc('periodic_study_logs', payload);
   }
 
+  await localDb.flushSyncQueue();
+
   // Broadcast change event to trigger localDb listeners and active UI subscribers
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
     window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
+    window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+    window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+    try {
+      localStorage.setItem('study_logs_updated_at', String(Date.now()));
+    } catch (e) {}
   }
 }

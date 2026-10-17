@@ -130,6 +130,13 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
 
   const fetchData = async () => {
     try {
+      // Force cloud sync for study collections so managers get instant updates without missing student submissions!
+      await Promise.all([
+        localDb.syncCollectionFromCloud('study_periods', true).catch(() => {}),
+        localDb.syncCollectionFromCloud('periodic_study_logs', true).catch(() => {}),
+        localDb.syncCollectionFromCloud('study_daily_entries', true).catch(() => {})
+      ]);
+
       const allStudents = await localDb.getDocs<Student>('students');
       setAllStudentsRaw(allStudents);
       
@@ -162,17 +169,33 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         localDb.getDocs<StudyDailyEntry>('study_daily_entries')
       ]);
 
+      // Map student objects for fast canonical ID resolution
+      const studentIdMap = new Map<string, Student>();
+      (allStudents || []).forEach(s => {
+        studentIdMap.set(String(s.id), s);
+        if (s.nationalId) studentIdMap.set(String(s.nationalId), s);
+        if (s.studentCode) studentIdMap.set(String(s.studentCode), s);
+      });
+
       // Automatically synthesize and merge any daily entries into periodic logs map
       const mergedLogsMap = new Map<string, PeriodicStudyLog>();
       (rawLogs || []).forEach(l => {
-        mergedLogsMap.set(`${l.periodId}_${l.studentId}`, l);
+        const matched = studentIdMap.get(String(l.studentId));
+        const canonicalStId = matched ? String(matched.id) : String(l.studentId);
+        mergedLogsMap.set(`${l.periodId}_${canonicalStId}`, {
+          ...l,
+          studentId: canonicalStId,
+          studentName: matched?.name || l.studentName || ''
+        });
       });
 
-      // Group daily entries by period and student
+      // Group daily entries by period and canonical student ID
       const entriesByPeriodStudent = new Map<string, StudyDailyEntry[]>();
       (rawDailyEntries || []).forEach(e => {
         if (!e.periodId || !e.studentId) return;
-        const key = `${e.periodId}_${e.studentId}`;
+        const matched = studentIdMap.get(String(e.studentId));
+        const canonicalStId = matched ? String(matched.id) : String(e.studentId);
+        const key = `${e.periodId}_${canonicalStId}`;
         const existing = entriesByPeriodStudent.get(key) || [];
         existing.push(e);
         entriesByPeriodStudent.set(key, existing);
@@ -180,6 +203,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
 
       entriesByPeriodStudent.forEach((entries, key) => {
         const [pId, stId] = key.split('_');
+        const matchedSt = studentIdMap.get(stId);
         let cStudy = 0;
         let cDisc = 0;
         let free = 0;
@@ -211,11 +235,15 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         const totalMin = coreTotal + free;
         const existingLog = mergedLogsMap.get(key);
 
-        if (totalMin > 0) {
+        if (totalMin > 0 || existingLog) {
           mergedLogsMap.set(key, {
             id: existingLog?.id || `synth_${pId}_${stId}`,
             periodId: pId,
             studentId: stId,
+            studentName: matchedSt?.name || existingLog?.studentName || entries[0]?.studentName || '',
+            studentCode: matchedSt?.studentCode || existingLog?.studentCode || '',
+            nationalId: matchedSt?.nationalId || existingLog?.nationalId || '',
+            grade: matchedSt?.grade || existingLog?.grade || '',
             hours: Math.round((totalMin / 60) * 100) / 100,
             studyHours: Math.round((cStudy / 60) * 100) / 100,
             discussionHours: Math.round((cDisc / 60) * 100) / 100,
@@ -239,10 +267,45 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
 
   useEffect(() => {
     fetchData();
+
     const unsub = localDb.subscribe(() => {
       fetchData();
     });
-    return () => unsub();
+
+    const handleDataChange = (e: any) => {
+      const col = e?.detail?.collection;
+      if (!col || col === 'periodic_study_logs' || col === 'study_daily_entries' || col === 'study_periods' || col === 'all') {
+        fetchData();
+      }
+    };
+
+    window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_periodic_study_logs', fetchData);
+    window.addEventListener('collection_change_study_daily_entries', fetchData);
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'study_logs_updated_at' || (e.key && e.key.includes('study'))) {
+        fetchData();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // Live background polling every 3 seconds for instant manager sync
+    const pollInterval = setInterval(() => {
+      Promise.all([
+        localDb.syncCollectionFromCloud('periodic_study_logs', true).catch(() => {}),
+        localDb.syncCollectionFromCloud('study_daily_entries', true).catch(() => {})
+      ]).then(() => fetchData());
+    }, 3000);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_periodic_study_logs', fetchData);
+      window.removeEventListener('collection_change_study_daily_entries', fetchData);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
+    };
   }, [currentMentor.id, currentMentorId, shahpooriFilter, currentUser]);
 
   useEffect(() => {

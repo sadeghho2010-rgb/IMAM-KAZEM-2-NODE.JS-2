@@ -327,6 +327,18 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         console.warn('Error syncing aggregate periodic log:', aggErr);
       }
 
+      await localDb.flushSyncQueue();
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+        window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+        try {
+          localStorage.setItem('study_logs_updated_at', String(Date.now()));
+        } catch (e) {}
+      }
+
       // Update state
       setDailyEntries(prev => [newEntry, ...prev]);
       setSaveSuccessMsg('کارکرد روزانه شما با موفقیت ثبت شد!');
@@ -348,11 +360,21 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     if (!confirm('آیا از حذف این رکورد مطالعه اطمینان دارید؟')) return;
     try {
       await localDb.deleteDoc('study_daily_entries', entryId);
-      setDailyEntries(prev => prev.filter(e => e.id !== entryId));
       if (activePeriod) {
         const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
         await syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student');
       }
+      await localDb.flushSyncQueue();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+        window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+        try {
+          localStorage.setItem('study_logs_updated_at', String(Date.now()));
+        } catch (e) {}
+      }
+      setDailyEntries(prev => prev.filter(e => e.id !== entryId));
     } catch (err) {
       console.warn('Error deleting daily entry:', err);
     }
