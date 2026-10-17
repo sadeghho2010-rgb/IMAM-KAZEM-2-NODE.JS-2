@@ -488,6 +488,9 @@ export interface Program {
   attendanceType?: 'representative' | 'self_reporting'; // نحوه ثبت حضور و غیاب: ثبت توسط نماینده (پیش‌فرض) یا خوداظهاری توسط طلبه
   status?: 'active' | 'deleted' | 'inactive' | string;
   isDeleted?: boolean;
+  deletedAt?: string;
+  version?: number;
+  updated_at?: string;
 }
 
 export interface ClassSessionAttendance {

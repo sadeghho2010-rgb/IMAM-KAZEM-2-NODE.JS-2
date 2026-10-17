@@ -28,7 +28,12 @@ export const ProgramInputSchema = z.object({
   representativeNames: z.array(z.string()).optional(),
   customRepresentative: z.string().optional(),
   subjectCategory: z.enum(['اصول', 'فقه', 'فلسفه', 'سایر']).optional(),
-  subjectBook: z.string().optional()
+  subjectBook: z.string().optional(),
+  isDeleted: z.boolean().optional(),
+  status: z.string().optional(),
+  deletedAt: z.string().optional(),
+  version: z.number().optional(),
+  updated_at: z.string().optional()
 });
 
 // Helper to normalize time string (e.g., Persian digits to English, pad with zero)
@@ -220,7 +225,12 @@ export class ProgramService {
       representativeNames: validData.representativeNames,
       customRepresentative: validData.customRepresentative,
       subjectCategory: validData.subjectCategory,
-      subjectBook: validData.subjectBook?.trim()
+      subjectBook: validData.subjectBook?.trim(),
+      isDeleted: validData.isDeleted,
+      status: validData.status,
+      deletedAt: validData.deletedAt,
+      version: validData.version,
+      updated_at: validData.updated_at
     };
 
     await serverSaveDoc('programs', programRecord, callerUser);

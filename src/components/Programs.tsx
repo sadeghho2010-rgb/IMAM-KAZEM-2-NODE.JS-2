@@ -32,7 +32,10 @@ import {
   X,
   PhoneCall,
   AlertTriangle,
-  Loader2
+  Loader2,
+  RotateCcw,
+  Archive,
+  ShieldAlert
 } from 'lucide-react';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumSubject, CurriculumBook, CurriculumChapter } from '../types';
 import { localDb } from '../lib/localDb';
@@ -625,9 +628,11 @@ export default function Programs() {
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
   const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [programToDelete, setProgramToDelete] = useState<Program | null>(null);
+  const [programToPermanentlyDelete, setProgramToPermanentlyDelete] = useState<Program | null>(null);
 
   const [isSavingProgram, setIsSavingProgram] = useState(false);
   const [deletingProgramIds, setDeletingProgramIds] = useState<Set<string>>(new Set());
+  const [reactivatingProgramIds, setReactivatingProgramIds] = useState<Set<string>>(new Set());
 
   const [addModalDays, setAddModalDays] = useState<string[]>(DEFAULT_MAIN_DAYS);
   const [editModalDays, setEditModalDays] = useState<string[]>([]);
@@ -1445,40 +1450,41 @@ export default function Programs() {
     }
   };
 
-  const deleteProgram = async (id: string) => {
-    const p = programs.find(item => item.id === id);
-    const title = p?.title || 'برنامه';
-
-    if (!confirm(`آیا از حذف برنامه «${title}» اطمینان دارید؟`)) return;
+  const handleSoftDeleteProgram = async (program: Program) => {
+    const id = program.id;
+    const title = program.title;
 
     if (deletingProgramIds.has(id)) return;
     setDeletingProgramIds(prev => new Set(prev).add(id));
 
     const originalPrograms = [...programs];
-    setPrograms(prev => prev.filter(item => item.id !== id));
-    dispatchDatabaseToast(`در حال حذف برنامه «${title}»...`, 'info', 2000);
+    const updatedProgram: Program = {
+      ...program,
+      isDeleted: true,
+      status: 'inactive',
+      deletedAt: new Date().toISOString(),
+      version: ((program as any).version || 0) + 1,
+      updated_at: new Date().toISOString()
+    };
+
+    setPrograms(prev => prev.map(item => item.id === id ? updatedProgram : item));
+    setProgramToDelete(null);
+    dispatchDatabaseToast(`کلاس «${title}» غیرفعال شد و به بخش کلاس‌های غیرفعال در انتهای صفحه منتقل گردید.`, 'info', 3000);
 
     try {
-      await localDb.deleteDoc('programs', id);
+      await localDb.setDoc('programs', updatedProgram);
 
-      // Clean up enrollments for this deleted program
-      const allEnrolls = await localDb.getDocs<any>('course_enrollments');
-      for (const e of allEnrolls) {
-        if (String(e.programId) === String(id)) {
-          await localDb.deleteDoc('course_enrollments', e.id);
-        }
-      }
+      await syncRepresentativeUsers();
 
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
-      window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
-      dispatchDatabaseToast(`برنامه «${title}» با موفقیت از سیستم پاک شد.`, 'success');
+      dispatchDatabaseToast(`کلاس «${title}» با موفقیت غیرفعال شد. آمار این کلاس از محاسبات حضور و غیاب کلی و فردی طلاب خارج گردید.`, 'success');
       fetchData();
-    } catch (error) {
-      console.error("Error deleting program:", error);
+    } catch (error: any) {
+      console.error("[STORAGE_FAILURE] Error soft deleting program:", error);
       setPrograms(originalPrograms);
-      dispatchDatabaseToast(`خطا در حذف برنامه «${title}». اطلاعات بازگردانده شد.`, 'error');
+      dispatchDatabaseToast(`خطا در غیرفعال‌سازی کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
     } finally {
       setDeletingProgramIds(prev => {
         const next = new Set(prev);
@@ -1486,6 +1492,115 @@ export default function Programs() {
         return next;
       });
     }
+  };
+
+  const handleReactivateProgram = async (program: Program) => {
+    const id = program.id;
+    const title = program.title;
+
+    if (reactivatingProgramIds.has(id)) return;
+    setReactivatingProgramIds(prev => new Set(prev).add(id));
+
+    const originalPrograms = [...programs];
+    const reactivatedProgram: Program = {
+      ...program,
+      isDeleted: false,
+      status: 'active',
+      deletedAt: undefined,
+      version: ((program as any).version || 0) + 1,
+      updated_at: new Date().toISOString()
+    };
+
+    setPrograms(prev => prev.map(item => item.id === id ? reactivatedProgram : item));
+    dispatchDatabaseToast(`در حال فعال‌سازی مجدد کلاس «${title}»...`, 'info', 2000);
+
+    try {
+      await localDb.setDoc('programs', reactivatedProgram);
+
+      await syncRepresentativeUsers();
+
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
+      dispatchDatabaseToast(`کلاس «${title}» با موفقیت فعال شد و به لیست برنامه‌های درسی بازگشت. تمام آمار گذشته آن اکنون معتبر است.`, 'success');
+      fetchData();
+    } catch (error: any) {
+      console.error("[STORAGE_FAILURE] Error reactivating program:", error);
+      setPrograms(originalPrograms);
+      dispatchDatabaseToast(`خطا در فعال‌سازی مجدد کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
+    } finally {
+      setReactivatingProgramIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handlePermanentDeleteProgram = async (program: Program) => {
+    const id = program.id;
+    const title = program.title;
+
+    if (deletingProgramIds.has(id)) return;
+    setDeletingProgramIds(prev => new Set(prev).add(id));
+
+    const originalPrograms = [...programs];
+    setPrograms(prev => prev.filter(item => item.id !== id));
+    setProgramToPermanentlyDelete(null);
+    dispatchDatabaseToast(`در حال حذف کامل و نابودی تمام آمار کلاس «${title}»...`, 'info', 2500);
+
+    try {
+      // 1. Delete program doc from localDb & server
+      await localDb.deleteDoc('programs', id);
+
+      // 2. Clean up enrollments
+      const allEnrolls = await localDb.getDocs<any>('course_enrollments');
+      for (const e of allEnrolls) {
+        if (String(e.programId) === String(id)) {
+          await localDb.deleteDoc('course_enrollments', e.id);
+        }
+      }
+      const legacyEnrolls = await localDb.getDocs<any>('enrollments');
+      for (const e of legacyEnrolls) {
+        if (String(e.programId) === String(id)) {
+          await localDb.deleteDoc('enrollments', e.id);
+        }
+      }
+
+      // 3. Clean up all attendance sessions and logs for this program (تمام آمارش نابود می‌شود)
+      const allAttendance = await localDb.getDocs<any>('attendance');
+      for (const att of allAttendance) {
+        if (String(att.programId) === String(id)) {
+          await localDb.deleteDoc('attendance', att.id);
+        }
+      }
+
+      await syncRepresentativeUsers();
+
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
+      window.dispatchEvent(new CustomEvent('collection_change_attendance'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
+
+      dispatchDatabaseToast(`کلاس «${title}» و تمام سوابق و آمار حضور و غیاب آن برای همیشه نابود شدند.`, 'success');
+      fetchData();
+    } catch (error: any) {
+      console.error("[STORAGE_FAILURE] Error permanently deleting program:", error);
+      setPrograms(originalPrograms);
+      dispatchDatabaseToast(`خطا در حذف دائمی کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
+    } finally {
+      setDeletingProgramIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const deleteProgram = async (id: string) => {
+    const p = programs.find(item => item.id === id);
+    if (!p) return;
+    setProgramToDelete(p);
   };
 
   const getProgramStudents = (programId: string) => {
@@ -1539,8 +1654,17 @@ export default function Programs() {
     };
   };
 
-  const mainPrograms = programs.filter(p => p.type === 'اصلی');
-  const counselingPrograms = programs.filter(p => p.type === 'مشاوره');
+  // Separate active programs and inactive/soft-deleted programs
+  const activePrograms = useMemo(() => {
+    return programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+  }, [programs]);
+
+  const inactivePrograms = useMemo(() => {
+    return programs.filter(p => p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted');
+  }, [programs]);
+
+  const mainPrograms = useMemo(() => activePrograms.filter(p => p.type === 'اصلی'), [activePrograms]);
+  const counselingPrograms = useMemo(() => activePrograms.filter(p => p.type === 'مشاوره'), [activePrograms]);
 
   // Active Main Programs with Grade Filter, Search, and Subject Sort
   const activeMainPrograms = useMemo(() => {
@@ -2373,7 +2497,7 @@ export default function Programs() {
         return (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {otherTypes.map(typeKey => {
-              const otherProgs = programs
+              const otherProgs = activePrograms
                 .filter(p => p.type === typeKey)
                 .filter(p => isProgramMatchingGradeFilter(p, selectedGradeFilter))
                 .filter(p => isProgramMatchingSearch(p, programSearchTerm));
@@ -3019,6 +3143,139 @@ export default function Programs() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: INACTIVE & ARCHIVED CLASSES (کلاس‌های غیرفعال در انتهای لیست) */}
+      {/* ========================================================================= */}
+      <div className="bg-slate-50/90 rounded-3xl border-2 border-dashed border-slate-300 p-6 sm:p-8 space-y-6 shadow-xs">
+        {/* Section Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+          <div className="flex items-center gap-3">
+            <span className="p-2.5 bg-slate-200 text-slate-700 rounded-2xl flex items-center justify-center">
+              <Archive size={22} className="text-slate-700" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg sm:text-xl font-black text-slate-900">
+                  کلاس‌های غیرفعال و بایگانی‌شده
+                </h3>
+                <span className="text-xs font-black bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-300">
+                  {inactivePrograms.length} کلاس
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                کلاس‌های این بخش از لیست فعال و آمار حضور و غیاب کلی و فردی طلاب خارج شده‌اند. می‌توانید هر کلاس را مجدداً فعال کرده یا به همراه تمام آمارش به طور کامل حذف نمایید.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Empty State */}
+        {inactivePrograms.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs italic bg-white/70 rounded-2xl border border-dashed border-slate-200 font-medium">
+            در حال حاضر هیچ کلاس غیرفعال یا بایگانی‌شده‌ای در سیستم وجود ندارد.
+          </div>
+        ) : (
+          /* Inactive Class Cards Grid */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {inactivePrograms.map(p => {
+              const pStudents = getProgramStudents(p.id);
+              const isReactivating = reactivatingProgramIds.has(p.id);
+              const isDeleting = deletingProgramIds.has(p.id);
+
+              return (
+                <div
+                  key={p.id}
+                  className="bg-white/95 rounded-2xl border border-slate-300/90 p-5 space-y-3.5 shadow-xs transition-all relative overflow-hidden"
+                >
+                  {/* Status Banner */}
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-black text-[11px]">
+                      <EyeOff size={13} className="text-slate-500" />
+                      <span>غیرفعال / خارج از آمار</span>
+                    </span>
+
+                    {p.grade && (
+                      <span className="text-[10px] font-black px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
+                        {p.grade}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Title & Type */}
+                  <div>
+                    <h4 className="font-black text-slate-700 text-base line-through decoration-slate-400">
+                      {p.title}
+                    </h4>
+                    <div className="text-[11px] text-slate-400 font-bold mt-0.5">
+                      نوع برنامه: {p.type || 'اصلی'}
+                      {p.subjectCategory && ` • گرایش ${p.subjectCategory}`}
+                    </div>
+                  </div>
+
+                  {/* Info Meta */}
+                  <div className="space-y-1.5 text-xs text-slate-600 font-medium bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <User size={13} className="text-slate-400 shrink-0" />
+                      <span>استاد: <strong className="text-slate-800">{p.teacher || 'تعیین‌نشده'}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock size={13} className="text-slate-400 shrink-0" />
+                      <span>زمان: <strong className="text-slate-800">{p.day || ''} - {p.time || 'نامشخص'}</strong></span>
+                    </div>
+                    {(p.madrasRoom || p.classroom) && (
+                      <div className="flex items-center gap-1.5">
+                        <DoorOpen size={13} className="text-slate-400 shrink-0" />
+                        <span>مَدرَس: <strong className="text-slate-800">{p.madrasRoom || p.classroom}</strong></span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <Users size={13} className="text-slate-400 shrink-0" />
+                      <span>تعداد طلاب عضو: <strong className="text-slate-800">{pStudents.length} نفر</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  {isAuthorizedToEdit && (
+                    <div className="pt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isReactivating || isDeleting}
+                        onClick={() => handleReactivateProgram(p)}
+                        className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        title="فعال‌سازی مجدد کلاس و بازگرداندن تمام آمار آن"
+                      >
+                        {isReactivating ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>در حال فعال‌سازی...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw size={13} />
+                            <span>فعال‌سازی مجدد</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isReactivating || isDeleting}
+                        onClick={() => setProgramToPermanentlyDelete(p)}
+                        className="py-2 px-3 bg-white hover:bg-rose-50 active:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                        title="حذف دائمی کلاس و نابودی کامل تمامی سوابق و آمار حضور و غیاب آن"
+                      >
+                        <Trash2 size={13} />
+                        <span>حذف دائمی</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Add Program Modal */}
@@ -4599,7 +4856,7 @@ export default function Programs() {
           </div>
         )}
       </AnimatePresence>
-      {/* Delete Confirmation Modal */}
+      {/* Safe Delete / Inactivation Confirmation Modal */}
       <AnimatePresence>
         {programToDelete && (
           <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
@@ -4607,24 +4864,27 @@ export default function Programs() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right"
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right border border-amber-100"
               dir="rtl"
             >
-              <div className="flex items-center gap-3 text-rose-600 border-b border-slate-100 pb-3">
-                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
-                  <Trash2 size={22} className="text-rose-600" />
+              <div className="flex items-center gap-3 text-amber-600 border-b border-amber-100 pb-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                  <Archive size={22} className="text-amber-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">تأیید حذف کلاس و برنامه آموزشی</h3>
-                  <p className="text-xs text-slate-500 font-medium">این عملیات غیرقابل بازگشت است</p>
+                  <h3 className="text-base font-black text-slate-900">تأیید غیرفعال‌سازی کلاس آموزشی</h3>
+                  <p className="text-xs text-slate-500 font-medium">انتقال به بخش کلاس‌های غیرفعال و خروج از آمار</p>
                 </div>
               </div>
 
-              <div className="bg-rose-50/70 p-3.5 rounded-xl border border-rose-200 text-xs text-rose-950 space-y-2">
-                <p className="font-bold text-slate-900">
-                  آیا از حذف کلاس <span className="text-rose-700 font-black">«{programToDelete.title}»</span> اطمینان دارید؟
+              <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200 text-xs text-amber-950 space-y-2">
+                <p className="font-bold text-slate-900 text-sm">
+                  آیا از غیرفعال‌سازی کلاس <span className="text-amber-800 font-black">«{programToDelete.title}»</span> اطمینان دارید؟
                 </p>
-                <div className="text-[11px] text-slate-600 space-y-0.5">
+                <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                  با غیرفعال کردن، این کلاس به انتهای لیست (کلاس‌های غیرفعال) منتقل می‌شود و آمار آن از محاسبات حضور و غیاب کلی و فردی طلاب خارج خواهد شد. شما هر زمان می‌توانید آن را دوباره فعال کرده یا به همراه تمام آمارش به طور کامل حذف نمایید.
+                </p>
+                <div className="text-[11px] text-slate-600 space-y-0.5 pt-2 border-t border-amber-200/60 font-medium">
                   <div>• استاد: <span className="font-bold text-slate-800">{programToDelete.teacher || 'تعیین‌نشده'}</span></div>
                   <div>• زمان: <span className="font-bold text-slate-800">{programToDelete.day || ''} {programToDelete.time || ''}</span></div>
                   <div>• تعداد طلاب عضو: <span className="font-bold text-slate-800">{getProgramStudents(programToDelete.id).length} نفر</span></div>
@@ -4635,49 +4895,83 @@ export default function Programs() {
                 <button 
                   type="button"
                   disabled={Boolean(programToDelete && deletingProgramIds.has(programToDelete.id))}
-                  onClick={async () => {
-                    if (!programToDelete || deletingProgramIds.has(programToDelete.id)) return;
-                    const id = programToDelete.id;
-                    const title = programToDelete.title;
-                    
-                    setDeletingProgramIds(prev => new Set(prev).add(id));
-                    const originalPrograms = [...programs];
-                    
-                    setPrograms(prev => prev.filter(p => p.id !== id));
-                    setProgramToDelete(null);
-                    dispatchDatabaseToast(`در حال حذف برنامه «${title}»...`, 'info', 2000);
-
-                    try {
-                      await localDb.deleteDoc('programs', id);
-                      dispatchDatabaseToast(`برنامه آموزشی «${title}» با موفقیت حذف گردید.`, 'success');
-                      fetchData();
-                    } catch (error) {
-                      console.error("Error deleting program:", error);
-                      setPrograms(originalPrograms);
-                      dispatchDatabaseToast(`خطا در حذف برنامه «${title}». اطلاعات بازگردانده شد.`, 'error');
-                    } finally {
-                      setDeletingProgramIds(prev => {
-                        const next = new Set(prev);
-                        next.delete(id);
-                        return next;
-                      });
-                    }
-                  }}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-bold text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={() => handleSoftDeleteProgram(programToDelete)}
+                  className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-xl font-black text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {programToDelete && deletingProgramIds.has(programToDelete.id) ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin inline" />
-                      <span>در حال حذف...</span>
+                      <span>در حال غیرفعال‌سازی...</span>
                     </>
                   ) : (
-                    <span>بله، حذف شود</span>
+                    <span>بله، غیرفعال شود</span>
                   )}
                 </button>
                 <button 
                   type="button"
                   onClick={() => setProgramToDelete(null)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                  className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Permanent Delete Confirmation Modal */}
+      <AnimatePresence>
+        {programToPermanentlyDelete && (
+          <div className="fixed inset-0 bg-[#00000085] backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 text-right border border-rose-100"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3 text-rose-600 border-b border-rose-100 pb-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                  <ShieldAlert size={24} className="text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-rose-950">هشدار قطعی: حذف دائمی و نابودی تمام آمار</h3>
+                  <p className="text-xs text-rose-600 font-bold">این عملیات غیرقابل بازگشت است</p>
+                </div>
+              </div>
+
+              <div className="bg-rose-50/80 p-4 rounded-2xl border border-rose-200 text-xs text-rose-950 space-y-2.5">
+                <p className="font-bold text-slate-900 text-sm">
+                  آیا از حذف دائمی کلاس <span className="text-rose-700 font-black">«{programToPermanentlyDelete.title}»</span> اطمینان کامل دارید؟
+                </p>
+                <div className="text-xs text-rose-800 leading-relaxed font-medium space-y-1 bg-white/70 p-3 rounded-xl border border-rose-200/60">
+                  <div>⚠️ <b>این کلاس برای همیشه از سیستم و دیتابیس پاک خواهد شد.</b></div>
+                  <div>⚠️ <b>تمامی سوابق و جلسات حضور و غیاب ثبت‌شده این کلاس به طور کامل نابود می‌شوند.</b></div>
+                  <div>⚠️ <b>این اقدام به هیچ عنوان قابل بازگردانی نیست!</b></div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button 
+                  type="button"
+                  disabled={Boolean(programToPermanentlyDelete && deletingProgramIds.has(programToPermanentlyDelete.id))}
+                  onClick={() => handlePermanentDeleteProgram(programToPermanentlyDelete)}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl font-black text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {programToPermanentlyDelete && deletingProgramIds.has(programToPermanentlyDelete.id) ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin inline" />
+                      <span>در حال حذف دائمی و نابودی آمار...</span>
+                    </>
+                  ) : (
+                    <span>بله، حذف دائمی و نابودی تمام آمار</span>
+                  )}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setProgramToPermanentlyDelete(null)}
+                  className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition-colors cursor-pointer"
                 >
                   انصراف
                 </button>

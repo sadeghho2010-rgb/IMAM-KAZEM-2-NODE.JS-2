@@ -17,7 +17,7 @@ import {
   ChevronLeft,
   BookOpen
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, getProgramDays } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { 

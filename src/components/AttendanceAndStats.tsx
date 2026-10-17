@@ -370,13 +370,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
       const activeStudents = (studs || []).filter((s: any) => s.status !== 'deleted' && !s.isDeleted && !s.deletedAt);
 
+      // Clean up and purge any orphan attendance records belonging to test classes previously deleted from the system
+      const validProgramIds = new Set((progs || []).map((p: any) => p.id));
+      const orphanAttendance = (atts || []).filter((r: any) => r.programId && !validProgramIds.has(r.programId));
+      if (orphanAttendance.length > 0) {
+        orphanAttendance.forEach((orphan: any) => {
+          localDb.deleteDoc('attendance', orphan.id).catch(err => {
+            console.warn('[STORAGE_FAILURE] Deleting orphan attendance record from deleted test class:', err);
+          });
+        });
+      }
+      const cleanAtts = (atts || []).filter((r: any) => !r.programId || validProgramIds.has(r.programId));
+
       const isDeepEqual = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 
       setPrograms(prev => isDeepEqual(prev, progs || []) ? prev : (progs || []));
       setStudents(prev => isDeepEqual(prev, activeStudents) ? prev : activeStudents);
       setTeachers(prev => isDeepEqual(prev, teaList || []) ? prev : (teaList || []));
       setEnrollments(prev => isDeepEqual(prev, enrolls || []) ? prev : (enrolls || []));
-      setAttendanceRecords(prev => isDeepEqual(prev, atts || []) ? prev : (atts || []));
+      setAttendanceRecords(prev => isDeepEqual(prev, cleanAtts) ? prev : cleanAtts);
       setAcademicHolidays(prev => isDeepEqual(prev, hols || []) ? prev : (hols || []));
       setAcademicPeriods(prev => isDeepEqual(prev, periods || []) ? prev : (periods || []));
       setUsers(prev => isDeepEqual(prev, userList || []) ? prev : (userList || []));
@@ -447,21 +459,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const representativePrograms = useMemo(() => {
     if (!currentUser) return [];
     
+    // Only active programs are considered (inactive classes are excluded from daily workflow)
+    const activeProgs = programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+
     // Admins or Education Managers or Grade Supervisors have broader access
     if (isSuperAdmin || isEducationManager || isGradeSupervisor) {
       if (isGradeSupervisor && currentUser.gradeLabel) {
-        return programs.filter(p => !p.grade || p.grade === currentUser.gradeLabel || p.grade === 'همه پایه‌ها');
+        return activeProgs.filter(p => !p.grade || p.grade === currentUser.gradeLabel || p.grade === 'همه پایه‌ها');
       }
-      return programs;
+      return activeProgs;
     }
 
     // 0. Direct Link via managedClassId or representativeProgramIds
     if ((currentUser as any).managedClassId) {
-      const direct = programs.filter(p => p.id === (currentUser as any).managedClassId);
+      const direct = activeProgs.filter(p => p.id === (currentUser as any).managedClassId);
       if (direct.length > 0) return direct;
     }
     if (Array.isArray((currentUser as any).representativeProgramIds) && (currentUser as any).representativeProgramIds.length > 0) {
-      const directList = programs.filter(p => (currentUser as any).representativeProgramIds.includes(p.id));
+      const directList = activeProgs.filter(p => (currentUser as any).representativeProgramIds.includes(p.id));
       if (directList.length > 0) return directList;
     }
 
@@ -514,7 +529,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       ? (currentUser as any).representativeProgramIds 
       : [];
 
-    const matchedProgs = programs.filter(p => {
+    const matchedProgs = activeProgs.filter(p => {
       // 0. Direct match with managedClassId or representativeProgramIds from user profile
       if (managedClassId && p.id === managedClassId) return true;
       if (repProgramIds.includes(p.id)) return true;
@@ -585,7 +600,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return false;
     };
     
-    return programs.filter(p => {
+    return programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted').filter(p => {
       if (p.attendanceType !== 'self_reporting') return false;
 
       const inEnroll = enrollments.some(e => String(e.programId) === String(p.id) && (
@@ -674,8 +689,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
     }
 
-    if (!selectedProgramId && programs.length > 0) {
-      setSelectedProgramId(programs[0].id);
+    const activeProgs = programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+    if (!selectedProgramId && activeProgs.length > 0) {
+      setSelectedProgramId(activeProgs[0].id);
     }
   }, [isRepresentative, isOrdinaryStudent, representativePrograms, studentSelfReportingPrograms, programs, selectedProgramId, initialStudentId, activeTab]);
 
@@ -684,7 +700,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     if (isRepresentative) {
       return representativePrograms.find(p => p.id === selectedProgramId) || null;
     }
-    return programs.find(p => p.id === selectedProgramId) || null;
+    const activeProgs = programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+    return activeProgs.find(p => p.id === selectedProgramId) || null;
   }, [programs, representativePrograms, selectedProgramId, isRepresentative]);
 
   // Get students enrolled in current program - ensures ALL members of the class are visible to the representative, BUT ordinary students ONLY see themselves
@@ -1323,6 +1340,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   // Filtered attendance records for report tab
   const filteredReportRecords = useMemo(() => {
     return attendanceRecords.filter(r => {
+      // Safe Delete & Orphan Filter: Exclude records belonging to deleted, inactive, or non-existent classes
+      const prog = programs.find(p => p.id === r.programId);
+      if (!prog || prog.isDeleted || prog.status === 'inactive' || prog.status === 'deleted') {
+        return false;
+      }
+
       if (reportGradeFilter !== 'all' && r.grade !== reportGradeFilter) return false;
       if (reportProgramFilter !== 'all' && r.programId !== reportProgramFilter) return false;
       if (reportStartDate && r.date < reportStartDate) return false;
@@ -1594,6 +1617,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       if (rec.isCancelled) return;
       const progKey = rec.programId || rec.programTitle || 'عمومی';
       const matchingProg = programs.find(p => p.id === rec.programId);
+      if (!matchingProg || matchingProg.isDeleted || matchingProg.status === 'inactive' || matchingProg.status === 'deleted') return;
       const attType = matchingProg?.attendanceType || (rec as any).attendanceType || 'representative';
       if (reportMethodFilter === 'self_reporting' && attType !== 'self_reporting') return;
       if (reportMethodFilter === 'representative' && attType === 'self_reporting') return;
@@ -1680,7 +1704,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       commitmentPercent: number;
     }>();
 
-    programs.forEach(p => {
+    programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted').forEach(p => {
       // 1. representativeStudentIds
       if (Array.isArray(p.representativeStudentIds)) {
         p.representativeStudentIds.forEach(sid => {
@@ -2234,7 +2258,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         const currentDayName = getShamsiDayOfWeekName(selectedDate);
 
         // Filter programs scheduled for currentDayName (Class Representatives only see their own assigned classes)
-        const availablePrograms = isRepresentative ? representativePrograms : programs;
+        const availablePrograms = isRepresentative 
+          ? representativePrograms 
+          : programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
         const scheduledOnDate = availablePrograms.filter(p => {
           const days = getProgramDays(p);
           if (days && days.length > 0) {
@@ -3310,7 +3336,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       })
                     )
                   ) : (
-                    programs.map(p => {
+                    programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted').map(p => {
                       const titleStr = p.title || p.name || 'کلاس بدون عنوان';
                       const gradeStr = p.grade ? ` (${p.grade})` : '';
                       const teacherStr = (p.teacher || p.teacherName) ? ` - استاد ${p.teacher || p.teacherName}` : '';
@@ -4421,9 +4447,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   ) : (
                     <>
                       <option value="all">همه کلاس‌های درسی</option>
-                      {programs.map(p => (
-                        <option key={p.id} value={p.id}>{p.title} {p.grade ? `(${p.grade})` : ''}</option>
-                      ))}
+                      {programs
+                        .filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted')
+                        .map(p => (
+                          <option key={p.id} value={p.id}>{p.title} {p.grade ? `(${p.grade})` : ''}</option>
+                        ))}
                     </>
                   )}
                 </select>
