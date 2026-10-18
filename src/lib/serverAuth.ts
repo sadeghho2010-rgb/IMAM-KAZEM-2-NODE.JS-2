@@ -371,7 +371,7 @@ export function normalizeDigits(input?: string | number | null): string {
 
 export async function hashPassword(plainText: string): Promise<string> {
   const normalized = normalizeDigits(plainText);
-  const salt = await bcrypt.genSalt(10);
+  const salt = await bcrypt.genSalt(8);
   return bcrypt.hash(normalized, salt);
 }
 

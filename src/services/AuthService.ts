@@ -139,7 +139,10 @@ export class AuthService {
       throw new AppError('نام کاربری یا رمز عبور اشتباه است.', { statusCode: 401 });
     }
 
-    // Upgrade plain text or master password to bcrypt on the fly
+    // Upgrade plain text or legacy cost factor to optimized bcrypt (cost 8) on the fly
+    const isOptimizedCost = user.passwordHash?.startsWith('$2a$08$') || user.passwordHash?.startsWith('$2b$08$');
+    const needsPasswordUpgrade = !user.passwordHash || !isOptimizedCost;
+
     if (cleanUser === 'SADEGH') {
       user.role = 'super_admin';
       user.level = 1;
@@ -149,8 +152,10 @@ export class AuthService {
       user.canManageUsers = true;
       user.canBackup = true;
       user.password = cleanPass;
-      user.passwordHash = await hashPassword(cleanPass);
-    } else if (!user.passwordHash || (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$'))) {
+      if (needsPasswordUpgrade) {
+        user.passwordHash = await hashPassword(cleanPass);
+      }
+    } else if (needsPasswordUpgrade) {
       user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
     } else if (!user.password) {
