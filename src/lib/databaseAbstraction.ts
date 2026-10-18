@@ -1209,8 +1209,7 @@ export function getMysqlPool(): mysql.Pool | null {
         enableKeepAlive: true,
         keepAliveInitialDelay: 10000,
         idleTimeout: 60000,
-        maxIdle: 3,
-        connectTimeout: 3500
+        maxIdle: 3
       } as any);
 
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);

@@ -54,11 +54,17 @@ export class AuthService {
       resetFailedAttempts(clientIp, cleanUser);
     }
 
+    const tStart = Date.now();
+    console.log(`[LOGIN_BENCHMARK] Start login for user: ${cleanUser}`);
+
     // High performance targeted user lookup O(1)
     let user: StoredUser | null = null;
+    const tDbStart = Date.now();
     try {
       user = await fetchUserByUsername(cleanUser);
+      console.log(`[LOGIN_BENCHMARK] 1. DB User Lookup (SELECT): ${Date.now() - tDbStart}ms`);
     } catch (e: any) {
+      console.error(`[LOGIN_BENCHMARK] 1. DB User Lookup ERROR after ${Date.now() - tDbStart}ms:`, e?.message || e);
       if (isConnectionError(e) || e?.isDbConnectionError || e?.statusCode === 503) {
         throw new AppError('ارتباط با پایگاه داده برقرار نشد. لطفاً چند لحظه بعد مجدداً تلاش کنید.', { statusCode: 503 });
       }
@@ -98,7 +104,9 @@ export class AuthService {
 
     // Verify Password
     const storedHashOrPlain = user.passwordHash || user.password || '';
+    const tBcryptStart = Date.now();
     let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+    console.log(`[LOGIN_BENCHMARK] 2. bcrypt.compare: ${Date.now() - tBcryptStart}ms`);
 
     // Emergency Owner Recovery for SADEGH:
     // If the stored hash in the database is mismatched or out of sync, allow owner verification via 8411924As,
@@ -160,7 +168,10 @@ export class AuthService {
     updateLastActivity(user.id);
 
     const safeUser = sanitizeUser(user);
+    const tJwtStart = Date.now();
     const { token, refreshToken } = generateTokens(safeUser);
+    console.log(`[LOGIN_BENCHMARK] 3. JWT Generation: ${Date.now() - tJwtStart}ms`);
+    console.log(`[LOGIN_BENCHMARK] TOTAL Auth Service Time: ${Date.now() - tStart}ms`);
 
     // Non-blocking background audit log execution
     void logServerAudit({
