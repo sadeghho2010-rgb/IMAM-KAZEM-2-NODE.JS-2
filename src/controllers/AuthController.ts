@@ -71,8 +71,7 @@ export class AuthController {
 
         if (isConnErr) {
           console.error('[DB_ERROR]', firstErr);
-          // Retry automatically after 500ms
-          await new Promise(r => setTimeout(r, 500));
+          // Retry immediately without artificial delay
           try {
             result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
           } catch (retryErr: any) {

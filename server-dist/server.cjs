@@ -1821,7 +1821,8 @@ function getMysqlPool() {
         enableKeepAlive: true,
         keepAliveInitialDelay: 1e4,
         idleTimeout: 6e4,
-        maxIdle: 3
+        maxIdle: 3,
+        connectTimeout: 3500
       });
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
     } catch (err) {
@@ -6380,7 +6381,6 @@ var AuthController = class _AuthController {
         const isConnErr = errMsg.includes("DbConnectionError") || errMsg.includes("ECONNREFUSED") || errMsg.includes("ETIMEDOUT") || firstErr?.code === "ECONNREFUSED" || firstErr?.code === "ETIMEDOUT";
         if (isConnErr) {
           console.error("[DB_ERROR]", firstErr);
-          await new Promise((r) => setTimeout(r, 500));
           try {
             result = await AuthService.login(parsedLogin.data.username, parsedLogin.data.password, ip);
           } catch (retryErr) {
@@ -12866,7 +12866,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-10-10T00:29:08.546Z",
+  "buildTime": "2026-10-18T06:51:38.500Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
