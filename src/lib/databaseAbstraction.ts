@@ -676,17 +676,48 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
         \`id\` VARCHAR(100) NOT NULL,
         \`user_id\` VARCHAR(100) NULL,
         \`username\` VARCHAR(100) NULL,
-        \`user_role\` VARCHAR(50) NULL,
+        \`user_name\` VARCHAR(150) NULL,
+        \`user_role\` VARCHAR(100) NULL,
         \`action\` VARCHAR(100) NOT NULL,
+        \`collection_name\` VARCHAR(100) NULL,
         \`entity_type\` VARCHAR(100) NULL,
+        \`record_id\` VARCHAR(100) NULL,
         \`entity_id\` VARCHAR(100) NULL,
-        \`description\` TEXT NOT NULL,
+        \`target_id\` VARCHAR(100) NULL,
+        \`description\` TEXT NULL,
+        \`details\` JSON NULL,
         \`ip_address\` VARCHAR(50) NULL,
+        \`status\` VARCHAR(20) NOT NULL DEFAULT 'success',
+        \`error_message\` TEXT NULL,
         \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (\`id\`),
         INDEX \`idx_audit_created\` (\`created_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure all audit columns exist gracefully
+    const auditCols = [
+      'ADD COLUMN IF NOT EXISTS user_role VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS username VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS user_name VARCHAR(150) NULL',
+      'ADD COLUMN IF NOT EXISTS collection_name VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS record_id VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS entity_id VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS target_id VARCHAR(100) NULL',
+      'ADD COLUMN IF NOT EXISTS description TEXT NULL',
+      'ADD COLUMN IF NOT EXISTS details JSON NULL',
+      'ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'success\'',
+      'ADD COLUMN IF NOT EXISTS error_message TEXT NULL',
+      'ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50) NULL'
+    ];
+    for (const cSql of auditCols) {
+      try {
+        await mysqlPool.query(`ALTER TABLE audit_logs ${cSql}`);
+      } catch (err: any) {
+        try { await mysqlPool.query(`ALTER TABLE audit_logs ${cSql.replace(' IF NOT EXISTS', '')}`); } catch (e2) {}
+      }
+    }
   } catch (e: any) {
     console.warn('[MySQL Schema Notice - auxiliary tables]:', e?.message || e);
   }
@@ -1592,13 +1623,13 @@ export const MysqlRepository = {
     try {
       const id = log.id || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       await pool.query(
-        `INSERT INTO audit_logs (id, user_id, username, user_role, action, entity_type, entity_id, description, ip_address, created_at)
+        `INSERT INTO audit_logs (id, user_id, username, user_name, action, entity_type, entity_id, description, ip_address, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
         [
           id,
           log.userId || null,
           log.username || null,
-          log.userRole || null,
+          log.username || null,
           log.action,
           log.entityType || null,
           log.entityId || null,
@@ -1606,8 +1637,8 @@ export const MysqlRepository = {
           log.ipAddress || null
         ]
       );
-    } catch (e) {
-      console.warn('[MySQL AuditLog Error]:', e);
+    } catch (e: any) {
+      console.warn('[MySQL AuditLog Notice]:', e?.message || e);
     }
   },
 

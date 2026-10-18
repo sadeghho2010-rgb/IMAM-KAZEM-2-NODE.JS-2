@@ -112,7 +112,7 @@ async function processAuditQueue(): Promise<void> {
 
       const sql = `
         INSERT INTO audit_logs (
-          id, action, collection_name, record_id, user_id, user_name, user_role, details, ip_address, status, error_message, created_at
+          id, action, collection_name, record_id, user_id, username, user_name, details, ip_address, status, error_message, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
 
@@ -123,7 +123,7 @@ async function processAuditQueue(): Promise<void> {
         recordId,
         userId,
         userName,
-        userRole,
+        userName,
         detailsJson,
         ipAddress,
         status,
@@ -132,6 +132,10 @@ async function processAuditQueue(): Promise<void> {
     } catch (e: any) {
       if (e?.code === 'ER_NO_SUCH_TABLE' || e?.message?.includes("doesn't exist")) {
         tableChecked = false;
+      }
+      if (e?.code === 'ER_BAD_FIELD_ERROR') {
+        console.warn('[AuditLogger Notice] Column schema mismatch, skipping retry:', e?.message || e);
+        continue;
       }
       if (item.retries < 3) {
         item.retries++;
