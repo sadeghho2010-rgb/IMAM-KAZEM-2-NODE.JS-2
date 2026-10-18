@@ -1079,7 +1079,9 @@ export async function logServerAudit(params: {
 
     // 2. Save to app_collections or internal storage
     const { serverSaveDoc } = await import('./serverDataApi');
-    await serverSaveDoc('audit_logs', logId, logEntry);
+    serverSaveDoc('audit_logs', logId, logEntry).catch(err => {
+      console.error('[STORAGE_FAILURE] audit log (login):', err?.message || err);
+    });
 
     // 3. Store in Supabase if configured
     if (isServerSupabaseConfigured) {
