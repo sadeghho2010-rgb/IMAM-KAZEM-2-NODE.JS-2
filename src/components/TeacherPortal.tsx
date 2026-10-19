@@ -268,7 +268,18 @@ export default function TeacherPortal() {
       }).catch(() => {});
     });
 
-    return () => unsub();
+    // Fast sync polling (every 3 seconds) for instant sync of counseling evaluations
+    const fastPollTimer = setInterval(() => {
+      localDb.syncCollectionFromCloud('counseling_session_grades', true)
+        .then(() => localDb.getDocs<CounselingSessionGrade>('counseling_session_grades'))
+        .then(g => { if (g) setGrades(g); })
+        .catch(() => {});
+    }, 3000);
+
+    return () => {
+      unsub();
+      clearInterval(fastPollTimer);
+    };
   }, [syncPortalData, currentUser?.id]);
 
   const showToast = (msg: string) => {
@@ -725,14 +736,16 @@ export default function TeacherPortal() {
       for (const student of enrolledStudents) {
         const draft = localDraftGrades[student.id];
         
-        // Match existing grade in fresh DB or in-memory grades
+        // Match existing grade in fresh DB or in-memory grades for this student, date, and counseling course
         const matchingExisting = freshAllGrades.filter(g => 
-          g.studentId === student.id &&
-          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate
+          (g.studentId === student.id || (g.studentName && g.studentName === student.name)) &&
+          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate &&
+          (g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
         );
         const existingPrimary = matchingExisting[0] || grades.find(g => 
-          g.studentId === student.id &&
-          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate
+          (g.studentId === student.id || (g.studentName && g.studentName === student.name)) &&
+          normalizeShamsiDateStr(g.sessionDate) === normSelectedDate &&
+          (g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
         ) || null;
 
         const partScore = draft?.participationScore !== undefined ? draft.participationScore : existingPrimary?.participationScore;
@@ -743,15 +756,15 @@ export default function TeacherPortal() {
           : (pendingNote !== undefined ? pendingNote.trim() : (existingPrimary?.counselorFeedback || ''));
 
         if (partScore || resScore || feedback.trim()) {
-          // Clean up any extra duplicates for this student on this date
-          if (matchingExisting.length > 1) {
-            for (let i = 1; i < matchingExisting.length; i++) {
-              allRemovedIds.push(matchingExisting[i].id);
-            }
-          }
+          // Standardized deterministic docId for exact in-place update/overwrite
+          const docId = `csg-${student.id}-${normSelectedDate.replace(/\//g, '-')}`;
 
-          // In-place edit / upsert of existing record
-          const docId = existingPrimary?.id || `csg-${student.id}-${normSelectedDate.replace(/\//g, '-')}`;
+          // Mark any other duplicate IDs for cleanup so only 1 record exists per student & date
+          matchingExisting.forEach(oldDoc => {
+            if (oldDoc.id !== docId) {
+              allRemovedIds.push(oldDoc.id);
+            }
+          });
           const gradeDoc: CounselingSessionGrade = {
             id: docId,
             studentId: student.id,

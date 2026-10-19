@@ -421,12 +421,14 @@ export default function CounselingClasses() {
           normalizeShamsiDateStr(g.sessionDate) === sessionDate
         );
 
+        const docId = `csg-${row.studentId}-${sessionDate.replace(/\//g, '-')}`;
+
         // Delete all old/previous duplicate evaluation records for this student on this session date
         for (const oldDoc of matchingDocs) {
-          await localDb.deleteDoc('counseling_session_grades', oldDoc.id);
+          if (oldDoc.id !== docId) {
+            await localDb.deleteDoc('counseling_session_grades', oldDoc.id);
+          }
         }
-
-        const docId = matchingDocs[0]?.id || `csg-${row.studentId}-${sessionDate.replace(/\//g, '-')}-${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
         const payload: CounselingSessionGrade = {
           id: docId,

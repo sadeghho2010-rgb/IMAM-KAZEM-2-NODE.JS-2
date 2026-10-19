@@ -1076,50 +1076,87 @@ export default function Programs() {
     setRepModalCustomInput('');
   };
 
-  const handleRemoveRepName = async (nameToRemove: string, isFromModal: boolean, isEditForm?: boolean) => {
+  const handleRemoveRepName = async (nameToRemove: string, isFromModal = false, isEditForm?: boolean) => {
+    const matchedStudent = students.find(s => 
+      s.name?.trim() === nameToRemove.trim() ||
+      nameToRemove.startsWith(s.name) ||
+      nameToRemove.includes(s.name) ||
+      s.id === nameToRemove
+    );
+
+    const matchNameClean = (matchedStudent?.name || nameToRemove).trim().toLowerCase();
+    const matchIdClean = matchedStudent?.id || nameToRemove;
+
     if (isFromModal) {
-      const nextNames = repModalNames.filter(n => n !== nameToRemove);
+      const nextNames = repModalNames.filter(n => {
+        const c = n.trim().toLowerCase();
+        return c !== nameToRemove.trim().toLowerCase() && (!matchNameClean || !c.includes(matchNameClean));
+      });
+      const nextIds = repModalStudentIds.filter(id => {
+        if (id === matchIdClean) return false;
+        const st = students.find(s => s.id === id);
+        if (st && matchNameClean && st.name?.trim().toLowerCase().includes(matchNameClean)) return false;
+        return true;
+      });
       setRepModalNames(nextNames);
-      const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
-      const nextIds = matchedStudent 
-        ? repModalStudentIds.filter(id => id !== matchedStudent.id)
-        : repModalStudentIds;
       setRepModalStudentIds(nextIds);
     } else {
       if (isEditForm && editingProgram) {
-        const nextNames = (editingProgram.representativeNames || []).filter(n => n !== nameToRemove);
-        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
-        const nextIds = matchedStudent 
-          ? (editingProgram.representativeStudentIds || []).filter(id => id !== matchedStudent.id)
-          : (editingProgram.representativeStudentIds || []);
+        const nextNames = (editingProgram.representativeNames || []).filter(n => {
+          const c = n.trim().toLowerCase();
+          return c !== nameToRemove.trim().toLowerCase() && (!matchNameClean || !c.includes(matchNameClean));
+        });
+        const nextIds = (editingProgram.representativeStudentIds || []).filter(id => {
+          if (id === matchIdClean) return false;
+          const st = students.find(s => s.id === id);
+          if (st && matchNameClean && st.name?.trim().toLowerCase().includes(matchNameClean)) return false;
+          return true;
+        });
+
+        const customRep = editingProgram.customRepresentative;
+        const shouldClearCustom = customRep && (
+          customRep.trim().toLowerCase() === nameToRemove.trim().toLowerCase() ||
+          (matchNameClean && customRep.trim().toLowerCase().includes(matchNameClean))
+        );
 
         const updated = {
           ...editingProgram,
           representativeNames: nextNames,
-          representativeStudentIds: nextIds
+          representativeStudentIds: nextIds,
+          customRepresentative: shouldClearCustom ? undefined : customRep
         };
         setEditingProgram(updated);
 
-        // Immediate DB persistence to prevent 1-second revert by background refetch
+        // Immediate DB persistence to prevent revert
         try {
-          await localDb.updateDoc('programs', editingProgram.id, {
-            representativeNames: nextNames,
-            representativeStudentIds: nextIds
-          });
+          await localDb.setDoc('programs', editingProgram.id, updated);
           await syncRepresentativeUsers();
         } catch (e) {
           console.warn('Error persisting representative removal:', e);
         }
       } else {
-        const nextNames = (newProgram.representativeNames || []).filter(n => n !== nameToRemove);
-        const matchedStudent = students.find(s => nameToRemove.startsWith(s.name) || nameToRemove.includes(s.name));
-        const nextIds = matchedStudent 
-          ? (newProgram.representativeStudentIds || []).filter(id => id !== matchedStudent.id)
-          : (newProgram.representativeStudentIds || []);
+        const nextNames = (newProgram.representativeNames || []).filter(n => {
+          const c = n.trim().toLowerCase();
+          return c !== nameToRemove.trim().toLowerCase() && (!matchNameClean || !c.includes(matchNameClean));
+        });
+        const nextIds = (newProgram.representativeStudentIds || []).filter(id => {
+          if (id === matchIdClean) return false;
+          const st = students.find(s => s.id === id);
+          if (st && matchNameClean && st.name?.trim().toLowerCase().includes(matchNameClean)) return false;
+          return true;
+        });
+
+        const customRep = newProgram.customRepresentative;
+        const shouldClearCustom = customRep && (
+          customRep.trim().toLowerCase() === nameToRemove.trim().toLowerCase() ||
+          (matchNameClean && customRep.trim().toLowerCase().includes(matchNameClean))
+        );
+
         setNewProgram({
           ...newProgram,
           representativeNames: nextNames,
-          representativeStudentIds: nextIds
+          representativeStudentIds: nextIds,
+          customRepresentative: shouldClearCustom ? undefined : customRep
         });
       }
     }

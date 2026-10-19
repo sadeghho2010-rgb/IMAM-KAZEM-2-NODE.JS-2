@@ -449,21 +449,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       loadData(false);
     });
 
-    const handleDataEvent = () => {
+    const handleDataEvent = async () => {
+      try {
+        await localDb.syncCollectionFromCloud('attendance', true);
+      } catch (e) {}
       loadData(false);
     };
 
     window.addEventListener('app_data_change', handleDataEvent);
     window.addEventListener('attendance_updated', handleDataEvent);
 
-    // Fast sync polling (every 5 seconds) for Education Manager to fetch fresh attendance changes
+    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance changes from cloud
     const fastSyncTimer = setInterval(async () => {
       try {
+        await localDb.syncCollectionFromCloud('attendance', true);
         const freshAtt = await localDb.getDocs<AttendanceSessionLog>('attendance');
         const isDeepEqual = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
         setAttendanceRecords(prev => isDeepEqual(prev, freshAtt || []) ? prev : (freshAtt || []));
       } catch (e) {}
-    }, 5000);
+    }, 3000);
 
     return () => {
       unsub();
@@ -1715,7 +1719,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }).filter(cGroup => cGroup.studentsList.length > 0);
   }, [filteredReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents]);
 
-  // Aggregated Representatives List for Education Manager (اصلاح ۵ و ۸)
+  // Aggregated Representatives List for Education Manager
   const representativesList = useMemo(() => {
     const repMap = new Map<string, {
       id: string;
@@ -1728,149 +1732,150 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       totalSessionsExpected: number;
       recordedSessionsCount: number;
       commitmentPercent: number;
+      isFormerRep?: boolean;
     }>();
 
-    programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted').forEach(p => {
-      // 1. representativeStudentIds
+    const resolveRepStudent = (rawRef: string) => {
+      if (!rawRef) return null;
+      const cleanKey = String(rawRef).trim();
+      if (!cleanKey) return null;
+
+      // 1. Direct ID / Code / National ID match in students
+      let st = students.find(s => 
+        String(s.id).toLowerCase() === cleanKey.toLowerCase() ||
+        s.studentCode === cleanKey ||
+        s.nationalId === cleanKey
+      );
+      if (st) return st;
+
+      // 2. Exact or Partial Name match in students
+      const cleanName = cleanKey.replace(/\(.*\)/g, '').trim().toLowerCase();
+      if (cleanName) {
+        st = students.find(s => {
+          if (!s.name) return false;
+          const sNameClean = s.name.trim().toLowerCase();
+          return sNameClean === cleanName || sNameClean.includes(cleanName) || cleanName.includes(sNameClean);
+        });
+        if (st) return st;
+      }
+
+      // 3. User match in users list
+      const u = users.find(usr => 
+        String(usr.id).toLowerCase() === cleanKey.toLowerCase() ||
+        usr.username === cleanKey ||
+        usr.studentId === cleanKey ||
+        usr.linkedStudentId === cleanKey ||
+        (usr.fullName && usr.fullName.trim().toLowerCase().includes(cleanName))
+      );
+      if (u) {
+        const uStId = u.studentId || u.linkedStudentId;
+        if (uStId) {
+          st = students.find(s => String(s.id) === String(uStId));
+          if (st) return st;
+        }
+      }
+
+      return null;
+    };
+
+    const activePrograms = programs.filter(p => !p.isDeleted && p.status !== 'inactive' && p.status !== 'deleted');
+
+    activePrograms.forEach(p => {
+      const refs: string[] = [];
       if (Array.isArray(p.representativeStudentIds)) {
-        p.representativeStudentIds.forEach(sid => {
-          if (!sid) return;
-          const st = students.find(s => String(s.id) === String(sid) || s.studentCode === sid || s.nationalId === sid);
-          const repId = st?.id || String(sid);
-          const repName = st?.name || `نماینده (${sid})`;
-          const repMobile = st?.fatherMobile || st?.mobile || st?.phone || (st as any)?.fatherPhone || (st as any)?.parentMobile || '';
-
-          if (!repMap.has(repId)) {
-            repMap.set(repId, {
-              id: repId,
-              name: repName,
-              studentCode: st?.studentCode,
-              nationalId: st?.nationalId,
-              mobile: repMobile,
-              grade: st?.grade || p.grade,
-              managedClasses: [p],
-              totalSessionsExpected: 0,
-              recordedSessionsCount: 0,
-              commitmentPercent: 100
-            });
-          } else {
-            const item = repMap.get(repId)!;
-            if (!item.managedClasses.some(cp => cp.id === p.id)) {
-              item.managedClasses.push(p);
-            }
-            if (!item.mobile && repMobile) item.mobile = repMobile;
-          }
-        });
+        p.representativeStudentIds.forEach(id => id && refs.push(String(id)));
       }
-
-      // 2. representativeNames
       if (Array.isArray(p.representativeNames)) {
-        p.representativeNames.forEach(rName => {
-          if (!rName || !rName.trim()) return;
-          const cleanName = rName.trim();
-          const st = students.find(s => s.name?.trim() === cleanName);
-          const repId = st?.id || `rep_name_${cleanName}`;
-          const repMobile = st?.fatherMobile || st?.mobile || st?.phone || (st as any)?.fatherPhone || (st as any)?.parentMobile || '';
-
-          if (!repMap.has(repId)) {
-            repMap.set(repId, {
-              id: repId,
-              name: st?.name || cleanName,
-              studentCode: st?.studentCode,
-              nationalId: st?.nationalId,
-              mobile: repMobile,
-              grade: st?.grade || p.grade,
-              managedClasses: [p],
-              totalSessionsExpected: 0,
-              recordedSessionsCount: 0,
-              commitmentPercent: 100
-            });
-          } else {
-            const item = repMap.get(repId)!;
-            if (!item.managedClasses.some(cp => cp.id === p.id)) {
-              item.managedClasses.push(p);
-            }
-            if (!item.mobile && repMobile) item.mobile = repMobile;
-          }
-        });
+        p.representativeNames.forEach(n => n && refs.push(String(n)));
+      }
+      const customRep = p.customRepresentative || (p as any).representative || (p as any).representativeName;
+      if (customRep && typeof customRep === 'string') {
+        refs.push(customRep);
       }
 
-      // 3. customRepresentative / single representative field
-      const singleRep = p.customRepresentative || (p as any).representative || (p as any).representativeName;
-      if (singleRep && typeof singleRep === 'string' && singleRep.trim()) {
-        const cleanName = singleRep.trim();
-        const st = students.find(s => s.name?.trim() === cleanName || String(s.id) === cleanName);
-        const repId = st?.id || `rep_custom_${cleanName}`;
-        const repMobile = st?.fatherMobile || st?.mobile || st?.phone || '';
+      refs.forEach(ref => {
+        const st = resolveRepStudent(ref);
+        const repKey = st ? st.id : ref.trim();
+        let repName = st ? (st.name || `${st.firstName || ''} ${st.lastName || ''}`.trim()) : ref.trim();
 
-        if (!repMap.has(repId)) {
-          repMap.set(repId, {
-            id: repId,
-            name: st?.name || cleanName,
+        // Prevent showing raw IDs as name if student wasn't matched
+        if (repName.startsWith('stu_') || repName.startsWith('rep_') || repName.startsWith('rec_')) {
+          const uMatch = users.find(u => u.id === repName || u.studentId === repName || u.username === repName);
+          repName = uMatch ? (uMatch.fullName || uMatch.name || uMatch.username) : 'نماینده کلاس';
+        }
+
+        const repMobile = st ? (st.fatherMobile || st.mobile || st.phone || '') : '';
+        const repNatId = st?.nationalId;
+        const repGrade = st?.grade || p.grade;
+
+        if (!repMap.has(repKey)) {
+          repMap.set(repKey, {
+            id: repKey,
+            name: repName,
             studentCode: st?.studentCode,
-            nationalId: st?.nationalId,
+            nationalId: repNatId,
             mobile: repMobile,
-            grade: st?.grade || p.grade,
+            grade: repGrade,
             managedClasses: [p],
             totalSessionsExpected: 0,
             recordedSessionsCount: 0,
-            commitmentPercent: 100
+            commitmentPercent: 100,
+            isFormerRep: Boolean(st && (st.isActive === false || st.status === 'inactive'))
           });
         } else {
-          const item = repMap.get(repId)!;
+          const item = repMap.get(repKey)!;
           if (!item.managedClasses.some(cp => cp.id === p.id)) {
             item.managedClasses.push(p);
           }
+          if (!item.mobile && repMobile) item.mobile = repMobile;
         }
-      }
+      });
     });
 
     // Also check users with class_representative role or title
     users.forEach(u => {
       if (u.role === 'class_representative' || u.roleTitle?.includes('نماینده') || (u as any).isRepresentative) {
         const uId = u.studentId || u.linkedStudentId || u.id;
-        const st = students.find(s => String(s.id) === String(uId) || s.nationalId === u.username);
-        const repId = st?.id || uId;
+        const st = resolveRepStudent(uId) || students.find(s => String(s.id) === String(uId) || s.nationalId === u.username);
+        const repKey = st?.id || uId;
         const repName = st?.name || u.fullName || u.name || u.username;
         const repMobile = u.phone || u.mobile || st?.fatherMobile || st?.mobile || '';
 
-        const userProgs = programs.filter(p => 
-          (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(repId) || p.representativeStudentIds.includes(u.studentId))) ||
+        const userProgs = activePrograms.filter(p => 
+          (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(repKey) || p.representativeStudentIds.includes(u.studentId))) ||
           (Array.isArray(p.representativeNames) && p.representativeNames.includes(repName)) ||
           p.customRepresentative === repName ||
-          p.id === u.managedClassId ||
-          (Array.isArray((u as any).representativeProgramIds) && (u as any).representativeProgramIds.includes(p.id))
+          p.id === u.managedClassId
         );
 
-        if (userProgs.length > 0) {
-          if (!repMap.has(repId)) {
-            repMap.set(repId, {
-              id: repId,
-              name: repName,
-              studentCode: st?.studentCode,
-              nationalId: st?.nationalId || u.username,
-              mobile: repMobile,
-              grade: st?.grade,
-              managedClasses: userProgs,
-              totalSessionsExpected: 0,
-              recordedSessionsCount: 0,
-              commitmentPercent: 100
-            });
-          } else {
-            const item = repMap.get(repId)!;
-            if (!item.mobile && repMobile) item.mobile = repMobile;
-            userProgs.forEach(p => {
-              if (!item.managedClasses.some(cp => cp.id === p.id)) {
-                item.managedClasses.push(p);
-              }
-            });
-          }
+        if (!repMap.has(repKey)) {
+          repMap.set(repKey, {
+            id: repKey,
+            name: repName,
+            studentCode: st?.studentCode,
+            nationalId: st?.nationalId || u.username,
+            mobile: repMobile,
+            grade: st?.grade,
+            managedClasses: userProgs,
+            totalSessionsExpected: 0,
+            recordedSessionsCount: 0,
+            commitmentPercent: 100,
+            isFormerRep: userProgs.length === 0 || Boolean(st && (st.isActive === false || st.status === 'inactive'))
+          });
+        } else {
+          const item = repMap.get(repKey)!;
+          if (!item.mobile && repMobile) item.mobile = repMobile;
+          userProgs.forEach(p => {
+            if (!item.managedClasses.some(cp => cp.id === p.id)) {
+              item.managedClasses.push(p);
+            }
+          });
         }
       }
     });
 
-    // Calculate commitment metrics for each rep, filtering out those with zero active managed classes
-    const list = Array.from(repMap.values()).filter(r => r.managedClasses.length > 0);
+    // Calculate commitment metrics for each rep
+    const list = Array.from(repMap.values());
     list.forEach(rep => {
       let expected = 0;
       let recorded = 0;
@@ -1884,12 +1889,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       rep.totalSessionsExpected = expected;
       rep.recordedSessionsCount = recorded;
       rep.commitmentPercent = expected > 0 ? Math.min(100, Math.round((recorded / expected) * 100)) : 100;
+      if (rep.managedClasses.length === 0) {
+        rep.isFormerRep = true;
+      }
     });
 
     // Filter by repSearchQuery if provided
+    let resultList = list;
     if (repSearchQuery.trim()) {
       const q = repSearchQuery.toLowerCase().trim();
-      return list.filter(r => 
+      resultList = list.filter(r => 
         r.name.toLowerCase().includes(q) || 
         r.mobile?.includes(q) || 
         r.nationalId?.includes(q) ||
@@ -1897,7 +1906,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       );
     }
 
-    return list.sort((a, b) => (b?.commitmentPercent || 0) - (a?.commitmentPercent || 0) || String(a?.name || '').localeCompare(String(b?.name || ''), 'fa'));
+    return resultList.sort((a, b) => {
+      if (a.isFormerRep !== b.isFormerRep) return a.isFormerRep ? 1 : -1;
+      return (b?.commitmentPercent || 0) - (a?.commitmentPercent || 0) || String(a?.name || '').localeCompare(String(b?.name || ''), 'fa');
+    });
   }, [programs, students, users, attendanceRecords, repSearchQuery]);
 
   // Handler to save Education Manager note for a representative
@@ -5158,7 +5170,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             </span>
           </div>
 
-          {/* Representatives Cards / Table List */}
+          {/* Active vs Former Representatives Sections */}
           {representativesList.length === 0 ? (
             <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-3">
               <Users size={48} className="mx-auto text-slate-300" />
@@ -5168,106 +5180,214 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {representativesList.map(rep => {
-                const noteVal = repNotesMap[rep.id] || '';
-                return (
-                  <div key={rep.id} className="bg-white rounded-xl p-3 border border-slate-200 shadow-2xs space-y-2.5 hover:border-indigo-300 transition-all text-xs">
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                      {/* Rep Info */}
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-black text-indigo-700 text-xs shrink-0">
-                          <UserCheck size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h3 className="text-xs font-black text-slate-900 truncate">{rep.name}</h3>
-                            {rep.grade && (
-                              <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 text-[9.5px] font-bold rounded border border-slate-200">
-                                {rep.grade}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[10.5px] text-slate-500 font-medium mt-0.5 flex-wrap">
-                            {rep.mobile ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(rep.mobile || '');
-                                  showToast(`شماره همراه ${rep.name} (${rep.mobile}) کپی شد.`);
-                                }}
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold border border-emerald-200 transition-all cursor-pointer"
-                                title="کپی شماره همراه"
-                              >
-                                <PhoneCall size={10} className="text-emerald-600" />
-                                <span className="font-mono dir-ltr">{rep.mobile}</span>
-                                <Copy size={10} className="text-emerald-600 ml-0.5" />
-                              </button>
-                            ) : (
-                              <span className="text-slate-400 text-[10px]">بدون شماره</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+            <div className="space-y-6">
+              {/* Active Representatives Section */}
+              <div className="space-y-3">
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
+                  <UserCheck size={16} className="text-indigo-600" />
+                  <span>نمایندگان فعال کلاس‌ها ({representativesList.filter(r => !r.isFormerRep).length} نفر)</span>
+                </h3>
 
-                      {/* Commitment Rating Badge */}
-                      <div className="shrink-0 text-left">
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-black border font-mono inline-block",
-                          rep.commitmentPercent >= 90 
-                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                            : rep.commitmentPercent >= 70
-                            ? "bg-amber-100 text-amber-900 border-amber-300"
-                            : "bg-rose-100 text-rose-800 border-rose-300"
-                        )}>
-                          {rep.commitmentPercent}٪ تعهد
-                        </span>
-                        <span className="text-[9.5px] text-slate-500 font-bold font-mono block mt-0.5">
-                          ({rep.recordedSessionsCount} از {rep.totalSessionsExpected})
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Compact Managed Classes List */}
-                    <div className="space-y-1">
-                      <div className="text-[10.5px] font-bold text-slate-700 flex items-center gap-1">
-                        <BookOpen size={12} className="text-indigo-600" />
-                        <span>کلاس‌های فعال تحت نمایندگی ({rep.managedClasses.length}):</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {rep.managedClasses.map(p => (
-                          <span
-                            key={p.id}
-                            className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 text-[10px] font-bold border border-indigo-100 inline-flex items-center gap-1"
-                          >
-                            <span>{p.title}</span>
-                            {p.grade && <span className="text-indigo-600 text-[9px]">({p.grade})</span>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Education Manager Editable Notes Area (Saved to DB) */}
-                    <div className="pt-1.5 border-t border-slate-100 flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="یادداشت مسئول آموزش..."
-                        className="flex-1 px-2 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/80 focus:bg-white font-medium text-slate-800"
-                        value={noteVal}
-                        onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
-                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10.5px] font-black transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
-                      >
-                        <Save size={11} />
-                        <span>ذخیره</span>
-                      </button>
-                    </div>
+                {representativesList.filter(r => !r.isFormerRep).length === 0 ? (
+                  <div className="bg-white rounded-2xl p-6 border border-slate-200 text-center text-slate-500 text-xs font-bold">
+                    هیچ نماینده فعالی یافت نشد.
                   </div>
-                );
-              })}
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {representativesList.filter(r => !r.isFormerRep).map(rep => {
+                      const noteVal = repNotesMap[rep.id] || '';
+                      return (
+                        <div key={rep.id} className="bg-white rounded-xl p-3 border border-slate-200 shadow-2xs space-y-2.5 hover:border-indigo-300 transition-all text-xs">
+                          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                            {/* Rep Info */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center font-black text-indigo-700 text-xs shrink-0">
+                                <UserCheck size={16} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h3 className="text-xs font-black text-slate-900 truncate">{rep.name}</h3>
+                                  {rep.grade && (
+                                    <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 text-[9.5px] font-bold rounded border border-slate-200">
+                                      {rep.grade}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[10.5px] text-slate-500 font-medium mt-0.5 flex-wrap">
+                                  {rep.mobile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(rep.mobile || '');
+                                        showToast(`شماره همراه ${rep.name} (${rep.mobile}) کپی شد.`);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold border border-emerald-200 transition-all cursor-pointer"
+                                      title="کپی شماره همراه"
+                                    >
+                                      <PhoneCall size={10} className="text-emerald-600" />
+                                      <span className="font-mono dir-ltr">{rep.mobile}</span>
+                                      <Copy size={10} className="text-emerald-600 ml-0.5" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">بدون شماره</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Commitment Rating Badge */}
+                            <div className="shrink-0 text-left">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-black border font-mono inline-block",
+                                rep.commitmentPercent >= 90 
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : rep.commitmentPercent >= 70
+                                  ? "bg-amber-100 text-amber-900 border-amber-300"
+                                  : "bg-rose-100 text-rose-800 border-rose-300"
+                              )}>
+                                {rep.commitmentPercent}٪ تعهد
+                              </span>
+                              <span className="text-[9.5px] text-slate-500 font-bold font-mono block mt-0.5">
+                                ({rep.recordedSessionsCount} از {rep.totalSessionsExpected})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Compact Managed Classes List */}
+                          <div className="space-y-1">
+                            <div className="text-[10.5px] font-bold text-slate-700 flex items-center gap-1">
+                              <BookOpen size={12} className="text-indigo-600" />
+                              <span>کلاس‌های فعال تحت نمایندگی ({rep.managedClasses.length}):</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {rep.managedClasses.map(p => (
+                                <span
+                                  key={p.id}
+                                  className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 text-[10px] font-bold border border-indigo-100 inline-flex items-center gap-1"
+                                >
+                                  <span>{p.title}</span>
+                                  {p.grade && <span className="text-indigo-600 text-[9px]">({p.grade})</span>}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Education Manager Editable Notes Area */}
+                          <div className="pt-1.5 border-t border-slate-100 flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="یادداشت مسئول آموزش..."
+                              className="flex-1 px-2 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50/80 focus:bg-white font-medium text-slate-800"
+                              value={noteVal}
+                              onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
+                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10.5px] font-black transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
+                            >
+                              <Save size={11} />
+                              <span>ذخیره</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Former / Inactive Representatives Section */}
+              {representativesList.some(r => r.isFormerRep) && (
+                <div className="space-y-3 pt-6 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-black text-slate-700 flex items-center gap-2">
+                      <UserX size={16} className="text-amber-600" />
+                      <span>نمایندگان سابق و غیرفعال ({representativesList.filter(r => r.isFormerRep).length} نفر)</span>
+                    </h3>
+                    <span className="text-[10px] text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-300 font-black">
+                      سوابق مسئولیت / غیرفعال
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {representativesList.filter(r => r.isFormerRep).map(rep => {
+                      const noteVal = repNotesMap[rep.id] || '';
+                      return (
+                        <div key={rep.id} className="bg-slate-50/90 rounded-xl p-3 border border-slate-200/90 shadow-2xs space-y-2.5 hover:border-amber-300 transition-all text-xs opacity-90">
+                          <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-amber-100/70 border border-amber-200 flex items-center justify-center font-black text-amber-800 text-xs shrink-0">
+                                <UserX size={16} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h3 className="text-xs font-black text-slate-800 truncate">{rep.name}</h3>
+                                  <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 text-[9px] font-black rounded border border-amber-300">
+                                    نماینده سابق
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10.5px] text-slate-500 font-medium mt-0.5 flex-wrap">
+                                  {rep.mobile ? (
+                                    <span className="font-mono dir-ltr text-[10px] text-slate-600">{rep.mobile}</span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">بدون شماره</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 text-left">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-slate-200 text-slate-700 border border-slate-300 font-mono inline-block">
+                                غیرفعال / سابق
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="text-[10.5px] font-bold text-slate-600 flex items-center gap-1">
+                              <BookOpen size={12} className="text-slate-500" />
+                              <span>کلاس‌های قبلی / سوابق ({rep.managedClasses.length}):</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {rep.managedClasses.length > 0 ? (
+                                rep.managedClasses.map(p => (
+                                  <span
+                                    key={p.id}
+                                    className="px-2 py-0.5 rounded bg-slate-200/70 text-slate-800 text-[10px] font-bold border border-slate-300 inline-flex items-center gap-1"
+                                  >
+                                    <span>{p.title}</span>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">بدون کلاس فعال در حال حاضر</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="pt-1.5 border-t border-slate-200 flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="یادداشت مسئول آموزش..."
+                              className="flex-1 px-2 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 bg-white font-medium text-slate-800"
+                              value={noteVal}
+                              onChange={(e) => setRepNotesMap({ ...repNotesMap, [rep.id]: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveRepNote(rep.id, repNotesMap[rep.id] || '')}
+                              className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-[10.5px] font-black transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
+                            >
+                              <Save size={11} />
+                              <span>ذخیره</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
