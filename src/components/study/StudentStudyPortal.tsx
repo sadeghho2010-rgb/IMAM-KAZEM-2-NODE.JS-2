@@ -328,7 +328,9 @@ export default function StudentStudyPortal({
 
       setSaveSuccessMessage('دقایق جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.');
       await loadDailyEntries();
-      if (onRefresh) onRefresh();
+      if (onRefresh) {
+        setTimeout(() => onRefresh(), 50);
+      }
 
       setTimeout(() => setSaveSuccessMessage(''), 4500);
     } catch (err) {

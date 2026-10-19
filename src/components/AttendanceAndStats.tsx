@@ -1472,6 +1472,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       history: { date: string; programTitle: string; status: AttendanceStatus | 'holiday'; isCancelled: boolean; note?: string; excuseReason?: string; hasWarning?: boolean }[];
     }> = {};
 
+    // Map all student candidate identifiers (id, nationalId, studentCode) to student ID
+    const studentLookupMap = new Map<string, string>();
+    students.forEach(s => {
+      if (s.id) studentLookupMap.set(String(s.id).trim(), s.id);
+      if (s.nationalId) studentLookupMap.set(String(s.nationalId).trim(), s.id);
+      if (s.studentCode) studentLookupMap.set(String(s.studentCode).trim().toUpperCase(), s.id);
+    });
+
     // Initialize students matching filter
     students.forEach(s => {
       // STRICT PRIVACY RULE: Regular students AND class representatives ONLY see THEIR OWN report!
@@ -1502,14 +1510,34 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       };
     });
 
-    filteredReportRecords.forEach(rec => {
+    // Consolidate report records by programId and date so edits on the same day cleanly merge
+    const consolidatedReportMap = new Map<string, AttendanceSessionLog>();
+    filteredReportRecords.forEach(r => {
+      const normDate = toEnglishDigits(normalizeShamsiDateStr(r.date)).replace(/[\/\-]/g, '-');
+      const key = `${r.programId}_${normDate}`;
+      const existing = consolidatedReportMap.get(key);
+      if (!existing) {
+        consolidatedReportMap.set(key, r);
+      } else {
+        const prog = programs.find(p => p.id === r.programId);
+        const merged = getConsolidatedSessionLog([r, existing], r.programId, r.date, prog?.title);
+        if (merged) consolidatedReportMap.set(key, merged);
+      }
+    });
+    const consolidatedReportRecords = Array.from(consolidatedReportMap.values());
+
+    consolidatedReportRecords.forEach(rec => {
       const prog = programs.find(p => p.id === rec.programId);
       const isCalendarHoliday = Boolean(getHolidayForDate(rec.date, prog?.grade));
 
       if (Array.isArray(rec.students)) {
         rec.students.forEach(stItem => {
-          if (studentMap[stItem.studentId]) {
-            const entry = studentMap[stItem.studentId];
+          const sid = String(stItem.studentId || '').trim();
+          const nat = String(stItem.nationalId || '').trim();
+          const canonicalId = studentLookupMap.get(sid) || (nat ? studentLookupMap.get(nat) : undefined);
+
+          if (canonicalId && studentMap[canonicalId]) {
+            const entry = studentMap[canonicalId];
             if (!rec.isCancelled && !isCalendarHoliday) {
               entry.heldSessionsEnrolled++;
               if (stItem.status === 'present') entry.presentCount++;

@@ -332,11 +332,22 @@ export function getConsolidatedSessionLog(
         if (!existing) {
           studentMap.set(key, { ...s });
         } else {
-          // Prefer non-unspecified status over unspecified; prefer newer timestamp
+          const getTs = (item: any, parentLog?: any) => {
+            const raw = item?.selfReportedAt || item?.recordedAt || item?.updatedAt || parentLog?.updatedAt || parentLog?.recordedAt || '';
+            if (raw) {
+              const t = new Date(raw).getTime();
+              if (!isNaN(t) && t > 0) return t;
+            }
+            return 0;
+          };
+
+          const sTs = getTs(s, log);
+          const exTs = getTs(existing);
+
           const isSValid = s.status && s.status !== 'unspecified';
           const isExValid = existing.status && existing.status !== 'unspecified';
           const isBetterStatus = isSValid && !isExValid;
-          const isNewer = s.selfReportedAt && (!existing.selfReportedAt || s.selfReportedAt > existing.selfReportedAt);
+          const isNewer = sTs > exTs;
 
           if (isBetterStatus || isNewer) {
             studentMap.set(key, { ...existing, ...s });

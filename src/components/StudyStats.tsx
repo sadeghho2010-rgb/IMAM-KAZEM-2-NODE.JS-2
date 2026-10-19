@@ -225,14 +225,14 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         if (!e.periodId || !e.studentId) return;
         const matched = findMatchedStudent(e.studentId, (e as any).nationalId, (e as any).studentCode, e);
         const canonicalStId = matched ? String(matched.id) : String(e.studentId);
-        const key = `${e.periodId}_${canonicalStId}`;
+        const key = `${e.periodId}:::${canonicalStId}`;
         const existing = entriesByPeriodStudent.get(key) || [];
         existing.push(e);
         entriesByPeriodStudent.set(key, existing);
       });
 
       entriesByPeriodStudent.forEach((entries, key) => {
-        const [pId, stId] = key.split('_');
+        const [pId, stId] = key.split(':::');
         const matchedSt = studentIdMap.get(stId);
         let cStudy = 0;
         let cDisc = 0;
