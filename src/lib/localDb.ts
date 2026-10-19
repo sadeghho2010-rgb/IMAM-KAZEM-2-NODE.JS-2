@@ -1125,6 +1125,9 @@ class LocalDatabase {
                 mergedDocsMap.set(docId, pendingDoc);
               }
             }
+          } else if (localDoc && localTs > cloudTs) {
+            // Preserve newer local document if cloud returns older/stale record (prevents UI rollbacks)
+            mergedDocsMap.set(docId, localDoc);
           } else {
             // Authoritative server document takes precedence when this device has no local pending write
             mergedDocsMap.set(docId, doc);
@@ -1467,7 +1470,7 @@ class LocalDatabase {
           } catch (e) {}
         }
         markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 1000);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 10000);
         this.autoLogAudit(db, 'create', resolvedCol, id, undefined, finalDoc);
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);

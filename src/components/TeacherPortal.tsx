@@ -106,27 +106,6 @@ export default function TeacherPortal() {
   const [feedbackSavedStudentId, setFeedbackSavedStudentId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync draft state with saved database grades when session date changes
-  useEffect(() => {
-    if (!selectedSessionDate) {
-      setLocalDraftGrades({});
-      return;
-    }
-    const initialMap: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
-    
-    grades.forEach(g => {
-      if (g.sessionDate === selectedSessionDate) {
-        initialMap[g.studentId] = {
-          participationScore: g.participationScore,
-          researchScore: g.researchScore,
-          counselorFeedback: g.counselorFeedback || ''
-        };
-      }
-    });
-
-    setLocalDraftGrades(initialMap);
-  }, [selectedSessionDate]);
-
   // Helper to read local database cache directly into React state
   const loadLocalCachedData = useCallback(async () => {
     try {
@@ -473,6 +452,34 @@ export default function TeacherPortal() {
     return counselingPrograms.find(p => p.id === selectedCourseId) || counselingPrograms[0];
   }, [counselingPrograms, selectedCourseId]);
 
+  // Sync draft state with saved database grades when session date or grades change
+  useEffect(() => {
+    if (!selectedSessionDate) {
+      setLocalDraftGrades({});
+      return;
+    }
+    const normSelected = normalizeShamsiDateStr(selectedSessionDate);
+    const initialMap: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
+    
+    grades.forEach(g => {
+      if (normalizeShamsiDateStr(g.sessionDate) === normSelected) {
+        if (activeCounselingCourse && g.programId && g.programId !== activeCounselingCourse.id && g.courseTitle !== activeCounselingCourse.title) {
+          return;
+        }
+        initialMap[g.studentId] = {
+          participationScore: g.participationScore,
+          researchScore: g.researchScore,
+          counselorFeedback: g.counselorFeedback || ''
+        };
+      }
+    });
+
+    setLocalDraftGrades(prev => ({
+      ...initialMap,
+      ...prev
+    }));
+  }, [selectedSessionDate, selectedCourseId, grades, activeCounselingCourse]);
+
   /**
    * Calculate ONLY the dates when this counseling class had sessions:
    * 1. Show maximum the last 4 classes they had
@@ -636,7 +643,10 @@ export default function TeacherPortal() {
     );
 
     sortedGrades.forEach(g => {
-      if (normalizeShamsiDateStr(g.sessionDate) === normSelectedDate) {
+      if (
+        normalizeShamsiDateStr(g.sessionDate) === normSelectedDate &&
+        (g.programId === activeCounselingCourse.id || g.courseTitle === activeCounselingCourse.title || !g.programId)
+      ) {
         if (!map.has(g.studentId)) {
           map.set(g.studentId, g);
         }
@@ -804,8 +814,19 @@ export default function TeacherPortal() {
           ...updates
         ]);
 
-        // Clear local drafts so UI seamlessly reflects the saved records
-        setLocalDraftGrades({});
+        // Directly merge newly saved updates into localDraftGrades so UI immediately holds the new scores and never reverts!
+        const newDrafts: Record<string, { participationScore?: CounselingScore; researchScore?: CounselingScore; counselorFeedback?: string }> = {};
+        updates.forEach(u => {
+          newDrafts[u.studentId] = {
+            participationScore: u.participationScore,
+            researchScore: u.researchScore,
+            counselorFeedback: u.counselorFeedback || ''
+          };
+        });
+        setLocalDraftGrades(prev => ({
+          ...prev,
+          ...newDrafts
+        }));
 
         await localDb.flushSyncQueue();
 
@@ -843,6 +864,13 @@ export default function TeacherPortal() {
       };
       await localDb.setDoc('counseling_session_grades', updated);
       setGrades(prev => prev.map(g => g.id === existing.id ? updated : g));
+      setLocalDraftGrades(prev => ({
+        ...prev,
+        [studentId]: {
+          ...(prev[studentId] || {}),
+          counselorFeedback: note.trim() || undefined
+        }
+      }));
       setFeedbackSavedStudentId(studentId);
       setTimeout(() => setFeedbackSavedStudentId(null), 1500);
     }

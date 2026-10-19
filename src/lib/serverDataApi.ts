@@ -1141,13 +1141,8 @@ export function canUserReadDoc(user: any, collection: string, doc: any, context?
 
   // 6. Counseling Session Grades
   if (collection === 'counseling_session_grades') {
-    if (user.role === 'teacher') {
-      const teacherName = (user.name || user.fullName || '').trim();
-      const cleanTeacher = cleanTeacherName(teacherName);
-      const csTeacher = doc.counselorTeacherName || doc.counselor_teacher_name || doc.teacherName || doc.counselorName || doc.teacher || '';
-      const cleanCsTeacher = cleanTeacherName(csTeacher);
-      if (!cleanTeacher) return true; // fallback if user teacher name not set
-      return Boolean(cleanCsTeacher && (cleanCsTeacher === cleanTeacher || cleanCsTeacher.includes(cleanTeacher) || cleanTeacher.includes(cleanCsTeacher)));
+    if (user.role === 'teacher' || user.level === 1 || user.role === 'super_admin' || user.role === 'education_manager' || user.role === 'education_officer' || user.role === 'research_manager') {
+      return true;
     }
     if (user.role === 'student' || user.level === 3) {
       const studentCandidates = [user.studentId, user.linkedStudentId, user.id, user.username, user.nationalId].filter(Boolean).map(x => String(x).toLowerCase().trim());
