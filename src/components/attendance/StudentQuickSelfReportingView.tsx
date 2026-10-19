@@ -24,7 +24,7 @@ import {
   AttendanceStatus, 
   AttendanceSettings 
 } from '../../types';
-import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, toEnglishDigits } from '../../lib/jalali';
 
 interface StudentQuickSelfReportingViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -304,9 +304,10 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
     try {
       setSavingProgramId(prog.id);
-      const cleanDate = selectedDate.replace(/\//g, '-');
+      const cleanDateStr = toEnglishDigits(selectedDate).replace(/-/g, '/');
+      const cleanDate = cleanDateStr.replace(/\//g, '-');
       const logId = `${prog.id}_${cleanDate}`;
-      const dayName = getShamsiDayOfWeekName(selectedDate);
+      const dayName = getShamsiDayOfWeekName(cleanDateStr);
       const nowIso = new Date().toISOString();
 
       const myStudentDetail: StudentAttendanceDetail = {
@@ -320,9 +321,17 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         selfReportedAt: nowIso
       };
 
-      const existingLog = attendanceLogs.find(l => 
+      // Retrieve freshest attendance logs directly to guarantee merging with any other student who just submitted
+      let freshLogs = attendanceLogs;
+      try {
+        const fresh = await localDb.getDocs<AttendanceSessionLog>('attendance');
+        if (fresh && fresh.length > 0) freshLogs = fresh;
+      } catch (e) {}
+
+      const existingLog = freshLogs.find(l => 
         l.id === logId || 
-        (l.programId === prog.id && l.date === selectedDate)
+        ((String(l.programId || (l as any).program_id) === String(prog.id)) &&
+         (toEnglishDigits(l.date).replace(/-/g, '/') === cleanDateStr || l.date === selectedDate))
       );
 
       let updatedLog: AttendanceSessionLog;
@@ -346,6 +355,9 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
         updatedLog = {
           ...existingLog,
+          id: existingLog.id || logId,
+          programId: prog.id,
+          date: existingLog.date || cleanDateStr,
           students: currentStudents,
           updatedAt: nowIso
         } as any;
@@ -355,7 +367,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
           programId: prog.id,
           programTitle: prog.title,
           grade: prog.grade || '',
-          date: selectedDate,
+          date: cleanDateStr,
           dayOfWeek: dayName,
           isCancelled: false,
           attendanceType: 'self_reporting',
@@ -376,11 +388,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         lateCount
       };
 
-      if (existingLog) {
-        await localDb.updateDoc('attendance', existingLog.id, updatedLog);
-      } else {
-        await localDb.setDoc('attendance', updatedLog);
-      }
+      await localDb.setDoc('attendance', updatedLog.id, updatedLog);
 
       setAttendanceLogs(prev => {
         const filtered = prev.filter(l => l.id !== logId && !(l.programId === prog.id && l.date === selectedDate));

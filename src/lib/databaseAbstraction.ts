@@ -225,6 +225,12 @@ export function mergeDedicatedAndDocumentRows(
       if (docTs >= existingTs) {
         // Updated JSON document is newer or equal: JSON document takes priority!
         const merged: any = { ...existing, ...doc };
+        if ((!merged.name || merged.name === 'نامشخص') && existing.name && existing.name !== 'نامشخص') {
+          merged.name = existing.name;
+        }
+        if (!merged.nationalId && existing.nationalId) {
+          merged.nationalId = existing.nationalId;
+        }
         delete merged._appUpdatedAt;
         mergedMap.set(docId, merged);
       } else {
@@ -1699,18 +1705,18 @@ export const MysqlRepository = {
           INSERT INTO students (id, student_code, national_id, name, father_name, grade, phone, address, status, is_active, entry_year, mentor_id, notes, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            student_code = ?,
-            national_id = ?,
-            name = ?,
-            father_name = ?,
-            grade = ?,
-            phone = ?,
-            address = ?,
-            status = ?,
+            student_code = COALESCE(?, student_code),
+            national_id = COALESCE(?, national_id),
+            name = CASE WHEN ? IS NOT NULL AND ? != '' AND ? != 'نامشخص' THEN ? ELSE name END,
+            father_name = COALESCE(?, father_name),
+            grade = CASE WHEN ? IS NOT NULL AND ? != '' AND ? != 'نامشخص' THEN ? ELSE grade END,
+            phone = COALESCE(?, phone),
+            address = COALESCE(?, address),
+            status = COALESCE(?, status),
             is_active = ?,
-            entry_year = ?,
-            mentor_id = ?,
-            notes = ?,
+            entry_year = COALESCE(?, entry_year),
+            mentor_id = COALESCE(?, mentor_id),
+            notes = COALESCE(?, notes),
             data = ?,
             updated_at = NOW();
         `;
@@ -1730,7 +1736,7 @@ export const MysqlRepository = {
 
         const params = [
           row.id, codeVal, natVal, nameVal, fatherVal, gradeVal, phoneVal, addressVal, statusVal, activeVal, entryVal, mentorVal, notesVal, dataJson,
-          codeVal, natVal, nameVal, fatherVal, gradeVal, phoneVal, addressVal, statusVal, activeVal, entryVal, mentorVal, notesVal, dataJson
+          codeVal, natVal, nameVal, nameVal, nameVal, nameVal, fatherVal, gradeVal, gradeVal, gradeVal, gradeVal, phoneVal, addressVal, statusVal, activeVal, entryVal, mentorVal, notesVal, dataJson
         ];
         try {
           await pool.query(sql, params);

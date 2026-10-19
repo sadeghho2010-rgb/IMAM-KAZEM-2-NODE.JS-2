@@ -1923,6 +1923,14 @@ export default function Programs() {
                 </span>
               )}
 
+              {/* Self-Reporting Badge (اصلاح ۲) */}
+              {(program.attendanceType === 'self_reporting' || (program as any).isSelfReporting) && (
+                <span className="text-[10px] font-black px-2.5 py-0.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-full flex items-center gap-1 shadow-xs ring-2 ring-emerald-300">
+                  <UserCheck size={11} className="text-emerald-100" />
+                  <span>خوداظهاری طلاب</span>
+                </span>
+              )}
+
               {/* Subject Category & Book Badges */}
               {(program.subjectCategory || program.type === 'اصلی') && (
                 (() => {
@@ -1957,6 +1965,14 @@ export default function Programs() {
                 <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-800 rounded-md border border-indigo-200 flex items-center gap-1">
                   <MessageSquare size={10} className="text-indigo-600" />
                   <span>{attachedCounselings.length} مشاوره مرتبط</span>
+                </span>
+              )}
+
+              {/* Self-Reporting Badge (اصلاح ۲) */}
+              {(program.attendanceType === 'self_reporting' || (program as any).isSelfReporting) && (
+                <span className="text-[10px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                  <UserCheck size={11} className="text-emerald-600" />
+                  <span>حضور و غیاب: خوداظهاری</span>
                 </span>
               )}
             </div>

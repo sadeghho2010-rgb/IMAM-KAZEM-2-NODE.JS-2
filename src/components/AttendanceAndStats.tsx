@@ -58,7 +58,9 @@ import {
   parseShamsiDate, 
   formatShamsiDate,
   shamsiToDate,
-  dateToShamsi
+  dateToShamsi,
+  normalizeShamsiDateStr,
+  toEnglishDigits
 } from '../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -216,6 +218,29 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // Safe Shamsi date comparison helper (handles / vs -, Persian vs English digits, padding)
+  const isSameShamsiDate = (d1?: string, d2?: string): boolean => {
+    if (!d1 || !d2) return false;
+    if (d1 === d2) return true;
+    const n1 = normalizeShamsiDateStr(d1);
+    const n2 = normalizeShamsiDateStr(d2);
+    if (n1 && n2 && n1 === n2) return true;
+    const c1 = toEnglishDigits(d1).replace(/[\/\-]/g, '');
+    const c2 = toEnglishDigits(d2).replace(/[\/\-]/g, '');
+    return Boolean(c1 && c2 && c1 === c2);
+  };
+
+  // Safe Attendance session program matcher (handles ID types, snake_case vs camelCase, and ID prefixes or titles)
+  const isAttendanceMatchProgram = (r: any, targetProgId: string, progTitle?: string): boolean => {
+    if (!r || (!targetProgId && !progTitle)) return false;
+    const p1 = String(r.programId || r.program_id || '').trim();
+    const p2 = String(targetProgId || '').trim();
+    if (p1 && p2 && (p1 === p2 || p1.toLowerCase() === p2.toLowerCase())) return true;
+    if (r.id && typeof r.id === 'string' && p2 && (r.id.startsWith(`${p2}_`) || r.id === p2)) return true;
+    if (progTitle && r.programTitle && String(r.programTitle).trim() === String(progTitle).trim()) return true;
+    return false;
   };
 
   // Helper to resolve teacher name for cards and headers
@@ -798,7 +823,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Current Attendance Session Log for selected course & date
   const currentSessionRecord = useMemo(() => {
-    return attendanceRecords.find(r => r.programId === selectedProgramId && r.date === selectedDate);
+    return attendanceRecords.find(r => isAttendanceMatchProgram(r, selectedProgramId) && isSameShamsiDate(r.date, selectedDate));
   }, [attendanceRecords, selectedProgramId, selectedDate]);
 
   // Filter enrolled students by recording method in roster (شیوه ثبت: همه / نماینده / خوداظهاری)
@@ -2276,7 +2301,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         // Card Helper Status Function
         const getStatusCardData = (prog: any) => {
           const hol = getHolidayForDate(selectedDate);
-          const rec = attendanceRecords.find(r => r.programId === prog.id && r.date === selectedDate);
+          const rec = attendanceRecords.find(r => isAttendanceMatchProgram(r, prog.id) && isSameShamsiDate(r.date, selectedDate));
 
           if (rec) {
             if (rec.isCancelled) {
@@ -2309,10 +2334,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             }
 
             // Normal recorded (GREEN)
-            const presentCount = rec.students?.filter(s => s.status === 'present').length || 0;
-            const absentCount = rec.students?.filter(s => s.status === 'absent').length || 0;
-            const lateCount = rec.students?.filter(s => s.status === 'late').length || 0;
-            const totalCount = rec.students?.length || 0;
+            const presentCount = rec.presentCount !== undefined ? Number(rec.presentCount) : ((rec as any).present_count !== undefined ? Number((rec as any).present_count) : (rec.students?.filter(s => s.status === 'present').length || 0));
+            const absentCount = rec.absentCount !== undefined ? Number(rec.absentCount) : ((rec as any).absent_count !== undefined ? Number((rec as any).absent_count) : (rec.students?.filter(s => s.status === 'absent').length || 0));
+            const lateCount = rec.lateCount !== undefined ? Number(rec.lateCount) : ((rec as any).late_count !== undefined ? Number((rec as any).late_count) : (rec.students?.filter(s => s.status === 'late').length || 0));
+            const totalCount = rec.students?.length || (presentCount + absentCount + lateCount);
 
             return {
               statusKey: 'recorded' as const,
@@ -2404,8 +2429,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           return true;
         });
 
-        // Separate Academic and Counseling programs
+        // Separate Self-Reporting, Regular Academic, and Regular Counseling programs (اصلاح ۳)
+        const isSelfReportingProg = (p: any) => p.attendanceType === 'self_reporting' || Boolean((p as any).isSelfReporting);
+
+        const selfReportingProgs = filteredPrograms.filter(isSelfReportingProg);
+
         const academicProgs = filteredPrograms.filter(p => 
+          !isSelfReportingProg(p) &&
           !p.isCounseling && 
           p.category !== 'counseling' && 
           p.type !== 'counseling' && 
@@ -2414,11 +2444,12 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         );
 
         const counselingProgs = filteredPrograms.filter(p => 
-          p.isCounseling || 
+          !isSelfReportingProg(p) &&
+          (p.isCounseling || 
           p.category === 'counseling' || 
           p.type === 'counseling' || 
           p.title?.includes('مشاوره') || 
-          p.grade?.includes('مشاوره')
+          p.grade?.includes('مشاوره'))
         );
 
         // Grade options extracted dynamically
@@ -3117,6 +3148,190 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           >
                             <CheckSquare size={11} className="shrink-0" />
                             <span className="truncate">ثبت و ویرایش</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                            className="col-span-1 py-1.5 px-2 rounded-xl text-[10.5px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-2xs bg-black/25 hover:bg-black/35 text-white border border-white/20"
+                            title="تغییر سریع وضعیت"
+                          >
+                            <SlidersHorizontal size={11} className="shrink-0" />
+                            <span className="truncate">تغییر وضعیت</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 3: SELF-REPORTING CLASSES (کلاس‌های با ثبت خوداظهاری توسط طلاب - اصلاح ۳) */}
+            {selfReportingProgs.length > 0 && (
+              <div className="space-y-2.5 pt-4 border-t-2 border-emerald-300">
+                <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 bg-emerald-100 text-emerald-800 rounded-lg">
+                      <UserCheck size={16} />
+                    </div>
+                    <h3 className="text-xs sm:text-sm font-black text-emerald-950">
+                      کلاس‌های با ثبت خوداظهاری توسط طلاب
+                    </h3>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full border border-emerald-300">
+                      {selfReportingProgs.length} کلاس خوداظهاری
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    ثبت حضور مستقیم در پنل شخصی هر طلبه
+                  </span>
+                </div>
+
+                <div className={cn(
+                  "grid gap-2.5 sm:gap-3",
+                  isCompactView 
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8" 
+                    : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                )}>
+                  {selfReportingProgs.map(prog => {
+                    const st = getStatusCardData(prog);
+                    const totalAtt = (st.presentCount || 0) + (st.absentCount || 0) + (st.lateCount || 0);
+                    const presenceRate = totalAtt > 0 ? Math.round(((st.presentCount || 0) / totalAtt) * 100) : 100;
+
+                    if (isCompactView) {
+                      return (
+                        <div
+                          key={prog.id}
+                          className={cn(
+                            "rounded-xl p-2 border transition-all duration-200 flex flex-col justify-between space-y-1.5 relative overflow-hidden text-[11px] shadow-xs backdrop-blur-md hover:scale-[1.03] cursor-default active:scale-[0.98] min-h-[95px]",
+                            st.cardBorder
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={cn("px-1.5 py-0.2 text-[9px] rounded-md font-black truncate max-w-[70px]", st.gradePill)}>
+                              {prog.grade || 'خوداظهاری'}
+                            </span>
+                            <span className={cn("px-1 py-0.2 text-[8.5px] rounded-md border flex items-center gap-0.5 font-extrabold truncate max-w-[80px]", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate">{st.badgeText.split(' ')[0]}</span>
+                            </span>
+                          </div>
+
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <h4 className="text-[11px] font-black truncate leading-tight drop-shadow-2xs" title={prog.title}>
+                              {prog.title}
+                            </h4>
+                            <p className="text-[9.5px] opacity-90 truncate font-semibold">
+                              استاد: {getProgramTeacherName(prog)}
+                            </p>
+                            <span className="text-[8.5px] px-1 py-0.2 bg-emerald-500/20 text-emerald-950 font-bold rounded">
+                              خوداظهاری
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-1 border-t border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedProgramId(prog.id);
+                                setActiveTab('record');
+                              }}
+                              className="flex-1 py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs bg-white text-slate-800"
+                              title="مشاهده آمار و لیست خوداظهاری"
+                            >
+                              <CheckSquare size={10} />
+                              <span>مشاهده</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setQuickStatusModal({ prog, initialMode: st.statusKey })}
+                              className="py-0.5 px-1 rounded-md text-[9.5px] font-black transition-all flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer shadow-2xs bg-black/25 text-white border border-white/20"
+                              title="تغییر وضعیت"
+                            >
+                              <SlidersHorizontal size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={prog.id}
+                        className={cn(
+                          "rounded-2xl p-2.5 sm:p-3 border transition-all duration-200 flex flex-col justify-between space-y-2 relative overflow-hidden text-xs shadow-xs backdrop-blur-xl hover:border-white/60 hover:ring-2 hover:ring-white/30 hover:shadow-md hover:scale-[1.01] cursor-default active:scale-[0.99] min-h-[135px]",
+                          st.cardBorder
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className={cn("px-1.5 py-0.5 text-[10px] rounded-lg font-black truncate max-w-[90px] tracking-wide shadow-2xs", st.gradePill)}>
+                            {prog.grade || 'خوداظهاری'}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {st.statusKey === 'recorded' && (
+                              <div className="flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-black/30 backdrop-blur-md text-white/95 border border-white/15 text-[9px] font-black" title={`درصد حضور: ${presenceRate}٪`}>
+                                <span>{presenceRate}٪</span>
+                              </div>
+                            )}
+                            <span className={cn("px-1.5 py-0.5 text-[9px] rounded-lg border flex items-center gap-1 font-extrabold shadow-2xs", st.badgeClass)}>
+                              {st.statusIcon}
+                              <span className="truncate max-w-[60px]">{st.badgeText}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <h4 className="text-xs sm:text-[13px] font-black leading-snug line-clamp-1 drop-shadow-xs tracking-tight" title={prog.title}>
+                            {prog.title}
+                          </h4>
+                          <div className="flex items-center gap-1 text-[10.5px] font-bold opacity-95">
+                            <User size={11} className="shrink-0 opacity-80" />
+                            <span className="truncate">استاد: {getProgramTeacherName(prog)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[9.5px] font-bold text-emerald-900 bg-emerald-100/70 px-1.5 py-0.5 rounded-md w-fit">
+                            <UserCheck size={11} className="text-emerald-700" />
+                            <span>شیوه: خوداظهاری طلاب</span>
+                          </div>
+                        </div>
+
+                        {st.statusKey === 'recorded' && (
+                          <div className={cn("grid grid-cols-3 divide-x divide-white/15 py-1 rounded-xl text-center font-black text-[10px]", st.boxBg)}>
+                            <div><span className="opacity-80">حاضر: </span>{st.presentCount}</div>
+                            <div><span className="opacity-80">غایب: </span>{st.absentCount}</div>
+                            <div><span className="opacity-80">تاخیر: </span>{st.lateCount}</div>
+                          </div>
+                        )}
+
+                        {st.statusKey === 'substitute' && (
+                          <div className={cn("py-1 px-2 rounded-xl text-[10px] font-extrabold truncate", st.boxBg)}>
+                            استاد جایگزین: {st.substituteName}
+                          </div>
+                        )}
+
+                        {(st.statusKey === 'cancelled' || st.statusKey === 'holiday') && (
+                          <div className={cn("py-1 px-2 rounded-xl text-[10px] font-bold truncate", st.boxBg)}>
+                            علت: {st.description}
+                          </div>
+                        )}
+
+                        {st.statusKey === 'pending' && (
+                          <div className={cn("py-1 text-center text-[10px] font-extrabold rounded-xl", st.boxBg)}>
+                            در انتظار ثبت خوداظهاری طلاب
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-white/15">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProgramId(prog.id);
+                              setActiveTab('record');
+                            }}
+                            className="col-span-2 py-1.5 px-2 rounded-xl text-[10.5px] font-black transition-all flex items-center justify-center gap-1 active:scale-95 cursor-pointer shadow-xs bg-white text-slate-900 hover:bg-slate-50"
+                            title="مشاهده آمار و جزئیات خوداظهاری"
+                          >
+                            <CheckSquare size={12} className="shrink-0 text-emerald-600" />
+                            <span className="truncate">مشاهده و مدیریت</span>
                           </button>
 
                           <button

@@ -51,6 +51,7 @@ import { cn, matchesGradeFilter } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import DeactivationModal from './DeactivationModal';
 import StudentRecordHistoryModal from './StudentRecordHistoryModal';
+import { getTodayShamsi } from '../lib/jalali';
 
 interface StudentListProps {
   onlyActive?: boolean;
@@ -125,6 +126,28 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     }
 
     return undefined;
+  };
+
+  // Helper to reliably resolve a student's full name, avoiding 'نامشخص'
+  const getStudentDisplayName = (student: Student): string => {
+    if (!student) return 'طلبه';
+    if (student.name && student.name !== 'نامشخص' && student.name.trim()) return student.name;
+    const acc = getStudentAccount(student);
+    if (acc?.name && acc.name !== 'نامشخص' && acc.name.trim()) return acc.name;
+    if (acc?.fullName && acc.fullName !== 'نامشخص' && acc.fullName.trim()) return acc.fullName;
+    if ((student as any).fullName && (student as any).fullName !== 'نامشخص') return (student as any).fullName;
+    if (student.nationalId) return `طلبه (کد ملی: ${student.nationalId})`;
+    return 'طلبه';
+  };
+
+  // Helper to reliably resolve a student's national ID
+  const getStudentDisplayNationalId = (student: Student): string => {
+    if (!student) return '---';
+    if (student.nationalId && student.nationalId.trim()) return student.nationalId;
+    const acc = getStudentAccount(student);
+    if (acc?.username && /^\d{10}$/.test(acc.username)) return acc.username;
+    if (acc?.nationalCode) return acc.nationalCode;
+    return (student as any).studentCode || '---';
   };
 
   const [isSavingCreds, setIsSavingCreds] = useState(false);
@@ -731,8 +754,10 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         }
       } else {
         // Optimistic UI for reactivation
+        const stud = students.find(s => s.id === id);
         setStudents(prev => prev.map(s => s.id === id ? { ...s, isActive: true, deactivationReason: undefined } : s));
         await localDb.updateDoc('students', id, { 
+          ...(stud || {}),
           isActive: true, 
           deactivationReason: undefined,
           deactivationDate: undefined 
@@ -755,6 +780,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
     try {
       await localDb.updateDoc('students', target.id, {
+        ...target,
         isActive: false,
         deactivationReason: reason,
         deactivationDate: date,
@@ -774,14 +800,34 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     if (!studentToDelete || isDeletingStudent) return;
     const targetStudent = studentToDelete;
 
-    // 1. INSTANT OPTIMISTIC UI CLOSE & PURGE (0ms)
-    // Box closes instantly and row vanishes without waiting for network!
+    const resolvedName = getStudentDisplayName(targetStudent);
+    const resolvedNatId = getStudentDisplayNationalId(targetStudent);
+
+    // Close modal instantly
     setStudentToDelete(null);
-    setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
+
+    // Deactivate the student cleanly (soft-deactivation) so their name, national ID and records are 100% preserved in "کل طلاب"
+    const updatedStudent: Student = {
+      ...targetStudent,
+      name: resolvedName,
+      nationalId: (resolvedNatId && resolvedNatId !== '---') ? resolvedNatId : (targetStudent.nationalId || ''),
+      isActive: false,
+      status: 'inactive',
+      deactivationReason: targetStudent.deactivationReason || 'صرفا غیر فعال',
+      deactivationDate: getTodayShamsi(),
+      deactivationNotes: 'غیرفعال‌شده از لیست طلاب فعال توسط مدیر'
+    };
+
+    setStudents(prev => {
+      if (statusFilter === 'active') {
+        return prev.filter(s => s.id !== targetStudent.id);
+      }
+      return prev.map(s => s.id === targetStudent.id ? updatedStudent : s);
+    });
 
     setIsDeletingStudent(true);
     try {
-      await localDb.deleteDoc('students', targetStudent.id);
+      await localDb.setDoc('students', targetStudent.id, updatedStudent);
 
       // Clean up orphaned enrollments and program studentIds
       try {
@@ -803,19 +849,10 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         console.warn("Non-fatal cleanup notice on student delete:", cleanErr);
       }
 
-      if (deleteUser) {
-        const linkedAcc = getStudentAccount(targetStudent);
-        if (linkedAcc) {
-          deleteUser(linkedAcc.id);
-        } else {
-          deleteUser(targetStudent.id);
-          if (targetStudent.nationalId) deleteUser(targetStudent.nationalId);
-          if (targetStudent.studentCode) deleteUser(targetStudent.studentCode);
-        }
-      }
+      // Synchronize and block user account
+      syncStudentUserStatus(targetStudent.id, false, updatedStudent);
     } catch (error: any) {
-      console.error("Error deleting student:", error);
-      alert('خطا در حذف: ' + (error.message || 'خطای نامشخص'));
+      console.error("Error deactivating student:", error);
       fetchStudents(true);
     } finally {
       setIsDeletingStudent(false);
@@ -1640,7 +1677,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                           </div>
                         )}
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 text-sm">{student.name}</span>
+                          <span className="font-bold text-slate-800 text-sm">
+                            {getStudentDisplayName(student)}
+                          </span>
                           {!visibleColumns.includes('phoneNumber') && (
                             <span className="text-[10px] text-slate-400">{student.phoneNumber || 'بدون شماره'}</span>
                           )}
@@ -1649,7 +1688,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                     </td>
                   )}
                   {visibleColumns.includes('nationalId') && (
-                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.nationalId || '---'}</td>
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{getStudentDisplayNationalId(student)}</td>
                   )}
                   {visibleColumns.includes('managementCenterCode') && (
                     <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.managementCenterCode || '---'}</td>

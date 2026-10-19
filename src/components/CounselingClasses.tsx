@@ -197,9 +197,9 @@ export default function CounselingClasses() {
   // Modal 3: Teacher History Detail Drawer/Modal
   const [selectedTeacherForHistory, setSelectedTeacherForHistory] = useState<string | null>(null);
 
-  // Fetch initial data + Purge orphan sediment (deleted students & test classes)
-  const fetchData = async () => {
-    setLoading(true);
+  // Fetch initial data
+  const fetchData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       // Force sync fresh counseling grades from cloud so updates are immediately visible without hard refresh!
       await localDb.syncCollectionFromCloud('counseling_session_grades', true).catch(() => {});
@@ -213,18 +213,8 @@ export default function CounselingClasses() {
         localDb.getDocs<ClassSessionAttendance>('attendance')
       ]);
 
-      // 1. Identify active students (permanently purge any inactive, deleted, or test residue)
-      const inactiveOrDeletedTestStudents = fetchedStudents.filter(s => 
-        s.isActive === false || 
-        s.isDeleted === true || 
-        (s as any).status === 'deleted' || 
-        (s as any).status === 'inactive'
-      );
-      for (const st of inactiveOrDeletedTestStudents) {
-        await localDb.deleteDoc('students', st.id);
-      }
-
-      const activeStudents = fetchedStudents.filter(s => 
+      // 1. Identify active students (in-memory clean filtering, strictly non-destructive)
+      const activeStudents = (fetchedStudents || []).filter(s => 
         s.isActive !== false && 
         !s.isDeleted && 
         (s as any).status !== 'deleted' && 
@@ -241,26 +231,12 @@ export default function CounselingClasses() {
       const activeProgramTitles = new Set(activePrograms.map(p => p.title));
       const activeProgramIds = new Set(activePrograms.map(p => p.id));
 
-      // 3. Purge all orphan counseling grades that reference deleted students or deleted test classes
-      const cleanGrades: CounselingSessionGrade[] = [];
-      for (const g of (fetchedGrades || [])) {
-        const isStudentValid = activeStudentIds.has(String(g.studentId));
+      // 3. Filter valid counseling grades in memory (fast and non-destructive)
+      const cleanGrades = (fetchedGrades || []).filter(g => {
+        const isStudentValid = !g.studentId || activeStudentIds.has(String(g.studentId)) || (fetchedStudents || []).some(s => String(s.id) === String(g.studentId));
         const isCourseValid = !g.courseTitle || activeProgramTitles.has(g.courseTitle) || (g.programId && activeProgramIds.has(g.programId));
-        
-        if (!isStudentValid || !isCourseValid) {
-          // Permanently purge orphan test grade
-          await localDb.deleteDoc('counseling_session_grades', g.id);
-        } else {
-          cleanGrades.push(g);
-        }
-      }
-
-      // 4. Purge orphan enrollments belonging to deleted students or deleted programs
-      for (const en of (fetchedEnrollments || [])) {
-        if (!activeStudentIds.has(String(en.studentId)) || (en.programId && !activeProgramIds.has(en.programId))) {
-          await localDb.deleteDoc('enrollments', en.id);
-        }
-      }
+        return isStudentValid && isCourseValid;
+      });
 
       setGrades(cleanGrades.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setStudents(activeStudents);
@@ -290,8 +266,9 @@ export default function CounselingClasses() {
         fetchData();
       }
     };
+    const handleCustomChange = () => fetchData();
     window.addEventListener('app_data_change', handleDataChange);
-    window.addEventListener('collection_change_counseling_session_grades', fetchData);
+    window.addEventListener('collection_change_counseling_session_grades', handleCustomChange);
 
     // 3. Storage event for cross-tab realtime sync
     const handleStorageChange = (e: StorageEvent) => {
@@ -304,14 +281,14 @@ export default function CounselingClasses() {
     // 4. Active live polling (every 3 seconds) so managers see teacher evaluations immediately without hard refresh
     const pollInterval = setInterval(() => {
       localDb.syncCollectionFromCloud('counseling_session_grades', true)
-        .then(() => fetchData())
+        .then(() => fetchData(true))
         .catch(() => {});
     }, 3000);
 
     return () => {
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
-      window.removeEventListener('collection_change_counseling_session_grades', fetchData);
+      window.removeEventListener('collection_change_counseling_session_grades', handleCustomChange);
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(pollInterval);
     };
@@ -524,8 +501,30 @@ export default function CounselingClasses() {
       gradesList: CounselingSessionGrade[];
     }>();
 
-    // Populate evaluated classes - strictly for active programs in counselingClassesList
+    // Deduplicate grades: keep only the latest evaluation per student per class per session date
+    const uniqueGradesMap = new Map<string, CounselingSessionGrade>();
     filteredGradesInRange.forEach(g => {
+      const sId = String(g.studentId || '').trim();
+      const cTitle = String(g.courseTitle || g.programId || '').trim();
+      const sDate = normalizeShamsiDateStr(g.sessionDate);
+      const dedupeKey = `${sId}_${cTitle}_${sDate}`;
+      const existing = uniqueGradesMap.get(dedupeKey);
+      if (!existing) {
+        uniqueGradesMap.set(dedupeKey, g);
+      } else {
+        const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        const curTime = new Date(g.updatedAt || g.createdAt || 0).getTime();
+        const existingVer = (existing as any).version || 0;
+        const curVer = (g as any).version || 0;
+        if (curVer > existingVer || curTime > existingTime) {
+          uniqueGradesMap.set(dedupeKey, g);
+        }
+      }
+    });
+    const deduplicatedGrades = Array.from(uniqueGradesMap.values());
+
+    // Populate evaluated classes - strictly for active programs in counselingClassesList
+    deduplicatedGrades.forEach(g => {
       const prog = counselingClassesList.find(p => 
         (g.programId && p.id === g.programId) ||
         p.title === g.courseTitle || 
@@ -756,7 +755,7 @@ export default function CounselingClasses() {
           )}
 
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             disabled={loading}
             className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
             title="بروزرسانی داده‌ها"

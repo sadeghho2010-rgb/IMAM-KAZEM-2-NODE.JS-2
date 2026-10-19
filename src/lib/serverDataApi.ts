@@ -4,6 +4,7 @@ import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
+import { normalizeShamsiDateStr } from './jalali';
 
 // Local Server File-based Storage (Fallback when neither MySQL nor Supabase is configured)
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -677,10 +678,71 @@ export async function serverSaveDoc(
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
-      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
+      let finalRecord = { ...record };
+
+      // Intelligent Merge for Attendance: Never overwrite concurrent student self-reporting sessions
+      if (collection === 'attendance' && Array.isArray(record.students)) {
+        try {
+          let existingDoc = await MysqlRepository.getDocument(collection, id);
+          if (!existingDoc && record.programId && record.date) {
+            // Find existing session by programId and matching Shamsi date
+            const allAtt = await fetchRawCollectionData('attendance');
+            existingDoc = allAtt.find((a: any) => 
+              (String(a.programId || a.program_id) === String(record.programId || record.program_id)) &&
+              normalizeShamsiDateStr(a.date) === normalizeShamsiDateStr(record.date)
+            );
+          }
+          if (existingDoc && Array.isArray(existingDoc.students) && existingDoc.students.length > 0) {
+            const studentMap = new Map<string, any>();
+            existingDoc.students.forEach((s: any) => {
+              const k = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
+              if (k) studentMap.set(k, s);
+            });
+            record.students.forEach((s: any) => {
+              const k = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
+              if (k) studentMap.set(k, s);
+            });
+            const mergedStudents = Array.from(studentMap.values());
+            const pCount = mergedStudents.filter((s: any) => s.status === 'present').length;
+            const aCount = mergedStudents.filter((s: any) => s.status === 'absent').length;
+            const lCount = mergedStudents.filter((s: any) => s.status === 'late').length;
+            finalRecord = {
+              ...existingDoc,
+              ...record,
+              id: existingDoc.id || id,
+              students: mergedStudents,
+              presentCount: pCount,
+              absentCount: aCount,
+              lateCount: lCount,
+              updatedAt: new Date().toISOString()
+            };
+          }
+        } catch (attMrgErr) {}
+      }
+
+      // Intelligent Merge for Students: Preserve name and nationalId from being replaced by نامشخص on partial patches
+      if (collection === 'students') {
+        try {
+          const existingDoc = await MysqlRepository.getDocument(collection, id);
+          if (existingDoc) {
+            finalRecord = {
+              ...existingDoc,
+              ...record
+            };
+            if ((!finalRecord.name || finalRecord.name === 'نامشخص') && existingDoc.name && existingDoc.name !== 'نامشخص') {
+              finalRecord.name = existingDoc.name;
+            }
+            if (!finalRecord.nationalId && existingDoc.nationalId) {
+              finalRecord.nationalId = existingDoc.nationalId;
+            }
+          }
+        } catch (stMrgErr) {}
+      }
+
+      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, finalRecord);
 
       // Primary JSON document persistence
-      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
+      const saveRes = await MysqlRepository.saveDocument(collection, id, finalRecord);
 
       // Secondary dedicated table sync (non-fatal if column constraint/type mismatch occurs)
       if (dedicatedTable) {
@@ -1471,7 +1533,8 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'academic_holidays', 'article_evaluations', 'received_articles',
     'student_lockers', 'personal_todos', 'assigned_todos',
     'evaluation_requests', 'research', 'study_stats',
-    'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods'
+    'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods',
+    'counseling_session_grades'
   ];
 
   const BATCH_SIZE = 6;

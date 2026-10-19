@@ -17,7 +17,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Program, AttendanceSessionLog, StudentAttendanceDetail, AttendanceStatus } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { getTodayShamsi, getShamsiDayOfWeek } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeek, toEnglishDigits } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
 
 interface StudentSelfReportingModalProps {
@@ -152,13 +152,19 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
 
     setIsSubmitting(true);
     try {
-      const cleanDate = selectedDate.replace(/\//g, '-');
+      const cleanDateStr = toEnglishDigits(selectedDate).replace(/-/g, '/');
+      const cleanDate = cleanDateStr.replace(/\//g, '-');
       const logId = `${currentProgram.id}_${cleanDate}`;
+      const dayName = getShamsiDayOfWeek(cleanDateStr);
       const nowIso = new Date().toISOString();
 
       // Retrieve existing logs
       const allLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
-      let existingLog = allLogs.find(l => l.id === logId || (l.programId === currentProgram.id && l.date === selectedDate));
+      let existingLog = allLogs.find(l => 
+        l.id === logId || 
+        ((String(l.programId || (l as any).program_id) === String(currentProgram.id)) &&
+         (toEnglishDigits(l.date).replace(/-/g, '/') === cleanDateStr || l.date === selectedDate))
+      );
 
       const myStudentDetail: StudentAttendanceDetail = {
         studentId,
@@ -170,6 +176,8 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
         recordedMethod: 'self_reporting',
         selfReportedAt: nowIso
       };
+
+      let finalLog: AttendanceSessionLog;
 
       if (existingLog) {
         // Update student in existing session log
@@ -189,21 +197,22 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
           currentStudents.push(myStudentDetail);
         }
 
-        const updatedLog: AttendanceSessionLog = {
+        finalLog = {
           ...existingLog,
+          id: existingLog.id || logId,
+          programId: currentProgram.id,
+          date: existingLog.date || cleanDateStr,
           students: currentStudents,
           updatedAt: nowIso
         } as any;
-
-        await localDb.setDoc('attendance', updatedLog);
       } else {
         // Create new session log for that date and class
-        const newLog: AttendanceSessionLog = {
+        finalLog = {
           id: logId,
           programId: currentProgram.id,
           programTitle: currentProgram.title,
           grade: currentProgram.grade || '',
-          date: selectedDate,
+          date: cleanDateStr,
           dayOfWeek: dayName,
           isCancelled: false,
           attendanceType: 'self_reporting',
@@ -211,9 +220,20 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
           recordedAt: nowIso,
           students: [myStudentDetail]
         } as any;
-
-        await localDb.setDoc('attendance', newLog);
       }
+
+      const presentCount = (finalLog.students || []).filter(s => s.status === 'present').length;
+      const absentCount = (finalLog.students || []).filter(s => s.status === 'absent').length;
+      const lateCount = (finalLog.students || []).filter(s => s.status === 'late').length;
+
+      finalLog = {
+        ...finalLog,
+        presentCount,
+        absentCount,
+        lateCount
+      };
+
+      await localDb.setDoc('attendance', finalLog.id, finalLog);
 
       // Dispatch real-time events
       window.dispatchEvent(new CustomEvent('app_data_change'));

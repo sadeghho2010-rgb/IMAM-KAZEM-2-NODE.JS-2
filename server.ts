@@ -82,7 +82,7 @@ async function startServer() {
       }
       return compression.filter(req, res);
     }
-  }));
+  }) as any);
 
   // Standard Body Parsing & Cookie Parser
   app.use(express.json({ limit: "50mb" }));
