@@ -178,7 +178,8 @@ class RealtimeSyncManager {
 
     try {
       const antiCacheTime = Date.now();
-      const res = await fetch(`/api/sync/changes?since=${this.lastTimestamp}&_t=${antiCacheTime}`, {
+      const querySince = Math.max(0, this.lastTimestamp - 10000);
+      const res = await fetch(`/api/sync/changes?since=${querySince}&_t=${antiCacheTime}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Cache-Control': 'no-cache, no-store, must-revalidate',

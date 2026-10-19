@@ -453,19 +453,18 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       try {
         await localDb.syncCollectionFromCloud('attendance', true);
       } catch (e) {}
-      loadData(false);
+      await loadData(false);
     };
 
     window.addEventListener('app_data_change', handleDataEvent);
     window.addEventListener('attendance_updated', handleDataEvent);
+    window.addEventListener('collection_change_attendance', handleDataEvent);
 
     // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance changes from cloud
     const fastSyncTimer = setInterval(async () => {
       try {
         await localDb.syncCollectionFromCloud('attendance', true);
-        const freshAtt = await localDb.getDocs<AttendanceSessionLog>('attendance');
-        const isDeepEqual = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
-        setAttendanceRecords(prev => isDeepEqual(prev, freshAtt || []) ? prev : (freshAtt || []));
+        await loadData(false);
       } catch (e) {}
     }, 3000);
 
@@ -473,6 +472,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       unsub();
       window.removeEventListener('app_data_change', handleDataEvent);
       window.removeEventListener('attendance_updated', handleDataEvent);
+      window.removeEventListener('collection_change_attendance', handleDataEvent);
       clearInterval(fastSyncTimer);
     };
   }, []);
