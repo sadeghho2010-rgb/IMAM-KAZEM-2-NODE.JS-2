@@ -4,7 +4,7 @@ import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
-import { normalizeShamsiDateStr } from './jalali';
+import { normalizeShamsiDateStr, getConsolidatedSessionLog } from './jalali';
 
 // Local Server File-based Storage (Fallback when neither MySQL nor Supabase is configured)
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -681,41 +681,20 @@ export async function serverSaveDoc(
       let finalRecord = { ...record };
 
       // Intelligent Merge for Attendance: Never overwrite concurrent student self-reporting sessions
-      if (collection === 'attendance' && Array.isArray(record.students)) {
+      if (collection === 'attendance') {
         try {
-          let existingDoc = await MysqlRepository.getDocument(collection, id);
-          if (!existingDoc && record.programId && record.date) {
-            // Find existing session by programId and matching Shamsi date
-            const allAtt = await fetchRawCollectionData('attendance');
-            existingDoc = allAtt.find((a: any) => 
-              (String(a.programId || a.program_id) === String(record.programId || record.program_id)) &&
-              normalizeShamsiDateStr(a.date) === normalizeShamsiDateStr(record.date)
-            );
-          }
-          if (existingDoc && Array.isArray(existingDoc.students) && existingDoc.students.length > 0) {
-            const studentMap = new Map<string, any>();
-            existingDoc.students.forEach((s: any) => {
-              const k = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
-              if (k) studentMap.set(k, s);
-            });
-            record.students.forEach((s: any) => {
-              const k = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
-              if (k) studentMap.set(k, s);
-            });
-            const mergedStudents = Array.from(studentMap.values());
-            const pCount = mergedStudents.filter((s: any) => s.status === 'present').length;
-            const aCount = mergedStudents.filter((s: any) => s.status === 'absent').length;
-            const lCount = mergedStudents.filter((s: any) => s.status === 'late').length;
-            finalRecord = {
-              ...existingDoc,
-              ...record,
-              id: existingDoc.id || id,
-              students: mergedStudents,
-              presentCount: pCount,
-              absentCount: aCount,
-              lateCount: lCount,
-              updatedAt: new Date().toISOString()
-            };
+          const allAtt = await fetchRawCollectionData('attendance');
+          const programId = String(record.programId || record.program_id || '');
+          const dateStr = String(record.date || '');
+          if (programId && dateStr) {
+            const consolidated = getConsolidatedSessionLog([record, ...allAtt], programId, dateStr, record.programTitle);
+            if (consolidated) {
+              finalRecord = {
+                ...consolidated,
+                id: record.id || consolidated.id,
+                updatedAt: new Date().toISOString()
+              };
+            }
           }
         } catch (attMrgErr) {}
       }

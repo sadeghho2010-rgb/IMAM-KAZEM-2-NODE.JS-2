@@ -29,7 +29,7 @@ import {
   AttendanceSettings,
   AcademicHolidayItem 
 } from '../../types';
-import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, getConsolidatedSessionLog } from '../../lib/jalali';
 
 interface RepresentativeQuickAttendanceViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -336,10 +336,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     }
     loadedLogKeyRef.current = sessionKey;
 
-    const existing = attendanceLogs.find(l => 
-      l.id === expectedLogId || 
-      (l.programId === currentProgram.id && l.date === selectedDate)
-    );
+    const existing = getConsolidatedSessionLog(attendanceLogs, currentProgram.id, selectedDate, currentProgram.title);
 
     if (existing) {
       setIsCancelled(existing.isCancelled || false);
@@ -456,9 +453,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       const absentCount = isCancelled ? 0 : studentsDetailList.filter(s => s.status === 'absent').length;
       const lateCount = isCancelled ? 0 : studentsDetailList.filter(s => s.status === 'late').length;
 
-      const existingInDb = (attendanceLogs || []).find(l => 
-        l.id === logId || (l.programId === currentProgram.id && l.date === selectedDate)
-      );
+      const existingInDb = getConsolidatedSessionLog(attendanceLogs || [], currentProgram.id, selectedDate, currentProgram.title);
 
       const sessionLog: AttendanceSessionLog = {
         ...(existingInDb || {}),

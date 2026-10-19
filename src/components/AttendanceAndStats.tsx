@@ -60,7 +60,8 @@ import {
   shamsiToDate,
   dateToShamsi,
   normalizeShamsiDateStr,
-  toEnglishDigits
+  toEnglishDigits,
+  getConsolidatedSessionLog
 } from '../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -823,8 +824,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Current Attendance Session Log for selected course & date
   const currentSessionRecord = useMemo(() => {
-    return attendanceRecords.find(r => isAttendanceMatchProgram(r, selectedProgramId) && isSameShamsiDate(r.date, selectedDate));
-  }, [attendanceRecords, selectedProgramId, selectedDate]);
+    return getConsolidatedSessionLog(attendanceRecords, selectedProgramId, selectedDate, currentProgram?.title);
+  }, [attendanceRecords, selectedProgramId, selectedDate, currentProgram]);
 
   // Filter enrolled students by recording method in roster (شیوه ثبت: همه / نماینده / خوداظهاری)
   const filteredRosterStudents = useMemo(() => {
@@ -2301,7 +2302,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         // Card Helper Status Function
         const getStatusCardData = (prog: any) => {
           const hol = getHolidayForDate(selectedDate);
-          const rec = attendanceRecords.find(r => isAttendanceMatchProgram(r, prog.id) && isSameShamsiDate(r.date, selectedDate));
+          const rec = getConsolidatedSessionLog(attendanceRecords, prog.id, selectedDate, prog.title);
 
           if (rec) {
             if (rec.isCancelled) {
@@ -2334,9 +2335,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             }
 
             // Normal recorded (GREEN)
-            const presentCount = rec.presentCount !== undefined ? Number(rec.presentCount) : ((rec as any).present_count !== undefined ? Number((rec as any).present_count) : (rec.students?.filter(s => s.status === 'present').length || 0));
-            const absentCount = rec.absentCount !== undefined ? Number(rec.absentCount) : ((rec as any).absent_count !== undefined ? Number((rec as any).absent_count) : (rec.students?.filter(s => s.status === 'absent').length || 0));
-            const lateCount = rec.lateCount !== undefined ? Number(rec.lateCount) : ((rec as any).late_count !== undefined ? Number((rec as any).late_count) : (rec.students?.filter(s => s.status === 'late').length || 0));
+            const presentCount = rec.students && rec.students.length > 0 
+              ? rec.students.filter((s: any) => s.status === 'present').length 
+              : (rec.presentCount !== undefined ? Number(rec.presentCount) : 0);
+            const absentCount = rec.students && rec.students.length > 0 
+              ? rec.students.filter((s: any) => s.status === 'absent').length 
+              : (rec.absentCount !== undefined ? Number(rec.absentCount) : 0);
+            const lateCount = rec.students && rec.students.length > 0 
+              ? rec.students.filter((s: any) => s.status === 'late').length 
+              : (rec.lateCount !== undefined ? Number(rec.lateCount) : 0);
             const totalCount = rec.students?.length || (presentCount + absentCount + lateCount);
 
             return {

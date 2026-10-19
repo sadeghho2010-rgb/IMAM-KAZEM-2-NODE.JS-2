@@ -267,3 +267,109 @@ export function subtractDaysShamsi(shamsiStr: string, days: number): string {
   }
 }
 
+/**
+ * Intelligently consolidates all matching attendance session logs for a given program and date into a single merged session log.
+ * Prevents data loss when multiple students submit self-reporting separately or when multiple session logs exist.
+ */
+export function getConsolidatedSessionLog(
+  logs: any[],
+  programId: string,
+  dateStr: string,
+  progTitle?: string
+): any | undefined {
+  if (!logs || !Array.isArray(logs) || logs.length === 0 || (!programId && !progTitle) || !dateStr) {
+    return undefined;
+  }
+
+  const normTargetDate = normalizeShamsiDateStr(dateStr);
+  const targetCleanDigits = toEnglishDigits(normTargetDate).replace(/[\/\-]/g, '');
+
+  const matchingLogs = logs.filter(l => {
+    if (!l) return false;
+    const p1 = String(l.programId || l.program_id || '').trim();
+    const p2 = String(programId || '').trim();
+    const idMatch = (p1 && p2 && (p1 === p2 || p1.toLowerCase() === p2.toLowerCase())) ||
+                    (l.id && typeof l.id === 'string' && p2 && (l.id.startsWith(`${p2}_`) || l.id === p2)) ||
+                    (progTitle && l.programTitle && String(l.programTitle).trim() === String(progTitle).trim());
+
+    if (!idMatch) return false;
+
+    const logNormDate = normalizeShamsiDateStr(l.date);
+    const logCleanDigits = toEnglishDigits(logNormDate).replace(/[\/\-]/g, '');
+    return Boolean(logCleanDigits && targetCleanDigits && logCleanDigits === targetCleanDigits);
+  });
+
+  if (matchingLogs.length === 0) return undefined;
+
+  // Combine all students from matching logs into a single Map keyed by student identifier
+  const studentMap = new Map<string, any>();
+  const baseLog = matchingLogs[0];
+
+  let isCancelled = false;
+  let cancellationReason = '';
+  let hasSubstituteTeacher = false;
+  let substituteTeacherName = '';
+  let substituteTeacherNotes = '';
+
+  matchingLogs.forEach(log => {
+    if (log.isCancelled) {
+      isCancelled = true;
+      if (log.cancellationReason) cancellationReason = log.cancellationReason;
+    }
+    if (log.hasSubstituteTeacher) {
+      hasSubstituteTeacher = true;
+      if (log.substituteTeacherName) substituteTeacherName = log.substituteTeacherName;
+      if (log.substituteTeacherNotes) substituteTeacherNotes = log.substituteTeacherNotes;
+    }
+
+    if (Array.isArray(log.students)) {
+      log.students.forEach((s: any) => {
+        if (!s) return;
+        const key = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
+        if (!key) return;
+
+        const existing = studentMap.get(key);
+        if (!existing) {
+          studentMap.set(key, { ...s });
+        } else {
+          // Prefer non-unspecified status over unspecified; prefer newer timestamp
+          const isSValid = s.status && s.status !== 'unspecified';
+          const isExValid = existing.status && existing.status !== 'unspecified';
+          const isBetterStatus = isSValid && !isExValid;
+          const isNewer = s.selfReportedAt && (!existing.selfReportedAt || s.selfReportedAt > existing.selfReportedAt);
+
+          if (isBetterStatus || isNewer) {
+            studentMap.set(key, { ...existing, ...s });
+          } else {
+            studentMap.set(key, { ...s, ...existing });
+          }
+        }
+      });
+    }
+  });
+
+  const mergedStudents = Array.from(studentMap.values());
+  const presentCount = mergedStudents.filter((s: any) => s.status === 'present').length;
+  const absentCount = mergedStudents.filter((s: any) => s.status === 'absent').length;
+  const lateCount = mergedStudents.filter((s: any) => s.status === 'late').length;
+
+  const stdCleanDate = normTargetDate.replace(/\//g, '-');
+
+  return {
+    ...baseLog,
+    id: `${programId}_${stdCleanDate}`,
+    programId,
+    date: normTargetDate,
+    isCancelled,
+    cancellationReason: isCancelled ? cancellationReason : undefined,
+    hasSubstituteTeacher,
+    substituteTeacherName: hasSubstituteTeacher ? substituteTeacherName : undefined,
+    substituteTeacherNotes: hasSubstituteTeacher ? substituteTeacherNotes : undefined,
+    students: mergedStudents,
+    presentCount,
+    absentCount,
+    lateCount,
+    totalCount: mergedStudents.length
+  };
+}
+

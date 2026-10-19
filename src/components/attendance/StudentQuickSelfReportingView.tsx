@@ -24,7 +24,7 @@ import {
   AttendanceStatus, 
   AttendanceSettings 
 } from '../../types';
-import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, toEnglishDigits } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, toEnglishDigits, getConsolidatedSessionLog } from '../../lib/jalali';
 
 interface StudentQuickSelfReportingViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -245,10 +245,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       const cleanDate = selectedDate.replace(/\//g, '-');
       const expectedLogId = `${prog.id}_${cleanDate}`;
 
-      const sessionLog = attendanceLogs.find(l => 
-        l.id === expectedLogId || 
-        (l.programId === prog.id && l.date === selectedDate)
-      );
+      const sessionLog = getConsolidatedSessionLog(attendanceLogs, prog.id, selectedDate, prog.title);
 
       const studentRec = sessionLog?.students?.find(st => 
         candidateIds.includes(String(st.studentId).trim().toLowerCase()) ||
@@ -328,11 +325,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         if (fresh && fresh.length > 0) freshLogs = fresh;
       } catch (e) {}
 
-      const existingLog = freshLogs.find(l => 
-        l.id === logId || 
-        ((String(l.programId || (l as any).program_id) === String(prog.id)) &&
-         (toEnglishDigits(l.date).replace(/-/g, '/') === cleanDateStr || l.date === selectedDate))
-      );
+      const existingLog = getConsolidatedSessionLog(freshLogs, prog.id, selectedDate, prog.title);
 
       let updatedLog: AttendanceSessionLog;
 

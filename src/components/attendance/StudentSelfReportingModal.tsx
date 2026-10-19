@@ -17,7 +17,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Program, AttendanceSessionLog, StudentAttendanceDetail, AttendanceStatus } from '../../types';
 import { localDb } from '../../lib/localDb';
-import { getTodayShamsi, getShamsiDayOfWeek, toEnglishDigits } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeek, toEnglishDigits, getConsolidatedSessionLog } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
 
 interface StudentSelfReportingModalProps {
@@ -160,11 +160,7 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
 
       // Retrieve existing logs
       const allLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
-      let existingLog = allLogs.find(l => 
-        l.id === logId || 
-        ((String(l.programId || (l as any).program_id) === String(currentProgram.id)) &&
-         (toEnglishDigits(l.date).replace(/-/g, '/') === cleanDateStr || l.date === selectedDate))
-      );
+      let existingLog = getConsolidatedSessionLog(allLogs, currentProgram.id, selectedDate, currentProgram.title);
 
       const myStudentDetail: StudentAttendanceDetail = {
         studentId,
