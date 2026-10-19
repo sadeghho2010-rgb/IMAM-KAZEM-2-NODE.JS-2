@@ -327,7 +327,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         console.warn('Error syncing aggregate periodic log:', aggErr);
       }
 
-      await localDb.flushSyncQueue();
+      localDb.flushSyncQueue().catch(() => {});
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
@@ -364,7 +364,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
         const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
         await syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student');
       }
-      await localDb.flushSyncQueue();
+      localDb.flushSyncQueue().catch(() => {});
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));

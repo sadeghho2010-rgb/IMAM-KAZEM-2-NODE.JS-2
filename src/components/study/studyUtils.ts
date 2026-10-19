@@ -760,7 +760,8 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
     await localDb.addDoc('periodic_study_logs', payload);
   }
 
-  await localDb.flushSyncQueue();
+  // Flush sync queue in background without blocking UI event dispatch
+  localDb.flushSyncQueue().catch(() => {});
 
   // Broadcast change event to trigger localDb listeners and active UI subscribers
   if (typeof window !== 'undefined') {

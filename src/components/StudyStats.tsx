@@ -172,28 +172,58 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       // Map student objects for fast canonical ID resolution
       const studentIdMap = new Map<string, Student>();
       (allStudents || []).forEach(s => {
-        studentIdMap.set(String(s.id), s);
-        if (s.nationalId) studentIdMap.set(String(s.nationalId), s);
-        if (s.studentCode) studentIdMap.set(String(s.studentCode), s);
+        if (s.id) studentIdMap.set(String(s.id).trim(), s);
+        if (s.nationalId) studentIdMap.set(String(s.nationalId).trim(), s);
+        if (s.studentCode) studentIdMap.set(String(s.studentCode).trim().toUpperCase(), s);
       });
+
+      const findMatchedStudent = (stId: any, natId?: any, stCode?: any, rawDoc?: any): Student | undefined => {
+        if (stId) {
+          const m = studentIdMap.get(String(stId).trim());
+          if (m) return m;
+        }
+        if (natId) {
+          const m = studentIdMap.get(String(natId).trim());
+          if (m) return m;
+        }
+        if (stCode) {
+          const m = studentIdMap.get(String(stCode).trim().toUpperCase());
+          if (m) return m;
+        }
+        if (rawDoc) {
+          if (rawDoc.student_id) {
+            const m = studentIdMap.get(String(rawDoc.student_id).trim());
+            if (m) return m;
+          }
+          if (rawDoc.userId) {
+            const m = studentIdMap.get(String(rawDoc.userId).trim());
+            if (m) return m;
+          }
+        }
+        return undefined;
+      };
 
       // Automatically synthesize and merge any daily entries into periodic logs map
       const mergedLogsMap = new Map<string, PeriodicStudyLog>();
       (rawLogs || []).forEach(l => {
-        const matched = studentIdMap.get(String(l.studentId));
+        const matched = findMatchedStudent(l.studentId, l.nationalId, l.studentCode, l);
         const canonicalStId = matched ? String(matched.id) : String(l.studentId);
-        mergedLogsMap.set(`${l.periodId}_${canonicalStId}`, {
+        const logData = {
           ...l,
           studentId: canonicalStId,
           studentName: matched?.name || l.studentName || ''
-        });
+        };
+        mergedLogsMap.set(`${l.periodId}_${canonicalStId}`, logData);
+        if (l.studentId && l.studentId !== canonicalStId) {
+          mergedLogsMap.set(`${l.periodId}_${l.studentId}`, logData);
+        }
       });
 
       // Group daily entries by period and canonical student ID
       const entriesByPeriodStudent = new Map<string, StudyDailyEntry[]>();
       (rawDailyEntries || []).forEach(e => {
         if (!e.periodId || !e.studentId) return;
-        const matched = studentIdMap.get(String(e.studentId));
+        const matched = findMatchedStudent(e.studentId, (e as any).nationalId, (e as any).studentCode, e);
         const canonicalStId = matched ? String(matched.id) : String(e.studentId);
         const key = `${e.periodId}_${canonicalStId}`;
         const existing = entriesByPeriodStudent.get(key) || [];
@@ -290,13 +320,13 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     };
     window.addEventListener('storage', handleStorageChange);
 
-    // Live background polling every 3 seconds for instant manager sync
-    const pollInterval = setInterval(() => {
-      Promise.all([
-        localDb.syncCollectionFromCloud('periodic_study_logs', true).catch(() => {}),
-        localDb.syncCollectionFromCloud('study_daily_entries', true).catch(() => {})
-      ]).then(() => fetchData());
-    }, 3000);
+    // Background polling for manager sync
+    const pollInterval = setInterval(async () => {
+      try {
+        await localDb.syncCollectionFromCloud('periodic_study_logs', false);
+        await localDb.syncCollectionFromCloud('study_daily_entries', false);
+      } catch (e) {}
+    }, 10000);
 
     return () => {
       unsub();

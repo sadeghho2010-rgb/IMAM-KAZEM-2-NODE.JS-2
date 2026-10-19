@@ -1134,14 +1134,17 @@ class LocalDatabase {
           }
         }
 
-        // Also guarantee any newly added local doc not yet on cloud is preserved
+        // Also guarantee any local doc not yet on cloud and not explicitly deleted locally is preserved
+        localDocMap.forEach((localDoc, id) => {
+          if (!pendingDeleteIds.has(id) && !mergedDocsMap.has(id)) {
+            mergedDocsMap.set(id, localDoc);
+          }
+        });
+
+        // Ensure pending local modifications override cloud
         pendingUpsertDocs.forEach((localDoc, id) => {
           if (!pendingDeleteIds.has(id)) {
-            const meta = pendingUpsertMeta.get(id);
-            const isWithinLock = meta ? (now - (meta.timestamp || 0)) < 15000 : false;
-            if (isWithinLock || !mergedDocsMap.has(id)) {
-              mergedDocsMap.set(id, localDoc);
-            }
+            mergedDocsMap.set(id, localDoc);
           }
         });
 
