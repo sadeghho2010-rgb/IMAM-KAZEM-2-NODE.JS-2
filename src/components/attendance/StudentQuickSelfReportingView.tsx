@@ -54,12 +54,13 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
   const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
   const [successMessages, setSuccessMessages] = useState<Record<string, string>>({});
+  const initialLoadDoneRef = React.useRef(false);
 
   useEffect(() => {
-    loadData();
+    loadData(true);
 
-    const unsub = localDb.subscribe(() => loadData());
-    const handleDataChange = () => loadData();
+    const unsub = localDb.subscribe(() => loadData(false));
+    const handleDataChange = () => loadData(false);
 
     window.addEventListener('app_data_change', handleDataChange);
     window.addEventListener('collection_change_programs', handleDataChange);
@@ -73,13 +74,16 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     };
   }, [currentUser]);
 
-  const loadData = async () => {
+  const loadData = async (isInitial = false) => {
     try {
-      setIsLoading(true);
-      const [allProgs, allStudents, allEnrolls, allSettings, allLogs] = await Promise.all([
+      if (isInitial && !initialLoadDoneRef.current) {
+        setIsLoading(true);
+      }
+      const [allProgs, allStudents, allEnrolls, legacyEnrolls, allSettings, allLogs] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<Student>('students'),
         localDb.getDocs<any>('course_enrollments'),
+        localDb.getDocs<any>('enrollments'),
         localDb.getDocs<AttendanceSettings>('attendance_settings'),
         localDb.getDocs<AttendanceSessionLog>('attendance')
       ]);
@@ -97,7 +101,8 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
       setPrograms((allProgs || []).filter(p => p.status !== 'deleted' && !(p as any).isDeleted));
       setStudents(allStudents || []);
-      setEnrollments(allEnrolls || []);
+      const combinedEnrollments = [...(allEnrolls || []), ...(legacyEnrolls || [])];
+      setEnrollments(combinedEnrollments);
       setAttendanceLogs(allLogs || []);
       if (allSettings && allSettings.length > 0) {
         setAttendanceSettings(allSettings[0]);
@@ -105,6 +110,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     } catch (e) {
       console.warn('Error loading self-reporting data:', e);
     } finally {
+      initialLoadDoneRef.current = true;
       setIsLoading(false);
     }
   };
@@ -282,12 +288,13 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
   };
 
   const handleSetLateMinutes = (progId: string, mins: number) => {
+    const capped = Math.max(1, Math.min(15, Number(mins) || 1));
     setDraftCourseStatus(prev => ({
       ...prev,
       [progId]: {
         ...(prev[progId] || { status: 'late', note: '' }),
         status: 'late',
-        lateMinutes: mins
+        lateMinutes: capped
       }
     }));
   };
@@ -312,10 +319,12 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         studentName,
         nationalId: studentNationalId,
         status: currentDraft.status,
-        lateMinutes: currentDraft.status === 'late' ? currentDraft.lateMinutes : undefined,
+        lateMinutes: currentDraft.status === 'late' ? Math.min(15, currentDraft.lateMinutes || 10) : undefined,
         note: currentDraft.note.trim() || 'ثبت خوداظهاری توسط طلبه',
         recordedMethod: 'self_reporting',
-        selfReportedAt: nowIso
+        selfReportedAt: nowIso,
+        recordedAt: nowIso,
+        updatedAt: nowIso
       };
 
       // Retrieve freshest attendance logs directly to guarantee merging with any other student who just submitted
@@ -641,10 +650,10 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
                 {/* Late Minutes Quick Toggle */}
                 {draft.status === 'late' && (
-                  <div className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200 flex items-center justify-between gap-2 mt-2">
-                    <span className="text-xs font-bold text-amber-900">میزان تاخیر شما به دقیقه:</span>
-                    <div className="flex items-center gap-1.5">
-                      {[10, 15, 20, 30].map(m => (
+                  <div className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200 flex flex-wrap items-center justify-between gap-2 mt-2">
+                    <span className="text-xs font-bold text-amber-900">میزان تاخیر شما به دقیقه (حداکثر ۱۵ دقیقه):</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[5, 10, 15].map(m => (
                         <button
                           key={m}
                           type="button"
@@ -659,6 +668,22 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
                           {m} دقیقه
                         </button>
                       ))}
+                      <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-xl border border-amber-300">
+                        <span className="text-[10px] text-amber-800 font-bold">تایپ:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={15}
+                          value={draft.lateMinutes || 10}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
+                            handleSetLateMinutes(prog.id, capped);
+                          }}
+                          className="w-12 px-1 py-0.5 text-center font-mono font-bold text-xs text-amber-950 outline-none"
+                        />
+                        <span className="text-[10px] text-amber-700 font-bold">دقیقه</span>
+                      </div>
                     </div>
                   </div>
                 )}

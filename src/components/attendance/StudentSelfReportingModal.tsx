@@ -167,10 +167,12 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
         studentName,
         nationalId: studentNationalId,
         status: selectedStatus,
-        lateMinutes: selectedStatus === 'late' ? Number(lateMinutes) || 10 : undefined,
+        lateMinutes: selectedStatus === 'late' ? Math.min(15, Math.max(1, Number(lateMinutes) || 10)) : undefined,
         note: note.trim() || 'ثبت خوداظهاری توسط طلبه',
         recordedMethod: 'self_reporting',
-        selfReportedAt: nowIso
+        selfReportedAt: nowIso,
+        recordedAt: nowIso,
+        updatedAt: nowIso
       };
 
       let finalLog: AttendanceSessionLog;
@@ -426,11 +428,29 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
                     animate={{ opacity: 1, height: 'auto' }}
                     className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2 text-xs"
                   >
-                    <label className="block font-bold text-amber-900">
-                      میزان تاخیر به دقیقه:
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-amber-900">
+                        میزان تاخیر به دقیقه (حداکثر ۱۵ دقیقه):
+                      </label>
+                      <div className="flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-amber-300">
+                        <span className="text-[10px] text-amber-800 font-bold">تایپ:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={15}
+                          value={lateMinutes || 10}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
+                            setLateMinutes(capped);
+                          }}
+                          className="w-10 px-1 py-0.5 text-center font-mono font-bold text-xs text-amber-950 outline-none"
+                        />
+                        <span className="text-[10px] text-amber-700 font-bold">دقیقه</span>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-2">
-                      {[5, 10, 15, 20, 30].map(m => (
+                      {[5, 10, 15].map(m => (
                         <button
                           key={m}
                           type="button"

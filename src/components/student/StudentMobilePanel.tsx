@@ -116,14 +116,15 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         const matchesId = candidateIds.some(id => Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(id));
         const matchesName = candidateNames.some(cn => Array.isArray((p as any).representativeNames) && (p as any).representativeNames.some((n: string) => n.toLowerCase().includes(cn!)));
         const matchesCust = candidateNames.some(cn => p.customRepresentative && p.customRepresentative.toLowerCase().includes(cn!));
-        const matchesManaged = (currentUser as any)?.managedClassId && p.id === (currentUser as any)?.managedClassId;
+        const hasExplicit = (Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.length > 0) ||
+                            (Array.isArray((p as any).representativeNames) && (p as any).representativeNames.length > 0) ||
+                            Boolean(p.customRepresentative);
+        const matchesManaged = !hasExplicit && (currentUser as any)?.managedClassId && p.id === (currentUser as any)?.managedClassId;
         return matchesId || matchesName || matchesCust || matchesManaged;
       });
 
-      if (repProg) {
-        setHasRepProgram(true);
-        setMyRepProgramTitle(repProg.title || 'کلاس تحت نمایندگی');
-      }
+      setHasRepProgram(Boolean(repProg));
+      setMyRepProgramTitle(repProg ? (repProg.title || 'کلاس تحت نمایندگی') : '');
 
       setTodayPrograms(filteredToday);
 

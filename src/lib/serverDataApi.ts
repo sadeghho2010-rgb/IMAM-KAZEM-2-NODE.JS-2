@@ -683,17 +683,34 @@ export async function serverSaveDoc(
       // Intelligent Merge for Attendance: Never overwrite concurrent student self-reporting sessions
       if (collection === 'attendance') {
         try {
+          const nowIso = new Date().toISOString();
           const allAtt = await fetchRawCollectionData('attendance');
           const programId = String(record.programId || record.program_id || '');
           const dateStr = String(record.date || '');
           if (programId && dateStr) {
-            const consolidated = getConsolidatedSessionLog([record, ...allAtt], programId, dateStr, record.programTitle);
+            const updatedStudents = Array.isArray(record.students)
+              ? record.students.map((st: any) => ({
+                  ...st,
+                  _logUpdatedAt: nowIso,
+                  updatedAt: st.updatedAt || nowIso
+                }))
+              : [];
+            const recordWithTs = {
+              ...record,
+              students: updatedStudents,
+              updatedAt: nowIso
+            };
+
+            const otherAtt = allAtt.filter((a: any) => a.id !== id && a.id !== record.id);
+            const consolidated = getConsolidatedSessionLog([recordWithTs, ...otherAtt], programId, dateStr, record.programTitle);
             if (consolidated) {
               finalRecord = {
                 ...consolidated,
                 id: record.id || consolidated.id,
-                updatedAt: new Date().toISOString()
+                updatedAt: nowIso
               };
+            } else {
+              finalRecord = recordWithTs;
             }
           }
         } catch (attMrgErr) {}

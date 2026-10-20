@@ -1001,11 +1001,32 @@ export default function Programs() {
         await localDb.deleteDoc('enrollments', enrollment.id);
       }
 
+      // Also sync course_enrollments collection identically
+      try {
+        const allCourseEnrolls = await localDb.getDocs<any>('course_enrollments');
+        const courseToRemove = (allCourseEnrolls || []).filter(e => 
+          String(e.programId) === String(selectedProgramId) && !selectedEnrollments.includes(String(e.studentId))
+        );
+        for (const ce of courseToRemove) {
+          await localDb.deleteDoc('course_enrollments', ce.id);
+        }
+        for (const studentId of toAdd) {
+          await localDb.addDoc('course_enrollments', {
+            studentId,
+            programId: selectedProgramId
+          });
+        }
+      } catch (ceErr) {}
+
       // Sync program document explicitly
       await localDb.updateDoc('programs', selectedProgramId, {
         studentIds: selectedEnrollments,
         hasExplicitEnrollment: true
       });
+
+      window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('app_data_change'));
 
       await fetchData();
       setShowEnrollModal(false);
@@ -1255,22 +1276,27 @@ export default function Programs() {
         );
         const effectiveStudentId = st?.id || uStudentId;
 
-        const isCurrentlyRep = activeRepStudentIds.has(String(effectiveStudentId).toLowerCase().trim()) || activeRepStudentIds.has(String(u.id).toLowerCase().trim());
+        const myActiveRepProgs = activePrograms.filter(p => {
+          const rIds = Array.isArray(p.representativeStudentIds) ? p.representativeStudentIds.map((x: any) => String(x).toLowerCase().trim()) : [];
+          return rIds.includes(String(effectiveStudentId).toLowerCase().trim()) || rIds.includes(String(u.id).toLowerCase().trim());
+        });
+        const myActiveRepProgIds = myActiveRepProgs.map(p => p.id);
 
-        if (isCurrentlyRep) {
-          if (u.role !== 'class_representative' || !u.isClassRep) {
-            const updated = {
-              ...u,
-              role: 'class_representative',
-              roleTitle: 'نماینده کلاس',
-              scope: 'class',
-              isClassRep: true
-            };
-            await localDb.setDoc('all_users', updated);
-            await localDb.setDoc('system_users', updated);
-            try { await localDb.setDoc('users', updated); } catch {}
-          }
-        } else if (u.role === 'class_representative' || u.isClassRep) {
+        if (myActiveRepProgIds.length > 0) {
+          const targetManagedId = (u.managedClassId && myActiveRepProgIds.includes(u.managedClassId)) ? u.managedClassId : myActiveRepProgIds[0];
+          const updated = {
+            ...u,
+            role: 'class_representative',
+            roleTitle: 'نماینده کلاس',
+            scope: 'class',
+            isClassRep: true,
+            managedClassId: targetManagedId,
+            representativeProgramIds: myActiveRepProgIds
+          };
+          await localDb.setDoc('all_users', updated);
+          await localDb.setDoc('system_users', updated);
+          try { await localDb.setDoc('users', updated); } catch {}
+        } else if (u.role === 'class_representative' || u.isClassRep || u.managedClassId || (Array.isArray(u.representativeProgramIds) && u.representativeProgramIds.length > 0)) {
           // No longer assigned to ANY active program! Reset role back to student
           const updated = {
             ...u,

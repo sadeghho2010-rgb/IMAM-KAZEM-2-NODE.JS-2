@@ -75,6 +75,8 @@ export interface StudentAttendanceDetail {
   warningRegisteredAt?: string;
   recordedMethod?: 'representative' | 'self_reporting'; // شیوه ثبت: نماینده یا خوداظهاری
   selfReportedAt?: string;
+  recordedAt?: string;
+  updatedAt?: string;
 }
 
 export interface AttendanceSessionLog {

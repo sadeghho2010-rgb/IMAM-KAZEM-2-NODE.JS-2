@@ -70,11 +70,13 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
   const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
   const loadedLogKeyRef = React.useRef<string>('');
 
-  useEffect(() => {
-    loadData();
+  const initialLoadDoneRef = React.useRef(false);
 
-    const unsub = localDb.subscribe(() => loadData());
-    const handleDataChange = () => loadData();
+  useEffect(() => {
+    loadData(true);
+
+    const unsub = localDb.subscribe(() => loadData(false));
+    const handleDataChange = () => loadData(false);
 
     window.addEventListener('app_data_change', handleDataChange);
     window.addEventListener('collection_change_programs', handleDataChange);
@@ -88,13 +90,16 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     };
   }, [currentUser]);
 
-  const loadData = async () => {
+  const loadData = async (isInitial = false) => {
     try {
-      setIsLoading(true);
-      const [allProgs, allStudents, allEnrolls, allSettings, allLogs, allHols] = await Promise.all([
+      if (isInitial && !initialLoadDoneRef.current) {
+        setIsLoading(true);
+      }
+      const [allProgs, allStudents, allEnrolls, legacyEnrolls, allSettings, allLogs, allHols] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<Student>('students'),
         localDb.getDocs<any>('course_enrollments'),
+        localDb.getDocs<any>('enrollments'),
         localDb.getDocs<AttendanceSettings>('attendance_settings'),
         localDb.getDocs<AttendanceSessionLog>('attendance'),
         localDb.getDocs<AcademicHolidayItem>('academic_holidays')
@@ -121,7 +126,6 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         const stNat = normalizeClean(s.nationalId);
         const stCode = normalizeClean(s.studentCode);
         const stName = normalizeClean(s.name);
-
         return (
           (sId && stId === String(sId)) ||
           (uNameNorm && (stNat === uNameNorm || stCode === uNameNorm)) ||
@@ -132,7 +136,8 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
       setPrograms((allProgs || []).filter(p => p.status !== 'deleted' && !(p as any).isDeleted));
       setStudents((allStudents || []).filter(s => s.status !== 'deleted'));
-      setEnrollments(allEnrolls || []);
+      const combinedEnrollments = [...(allEnrolls || []), ...(legacyEnrolls || [])];
+      setEnrollments(combinedEnrollments);
       setAttendanceLogs(allLogs || []);
       if (allSettings && allSettings.length > 0) {
         setAttendanceSettings(allSettings[0]);
@@ -140,6 +145,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     } catch (e) {
       console.warn('Error loading representative attendance data:', e);
     } finally {
+      initialLoadDoneRef.current = true;
       setIsLoading(false);
     }
   };
@@ -185,32 +191,37 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     }
 
     return activeProgs.filter(p => {
-      // 1. Direct managedClassId
-      if ((currentUser as any)?.managedClassId && String(p.id) === String((currentUser as any).managedClassId)) {
-        return true;
-      }
-      // 2. representativeProgramIds array on user
-      if (Array.isArray((currentUser as any)?.representativeProgramIds) && (currentUser as any).representativeProgramIds.map(String).includes(String(p.id))) {
-        return true;
-      }
-      // 3. representativeStudentIds array on program
+      // 1. representativeStudentIds array on program (PRIMARY SOURCE OF TRUTH)
       const repIds = Array.isArray(p.representativeStudentIds) 
         ? p.representativeStudentIds.map(x => normalizeClean(String(x))) 
         : [];
       if (candidateIds.some(cid => repIds.includes(cid))) {
         return true;
       }
-      // 4. representativeNames array on program
+
+      // 2. representativeNames array on program
       const repNames = Array.isArray(p.representativeNames) 
         ? p.representativeNames.map(x => normalizeClean(String(x))) 
         : [];
       if (candidateNames.some(cname => repNames.some(rn => rn.includes(cname) || cname.includes(rn)))) {
         return true;
       }
-      // 5. customRepresentative string on program
+
+      // 3. customRepresentative string on program
       if (p.customRepresentative) {
         const cust = normalizeClean(String(p.customRepresentative));
         if (candidateNames.some(cname => cust.includes(cname) || cname.includes(cust))) {
+          return true;
+        }
+      }
+
+      // 4. Fallback ONLY if program has no explicit representative assigned at all
+      const hasExplicitReps = repIds.length > 0 || repNames.length > 0 || Boolean(p.customRepresentative);
+      if (!hasExplicitReps) {
+        if ((currentUser as any)?.managedClassId && String(p.id) === String((currentUser as any).managedClassId)) {
+          return true;
+        }
+        if (Array.isArray((currentUser as any)?.representativeProgramIds) && (currentUser as any).representativeProgramIds.map(String).includes(String(p.id))) {
           return true;
         }
       }
@@ -308,13 +319,17 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         : []
     );
 
-    const hasExplicit = directEnrolledIds.size > 0 || programStudentIds.size > 0;
+    const hasProgramStudentIds = Array.isArray((currentProgram as any).studentIds);
+    const hasExplicitProgramConfig = Boolean((currentProgram as any).hasExplicitEnrollment) || (hasProgramStudentIds && (currentProgram as any).studentIds.length > 0);
 
     return students.filter(s => {
-      if (s.status === 'deleted') return false;
+      if (s.status === 'deleted' || (s as any).isDeleted) return false;
       const sIdStr = String(s.id);
-      if (hasExplicit) {
-        return directEnrolledIds.has(sIdStr) || programStudentIds.has(sIdStr);
+      if (hasExplicitProgramConfig) {
+        return programStudentIds.has(sIdStr);
+      }
+      if (directEnrolledIds.size > 0) {
+        return directEnrolledIds.has(sIdStr);
       }
       // Grade-based matching fallback
       if (!programGrade || programGrade === 'همه پایه‌ها' || programGrade === 'همه') return true;
@@ -375,12 +390,13 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
   };
 
   const handleSetStudentLateMinutes = (studentId: string, mins: number) => {
+    const capped = Math.max(1, Math.min(15, Number(mins) || 1));
     setDraftAttendance(prev => ({
       ...prev,
       [studentId]: {
         ...(prev[studentId] || {}),
         status: 'late',
-        lateMinutes: mins
+        lateMinutes: capped
       }
     }));
   };
@@ -436,16 +452,18 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
       const studentsDetailList: StudentAttendanceDetail[] = classStudents.map(st => {
         const d = draftAttendance[String(st.id)];
-        const currentStatus: AttendanceStatus = isCancelled ? 'excused' : (d?.status || 'present');
+        const currentStatus: AttendanceStatus = isCancelled ? 'unspecified' : (d?.status || 'present');
 
         return {
           studentId: String(st.id),
           studentName: st.name,
           nationalId: st.nationalId,
           status: currentStatus,
-          lateMinutes: currentStatus === 'late' ? (d?.lateMinutes || 10) : undefined,
+          lateMinutes: currentStatus === 'late' ? Math.min(15, Math.max(1, d?.lateMinutes || 10)) : undefined,
           note: d?.note || (isCancelled ? 'تعطیلی کلاس' : undefined),
-          recordedMethod: 'representative'
+          recordedMethod: 'representative',
+          recordedAt: nowIso,
+          updatedAt: nowIso
         };
       });
 
@@ -905,26 +923,26 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                       <span>تاخیر</span>
                     </button>
 
-                    {/* موجه */}
+                    {/* نامشخص */}
                     <button
                       type="button"
                       disabled={isCancelled}
-                      onClick={() => handleSetStudentStatus(String(st.id), 'excused')}
+                      onClick={() => handleSetStudentStatus(String(st.id), 'unspecified')}
                       className={cn(
                         "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                        status === 'excused' || isCancelled
-                          ? "bg-blue-600 text-white border-blue-600 shadow-xs font-black"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-800"
+                        status === 'unspecified' || !status
+                          ? "bg-slate-700 text-white border-slate-700 shadow-xs font-black"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-800"
                       )}
                     >
-                      <span>موجه</span>
+                      <span>نامشخص</span>
                     </button>
 
                     {/* Late Minutes Quick Toggle if late */}
                     {status === 'late' && !isCancelled && (
-                      <div className="flex items-center gap-1 mr-2 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900">
-                        <span>دقیقه:</span>
-                        {[10, 15, 20, 30].map(m => (
+                      <div className="flex items-center gap-1 mr-2 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900 flex-wrap">
+                        <span>تاخیر:</span>
+                        {[5, 10, 15].map(m => (
                           <button
                             key={m}
                             type="button"
@@ -937,6 +955,21 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             {m}
                           </button>
                         ))}
+                        <div className="flex items-center gap-0.5 border-r border-amber-200 pr-1 mr-0.5">
+                          <input
+                            type="number"
+                            min={1}
+                            max={15}
+                            value={lateMins || 10}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
+                              handleSetStudentLateMinutes(String(st.id), capped);
+                            }}
+                            className="w-10 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                          <span className="text-[9px] text-amber-700">دقیقه</span>
+                        </div>
                       </div>
                     )}
                   </div>

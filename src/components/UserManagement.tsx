@@ -204,6 +204,18 @@ export default function UserManagement() {
         });
 
         const previousClassId = editingUser.managedClassId;
+        if (previousClassId && previousClassId !== formManagedClassId) {
+          localDb.getDoc<any>('programs', previousClassId).then(async (prevProg) => {
+            if (prevProg) {
+              const repNames = (prevProg.representativeNames || []).filter((n: string) => n !== cleanFullName && n !== editingUser.name && n !== editingUser.fullName);
+              const repIds = (prevProg.representativeStudentIds || []).filter((id: string) => id !== editingUser.id && id !== editingUser.studentId && id !== matchedStudentId);
+              await localDb.updateDoc('programs', previousClassId, {
+                representativeNames: repNames,
+                representativeStudentIds: repIds
+              });
+            }
+          }).catch(console.warn);
+        }
         if (formRole === 'class_representative' && formManagedClassId) {
           localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
             if (prog) {
@@ -211,6 +223,7 @@ export default function UserManagement() {
               const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
               if (!repNames.includes(cleanFullName)) repNames.push(cleanFullName);
               if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
+              if (matchedStudentId && !repIds.includes(matchedStudentId)) repIds.push(matchedStudentId);
               await localDb.updateDoc('programs', formManagedClassId, {
                 representativeNames: repNames,
                 representativeStudentIds: repIds
@@ -221,9 +234,9 @@ export default function UserManagement() {
           // If role changed away from class_representative or managedClassId cleared, remove from all programs
           localDb.getDocs<any>('programs').then(async (progs) => {
             for (const p of progs) {
-              if (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(editingUser.id) || p.representativeStudentIds.includes(editingUser.studentId))) {
-                const nextIds = p.representativeStudentIds.filter((id: string) => id !== editingUser.id && id !== editingUser.studentId);
-                const nextNames = Array.isArray(p.representativeNames) ? p.representativeNames.filter((n: string) => n !== editingUser.fullName && n !== editingUser.name) : [];
+              if (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(editingUser.id) || p.representativeStudentIds.includes(editingUser.studentId) || (matchedStudentId && p.representativeStudentIds.includes(matchedStudentId)))) {
+                const nextIds = p.representativeStudentIds.filter((id: string) => id !== editingUser.id && id !== editingUser.studentId && id !== matchedStudentId);
+                const nextNames = Array.isArray(p.representativeNames) ? p.representativeNames.filter((n: string) => n !== editingUser.fullName && n !== editingUser.name && n !== cleanFullName) : [];
                 await localDb.updateDoc('programs', p.id, {
                   representativeStudentIds: nextIds,
                   representativeNames: nextNames

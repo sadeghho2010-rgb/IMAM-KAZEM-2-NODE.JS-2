@@ -36,18 +36,34 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
   const [isSelfReportingModalOpen, setIsSelfReportingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  const initialLoadDoneRef = React.useRef(false);
+
   useEffect(() => {
-    loadData();
+    loadData(true);
+
+    const unsub = localDb.subscribe(() => loadData(false));
+    const handleUpdate = () => loadData(false);
+    window.addEventListener('app_data_change', handleUpdate);
+    window.addEventListener('attendance_updated', handleUpdate);
+
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleUpdate);
+      window.removeEventListener('attendance_updated', handleUpdate);
+    };
   }, [currentUser]);
 
-  const loadData = async () => {
+  const loadData = async (isInitial = false) => {
     try {
-      setIsLoading(true);
-      const [allProgs, allRecords, allStudents, allEnrollments] = await Promise.all([
+      if (isInitial && !initialLoadDoneRef.current) {
+        setIsLoading(true);
+      }
+      const [allProgs, allRecords, allStudents, allEnrollments, legacyEnrolls] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<AttendanceSessionLog>('attendance'),
         localDb.getDocs<Student>('students'),
-        localDb.getDocs<any>('course_enrollments')
+        localDb.getDocs<any>('course_enrollments'),
+        localDb.getDocs<any>('enrollments')
       ]);
 
       const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
@@ -64,11 +80,13 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
       }
 
       setPrograms(allProgs);
-      setEnrollments(allEnrollments || []);
+      const combinedEnrollments = [...(allEnrollments || []), ...(legacyEnrolls || [])];
+      setEnrollments(combinedEnrollments);
       setAttendanceRecords(allRecords);
     } catch (err) {
       console.warn('Error loading student attendance:', err);
     } finally {
+      initialLoadDoneRef.current = true;
       setIsLoading(false);
     }
   };

@@ -329,30 +329,38 @@ export function getConsolidatedSessionLog(
         if (!key) return;
 
         const existing = studentMap.get(key);
+        const getTs = (item: any, parentLog?: any) => {
+          const raw = item?.selfReportedAt || item?.updatedAt || item?.recordedAt || item?._logUpdatedAt || parentLog?.updatedAt || parentLog?.recordedAt || '';
+          if (raw) {
+            const t = new Date(raw).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          return 0;
+        };
+
+        const itemLogTs = s._logUpdatedAt || log.updatedAt || log.recordedAt || '';
+        const sWithTs = { ...s, _logUpdatedAt: itemLogTs };
+
         if (!existing) {
-          studentMap.set(key, { ...s });
+          studentMap.set(key, sWithTs);
         } else {
-          const getTs = (item: any, parentLog?: any) => {
-            const raw = item?.selfReportedAt || item?.recordedAt || item?.updatedAt || parentLog?.updatedAt || parentLog?.recordedAt || '';
-            if (raw) {
-              const t = new Date(raw).getTime();
-              if (!isNaN(t) && t > 0) return t;
-            }
-            return 0;
-          };
-
-          const sTs = getTs(s, log);
+          const sTs = getTs(sWithTs, log);
           const exTs = getTs(existing);
-
           const isSValid = s.status && s.status !== 'unspecified';
           const isExValid = existing.status && existing.status !== 'unspecified';
           const isBetterStatus = isSValid && !isExValid;
           const isNewer = sTs > exTs;
 
-          if (isBetterStatus || isNewer) {
-            studentMap.set(key, { ...existing, ...s });
+          if (isNewer || (isBetterStatus && sTs >= exTs)) {
+            studentMap.set(key, { ...existing, ...sWithTs });
+          } else if (exTs > sTs) {
+            studentMap.set(key, { ...sWithTs, ...existing });
           } else {
-            studentMap.set(key, { ...s, ...existing });
+            if (isBetterStatus) {
+              studentMap.set(key, { ...existing, ...sWithTs });
+            } else {
+              studentMap.set(key, { ...sWithTs, ...existing });
+            }
           }
         }
       });

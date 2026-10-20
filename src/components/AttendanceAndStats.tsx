@@ -560,11 +560,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       : [];
 
     const matchedProgs = activeProgs.filter(p => {
-      // 0. Direct match with managedClassId or representativeProgramIds from user profile
-      if (managedClassId && p.id === managedClassId) return true;
-      if (repProgramIds.includes(p.id)) return true;
-
-      // 1. Direct ID match in representativeStudentIds
+      // 1. Direct ID match in representativeStudentIds (PRIMARY)
       if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
         if (p.representativeStudentIds.some(id => candidateIds.includes(id))) {
           return true;
@@ -586,6 +582,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         if (candidateNames.some(c => c && (norm.includes(c) || c.includes(norm) || (clean && clean.includes(c))))) {
           return true;
         }
+      }
+      // 4. Fallback ONLY if program has NO explicit representative set
+      const hasExplicitReps = (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) ||
+        (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) ||
+        Boolean(p.customRepresentative);
+      if (!hasExplicitReps) {
+        if (managedClassId && p.id === managedClassId) return true;
+        if (repProgramIds.includes(p.id)) return true;
       }
       return false;
     });
