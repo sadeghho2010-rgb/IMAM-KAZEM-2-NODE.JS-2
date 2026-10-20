@@ -191,37 +191,30 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     }
 
     return activeProgs.filter(p => {
-      // 1. representativeStudentIds array on program (PRIMARY SOURCE OF TRUTH)
+      // 1. representativeStudentIds array on program (AUTHORITATIVE SOURCE OF TRUTH)
       const repIds = Array.isArray(p.representativeStudentIds) 
-        ? p.representativeStudentIds.map(x => normalizeClean(String(x))) 
+        ? p.representativeStudentIds.map(x => normalizeClean(String(x))).filter(Boolean)
         : [];
-      if (candidateIds.some(cid => repIds.includes(cid))) {
-        return true;
+      
+      // If program has assigned student IDs, ONLY those specific students are representatives
+      if (repIds.length > 0) {
+        return candidateIds.some(cid => repIds.includes(cid));
       }
 
-      // 2. representativeNames array on program
+      // 2. Only if NO representativeStudentIds are set, fallback to clean exact match in representativeNames
       const repNames = Array.isArray(p.representativeNames) 
-        ? p.representativeNames.map(x => normalizeClean(String(x))) 
+        ? p.representativeNames.map(x => normalizeClean(String(x)).replace(/\(.*?\)/g, '').trim()).filter(Boolean)
         : [];
-      if (candidateNames.some(cname => repNames.some(rn => rn.includes(cname) || cname.includes(rn)))) {
-        return true;
+      if (repNames.length > 0) {
+        if (candidateNames.some(cname => repNames.some(rn => rn === cname))) {
+          return true;
+        }
       }
 
-      // 3. customRepresentative string on program
+      // 3. customRepresentative string (only if no repIds)
       if (p.customRepresentative) {
-        const cust = normalizeClean(String(p.customRepresentative));
-        if (candidateNames.some(cname => cust.includes(cname) || cname.includes(cust))) {
-          return true;
-        }
-      }
-
-      // 4. Fallback ONLY if program has no explicit representative assigned at all
-      const hasExplicitReps = repIds.length > 0 || repNames.length > 0 || Boolean(p.customRepresentative);
-      if (!hasExplicitReps) {
-        if ((currentUser as any)?.managedClassId && String(p.id) === String((currentUser as any).managedClassId)) {
-          return true;
-        }
-        if (Array.isArray((currentUser as any)?.representativeProgramIds) && (currentUser as any).representativeProgramIds.map(String).includes(String(p.id))) {
+        const cust = normalizeClean(String(p.customRepresentative)).replace(/\(.*?\)/g, '').trim();
+        if (candidateNames.some(cname => cust === cname)) {
           return true;
         }
       }
@@ -440,6 +433,14 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     if (!isClassDay) {
       const dayName = getShamsiDayOfWeekName(selectedDate);
       alert(`تاریخ ${selectedDate} (${dayName}) روز درسی برای کلاس «${currentProgram.title}» نیست و امکان ثبت حضور و غیاب برای آن وجود ندارد.`);
+      return;
+    }
+
+    // Authorization check: Verify user is still an active representative of currentProgram
+    const isLevelManager = currentUser?.level && currentUser.level < 3;
+    const isAuthorizedForThisClass = isLevelManager || representedPrograms.some(p => String(p.id) === String(currentProgram.id));
+    if (!isAuthorizedForThisClass) {
+      alert(`شما دیگر نماینده کلاس «${currentProgram.title}» نیستید و امکان ثبت یا ویرایش حضور و غیاب برای این درس را ندارید.`);
       return;
     }
 

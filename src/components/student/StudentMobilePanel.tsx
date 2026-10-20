@@ -55,14 +55,8 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   const [myRepProgramTitle, setMyRepProgramTitle] = useState<string>('');
 
   const isRepresentative = useMemo(() => {
-    return (
-      currentUser?.role === 'class_representative' || 
-      currentUser?.roleTitle?.includes('نماینده') ||
-      Boolean((currentUser as any)?.managedClassId) ||
-      Boolean((currentUser as any)?.representativeProgramIds?.length) ||
-      hasRepProgram
-    );
-  }, [currentUser, hasRepProgram]);
+    return hasRepProgram;
+  }, [hasRepProgram]);
 
   useEffect(() => {
     loadStudentData();
@@ -113,14 +107,21 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       });
 
       const repProg = allProgs.find(p => {
-        const matchesId = candidateIds.some(id => Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(id));
-        const matchesName = candidateNames.some(cn => Array.isArray((p as any).representativeNames) && (p as any).representativeNames.some((n: string) => n.toLowerCase().includes(cn!)));
-        const matchesCust = candidateNames.some(cn => p.customRepresentative && p.customRepresentative.toLowerCase().includes(cn!));
-        const hasExplicit = (Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.length > 0) ||
-                            (Array.isArray((p as any).representativeNames) && (p as any).representativeNames.length > 0) ||
-                            Boolean(p.customRepresentative);
-        const matchesManaged = !hasExplicit && (currentUser as any)?.managedClassId && p.id === (currentUser as any)?.managedClassId;
-        return matchesId || matchesName || matchesCust || matchesManaged;
+        const repIds = Array.isArray((p as any).representativeStudentIds) ? (p as any).representativeStudentIds.map(String) : [];
+        if (repIds.length > 0) {
+          return candidateIds.some(id => repIds.includes(String(id)));
+        }
+        const repNames = Array.isArray((p as any).representativeNames) 
+          ? (p as any).representativeNames.map((n: string) => n.replace(/\(.*?\)/g, '').trim()).filter(Boolean)
+          : [];
+        if (repNames.length > 0) {
+          return candidateNames.some(cn => repNames.includes(cn));
+        }
+        if (p.customRepresentative) {
+          const cust = String(p.customRepresentative).replace(/\(.*?\)/g, '').trim();
+          return candidateNames.includes(cust);
+        }
+        return false;
       });
 
       setHasRepProgram(Boolean(repProg));
@@ -325,22 +326,38 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
             <div
               onClick={() => {
+                if (!isRepresentative) {
+                  alert("شما در حال حاضر نماینده هیچ کلاسی نیستید. ثبت حضور و غیاب کلاس‌ها فقط توسط نماینده منتخب هر درس یا مسئولین آموزش انجام می‌شود.");
+                  return;
+                }
                 onNavigateTab('rep-attendance');
               }}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-purple-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900"
+              className={cn(
+                "relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px]",
+                isRepresentative
+                  ? "bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900 border-purple-400/30"
+                  : "bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-slate-700/40 opacity-70"
+              )}
             >
               <div className="absolute -top-6 -right-6 w-16 h-16 bg-purple-400/20 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between relative z-10">
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-purple-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
                   <CheckSquare size={16} />
                 </div>
-                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/30 text-purple-100 border border-purple-400/40 backdrop-blur-xs">
-                  نمایندگان
+                <span className={cn(
+                  "text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full border backdrop-blur-xs",
+                  isRepresentative
+                    ? "bg-purple-500/30 text-purple-100 border-purple-400/40"
+                    : "bg-slate-700/50 text-slate-300 border-slate-600/40"
+                )}>
+                  {isRepresentative ? 'نمایندگان' : 'غیرفعال'}
                 </span>
               </div>
               <div className="relative z-10 space-y-0.5 pt-1">
                 <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت حضور و غیاب</h3>
-                <p className="text-[8.5px] text-purple-200/90 font-bold truncate">مخصوص نمایندگان کلاس</p>
+                <p className="text-[8.5px] text-purple-200/90 font-bold truncate">
+                  {isRepresentative ? (myRepProgramTitle ? `کلاس: ${myRepProgramTitle}` : 'مخصوص نمایندگان کلاس') : 'فقط مخصوص نماینده کلاس'}
+                </p>
               </div>
             </div>
 

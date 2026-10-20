@@ -35,7 +35,8 @@ import {
   Loader2,
   RotateCcw,
   Archive,
-  ShieldAlert
+  ShieldAlert,
+  UserX
 } from 'lucide-react';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumSubject, CurriculumBook, CurriculumChapter } from '../types';
 import { localDb } from '../lib/localDb';
@@ -1079,11 +1080,17 @@ export default function Programs() {
     const isSelected = repModalStudentIds.includes(st.id);
     if (isSelected) {
       setRepModalStudentIds(repModalStudentIds.filter(id => id !== st.id));
-      setRepModalNames(repModalNames.filter(name => !name.startsWith(st.name)));
+      const cleanName = st.name.trim().toLowerCase();
+      setRepModalNames(repModalNames.filter(name => {
+        const c = name.replace(/\(.*?\)/g, '').trim().toLowerCase();
+        return c !== cleanName && !name.includes(st.name);
+      }));
     } else {
-      setRepModalStudentIds([...repModalStudentIds, st.id]);
+      // By default in school management, appointing a new representative replaces the previous one
       const label = `${st.name} (${st.grade || 'طلبه'})`;
-      setRepModalNames([...repModalNames, label]);
+      setRepModalStudentIds([st.id]);
+      setRepModalNames([label]);
+      setRepModalCustomInput('');
     }
   };
 
@@ -1188,22 +1195,25 @@ export default function Programs() {
       setNewProgram({
         ...newProgram,
         representativeStudentIds: repModalStudentIds,
-        representativeNames: repModalNames
+        representativeNames: repModalNames,
+        customRepresentative: repModalStudentIds.length > 0 ? '' : newProgram.customRepresentative
       });
     } else if (editingProgram) {
       const updated = {
         ...editingProgram,
         representativeStudentIds: repModalStudentIds,
-        representativeNames: repModalNames
+        representativeNames: repModalNames,
+        customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
       };
       setEditingProgram(updated);
       // Persist immediately to database and sync user roles
       try {
         await localDb.updateDoc('programs', editingProgram.id, {
           representativeStudentIds: repModalStudentIds,
-          representativeNames: repModalNames
+          representativeNames: repModalNames,
+          customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
         });
-        await syncRepresentativeUsers();
+        await syncRepresentativeUsers([updated]);
         await fetchData();
       } catch (err) {
         console.warn('Error saving representative immediately:', err);
@@ -1241,7 +1251,7 @@ export default function Programs() {
     }
   };
 
-  const syncRepresentativeUsers = async (_studentIds?: string[]) => {
+  const syncRepresentativeUsers = async (programsOverride?: Program[]) => {
     try {
       const [allUsersList, systemUsersList, legacyUsersList, allStudents, allPrograms] = await Promise.all([
         localDb.getDocs<any>('all_users'),
@@ -1251,21 +1261,22 @@ export default function Programs() {
         localDb.getDocs<any>('programs')
       ]);
 
+      const effectivePrograms = allPrograms.map(p => {
+        const override = programsOverride?.find(op => op.id === p.id);
+        return override ? { ...p, ...override } : p;
+      });
+
       const mergedUsersMap = new Map<string, any>();
       [...legacyUsersList, ...allUsersList, ...systemUsersList].forEach(u => {
         if (u && u.id) mergedUsersMap.set(u.id, u);
       });
       const allUsers = Array.from(mergedUsersMap.values());
 
-      const activePrograms = allPrograms.filter(p => p.status !== 'deleted' && !p.isDeleted);
+      const activePrograms = effectivePrograms.filter(p => p.status !== 'deleted' && !p.isDeleted);
 
-      // Collect ALL student IDs currently assigned as representatives in active programs
-      const activeRepStudentIds = new Set<string>();
-      activePrograms.forEach(p => {
-        if (Array.isArray(p.representativeStudentIds)) {
-          p.representativeStudentIds.forEach((id: any) => activeRepStudentIds.add(String(id).toLowerCase().trim()));
-        }
-      });
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')) : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
       for (const u of allUsers) {
         const uStudentId = u.studentId || u.linkedStudentId || u.id;
@@ -1296,6 +1307,24 @@ export default function Programs() {
           await localDb.setDoc('all_users', updated);
           await localDb.setDoc('system_users', updated);
           try { await localDb.setDoc('users', updated); } catch {}
+
+          // Persist to backend
+          fetch('/api/auth/update-user', {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify({ targetUserId: u.id, updates: updated })
+          }).catch(() => {});
+
+          try {
+            const curStr = localStorage.getItem('auth_user');
+            if (curStr) {
+              const cur = JSON.parse(curStr);
+              if (cur && (cur.id === u.id || (cur.username && u.username && cur.username.toUpperCase() === u.username.toUpperCase()))) {
+                localStorage.setItem('auth_user', JSON.stringify({ ...cur, ...updated }));
+              }
+            }
+          } catch {}
         } else if (u.role === 'class_representative' || u.isClassRep || u.managedClassId || (Array.isArray(u.representativeProgramIds) && u.representativeProgramIds.length > 0)) {
           // No longer assigned to ANY active program! Reset role back to student
           const updated = {
@@ -1310,6 +1339,25 @@ export default function Programs() {
           await localDb.setDoc('all_users', updated);
           await localDb.setDoc('system_users', updated);
           try { await localDb.setDoc('users', updated); } catch {}
+
+          // Persist demotion to backend
+          fetch('/api/auth/update-user', {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify({ targetUserId: u.id, updates: updated })
+          }).catch(() => {});
+
+          // If the logged in user is this user, also update localStorage immediately
+          try {
+            const curStr = localStorage.getItem('auth_user');
+            if (curStr) {
+              const cur = JSON.parse(curStr);
+              if (cur && (cur.id === u.id || (cur.username && u.username && cur.username.toUpperCase() === u.username.toUpperCase()))) {
+                localStorage.setItem('auth_user', JSON.stringify({ ...cur, ...updated }));
+              }
+            }
+          } catch {}
         }
       }
 
@@ -4671,6 +4719,32 @@ export default function Programs() {
                   <X size={18} />
                 </button>
               </div>
+
+              {/* Current Representative Banner & Dismiss Action */}
+              {(repModalStudentIds.length > 0 || repModalNames.length > 0) && (
+                <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <UserCheck className="text-indigo-600 shrink-0" size={16} />
+                    <div className="truncate">
+                      <span className="font-bold text-slate-700">نماینده فعلی کلاس: </span>
+                      <span className="font-black text-indigo-950">{repModalNames.join(' ، ')}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRepModalStudentIds([]);
+                      setRepModalNames([]);
+                      setRepModalCustomInput('');
+                    }}
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                    title="عزل و حذف کامل نماینده فعلی و بازگرداندن کلاس به وضعیت بدون نماینده"
+                  >
+                    <UserX size={13} />
+                    <span>عزل نماینده (بدون نماینده)</span>
+                  </button>
+                </div>
+              )}
 
               {/* Search active students */}
               <div className="relative">

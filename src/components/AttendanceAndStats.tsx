@@ -560,36 +560,24 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       : [];
 
     const matchedProgs = activeProgs.filter(p => {
-      // 1. Direct ID match in representativeStudentIds (PRIMARY)
+      // 1. Direct ID match in representativeStudentIds (PRIMARY & AUTHORITATIVE)
       if (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) {
-        if (p.representativeStudentIds.some(id => candidateIds.includes(id))) {
-          return true;
-        }
+        return p.representativeStudentIds.some(id => candidateIds.includes(String(id)));
       }
-      // 2. Name match in representativeNames
+      // 2. Name match in representativeNames ONLY if representativeStudentIds is not set
       if (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) {
         const hasNameMatch = p.representativeNames.some((repName: string) => {
-          const norm = repName.trim().toLowerCase();
-          const clean = cleanStr(repName);
-          return candidateNames.some(c => c && (norm.includes(c) || c.includes(norm) || (clean && (clean === c || clean.includes(c) || c.includes(clean)))));
+          const clean = cleanStr(repName).replace(/\(.*?\)/g, '').trim();
+          return candidateNames.some(c => c && clean === c);
         });
         if (hasNameMatch) return true;
       }
       // 3. Custom representative string match
       if (p.customRepresentative) {
-        const norm = p.customRepresentative.trim().toLowerCase();
-        const clean = cleanStr(p.customRepresentative);
-        if (candidateNames.some(c => c && (norm.includes(c) || c.includes(norm) || (clean && clean.includes(c))))) {
+        const clean = cleanStr(p.customRepresentative).replace(/\(.*?\)/g, '').trim();
+        if (candidateNames.some(c => c && clean === c)) {
           return true;
         }
-      }
-      // 4. Fallback ONLY if program has NO explicit representative set
-      const hasExplicitReps = (Array.isArray(p.representativeStudentIds) && p.representativeStudentIds.length > 0) ||
-        (Array.isArray(p.representativeNames) && p.representativeNames.length > 0) ||
-        Boolean(p.customRepresentative);
-      if (!hasExplicitReps) {
-        if (managedClassId && p.id === managedClassId) return true;
-        if (repProgramIds.includes(p.id)) return true;
       }
       return false;
     });
@@ -597,17 +585,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     return matchedProgs;
   }, [currentUser, programs, students]);
 
-  // Determine if the user is a class representative vs ordinary student
-  const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && (
-    currentUser?.role === 'class_representative' || 
-    currentUser?.roleTitle?.includes('نماینده') || 
-    Boolean((currentUser as any)?.managedClassId) ||
-    representativePrograms.length > 0
-  );
+  // Determine if the user is an active class representative vs ordinary student
+  const isRepresentative = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && representativePrograms.length > 0;
 
-  const isOrdinaryStudent = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && !isRepresentative && (
-    currentUser?.role === 'student' || currentUser?.level === 3 || !currentUser
-  );
+  const isOrdinaryStudent = !isSuperAdmin && !isEducationManager && !isGradeSupervisor && !isRepresentative;
 
   // Self-reporting programs for student (whether ordinary student or class representative participating in a self-reporting class)
   const studentSelfReportingPrograms = useMemo(() => {
@@ -673,12 +654,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         hasEnforcedInitialTabRef.current = true;
       }
     } else if (isOrdinaryStudent) {
-      if (activeTab !== 'report' && activeTab !== 'record') {
+      if (activeTab !== 'report' && activeTab !== 'leave_requests') {
         setActiveTab('report');
         hasEnforcedInitialTabRef.current = true;
       }
     }
   }, [isOrdinaryStudent, isRepresentative]);
+
+  // Continuously ensure ordinary students cannot stay on record tab
+  useEffect(() => {
+    if (isOrdinaryStudent && activeTab === 'record') {
+      setActiveTab('report');
+    }
+  }, [isOrdinaryStudent, activeTab]);
 
   // Set default selected program strictly constrained to represented classes for class representatives or self-reporting for students
   useEffect(() => {
@@ -1107,6 +1095,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       alert("ثبت و ویرایش حضور و غیاب توسط مسئول محترم آموزش برای اساتید پایه غیرفعال شده است (حالت فقط مشاهده).");
       return;
     }
+
+    const isAuthorizedManager = isSuperAdmin || isEducationManager || isGradeSupervisor;
+    const isProgramRep = isRepresentative && representativePrograms.some(p => String(p.id) === String(currentProgram.id));
+    if (!isAuthorizedManager && !isProgramRep) {
+      alert("شما دسترسی ثبت یا ویرایش حضور و غیاب برای این کلاس را ندارید. فقط نماینده منتخب همین درس یا مسئولین آموزش مجاز به ثبت هستند.");
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -2213,19 +2209,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             )}
 
             <div className="p-1 bg-slate-100 rounded-xl flex items-center border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setActiveTab('record')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                  activeTab === 'record'
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <CheckSquare size={14} />
-                <span>{isRepresentative ? 'ثبت حضور و غیاب' : 'ثبت و ویرایش جلسه'}</span>
-              </button>
+              {!isOrdinaryStudent && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('record')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                    activeTab === 'record'
+                      ? "bg-white text-indigo-700 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  <CheckSquare size={14} />
+                  <span>{isRepresentative ? 'ثبت حضور و غیاب' : 'ثبت و ویرایش جلسه'}</span>
+                </button>
+              )}
 
               <button
                 type="button"

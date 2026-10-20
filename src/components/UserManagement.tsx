@@ -207,7 +207,10 @@ export default function UserManagement() {
         if (previousClassId && previousClassId !== formManagedClassId) {
           localDb.getDoc<any>('programs', previousClassId).then(async (prevProg) => {
             if (prevProg) {
-              const repNames = (prevProg.representativeNames || []).filter((n: string) => n !== cleanFullName && n !== editingUser.name && n !== editingUser.fullName);
+              const repNames = (prevProg.representativeNames || []).filter((n: string) => {
+                const cleanN = n.replace(/\(.*?\)/g, '').trim().toLowerCase();
+                return cleanN !== cleanFullName.toLowerCase() && cleanN !== (editingUser.name || '').trim().toLowerCase() && cleanN !== (editingUser.fullName || '').trim().toLowerCase();
+              });
               const repIds = (prevProg.representativeStudentIds || []).filter((id: string) => id !== editingUser.id && id !== editingUser.studentId && id !== matchedStudentId);
               await localDb.updateDoc('programs', previousClassId, {
                 representativeNames: repNames,
@@ -216,17 +219,36 @@ export default function UserManagement() {
             }
           }).catch(console.warn);
         }
+
         if (formRole === 'class_representative' && formManagedClassId) {
           localDb.getDoc<any>('programs', formManagedClassId).then(async (prog) => {
             if (prog) {
-              const repNames = Array.isArray(prog.representativeNames) ? [...prog.representativeNames] : [];
-              const repIds = Array.isArray(prog.representativeStudentIds) ? [...prog.representativeStudentIds] : [];
-              if (!repNames.includes(cleanFullName)) repNames.push(cleanFullName);
-              if (!repIds.includes(editingUser.id)) repIds.push(editingUser.id);
+              const prevReps = Array.isArray(prog.representativeStudentIds) ? prog.representativeStudentIds : [];
+              // Demote any previously assigned representatives for this class who are not this user
+              const allUsrs = await localDb.getDocs<any>('all_users');
+              for (const u of allUsrs) {
+                if (u.id !== editingUser.id && (u.managedClassId === formManagedClassId || (u.studentId && prevReps.includes(u.studentId)))) {
+                  const demoted = {
+                    ...u,
+                    role: 'student',
+                    roleTitle: 'طلبه',
+                    scope: 'student',
+                    isClassRep: false,
+                    managedClassId: null,
+                    representativeProgramIds: []
+                  };
+                  await localDb.setDoc('all_users', demoted);
+                  await localDb.setDoc('system_users', demoted);
+                  try { await localDb.setDoc('users', demoted); } catch {}
+                }
+              }
+              const repNames = [`${cleanFullName} (${editingUser.gradeLabel || 'طلبه'})`];
+              const repIds = [editingUser.id];
               if (matchedStudentId && !repIds.includes(matchedStudentId)) repIds.push(matchedStudentId);
               await localDb.updateDoc('programs', formManagedClassId, {
                 representativeNames: repNames,
-                representativeStudentIds: repIds
+                representativeStudentIds: repIds,
+                customRepresentative: ''
               });
             }
           }).catch(console.warn);
@@ -236,7 +258,10 @@ export default function UserManagement() {
             for (const p of progs) {
               if (Array.isArray(p.representativeStudentIds) && (p.representativeStudentIds.includes(editingUser.id) || p.representativeStudentIds.includes(editingUser.studentId) || (matchedStudentId && p.representativeStudentIds.includes(matchedStudentId)))) {
                 const nextIds = p.representativeStudentIds.filter((id: string) => id !== editingUser.id && id !== editingUser.studentId && id !== matchedStudentId);
-                const nextNames = Array.isArray(p.representativeNames) ? p.representativeNames.filter((n: string) => n !== editingUser.fullName && n !== editingUser.name && n !== cleanFullName) : [];
+                const nextNames = Array.isArray(p.representativeNames) ? p.representativeNames.filter((n: string) => {
+                  const cleanN = n.replace(/\(.*?\)/g, '').trim().toLowerCase();
+                  return cleanN !== cleanFullName.toLowerCase() && cleanN !== (editingUser.name || '').trim().toLowerCase() && cleanN !== (editingUser.fullName || '').trim().toLowerCase();
+                }) : [];
                 await localDb.updateDoc('programs', p.id, {
                   representativeStudentIds: nextIds,
                   representativeNames: nextNames
