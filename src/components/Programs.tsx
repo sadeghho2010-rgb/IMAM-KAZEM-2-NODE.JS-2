@@ -2669,115 +2669,74 @@ export default function Programs() {
         </div>
       </div>
 
-      {/* Main & Counseling Grid (2-Columns Side-by-Side or Synchronized Spaced Rows) */}
+      {/* Main & Counseling Grid */}
       {!enableCounselingSpacing ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Column 1: Main Classes */}
+        /* OFF MODE: MAIN CLASSES FIRST, COUNSELING CLASSES BELOW IN A SEPARATE SECTION */
+        <div className="space-y-8">
+          {/* 1. Main Classes Section */}
           <div className="space-y-4">
-            {/* Animated Hero Header for Main Classes */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-5 border border-indigo-700/60 shadow-md">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-              <div className="relative z-10 flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                  <motion.div 
-                    animate={{ scale: [1, 1.08, 1], rotate: [0, 5, 0] }}
-                    transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-                    className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-indigo-200 shadow-inner"
+            <div className="bg-indigo-900 text-white px-5 py-3.5 rounded-2xl border border-indigo-700 flex items-center justify-between shadow-xs">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <BookOpen size={18} className="text-indigo-300" />
+                <span>کلاس‌های اصلی</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {isLevel2User && activeMainPrograms.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => copyGroupTeacherPhones(activeMainPrograms)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    title="کپی شماره تلفن تمام اساتید این بخش"
                   >
-                    <BookOpen size={24} />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-                      <span>کلاس‌های اصلی حوزه</span>
-                      <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 rounded-full border border-indigo-400/40">
-                        فقه، اصول و فلسفه
-                      </span>
-                    </h3>
-                    <p className="text-xs text-indigo-200/80 font-medium mt-0.5">
-                      دروس رسمی پایه‌های تحصیلی مدرسه
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {isLevel2User && activeMainPrograms.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => copyGroupTeacherPhones(activeMainPrograms)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                      title="کپی شماره تلفن تمام اساتید این بخش"
-                    >
-                      <Copy size={14} className="text-amber-300" />
-                      <span>کپی تلفن اساتید</span>
-                    </button>
-                  )}
-                  <span className="text-xs font-black bg-white/15 border border-white/20 text-white px-3 py-1 rounded-xl backdrop-blur-sm">
-                    {activeMainPrograms.length} کلاس
-                  </span>
-                </div>
+                    <Copy size={13} className="text-amber-300" />
+                    <span>کپی تلفن اساتید</span>
+                  </button>
+                )}
+                <span className="text-xs font-black bg-white/20 border border-white/30 text-white px-3 py-0.5 rounded-xl">
+                  {activeMainPrograms.length} کلاس
+                </span>
               </div>
             </div>
 
-            <div className="space-y-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeMainPrograms.map(p => renderProgramCard(p, 'اصلی'))}
               {activeMainPrograms.length === 0 && (
-                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
+                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200 md:col-span-2">
                   {programSearchTerm ? `کلاس اصلی منطبق با عبارت «${programSearchTerm}» یافت نشد.` : 'کلاس اصلی در این بخش ثبت نشده است.'}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Column 2: Counseling Classes */}
+          {/* 2. Counseling Classes Section Below Main Classes */}
           <div className="space-y-4">
-            {/* Animated Hero Header for Counseling Classes */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-900 via-orange-900 to-slate-900 text-white p-5 border border-amber-700/60 shadow-md">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-              <div className="relative z-10 flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                  <motion.div 
-                    animate={{ scale: [1, 1.08, 1], rotate: [0, -5, 0] }}
-                    transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-                    className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-amber-200 shadow-inner"
+            <div className="bg-amber-900 text-white px-5 py-3.5 rounded-2xl border border-amber-700 flex items-center justify-between shadow-xs">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <MessageSquare size={18} className="text-amber-300" />
+                <span>کلاس‌های مشاوره درسی</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {isLevel2User && activeCounselingPrograms.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => copyGroupTeacherPhones(activeCounselingPrograms)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    title="کپی شماره تلفن تمام اساتید این بخش"
                   >
-                    <MessageSquare size={24} />
-                  </motion.div>
-                  <div>
-                    <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
-                      <span>کلاس‌های مشاوره درسی</span>
-                      <span className="text-xs font-bold px-2.5 py-0.5 bg-amber-500/30 text-amber-200 rounded-full border border-amber-400/40">
-                        پشتیبانی علمی
-                      </span>
-                    </h3>
-                    <p className="text-xs text-amber-200/80 font-medium mt-0.5">
-                      جلسات مشاوره متصل به دروس اصلی جهت هدایت علمی
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {isLevel2User && activeCounselingPrograms.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => copyGroupTeacherPhones(activeCounselingPrograms)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                      title="کپی شماره تلفن تمام اساتید این بخش"
-                    >
-                      <Copy size={14} className="text-amber-300" />
-                      <span>کپی تلفن اساتید</span>
-                    </button>
-                  )}
-                  <span className="text-xs font-black bg-white/15 border border-white/20 text-white px-3 py-1 rounded-xl backdrop-blur-sm">
-                    {activeCounselingPrograms.length} کلاس
-                  </span>
-                </div>
+                    <Copy size={13} className="text-amber-300" />
+                    <span>کپی تلفن اساتید</span>
+                  </button>
+                )}
+                <span className="text-xs font-black bg-white/20 border border-white/30 text-white px-3 py-0.5 rounded-xl">
+                  {activeCounselingPrograms.length} کلاس
+                </span>
               </div>
             </div>
 
-            <div className="space-y-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeCounselingPrograms.map(p => renderProgramCard(p, 'مشاوره'))}
               {activeCounselingPrograms.length === 0 && (
-                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
+                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200 md:col-span-2">
                   {programSearchTerm ? `کلاس مشاوره‌ای منطبق با عبارت «${programSearchTerm}» یافت نشد.` : 'کلاس مشاوره‌ای ثبت نشده است.'}
                 </div>
               )}
@@ -2802,7 +2761,7 @@ export default function Programs() {
             <div className="bg-amber-900 text-white px-5 py-3.5 rounded-2xl border border-amber-700 flex items-center justify-between shadow-xs">
               <h3 className="text-sm font-black flex items-center gap-2">
                 <MessageSquare size={18} className="text-amber-300" />
-                <span>کلاس‌های مشاوره درسی (تراز روبه‌روی درس اصلی)</span>
+                <span>کلاس‌های مشاوره درسی</span>
               </h3>
               <span className="text-xs font-black bg-white/20 border border-white/30 text-white px-3 py-0.5 rounded-xl">
                 {activeCounselingPrograms.length} کلاس
