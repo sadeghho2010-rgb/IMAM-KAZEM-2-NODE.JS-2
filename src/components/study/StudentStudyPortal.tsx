@@ -1104,49 +1104,63 @@ export default function StudentStudyPortal({
           </div>
 
           {/* Cumulative Totals Widget for Active Period */}
-          <div className="bg-gradient-to-br from-indigo-50 via-slate-50 to-indigo-50/30 p-5 md:p-6 rounded-3xl border border-indigo-100 shadow-2xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
+          <div className="bg-gradient-to-br from-indigo-50 via-slate-50 to-indigo-50/40 p-5 md:p-6 rounded-3xl border border-indigo-200/80 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
               <div className="flex items-center gap-2">
                 <Calculator size={18} className="text-indigo-600" />
                 <h4 className="text-sm font-black text-indigo-950">
-                  جمع کل کارکرد ثبت‌شده تا این لحظه در دوره «{currentPeriod?.title}»
+                  خلاصه مجموع ثبت‌شده‌ها و مجموع کارکرد دوره «{currentPeriod?.title}»
                 </h4>
               </div>
-              <span className="text-xs font-bold text-indigo-700 bg-white px-3 py-1 rounded-xl border border-indigo-200 shadow-2xs self-start sm:self-auto">
-                تعداد ثبت‌ها: {dailyEntries.length} مورد
+              <span className="text-xs font-bold text-indigo-800 bg-white px-3.5 py-1 rounded-xl border border-indigo-200 shadow-2xs self-start sm:self-auto">
+                تعداد ثبت‌های انجام‌شده: {dailyEntries.length} مورد
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
-                <span className="text-[11px] font-bold text-slate-400 block">مجموع مطالعه انفرادی</span>
-                <div className="text-xl font-black text-indigo-700 mt-1">
-                  {activePeriodTotals.totalStudyHours.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* Core Courses Total */}
+              <div className="bg-white p-4 rounded-2xl border border-indigo-200/80 shadow-2xs space-y-1">
+                <span className="text-[11px] font-bold text-indigo-900 block">مجموع دروس اصلی</span>
+                <div className="text-xl font-black text-indigo-700">
+                  {activePeriodTotals.totalCoreMin.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">دقیقه</span>
                 </div>
+                <p className="text-[10px] text-indigo-900/70 font-bold">
+                  معادل {(activePeriodTotals.totalCoreMin / 60).toFixed(1)} ساعت
+                  <span className="block text-[9.5px] text-slate-500 font-medium">(مطالعه: {activePeriodTotals.totalCoreStudyMin}د • مباحثه: {activePeriodTotals.totalCoreDiscMin}د)</span>
+                </p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-2xs">
-                <span className="text-[11px] font-bold text-slate-400 block">مجموع مباحثه گروهی</span>
-                <div className="text-xl font-black text-emerald-700 mt-1">
-                  {activePeriodTotals.totalDiscHours.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">ساعت</span>
+              {/* Free Study Total */}
+              <div className="bg-white p-4 rounded-2xl border border-teal-200/80 shadow-2xs space-y-1">
+                <span className="text-[11px] font-bold text-teal-900 block">سهم مطالعه آزاد</span>
+                <div className="text-xl font-black text-teal-700">
+                  {activePeriodTotals.totalFreeMin.toLocaleString('fa-IR')} <span className="text-xs font-normal text-slate-500">دقیقه</span>
                 </div>
+                <p className="text-[10px] text-teal-900/70 font-bold">
+                  معادل {(activePeriodTotals.totalFreeMin / 60).toFixed(1)} ساعت
+                </p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-                <span className="text-[11px] font-bold text-slate-400 block">کل کارکرد دوره</span>
-                <div className="text-xl font-black text-slate-900 mt-1 flex items-baseline gap-1.5">
-                  <span>{activePeriodTotals.totalSumHours.toLocaleString('fa-IR')}</span>
-                  <span className="text-xs font-normal text-slate-500">ساعت</span>
+              {/* Grand Total Overall */}
+              <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 text-white p-4 rounded-2xl border border-indigo-800 shadow-md col-span-1 sm:col-span-2 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-200 block">مجموع کل کارکرد (دروس اصلی + مطالعه آزاد)</span>
                   {activePeriodTotals.mandatoryTotalMin > 0 && (
                     <span className={cn(
-                      "text-xs font-bold mr-auto px-2 py-0.5 rounded-lg text-[10.5px]",
-                      activePeriodTotals.isFullyFulfilled ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                      "text-[10px] font-black px-2.5 py-0.5 rounded-full border",
+                      activePeriodTotals.isFullyFulfilled 
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-400/30" 
+                        : "bg-amber-500/20 text-amber-300 border-amber-400/30"
                     )}>
                       {activePeriodTotals.diffTotalMin >= 0 
-                        ? `+${Math.round(activePeriodTotals.diffTotalMin / 60)} ساعت مازاد` 
-                        : `${Math.round(Math.abs(activePeriodTotals.diffTotalMin) / 60)} ساعت کسری`}
+                        ? `+${Math.round(activePeriodTotals.diffTotalMin / 60)} ساعت مازاد موظفی` 
+                        : `${Math.round(Math.abs(activePeriodTotals.diffTotalMin) / 60)} ساعت کسری موظفی`}
                     </span>
                   )}
+                </div>
+                <div className="text-2xl font-black text-amber-300 flex items-baseline gap-2">
+                  <span>{activePeriodTotals.totalSumMin.toLocaleString('fa-IR')} <span className="text-xs font-normal text-indigo-200">دقیقه</span></span>
+                  <span className="text-sm text-white font-bold">({activePeriodTotals.totalSumHours.toLocaleString('fa-IR')} ساعت کارکرد کل)</span>
                 </div>
               </div>
             </div>
