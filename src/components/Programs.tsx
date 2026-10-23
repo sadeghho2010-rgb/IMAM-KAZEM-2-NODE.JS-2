@@ -2145,9 +2145,19 @@ export default function Programs() {
               <span className="flex items-center gap-1">
                 <Clock size={13} className="text-indigo-500" /> {program.day || 'نامشخص'} - {program.time || 'نامشخص'}
               </span>
-              <span className="flex items-center gap-1">
-                <User size={13} className="text-indigo-500" /> {program.teacher || 'استاد تعیین نشده'}
-              </span>
+              <motion.span 
+                whileHover={{ scale: 1.05, y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-violet-100/90 via-purple-50 to-indigo-100/90 text-violet-950 border border-violet-300/80 rounded-xl text-xs sm:text-[13px] font-black shadow-xs shadow-violet-200/50 transition-all cursor-default group"
+              >
+                <span className="relative flex items-center justify-center shrink-0">
+                  <User size={14} className="text-violet-700 group-hover:rotate-12 transition-transform duration-300" />
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping opacity-75"></span>
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                </span>
+                <span className="text-[11px] font-bold text-violet-700/90 shrink-0">استاد:</span>
+                <span className="text-violet-950 font-black tracking-tight">{program.teacher || 'تعیین نشده'}</span>
+              </motion.span>
               {program.representativeNames && program.representativeNames.length > 0 && (
                 <span className="flex items-center gap-1 text-teal-800 font-bold bg-teal-50 border border-teal-200/80 px-2 py-0.5 rounded-md">
                   <UserCheck size={13} className="text-teal-600" />
@@ -2603,7 +2613,14 @@ export default function Programs() {
                     <div className="flex items-center justify-between px-2.5 py-1.5 bg-amber-100/80 rounded-xl text-[11px] font-bold text-amber-950 border border-amber-200 mb-2">
                       <span className="flex items-center gap-1">
                         <GitFork size={12} className="text-amber-700" />
-                        <span>مشاوره‌های مرتبط با: <b>{mainProg.title}</b> ({mainProg.teacher || 'بدون استاد'})</span>
+                        <span>
+                          مشاوره‌های مرتبط با: <b>{mainProg.title}</b> (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-100 text-violet-950 font-black rounded-lg border border-violet-200 text-xs">
+                            <User size={12} className="text-violet-700" />
+                            استاد: {mainProg.teacher || 'بدون استاد'}
+                          </span>
+                          )
+                        </span>
                       </span>
                       <span className="text-[10px] bg-white px-2 py-0.5 rounded-md text-amber-800 border border-amber-200 font-extrabold">
                         {linked.length} کلاس
@@ -2887,9 +2904,14 @@ export default function Programs() {
                           </div>
 
                           <div className="flex items-center gap-3 text-xs text-indigo-200">
-                            <span className="font-bold flex items-center gap-1">
-                              <User size={13} className="text-indigo-300" /> {mainProg.teacher || 'بدون استاد'}
-                            </span>
+                            <motion.span 
+                              whileHover={{ scale: 1.05 }}
+                              className="font-black flex items-center gap-1.5 px-2.5 py-1 bg-amber-400/20 text-amber-200 border border-amber-400/40 rounded-xl text-xs sm:text-[13px] shadow-2xs"
+                            >
+                              <User size={14} className="text-amber-300" />
+                              <span className="text-amber-300 text-[11px] font-bold">استاد:</span>
+                              <span className="text-white font-black">{mainProg.teacher || 'بدون استاد'}</span>
+                            </motion.span>
                             <span className="font-bold flex items-center gap-1">
                               <Clock size={13} className="text-indigo-300" /> {mainProg.day || ''} - {mainProg.time || ''}
                             </span>
@@ -3047,7 +3069,14 @@ export default function Programs() {
                                     </div>
 
                                     <div className="flex items-center justify-between text-xs text-slate-600 font-bold">
-                                      <span>استاد: {counselingProg.teacher || 'مشخص‌نشده'}</span>
+                                      <motion.span 
+                                        whileHover={{ scale: 1.04 }}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-950 font-black rounded-lg border border-violet-200 text-xs"
+                                      >
+                                        <User size={12} className="text-violet-600" />
+                                        <span className="text-[10px] text-violet-700">استاد:</span>
+                                        <span className="text-violet-950 font-black">{counselingProg.teacher || 'مشخص‌نشده'}</span>
+                                      </motion.span>
                                       <span>زمان: {counselingProg.day || ''} - {counselingProg.time || ''}</span>
                                     </div>
 
@@ -3128,8 +3157,12 @@ export default function Programs() {
                             اتصال به درس اصلی
                           </button>
                         </div>
-                        <div className="text-slate-600 flex justify-between font-bold">
-                          <span>استاد: {cp.teacher || '---'}</span>
+                        <div className="text-slate-600 flex justify-between items-center font-bold">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-950 font-black rounded-lg border border-violet-200 text-xs">
+                            <User size={12} className="text-violet-600" />
+                            <span className="text-[10px] text-violet-700">استاد:</span>
+                            <span className="text-violet-950 font-black">{cp.teacher || '---'}</span>
+                          </span>
                           <span>زمان: {cp.day} {cp.time}</span>
                         </div>
                         <div className="text-slate-500 font-bold text-[10px]">
