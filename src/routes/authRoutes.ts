@@ -102,6 +102,7 @@ router.post('/add-user', requireUserManagementRole, AuthController.addUser);
 router.post('/update-user', requireUserManagementRole, AuthController.updateUser);
 router.post('/delete-user', requireUserManagementRole, AuthController.deleteUser);
 router.post('/admin-reset-password', requireUserManagementRole, AuthController.adminResetPassword);
+router.post('/unlock-user', requireUserManagementRole, AuthController.unlockUser);
 
 router.post('/change-password', AuthController.changePassword);
 router.post('/logout', AuthController.logout);

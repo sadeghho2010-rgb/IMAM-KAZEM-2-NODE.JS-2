@@ -576,6 +576,50 @@ export class AuthController {
     }
   }
 
+  public static async unlockUser(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { targetUserId, username } = req.body;
+      const target = targetUserId || username;
+      if (!target) {
+        return res.status(400).json({ success: false, message: 'شناسه کاربر یا نام کاربری الزامی است.' });
+      }
+
+      const users = await fetchAllUsersFromStorage();
+      const existing = users.find(u => 
+        u.id === target || 
+        u.username.toUpperCase() === String(target).toUpperCase()
+      );
+
+      if (!existing) {
+        return res.status(404).json({ success: false, message: 'کاربر یافت نشد.' });
+      }
+
+      existing.failedLoginAttempts = 0;
+      existing.accountLockedUntil = undefined;
+
+      await saveUserToStorage(existing);
+      notifyRealtimeChange('system_users', existing.id, 'upsert');
+
+      const caller = (req as any).user || AuthController.extractCaller(req);
+      logServerAudit({
+        userId: caller?.userId || caller?.id || 'system',
+        username: caller?.username || 'system',
+        action: 'UNLOCK_USER_ACCOUNT',
+        entityType: 'system_users',
+        entityId: existing.id,
+        description: `رفع مسدودی موقت حساب کاربری ${existing.username} توسط ${caller?.username || 'مدیر'}`,
+        ipAddress: AuthController.getClientIp(req)
+      }).catch(() => {});
+
+      return res.status(200).json({
+        success: true,
+        message: `مسدودی حساب کاربری ${existing.username} با موفقیت برطرف گردید.`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public static async changePassword(req: Request, res: Response, next: NextFunction) {
     try {
       const caller = AuthController.extractCaller(req);
