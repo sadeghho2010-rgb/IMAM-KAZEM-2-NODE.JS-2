@@ -4,7 +4,7 @@ import path from 'path';
 import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
-import { normalizeShamsiDateStr, getConsolidatedSessionLog } from './jalali';
+import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
 
 // Local Server File-based Storage (Fallback when neither MySQL nor Supabase is configured)
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -711,6 +711,22 @@ export async function serverSaveDoc(
               };
             } else {
               finalRecord = recordWithTs;
+            }
+
+            // Prune any older duplicate records with different IDs for this exact session
+            const normDate = normalizeShamsiDateStr(dateStr);
+            const targetCleanDigits = toEnglishDigits(normDate).replace(/[\/\-]/g, '');
+            for (const oldDoc of otherAtt) {
+              if (oldDoc && oldDoc.id && oldDoc.id !== finalRecord.id) {
+                const oldDate = normalizeShamsiDateStr(oldDoc.date);
+                const oldClean = toEnglishDigits(oldDate).replace(/[\/\-]/g, '');
+                const oldProgId = String(oldDoc.programId || oldDoc.program_id || '');
+                if (oldClean === targetCleanDigits && (oldProgId === programId || (record.programTitle && oldDoc.programTitle === record.programTitle))) {
+                  try {
+                    await MysqlRepository.deleteDocument('attendance', oldDoc.id);
+                  } catch (delErr) {}
+                }
+              }
             }
           }
         } catch (attMrgErr) {}

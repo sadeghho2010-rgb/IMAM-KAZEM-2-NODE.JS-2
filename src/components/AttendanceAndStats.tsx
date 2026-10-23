@@ -886,10 +886,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       const tNorm = norm(dayOfWeekName);
       return progDays.some(d => {
         const dNorm = norm(d);
-        return dNorm === tNorm || dNorm.includes(tNorm) || tNorm.includes(dNorm);
+        return dNorm === tNorm;
       });
     }
-    return dayOfWeekName !== 'جمعه' && dayOfWeekName !== 'پنج‌شنبه';
+    const normDay = dayOfWeekName.replace(/[\u200c\s]/g, '').trim().toLowerCase();
+    return normDay !== 'جمعه' && normDay !== 'پنجشنبه';
   }, [currentProgram, dayOfWeekName]);
 
   // Recent / Upcoming Class Sessions based on school schedule and calendar
@@ -1106,7 +1107,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     setIsSaving(true);
 
     try {
-      const recordId = `${currentProgram.id}_${selectedDate.replace(/\//g, '-')}`;
+      const normDate = normalizeShamsiDateStr(selectedDate);
+      const cleanDate = toEnglishDigits(normDate).replace(/[\/\-]/g, '-');
+      const targetCleanDigits = toEnglishDigits(normDate).replace(/[\/\-]/g, '');
+      const recordId = `${currentProgram.id}_${cleanDate}`;
+      const nowIso = new Date().toISOString();
 
       const studentItems: StudentAttendanceDetail[] = enrolledStudents.map(s => ({
         studentId: s.id,
@@ -1119,7 +1124,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         excuseReason: studentExcused[s.id]?.reason || '',
         hasEducationalWarning: studentWarnings[s.id] || false,
         warningRegisteredBy: studentWarnings[s.id] ? (currentUser?.fullName || currentUser?.name || currentUser?.username) : undefined,
-        warningRegisteredAt: studentWarnings[s.id] ? new Date().toISOString() : undefined
+        warningRegisteredAt: studentWarnings[s.id] ? nowIso : undefined,
+        recordedAt: nowIso,
+        updatedAt: nowIso
       }));
 
       const newRecord: AttendanceSessionLog = {
@@ -1138,11 +1145,32 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         notes: sessionNotes,
         recordedByUserId: currentUser?.id,
         recordedByName: currentUser?.fullName || currentUser?.name || currentUser?.username || 'نماینده کلاس',
-        recordedAt: new Date().toISOString(),
+        recordedAt: nowIso,
+        updatedAt: nowIso,
         students: studentItems
       };
 
-      await localDb.setDoc('attendance', newRecord);
+      await localDb.setDoc('attendance', recordId, newRecord);
+
+      // Clean up any stale or duplicate logs for this exact class session in local database
+      const allDbLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
+      const duplicatesToDelete = allDbLogs.filter(l => {
+        if (!l || l.id === recordId) return false;
+        const p1 = String(l.programId || (l as any).program_id || '').trim();
+        const p2 = String(currentProgram.id || '').trim();
+        const isProgMatch = p1 === p2 || (l.id && l.id.startsWith(`${p2}_`)) || (l.programTitle && l.programTitle === currentProgram.title);
+        if (!isProgMatch) return false;
+        const lClean = toEnglishDigits(normalizeShamsiDateStr(l.date)).replace(/[\/\-]/g, '');
+        return lClean === targetCleanDigits;
+      });
+
+      for (const dup of duplicatesToDelete) {
+        if (dup.id) {
+          try {
+            await localDb.deleteDoc('attendance', dup.id);
+          } catch (e) {}
+        }
+      }
 
       // Create workflow item if any student has educational warning
       for (const s of enrolledStudents) {
@@ -1160,7 +1188,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             requiresEducationApproval: false,
             createdByUserId: currentUser?.id,
             createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username,
-            createdAt: new Date().toISOString(),
+            createdAt: nowIso,
             details: {
               programTitle: currentProgram.title,
               date: selectedDate,
@@ -1172,9 +1200,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }
 
       setAttendanceRecords(prev => {
-        const filtered = prev.filter(r => r.id !== recordId);
+        const filtered = prev.filter(r => {
+          if (r.id === recordId) return false;
+          const p1 = String(r.programId || (r as any).program_id || '').trim();
+          const p2 = String(currentProgram.id || '').trim();
+          const isProgMatch = p1 === p2 || (r.id && r.id.startsWith(`${p2}_`)) || (r.programTitle && r.programTitle === currentProgram.title);
+          if (!isProgMatch) return true;
+          const lClean = toEnglishDigits(normalizeShamsiDateStr(r.date)).replace(/[\/\-]/g, '');
+          return lClean !== targetCleanDigits;
+        });
         return [newRecord, ...filtered];
       });
+
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: recordId } }));
+      window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId: recordId, programId: currentProgram.id, date: selectedDate } }));
 
       setIsSavedRecently(true);
       showToast("حضور و غیاب با موفقیت در سیستم ثبت گردید.");
@@ -1396,9 +1435,27 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     });
   }, [attendanceRecords, reportGradeFilter, reportProgramFilter, reportStartDate, reportEndDate, reportCourseCategory, programs]);
 
+  // Consolidate report records by programId and date so edits on the same day cleanly merge
+  const consolidatedReportRecords = useMemo(() => {
+    const consolidatedReportMap = new Map<string, AttendanceSessionLog>();
+    filteredReportRecords.forEach(r => {
+      const normDate = toEnglishDigits(normalizeShamsiDateStr(r.date)).replace(/[\/\-]/g, '-');
+      const key = `${r.programId}_${normDate}`;
+      const existing = consolidatedReportMap.get(key);
+      if (!existing) {
+        consolidatedReportMap.set(key, r);
+      } else {
+        const prog = programs.find(p => p.id === r.programId);
+        const merged = getConsolidatedSessionLog([r, existing], r.programId, r.date, prog?.title);
+        if (merged) consolidatedReportMap.set(key, merged);
+      }
+    });
+    return Array.from(consolidatedReportMap.values());
+  }, [filteredReportRecords, programs]);
+
   // Overall Report Metrics
   const overallReportMetrics = useMemo(() => {
-    let totalSessions = filteredReportRecords.length;
+    let totalSessions = consolidatedReportRecords.length;
     let heldSessions = 0;
     let cancelledSessions = 0; // Teacher absence / session cancelled
     let officialHolidaySessions = 0; // Educational calendar holidays
@@ -1410,7 +1467,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     let totalUnspecified = 0;
     let totalWarnings = 0;
 
-    filteredReportRecords.forEach(r => {
+    consolidatedReportRecords.forEach(r => {
       const prog = programs.find(p => p.id === r.programId);
       const isCalendarHoliday = Boolean(getHolidayForDate(r.date, prog?.grade));
 
@@ -1447,7 +1504,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       totalUnspecified,
       totalWarnings
     };
-  }, [filteredReportRecords, programs, academicHolidays]);
+  }, [consolidatedReportRecords, programs, academicHolidays]);
 
   // Aggregated Per-Student Report Data
   const studentReportList = useMemo(() => {
@@ -1510,21 +1567,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       };
     });
 
-    // Consolidate report records by programId and date so edits on the same day cleanly merge
-    const consolidatedReportMap = new Map<string, AttendanceSessionLog>();
-    filteredReportRecords.forEach(r => {
-      const normDate = toEnglishDigits(normalizeShamsiDateStr(r.date)).replace(/[\/\-]/g, '-');
-      const key = `${r.programId}_${normDate}`;
-      const existing = consolidatedReportMap.get(key);
-      if (!existing) {
-        consolidatedReportMap.set(key, r);
-      } else {
-        const prog = programs.find(p => p.id === r.programId);
-        const merged = getConsolidatedSessionLog([r, existing], r.programId, r.date, prog?.title);
-        if (merged) consolidatedReportMap.set(key, merged);
-      }
-    });
-    const consolidatedReportRecords = Array.from(consolidatedReportMap.values());
+
 
     consolidatedReportRecords.forEach(rec => {
       const prog = programs.find(p => p.id === rec.programId);
@@ -1650,7 +1693,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
 
     return list;
-  }, [students, filteredReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs]);
+  }, [students, consolidatedReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs]);
 
   // Grouped by Class Report Data (for reportViewMode === 'class')
   const classGroupedReportList = useMemo(() => {
@@ -1671,7 +1714,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       }>;
     }> = {};
 
-    filteredReportRecords.forEach(rec => {
+    consolidatedReportRecords.forEach(rec => {
       if (rec.isCancelled) return;
       const progKey = rec.programId || rec.programTitle || 'عمومی';
       const matchingProg = programs.find(p => p.id === rec.programId);
@@ -1745,7 +1788,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         studentsList: stList
       };
     }).filter(cGroup => cGroup.studentsList.length > 0);
-  }, [filteredReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents]);
+  }, [consolidatedReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents, reportMethodFilter]);
 
   // Aggregated Representatives List for Education Manager
   const representativesList = useMemo(() => {

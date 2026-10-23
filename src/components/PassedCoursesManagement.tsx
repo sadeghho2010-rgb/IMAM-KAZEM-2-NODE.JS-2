@@ -79,14 +79,15 @@ export default function PassedCoursesManagement() {
   const [editingChapter, setEditingChapter] = useState<Partial<CurriculumChapter> | null>(null);
 
   // Load All Data
-  const loadAllData = async () => {
-    setIsLoading(true);
+  const loadAllData = async (syncPrograms = false) => {
     try {
-      // Ensure seed data and purge non-allowed subjects / duplicates
-      await StudentCourseProgressService.ensureDefaultCurriculumData();
-      
-      // Synchronize active main school programs with course progress so programs are the single source of truth
-      await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
+      if (syncPrograms) {
+        // Ensure seed data and purge non-allowed subjects / duplicates
+        await StudentCourseProgressService.ensureDefaultCurriculumData();
+        
+        // Synchronize active main school programs with course progress so programs are the single source of truth
+        await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
+      }
 
       const [stList, subList, bkList, chList, prgList, enrList, progList] = await Promise.all([
         localDb.getDocs<Student>('students'),
@@ -113,10 +114,13 @@ export default function PassedCoursesManagement() {
   };
 
   useEffect(() => {
-    loadAllData();
+    // Only perform the full sync on initial mount
+    setIsLoading(true);
+    loadAllData(true);
 
     const handleDataChange = () => {
-      loadAllData();
+      // For external events, reload data without re-triggering sync cascade
+      loadAllData(false);
     };
 
     window.addEventListener('collection_change_programs', handleDataChange);
@@ -773,7 +777,7 @@ export default function PassedCoursesManagement() {
 
               <button
                 type="button"
-                onClick={loadAllData}
+                onClick={() => loadAllData(false)}
                 className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 title="بروزرسانی داده‌ها"
               >

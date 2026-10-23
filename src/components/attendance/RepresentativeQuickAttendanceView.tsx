@@ -29,7 +29,7 @@ import {
   AttendanceSettings,
   AcademicHolidayItem 
 } from '../../types';
-import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, getConsolidatedSessionLog } from '../../lib/jalali';
+import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, getConsolidatedSessionLog, normalizeShamsiDateStr, toEnglishDigits } from '../../lib/jalali';
 
 interface RepresentativeQuickAttendanceViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -243,17 +243,17 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     const norm = (s: string) => s.replace(/[\u200c\s]/g, '').trim().toLowerCase();
     const targetNorm = norm(dayName);
 
-    const isFriday = targetNorm === 'جمعه' || targetNorm.includes('جمعه');
+    const isFriday = targetNorm === 'جمعه';
 
     const progDays = getProgramDays(prog);
 
     if (!progDays || progDays.length === 0) {
-      return !isFriday && !targetNorm.includes('پنجشنبه');
+      return !isFriday && targetNorm !== 'پنجشنبه';
     }
 
     return progDays.some(d => {
       const dNorm = norm(d);
-      return dNorm === targetNorm || dNorm.includes(targetNorm) || targetNorm.includes(dNorm);
+      return dNorm === targetNorm;
     });
   };
 
@@ -446,7 +446,9 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
     try {
       setIsSaving(true);
-      const cleanDate = selectedDate.replace(/\//g, '-');
+      const normDate = normalizeShamsiDateStr(selectedDate);
+      const cleanDate = toEnglishDigits(normDate).replace(/[\/\-]/g, '-');
+      const targetCleanDigits = toEnglishDigits(normDate).replace(/[\/\-]/g, '');
       const logId = `${currentProgram.id}_${cleanDate}`;
       const dayName = getShamsiDayOfWeekName(selectedDate);
       const nowIso = new Date().toISOString();
@@ -496,15 +498,40 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         lateCount
       };
 
-      if (existingInDb) {
-        await localDb.updateDoc('attendance', existingInDb.id, sessionLog);
-      } else {
-        await localDb.setDoc('attendance', sessionLog);
+      // Always save to canonical logId
+      await localDb.setDoc('attendance', logId, sessionLog);
+
+      // Clean up any stale or duplicate logs for this exact class session in local database
+      const allDbLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
+      const duplicatesToDelete = allDbLogs.filter(l => {
+        if (!l || l.id === logId) return false;
+        const p1 = String(l.programId || (l as any).program_id || '').trim();
+        const p2 = String(currentProgram.id || '').trim();
+        const isProgMatch = p1 === p2 || (l.id && l.id.startsWith(`${p2}_`)) || (l.programTitle && l.programTitle === currentProgram.title);
+        if (!isProgMatch) return false;
+        const lClean = toEnglishDigits(normalizeShamsiDateStr(l.date)).replace(/[\/\-]/g, '');
+        return lClean === targetCleanDigits;
+      });
+
+      for (const dup of duplicatesToDelete) {
+        if (dup.id) {
+          try {
+            await localDb.deleteDoc('attendance', dup.id);
+          } catch (e) {}
+        }
       }
 
-      // Update local state
+      // Update local state by removing duplicates and setting fresh sessionLog
       setAttendanceLogs(prev => {
-        const filtered = prev.filter(l => l.id !== logId && !(l.programId === currentProgram.id && l.date === selectedDate));
+        const filtered = prev.filter(l => {
+          if (l.id === logId) return false;
+          const p1 = String(l.programId || (l as any).program_id || '').trim();
+          const p2 = String(currentProgram.id || '').trim();
+          const isProgMatch = p1 === p2 || (l.id && l.id.startsWith(`${p2}_`)) || (l.programTitle && l.programTitle === currentProgram.title);
+          if (!isProgMatch) return true;
+          const lClean = toEnglishDigits(normalizeShamsiDateStr(l.date)).replace(/[\/\-]/g, '');
+          return lClean !== targetCleanDigits;
+        });
         return [sessionLog, ...filtered];
       });
 

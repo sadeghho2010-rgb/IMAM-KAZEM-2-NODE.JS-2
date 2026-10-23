@@ -157,15 +157,21 @@ export class StudentCourseProgressService {
       if (existing) {
         // Only update if not already marked 'passed' by Education Manager
         if (existing.status !== 'passed') {
-          await localDb.setDoc('student_course_progress', {
-            ...existing,
-            status: 'in_progress',
-            programId: program.id,
-            chapterTitle: resolvedChapterTitle,
-            bookTitle: resolvedBookTitle,
-            subjectTitle: resolvedSubjectTitle,
-            updatedAt: new Date().toISOString()
-          });
+          const needsUpdate = existing.status !== 'in_progress' || 
+                              existing.programId !== program.id ||
+                              existing.chapterTitle !== resolvedChapterTitle ||
+                              existing.bookTitle !== resolvedBookTitle;
+          if (needsUpdate) {
+            await localDb.setDoc('student_course_progress', {
+              ...existing,
+              status: 'in_progress',
+              programId: program.id,
+              chapterTitle: resolvedChapterTitle,
+              bookTitle: resolvedBookTitle,
+              subjectTitle: resolvedSubjectTitle,
+              updatedAt: new Date().toISOString()
+            });
+          }
         }
       } else {
         const newRecord: StudentCourseProgress = {
@@ -206,11 +212,16 @@ export class StudentCourseProgressService {
     }
   }
 
+  private static isSyncingAll = false;
+
   /**
    * Complete synchronization of all active main programs with student course progress.
    * Single source of truth is active school programs and their enrolled students.
    */
   static async syncAllProgramsWithCourseProgress(): Promise<void> {
+    if (this.isSyncingAll) return;
+    this.isSyncingAll = true;
+
     try {
       const [allPrograms, allStudents, allEnrollments, allCourseEnrollments] = await Promise.all([
         localDb.getDocs<Program>('programs'),
@@ -254,6 +265,8 @@ export class StudentCourseProgressService {
       }
     } catch (err) {
       console.warn('Error during syncAllProgramsWithCourseProgress:', err);
+    } finally {
+      this.isSyncingAll = false;
     }
   }
 }

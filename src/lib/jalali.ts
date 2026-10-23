@@ -301,66 +301,62 @@ export function getConsolidatedSessionLog(
 
   if (matchingLogs.length === 0) return undefined;
 
+  // Helper to extract timestamp for ordering logs from newest to oldest
+  const getLogTime = (l: any): number => {
+    const raw = l?._localModifiedAt || l?.updatedAt || l?.recordedAt || l?.createdAt;
+    if (typeof raw === 'number' && raw > 0) return raw;
+    if (typeof raw === 'string') {
+      const t = new Date(raw).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  };
+
+  // Sort matching logs descending: newest first so that latest edit acts as the master record
+  const sortedLogs = [...matchingLogs].sort((a, b) => getLogTime(b) - getLogTime(a));
+  const newestLog = sortedLogs[0];
+
   // Combine all students from matching logs into a single Map keyed by student identifier
   const studentMap = new Map<string, any>();
-  const baseLog = matchingLogs[0];
 
-  let isCancelled = false;
-  let cancellationReason = '';
-  let hasSubstituteTeacher = false;
-  let substituteTeacherName = '';
-  let substituteTeacherNotes = '';
-
-  matchingLogs.forEach(log => {
-    if (log.isCancelled) {
-      isCancelled = true;
-      if (log.cancellationReason) cancellationReason = log.cancellationReason;
+  const getStudentTs = (item: any, parentLog?: any): number => {
+    const raw = item?.selfReportedAt || item?.updatedAt || item?.recordedAt || item?._logUpdatedAt || parentLog?.updatedAt || parentLog?.recordedAt || '';
+    if (typeof raw === 'number' && raw > 0) return raw;
+    if (typeof raw === 'string') {
+      const t = new Date(raw).getTime();
+      if (!isNaN(t) && t > 0) return t;
     }
-    if (log.hasSubstituteTeacher) {
-      hasSubstituteTeacher = true;
-      if (log.substituteTeacherName) substituteTeacherName = log.substituteTeacherName;
-      if (log.substituteTeacherNotes) substituteTeacherNotes = log.substituteTeacherNotes;
-    }
+    return 0;
+  };
 
+  // Iterate through logs from newest to oldest
+  sortedLogs.forEach(log => {
     if (Array.isArray(log.students)) {
       log.students.forEach((s: any) => {
         if (!s) return;
         const key = String(s.studentId || s.nationalId || s.studentName || '').trim().toLowerCase();
         if (!key) return;
 
-        const existing = studentMap.get(key);
-        const getTs = (item: any, parentLog?: any) => {
-          const raw = item?.selfReportedAt || item?.updatedAt || item?.recordedAt || item?._logUpdatedAt || parentLog?.updatedAt || parentLog?.recordedAt || '';
-          if (raw) {
-            const t = new Date(raw).getTime();
-            if (!isNaN(t) && t > 0) return t;
-          }
-          return 0;
-        };
-
-        const itemLogTs = s._logUpdatedAt || log.updatedAt || log.recordedAt || '';
+        const itemLogTs = s._logUpdatedAt || s.updatedAt || s.recordedAt || log.updatedAt || log.recordedAt || '';
         const sWithTs = { ...s, _logUpdatedAt: itemLogTs };
 
-        if (!existing) {
+        if (!studentMap.has(key)) {
           studentMap.set(key, sWithTs);
         } else {
-          const sTs = getTs(sWithTs, log);
-          const exTs = getTs(existing);
-          const isSValid = s.status && s.status !== 'unspecified';
-          const isExValid = existing.status && existing.status !== 'unspecified';
-          const isBetterStatus = isSValid && !isExValid;
-          const isNewer = sTs > exTs;
+          const existing = studentMap.get(key)!;
+          const sTs = getStudentTs(sWithTs, log);
+          const exTs = getStudentTs(existing);
 
-          if (isNewer || (isBetterStatus && sTs >= exTs)) {
+          const isSNewer = sTs > exTs;
+          const isExistingUnspecified = !existing.status || existing.status === 'unspecified';
+          const isSValid = s.status && s.status !== 'unspecified';
+
+          // If the older log has an explicitly newer student-level timestamp (e.g. self-reporting), adopt s.
+          // Otherwise, because existing comes from a newer log, existing takes priority, but merge extra fields from s.
+          if (isSNewer || (isExistingUnspecified && isSValid)) {
             studentMap.set(key, { ...existing, ...sWithTs });
-          } else if (exTs > sTs) {
-            studentMap.set(key, { ...sWithTs, ...existing });
           } else {
-            if (isBetterStatus) {
-              studentMap.set(key, { ...existing, ...sWithTs });
-            } else {
-              studentMap.set(key, { ...sWithTs, ...existing });
-            }
+            studentMap.set(key, { ...sWithTs, ...existing });
           }
         }
       });
@@ -372,18 +368,13 @@ export function getConsolidatedSessionLog(
   const absentCount = mergedStudents.filter((s: any) => s.status === 'absent').length;
   const lateCount = mergedStudents.filter((s: any) => s.status === 'late').length;
 
-  const stdCleanDate = normTargetDate.replace(/\//g, '-');
+  const stdCleanDate = toEnglishDigits(normTargetDate).replace(/[\/\-]/g, '-');
 
   return {
-    ...baseLog,
-    id: `${programId}_${stdCleanDate}`,
+    ...newestLog,
+    id: newestLog.id || `${programId}_${stdCleanDate}`,
     programId,
     date: normTargetDate,
-    isCancelled,
-    cancellationReason: isCancelled ? cancellationReason : undefined,
-    hasSubstituteTeacher,
-    substituteTeacherName: hasSubstituteTeacher ? substituteTeacherName : undefined,
-    substituteTeacherNotes: hasSubstituteTeacher ? substituteTeacherNotes : undefined,
     students: mergedStudents,
     presentCount,
     absentCount,
