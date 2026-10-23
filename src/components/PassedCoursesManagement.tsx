@@ -83,8 +83,11 @@ export default function PassedCoursesManagement() {
     setIsLoading(true);
     try {
       // Ensure seed data and purge non-allowed subjects / duplicates
-      const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
+      await StudentCourseProgressService.ensureDefaultCurriculumData();
       
+      // Synchronize active main school programs with course progress so programs are the single source of truth
+      await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
+
       const [stList, subList, bkList, chList, prgList, enrList, progList] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<CurriculumSubject>('curriculum_subjects'),
@@ -111,6 +114,22 @@ export default function PassedCoursesManagement() {
 
   useEffect(() => {
     loadAllData();
+
+    const handleDataChange = () => {
+      loadAllData();
+    };
+
+    window.addEventListener('collection_change_programs', handleDataChange);
+    window.addEventListener('collection_change_enrollments', handleDataChange);
+    window.addEventListener('collection_change_student_course_progress', handleDataChange);
+    window.addEventListener('app_data_change', handleDataChange);
+
+    return () => {
+      window.removeEventListener('collection_change_programs', handleDataChange);
+      window.removeEventListener('collection_change_enrollments', handleDataChange);
+      window.removeEventListener('collection_change_student_course_progress', handleDataChange);
+      window.removeEventListener('app_data_change', handleDataChange);
+    };
   }, []);
 
   const getStudentFullName = (s: Student): string => {
@@ -169,6 +188,10 @@ export default function PassedCoursesManagement() {
       // Count custom passed courses that might not be in standard chapter list
       const customPassed = studentProgs.filter(p => p.status === 'passed' && !chapters.some(ch => ch.id === p.chapterId));
       passedCount += customPassed.length;
+
+      // Count custom in-progress courses that might not be in standard chapter list
+      const customInProgress = studentProgs.filter(p => p.status === 'in_progress' && !chapters.some(ch => ch.id === p.chapterId));
+      inProgressCount += customInProgress.length;
 
       const remainingCount = Math.max(0, totalChaptersCount - passedCount);
       const denominator = Math.max(1, totalChaptersCount);

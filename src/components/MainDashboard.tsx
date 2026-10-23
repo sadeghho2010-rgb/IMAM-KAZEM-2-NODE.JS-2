@@ -225,6 +225,11 @@ export default function MainDashboard({
   // Selected Category when in 'grouped' Mode
   const [activeCategoryGroup, setActiveCategoryGroup] = useState<string | null>(initialCategoryGroup || null);
 
+  const handleSelectCategoryGroup = (group: string | null) => {
+    setActiveCategoryGroup(group);
+    onCategoryGroupChange?.(group);
+  };
+
   useEffect(() => {
     if (initialCategoryGroup !== undefined) {
       setActiveCategoryGroup(initialCategoryGroup);
@@ -1919,11 +1924,11 @@ export default function MainDashboard({
           {displayMode === 'grouped' && activeCategoryGroup && (
             <button
               type="button"
-              onClick={() => setActiveCategoryGroup(null)}
-              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-200 flex items-center gap-1.5 cursor-pointer"
+              onClick={() => handleSelectCategoryGroup(null)}
+              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <ArrowRight size={14} />
-              <span>بازگشت به تمام دسته‌بندی‌ها</span>
+              <span>بازگشت به پیشخوان اصلی</span>
             </button>
           )}
 
@@ -2144,7 +2149,7 @@ export default function MainDashboard({
                     transition: { duration: 0.22, ease: 'easeOut' }
                   } : undefined}
                   whileTap={!isAnimationsDisabled ? { scale: 0.97 } : undefined}
-                  onClick={() => setActiveCategoryGroup(cat.id)}
+                  onClick={() => handleSelectCategoryGroup(cat.id)}
                   className={cn(
                     "relative group overflow-hidden bg-white/95 rounded-3xl p-6 border text-right transition-all duration-300 cursor-pointer flex flex-col justify-between shadow-sm select-none backdrop-blur-md min-h-[175px]",
                     cat.borderGlow,
@@ -2239,11 +2244,13 @@ export default function MainDashboard({
                 </div>
 
                 <button
-                  onClick={() => setActiveCategoryGroup(null)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  type="button"
+                  onClick={() => handleSelectCategoryGroup(null)}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 shrink-0"
+                  title="بازگشت به پیشخوان اصلی"
                 >
-                  <ArrowRight size={14} />
-                  <span>بازگشت به کارت‌های اصلی</span>
+                  <ArrowRight size={15} />
+                  <span>بازگشت به پیشخوان اصلی</span>
                 </button>
               </div>
             )}

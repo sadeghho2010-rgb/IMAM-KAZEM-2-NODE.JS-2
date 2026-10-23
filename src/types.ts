@@ -489,6 +489,8 @@ export interface Program {
   chapterId?: string; // شناسه بخش در بانک دروس
   attendanceType?: 'representative' | 'self_reporting'; // نحوه ثبت حضور و غیاب: ثبت توسط نماینده (پیش‌فرض) یا خوداظهاری توسط طلبه
   status?: 'active' | 'deleted' | 'inactive' | string;
+  studentIds?: string[]; // شناسه‌های طلاب ثبت‌نام شده در کلاس
+  hasExplicitEnrollment?: boolean; // آیا ثبت‌نام مستقیم انجام شده است؟
   isDeleted?: boolean;
   deletedAt?: string;
   version?: number;

@@ -145,6 +145,16 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'audit-logs': 'security_group',
 };
 
+const DASHBOARD_CATEGORY_NAMES: Record<string, string> = {
+  'education_group': 'آموزش و کلاس‌ها',
+  'requests_group': 'درخواست‌ها، وظایف و گردش‌کار',
+  'students_group': 'طلاب و امور آموزشی',
+  'finance_group': 'امور مالی، رفاهی و خدمات',
+  'research_group': 'پژوهش و کلاس‌های مشاوره',
+  'security_group': 'مدیریت و امنیت سایت',
+  'system_group': 'مدیریت و امنیت سایت',
+};
+
 function AppContent() {
   const { currentUser, logout, isTabAllowed, isSuperAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -662,11 +672,15 @@ function AppContent() {
         </header>
 
         {/* Universal Sub-Header Back Button - Positioned on the LEFT side and slightly lower */}
-        {activeTab !== 'dashboard' && (
+        {(activeTab !== 'dashboard' || Boolean(dashboardCategoryGroup)) && (
           <div className="bg-slate-50/90 border-b border-slate-200/80 px-4 sm:px-6 py-1.5 flex items-center justify-between min-w-0 shadow-2xs">
             <div className="text-[11px] font-bold text-slate-500 truncate flex items-center gap-1.5">
               <span>محیط جاری:</span>
-              <span className="text-slate-800 font-black text-xs">{getActiveTabTitle(activeTab)}</span>
+              <span className="text-slate-800 font-black text-xs">
+                {activeTab === 'dashboard' && dashboardCategoryGroup 
+                  ? `پیشخوان اصلی > ${DASHBOARD_CATEGORY_NAMES[dashboardCategoryGroup] || 'زیرمجموعه کارت‌ها'}`
+                  : getActiveTabTitle(activeTab)}
+              </span>
             </div>
 
             <button
@@ -678,7 +692,7 @@ function AppContent() {
                 currentBackTheme.shadow,
                 currentBackTheme.border
               )}
-              title="بازگشت به پیشخوان اصلی"
+              title={activeTab === 'dashboard' ? "بازگشت به پیشخوان اصلی" : "بازگشت"}
             >
               <ChevronRight size={16} className="text-white group-hover:-translate-x-0.5 transition-transform shrink-0 drop-shadow" />
               <span className="drop-shadow-sm font-black">بازگشت</span>

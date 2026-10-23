@@ -4,7 +4,8 @@ import {
   CurriculumBook, 
   CurriculumChapter, 
   StudentCourseProgress,
-  Program 
+  Program,
+  Student 
 } from '../types';
 
 /**
@@ -98,45 +99,60 @@ export class StudentCourseProgressService {
     enrolledStudentIds: string[],
     previousStudentIds: string[] = []
   ): Promise<void> {
-    if (!program || program.type !== 'اصلی' || !program.subjectBook) {
+    if (!program || program.type !== 'اصلی') {
       return;
     }
 
     const { subjects, books, chapters } = await this.ensureDefaultCurriculumData();
 
-    // Match book and chapter for this program
+    const bookKey = (program.subjectBook || '').trim();
+    const chapterKey = (program.subjectChapter || '').trim();
+    const programTitle = (program.title || '').trim();
+
+    // Match book for this program (by subjectBook or title)
     let matchedBook = books.find(b => 
-      b.title.trim() === (program.subjectBook || '').trim() ||
-      (program.subjectBook && b.title.includes(program.subjectBook))
+      (bookKey && b.title.trim() === bookKey) ||
+      (bookKey && b.title.includes(bookKey)) ||
+      (bookKey && bookKey.includes(b.title.trim())) ||
+      (programTitle && (programTitle.includes(b.title.trim()) || b.title.trim().includes(programTitle)))
     );
 
     let matchedChapter: CurriculumChapter | undefined;
-    if (program.subjectChapter) {
+    if (chapterKey) {
       matchedChapter = chapters.find(c => 
         (matchedBook ? c.bookId === matchedBook.id : true) &&
-        (c.title.trim() === program.subjectChapter?.trim() || c.title.includes(program.subjectChapter || ''))
+        (c.title.trim() === chapterKey || c.title.includes(chapterKey) || chapterKey.includes(c.title.trim()))
       );
     } else if (matchedBook) {
-      // Fallback: match first chapter of that book
       matchedChapter = chapters.find(c => c.bookId === matchedBook.id);
+    } else if (program.chapterId) {
+      matchedChapter = chapters.find(c => c.id === program.chapterId);
+    } else {
+      matchedChapter = chapters.find(c => programTitle && (programTitle.includes(c.title.trim()) || c.title.trim().includes(programTitle)));
     }
 
     if (!matchedBook && matchedChapter) {
       matchedBook = books.find(b => b.id === matchedChapter?.bookId);
     }
 
-    if (!matchedBook || !matchedChapter) {
-      console.log('No exact curriculum bank chapter matched for program:', program.title);
-      return;
-    }
+    // Determine canonical identities so all active main classes are consistently tracked
+    const resolvedSubjectTitle = matchedBook?.subjectTitle || program.subjectCategory || 'دروس اصلی';
+    const resolvedSubjectId = matchedBook?.subjectId || `subj_${resolvedSubjectTitle}`;
+    const resolvedBookTitle = matchedBook?.title || program.subjectBook || program.title;
+    const resolvedBookId = matchedBook?.id || `book_${resolvedBookTitle}`;
+    const resolvedChapterTitle = matchedChapter?.title || program.subjectChapter || program.title;
+    const resolvedChapterId = matchedChapter?.id || program.chapterId || `chap_${program.id}`;
 
     const allProgressRecords = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
 
     // 1. Enrolled Students -> Set status = 'in_progress'
     for (const sid of enrolledStudentIds) {
       if (!sid) continue;
-      const progressId = `progress_${sid}_${matchedChapter.id}`;
-      const existing = allProgressRecords.find(p => p.id === progressId || (p.studentId === sid && p.chapterId === matchedChapter!.id));
+      const progressId = `progress_${sid}_${resolvedChapterId}`;
+      const existing = allProgressRecords.find(p => 
+        p.id === progressId || 
+        (p.studentId === sid && (p.chapterId === resolvedChapterId || p.chapterTitle === resolvedChapterTitle || p.programId === program.id))
+      );
 
       if (existing) {
         // Only update if not already marked 'passed' by Education Manager
@@ -145,6 +161,9 @@ export class StudentCourseProgressService {
             ...existing,
             status: 'in_progress',
             programId: program.id,
+            chapterTitle: resolvedChapterTitle,
+            bookTitle: resolvedBookTitle,
+            subjectTitle: resolvedSubjectTitle,
             updatedAt: new Date().toISOString()
           });
         }
@@ -152,12 +171,12 @@ export class StudentCourseProgressService {
         const newRecord: StudentCourseProgress = {
           id: progressId,
           studentId: sid,
-          subjectId: matchedBook.subjectId,
-          subjectTitle: matchedBook.subjectTitle,
-          bookId: matchedBook.id,
-          bookTitle: matchedBook.title,
-          chapterId: matchedChapter.id,
-          chapterTitle: matchedChapter.title,
+          subjectId: resolvedSubjectId,
+          subjectTitle: resolvedSubjectTitle,
+          bookId: resolvedBookId,
+          bookTitle: resolvedBookTitle,
+          chapterId: resolvedChapterId,
+          chapterTitle: resolvedChapterTitle,
           status: 'in_progress',
           programId: program.id,
           updatedAt: new Date().toISOString()
@@ -170,10 +189,13 @@ export class StudentCourseProgressService {
     const removedStudentIds = previousStudentIds.filter(id => !enrolledStudentIds.includes(id));
     for (const sid of removedStudentIds) {
       if (!sid) continue;
-      const progressId = `progress_${sid}_${matchedChapter.id}`;
-      const existing = allProgressRecords.find(p => p.id === progressId || (p.studentId === sid && p.chapterId === matchedChapter!.id));
+      const progressId = `progress_${sid}_${resolvedChapterId}`;
+      const existing = allProgressRecords.find(p => 
+        p.id === progressId || 
+        (p.studentId === sid && (p.chapterId === resolvedChapterId || p.chapterTitle === resolvedChapterTitle || p.programId === program.id))
+      );
 
-      if (existing && existing.status === 'in_progress') {
+      if (existing && existing.status === 'in_progress' && (existing.programId === program.id || existing.chapterId === resolvedChapterId)) {
         await localDb.setDoc('student_course_progress', {
           ...existing,
           status: 'remaining',
@@ -181,6 +203,57 @@ export class StudentCourseProgressService {
           updatedAt: new Date().toISOString()
         });
       }
+    }
+  }
+
+  /**
+   * Complete synchronization of all active main programs with student course progress.
+   * Single source of truth is active school programs and their enrolled students.
+   */
+  static async syncAllProgramsWithCourseProgress(): Promise<void> {
+    try {
+      const [allPrograms, allStudents, allEnrollments, allCourseEnrollments] = await Promise.all([
+        localDb.getDocs<Program>('programs'),
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<any>('enrollments'),
+        localDb.getDocs<any>('course_enrollments')
+      ]);
+
+      const activeMainPrograms = (allPrograms || []).filter(p => 
+        p.type === 'اصلی' && 
+        p.status !== 'deleted' && 
+        !p.isDeleted
+      );
+
+      for (const prog of activeMainPrograms) {
+        const enrolledStudentIds = new Set<string>();
+
+        if (Array.isArray(prog.studentIds) && prog.studentIds.length > 0) {
+          prog.studentIds.forEach(id => enrolledStudentIds.add(String(id)));
+        }
+
+        (allEnrollments || [])
+          .filter(e => String(e.programId) === String(prog.id))
+          .forEach(e => enrolledStudentIds.add(String(e.studentId)));
+
+        (allCourseEnrollments || [])
+          .filter(e => String(e.programId) === String(prog.id))
+          .forEach(e => enrolledStudentIds.add(String(e.studentId)));
+
+        const hasExplicit = prog.hasExplicitEnrollment || 
+          (Array.isArray(prog.studentIds) && prog.studentIds.length > 0) || 
+          (allEnrollments || []).some(e => String(e.programId) === String(prog.id));
+
+        if (!hasExplicit && enrolledStudentIds.size === 0) {
+          (allStudents || [])
+            .filter(s => s.grade === prog.grade || prog.grade === 'همه پایه‌ها')
+            .forEach(s => enrolledStudentIds.add(String(s.id)));
+        }
+
+        await this.syncProgramEnrollmentProgress(prog, Array.from(enrolledStudentIds));
+      }
+    } catch (err) {
+      console.warn('Error during syncAllProgramsWithCourseProgress:', err);
     }
   }
 }

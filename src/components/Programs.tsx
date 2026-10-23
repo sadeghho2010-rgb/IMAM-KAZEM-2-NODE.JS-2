@@ -972,10 +972,12 @@ export default function Programs() {
   }, []);
 
   const handleEnrollClick = (programId: string) => {
-    const currentEnrollments = enrollments
-      .filter(e => e.programId === programId)
+    const currentProgram = programs.find(p => p.id === programId);
+    const fromEnrollments = enrollments
+      .filter(e => String(e.programId) === String(programId))
       .map(e => e.studentId);
-    setSelectedEnrollments(currentEnrollments);
+    const combined = Array.from(new Set([...(currentProgram?.studentIds || []), ...fromEnrollments]));
+    setSelectedEnrollments(combined);
     setSelectedProgramId(programId);
     setShowEnrollModal(true);
   };
@@ -984,11 +986,13 @@ export default function Programs() {
     if (!selectedProgramId) return;
     setLoading(true);
     try {
-      const currentEnrollments = enrollments.filter(e => e.programId === selectedProgramId);
-      const currentStudentIds = currentEnrollments.map(e => e.studentId);
+      const targetProgram = programs.find(p => p.id === selectedProgramId);
+      const currentEnrollments = enrollments.filter(e => String(e.programId) === String(selectedProgramId));
+      const fromEnrollmentIds = currentEnrollments.map(e => e.studentId);
+      const currentStudentIds = Array.from(new Set([...(targetProgram?.studentIds || []), ...fromEnrollmentIds]));
 
       // Add new ones
-      const toAdd = selectedEnrollments.filter(id => !currentStudentIds.includes(id));
+      const toAdd = selectedEnrollments.filter(id => !fromEnrollmentIds.includes(id));
       for (const studentId of toAdd) {
         await localDb.addDoc('enrollments', {
           studentId,
@@ -1025,8 +1029,23 @@ export default function Programs() {
         hasExplicitEnrollment: true
       });
 
+      // Synchronize in-progress courses progress for students in this class
+      if (targetProgram) {
+        const updatedProg: Program = {
+          ...targetProgram,
+          studentIds: selectedEnrollments,
+          hasExplicitEnrollment: true
+        };
+        await StudentCourseProgressService.syncProgramEnrollmentProgress(
+          updatedProg,
+          selectedEnrollments,
+          currentStudentIds
+        ).catch(console.error);
+      }
+
       window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
       await fetchData();
@@ -1428,9 +1447,11 @@ export default function Programs() {
         mentorId: currentMentorId || 'admin'
       };
 
-      // Auto sync course progress status for students in this grade
-      const gradeStudentIds = students.filter(s => s.grade === programGrade).map(s => s.id);
-      StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, gradeStudentIds).catch(console.error);
+      // Auto sync course progress status for students in this class
+      const enrolledStudentIds = programPayload.studentIds && programPayload.studentIds.length > 0
+        ? programPayload.studentIds
+        : students.filter(s => s.grade === programGrade || programGrade === 'همه پایه‌ها').map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, enrolledStudentIds).catch(console.error);
 
       // Optimistic UI Update: update state immediately
       setPrograms(prev => [programPayload, ...prev]);
@@ -1533,9 +1554,11 @@ export default function Programs() {
         chapterId: editingProgram.type === 'اصلی' ? editingProgram.chapterId : undefined
       };
 
-      // Auto sync course progress status for students in this grade
-      const gradeStudentIds = students.filter(s => s.grade === updatedProgram.grade).map(s => s.id);
-      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, gradeStudentIds).catch(console.error);
+      // Auto sync course progress status for students in this class
+      const enrolledStudentIds = updatedProgram.studentIds && updatedProgram.studentIds.length > 0
+        ? updatedProgram.studentIds
+        : students.filter(s => s.grade === updatedProgram.grade || updatedProgram.grade === 'همه پایه‌ها').map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, enrolledStudentIds).catch(console.error);
 
       // Optimistic UI update
       setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updatedProgram : p));
@@ -1585,9 +1608,16 @@ export default function Programs() {
     try {
       await localDb.setDoc('programs', updatedProgram);
 
+      // Revert in-progress courses for students of this deactivated program
+      const previousEnrolledIds = program.studentIds && program.studentIds.length > 0
+        ? program.studentIds
+        : students.filter(s => s.grade === program.grade || program.grade === 'همه پایه‌ها').map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, [], previousEnrolledIds).catch(console.error);
+
       await syncRepresentativeUsers();
 
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
       dispatchDatabaseToast(`کلاس «${title}» با موفقیت غیرفعال شد. آمار این کلاس از محاسبات حضور و غیاب کلی و فردی طلاب خارج گردید.`, 'success');
@@ -1628,9 +1658,16 @@ export default function Programs() {
     try {
       await localDb.setDoc('programs', reactivatedProgram);
 
+      // Restore in-progress courses for students of this reactivated program
+      const reactivatedEnrolledIds = reactivatedProgram.studentIds && reactivatedProgram.studentIds.length > 0
+        ? reactivatedProgram.studentIds
+        : students.filter(s => s.grade === reactivatedProgram.grade || reactivatedProgram.grade === 'همه پایه‌ها').map(s => s.id);
+      StudentCourseProgressService.syncProgramEnrollmentProgress(reactivatedProgram, reactivatedEnrolledIds).catch(console.error);
+
       await syncRepresentativeUsers();
 
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
       dispatchDatabaseToast(`کلاس «${title}» با موفقیت فعال شد و به لیست برنامه‌های درسی بازگشت. تمام آمار گذشته آن اکنون معتبر است.`, 'success');
