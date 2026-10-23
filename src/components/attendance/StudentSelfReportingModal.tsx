@@ -41,7 +41,7 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(getTodayShamsi());
   const [selectedProgramId, setSelectedProgramId] = useState<string>('');
-  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus>('present');
+  const [selectedStatus, setSelectedStatus] = useState<AttendanceStatus | null>(null);
   const [lateMinutes, setLateMinutes] = useState<number>(10);
   const [note, setNote] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -123,9 +123,14 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
 
         if (!isCancelled) {
           setExistingRecordForSession(null);
+          setSelectedStatus(null);
+          setNote('');
         }
       } catch (err) {
-        if (!isCancelled) setExistingRecordForSession(null);
+        if (!isCancelled) {
+          setExistingRecordForSession(null);
+          setSelectedStatus(null);
+        }
       }
     };
 
@@ -147,6 +152,10 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
     }
     if (!selectedDate.trim()) {
       alert('لطفاً تاریخ جلسه را مشخص فرمایید.');
+      return;
+    }
+    if (!selectedStatus || (selectedStatus as any) === 'unspecified') {
+      alert('لطفاً ابتدا وضعیت حضور خود را در این جلسه (حاضر، غایب یا با تاخیر) مشخص فرمایید.');
       return;
     }
 

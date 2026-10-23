@@ -117,8 +117,13 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   };
 
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(initialStudentId || null);
+  const selectedStudentIdRef = useRef<string | null>(initialStudentId || null);
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>(getInitialGradeFilter);
+
+  useEffect(() => {
+    selectedStudentIdRef.current = selectedStudentId;
+  }, [selectedStudentId]);
 
   useEffect(() => {
     const initG = getInitialGradeFilter();
@@ -132,8 +137,10 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
 
   const isLevel3Student = currentUser?.level === 3;
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const rawStudents = await localDb.getDocs<Student>('students');
       const rawPrograms = await localDb.getDocs<Program>('programs');
@@ -157,25 +164,33 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
         );
         if (ownStudent) {
           setSelectedStudentId(ownStudent.id);
+          selectedStudentIdRef.current = ownStudent.id;
           return;
         }
       }
 
-      // Default select the first active student if none selected
-      const activeFiltered = filterStudents(rawStudents, true);
-      if (!selectedStudentId && activeFiltered.length > 0) {
-        setSelectedStudentId(activeFiltered[0].id);
+      // Preserve selection if valid; otherwise select first active student
+      const currentSel = selectedStudentIdRef.current;
+      const stillExists = currentSel && rawStudents.some(s => s.id === currentSel);
+      if (!stillExists) {
+        const activeFiltered = filterStudents(rawStudents, true);
+        if (activeFiltered.length > 0) {
+          setSelectedStudentId(activeFiltered[0].id);
+          selectedStudentIdRef.current = activeFiltered[0].id;
+        }
       }
     } catch (error) {
       console.error("Error fetching data for student schedules:", error);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchData();
-    const unsub = localDb.subscribe(() => fetchData());
+    const unsub = localDb.subscribe(() => fetchData(true));
     return () => unsub();
   }, [currentMentorId, shahpooriFilter, currentUser]);
 

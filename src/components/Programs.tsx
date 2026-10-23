@@ -1210,6 +1210,7 @@ export default function Programs() {
   };
 
   const handleSaveRepModal = async () => {
+    setShowRepModal(false);
     if (repModalTarget === 'add') {
       setNewProgram({
         ...newProgram,
@@ -1217,6 +1218,7 @@ export default function Programs() {
         representativeNames: repModalNames,
         customRepresentative: repModalStudentIds.length > 0 ? '' : newProgram.customRepresentative
       });
+      dispatchDatabaseToast('نمایندگان جدید برای کلاس تنظیم شدند.', 'success');
     } else if (editingProgram) {
       const updated = {
         ...editingProgram,
@@ -1225,20 +1227,21 @@ export default function Programs() {
         customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
       };
       setEditingProgram(updated);
-      // Persist immediately to database and sync user roles
-      try {
-        await localDb.updateDoc('programs', editingProgram.id, {
-          representativeStudentIds: repModalStudentIds,
-          representativeNames: repModalNames,
-          customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
-        });
-        await syncRepresentativeUsers([updated]);
-        await fetchData();
-      } catch (err) {
+      setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updated : p));
+      dispatchDatabaseToast('نمایندگان کلاس با موفقیت بروزرسانی شدند.', 'success');
+
+      // Persist to database and sync user roles in background
+      localDb.updateDoc('programs', editingProgram.id, {
+        representativeStudentIds: repModalStudentIds,
+        representativeNames: repModalNames,
+        customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
+      }).then(() => {
+        syncRepresentativeUsers([updated]).catch(console.error);
+        fetchData();
+      }).catch(err => {
         console.warn('Error saving representative immediately:', err);
-      }
+      });
     }
-    setShowRepModal(false);
   };
 
   const syncTeacherWithBank = async (teacherName?: string, courseTitle?: string) => {
@@ -1314,6 +1317,14 @@ export default function Programs() {
 
         if (myActiveRepProgIds.length > 0) {
           const targetManagedId = (u.managedClassId && myActiveRepProgIds.includes(u.managedClassId)) ? u.managedClassId : myActiveRepProgIds[0];
+          const curRepProgs = Array.isArray(u.representativeProgramIds) ? u.representativeProgramIds : [];
+          const isSameProgs = curRepProgs.length === myActiveRepProgIds.length && myActiveRepProgIds.every((id: string) => curRepProgs.includes(id));
+          const isSameRole = u.role === 'class_representative' && u.isClassRep === true && u.managedClassId === targetManagedId;
+
+          if (isSameRole && isSameProgs) {
+            continue;
+          }
+
           const updated = {
             ...u,
             role: 'class_representative',
@@ -1572,7 +1583,7 @@ export default function Programs() {
 
       await localDb.updateDoc('programs', editingProgram.id, updatedProgram);
 
-      await syncRepresentativeUsers();
+      syncRepresentativeUsers().catch(console.error);
 
       fetchData();
     } catch (error: any) {

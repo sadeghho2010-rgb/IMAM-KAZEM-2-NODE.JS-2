@@ -261,13 +261,13 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
       if (studentRec) {
         newDraft[prog.id] = {
-          status: studentRec.status || 'present',
+          status: studentRec.status || 'unspecified',
           lateMinutes: studentRec.lateMinutes || 10,
           note: studentRec.note || ''
         };
       } else {
         newDraft[prog.id] = {
-          status: 'present',
+          status: 'unspecified',
           lateMinutes: 10,
           note: ''
         };
@@ -304,7 +304,11 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     const studentName = matchedStudent?.name || currentUser?.name || currentUser?.fullName || 'طلبه گرامی';
     const studentNationalId = matchedStudent?.nationalId || currentUser?.username;
 
-    const currentDraft = draftCourseStatus[prog.id] || { status: 'present', lateMinutes: 10, note: '' };
+    const currentDraft = draftCourseStatus[prog.id];
+    if (!currentDraft || !currentDraft.status || currentDraft.status === 'unspecified') {
+      alert('لطفاً ابتدا وضعیت حضور خود را در این درس مشخص فرمایید (حاضر، غایب یا با تاخیر).');
+      return;
+    }
 
     try {
       setSavingProgramId(prog.id);

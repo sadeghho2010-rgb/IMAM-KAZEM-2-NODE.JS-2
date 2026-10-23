@@ -355,7 +355,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       const draft: Record<string, { status: AttendanceStatus; lateMinutes?: number; note?: string }> = {};
       (existing.students || []).forEach(st => {
         draft[String(st.studentId)] = {
-          status: st.status || 'present',
+          status: st.status || 'unspecified',
           lateMinutes: st.lateMinutes,
           note: st.note
         };
@@ -455,7 +455,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
       const studentsDetailList: StudentAttendanceDetail[] = classStudents.map(st => {
         const d = draftAttendance[String(st.id)];
-        const currentStatus: AttendanceStatus = isCancelled ? 'unspecified' : (d?.status || 'present');
+        const currentStatus: AttendanceStatus = isCancelled ? 'unspecified' : (d?.status || 'unspecified');
 
         return {
           studentId: String(st.id),
@@ -859,7 +859,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
               <span>لیست طلاب کلاس «{currentProgram?.title}»</span>
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              تعداد طلاب کلاس: {classStudents.length} نفر • وضعیت پیش‌فرض پس از ذخیره: حاضر
+              تعداد طلاب کلاس: {classStudents.length} نفر • وضعیت اولیه: نامشخص (برای تغییر، روی گزینه‌ها کلیک نمایید)
             </p>
           </div>
           <span className="text-xs font-bold text-slate-500 font-mono">
@@ -875,7 +875,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           <div className="divide-y divide-slate-100">
             {classStudents.map((st, idx) => {
               const studentDraft = draftAttendance[String(st.id)];
-              const status: AttendanceStatus = studentDraft?.status || 'present';
+              const status: AttendanceStatus = studentDraft?.status || 'unspecified';
               const lateMins = studentDraft?.lateMinutes || 10;
 
               return (

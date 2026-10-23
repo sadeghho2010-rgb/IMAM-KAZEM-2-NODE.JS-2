@@ -45,7 +45,10 @@ import {
   Building2,
   Copy,
   Phone,
-  PhoneCall
+  PhoneCall,
+  BarChart3,
+  PieChart,
+  TrendingUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn, getProgramDays, matchesGradeFilter } from '../lib/utils';
@@ -198,6 +201,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportCourseCategory, setReportCourseCategory] = useState<'all' | 'academic' | 'counseling' | 'thursday'>('all');
   const [reportViewMode, setReportViewMode] = useState<'student' | 'class' | 'summary'>('student');
   const [selectedStudentDrilldown, setSelectedStudentDrilldown] = useState<any | null>(null);
+  const [editingSessionIdx, setEditingSessionIdx] = useState<number | null>(null);
+  const [sessionEditDraft, setSessionEditDraft] = useState<{
+    status: AttendanceStatus;
+    note: string;
+    excuseReason: string;
+    lateMinutes: number;
+  }>({
+    status: 'present',
+    note: '',
+    excuseReason: '',
+    lateMinutes: 10
+  });
+  const [isSavingSessionEdit, setIsSavingSessionEdit] = useState<boolean>(false);
 
   // Check roles
   const isSuperAdmin = currentUser?.level === 1 && currentUser?.role === 'super_admin';
@@ -1603,6 +1619,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
             entry.history.push({
               date: rec.date,
               programTitle: rec.programTitle,
+              programId: rec.programId,
+              logId: rec.id,
+              studentId: canonicalId,
+              nationalId: nat,
+              lateMinutes: stItem.lateMinutes,
               status: isCalendarHoliday ? ('holiday' as any) : stItem.status,
               isCancelled: rec.isCancelled,
               isHoliday: isCalendarHoliday,
@@ -1769,9 +1790,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
           stMapEntry.history.push({
             date: rec.date,
+            programTitle: rec.programTitle,
+            programId: rec.programId,
+            logId: rec.id,
+            studentId: stItem.studentId,
             status: stItem.status,
             note: stItem.note,
-            excuseReason: stItem.excuseReason
+            excuseReason: stItem.excuseReason,
+            lateMinutes: stItem.lateMinutes
           });
         });
       }
@@ -1982,6 +2008,205 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       return (b?.commitmentPercent || 0) - (a?.commitmentPercent || 0) || String(a?.name || '').localeCompare(String(b?.name || ''), 'fa');
     });
   }, [programs, students, users, attendanceRecords, repSearchQuery]);
+
+  // Visual Analytics for Absence Reports
+  const reportAnalytics = useMemo(() => {
+    const gradeCounts: Record<string, { label: string; absent: number; excused: number; late: number; total: number }> = {
+      '۷': { label: 'پایه ۷', absent: 0, excused: 0, late: 0, total: 0 },
+      '۸': { label: 'پایه ۸', absent: 0, excused: 0, late: 0, total: 0 },
+      '۹': { label: 'پایه ۹', absent: 0, excused: 0, late: 0, total: 0 },
+      '۱۰': { label: 'پایه ۱۰', absent: 0, excused: 0, late: 0, total: 0 },
+      'other': { label: 'سایر پایه‌ها', absent: 0, excused: 0, late: 0, total: 0 }
+    };
+
+    let totalSchoolAbsences = 0;
+    let totalSchoolExcused = 0;
+    let totalSchoolLates = 0;
+    let totalSchoolPresents = 0;
+
+    studentReportList.forEach(item => {
+      const g = String(item.student?.grade || '');
+      let gKey = 'other';
+      if (g.includes('7') || g.includes('۷')) gKey = '۷';
+      else if (g.includes('8') || g.includes('۸')) gKey = '۸';
+      else if (g.includes('9') || g.includes('۹')) gKey = '۹';
+      else if (g.includes('10') || g.includes('۱۰')) gKey = '۱۰';
+
+      gradeCounts[gKey].absent += (item.absentCount || 0);
+      gradeCounts[gKey].excused += (item.excusedCount || 0);
+      gradeCounts[gKey].late += (item.lateCount || 0);
+      gradeCounts[gKey].total += ((item.absentCount || 0) + (item.excusedCount || 0));
+
+      totalSchoolAbsences += (item.absentCount || 0);
+      totalSchoolExcused += (item.excusedCount || 0);
+      totalSchoolLates += (item.lateCount || 0);
+      totalSchoolPresents += (item.presentCount || 0);
+    });
+
+    const maxGradeAbsences = Math.max(1, ...Object.values(gradeCounts).map(g => g.absent));
+
+    const courseAbsenceMap: Record<string, { title: string; teacher?: string; absent: number; excused: number }> = {};
+    consolidatedReportRecords.forEach(rec => {
+      if (rec.isCancelled) return;
+      const prog = programs.find(p => p.id === rec.programId);
+      const title = rec.programTitle || prog?.title || 'درس';
+      if (!courseAbsenceMap[title]) {
+        courseAbsenceMap[title] = { title, teacher: prog?.teacher, absent: 0, excused: 0 };
+      }
+      (rec.students || []).forEach(st => {
+        if (st.status === 'absent') courseAbsenceMap[title].absent++;
+        else if (st.status === 'excused') courseAbsenceMap[title].excused++;
+      });
+    });
+
+    const topCourses = Object.values(courseAbsenceMap)
+      .filter(c => c.absent > 0 || c.excused > 0)
+      .sort((a, b) => b.absent - a.absent)
+      .slice(0, 4);
+
+    const totalSessionsAll = totalSchoolPresents + totalSchoolAbsences + totalSchoolExcused + totalSchoolLates;
+    const presentRatio = totalSessionsAll > 0 ? Math.round((totalSchoolPresents / totalSessionsAll) * 100) : 100;
+    const absentRatio = totalSessionsAll > 0 ? Math.round((totalSchoolAbsences / totalSessionsAll) * 100) : 0;
+    const excusedRatio = totalSessionsAll > 0 ? Math.round((totalSchoolExcused / totalSessionsAll) * 100) : 0;
+    const lateRatio = totalSessionsAll > 0 ? Math.round((totalSchoolLates / totalSessionsAll) * 100) : 0;
+
+    return {
+      gradeCounts,
+      maxGradeAbsences,
+      topCourses,
+      totalSchoolAbsences,
+      totalSchoolExcused,
+      totalSchoolLates,
+      totalSchoolPresents,
+      presentRatio,
+      absentRatio,
+      excusedRatio,
+      lateRatio
+    };
+  }, [studentReportList, consolidatedReportRecords, programs]);
+
+  const handleSaveSessionEdit = async (sessionItem: any) => {
+    if (!selectedStudentDrilldown || isSavingSessionEdit) return;
+    setIsSavingSessionEdit(true);
+
+    try {
+      const studentId = String(selectedStudentDrilldown.student.id || '').trim();
+      const studentName = String(selectedStudentDrilldown.student.name || '').trim();
+      const studentNat = String(selectedStudentDrilldown.student.nationalId || '').trim();
+      const progId = String(sessionItem.programId || '').trim();
+      const sessionDate = String(sessionItem.date || '').trim();
+
+      const allLogs = await localDb.getDocs<AttendanceSessionLog>('attendance');
+      let targetLog = allLogs.find(l => 
+        (sessionItem.logId && l.id === sessionItem.logId) ||
+        (l.programId === progId && isSameShamsiDate(l.date, sessionDate))
+      );
+
+      const nowIso = new Date().toISOString();
+
+      if (!targetLog) {
+        const cleanDateStr = toEnglishDigits(sessionDate).replace(/-/g, '/');
+        const cleanDate = cleanDateStr.replace(/\//g, '-');
+        const logId = `${progId}_${cleanDate}`;
+        const dayOfWeek = getShamsiDayOfWeekName(cleanDateStr);
+
+        targetLog = {
+          id: logId,
+          programId: progId,
+          programTitle: sessionItem.programTitle || 'درس حوزوی',
+          grade: selectedStudentDrilldown.student.grade || '',
+          date: cleanDateStr,
+          dayOfWeek,
+          isCancelled: false,
+          recordedByName: currentUser?.name || 'مسئول آموزش',
+          recordedAt: nowIso,
+          students: []
+        } as any;
+      }
+
+      const currentStudents = [...(targetLog.students || [])];
+      const sIdx = currentStudents.findIndex(s => 
+        (s.studentId && String(s.studentId).trim() === studentId) ||
+        (studentNat && s.nationalId && String(s.nationalId).trim() === studentNat) ||
+        (s.studentName && s.studentName.trim() === studentName)
+      );
+
+      const updatedDetail: StudentAttendanceDetail = {
+        studentId,
+        studentName,
+        nationalId: studentNat,
+        status: sessionEditDraft.status,
+        note: sessionEditDraft.note.trim(),
+        excuseReason: sessionEditDraft.status === 'excused' ? (sessionEditDraft.excuseReason.trim() || sessionEditDraft.note.trim()) : undefined,
+        lateMinutes: sessionEditDraft.status === 'late' ? sessionEditDraft.lateMinutes : undefined,
+        updatedAt: nowIso
+      };
+
+      if (sIdx >= 0) {
+        currentStudents[sIdx] = {
+          ...currentStudents[sIdx],
+          ...updatedDetail
+        };
+      } else {
+        currentStudents.push(updatedDetail);
+      }
+
+      const updatedLog: AttendanceSessionLog = {
+        ...targetLog,
+        students: currentStudents,
+        presentCount: currentStudents.filter(s => s.status === 'present').length,
+        absentCount: currentStudents.filter(s => s.status === 'absent').length,
+        lateCount: currentStudents.filter(s => s.status === 'late').length,
+        updatedAt: nowIso
+      };
+
+      await localDb.setDoc('attendance', updatedLog.id, updatedLog);
+
+      setAttendanceRecords(prev => {
+        const withoutOld = prev.filter(l => l.id !== updatedLog.id && !(l.programId === progId && isSameShamsiDate(l.date, sessionDate)));
+        return [updatedLog, ...withoutOld];
+      });
+
+      setSelectedStudentDrilldown((prev: any) => {
+        if (!prev) return null;
+        const newHistory = prev.history.map((h: any) => {
+          if ((h.logId && h.logId === sessionItem.logId) || (h.programId === progId && isSameShamsiDate(h.date, sessionDate))) {
+            return {
+              ...h,
+              status: sessionEditDraft.status,
+              note: sessionEditDraft.note.trim(),
+              excuseReason: sessionEditDraft.status === 'excused' ? (sessionEditDraft.excuseReason.trim() || sessionEditDraft.note.trim()) : undefined,
+              lateMinutes: sessionEditDraft.status === 'late' ? sessionEditDraft.lateMinutes : undefined
+            };
+          }
+          return h;
+        });
+
+        const newAbsent = newHistory.filter((h: any) => h.status === 'absent').length;
+        const newExcused = newHistory.filter((h: any) => h.status === 'excused').length;
+        const newLate = newHistory.filter((h: any) => h.status === 'late').length;
+
+        return {
+          ...prev,
+          absentCount: newAbsent,
+          excusedCount: newExcused,
+          lateCount: newLate,
+          history: newHistory
+        };
+      });
+
+      setEditingSessionIdx(null);
+      showToast(`جلسه «${sessionItem.programTitle}» در تاریخ ${sessionDate} با موفقیت ویرایش شد.`);
+
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: updatedLog.id } }));
+      window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId: updatedLog.id, programId: progId, date: sessionDate } }));
+    } catch (err: any) {
+      console.error('Error saving session edit:', err);
+      alert('خطا در ذخیره‌سازی تغییرات جلسه: ' + (err?.message || 'لطفاً دوباره امتحان کنید'));
+    } finally {
+      setIsSavingSessionEdit(false);
+    }
+  };
 
   // Handler to save Education Manager note for a representative
   const handleSaveRepNote = async (repId: string, text: string) => {
@@ -4479,7 +4704,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 {reportStartDate} تا {reportEndDate}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+            <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setReportStartDate('1403/07/01');
+                  setReportEndDate(getTodayShamsi());
+                  showToast('بازه گزارش از ابتدای سال تحصیلی (۱ مهر) تا امروز تنظیم شد.');
+                }}
+                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                title="مشاهده آمار کامل از اول مهر تا امروز"
+              >
+                <CalendarIcon size={13} />
+                <span>از ابتدای سال تحصیلی</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -4488,102 +4726,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   setReportEndDate(today);
                   showToast('بازه آمار به «امروز» تغییر یافت.');
                 }}
-                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
               >
                 <CalendarIcon size={13} />
                 <span>امروز</span>
               </button>
-            </div>
-          </div>
-
-          {/* Summary Metric Cards - 4 Modern Sleek Boxes */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-            {/* 1. Total Held Sessions */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 text-white p-4 rounded-2xl border border-indigo-400/40 shadow-lg shadow-indigo-600/20 group hover:border-indigo-300 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-indigo-100 block">کل جلسات {isOrdinaryStudent ? 'برگزار شده' : 'تشکیل شده'}</span>
-                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
-                    <span>{studentMetrics.heldSessions}</span>
-                    <span className="text-[10px] text-indigo-200 font-medium font-vazir">جلسه</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
-                  <BookOpen size={20} />
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-indigo-100">
-                <span>وضعیت حضور: {studentMetrics.presents} جلسه حاضر</span>
-                <span className="font-mono text-emerald-200 font-bold">
-                  {studentMetrics.heldSessions > 0 ? `${Math.round((studentMetrics.presents / studentMetrics.heldSessions) * 100)}%` : '۱۰۰%'}
-                </span>
-              </div>
-            </div>
-
-            {/* 2. Total Absences (Excused & Unexcused) */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-rose-500 via-rose-600 to-red-600 text-white p-4 rounded-2xl border border-rose-400/40 shadow-lg shadow-rose-600/20 group hover:border-rose-300 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-rose-100 block">غیبت‌ها (اعم از موجه و غیرموجه)</span>
-                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
-                    <span>{studentMetrics.totalAbsences}</span>
-                    <span className="text-[10px] text-rose-200 font-medium font-vazir">جلسه</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
-                  <UserX size={20} />
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-rose-100">
-                <span>غیرموجه: <strong className="text-white font-mono">{studentMetrics.absents}</strong></span>
-                <span>موجه: <strong className="text-rose-100 font-mono">{studentMetrics.excused}</strong></span>
-              </div>
-            </div>
-
-            {/* 3. Total Delays */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-white p-4 rounded-2xl border border-amber-400/40 shadow-lg shadow-amber-600/20 group hover:border-amber-300 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-amber-100 block">تأخیرها</span>
-                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
-                    <span>{studentMetrics.lates}</span>
-                    <span className="text-[10px] text-amber-200 font-medium font-vazir">مورد</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
-                  <Clock3 size={20} />
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-amber-100">
-                <span>ثبت تاخیر در ورود به کلاس</span>
-                <span className="font-mono text-white font-bold">{studentMetrics.lates > 0 ? 'موجب کسر انضباط' : 'بدون تاخیر'}</span>
-              </div>
-            </div>
-
-            {/* 4. Educational Warnings */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-purple-700 to-violet-700 text-white p-4 rounded-2xl border border-purple-400/40 shadow-lg shadow-purple-600/20 group hover:border-purple-300 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-purple-100 block">اخطارهای آموزشی</span>
-                  <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
-                    <span>{studentMetrics.warnings}</span>
-                    <span className="text-[10px] text-purple-200 font-medium font-vazir">اخطار</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner group-hover:scale-105 transition-transform">
-                  <AlertTriangle size={20} />
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-purple-100">
-                <span>تنها اخطارهای قطعی ثبت شده</span>
-                <span className={cn("font-bold font-mono", studentMetrics.warnings > 0 ? "text-amber-300" : "text-emerald-200")}>
-                  {studentMetrics.warnings > 0 ? 'نیازمند پیگیری' : 'بدون اخطار'}
-                </span>
-              </div>
             </div>
           </div>
 
@@ -5161,6 +5308,216 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 </table>
               </div>
             )}
+          </div>
+
+          {/* Bottom Analytics & KPI Summary Section */}
+          <div className="pt-6 border-t border-slate-200 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <BarChart3 size={20} className="text-indigo-600" />
+                <span>خلاصه شاخص‌ها و تحلیل گرافیکی غیبت‌ها</span>
+              </h3>
+              <span className="text-[11px] font-bold text-slate-500">
+                بر اساس داده‌های بازه زمانی انتخاب‌شده
+              </span>
+            </div>
+
+            {/* 1. The 4 KPI Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+              {/* Card 1 */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-blue-700 text-white p-4 rounded-2xl border border-indigo-400/40 shadow-lg shadow-indigo-600/20 group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-indigo-100 block">کل جلسات تشکیل شده</span>
+                    <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                      <span>{studentMetrics.heldSessions}</span>
+                      <span className="text-[10px] text-indigo-200 font-medium font-vazir">جلسه</span>
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner">
+                    <BookOpen size={20} />
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-indigo-100">
+                  <span>وضعیت حضور: {studentMetrics.presents} جلسه حاضر</span>
+                  <span className="font-mono text-emerald-200 font-bold">
+                    {reportAnalytics.presentRatio}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2 */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-rose-500 via-rose-600 to-red-600 text-white p-4 rounded-2xl border border-rose-400/40 shadow-lg shadow-rose-600/20 group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-rose-100 block">غیبت‌ها (کل غیرموجه و موجه)</span>
+                    <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                      <span>{studentMetrics.totalAbsences}</span>
+                      <span className="text-[10px] text-rose-200 font-medium font-vazir">جلسه</span>
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner">
+                    <UserX size={20} />
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-rose-100">
+                  <span>غیرموجه: <strong className="text-white font-mono">{studentMetrics.absents}</strong></span>
+                  <span>موجه: <strong className="text-rose-100 font-mono">{studentMetrics.excused}</strong></span>
+                </div>
+              </div>
+
+              {/* Card 3 */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 text-white p-4 rounded-2xl border border-amber-400/40 shadow-lg shadow-amber-600/20 group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-amber-100 block">تأخیرها</span>
+                    <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                      <span>{studentMetrics.lates}</span>
+                      <span className="text-[10px] text-amber-200 font-medium font-vazir">مورد</span>
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner">
+                    <Clock3 size={20} />
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-amber-100">
+                  <span>ثبت تاخیر ورود</span>
+                  <span className="font-mono text-white font-bold">{studentMetrics.lates > 0 ? 'کسر انضباط' : 'بدون تاخیر'}</span>
+                </div>
+              </div>
+
+              {/* Card 4 */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 via-purple-700 to-violet-700 text-white p-4 rounded-2xl border border-purple-400/40 shadow-lg shadow-purple-600/20 group">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-purple-100 block">اخطارهای آموزشی</span>
+                    <div className="text-2xl font-black font-mono text-white mt-1 flex items-baseline gap-1">
+                      <span>{studentMetrics.warnings}</span>
+                      <span className="text-[10px] text-purple-200 font-medium font-vazir">اخطار</span>
+                    </div>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner">
+                    <AlertTriangle size={20} />
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between text-[10px] text-purple-100">
+                  <span>اخطارهای قطعی</span>
+                  <span className={cn("font-bold font-mono", studentMetrics.warnings > 0 ? "text-amber-300" : "text-emerald-200")}>
+                    {studentMetrics.warnings > 0 ? 'نیازمند پیگیری' : 'پاک'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Visual Graphs & Breakdown Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Visual Graph 1: Absence Distribution by Grade */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 size={18} className="text-indigo-600" />
+                    <h4 className="text-xs font-black text-slate-800">توزیع غیبت‌ها بر حسب پایه تحصیلی</h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">غیبت غیرموجه</span>
+                </div>
+
+                <div className="space-y-3">
+                  {['۷', '۸', '۹', '۱۰'].map(gKey => {
+                    const gData = reportAnalytics.gradeCounts[gKey];
+                    const pct = Math.round((gData.absent / reportAnalytics.maxGradeAbsences) * 100);
+                    return (
+                      <div key={gKey} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700">{gData.label}</span>
+                          <span className="font-mono font-black text-rose-600 text-[11px]">
+                            {gData.absent} غیبت {gData.excused > 0 && <span className="text-indigo-600 font-bold text-[10px]">(+{gData.excused} موجه)</span>}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden flex">
+                          <div 
+                            className="bg-gradient-to-r from-rose-500 to-rose-600 h-full rounded-full transition-all duration-500" 
+                            style={{ width: `${Math.max(gData.absent > 0 ? 8 : 0, pct)}%` }} 
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Visual Graph 2: School Attendance Ratio Gauge */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <PieChart size={18} className="text-teal-600" />
+                    <h4 className="text-xs font-black text-slate-800">نسبت ترکیبی کل حضور و غیبت</h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-teal-700 font-mono">{reportAnalytics.presentRatio}٪ سلامت حضور</span>
+                </div>
+
+                {/* Progress Bar Stack */}
+                <div className="space-y-3">
+                  <div className="w-full bg-slate-100 h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-200/80">
+                    <div className="bg-emerald-500 h-full rounded-l-md transition-all" style={{ width: `${reportAnalytics.presentRatio}%` }} title={`حاضر: ${reportAnalytics.presentRatio}%`} />
+                    <div className="bg-rose-500 h-full transition-all" style={{ width: `${reportAnalytics.absentRatio}%` }} title={`غایب: ${reportAnalytics.absentRatio}%`} />
+                    <div className="bg-indigo-500 h-full transition-all" style={{ width: `${reportAnalytics.excusedRatio}%` }} title={`موجه: ${reportAnalytics.excusedRatio}%`} />
+                    <div className="bg-amber-500 h-full rounded-r-md transition-all" style={{ width: `${reportAnalytics.lateRatio}%` }} title={`تاخیر: ${reportAnalytics.lateRatio}%`} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                      <span className="text-emerald-900 font-bold text-[11px]">حاضر:</span>
+                      <span className="font-mono font-black text-emerald-700">{reportAnalytics.presentRatio}٪</span>
+                    </div>
+                    <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
+                      <span className="text-rose-900 font-bold text-[11px]">غایب غیرموجه:</span>
+                      <span className="font-mono font-black text-rose-700">{reportAnalytics.absentRatio}٪</span>
+                    </div>
+                    <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
+                      <span className="text-indigo-900 font-bold text-[11px]">غایب موجه:</span>
+                      <span className="font-mono font-black text-indigo-700">{reportAnalytics.excusedRatio}٪</span>
+                    </div>
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
+                      <span className="text-amber-900 font-bold text-[11px]">با تاخیر:</span>
+                      <span className="font-mono font-black text-amber-700">{reportAnalytics.lateRatio}٪</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Visual Graph 3: Top Absent Classes */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp size={18} className="text-rose-600" />
+                    <h4 className="text-xs font-black text-slate-800">بیشترین غیبت‌ها به تفکیک دروس</h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">۴ درس اول</span>
+                </div>
+
+                <div className="space-y-2">
+                  {reportAnalytics.topCourses.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-6">بدون غیبت ثبت‌شده در دروس</p>
+                  ) : (
+                    reportAnalytics.topCourses.map((c, cIdx) => (
+                      <div key={cIdx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 text-xs">
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 truncate text-[11px]">{c.title}</div>
+                          {c.teacher && <div className="text-[10px] text-slate-500 font-medium">استاد: {c.teacher}</div>}
+                        </div>
+                        <span className="px-2.5 py-1 bg-rose-100 text-rose-800 rounded-xl font-mono font-black text-[11px] shrink-0 border border-rose-200">
+                          {c.absent} غیبت
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -5921,75 +6278,258 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       {/* ========================================================================= */}
       <AnimatePresence>
         {selectedStudentDrilldown && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs font-vazir" dir="rtl">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs font-vazir" dir="rtl">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col"
+              className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[88vh] flex flex-col"
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    ریز گزارش حضور و غیاب: {selectedStudentDrilldown.student.name}
-                  </h3>
-                  <p className="text-[11px] text-slate-500">{selectedStudentDrilldown.student.grade || '---'}</p>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-black text-slate-900">
+                      ریز جلسات و ویرایش وضعیت: {selectedStudentDrilldown.student.name}
+                    </h3>
+                    {selectedStudentDrilldown.student.grade && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+                        پایه {selectedStudentDrilldown.student.grade}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                    <span>کل غیبت‌ها: <strong className="text-rose-600 font-mono font-bold">{selectedStudentDrilldown.absentCount || 0}</strong></span>
+                    <span>•</span>
+                    <span>موجه: <strong className="text-indigo-600 font-mono font-bold">{selectedStudentDrilldown.excusedCount || 0}</strong></span>
+                    <span>•</span>
+                    <span>تاخیر: <strong className="text-amber-600 font-mono font-bold">{selectedStudentDrilldown.lateCount || 0}</strong></span>
+                  </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSelectedStudentDrilldown(null)}
-                  className="text-slate-400 hover:text-slate-600"
+                  onClick={() => {
+                    setSelectedStudentDrilldown(null);
+                    setEditingSessionIdx(null);
+                  }}
+                  className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  <X size={18} />
+                  <X size={20} />
                 </button>
               </div>
 
-              <div className="overflow-y-auto flex-1 space-y-2">
+              <div className="overflow-y-auto flex-1 space-y-2.5 pr-1">
                 {selectedStudentDrilldown.history.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-6">رکوردی برای این طلبه یافت نشد.</p>
+                  <div className="text-center py-8 text-slate-400 space-y-1">
+                    <Info size={28} className="mx-auto text-slate-300" />
+                    <p className="text-xs font-bold">رکوردی برای این طلبه در این بازه تاریخی یافت نشد.</p>
+                  </div>
                 ) : (
-                  selectedStudentDrilldown.history.map((h: any, i: number) => (
-                    <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-150 flex items-center justify-between gap-3 text-xs">
-                      <div>
-                        <div className="font-bold text-slate-800">{h.programTitle}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{h.date}</div>
-                        {h.excuseReason && (
-                          <div className="text-[10px] text-indigo-700 mt-0.5">علت موجهی: {h.excuseReason}</div>
+                  selectedStudentDrilldown.history.map((h: any, i: number) => {
+                    const isEditing = editingSessionIdx === i;
+                    return (
+                      <div 
+                        key={i} 
+                        className={cn(
+                          "p-3 rounded-2xl border transition-all text-xs space-y-2",
+                          isEditing ? "bg-indigo-50/60 border-indigo-300 shadow-xs" : "bg-slate-50 hover:bg-slate-100/70 border-slate-200"
                         )}
-                        {h.note && (
-                          <div className="text-[10px] text-slate-600 mt-0.5">توضیح: {h.note}</div>
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="font-black text-slate-800 text-xs sm:text-sm">{h.programTitle || 'درس'}</div>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+                              <span>تاریخ: {h.date}</span>
+                              {h.lateMinutes ? <span>• {h.lateMinutes} دقیقه تاخیر</span> : null}
+                            </div>
+                            {h.excuseReason && !isEditing && (
+                              <div className="text-[11px] text-indigo-800 font-bold bg-indigo-100/60 px-2 py-0.5 rounded-lg inline-block mt-1">
+                                علت موجهی: {h.excuseReason}
+                              </div>
+                            )}
+                            {h.note && !isEditing && (
+                              <div className="text-[11px] text-slate-600 bg-white/70 px-2 py-0.5 rounded-lg inline-block border border-slate-200/60 mt-1">
+                                توضیحات: {h.note}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {h.isCancelled ? (
+                              <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10.5px] font-bold rounded-lg border border-rose-200">کلاس لغو شد</span>
+                            ) : h.status === 'present' ? (
+                              <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10.5px] font-bold rounded-lg border border-emerald-300">حاضر</span>
+                            ) : h.status === 'absent' ? (
+                              <span className="px-2.5 py-0.5 bg-rose-100 text-rose-800 text-[10.5px] font-black rounded-lg border border-rose-300">غایب</span>
+                            ) : h.status === 'excused' ? (
+                              <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 text-[10.5px] font-bold rounded-lg border border-indigo-300">موجه</span>
+                            ) : h.status === 'late' ? (
+                              <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 text-[10.5px] font-bold rounded-lg border border-amber-300">تاخیر</span>
+                            ) : (
+                              <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 text-[10.5px] font-bold rounded-lg border border-slate-200">نامشخص</span>
+                            )}
+
+                            {!isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSessionIdx(i);
+                                  setSessionEditDraft({
+                                    status: h.status || 'present',
+                                    note: h.note || '',
+                                    excuseReason: h.excuseReason || '',
+                                    lateMinutes: h.lateMinutes || 10
+                                  });
+                                }}
+                                className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-700 border border-indigo-200 rounded-lg text-[10.5px] font-bold transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                              >
+                                <Edit3 size={11} />
+                                <span>ویرایش</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline Editing Controls */}
+                        {isEditing && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            className="pt-2 border-t border-indigo-200/80 space-y-2.5 text-xs"
+                          >
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-slate-700">تغییر وضعیت حضور:</label>
+                              <div className="grid grid-cols-4 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionEditDraft(prev => ({ ...prev, status: 'present' }))}
+                                  className={cn(
+                                    "py-1.5 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer",
+                                    sessionEditDraft.status === 'present'
+                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                                      : "bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50"
+                                  )}
+                                >
+                                  حاضر
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionEditDraft(prev => ({ ...prev, status: 'absent' }))}
+                                  className={cn(
+                                    "py-1.5 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer",
+                                    sessionEditDraft.status === 'absent'
+                                      ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
+                                      : "bg-white text-rose-800 border-rose-200 hover:bg-rose-50"
+                                  )}
+                                >
+                                  غایب
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionEditDraft(prev => ({ ...prev, status: 'late' }))}
+                                  className={cn(
+                                    "py-1.5 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer",
+                                    sessionEditDraft.status === 'late'
+                                      ? "bg-amber-500 text-white border-amber-500 shadow-2xs"
+                                      : "bg-white text-amber-800 border-amber-200 hover:bg-amber-50"
+                                  )}
+                                >
+                                  با تاخیر
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSessionEditDraft(prev => ({ ...prev, status: 'excused' }))}
+                                  className={cn(
+                                    "py-1.5 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer",
+                                    sessionEditDraft.status === 'excused'
+                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
+                                      : "bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50"
+                                  )}
+                                >
+                                  موجه
+                                </button>
+                              </div>
+                            </div>
+
+                            {sessionEditDraft.status === 'late' && (
+                              <div className="flex items-center justify-between bg-amber-50 p-2 rounded-xl border border-amber-200 text-[11px]">
+                                <span className="font-bold text-amber-900">دقایق تاخیر:</span>
+                                <div className="flex items-center gap-1">
+                                  {[5, 10, 15].map(m => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => setSessionEditDraft(prev => ({ ...prev, lateMinutes: m }))}
+                                      className={cn(
+                                        "px-2 py-0.5 rounded-lg font-mono font-bold cursor-pointer border",
+                                        sessionEditDraft.lateMinutes === m ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-900 border-amber-300"
+                                      )}
+                                    >
+                                      {m}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10.5px] font-bold text-slate-700 block mb-0.5">علت موجهی (در صورت موجه):</label>
+                                <input
+                                  type="text"
+                                  value={sessionEditDraft.excuseReason}
+                                  onChange={(e) => setSessionEditDraft(prev => ({ ...prev, excuseReason: e.target.value }))}
+                                  placeholder="علت غیبت موجه (بیماری، مرخصی و...)"
+                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] font-bold text-slate-700 block mb-0.5">توضیحات و یادداشت جلسه:</label>
+                                <input
+                                  type="text"
+                                  value={sessionEditDraft.note}
+                                  onChange={(e) => setSessionEditDraft(prev => ({ ...prev, note: e.target.value }))}
+                                  placeholder="توضیحات اضافی..."
+                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setEditingSessionIdx(null)}
+                                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                              >
+                                انصراف
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isSavingSessionEdit}
+                                onClick={() => handleSaveSessionEdit(h)}
+                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                              >
+                                <Check size={13} />
+                                <span>{isSavingSessionEdit ? 'در حال ثبت...' : 'ذخیره وضعیت این جلسه'}</span>
+                              </button>
+                            </div>
+                          </motion.div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {h.isCancelled ? (
-                          <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-bold rounded">کلاس لغو شد</span>
-                        ) : h.status === 'present' ? (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">حاضر</span>
-                        ) : h.status === 'absent' ? (
-                          <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-black rounded">غایب</span>
-                        ) : h.status === 'excused' ? (
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded">موجه</span>
-                        ) : h.status === 'late' ? (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded">تاخیر</span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded">نامشخص</span>
-                        )}
-                        {h.hasWarning && (
-                          <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded">اخطار</span>
-                        )}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
               <div className="flex justify-end pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setSelectedStudentDrilldown(null)}
-                  className="px-4 py-1.5 text-xs bg-slate-800 text-white rounded-xl font-bold cursor-pointer"
+                  onClick={() => {
+                    setSelectedStudentDrilldown(null);
+                    setEditingSessionIdx(null);
+                  }}
+                  className="px-5 py-2 text-xs bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition-colors"
                 >
-                  بستن
+                  بستن پنجره
                 </button>
               </div>
             </motion.div>
