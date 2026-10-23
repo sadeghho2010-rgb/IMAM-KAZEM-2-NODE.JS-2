@@ -36,7 +36,8 @@ import {
   RotateCcw,
   Archive,
   ShieldAlert,
-  UserX
+  UserX,
+  MoreVertical
 } from 'lucide-react';
 import { Program, Student, Enrollment, MadrasRoom, Teacher, DiscussionGroup, CurriculumSubject, CurriculumBook, CurriculumChapter } from '../types';
 import { localDb } from '../lib/localDb';
@@ -448,6 +449,16 @@ export function isProgramMatchingSearch(p: Program, search: string): boolean {
   return Boolean(titleMatch || teacherMatch || roomMatch || dayMatch || timeMatch || gradeMatch || typeMatch || repMatch || categoryMatch || bookMatch);
 }
 
+export function isSelfReportedProgram(p: Program): boolean {
+  if (!p) return false;
+  return Boolean(
+    p.attendanceType === 'self_reporting' ||
+    (p as any).isSelfReporting ||
+    (p.title && p.title.includes('خوداظهاری')) ||
+    p.subjectCategory === 'خوداظهاری'
+  );
+}
+
 export function sortMainPrograms(
   mainProgs: Program[],
   sortMode: 'default' | 'اصول' | 'فقه' | 'فلسفه'
@@ -621,6 +632,10 @@ export default function Programs() {
   const [programSearchTerm, setProgramSearchTerm] = useState<string>('');
   const [mainCourseSubjectSort, setMainCourseSubjectSort] = useState<'default' | 'اصول' | 'فقه' | 'فلسفه'>('default');
   const [enableCounselingSpacing, setEnableCounselingSpacing] = useState<boolean>(false);
+  const [pushSelfReportedToBottom, setPushSelfReportedToBottom] = useState<boolean>(true);
+  const [openMenuCardId, setOpenMenuCardId] = useState<string | null>(null);
+  const [hoveredDaysCardId, setHoveredDaysCardId] = useState<string | null>(null);
+  const [expandedDaysCardId, setExpandedDaysCardId] = useState<string | null>(null);
   
   // Modals state
   const DEFAULT_MAIN_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه'];
@@ -1825,14 +1840,26 @@ export default function Programs() {
   const mainPrograms = useMemo(() => activePrograms.filter(p => p.type === 'اصلی'), [activePrograms]);
   const counselingPrograms = useMemo(() => activePrograms.filter(p => p.type === 'مشاوره'), [activePrograms]);
 
-  // Active Main Programs with Grade Filter, Search, and Subject Sort
+  const sortWithSelfReported = (progs: Program[]) => {
+    if (!pushSelfReportedToBottom) return progs;
+    return [...progs].sort((a, b) => {
+      const isSelfA = isSelfReportedProgram(a);
+      const isSelfB = isSelfReportedProgram(b);
+      if (isSelfA && !isSelfB) return 1;
+      if (!isSelfA && isSelfB) return -1;
+      return 0;
+    });
+  };
+
+  // Active Main Programs with Grade Filter, Search, Subject Sort, and Self-Reported Bottom Sort
   const activeMainPrograms = useMemo(() => {
     const filtered = mainPrograms
       .filter(p => isProgramMatchingGradeFilter(p, selectedGradeFilter))
       .filter(p => isProgramMatchingSearch(p, programSearchTerm));
 
-    return sortMainPrograms(filtered, mainCourseSubjectSort);
-  }, [mainPrograms, selectedGradeFilter, programSearchTerm, mainCourseSubjectSort]);
+    const sortedBySubject = sortMainPrograms(filtered, mainCourseSubjectSort);
+    return sortWithSelfReported(sortedBySubject);
+  }, [mainPrograms, selectedGradeFilter, programSearchTerm, mainCourseSubjectSort, pushSelfReportedToBottom]);
 
   // Active Counseling Programs ordered by active Main Programs
   const activeCounselingPrograms = useMemo(() => {
@@ -1863,8 +1890,8 @@ export default function Programs() {
       }
     });
 
-    return ordered;
-  }, [counselingPrograms, selectedGradeFilter, programSearchTerm, activeMainPrograms]);
+    return sortWithSelfReported(ordered);
+  }, [counselingPrograms, selectedGradeFilter, programSearchTerm, activeMainPrograms, pushSelfReportedToBottom]);
 
   const hierarchyMainPrograms = useMemo(() => {
     return activeMainPrograms;
@@ -1875,6 +1902,9 @@ export default function Programs() {
     const XLSX = await import('xlsx');
     const pStudents = getProgramStudents(program.id);
     const parentProg = program.parentProgramId ? programs.find(p => p.id === program.parentProgramId) : null;
+    const repText = (program.representativeNames && program.representativeNames.length > 0)
+      ? program.representativeNames.join(' ، ')
+      : (program.customRepresentative || '---');
 
     const data = [
       ["گزارش طلاب کلاس / برنامه آموزشی"],
@@ -1882,6 +1912,7 @@ export default function Programs() {
       ["نوع برنامه", program.type],
       ...(parentProg ? [["درس اصلی مرتبط", parentProg.title]] : []),
       ["استاد مربوطه", program.teacher || '---'],
+      ["نماینده / نمایندگان کلاس", repText],
       ["زمان برگزاری", `${program.day || ''} - ${program.time || ''}`],
       ["تعداد طلاب ثبت‌نام شده", pStudents.length],
       [],
@@ -1923,37 +1954,46 @@ export default function Programs() {
       ["تاریخ گزارش", new Date().toLocaleDateString('fa-IR-u-nu-latn')],
       ["تعداد کل کلاس‌ها", programs.length],
       [],
-      ["ردیف", "عنوان کلاس", "نوع برنامه", "درس اصلی مرتبط (در صورت مشاوره)", "استاد", "زمان", "تعداد طلاب"]
+      ["ردیف", "عنوان کلاس", "نوع برنامه", "درس اصلی مرتبط (در صورت مشاوره)", "استاد", "نماینده کلاس", "زمان", "تعداد طلاب"]
     ];
 
     programs.forEach((p, idx) => {
       const pStudents = getProgramStudents(p.id);
       const parentProg = p.parentProgramId ? programs.find(parent => parent.id === p.parentProgramId) : null;
+      const repText = (p.representativeNames && p.representativeNames.length > 0)
+        ? p.representativeNames.join(' ، ')
+        : (p.customRepresentative || '---');
+
       summaryData.push([
         (idx + 1).toString(),
         p.title,
         p.type,
         parentProg ? parentProg.title : '---',
         p.teacher || '---',
+        repText,
         `${p.day || ''} ${p.time || ''}`.trim() || '---',
         pStudents.length.toString()
       ]);
     });
 
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-    summaryWs['!cols'] = [{ wch: 8 }, { wch: 25 }, { wch: 15 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 12 }];
+    summaryWs['!cols'] = [{ wch: 8 }, { wch: 25 }, { wch: 15 }, { wch: 22 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, summaryWs, 'خلاصه همه کلاس‌ها');
 
     // Individual Sheets
     programs.forEach(program => {
       const pStudents = getProgramStudents(program.id);
       const parentProg = program.parentProgramId ? programs.find(p => p.id === program.parentProgramId) : null;
+      const repText = (program.representativeNames && program.representativeNames.length > 0)
+        ? program.representativeNames.join(' ، ')
+        : (program.customRepresentative || '---');
 
       const data = [
         ["مشخصات کلاس", program.title],
         ["نوع برنامه", program.type],
         ...(parentProg ? [["درس اصلی مرتبط", parentProg.title]] : []),
         ["استاد", program.teacher || '---'],
+        ["نماینده کلاس", repText],
         ["زمان", `${program.day || ''} - ${program.time || ''}`],
         ["تعداد طلاب", pStudents.length],
         [],
@@ -2068,248 +2108,364 @@ export default function Programs() {
       ? counselingPrograms.filter(cp => cp.parentProgramId === program.id)
       : [];
 
+    const isSelfReport = isSelfReportedProgram(program);
+    const repNames = (program.representativeNames && program.representativeNames.length > 0)
+      ? program.representativeNames.join(' ، ')
+      : (program.customRepresentative || '');
+
+    // Soft, delicate pastel background tint based on category/type
+    const category = program.subjectCategory || getCourseSubjectCategory(program);
+    const cardBgClass = 
+      cardType === 'مشاوره' ? "bg-gradient-to-br from-amber-50/70 via-orange-50/25 to-white hover:from-amber-50/90" :
+      cardType === 'دروس 5 شنبه' ? "bg-gradient-to-br from-purple-50/70 via-fuchsia-50/25 to-white hover:from-purple-50/90" :
+      category === 'اصول' ? "bg-gradient-to-br from-sky-50/70 via-blue-50/25 to-white hover:from-sky-50/90" :
+      category === 'فقه' ? "bg-gradient-to-br from-emerald-50/70 via-teal-50/25 to-white hover:from-emerald-50/90" :
+      category === 'فلسفه' ? "bg-gradient-to-br from-amber-50/70 via-yellow-50/25 to-white hover:from-amber-50/90" :
+      "bg-gradient-to-br from-slate-50/80 via-indigo-50/20 to-white hover:from-slate-100/90";
+
     return (
-      <div key={program.id} className="p-4 hover:bg-slate-50/70 transition-colors border-b last:border-0 space-y-2.5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 cursor-pointer" onClick={() => setSelectedProgramId(selectedProgramId === program.id ? null : program.id)}>
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h4 className="font-black text-slate-900 text-sm">{program.title}</h4>
-
-              {program.grade && (
-                <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-800 rounded-md border border-indigo-200 flex items-center gap-1">
-                  <GraduationCap size={11} className="text-indigo-600" />
-                  <span>{program.grade}</span>
-                </span>
-              )}
-
-              {/* Self-Reporting Badge (اصلاح ۲) */}
-              {(program.attendanceType === 'self_reporting' || (program as any).isSelfReporting) && (
-                <span className="text-[10px] font-black px-2.5 py-0.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-full flex items-center gap-1 shadow-xs ring-2 ring-emerald-300">
-                  <UserCheck size={11} className="text-emerald-100" />
-                  <span>خوداظهاری طلاب</span>
-                </span>
-              )}
-
-              {/* Subject Category & Book Badges */}
-              {(program.subjectCategory || program.type === 'اصلی') && (
-                (() => {
-                  const cat = program.subjectCategory || getCourseSubjectCategory(program);
-                  if (cat === 'سایر' && !program.subjectBook) return null;
-                  return (
-                    <span className={cn(
-                      "text-[10px] font-black px-2 py-0.5 rounded-md border flex items-center gap-1",
-                      cat === 'اصول' ? "bg-blue-50 text-blue-800 border-blue-200" :
-                      cat === 'فقه' ? "bg-emerald-50 text-emerald-800 border-emerald-200" :
-                      cat === 'فلسفه' ? "bg-amber-50 text-amber-800 border-amber-200" :
-                      "bg-purple-50 text-purple-800 border-purple-200"
-                    )}>
-                      <BookOpen size={10} />
-                      <span>{cat}</span>
-                      {program.subjectBook && <span className="font-bold text-slate-700">({program.subjectBook})</span>}
-                    </span>
-                  );
-                })()
-              )}
-              
-              {/* If Counseling Class with linked Main Class */}
-              {cardType === 'مشاوره' && parentProg && (
-                <span className="text-[10px] font-black px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md border border-amber-200 flex items-center gap-1">
-                  <GitFork size={10} className="text-amber-700" />
-                  <span>درس اصلی: {parentProg.title}</span>
-                </span>
-              )}
-
-              {/* If Main Class with attached Counseling classes */}
-              {cardType === 'اصلی' && attachedCounselings.length > 0 && (
-                <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-50 text-indigo-800 rounded-md border border-indigo-200 flex items-center gap-1">
-                  <MessageSquare size={10} className="text-indigo-600" />
-                  <span>{attachedCounselings.length} مشاوره مرتبط</span>
-                </span>
-              )}
-
-              {/* Self-Reporting Badge (اصلاح ۲) */}
-              {(program.attendanceType === 'self_reporting' || (program as any).isSelfReporting) && (
-                <span className="text-[10px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                  <UserCheck size={11} className="text-emerald-600" />
-                  <span>حضور و غیاب: خوداظهاری</span>
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-2.5 text-xs text-slate-500 font-medium">
-              {(program.madrasRoom || program.classroom) && (
-                <span className="flex items-center gap-1 text-slate-700 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
-                  <DoorOpen size={13} className="text-indigo-600" /> مَدرَس: {program.madrasRoom || program.classroom}
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Clock size={13} className="text-indigo-500" /> {program.day || 'نامشخص'} - {program.time || 'نامشخص'}
-              </span>
-              <motion.span 
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-violet-100/90 via-purple-50 to-indigo-100/90 text-violet-950 border border-violet-300/80 rounded-xl text-xs sm:text-[13px] font-black shadow-xs shadow-violet-200/50 transition-all cursor-default group"
-              >
-                <span className="relative flex items-center justify-center shrink-0">
-                  <User size={14} className="text-violet-700 group-hover:rotate-12 transition-transform duration-300" />
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping opacity-75"></span>
-                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
-                </span>
-                <span className="text-[11px] font-bold text-violet-700/90 shrink-0">استاد:</span>
-                <span className="text-violet-950 font-black tracking-tight">{program.teacher || 'تعیین نشده'}</span>
-              </motion.span>
-              {program.representativeNames && program.representativeNames.length > 0 && (
-                <span className="flex items-center gap-1 text-teal-800 font-bold bg-teal-50 border border-teal-200/80 px-2 py-0.5 rounded-md">
-                  <UserCheck size={13} className="text-teal-600" />
-                  <span>نماینده: {program.representativeNames.join(' ، ')}</span>
-                </span>
-              )}
-              <motion.span 
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-blue-100/90 via-indigo-50 to-sky-100/90 text-indigo-950 border border-indigo-300/80 rounded-xl text-xs sm:text-[13px] font-black shadow-xs shadow-indigo-200/50 transition-all cursor-default group"
-              >
-                <span className="relative flex items-center justify-center shrink-0">
-                  <Users size={14} className="text-indigo-700 group-hover:scale-110 transition-transform duration-300" />
-                </span>
-                <span className="text-[11px] font-bold text-indigo-700/90 shrink-0">تعداد طلاب:</span>
-                <span className="text-indigo-950 font-black tracking-tight">{programStudents.length} نفر</span>
-              </motion.span>
-            </div>
-          </div>
-
-          {/* Program Card Action Buttons */}
-          <div className="flex items-center gap-1 shrink-0">
-            <button 
-              type="button"
-              onClick={() => exportProgramToExcel(program)}
-              className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
-              title="خروجی اکسل این کلاس"
-            >
-              <FileSpreadsheet size={16} />
-            </button>
-
-            <button 
-              type="button"
-              onClick={() => handleExportProgramPdf(program)}
-              disabled={isExportingClassPdf}
-              className="p-1.5 text-slate-400 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
-              title="خروجی PDF این کلاس"
-            >
-              <FileText size={16} />
-            </button>
-
-            {isAuthorizedToEdit && (
-              <>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setEditingProgram(program);
-                    openRepModal('edit');
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-teal-700 hover:bg-teal-50 rounded-lg transition-all cursor-pointer"
-                  title="تعیین / ویرایش نماینده کلاس"
-                >
-                  <UserCheck size={16} />
-                </button>
-
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setEditingProgram(program);
-                    setEditModalDays(getProgramDays(program));
-                    if (program.time) {
-                      const parts = program.time.split('الی').map(p => p.trim());
-                      if (parts.length === 2) {
-                        setCustomStartEdit(parts[0]);
-                        setCustomEndEdit(parts[1]);
-                      }
-                    }
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
-                  title="ویرایش مشخصات برنامه"
-                >
-                  <Edit3 size={16} />
-                </button>
-
-                <button 
-                  type="button"
-                  onClick={() => setProgramToDelete(program)}
-                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                  title="حذف برنامه"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </>
-            )}
-          </div>
+      <div 
+        key={program.id}
+        className="relative group rounded-2xl p-[2px] transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.012]"
+      >
+        {/* Animated Electric Border Glow Effect on Mouse Hover */}
+        <div className="absolute inset-0 rounded-2xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-0">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+            className="w-[220%] h-[220%] -translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 bg-[conic-gradient(from_0deg,#6366f1,#a855f7,#ec4899,#06b6d4,#10b981,#6366f1)] opacity-70 blur-[1px]"
+          />
         </div>
 
-        {/* Display attached counseling list preview for Main Class */}
-        {cardType === 'اصلی' && attachedCounselings.length > 0 && (
-          <div className="bg-indigo-50/60 p-2 rounded-xl border border-indigo-100/80 text-xs text-indigo-950 flex flex-col gap-1">
-            <span className="font-bold text-[11px] text-indigo-900 flex items-center gap-1">
-              <Sparkles size={12} className="text-indigo-600" />
-              <span>کلاس‌های مشاوره متصل:</span>
-            </span>
-            <div className="flex flex-wrap gap-2 mt-0.5">
-              {attachedCounselings.map(c => (
-                <span key={c.id} className="bg-white px-2 py-0.5 rounded-lg border border-indigo-200 font-bold text-[11px] flex items-center gap-1 shadow-2xs">
-                  <span>{c.title}</span>
-                  <span className="text-slate-400 font-normal">({c.teacher || 'بدون استاد'})</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Main Card Surface */}
+        <div className={cn(
+          "relative z-10 rounded-[14px] p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xl transition-all duration-300 flex flex-col gap-3.5",
+          cardBgClass
+        )}>
+          {/* Card Header Row */}
+          <div className="flex items-start justify-between gap-3">
+            <div 
+              className="flex-1 cursor-pointer select-none"
+              onClick={() => setSelectedProgramId(selectedProgramId === program.id ? null : program.id)}
+            >
+              {/* Title & Badges */}
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <h4 className="font-black text-slate-900 text-base tracking-tight hover:text-indigo-700 transition-colors">
+                  {program.title}
+                </h4>
 
-        {/* Expandable Enrolled Students List */}
-        {selectedProgramId === program.id && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="mt-3 pt-3 border-t border-slate-100 space-y-3"
-          >
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h5 className="text-xs font-bold text-slate-700">طلاب ثبت‌نام شده ({programStudents.length} نفر):</h5>
-              <div className="flex items-center gap-2">
-                <button 
-                  type="button"
-                  onClick={() => handleCopyClassPhoneNumbers(program, programStudents)}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all border border-emerald-200 shadow-2xs cursor-pointer"
-                  title="کپی شماره تلفن تمام طلاب عضو این کلاس جهت استفاده در پنل پیامک"
-                >
-                  <Copy size={13} className="text-emerald-600" />
-                  <span>کپی شماره تلفن طلاب ({programStudents.filter(s => !!s.phoneNumber).length})</span>
-                </button>
-
-                {isAuthorizedToEdit && (
-                  <button 
-                    type="button"
-                    onClick={() => handleEnrollClick(program.id)}
-                    className="flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors border border-indigo-200/80 cursor-pointer"
-                  >
-                    <Plus size={14} />
-                    <span>مدیریت و افزودن طالبان</span>
-                  </button>
+                {program.grade && (
+                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-indigo-100/80 text-indigo-900 rounded-lg border border-indigo-200/80 flex items-center gap-1 shadow-2xs">
+                    <GraduationCap size={12} className="text-indigo-600" />
+                    <span>{program.grade}</span>
+                  </span>
                 )}
+
+                {/* Self-Reporting Badge */}
+                {isSelfReport && (
+                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-emerald-600 text-white rounded-full flex items-center gap-1 shadow-xs ring-2 ring-emerald-300">
+                    <UserCheck size={12} className="text-emerald-100" />
+                    <span>خوداظهاری طلاب</span>
+                  </span>
+                )}
+
+                {/* Subject Category Badge */}
+                {(program.subjectCategory || program.type === 'اصلی') && (
+                  (() => {
+                    const cat = program.subjectCategory || getCourseSubjectCategory(program);
+                    if (cat === 'سایر' && !program.subjectBook) return null;
+                    return (
+                      <span className={cn(
+                        "text-[11px] font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1 shadow-2xs",
+                        cat === 'اصول' ? "bg-blue-100/90 text-blue-900 border-blue-200" :
+                        cat === 'فقه' ? "bg-emerald-100/90 text-emerald-900 border-emerald-200" :
+                        cat === 'فلسفه' ? "bg-amber-100/90 text-amber-900 border-amber-200" :
+                        "bg-purple-100/90 text-purple-900 border-purple-200"
+                      )}>
+                        <BookOpen size={11} />
+                        <span>{cat}</span>
+                        {program.subjectBook && <span className="font-bold text-slate-700">({program.subjectBook})</span>}
+                      </span>
+                    );
+                  })()
+                )}
+
+                {/* Counseling Parent Badge */}
+                {cardType === 'مشاوره' && parentProg && (
+                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-amber-100 text-amber-950 rounded-lg border border-amber-300/80 flex items-center gap-1 shadow-2xs">
+                    <GitFork size={11} className="text-amber-700" />
+                    <span>درس اصلی: {parentProg.title}</span>
+                  </span>
+                )}
+
+                {/* Attached Counselings Count Badge */}
+                {cardType === 'اصلی' && attachedCounselings.length > 0 && (
+                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-indigo-100 text-indigo-950 rounded-lg border border-indigo-200 flex items-center gap-1 shadow-2xs">
+                    <MessageSquare size={11} className="text-indigo-600" />
+                    <span>{attachedCounselings.length} مشاوره مرتبط</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Program Details: Room, Time, Days (Hidden by default), Teacher (Prominent), Students (Prominent) */}
+              <div className="flex flex-wrap items-center gap-2.5 text-xs font-medium">
+                {/* Classroom */}
+                {(program.madrasRoom || program.classroom) && (
+                  <span className="flex items-center gap-1 text-slate-700 font-bold bg-slate-100/90 px-2.5 py-1 rounded-xl border border-slate-200/80 shadow-2xs">
+                    <DoorOpen size={14} className="text-indigo-600" />
+                    <span>مَدرَس: {program.madrasRoom || program.classroom}</span>
+                  </span>
+                )}
+
+                {/* Time */}
+                {program.time && (
+                  <span className="flex items-center gap-1 text-slate-700 font-bold bg-slate-100/90 px-2.5 py-1 rounded-xl border border-slate-200/80 shadow-2xs">
+                    <Clock size={14} className="text-indigo-500" />
+                    <span>ساعت: {program.time}</span>
+                  </span>
+                )}
+
+                {/* Days Hidden by Default - Revealed on Hover / Click Button */}
+                <div 
+                  className="relative inline-block"
+                  onMouseEnter={() => setHoveredDaysCardId(program.id)}
+                  onMouseLeave={() => setHoveredDaysCardId(null)}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedDaysCardId(expandedDaysCardId === program.id ? null : program.id);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-900 px-2.5 py-1 rounded-xl transition-all border border-indigo-200/80 shadow-2xs cursor-pointer"
+                    title="کلیک یا هوور جهت مشاهده روزهای برگزاری"
+                  >
+                    <Calendar size={13} className="text-indigo-600" />
+                    <span>روزهای برگزاری</span>
+                    <ChevronDown size={12} className={cn("text-indigo-500 transition-transform duration-200", (expandedDaysCardId === program.id || hoveredDaysCardId === program.id) && "rotate-180")} />
+                  </button>
+
+                  <AnimatePresence>
+                    {(expandedDaysCardId === program.id || hoveredDaysCardId === program.id) && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute bottom-full right-0 mb-1.5 z-30 bg-slate-900 text-white p-2.5 rounded-xl shadow-2xl text-xs font-bold whitespace-nowrap flex items-center gap-2 border border-slate-700 pointer-events-none"
+                      >
+                        <span className="text-amber-400 font-bold">روزها:</span>
+                        <span className="text-slate-100 font-black">{program.day || 'تعیین نشده'}</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Teacher Name - Prominent, Larger & Distinct */}
+                <motion.span 
+                  whileHover={{ scale: 1.04, y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-purple-100 via-violet-100 to-indigo-100 text-violet-950 border border-violet-300 rounded-xl text-xs sm:text-sm font-black shadow-xs shadow-violet-200/60 cursor-default group/teacher"
+                >
+                  <User size={15} className="text-violet-700 group-hover/teacher:rotate-12 transition-transform duration-300 shrink-0" />
+                  <span className="text-xs text-violet-700 font-bold">استاد:</span>
+                  <span className="text-violet-950 font-extrabold tracking-tight text-sm">{program.teacher || 'تعیین نشده'}</span>
+                </motion.span>
+
+                {/* Representative Name Badge */}
+                {repNames && (
+                  <span className="flex items-center gap-1 text-teal-900 font-bold bg-teal-100/90 border border-teal-300 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+                    <UserCheck size={14} className="text-teal-700" />
+                    <span>نماینده: {repNames}</span>
+                  </span>
+                )}
+
+                {/* Student Count Badge - Prominent & Larger */}
+                <motion.span 
+                  whileHover={{ scale: 1.04, y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-blue-100 via-indigo-100 to-sky-100 text-indigo-950 border border-indigo-300 rounded-xl text-xs sm:text-sm font-black shadow-xs shadow-indigo-200/60 cursor-default"
+                >
+                  <Users size={15} className="text-indigo-700 shrink-0" />
+                  <span className="text-xs text-indigo-700 font-bold">تعداد طلاب:</span>
+                  <span className="text-indigo-950 font-black text-sm">{programStudents.length} نفر</span>
+                </motion.span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {programStudents.map(student => (
-                <div key={student.id} className="bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl text-xs text-slate-800 flex items-center justify-between">
-                  <span className="font-bold">{student.name}</span>
-                  <span className="text-[10px] text-slate-500 font-medium bg-white px-2 py-0.5 rounded-md border border-slate-200">پایه {student.grade}</span>
-                </div>
-              ))}
-              {programStudents.length === 0 && (
-                <p className="text-xs text-slate-400 col-span-2 py-3 text-center italic">هنوز طلبی برای این کلاس ثبت نشده است.</p>
-              )}
+            {/* 3-Dots Action Dropdown Menu Button */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenMenuCardId(openMenuCardId === program.id ? null : program.id);
+                }}
+                className="p-2 text-slate-500 hover:text-indigo-700 hover:bg-white active:bg-indigo-50 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-indigo-300 shadow-2xs"
+                title="منوی عملیات و خروجی‌ها"
+              >
+                <MoreVertical size={18} />
+              </button>
+
+              <AnimatePresence>
+                {openMenuCardId === program.id && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setOpenMenuCardId(null)} />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92, y: 4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: 4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute left-0 top-full mt-1.5 w-52 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 overflow-hidden text-xs font-bold divide-y divide-slate-100"
+                    >
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuCardId(null);
+                            exportProgramToExcel(program);
+                          }}
+                          className="w-full px-3.5 py-2 text-right text-emerald-800 hover:bg-emerald-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                        >
+                          <FileSpreadsheet size={16} className="text-emerald-600" />
+                          <span>خروجی اکسل (Excel)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuCardId(null);
+                            handleExportProgramPdf(program);
+                          }}
+                          disabled={isExportingClassPdf}
+                          className="w-full px-3.5 py-2 text-right text-indigo-800 hover:bg-indigo-50 flex items-center gap-2.5 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <FileText size={16} className="text-indigo-600" />
+                          <span>خروجی فایل PDF</span>
+                        </button>
+                      </div>
+
+                      {isAuthorizedToEdit && (
+                        <div className="py-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuCardId(null);
+                              setEditingProgram(program);
+                              openRepModal('edit');
+                            }}
+                            className="w-full px-3.5 py-2 text-right text-teal-800 hover:bg-teal-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <UserCheck size={16} className="text-teal-600" />
+                            <span>تعیین / ویرایش نماینده</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuCardId(null);
+                              setEditingProgram(program);
+                              setEditModalDays(getProgramDays(program));
+                              if (program.time) {
+                                const parts = program.time.split('الی').map(p => p.trim());
+                                if (parts.length === 2) {
+                                  setCustomStartEdit(parts[0]);
+                                  setCustomEndEdit(parts[1]);
+                                }
+                              }
+                            }}
+                            className="w-full px-3.5 py-2 text-right text-blue-800 hover:bg-blue-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <Edit3 size={16} className="text-blue-600" />
+                            <span>ویرایش مشخصات کلاس</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuCardId(null);
+                              setProgramToDelete(program);
+                            }}
+                            className="w-full px-3.5 py-2 text-right text-rose-700 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={16} className="text-rose-600" />
+                            <span>حذف / غیرفعال‌سازی</span>
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
-          </motion.div>
-        )}
+          </div>
+
+          {/* Attached Counselings Preview */}
+          {cardType === 'اصلی' && attachedCounselings.length > 0 && (
+            <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200/80 text-xs text-indigo-950 flex flex-col gap-1">
+              <span className="font-bold text-[11px] text-indigo-900 flex items-center gap-1">
+                <Sparkles size={12} className="text-indigo-600" />
+                <span>کلاس‌های مشاوره متصل:</span>
+              </span>
+              <div className="flex flex-wrap gap-2 mt-0.5">
+                {attachedCounselings.map(c => (
+                  <span key={c.id} className="bg-white px-2.5 py-0.5 rounded-lg border border-indigo-200 font-bold text-[11px] flex items-center gap-1 shadow-2xs">
+                    <span>{c.title}</span>
+                    <span className="text-slate-500 font-normal">({c.teacher || 'بدون استاد'})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Expandable Enrolled Students List */}
+          {selectedProgramId === program.id && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="pt-3 border-t border-slate-200 space-y-3"
+            >
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <h5 className="text-xs font-bold text-slate-700">طلاب ثبت‌نام شده ({programStudents.length} نفر):</h5>
+                <div className="flex items-center gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => handleCopyClassPhoneNumbers(program, programStudents)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all border border-emerald-200 shadow-2xs cursor-pointer"
+                    title="کپی شماره تلفن تمام طلاب عضو این کلاس جهت استفاده در پنل پیامک"
+                  >
+                    <Copy size={13} className="text-emerald-600" />
+                    <span>کپی شماره تلفن طلاب ({programStudents.filter(s => !!s.phoneNumber).length})</span>
+                  </button>
+
+                  {isAuthorizedToEdit && (
+                    <button 
+                      type="button"
+                      onClick={() => handleEnrollClick(program.id)}
+                      className="flex items-center gap-1 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors border border-indigo-200/80 cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>مدیریت و افزودن طالبان</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {programStudents.map(student => (
+                  <div key={student.id} className="bg-white/80 border border-slate-200/80 px-3 py-2 rounded-xl text-xs text-slate-800 flex items-center justify-between shadow-2xs">
+                    <span className="font-bold">{student.name}</span>
+                    <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">پایه {student.grade}</span>
+                  </div>
+                ))}
+                {programStudents.length === 0 && (
+                  <p className="text-xs text-slate-400 col-span-2 py-3 text-center italic">هنوز طلبی برای این کلاس ثبت نشده است.</p>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </div>
       </div>
     );
   };
@@ -2371,7 +2527,7 @@ export default function Programs() {
                 });
                 setShowAddModal(true);
               }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md hover:shadow-lg"
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md hover:shadow-lg cursor-pointer"
             >
               <Plus size={18} />
               <span>افزودن برنامه جدید</span>
@@ -2430,7 +2586,7 @@ export default function Programs() {
         </div>
       </div>
 
-      {/* Search, Subject Sort & Visual Alignment Control Bar */}
+      {/* Search, Subject Sort, Visual Alignment & Self-Reported Toggle Control Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           {/* Search Box */}
@@ -2454,8 +2610,25 @@ export default function Programs() {
             )}
           </div>
 
-          {/* Sort & Alignment Controls */}
+          {/* Sort, Alignment & Self-Reported Controls */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Self-Reported Sort Toggle */}
+            <button
+              type="button"
+              onClick={() => setPushSelfReportedToBottom(!pushSelfReportedToBottom)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer select-none",
+                pushSelfReportedToBottom
+                  ? "bg-emerald-600 text-white border-emerald-700 font-black shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+              )}
+              title="نمایش کلاس‌های خوداظهاری در انتهای لیست کلاس‌ها"
+            >
+              <UserCheck size={15} />
+              <span>خوداظهاری در انتهای لیست</span>
+              {pushSelfReportedToBottom && <Check size={14} className="text-white" />}
+            </button>
+
             {/* Sort Main Classes by Subject */}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
               <span className="px-2 text-slate-500 shrink-0 text-[10px]">اولویت درس اصلی:</span>
@@ -2500,34 +2673,55 @@ export default function Programs() {
       {!enableCounselingSpacing ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           {/* Column 1: Main Classes */}
-          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col">
-            <div className="bg-slate-50/90 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                <div className="w-2 h-6 rounded-full bg-indigo-600"></div>
-                <span>کلاس‌های اصلی</span>
-              </h3>
-              <div className="flex items-center gap-2">
-                {isLevel2User && activeMainPrograms.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => copyGroupTeacherPhones(activeMainPrograms)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/90 rounded-xl text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
-                    title="کپی شماره تلفن تمام اساتید این بخش"
+          <div className="space-y-4">
+            {/* Animated Hero Header for Main Classes */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-5 border border-indigo-700/60 shadow-md">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+              <div className="relative z-10 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <motion.div 
+                    animate={{ scale: [1, 1.08, 1], rotate: [0, 5, 0] }}
+                    transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+                    className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-indigo-200 shadow-inner"
                   >
-                    <Copy size={13} className="text-amber-700" />
-                    <span>کپی تلفن اساتید</span>
-                  </button>
-                )}
-                <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
-                  {activeMainPrograms.length} کلاس
-                </span>
+                    <BookOpen size={24} />
+                  </motion.div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                      <span>کلاس‌های اصلی حوزه</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 rounded-full border border-indigo-400/40">
+                        فقه، اصول و فلسفه
+                      </span>
+                    </h3>
+                    <p className="text-xs text-indigo-200/80 font-medium mt-0.5">
+                      دروس رسمی پایه‌های تحصیلی مدرسه
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {isLevel2User && activeMainPrograms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => copyGroupTeacherPhones(activeMainPrograms)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      title="کپی شماره تلفن تمام اساتید این بخش"
+                    >
+                      <Copy size={14} className="text-amber-300" />
+                      <span>کپی تلفن اساتید</span>
+                    </button>
+                  )}
+                  <span className="text-xs font-black bg-white/15 border border-white/20 text-white px-3 py-1 rounded-xl backdrop-blur-sm">
+                    {activeMainPrograms.length} کلاس
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100 flex-1">
+            <div className="space-y-3.5">
               {activeMainPrograms.map(p => renderProgramCard(p, 'اصلی'))}
               {activeMainPrograms.length === 0 && (
-                <div className="p-10 text-center text-slate-400 text-xs italic">
+                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
                   {programSearchTerm ? `کلاس اصلی منطبق با عبارت «${programSearchTerm}» یافت نشد.` : 'کلاس اصلی در این بخش ثبت نشده است.'}
                 </div>
               )}
@@ -2535,34 +2729,55 @@ export default function Programs() {
           </div>
 
           {/* Column 2: Counseling Classes */}
-          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col">
-            <div className="bg-slate-50/90 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                <div className="w-2 h-6 rounded-full bg-amber-500"></div>
-                <span>کلاس‌های مشاوره درسی</span>
-              </h3>
-              <div className="flex items-center gap-2">
-                {isLevel2User && activeCounselingPrograms.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => copyGroupTeacherPhones(activeCounselingPrograms)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/90 rounded-xl text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
-                    title="کپی شماره تلفن تمام اساتید این بخش"
+          <div className="space-y-4">
+            {/* Animated Hero Header for Counseling Classes */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-900 via-orange-900 to-slate-900 text-white p-5 border border-amber-700/60 shadow-md">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+              <div className="relative z-10 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                  <motion.div 
+                    animate={{ scale: [1, 1.08, 1], rotate: [0, -5, 0] }}
+                    transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+                    className="p-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 text-amber-200 shadow-inner"
                   >
-                    <Copy size={13} className="text-amber-700" />
-                    <span>کپی تلفن اساتید</span>
-                  </button>
-                )}
-                <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
-                  {activeCounselingPrograms.length} کلاس
-                </span>
+                    <MessageSquare size={24} />
+                  </motion.div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                      <span>کلاس‌های مشاوره درسی</span>
+                      <span className="text-xs font-bold px-2.5 py-0.5 bg-amber-500/30 text-amber-200 rounded-full border border-amber-400/40">
+                        پشتیبانی علمی
+                      </span>
+                    </h3>
+                    <p className="text-xs text-amber-200/80 font-medium mt-0.5">
+                      جلسات مشاوره متصل به دروس اصلی جهت هدایت علمی
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {isLevel2User && activeCounselingPrograms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => copyGroupTeacherPhones(activeCounselingPrograms)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      title="کپی شماره تلفن تمام اساتید این بخش"
+                    >
+                      <Copy size={14} className="text-amber-300" />
+                      <span>کپی تلفن اساتید</span>
+                    </button>
+                  )}
+                  <span className="text-xs font-black bg-white/15 border border-white/20 text-white px-3 py-1 rounded-xl backdrop-blur-sm">
+                    {activeCounselingPrograms.length} کلاس
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100 flex-1">
+            <div className="space-y-3.5">
               {activeCounselingPrograms.map(p => renderProgramCard(p, 'مشاوره'))}
               {activeCounselingPrograms.length === 0 && (
-                <div className="p-10 text-center text-slate-400 text-xs italic">
+                <div className="p-10 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
                   {programSearchTerm ? `کلاس مشاوره‌ای منطبق با عبارت «${programSearchTerm}» یافت نشد.` : 'کلاس مشاوره‌ای ثبت نشده است.'}
                 </div>
               )}
@@ -2574,22 +2789,22 @@ export default function Programs() {
         <div className="space-y-6">
           {/* Header Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-            <div className="bg-slate-100 px-5 py-3 rounded-2xl border border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                <div className="w-2 h-6 rounded-full bg-indigo-600"></div>
+            <div className="bg-indigo-900 text-white px-5 py-3.5 rounded-2xl border border-indigo-700 flex items-center justify-between shadow-xs">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <BookOpen size={18} className="text-indigo-300" />
                 <span>کلاس‌های اصلی</span>
               </h3>
-              <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
+              <span className="text-xs font-black bg-white/20 border border-white/30 text-white px-3 py-0.5 rounded-xl">
                 {activeMainPrograms.length} کلاس
               </span>
             </div>
 
-            <div className="bg-amber-50 px-5 py-3 rounded-2xl border border-amber-200 flex items-center justify-between">
-              <h3 className="text-sm font-black text-amber-950 flex items-center gap-2">
-                <div className="w-2 h-6 rounded-full bg-amber-500"></div>
+            <div className="bg-amber-900 text-white px-5 py-3.5 rounded-2xl border border-amber-700 flex items-center justify-between shadow-xs">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <MessageSquare size={18} className="text-amber-300" />
                 <span>کلاس‌های مشاوره درسی (تراز روبه‌روی درس اصلی)</span>
               </h3>
-              <span className="text-xs font-bold bg-white border border-amber-200 text-amber-800 px-2.5 py-0.5 rounded-full shadow-2xs">
+              <span className="text-xs font-black bg-white/20 border border-white/30 text-white px-3 py-0.5 rounded-xl">
                 {activeCounselingPrograms.length} کلاس
               </span>
             </div>
@@ -2611,7 +2826,7 @@ export default function Programs() {
                       <BookOpen size={13} />
                       <span>درس اصلی: {mainProg.title}</span>
                     </div>
-                    <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 overflow-hidden h-full flex flex-col justify-between">
+                    <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 overflow-hidden h-full flex flex-col justify-between p-1">
                       {renderProgramCard(mainProg, 'اصلی')}
                     </div>
                   </div>
@@ -2636,7 +2851,7 @@ export default function Programs() {
                     </div>
 
                     {linked.length > 0 ? (
-                      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                      <div className="space-y-3">
                         {linked.map(c => renderProgramCard(c, 'مشاوره'))}
                       </div>
                     ) : (
@@ -2667,14 +2882,14 @@ export default function Programs() {
                   <div className="flex items-center justify-center text-slate-400 text-xs italic bg-white/50 rounded-2xl border border-dashed border-slate-200 p-4">
                     کلاس‌های مشاوره بدون درس اصلی مستقیم
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-200/80 rounded-xl text-[11px] font-bold text-slate-800 border border-slate-300">
                       <span>سایر کلاس‌های مشاوره</span>
                       <span className="text-[10px] bg-white px-2 py-0.5 rounded-md text-slate-700 border border-slate-300 font-extrabold">
                         {unlinked.length} کلاس
                       </span>
                     </div>
-                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                    <div className="space-y-3">
                       {unlinked.map(c => renderProgramCard(c, 'مشاوره'))}
                     </div>
                   </div>
@@ -2703,25 +2918,27 @@ export default function Programs() {
                 .filter(p => isProgramMatchingSearch(p, programSearchTerm));
 
               return (
-                <div key={typeKey} className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden flex flex-col">
-                  <div className="bg-slate-50/90 px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                      <div className={cn(
-                        "w-2 h-6 rounded-full",
-                        typeKey === 'پژوهش' ? "bg-emerald-500" :
-                        typeKey === 'دروس 5 شنبه' ? "bg-purple-500" : "bg-slate-500"
-                      )}></div>
-                      <span>{typesMap[typeKey] || typeKey}</span>
-                    </h3>
-                    <span className="text-xs font-bold bg-white border border-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full shadow-2xs">
-                      {otherProgs.length} کلاس
-                    </span>
+                <div key={typeKey} className="space-y-3.5">
+                  {/* Hero Header for Thursday & Special Programs */}
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-900 via-fuchsia-900 to-slate-900 text-white p-4 border border-purple-700/60 shadow-md">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-500/20 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+                    <div className="relative z-10 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={20} className="text-fuchsia-300 shrink-0" />
+                        <h3 className="text-sm font-black text-white">
+                          {typesMap[typeKey] || typeKey}
+                        </h3>
+                      </div>
+                      <span className="text-[11px] font-black bg-white/15 border border-white/20 text-white px-2.5 py-0.5 rounded-xl">
+                        {otherProgs.length} کلاس
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="divide-y divide-slate-100 flex-1">
+                  <div className="space-y-3">
                     {otherProgs.map(p => renderProgramCard(p, typeKey))}
                     {otherProgs.length === 0 && (
-                      <div className="p-8 text-center text-slate-400 text-xs italic">
+                      <div className="p-8 text-center text-slate-400 text-xs italic bg-white rounded-2xl border border-slate-200">
                         برنامه‌ای در این بخش ثبت نشده است.
                       </div>
                     )}
