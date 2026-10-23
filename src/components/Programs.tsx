@@ -2164,9 +2164,17 @@ export default function Programs() {
                   <span>نماینده: {program.representativeNames.join(' ، ')}</span>
                 </span>
               )}
-              <span className="flex items-center gap-1 text-indigo-700 font-bold">
-                <Users size={13} /> {programStudents.length} نفر
-              </span>
+              <motion.span 
+                whileHover={{ scale: 1.05, y: -1 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-blue-100/90 via-indigo-50 to-sky-100/90 text-indigo-950 border border-indigo-300/80 rounded-xl text-xs sm:text-[13px] font-black shadow-xs shadow-indigo-200/50 transition-all cursor-default group"
+              >
+                <span className="relative flex items-center justify-center shrink-0">
+                  <Users size={14} className="text-indigo-700 group-hover:scale-110 transition-transform duration-300" />
+                </span>
+                <span className="text-[11px] font-bold text-indigo-700/90 shrink-0">تعداد طلاب:</span>
+                <span className="text-indigo-950 font-black tracking-tight">{programStudents.length} نفر</span>
+              </motion.span>
             </div>
           </div>
 
@@ -2915,9 +2923,14 @@ export default function Programs() {
                             <span className="font-bold flex items-center gap-1">
                               <Clock size={13} className="text-indigo-300" /> {mainProg.day || ''} - {mainProg.time || ''}
                             </span>
-                            <span className="font-black px-2.5 py-0.5 bg-white text-indigo-950 rounded-full text-xs shadow-2xs">
-                              {mainStudents.length} طالب
-                            </span>
+                            <motion.span 
+                              whileHover={{ scale: 1.05, y: -1 }}
+                              whileTap={{ scale: 0.98 }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-700 text-white border border-blue-400/60 rounded-xl text-xs sm:text-[13px] font-black shadow-xs transition-all cursor-default group"
+                            >
+                              <Users size={14} className="text-blue-200 group-hover:scale-110 transition-transform duration-300" />
+                              <span>{mainStudents.length} طالب</span>
+                            </motion.span>
                           </div>
                         </div>
 
@@ -3165,8 +3178,13 @@ export default function Programs() {
                           </span>
                           <span>زمان: {cp.day} {cp.time}</span>
                         </div>
-                        <div className="text-slate-500 font-bold text-[10px]">
-                          تعداد طلاب: {cpStudents.length} نفر {showCounselingStudents && cpStudents.length > 0 ? `(${cpStudents.map(s => s.name).join(' ، ')})` : ''}
+                        <div className="text-slate-700 font-bold text-[11px] bg-slate-100 p-2 rounded-lg border border-slate-200/80 flex items-center gap-1.5">
+                          <Users size={13} className="text-indigo-600" />
+                          <span>تعداد طلاب:</span>
+                          <strong className="text-slate-900 font-black">{cpStudents.length} نفر</strong>
+                          {showCounselingStudents && cpStudents.length > 0 && (
+                            <span className="text-slate-500 font-normal truncate">({cpStudents.map(s => s.name).join(' ، ')})</span>
+                          )}
                         </div>
                       </div>
                     );
