@@ -278,7 +278,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     return dates;
   }, [todayShamsi, allowedDaysCount, currentProgram]);
 
-  // Smart date selection: Auto-select most recent held class day if current selected date is an off-day (e.g. Friday)
+  // Smart date selection: Auto-select most recent held class day if current selected date is an off-day (e.g. Thursday or Friday)
   useEffect(() => {
     if (allowedDates.length === 0 || !currentProgram) return;
 
@@ -289,7 +289,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         setSelectedDate(firstClassDay.dateStr);
       }
     }
-  }, [allowedDates, currentProgram]);
+  }, [allowedDates, currentProgram, selectedDate]);
 
   // Get enrolled students for the currently selected program
   const classStudents = useMemo(() => {
@@ -730,300 +730,303 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
           </div>
         </div>
 
-        {/* Off-day Notice (when selected date is not a class day for currentProgram) */}
-        {!isCourseHeldOnDate(currentProgram, selectedDate) && (
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-slate-200/80 text-slate-600 flex items-center justify-center shrink-0">
-                <Calendar size={18} />
-              </div>
-              <div>
-                <p className="font-black text-slate-900 text-sm">
-                  در روز {getShamsiDayOfWeekName(selectedDate)} ({selectedDate}) کلاسی برای «{currentProgram?.title}» تشکیل نمی‌شود
-                </p>
-                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  برنامه این درس شامل روز {getShamsiDayOfWeekName(selectedDate)} نمی‌باشد. جهت ثبت حضور، روزهای تشکیل کلاس را انتخاب نمایید.
-                </p>
-              </div>
+        {/* Conditional Content: Off-Day / Holiday Notice vs Student Roster */}
+        {!isCourseHeldOnDate(currentProgram, selectedDate) ? (
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-10 text-center space-y-4 shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-2xs">
+              <Calendar size={28} />
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h3 className="text-sm sm:text-base font-black text-slate-800">
+                کلاس «{currentProgram?.title}» در روز {getShamsiDayOfWeekName(selectedDate)} تشکیل نمی‌شود
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                روزهای رسمی برگزاری این کلاس: <strong className="text-indigo-900 font-black">{getProgramDays(currentProgram).join(' ، ')}</strong> می‌باشد.
+                بنابراین برای تاریخ {selectedDate} ({getShamsiDayOfWeekName(selectedDate)}) ثبت حضور و غیاب غیرفعال است.
+              </p>
             </div>
             {allowedDates.find(ad => ad.isClassDay) && (
-              <button
-                type="button"
-                onClick={() => {
-                  const lastHeld = allowedDates.find(ad => ad.isClassDay);
-                  if (lastHeld) setSelectedDate(lastHeld.dateStr);
-                }}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
-              >
-                <Clock size={14} />
-                <span>آخرین جلسه برگزارشده ({allowedDates.find(ad => ad.isClassDay)?.dayName} {allowedDates.find(ad => ad.isClassDay)?.dateStr})</span>
-              </button>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lastHeld = allowedDates.find(ad => ad.isClassDay);
+                    if (lastHeld) setSelectedDate(lastHeld.dateStr);
+                  }}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20"
+                >
+                  <Clock size={15} />
+                  <span>انتقال به روز برگزاری کلاس ({allowedDates.find(ad => ad.isClassDay)?.dayName} {allowedDates.find(ad => ad.isClassDay)?.dateStr})</span>
+                </button>
+              </div>
             )}
           </div>
-        )}
-
-        {/* Official Holiday Notice */}
-        {currentHoliday && (
-          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-3">
-            <AlertTriangle className="text-amber-600 shrink-0" size={22} />
-            <div>
-              <p className="font-black text-amber-950 text-sm">
-                این تاریخ در تقویم آموزشی به عنوان روز تعطیل («{currentHoliday.title}») ثبت شده است
+        ) : currentHoliday ? (
+          <div className="bg-white rounded-3xl border border-amber-200 p-6 sm:p-10 text-center space-y-4 shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 border border-amber-300 flex items-center justify-center mx-auto">
+              <AlertTriangle size={28} />
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h3 className="text-sm sm:text-base font-black text-amber-950">
+                تعطیلی رسمی تقویم آموزشی: {currentHoliday.title}
+              </h3>
+              <p className="text-xs text-amber-800 leading-relaxed">
+                تاریخ {selectedDate} در تقویم آموزشی به عنوان تعطیل رسمی ثبت شده است و امکان ثبت حضور و غیاب برای آن وجود ندارد.
               </p>
-              <p className="text-[11px] text-amber-800 mt-1">
-                طبق تقویم آموزشی، این روز تعطیل رسمی است و حضور و غیاب برای آن ایجاد یا ثبت نمی‌شود.
-              </p>
             </div>
-          </div>
-        )}
-
-        {/* Quick Class Status Actions: کلاس تعطیل بود / استاد جایگزین آمد */}
-        <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Class Cancelled Button */}
-            <button
-              type="button"
-              onClick={() => setIsCancelled(!isCancelled)}
-              className={cn(
-                "px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
-                isCancelled
-                  ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700"
-              )}
-            >
-              <AlertTriangle size={15} />
-              <span>کلاس در این تاریخ تعطیل بود</span>
-              {isCancelled && <span className="text-[10px] bg-rose-700 px-1.5 py-0.2 rounded">فعال</span>}
-            </button>
-
-            {/* Substitute Teacher Button */}
-            <button
-              type="button"
-              onClick={() => setHasSubstituteTeacher(!hasSubstituteTeacher)}
-              className={cn(
-                "px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
-                hasSubstituteTeacher
-                  ? "bg-amber-600 text-white border-amber-600 shadow-xs"
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-700"
-              )}
-            >
-              <UserCheck size={15} />
-              <span>استاد جایگزین آمد</span>
-              {hasSubstituteTeacher && <span className="text-[10px] bg-amber-700 px-1.5 py-0.2 rounded">فعال</span>}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleMarkAllPresent}
-              disabled={isCancelled}
-              className="mr-auto px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
-            >
-              <CheckCircle2 size={15} className="text-emerald-600" />
-              <span>حاضر کردن همه طلاب</span>
-            </button>
-          </div>
-
-          {/* Conditional inputs */}
-          {isCancelled && (
-            <div className="pt-2 border-t border-slate-200">
-              <input
-                type="text"
-                placeholder="علت تعطیلی کلاس (مثلاً: تعطیلی رسمی، ماموریت استاد و...)"
-                value={cancellationReason}
-                onChange={(e) => setCancellationReason(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-rose-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-rose-500"
-              />
-            </div>
-          )}
-
-          {hasSubstituteTeacher && (
-            <div className="pt-2 border-t border-slate-200">
-              <input
-                type="text"
-                placeholder="نام و نام خانوادگی استاد جایگزین این جلسه"
-                value={substituteTeacherName}
-                onChange={(e) => setSubstituteTeacherName(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 4. Student Attendance List (Clean, Ultra-Simple like TeacherPortal / ارزیابی استاد مشاوره) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-              <Users size={16} className="text-indigo-600" />
-              <span>لیست طلاب کلاس «{currentProgram?.title}»</span>
-            </h3>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              تعداد طلاب کلاس: {classStudents.length} نفر • وضعیت اولیه: نامشخص (برای تغییر، روی گزینه‌ها کلیک نمایید)
-            </p>
-          </div>
-          <span className="text-xs font-bold text-slate-500 font-mono">
-            تاریخ: {selectedDate}
-          </span>
-        </div>
-
-        {classStudents.length === 0 ? (
-          <div className="p-10 text-center text-slate-400 text-xs italic">
-            هیچ طلبه‌ای برای این کلاس ثبت‌نام نشده است.
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {classStudents.map((st, idx) => {
-              const studentDraft = draftAttendance[String(st.id)];
-              const status: AttendanceStatus = studentDraft?.status || 'unspecified';
-              const lateMins = studentDraft?.lateMinutes || 10;
-
-              return (
-                <div 
-                  key={st.id} 
+          <>
+            {/* Quick Class Status Actions: کلاس تعطیل بود / استاد جایگزین آمد */}
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Class Cancelled Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsCancelled(!isCancelled)}
                   className={cn(
-                    "p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors",
-                    status === 'absent' ? "bg-rose-50/30" :
-                    status === 'late' ? "bg-amber-50/30" :
-                    status === 'excused' ? "bg-blue-50/30" :
-                    "hover:bg-slate-50/60"
+                    "px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    isCancelled
+                      ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                      : "bg-white text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700"
                   )}
                 >
-                  {/* Student Info */}
-                  <div className="flex items-center gap-2.5 min-w-[200px]">
-                    <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-black flex items-center justify-center shrink-0">
-                      {idx + 1}
-                    </span>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-black text-slate-900">
-                        {st.name}
-                      </h4>
-                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                        کد طلبی: {st.studentCode || st.nationalId || '---'} {st.grade ? `(${st.grade})` : ''}
-                      </p>
-                    </div>
-                  </div>
+                  <AlertTriangle size={15} />
+                  <span>کلاس در این تاریخ تعطیل بود</span>
+                  {isCancelled && <span className="text-[10px] bg-rose-700 px-1.5 py-0.2 rounded">فعال</span>}
+                </button>
 
-                  {/* 4 Status Quick Pills */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {/* حاضر */}
-                    <button
-                      type="button"
-                      disabled={isCancelled}
-                      onClick={() => handleSetStudentStatus(String(st.id), 'present')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                        status === 'present' && !isCancelled
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-black"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 hover:text-emerald-800"
-                      )}
-                    >
-                      <span>حاضر</span>
-                    </button>
+                {/* Substitute Teacher Button */}
+                <button
+                  type="button"
+                  onClick={() => setHasSubstituteTeacher(!hasSubstituteTeacher)}
+                  className={cn(
+                    "px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer",
+                    hasSubstituteTeacher
+                      ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                      : "bg-white text-slate-700 border-slate-200 hover:bg-amber-50 hover:text-amber-700"
+                  )}
+                >
+                  <UserCheck size={15} />
+                  <span>استاد جایگزین آمد</span>
+                  {hasSubstituteTeacher && <span className="text-[10px] bg-amber-700 px-1.5 py-0.2 rounded">فعال</span>}
+                </button>
 
-                    {/* غایب */}
-                    <button
-                      type="button"
-                      disabled={isCancelled}
-                      onClick={() => handleSetStudentStatus(String(st.id), 'absent')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                        status === 'absent' && !isCancelled
-                          ? "bg-rose-600 text-white border-rose-600 shadow-xs font-black"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-rose-50 hover:text-rose-800"
-                      )}
-                    >
-                      <span>غایب</span>
-                    </button>
+                <button
+                  type="button"
+                  onClick={handleMarkAllPresent}
+                  disabled={isCancelled}
+                  className="mr-auto px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                >
+                  <CheckCircle2 size={15} className="text-emerald-600" />
+                  <span>حاضر کردن همه طلاب</span>
+                </button>
+              </div>
 
-                    {/* تاخیر */}
-                    <button
-                      type="button"
-                      disabled={isCancelled}
-                      onClick={() => handleSetStudentStatus(String(st.id), 'late')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                        status === 'late' && !isCancelled
-                          ? "bg-amber-500 text-white border-amber-500 shadow-xs font-black"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-800"
-                      )}
-                    >
-                      <span>تاخیر</span>
-                    </button>
+              {/* Conditional inputs */}
+              {isCancelled && (
+                <div className="pt-2 border-t border-slate-200">
+                  <input
+                    type="text"
+                    placeholder="علت تعطیلی کلاس (مثلاً: تعطیلی رسمی، ماموریت استاد و...)"
+                    value={cancellationReason}
+                    onChange={(e) => setCancellationReason(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-rose-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              )}
 
-                    {/* نامشخص */}
-                    <button
-                      type="button"
-                      disabled={isCancelled}
-                      onClick={() => handleSetStudentStatus(String(st.id), 'unspecified')}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
-                        status === 'unspecified' || !status
-                          ? "bg-slate-700 text-white border-slate-700 shadow-xs font-black"
-                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-800"
-                      )}
-                    >
-                      <span>نامشخص</span>
-                    </button>
+              {hasSubstituteTeacher && (
+                <div className="pt-2 border-t border-slate-200">
+                  <input
+                    type="text"
+                    placeholder="نام و نام خانوادگی استاد جایگزین این جلسه"
+                    value={substituteTeacherName}
+                    onChange={(e) => setSubstituteTeacherName(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              )}
+            </div>
 
-                    {/* Late Minutes Quick Toggle if late */}
-                    {status === 'late' && !isCancelled && (
-                      <div className="flex items-center gap-1 mr-2 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900 flex-wrap">
-                        <span>تاخیر:</span>
-                        {[5, 10, 15].map(m => (
+            {/* 4. Student Attendance List */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                    <Users size={16} className="text-indigo-600" />
+                    <span>لیست طلاب کلاس «{currentProgram?.title}»</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    تعداد طلاب کلاس: {classStudents.length} نفر • وضعیت اولیه: نامشخص (برای تغییر، روی گزینه‌ها کلیک نمایید)
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-slate-500 font-mono">
+                  تاریخ: {selectedDate}
+                </span>
+              </div>
+
+              {classStudents.length === 0 ? (
+                <div className="p-10 text-center text-slate-400 text-xs italic">
+                  هیچ طلبه‌ای برای این کلاس ثبت‌نام نشده است.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {classStudents.map((st, idx) => {
+                    const studentDraft = draftAttendance[String(st.id)];
+                    const status: AttendanceStatus = studentDraft?.status || 'unspecified';
+                    const lateMins = studentDraft?.lateMinutes || 10;
+
+                    return (
+                      <div 
+                        key={st.id} 
+                        className={cn(
+                          "p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors",
+                          status === 'absent' ? "bg-rose-50/30" :
+                          status === 'late' ? "bg-amber-50/30" :
+                          status === 'excused' ? "bg-blue-50/30" :
+                          "hover:bg-slate-50/60"
+                        )}
+                      >
+                        {/* Student Info */}
+                        <div className="flex items-center gap-2.5 min-w-[200px]">
+                          <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-black flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                              {st.name}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              کد طلبی: {st.studentCode || st.nationalId || '---'} {st.grade ? `(${st.grade})` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* 4 Status Quick Pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* حاضر */}
                           <button
-                            key={m}
                             type="button"
-                            onClick={() => handleSetStudentLateMinutes(String(st.id), m)}
+                            disabled={isCancelled}
+                            onClick={() => handleSetStudentStatus(String(st.id), 'present')}
                             className={cn(
-                              "px-1.5 py-0.5 rounded-md cursor-pointer transition-all",
-                              lateMins === m ? "bg-amber-600 text-white" : "bg-white text-amber-800 hover:bg-amber-100"
+                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              status === 'present' && !isCancelled
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-black"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 hover:text-emerald-800"
                             )}
                           >
-                            {m}
+                            <span>حاضر</span>
                           </button>
-                        ))}
-                        <div className="flex items-center gap-0.5 border-r border-amber-200 pr-1 mr-0.5">
-                          <input
-                            type="number"
-                            min={1}
-                            max={15}
-                            value={lateMins || 10}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10);
-                              const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
-                              handleSetStudentLateMinutes(String(st.id), capped);
-                            }}
-                            className="w-10 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                          />
-                          <span className="text-[9px] text-amber-700">دقیقه</span>
+
+                          {/* غایب */}
+                          <button
+                            type="button"
+                            disabled={isCancelled}
+                            onClick={() => handleSetStudentStatus(String(st.id), 'absent')}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              status === 'absent' && !isCancelled
+                                ? "bg-rose-600 text-white border-rose-600 shadow-xs font-black"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-rose-50 hover:text-rose-800"
+                            )}
+                          >
+                            <span>غایب</span>
+                          </button>
+
+                          {/* تاخیر */}
+                          <button
+                            type="button"
+                            disabled={isCancelled}
+                            onClick={() => handleSetStudentStatus(String(st.id), 'late')}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              status === 'late' && !isCancelled
+                                ? "bg-amber-500 text-white border-amber-500 shadow-xs font-black"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-800"
+                            )}
+                          >
+                            <span>تاخیر</span>
+                          </button>
+
+                          {/* نامشخص */}
+                          <button
+                            type="button"
+                            disabled={isCancelled}
+                            onClick={() => handleSetStudentStatus(String(st.id), 'unspecified')}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              status === 'unspecified' || !status
+                                ? "bg-slate-700 text-white border-slate-700 shadow-xs font-black"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-800"
+                            )}
+                          >
+                            <span>نامشخص</span>
+                          </button>
+
+                          {/* Late Minutes Quick Toggle if late */}
+                          {status === 'late' && !isCancelled && (
+                            <div className="flex items-center gap-1 mr-2 bg-amber-50 px-2 py-1 rounded-xl border border-amber-200 text-[10px] font-bold text-amber-900 flex-wrap">
+                              <span>تاخیر:</span>
+                              {[5, 10, 15].map(m => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => handleSetStudentLateMinutes(String(st.id), m)}
+                                  className={cn(
+                                    "px-1.5 py-0.5 rounded-md cursor-pointer transition-all",
+                                    lateMins === m ? "bg-amber-600 text-white" : "bg-white text-amber-800 hover:bg-amber-100"
+                                  )}
+                                >
+                                  {m}
+                                </button>
+                              ))}
+                              <div className="flex items-center gap-0.5 border-r border-amber-200 pr-1 mr-0.5">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={15}
+                                  value={lateMins || 10}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    const capped = isNaN(val) ? 1 : Math.max(1, Math.min(15, val));
+                                    handleSetStudentLateMinutes(String(st.id), capped);
+                                  }}
+                                  className="w-10 px-1 py-0.5 bg-white border border-amber-300 rounded text-center font-mono font-bold text-[11px] text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                                <span className="text-[9px] text-amber-700">دقیقه</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              )}
+
+              {/* 5. Final Save Button */}
+              <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-slate-500 font-medium">
+                  <span>پس از ثبت، اطلاعات به صورت برخط در سامانه ذخیره و در تمامی دستگاه‌ها سینک می‌شود.</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAttendance}
+                  disabled={isSaving || classStudents.length === 0 || !isCourseHeldOnDate(currentProgram, selectedDate) || !!currentHoliday}
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-40"
+                >
+                  <Save size={16} />
+                  <span>{isSaving ? 'در حال ذخیره‌سازی...' : 'ثبت و ذخیره نهایی حضور و غیاب این جلسه'}</span>
+                </button>
+              </div>
+            </div>
+          </>
         )}
-
-        {/* 5. Final Save Button */}
-        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-slate-500 font-medium">
-            <span>پس از ثبت، اطلاعات به صورت برخط در سامانه ذخیره و در تمامی دستگاه‌ها سینک می‌شود.</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSaveAttendance}
-            disabled={isSaving || classStudents.length === 0 || !isCourseHeldOnDate(currentProgram, selectedDate) || !!currentHoliday}
-            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-40"
-          >
-            <Save size={16} />
-            <span>{isSaving ? 'در حال ذخیره‌سازی...' : 'ثبت و ذخیره نهایی حضور و غیاب این جلسه'}</span>
-          </button>
-        </div>
       </div>
     </div>
   );
 };
+
