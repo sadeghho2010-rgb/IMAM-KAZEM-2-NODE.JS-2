@@ -236,6 +236,9 @@ export class StudentCourseProgressService {
         !p.isDeleted
       );
 
+      // Map active program enrolled students
+      const programStudentMap = new Map<string, Set<string>>();
+
       for (const prog of activeMainPrograms) {
         const enrolledStudentIds = new Set<string>();
 
@@ -257,11 +260,51 @@ export class StudentCourseProgressService {
 
         if (!hasExplicit && enrolledStudentIds.size === 0) {
           (allStudents || [])
-            .filter(s => s.grade === prog.grade || prog.grade === 'همه پایه‌ها')
+            .filter(s => (s.isActive !== false) && (s.grade === prog.grade || prog.grade === 'همه پایه‌ها'))
             .forEach(s => enrolledStudentIds.add(String(s.id)));
         }
 
-        await this.syncProgramEnrollmentProgress(prog, Array.from(enrolledStudentIds));
+        programStudentMap.set(prog.id, enrolledStudentIds);
+
+        // Fetch previous enrolled students from existing progress records to compute removed ones
+        const existingProgress = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+        const prevEnrolled = existingProgress
+          .filter(p => p.programId === prog.id && p.status === 'in_progress')
+          .map(p => p.studentId);
+
+        await this.syncProgramEnrollmentProgress(prog, Array.from(enrolledStudentIds), prevEnrolled);
+      }
+
+      // Re-check all in_progress records to ensure no stale in_progress records remain
+      const allProgressRecords = await localDb.getDocs<StudentCourseProgress>('student_course_progress');
+      for (const rec of allProgressRecords) {
+        if (rec.status === 'in_progress') {
+          let isStillEnrolled = false;
+
+          for (const prog of activeMainPrograms) {
+            const enrolledSet = programStudentMap.get(prog.id);
+            if (enrolledSet && enrolledSet.has(rec.studentId)) {
+              if (
+                rec.programId === prog.id ||
+                rec.chapterId === prog.chapterId ||
+                (rec.chapterTitle && prog.title && (prog.title.includes(rec.chapterTitle) || rec.chapterTitle.includes(prog.title))) ||
+                (rec.bookTitle && prog.title && (prog.title.includes(rec.bookTitle) || rec.bookTitle.includes(prog.title)))
+              ) {
+                isStillEnrolled = true;
+                break;
+              }
+            }
+          }
+
+          if (!isStillEnrolled) {
+            await localDb.setDoc('student_course_progress', {
+              ...rec,
+              status: 'remaining',
+              programId: undefined,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
       }
     } catch (err) {
       console.warn('Error during syncAllProgramsWithCourseProgress:', err);

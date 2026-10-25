@@ -85,6 +85,14 @@ export default function StudentStudyPortal({
     return openP?.id || periods[0]?.id || '';
   });
 
+  // Ensure activePeriodId is synchronized if periods load asynchronously
+  useEffect(() => {
+    if (!activePeriodId && periods.length > 0) {
+      const openP = periods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
+      setActivePeriodId(openP?.id || periods[0]?.id || '');
+    }
+  }, [periods, activePeriodId, student]);
+
   // Daily entries list state
   const [dailyEntries, setDailyEntries] = useState<StudyDailyEntry[]>([]);
 
@@ -178,6 +186,9 @@ export default function StudentStudyPortal({
       const allDaily = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
       const stIdStr = String(student.id || '').trim();
       const stNat = String(student.nationalId || '').trim();
+      const uIdStr = String(currentUser?.id || '').trim();
+      const uLinkedStr = String(currentUser?.linkedStudentId || '').trim();
+      const uUsernameStr = String(currentUser?.username || '').trim();
 
       const filtered = allDaily.filter(e => {
         const pMatch = String(e.periodId || (e as any).period_id || '').trim() === String(activePeriodId || '').trim();
@@ -185,8 +196,16 @@ export default function StudentStudyPortal({
 
         const eStId = String(e.studentId || (e as any).student_id || '').trim();
         const eNat = String((e as any).nationalId || (e as any).nationalCode || '').trim();
+        const eUser = String((e as any).userId || '').trim();
 
-        return (stIdStr && eStId === stIdStr) || (stNat && eNat === stNat) || (stNat && eStId === stNat);
+        return (
+          (stIdStr && eStId === stIdStr) ||
+          (stNat && eNat === stNat) ||
+          (stNat && eStId === stNat) ||
+          (uIdStr && (eStId === uIdStr || eUser === uIdStr)) ||
+          (uLinkedStr && eStId === uLinkedStr) ||
+          (uUsernameStr && (eNat === uUsernameStr || eStId === uUsernameStr))
+        );
       });
 
       // Sort newest first
@@ -201,7 +220,7 @@ export default function StudentStudyPortal({
     if (activePeriodId) {
       loadDailyEntries();
     }
-  }, [activePeriodId, student.id]);
+  }, [activePeriodId, student.id, currentUser?.id]);
 
   // Real-time synchronization for daily entries & logs across panels
   useEffect(() => {

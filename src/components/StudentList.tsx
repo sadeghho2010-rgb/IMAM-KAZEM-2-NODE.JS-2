@@ -52,6 +52,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import DeactivationModal from './DeactivationModal';
 import StudentRecordHistoryModal from './StudentRecordHistoryModal';
 import { getTodayShamsi } from '../lib/jalali';
+import { StudentCourseProgressService } from '../services/StudentCourseProgressService';
 
 interface StudentListProps {
   onlyActive?: boolean;
@@ -802,11 +803,77 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
     const resolvedName = getStudentDisplayName(targetStudent);
     const resolvedNatId = getStudentDisplayNationalId(targetStudent);
+    const isAlreadyInactive = !isStudentActive(targetStudent);
 
     // Close modal instantly
     setStudentToDelete(null);
 
-    // Deactivate the student cleanly (soft-deactivation) so their name, national ID and records are 100% preserved in "کل طلاب"
+    if (isAlreadyInactive) {
+      // -------------------------------------------------------------
+      // HARD PERMANENT DELETE (When deleting from 'مدیریت کل طلاب' / inactive list)
+      // -------------------------------------------------------------
+      setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
+      setIsDeletingStudent(true);
+
+      try {
+        await localDb.deleteDoc('students', targetStudent.id);
+
+        // Delete user account if linked
+        const studentUser = getStudentAccount(targetStudent);
+        if (studentUser) {
+          try {
+            deleteUser(studentUser.id);
+          } catch (e) {
+            await localDb.deleteDoc('system_users', studentUser.id);
+          }
+        }
+
+        // Clean up orphaned enrollments, course_enrollments, and course progress records
+        try {
+          const [allEnrolls, allCourseEnrolls, allProgs, allProgress] = await Promise.all([
+            localDb.getDocs<any>('enrollments'),
+            localDb.getDocs<any>('course_enrollments'),
+            localDb.getDocs<any>('programs'),
+            localDb.getDocs<any>('student_course_progress')
+          ]);
+
+          for (const enr of allEnrolls.filter(e => String(e.studentId) === String(targetStudent.id) || String(e.student_id) === String(targetStudent.id))) {
+            await localDb.deleteDoc('enrollments', enr.id);
+          }
+          for (const cenr of allCourseEnrolls.filter(e => String(e.studentId) === String(targetStudent.id))) {
+            await localDb.deleteDoc('course_enrollments', cenr.id);
+          }
+          for (const prog of allProgs) {
+            if (Array.isArray(prog.studentIds) && prog.studentIds.includes(targetStudent.id)) {
+              const updatedIds = prog.studentIds.filter((id: string) => id !== targetStudent.id);
+              await localDb.updateDoc('programs', prog.id, { studentIds: updatedIds });
+            }
+          }
+          for (const p of allProgress.filter(p => String(p.studentId) === String(targetStudent.id))) {
+            await localDb.deleteDoc('student_course_progress', p.id);
+          }
+        } catch (cleanErr) {
+          console.warn("Non-fatal cleanup notice on permanent student delete:", cleanErr);
+        }
+
+        // Re-sync overall curriculum progress
+        await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
+
+        window.dispatchEvent(new CustomEvent('collection_change_students'));
+        window.dispatchEvent(new CustomEvent('app_data_change'));
+      } catch (error: any) {
+        console.error("Error permanently deleting student:", error);
+        alert('خطا در حذف کامل پرونده طلبه: ' + (error?.message || 'نامشخص'));
+        fetchStudents(true);
+      } finally {
+        setIsDeletingStudent(false);
+      }
+      return;
+    }
+
+    // -------------------------------------------------------------
+    // SOFT DELETE / DEACTIVATION (When deleting an active student)
+    // -------------------------------------------------------------
     const updatedStudent: Student = {
       ...targetStudent,
       name: resolvedName,
@@ -818,12 +885,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       deactivationNotes: 'غیرفعال‌شده از لیست طلاب فعال توسط مدیر'
     };
 
-    setStudents(prev => {
-      if (statusFilter === 'active') {
-        return prev.filter(s => s.id !== targetStudent.id);
-      }
-      return prev.map(s => s.id === targetStudent.id ? updatedStudent : s);
-    });
+    setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
 
     setIsDeletingStudent(true);
     try {
@@ -835,7 +897,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           localDb.getDocs<any>('enrollments'),
           localDb.getDocs<any>('programs')
         ]);
-        const matchedEnrolls = allEnrolls.filter(e => e.studentId === targetStudent.id || e.student_id === targetStudent.id);
+        const matchedEnrolls = allEnrolls.filter(e => String(e.studentId) === String(targetStudent.id) || String(e.student_id) === String(targetStudent.id));
         for (const enr of matchedEnrolls) {
           await localDb.deleteDoc('enrollments', enr.id);
         }
@@ -846,8 +908,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           }
         }
       } catch (cleanErr) {
-        console.warn("Non-fatal cleanup notice on student delete:", cleanErr);
+        console.warn("Non-fatal cleanup notice on student deactivation:", cleanErr);
       }
+
+      // Re-sync overall curriculum progress
+      await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
 
       // Synchronize and block user account
       syncStudentUserStatus(targetStudent.id, false, updatedStudent);
@@ -2393,10 +2458,20 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                 <div className="p-2.5 bg-rose-50 rounded-xl">
                   <Trash2 size={22} />
                 </div>
-                <h3 className="text-base font-bold text-slate-800">تایید حذف کاربر</h3>
+                <h3 className="text-base font-bold text-slate-800">
+                  {isStudentActive(studentToDelete) ? 'تایید غیرفعال‌سازی طلبه' : 'تایید حذف کامل و دائمی پرونده'}
+                </h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                آیا از حذف <span className="font-bold text-slate-900">{studentToDelete.name}</span> اطمینان دارید؟ این عمل غیرقابل بازگشت است.
+                {isStudentActive(studentToDelete) ? (
+                  <>
+                    آیا از غیرفعال کردن <span className="font-bold text-slate-900">{studentToDelete.name}</span> و انتقال پرونده به لیست غیرفعالین (مدیریت کل طلاب) اطمینان دارید؟
+                  </>
+                ) : (
+                  <>
+                    این طلبه هم‌اکنون در حالت غیرفعال است. آیا از <strong className="text-rose-600">حذف کامل و دائمی</strong> پرونده <span className="font-bold text-slate-900">{studentToDelete.name}</span> و تمامی سوابق مربوط به وی از دیتابیس اطمینان دارید؟ این عمل غیرقابل بازگشت است.
+                  </>
+                )}
               </p>
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
@@ -2413,7 +2488,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   disabled={isDeletingStudent}
                   className="px-4 py-2 bg-rose-600 disabled:bg-rose-300 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-colors shadow-md shadow-rose-200 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  {isDeletingStudent ? 'در حال حذف...' : 'حذف کاربر'}
+                  {isDeletingStudent ? 'در حال عملیات...' : (isStudentActive(studentToDelete) ? 'غیرفعال‌سازی' : 'حذف کامل و دائمی')}
                 </button>
               </div>
             </motion.div>

@@ -581,7 +581,7 @@ export async function addStudyDailyEntry(entry: {
   const todayShamsi = getTodayShamsi();
   const timeStr = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 
-  const newDoc = await localDb.addDoc('study_daily_entries', {
+  const payloadToSave = {
     periodId: entry.periodId,
     studentId: entry.studentId,
     student_id: entry.studentId,
@@ -600,10 +600,16 @@ export async function addStudyDailyEntry(entry: {
     createdAt: now.toISOString(),
     submittedBy: entry.submittedBy || 'student',
     note: entry.note || ''
-  });
+  };
 
-  await syncAggregatePeriodicStudyLog(entry.periodId, entry.studentId, entry.submittedBy);
-  return newDoc;
+  const newDocId = await localDb.addDoc('study_daily_entries', payloadToSave);
+  const createdDoc: StudyDailyEntry = {
+    id: newDocId,
+    ...payloadToSave
+  };
+
+  await syncAggregatePeriodicStudyLog(entry.periodId, entry.studentId, entry.submittedBy, createdDoc);
+  return createdDoc;
 }
 
 export async function updateStudyDailyEntry(
@@ -659,25 +665,41 @@ export async function deleteStudyDailyEntry(entryId: string, periodId: string, s
   await syncAggregatePeriodicStudyLog(periodId, studentId, submittedBy);
 }
 
-export async function syncAggregatePeriodicStudyLog(periodId: string, studentId: string, submittedBy?: string) {
+export async function syncAggregatePeriodicStudyLog(
+  periodId: string, 
+  studentId: string, 
+  submittedBy?: string, 
+  freshDoc?: StudyDailyEntry
+) {
   const targetStudentId = String(studentId || '').trim();
   if (!periodId || !targetStudentId) return;
 
-  const [allEntries, allStudents, existingLogs] = await Promise.all([
+  const [allEntries, allStudents, allUsers, existingLogs] = await Promise.all([
     localDb.getDocs<StudyDailyEntry>('study_daily_entries'),
     localDb.getDocs<Student>('students'),
+    localDb.getDocs<any>('system_users'),
     localDb.getDocs<PeriodicStudyLog>('periodic_study_logs')
   ]);
 
-  const studentObj = allStudents.find(s => 
-    String(s.id).trim() === targetStudentId || 
-    (s.nationalId && String(s.nationalId).trim() === targetStudentId) ||
-    (s.studentCode && String(s.studentCode).trim() === targetStudentId)
+  const matchedUser = allUsers.find((u: any) => 
+    String(u.id || '').trim() === targetStudentId ||
+    String(u.username || '').trim().toLowerCase() === targetStudentId.toLowerCase() ||
+    String(u.linkedStudentId || '').trim() === targetStudentId
   );
 
-  const canonicalId = studentObj ? String(studentObj.id).trim() : targetStudentId;
-  const canonicalNat = studentObj?.nationalId ? String(studentObj.nationalId).trim() : '';
-  const canonicalCode = studentObj?.studentCode ? String(studentObj.studentCode).trim() : '';
+  const studentObj = allStudents.find(s => 
+    String(s.id).trim() === targetStudentId || 
+    (matchedUser?.linkedStudentId && String(s.id).trim() === String(matchedUser.linkedStudentId).trim()) ||
+    (s.nationalId && String(s.nationalId).trim() === targetStudentId) ||
+    (matchedUser?.nationalId && String(s.nationalId).trim() === String(matchedUser.nationalId).trim()) ||
+    (s.studentCode && String(s.studentCode).trim() === targetStudentId) ||
+    (matchedUser?.username && (String(s.nationalId).trim() === String(matchedUser.username).trim() || String(s.studentCode).trim() === String(matchedUser.username).trim()))
+  );
+
+  const canonicalId = studentObj ? String(studentObj.id).trim() : (matchedUser?.linkedStudentId || targetStudentId);
+  const canonicalNat = studentObj?.nationalId ? String(studentObj.nationalId).trim() : (matchedUser?.nationalId || matchedUser?.username || '');
+  const canonicalCode = studentObj?.studentCode ? String(studentObj.studentCode).trim() : (matchedUser?.username || '');
+  const canonicalName = studentObj?.name ? String(studentObj.name).trim() : (matchedUser?.name || '');
 
   const studentEntries = allEntries.filter(e => {
     const pMatch = String(e.periodId || (e as any).period_id || '').trim() === String(periodId).trim();
@@ -687,16 +709,40 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
     const eNat = String((e as any).nationalId || (e as any).nationalCode || '').trim();
     const eCode = String((e as any).studentCode || '').trim();
     const eUser = String((e as any).userId || '').trim();
+    const eName = String((e as any).studentName || '').trim().toLowerCase();
 
     return (
       (targetStudentId && eStId === targetStudentId) ||
       (canonicalId && eStId === canonicalId) ||
+      (matchedUser && eStId === matchedUser.id) ||
+      (matchedUser?.linkedStudentId && eStId === matchedUser.linkedStudentId) ||
       (canonicalNat && eNat === canonicalNat) ||
       (canonicalNat && eStId === canonicalNat) ||
       (canonicalCode && eCode === canonicalCode) ||
-      (targetStudentId && eUser === targetStudentId)
+      (targetStudentId && eUser === targetStudentId) ||
+      (matchedUser && eUser === matchedUser.id) ||
+      (canonicalName && eName && eName.toLowerCase() === canonicalName.toLowerCase())
     );
   });
+
+  if (freshDoc && freshDoc.id && !studentEntries.some(e => e.id === freshDoc.id)) {
+    const freshP = String(freshDoc.periodId || (freshDoc as any).period_id || '').trim();
+    if (freshP === String(periodId).trim()) {
+      studentEntries.push(freshDoc);
+    }
+  }
+
+  // Retroactively normalize matched entries so they store canonical studentId and nationalId
+  for (const entry of studentEntries) {
+    if (entry.id && (entry.studentId !== canonicalId || (canonicalNat && entry.nationalId !== canonicalNat))) {
+      localDb.updateDoc('study_daily_entries', entry.id, {
+        studentId: canonicalId,
+        student_id: canonicalId,
+        nationalId: canonicalNat || entry.nationalId || '',
+        studentName: canonicalName || entry.studentName || ''
+      }).catch(() => {});
+    }
+  }
 
   let totalMinutesSum = 0;
   let coreTotalMinutesSum = 0;
@@ -704,7 +750,7 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
   let coreDiscussionMinutesSum = 0;
   let freeStudyMinutesSum = 0;
 
-  // Aggregate breakdown by courseId or courseTitle
+  // Aggregate breakdown by courseTitle (normalized)
   const coursesAggMap = new Map<string, CourseStudyDetail>();
 
   studentEntries.forEach(e => {
@@ -718,7 +764,9 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
         coreStudyMinutesSum += sMin;
         coreDiscussionMinutesSum += dMin;
 
-        const key = c.courseId || c.courseTitle || 'unknown_course';
+        const rawTitle = (c.courseTitle || '').trim();
+        const key = rawTitle ? rawTitle.toLowerCase() : (c.courseId || 'unknown_course').trim().toLowerCase();
+
         const existing = coursesAggMap.get(key) || {
           courseId: c.courseId || key,
           courseTitle: c.courseTitle || 'درس اصلی',
@@ -751,21 +799,25 @@ export async function syncAggregatePeriodicStudyLog(periodId: string, studentId:
 
     const lStId = String(l.studentId || (l as any).student_id || '').trim();
     const lNat = String((l as any).nationalId || (l as any).nationalCode || '').trim();
+    const lName = String(l.studentName || '').trim().toLowerCase();
 
     return (
       (targetStudentId && lStId === targetStudentId) ||
       (canonicalId && lStId === canonicalId) ||
+      (matchedUser && lStId === matchedUser.id) ||
+      (matchedUser?.linkedStudentId && lStId === matchedUser.linkedStudentId) ||
       (canonicalNat && lNat === canonicalNat) ||
-      (canonicalNat && lStId === canonicalNat)
+      (canonicalNat && lStId === canonicalNat) ||
+      (canonicalName && lName && lName === canonicalName.toLowerCase())
     );
   });
 
   const payload: Partial<PeriodicStudyLog> = {
     periodId: String(periodId).trim(),
     studentId: canonicalId,
-    studentName: studentObj?.name || matchingLogs[0]?.studentName || '',
-    studentCode: studentObj?.studentCode || matchingLogs[0]?.studentCode || '',
-    nationalId: studentObj?.nationalId || matchingLogs[0]?.nationalId || '',
+    studentName: canonicalName || matchingLogs[0]?.studentName || '',
+    studentCode: canonicalCode || matchingLogs[0]?.studentCode || '',
+    nationalId: canonicalNat || matchingLogs[0]?.nationalId || '',
     grade: studentObj?.grade || matchingLogs[0]?.grade || '',
     hours: totalSumHours,
     totalMinutes: totalMinutesSum,
