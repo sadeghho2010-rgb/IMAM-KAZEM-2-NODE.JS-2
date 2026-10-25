@@ -129,25 +129,50 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     return undefined;
   };
 
-  // Helper to reliably resolve a student's full name, avoiding 'نامشخص'
+  // Helper to reliably resolve a student's full name, avoiding 'نامشخص' or generic 'طلبه'
   const getStudentDisplayName = (student: Student): string => {
     if (!student) return 'طلبه';
-    if (student.name && student.name !== 'نامشخص' && student.name.trim()) return student.name;
+    
+    // 1. Direct name
+    if (student.name && student.name !== 'نامشخص' && student.name !== 'طلبه' && student.name.trim()) {
+      return student.name.trim();
+    }
+    // 2. fullName
+    if ((student as any).fullName && (student as any).fullName !== 'نامشخص' && (student as any).fullName !== 'طلبه' && (student as any).fullName.trim()) {
+      return (student as any).fullName.trim();
+    }
+    // 3. studentName
+    if ((student as any).studentName && (student as any).studentName !== 'نامشخص' && (student as any).studentName !== 'طلبه' && (student as any).studentName.trim()) {
+      return (student as any).studentName.trim();
+    }
+    // 4. firstName + lastName
+    const fnLn = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+    if (fnLn && fnLn !== 'نامشخص' && fnLn !== 'طلبه') {
+      return fnLn;
+    }
+    // 5. User account linked name
     const acc = getStudentAccount(student);
-    if (acc?.name && acc.name !== 'نامشخص' && acc.name.trim()) return acc.name;
-    if (acc?.fullName && acc.fullName !== 'نامشخص' && acc.fullName.trim()) return acc.fullName;
-    if ((student as any).fullName && (student as any).fullName !== 'نامشخص') return (student as any).fullName;
-    if (student.nationalId) return `طلبه (کد ملی: ${student.nationalId})`;
-    return 'طلبه';
+    if (acc?.name && acc.name !== 'نامشخص' && acc.name !== 'طلبه' && acc.name.trim()) return acc.name.trim();
+    if (acc?.fullName && acc.fullName !== 'نامشخص' && acc.fullName !== 'طلبه' && acc.fullName.trim()) return acc.fullName.trim();
+    
+    // 6. National code fallback
+    const nat = student.nationalId || (student as any).national_id || (student as any).nationalCode;
+    if (nat && nat !== '---') return `طلبه (کد ملی: ${nat})`;
+
+    return student.name && student.name !== 'نامشخص' ? student.name : 'طلبه';
   };
 
   // Helper to reliably resolve a student's national ID
   const getStudentDisplayNationalId = (student: Student): string => {
     if (!student) return '---';
-    if (student.nationalId && student.nationalId.trim()) return student.nationalId;
+    if (student.nationalId && student.nationalId.trim() && student.nationalId !== '---') return student.nationalId.trim();
+    if ((student as any).national_id && String((student as any).national_id).trim() && (student as any).national_id !== '---') return String((student as any).national_id).trim();
+    if ((student as any).nationalCode && String((student as any).nationalCode).trim() && (student as any).nationalCode !== '---') return String((student as any).nationalCode).trim();
+    if ((student as any).codeMelli && String((student as any).codeMelli).trim() && (student as any).codeMelli !== '---') return String((student as any).codeMelli).trim();
     const acc = getStudentAccount(student);
     if (acc?.username && /^\d{10}$/.test(acc.username)) return acc.username;
     if (acc?.nationalCode) return acc.nationalCode;
+    if (acc?.nationalId) return acc.nationalId;
     return (student as any).studentCode || '---';
   };
 
@@ -539,10 +564,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
         updateUser(studentUser.id, {
           isActive,
+          skipStudentDocUpsert: true,
           ...(cleanNat ? { username: cleanNat.toUpperCase(), nationalCode: cleanNat, nationalId: cleanNat } : {}),
           ...(gradeVal ? { gradeLabel: gradeVal, grade: gradeVal } : {}),
           ...(nameVal ? { name: nameVal, fullName: nameVal } : {})
-        });
+        } as any);
       }
     } catch (e) {
       console.warn('Could not sync user status:', e);
@@ -774,20 +800,45 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     if (!studentToDeactivate) return;
     const target = studentToDeactivate;
 
+    const resolvedName = getStudentDisplayName(target);
+    const resolvedNatId = getStudentDisplayNationalId(target);
+
+    const finalName = (resolvedName && resolvedName !== 'طلبه' && resolvedName !== 'نامشخص')
+      ? resolvedName
+      : (target.name && target.name !== 'نامشخص' && target.name !== 'طلبه')
+      ? target.name
+      : (target as any).fullName || `${target.firstName || ''} ${target.lastName || ''}`.trim() || 'طلبه';
+
+    const finalNatId = (resolvedNatId && resolvedNatId !== '---')
+      ? resolvedNatId
+      : (target.nationalId && target.nationalId !== '---')
+      ? target.nationalId
+      : (target as any).national_id || (target as any).nationalCode || '';
+
+    const updated: Student = {
+      ...target,
+      name: finalName,
+      nationalId: finalNatId,
+      isActive: false,
+      status: 'inactive',
+      deactivationReason: reason,
+      deactivationDate: date,
+      deactivationNotes: notes
+    };
+
     // Optimistic UI: close modal instantly and update status in state
     setShowDeactivationModal(false);
     setStudentToDeactivate(null);
-    setStudents(prev => prev.map(s => s.id === target.id ? { ...s, isActive: false, deactivationReason: reason } : s));
+
+    if (onlyActive) {
+      setStudents(prev => prev.filter(s => s.id !== target.id));
+    } else {
+      setStudents(prev => prev.map(s => s.id === target.id ? updated : s));
+    }
 
     try {
-      await localDb.updateDoc('students', target.id, {
-        ...target,
-        isActive: false,
-        deactivationReason: reason,
-        deactivationDate: date,
-        deactivationNotes: notes
-      });
-      syncStudentUserStatus(target.id, false);
+      await localDb.setDoc('students', target.id, updated);
+      syncStudentUserStatus(target.id, false, updated);
     } catch (err) {
       console.error('Error deactivating student:', err);
     }
@@ -810,51 +861,70 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
     if (isAlreadyInactive) {
       // -------------------------------------------------------------
-      // HARD PERMANENT DELETE (When deleting from 'مدیریت کل طلاب' / inactive list)
+      // HARD PERMANENT DELETE (When deleting an inactive student)
       // -------------------------------------------------------------
       setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
       setIsDeletingStudent(true);
 
       try {
-        await localDb.deleteDoc('students', targetStudent.id);
-
-        // Delete user account if linked
+        // 1. Delete linked user account FIRST with skipStudentSync to prevent resurrecting the student
         const studentUser = getStudentAccount(targetStudent);
         if (studentUser) {
           try {
-            deleteUser(studentUser.id);
+            await deleteUser(studentUser.id, { skipStudentSync: true });
           } catch (e) {
             await localDb.deleteDoc('system_users', studentUser.id);
           }
         }
 
-        // Clean up orphaned enrollments, course_enrollments, and course progress records
+        // 2. Permanently delete student from students collection
+        await localDb.deleteDoc('students', targetStudent.id);
+
+        // 3. Clean up orphaned enrollments, course_enrollments, and course progress records
         try {
           const [allEnrolls, allCourseEnrolls, allProgs, allProgress] = await Promise.all([
-            localDb.getDocs<any>('enrollments'),
-            localDb.getDocs<any>('course_enrollments'),
-            localDb.getDocs<any>('programs'),
-            localDb.getDocs<any>('student_course_progress')
+            localDb.getDocs<any>('enrollments').catch(() => []),
+            localDb.getDocs<any>('course_enrollments').catch(() => []),
+            localDb.getDocs<any>('programs').catch(() => []),
+            localDb.getDocs<any>('student_course_progress').catch(() => [])
           ]);
 
           for (const enr of allEnrolls.filter(e => String(e.studentId) === String(targetStudent.id) || String(e.student_id) === String(targetStudent.id))) {
-            await localDb.deleteDoc('enrollments', enr.id);
+            await localDb.deleteDoc('enrollments', enr.id).catch(() => {});
           }
           for (const cenr of allCourseEnrolls.filter(e => String(e.studentId) === String(targetStudent.id))) {
-            await localDb.deleteDoc('course_enrollments', cenr.id);
+            await localDb.deleteDoc('course_enrollments', cenr.id).catch(() => {});
           }
           for (const prog of allProgs) {
             if (Array.isArray(prog.studentIds) && prog.studentIds.includes(targetStudent.id)) {
               const updatedIds = prog.studentIds.filter((id: string) => id !== targetStudent.id);
-              await localDb.updateDoc('programs', prog.id, { studentIds: updatedIds });
+              await localDb.updateDoc('programs', prog.id, { studentIds: updatedIds }).catch(() => {});
             }
           }
           for (const p of allProgress.filter(p => String(p.studentId) === String(targetStudent.id))) {
-            await localDb.deleteDoc('student_course_progress', p.id);
+            await localDb.deleteDoc('student_course_progress', p.id).catch(() => {});
           }
         } catch (cleanErr) {
           console.warn("Non-fatal cleanup notice on permanent student delete:", cleanErr);
         }
+
+        // 4. Clean up other student references (attendance, loans, claims)
+        try {
+          const [allAttendance, allLoans, allClaims] = await Promise.all([
+            localDb.getDocs<any>('attendance').catch(() => []),
+            localDb.getDocs<any>('finance_loans').catch(() => []),
+            localDb.getDocs<any>('finance_student_claims').catch(() => [])
+          ]);
+          for (const a of allAttendance.filter((x: any) => String(x.studentId) === String(targetStudent.id))) {
+            await localDb.deleteDoc('attendance', a.id).catch(() => {});
+          }
+          for (const l of allLoans.filter((x: any) => String(x.studentId) === String(targetStudent.id))) {
+            await localDb.deleteDoc('finance_loans', l.id).catch(() => {});
+          }
+          for (const c of allClaims.filter((x: any) => String(x.studentId) === String(targetStudent.id))) {
+            await localDb.deleteDoc('finance_student_claims', c.id).catch(() => {});
+          }
+        } catch (e) {}
 
         // Re-sync overall curriculum progress
         await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
@@ -874,10 +944,22 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     // -------------------------------------------------------------
     // SOFT DELETE / DEACTIVATION (When deleting an active student)
     // -------------------------------------------------------------
+    const finalName = (resolvedName && resolvedName !== 'طلبه' && resolvedName !== 'نامشخص')
+      ? resolvedName
+      : (targetStudent.name && targetStudent.name !== 'نامشخص' && targetStudent.name !== 'طلبه')
+      ? targetStudent.name
+      : (targetStudent as any).fullName || `${targetStudent.firstName || ''} ${targetStudent.lastName || ''}`.trim() || 'طلبه';
+
+    const finalNatId = (resolvedNatId && resolvedNatId !== '---')
+      ? resolvedNatId
+      : (targetStudent.nationalId && targetStudent.nationalId !== '---')
+      ? targetStudent.nationalId
+      : (targetStudent as any).national_id || (targetStudent as any).nationalCode || '';
+
     const updatedStudent: Student = {
       ...targetStudent,
-      name: resolvedName,
-      nationalId: (resolvedNatId && resolvedNatId !== '---') ? resolvedNatId : (targetStudent.nationalId || ''),
+      name: finalName,
+      nationalId: finalNatId,
       isActive: false,
       status: 'inactive',
       deactivationReason: targetStudent.deactivationReason || 'صرفا غیر فعال',
@@ -885,7 +967,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       deactivationNotes: 'غیرفعال‌شده از لیست طلاب فعال توسط مدیر'
     };
 
-    setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
+    if (onlyActive) {
+      setStudents(prev => prev.filter(s => s.id !== targetStudent.id));
+    } else {
+      setStudents(prev => prev.map(s => s.id === targetStudent.id ? updatedStudent : s));
+    }
 
     setIsDeletingStudent(true);
     try {
@@ -2465,11 +2551,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
               <p className="text-xs text-slate-600 leading-relaxed">
                 {isStudentActive(studentToDelete) ? (
                   <>
-                    آیا از غیرفعال کردن <span className="font-bold text-slate-900">{studentToDelete.name}</span> و انتقال پرونده به لیست غیرفعالین (مدیریت کل طلاب) اطمینان دارید؟
+                    آیا از غیرفعال کردن <span className="font-bold text-slate-900">{getStudentDisplayName(studentToDelete)}</span> و انتقال پرونده به لیست غیرفعالین (مدیریت کل طلاب) اطمینان دارید؟
                   </>
                 ) : (
                   <>
-                    این طلبه هم‌اکنون در حالت غیرفعال است. آیا از <strong className="text-rose-600">حذف کامل و دائمی</strong> پرونده <span className="font-bold text-slate-900">{studentToDelete.name}</span> و تمامی سوابق مربوط به وی از دیتابیس اطمینان دارید؟ این عمل غیرقابل بازگشت است.
+                    این طلبه هم‌اکنون در حالت غیرفعال است. آیا از <strong className="text-rose-600">حذف کامل و دائمی</strong> پرونده <span className="font-bold text-slate-900">{getStudentDisplayName(studentToDelete)}</span> و تمامی سوابق مربوط به وی از دیتابیس اطمینان دارید؟ این عمل غیرقابل بازگشت است.
                   </>
                 )}
               </p>

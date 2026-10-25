@@ -132,8 +132,8 @@ interface AuthContextType {
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   adminResetPassword: (targetUserId: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   addUser: (newUser: Partial<AppUser>) => Promise<{ success: boolean; error?: string; user?: AppUser }>;
-  updateUser: (id: string, updates: Partial<AppUser>) => void;
-  deleteUser: (id: string) => void;
+  updateUser: (id: string, updates: Partial<AppUser> & { skipStudentDocUpsert?: boolean }) => void;
+  deleteUser: (id: string, options?: { skipStudentSync?: boolean }) => Promise<void> | void;
   resetDefaultUsers: () => void;
   resetToDefaultUsers: () => void;
   toggleUserActive: (id: string) => void;
@@ -1089,12 +1089,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedList));
       } catch (e) {}
 
-      // Synchronize student document locally in localDb if linked
+      // Synchronize student document locally in localDb if linked and not skipped
       const targetStudentId = targetUser.linkedStudentId || targetUser.studentId;
-      if (targetStudentId) {
-        localDb.updateDoc('students', targetStudentId, {
-          hasUserAccount: true,
-          userAccountUsername: targetUser.username
+      if (targetStudentId && !(updates as any)?.skipStudentDocUpsert) {
+        localDb.getDoc('students', targetStudentId).then(existingStudent => {
+          if (existingStudent && (existingStudent.hasUserAccount || existingStudent.userAccountUsername)) {
+            localDb.updateDoc('students', targetStudentId, {
+              hasUserAccount: true,
+              userAccountUsername: targetUser.username
+            }).catch(() => {});
+          }
         }).catch(() => {});
       }
 
@@ -1126,7 +1130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const deleteUser = async (id: string) => {
+  const deleteUser = async (id: string, options?: { skipStudentSync?: boolean }) => {
     const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -1147,25 +1151,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout();
     }
 
-    // Immediately unlink student in localDb
-    if (linkedStudentId) {
-      localDb.updateDoc('students', linkedStudentId, {
-        hasUserAccount: false,
-        userAccountUsername: null
-      }).catch(() => {});
-    } else {
-      localDb.getDocs<any>('students').then(students => {
-        const targetStudent = students.find(s => 
-          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === usernameToDelete) ||
-          (s.nationalId && String(s.nationalId).trim().toUpperCase() === usernameToDelete)
-        );
-        if (targetStudent) {
-          localDb.updateDoc('students', targetStudent.id, {
-            hasUserAccount: false,
-            userAccountUsername: null
-          }).catch(() => {});
-        }
-      }).catch(() => {});
+    // Immediately unlink student in localDb ONLY IF not skipped and student actually exists
+    if (!options?.skipStudentSync) {
+      if (linkedStudentId) {
+        localDb.getDoc('students', linkedStudentId).then(existingStudent => {
+          if (existingStudent && (existingStudent.hasUserAccount || existingStudent.userAccountUsername)) {
+            localDb.updateDoc('students', linkedStudentId, {
+              hasUserAccount: false,
+              userAccountUsername: null
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      } else {
+        localDb.getDocs<any>('students').then(students => {
+          const targetStudent = students.find(s => 
+            (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === usernameToDelete) ||
+            (s.nationalId && String(s.nationalId).trim().toUpperCase() === usernameToDelete)
+          );
+          if (targetStudent && (targetStudent.hasUserAccount || targetStudent.userAccountUsername)) {
+            localDb.updateDoc('students', targetStudent.id, {
+              hasUserAccount: false,
+              userAccountUsername: null
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
     }
 
     if (typeof window !== 'undefined') {
@@ -1177,7 +1187,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ targetUserId: id, userId: id, username: usernameToDelete })
+      body: JSON.stringify({ 
+        targetUserId: id, 
+        userId: id, 
+        username: usernameToDelete,
+        skipStudentSync: options?.skipStudentSync 
+      })
     }).then(res => {
       if (res.status === 401 || res.status === 403) logout();
     }).catch(() => {});

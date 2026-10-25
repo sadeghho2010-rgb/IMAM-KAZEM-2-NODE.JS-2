@@ -620,26 +620,6 @@ export default function UserManagement() {
                                 onClick={() => {
                                   if (window.confirm(`آیا از حذف حساب کاربری "${u.fullName}" اطمینان دارید؟`)) {
                                     deleteUser(u.id);
-                                    const sId = u.linkedStudentId || u.studentId;
-                                    if (sId) {
-                                      localDb.updateDoc('students', sId, {
-                                        hasUserAccount: false,
-                                        userAccountUsername: null
-                                      }).catch(console.warn);
-                                    }
-                                    localDb.getDocs<any>('students').then(allSts => {
-                                      const matched = allSts.find(s => 
-                                        (sId && String(s.id) === String(sId)) ||
-                                        (s.nationalId && String(s.nationalId).trim().toUpperCase() === u.username.toUpperCase()) ||
-                                        (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === u.username.toUpperCase())
-                                      );
-                                      if (matched) {
-                                        localDb.updateDoc('students', matched.id, {
-                                          hasUserAccount: false,
-                                          userAccountUsername: null
-                                        }).catch(console.warn);
-                                      }
-                                    }).catch(console.warn);
                                   }
                                 }}
                                 className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-xl transition-all"

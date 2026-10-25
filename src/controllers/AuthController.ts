@@ -471,7 +471,7 @@ export class AuthController {
 
   public static async deleteUser(req: Request, res: Response, next: NextFunction) {
     try {
-      const { userId, username } = req.body;
+      const { userId, username, skipStudentSync } = req.body;
       const target = userId || username || req.params.id;
       if (!target) {
         return res.status(400).json({ success: false, message: 'شناسه کاربر الزامی است.' });
@@ -486,30 +486,33 @@ export class AuthController {
       await deleteUserFromStorage(target);
       notifyRealtimeChange('system_users', String(target), 'delete');
 
-      // Unlink student in 'students' collection so student management instantly reflects "without user account"
-      const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
-      const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
+      // Unlink student in 'students' collection if not explicitly skipped (e.g. during student deletion)
+      if (!skipStudentSync) {
+        const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+        const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
 
-      try {
-        const students = await serverQueryCollection('students');
-        const targetStudent = students.find((s: any) =>
-          (studentId && String(s.id) === String(studentId)) ||
-          (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername) ||
-          (s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername)
-        );
+        try {
+          const students = await serverQueryCollection('students');
+          const targetStudent = students.find((s: any) =>
+            (studentId && String(s.id) === String(studentId)) ||
+            (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername) ||
+            (s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername)
+          );
 
-        if (targetStudent) {
-          const updatedStudent = {
-            ...targetStudent,
-            hasUserAccount: false,
-            userAccountUsername: null,
-            updatedAt: new Date().toISOString()
-          };
-          await serverSaveDoc('students', updatedStudent);
-          notifyRealtimeChange('students', updatedStudent.id, 'upsert');
+          // Only update if targetStudent actually exists AND is currently marked with a user account
+          if (targetStudent && (targetStudent.hasUserAccount || targetStudent.userAccountUsername)) {
+            const updatedStudent = {
+              ...targetStudent,
+              hasUserAccount: false,
+              userAccountUsername: null,
+              updatedAt: new Date().toISOString()
+            };
+            await serverSaveDoc('students', updatedStudent);
+            notifyRealtimeChange('students', updatedStudent.id, 'upsert');
+          }
+        } catch (sErr) {
+          console.warn('Non-fatal student unlink error in deleteUser:', sErr);
         }
-      } catch (sErr) {
-        console.warn('Non-fatal student unlink error in deleteUser:', sErr);
       }
 
       const caller = (req as any).user || AuthController.extractCaller(req);

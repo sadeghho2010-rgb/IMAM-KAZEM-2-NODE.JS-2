@@ -806,12 +806,40 @@ export function isStudentActive(val: any): boolean {
 export function normalizeStudent(item: any): any {
   if (!item || typeof item !== 'object') return item;
   const isAct = isStudentActive(item);
+
+  // Intelligently resolve full name from all possible fields, avoiding losing genuine names
+  const rawName = item.name ? String(item.name).trim() : '';
+  const fullName = item.fullName ? String(item.fullName).trim() : '';
+  const studentName = item.studentName ? String(item.studentName).trim() : '';
+  const fnLn = `${item.firstName || ''} ${item.lastName || ''}`.trim();
+
+  let finalName = rawName;
+  if (!finalName || finalName === 'نامشخص' || finalName === 'طلبه') {
+    if (fullName && fullName !== 'نامشخص' && fullName !== 'طلبه') finalName = fullName;
+    else if (studentName && studentName !== 'نامشخص' && studentName !== 'طلبه') finalName = studentName;
+    else if (fnLn && fnLn !== 'نامشخص' && fnLn !== 'طلبه') finalName = fnLn;
+  }
+  if (!finalName) {
+    finalName = item.name || 'نامشخص';
+  }
+
+  // Intelligently resolve national ID from all common aliases
+  const natId = (
+    item.nationalId ||
+    item.national_id ||
+    item.nationalCode ||
+    item.codeMelli ||
+    item.username ||
+    ''
+  ).trim();
+
   return {
     ...item,
     id: item.id || `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
     isActive: isAct,
     grade: item.grade ? String(item.grade).trim() : '',
-    name: item.name ? String(item.name).trim() : 'نامشخص',
+    name: finalName,
+    nationalId: (natId && natId !== '---') ? natId : (item.nationalId || ''),
     createdAt: item.createdAt || new Date().toISOString()
   };
 }
@@ -1492,10 +1520,26 @@ class LocalDatabase {
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
 
+    // Protection 1: If document is marked as deleted locally, never resurrect it!
+    const pendingMap = getPendingLocalDocsMap();
+    const isPendingDelete = pendingMap.get(`${resolvedCol}::${id}`)?.action === 'delete';
+    if (isPendingDelete) {
+      console.warn(`[updateDoc] Aborted updateDoc for deleted document in "${resolvedCol}" id "${id}"`);
+      return;
+    }
+
     let existingDoc: any = null;
     try {
       existingDoc = await this.getDoc(resolvedCol, id);
     } catch (e) {}
+
+    // Protection 2: If document doesn't exist, do not create skeleton records for partial updates
+    if (!existingDoc) {
+      if (resolvedCol === 'students' && !data?.name && !data?.fullName && !data?.firstName) {
+        console.warn(`[updateDoc] Skipped updating non-existent student ${id} with partial data`);
+        return;
+      }
+    }
 
     const nowIso = new Date().toISOString();
     let updated = { 
@@ -1579,7 +1623,7 @@ class LocalDatabase {
     try {
       const res = await saveToCloudWithTimeout('delete', resolvedCol, id, undefined, 12000);
       if (res.success) {
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 60000);
         this.autoLogAudit(db, 'delete', resolvedCol, id, existingDoc, undefined);
       } else {
         console.error(`[STORAGE_FAILURE] Client deleteDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);

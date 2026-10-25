@@ -110,7 +110,7 @@ export default function DeactivationModal({
                   تعیین وضعیت و علت خروج طلبه از طلاب حاضر
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  تغییر وضعیت طلبه <span className="font-bold text-slate-800">«{student.name}»</span> ({student.grade || 'پایه نامشخص'}) به غیرفعال
+                  تغییر وضعیت طلبه <span className="font-bold text-slate-800">«{(student.name && student.name !== 'نامشخص' && student.name !== 'طلبه') ? student.name : ((student as any).fullName || `${student.firstName || ''} ${student.lastName || ''}`.trim() || student.name || 'طلبه')}»</span> ({student.grade || 'پایه نامشخص'}) به غیرفعال
                 </p>
               </div>
             </div>
