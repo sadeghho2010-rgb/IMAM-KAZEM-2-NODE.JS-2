@@ -47,7 +47,7 @@ import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { useAuth } from '../../context/AuthContext';
 import { ShamsiDatePicker } from '../ShamsiDatePicker';
-import { getTodayShamsi } from '../../lib/jalali';
+import { getTodayShamsi, normalizeShamsiDateStr } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 import ActivityInfoTabbedView from './tuition/ActivityInfoTabbedView';
 import { 
@@ -59,6 +59,7 @@ import {
   StudyTier,
   AttendanceSessionLog,
   PeriodicStudyLog,
+  StudyDailyEntry,
   StudyPeriod,
   CounselingSessionGrade,
   EducationFinancialReport,
@@ -210,6 +211,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
   const [claimCategories, setClaimCategories] = useState<FinanceClaimCategory[]>([]);
   const [destinationAccounts, setDestinationAccounts] = useState<FinanceDestinationAccount[]>([]);
   const [educationReports, setEducationReports] = useState<EducationFinancialReport[]>([]);
+  const [studyDailyEntries, setStudyDailyEntries] = useState<StudyDailyEntry[]>([]);
 
   // Modals
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -362,7 +364,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         cRecs2,
         cCats,
         dAccs,
-        eduReports
+        eduReports,
+        sDailyEntries
       ] = await Promise.all([
         localDb.getDocs<Student>('students'),
         localDb.getDocs<StudentFinancialProfile>('student_financial_profiles'),
@@ -380,7 +383,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         localDb.getDocs<StudentClaimRecord>('student_claims'),
         localDb.getDocs<FinanceClaimCategory>('finance_claim_categories'),
         localDb.getDocs<FinanceDestinationAccount>('finance_destination_accounts'),
-        localDb.getDocs<EducationFinancialReport>('education_financial_reports')
+        localDb.getDocs<EducationFinancialReport>('education_financial_reports'),
+        localDb.getDocs<StudyDailyEntry>('study_daily_entries')
       ]);
 
       setStudents(studs || []);
@@ -397,6 +401,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       setLunchItems(lnchItems || []);
       setMealReservations(mRes || []);
       setMealPeriods(mPer || []);
+      setStudyDailyEntries(sDailyEntries || []);
 
       // Merge claims from both collections seamlessly
       const mergedClaimsMap = new Map<string, StudentClaimRecord>();
@@ -609,8 +614,14 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       map[s.id] = { present: 0, absentUnexcused: 0, absentExcused: 0, late: 0, unspecified: 0, warningCount: 0, totalSessions: 0 };
     });
 
+    const normStart = normalizeShamsiDateStr(startDate);
+    const normEnd = normalizeShamsiDateStr(endDate);
+
     attendanceLogs.forEach(log => {
-      if (log.date >= startDate && log.date <= endDate && !log.isCancelled) {
+      if (log.isCancelled) return;
+      const logDateNorm = normalizeShamsiDateStr(log.date);
+      const inRange = (!normStart || logDateNorm >= normStart) && (!normEnd || logDateNorm <= normEnd);
+      if (inRange) {
         if (Array.isArray(log.students)) {
           log.students.forEach(st => {
             if (!map[st.studentId]) {
@@ -643,7 +654,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     return map;
   }, [students, attendanceLogs, startDate, endDate]);
 
-  // 2. Study Hours Aggregation
+  // 2. Study Hours Aggregation (Scoped strictly to selected date range and actual records)
   const studyAggregations = useMemo(() => {
     const studentStudyMinutes: Record<string, number> = {};
     const studentWarningStatus: Record<string, boolean> = {};
@@ -653,36 +664,60 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       studentWarningStatus[s.id] = false;
     });
 
+    const normStart = normalizeShamsiDateStr(startDate);
+    const normEnd = normalizeShamsiDateStr(endDate);
+
     // Determine mandatory hours from overlapping study periods or default 40 hours
-    let mandatoryHours = 40;
     const relevantPeriods = studyPeriods.filter(p => {
-      return (p.startDate <= endDate && p.endDate >= startDate);
+      const pStart = normalizeShamsiDateStr(p.startDate);
+      const pEnd = normalizeShamsiDateStr(p.endDate);
+      return (!normEnd || pStart <= normEnd) && (!normStart || pEnd >= normStart);
     });
+
+    let mandatoryHours = 40;
     if (relevantPeriods.length > 0) {
       mandatoryHours = relevantPeriods.reduce((acc, curr) => acc + (curr.mandatoryHours || 40), 0) / relevantPeriods.length;
     }
     const mandatoryMinutes = Math.round(mandatoryHours * 60);
 
-    // Sum hours from study logs matching student and periods
+    // Track students with daily entries recorded in this range
+    const studentWithDailyEntries = new Set<string>();
+
+    studyDailyEntries.forEach(entry => {
+      const entryDateNorm = normalizeShamsiDateStr(entry.entryDate);
+      const inRange = (!normStart || entryDateNorm >= normStart) && (!normEnd || entryDateNorm <= normEnd);
+      if (inRange && studentStudyMinutes[entry.studentId] !== undefined) {
+        studentWithDailyEntries.add(entry.studentId);
+        const mins = Number(entry.totalMinutes || 0) || Math.round(((entry.studyHours || 0) + (entry.discussionHours || 0)) * 60);
+        studentStudyMinutes[entry.studentId] += mins;
+      }
+    });
+
+    // Check periodic_study_logs for students without daily entries, strictly within overlapping periods
     studyLogs.forEach(log => {
-      const p = studyPeriods.find(sp => sp.id === log.periodId);
-      const isPeriodInRange = p ? (p.startDate <= endDate && p.endDate >= startDate) : true;
-      if (isPeriodInRange && studentStudyMinutes[log.studentId] !== undefined) {
-        const totalLogMinutes = Math.round(((log.studyHours || 0) + (log.discussionHours || 0) || (log.hours || 0)) * 60);
-        studentStudyMinutes[log.studentId] += totalLogMinutes;
+      if (studentWithDailyEntries.has(log.studentId)) {
         if ((log.warningsCount || 0) > 0) {
           studentWarningStatus[log.studentId] = true;
+        }
+        return;
+      }
+      const p = studyPeriods.find(sp => sp.id === log.periodId);
+      if (p) {
+        const pStart = normalizeShamsiDateStr(p.startDate);
+        const pEnd = normalizeShamsiDateStr(p.endDate);
+        const isPeriodInRange = (!normEnd || pStart <= normEnd) && (!normStart || pEnd >= normStart);
+        if (isPeriodInRange && studentStudyMinutes[log.studentId] !== undefined) {
+          const totalLogMinutes = Math.round(((log.studyHours || 0) + (log.discussionHours || 0) || (log.hours || 0)) * 60);
+          studentStudyMinutes[log.studentId] += totalLogMinutes;
+          if ((log.warningsCount || 0) > 0) {
+            studentWarningStatus[log.studentId] = true;
+          }
         }
       }
     });
 
-    // Provide baseline if no logs recorded yet (so data isn't artificially zero in test env)
-    students.forEach(s => {
-      if (studentStudyMinutes[s.id] === 0) {
-        const prof = profiles.find(p => p.studentId === s.id);
-        studentStudyMinutes[s.id] = (prof?.studyHoursLogged ? prof.studyHoursLogged * 60 : 42 * 60);
-      }
-    });
+    // NOTE: NEVER inject artificial fallback hours (no fake 42 * 60 or static profile values).
+    // If student studied 0 minutes in this date range, the value remains 0!
 
     // Calculate school average minutes
     const values = Object.values(studentStudyMinutes);
@@ -694,7 +729,7 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       mandatoryMinutes,
       avgMinutes
     };
-  }, [students, studyLogs, studyPeriods, profiles, startDate, endDate]);
+  }, [students, studyLogs, studyDailyEntries, studyPeriods, startDate, endDate]);
 
   // 3. Counseling Session Grades Aggregation (الف، ب، ج، د، غیبت)
   const counselingAggregations = useMemo(() => {
@@ -704,8 +739,13 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       map[s.id] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
     });
 
+    const normStart = normalizeShamsiDateStr(startDate);
+    const normEnd = normalizeShamsiDateStr(endDate);
+
     counselingGrades.forEach(cg => {
-      if (cg.sessionDate >= startDate && cg.sessionDate <= endDate) {
+      const gDateNorm = normalizeShamsiDateStr(cg.sessionDate);
+      const inRange = (!normStart || gDateNorm >= normStart) && (!normEnd || gDateNorm <= normEnd);
+      if (inRange) {
         if (!map[cg.studentId]) {
           map[cg.studentId] = { countA: 0, countB: 0, countC: 0, countD: 0, countAbsence: 0, total: 0 };
         }
@@ -943,24 +983,44 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
       // TYPE 2 DEDUCTIONS (کسورات انتقالی و واریز به حساب‌های مقصد)
       // ==============================================================
       
-      // 1. سهم آشپزخانه (نهار و شام)
+      // 1. سهم آشپزخانه (نهار و شام) - مقید به بازه زمانی انتخابی
       let kitchenTransferAmount = 0;
-      const studentMealRes = mealReservations.find(mr => mr.studentId === student.id);
-      const studentLunchItem = lunchItems.find(li => li.studentId === student.id);
+      let studentLunchCount = 0;
+      let studentDinnerCount = 0;
 
-      if (studentMealRes) {
-        kitchenTransferAmount = studentMealRes.finalDeductionAmount || studentMealRes.totalMealCost || 0;
-      } else if (studentLunchItem) {
-        const count = studentLunchItem.monthlyMealsCount || 0;
-        const price = studentLunchItem.mealPrice || settings.dailyLunchCost || 45000;
-        const discount = studentLunchItem.subsidyDiscount || 0;
-        kitchenTransferAmount = Math.max(0, (count * price) - discount);
-      } else {
-        const lunchDaysCount = prof?.monthlyLunchDays ?? prof?.lunchDaysCount ?? 20;
-        const dinnerDaysCount = prof?.monthlyDinnerDays ?? prof?.dinnerDaysCount ?? 0;
-        const lunchTotal = lunchDaysCount * (settings.dailyLunchCost || settings.lunchCostPerDay || 45000);
-        const dinnerTotal = dinnerDaysCount * (settings.dailyDinnerCost || settings.dinnerCostPerDay || 35000);
-        kitchenTransferAmount = lunchTotal + dinnerTotal;
+      const normStart = normalizeShamsiDateStr(startDate);
+      const normEnd = normalizeShamsiDateStr(endDate);
+
+      // Find meal periods that overlap [startDate, endDate]
+      const relevantMealPeriodIds = new Set(
+        mealPeriods.filter(mp => {
+          const mpStart = normalizeShamsiDateStr(mp.startDate);
+          const mpEnd = normalizeShamsiDateStr(mp.endDate);
+          return (!normEnd || mpStart <= normEnd) && (!normStart || mpEnd >= normStart);
+        }).map(mp => mp.id)
+      );
+
+      // Meal reservations for this student strictly in overlapping periods
+      const matchingReservations = mealReservations.filter(mr => 
+        mr.studentId === student.id && (relevantMealPeriodIds.size === 0 || relevantMealPeriodIds.has(mr.periodId))
+      );
+
+      if (matchingReservations.length > 0) {
+        matchingReservations.forEach(res => {
+          kitchenTransferAmount += (res.finalDeductionAmount || res.totalMealCost || 0);
+          studentLunchCount += (res.totalCalculatedLunches || 0);
+          studentDinnerCount += (res.totalCalculatedDinners || 0);
+        });
+      } else if (relevantMealPeriodIds.size === 0) {
+        // Fallback only if no meal reservation periods are defined at all in the system
+        const studentLunchItem = lunchItems.find(li => li.studentId === student.id);
+        if (studentLunchItem) {
+          const count = studentLunchItem.monthlyMealsCount || 0;
+          const price = studentLunchItem.mealPrice || settings.dailyLunchCost || 45000;
+          const discount = studentLunchItem.subsidyDiscount || 0;
+          kitchenTransferAmount = Math.max(0, (count * price) - discount);
+          studentLunchCount = count;
+        }
       }
 
       // 2. سهم وام فعال صندوق قرض‌الحسنه
@@ -1067,7 +1127,8 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
         grossEarnedTuition,
 
         // Type 2 Deductions & Destination Transfers
-        lunchDaysCount: prof?.monthlyLunchDays ?? 20,
+        lunchDaysCount: studentLunchCount,
+        dinnerDaysCount: studentDinnerCount,
         lunchDeductionAmount: kitchenTransferAmount,
         lunchDeduction: kitchenTransferAmount,
         kitchenTransferAmount,
@@ -1100,9 +1161,12 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
     settings, 
     newPeriodTitle,
     mealReservations,
+    mealPeriods,
     lunchItems,
     claimsList,
-    studentOverrides
+    studentOverrides,
+    startDate,
+    endDate
   ]);
 
   // Aggregate Metrics for Current Calculation
@@ -1942,9 +2006,11 @@ export default function StudentActivityAndTuition({ onNavigateTab }: StudentActi
           calculatedTuitions={calculatedTuitions}
           studyPeriods={studyPeriods}
           studyLogs={studyLogs}
+          studyDailyEntries={studyDailyEntries}
           attendanceLogs={attendanceLogs}
           counselingGrades={counselingGrades}
           mealReservations={mealReservations}
+          mealPeriods={mealPeriods}
           lunchItems={lunchItems}
           claimsList={claimsList}
           claimCategories={claimCategories}

@@ -30,8 +30,11 @@ import {
   StudentClaimRecord,
   FinanceClaimCategory,
   FinanceDestinationAccount,
-  StudentMealReservation
+  StudentMealReservation,
+  MealReservationPeriod,
+  StudyDailyEntry
 } from '../../../types';
+import { normalizeShamsiDateStr } from '../../../lib/jalali';
 
 interface StudentLunchItem {
   id: string;
@@ -50,9 +53,11 @@ interface ActivityInfoTabbedViewProps {
   calculatedTuitions: TuitionCalculationBreakdown[];
   studyPeriods: StudyPeriod[];
   studyLogs: PeriodicStudyLog[];
+  studyDailyEntries?: StudyDailyEntry[];
   attendanceLogs: AttendanceSessionLog[];
   counselingGrades: CounselingSessionGrade[];
   mealReservations: StudentMealReservation[];
+  mealPeriods?: MealReservationPeriod[];
   lunchItems: StudentLunchItem[];
   claimsList: StudentClaimRecord[];
   claimCategories: FinanceClaimCategory[];
@@ -102,8 +107,11 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   calculatedTuitions,
   studyPeriods,
   studyLogs,
+  studyDailyEntries = [],
   attendanceLogs,
   counselingGrades,
+  mealReservations = [],
+  mealPeriods = [],
   lunchItems,
   claimsList,
   destinationAccounts,
@@ -127,15 +135,37 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
   const [selectedStudyPeriodId, setSelectedStudyPeriodId] = useState<string>('all');
   const [studyFilterBelowAvgAndReq, setStudyFilterBelowAvgAndReq] = useState<boolean>(false);
 
-  // Closed study periods in the date range
-  const closedStudyPeriods = useMemo(() => {
+  const normStart = useMemo(() => normalizeShamsiDateStr(startDate), [startDate]);
+  const normEnd = useMemo(() => normalizeShamsiDateStr(endDate), [endDate]);
+
+  // Study periods in the selected date range
+  const relevantStudyPeriods = useMemo(() => {
     return studyPeriods.filter(p => {
-      if (!p.isClosed && !p.closedManually) return false;
-      if (startDate && p.startDate < startDate) return false;
-      if (endDate && p.endDate > endDate) return false;
-      return true;
+      const pStart = normalizeShamsiDateStr(p.startDate);
+      const pEnd = normalizeShamsiDateStr(p.endDate);
+      return (!normEnd || pStart <= normEnd) && (!normStart || pEnd >= normStart);
     });
-  }, [studyPeriods, startDate, endDate]);
+  }, [studyPeriods, normStart, normEnd]);
+
+  // Attendance sessions in the selected date range
+  const attendanceLogsInRange = useMemo(() => {
+    return attendanceLogs.filter(session => {
+      if (session.isCancelled) return false;
+      const sDate = normalizeShamsiDateStr(session.date);
+      return (!normStart || sDate >= normStart) && (!normEnd || sDate <= normEnd);
+    });
+  }, [attendanceLogs, normStart, normEnd]);
+
+  // Overlapping meal periods in the selected date range
+  const relevantMealPeriodIds = useMemo(() => {
+    return new Set(
+      mealPeriods.filter(mp => {
+        const mpStart = normalizeShamsiDateStr(mp.startDate);
+        const mpEnd = normalizeShamsiDateStr(mp.endDate);
+        return (!normEnd || mpStart <= normEnd) && (!normStart || mpEnd >= normStart);
+      }).map(mp => mp.id)
+    );
+  }, [mealPeriods, normStart, normEnd]);
 
   // Filtered Students
   const filteredStudents = useMemo(() => {
@@ -277,12 +307,12 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
               <div className="text-xl font-black text-slate-800 mt-1 font-mono">{filteredStudents.length} نفر</div>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-xs text-slate-500 font-medium">دوره‌های مطالعه بسته شده</span>
-              <div className="text-xl font-black text-indigo-600 mt-1 font-mono">{closedStudyPeriods.length} دوره</div>
+              <span className="text-xs text-slate-500 font-medium">دوره‌های مطالعه بازه انتخابی</span>
+              <div className="text-xl font-black text-indigo-600 mt-1 font-mono">{relevantStudyPeriods.length} دوره</div>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-xs text-slate-500 font-medium">جلسات حضور و غیاب ثبت‌شده</span>
-              <div className="text-xl font-black text-emerald-600 mt-1 font-mono">{attendanceLogs.length} جلسه</div>
+              <span className="text-xs text-slate-500 font-medium">جلسات حضور و غیاب بازه انتخابی</span>
+              <div className="text-xl font-black text-emerald-600 mt-1 font-mono">{attendanceLogsInRange.length} جلسه</div>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
               <span className="text-xs text-slate-500 font-medium">تعداد کل رکورد‌های بدهی</span>
@@ -366,14 +396,14 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-bold text-slate-700">انتخاب دوره مطالعاتی بسته شده:</span>
+                <span className="text-xs font-bold text-slate-700">انتخاب دوره مطالعاتی بازه انتخابی:</span>
                 <select
                   value={selectedStudyPeriodId}
                   onChange={(e) => setSelectedStudyPeriodId(e.target.value)}
                   className="text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900"
                 >
-                  <option value="all">همه دوره‌های بسته شده ({closedStudyPeriods.length} دوره)</option>
-                  {closedStudyPeriods.map(p => (
+                  <option value="all">همه دوره‌های بازه انتخابی ({relevantStudyPeriods.length} دوره)</option>
+                  {relevantStudyPeriods.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.title} ({p.startDate} الی {p.endDate})
                     </option>
@@ -395,7 +425,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
           </div>
 
           {/* Render Tables for Periods */}
-          {(selectedStudyPeriodId === 'all' ? closedStudyPeriods : closedStudyPeriods.filter(p => p.id === selectedStudyPeriodId)).map(period => {
+          {(selectedStudyPeriodId === 'all' ? relevantStudyPeriods : relevantStudyPeriods.filter(p => p.id === selectedStudyPeriodId)).map(period => {
             // Logs for this period
             const periodLogs = studyLogs.filter(l => l.periodId === period.id);
             const logsMap = new Map<string, PeriodicStudyLog>();
@@ -523,7 +553,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs space-y-2">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <h4 className="text-xs font-bold text-slate-800">تفکیک حضور و غیاب طلاب در بازه زمانی انتخابی</h4>
-            <span className="text-[11px] text-slate-500 font-mono">تعداد کل جلسات ثبت شده: {attendanceLogs.length}</span>
+            <span className="text-[11px] text-slate-500 font-mono">تعداد کل جلسات ثبت شده در این بازه: {attendanceLogsInRange.length}</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -547,7 +577,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
                   let excusedCount = 0;
                   let lateMinutesTotal = 0;
 
-                  attendanceLogs.forEach(session => {
+                  attendanceLogsInRange.forEach(session => {
                     const rec = session.students?.find(s => s.studentId === st.id);
                     if (rec) {
                       if (rec.status === 'present') presentCount++;
@@ -591,7 +621,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
       {activeTab === 'meals' && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-800">آمار ژتون‌های نهار و شام و مبالغ کسر از شهریه</h4>
+            <h4 className="text-xs font-bold text-slate-800">آمار ژتون‌های نهار و شام و مبالغ کسر از شهریه در بازه انتخابی</h4>
           </div>
 
           <div className="overflow-x-auto">
@@ -609,19 +639,35 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredStudents.map((st, idx) => {
-                  const lunch = lunchItems.find(l => l.studentId === st.id);
-                  const totalMeals = lunch?.monthlyMealsCount || 0;
-                  const estimatedLunch = Math.round(totalMeals * 0.6);
-                  const estimatedDinner = totalMeals - estimatedLunch;
-                  const totalCost = (lunch?.mealPrice || 0) * totalMeals;
+                  const stReservations = mealReservations.filter(mr => 
+                    mr.studentId === st.id && (relevantMealPeriodIds.size === 0 || relevantMealPeriodIds.has(mr.periodId))
+                  );
+
+                  let lunchCount = 0;
+                  let dinnerCount = 0;
+                  let totalCost = 0;
+
+                  if (stReservations.length > 0) {
+                    stReservations.forEach(r => {
+                      lunchCount += r.totalCalculatedLunches || 0;
+                      dinnerCount += r.totalCalculatedDinners || 0;
+                      totalCost += (r.finalDeductionAmount || r.totalMealCost || 0);
+                    });
+                  } else if (relevantMealPeriodIds.size === 0) {
+                    const lunch = lunchItems.find(l => l.studentId === st.id);
+                    lunchCount = lunch?.monthlyMealsCount || 0;
+                    dinnerCount = 0;
+                    totalCost = Math.max(0, ((lunch?.monthlyMealsCount || 0) * (lunch?.mealPrice || 45000)) - (lunch?.subsidyDiscount || 0));
+                  }
+                  const totalMeals = lunchCount + dinnerCount;
 
                   return (
                     <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3 text-slate-400 font-mono">{idx + 1}</td>
                       <td className="p-3 font-bold text-slate-900">{st.name}</td>
                       <td className="p-3 text-slate-600">{st.grade || '-'}</td>
-                      <td className="p-3 text-center font-mono font-bold text-slate-800">{estimatedLunch}</td>
-                      <td className="p-3 text-center font-mono font-bold text-slate-800">{estimatedDinner}</td>
+                      <td className="p-3 text-center font-mono font-bold text-slate-800">{lunchCount}</td>
+                      <td className="p-3 text-center font-mono font-bold text-slate-800">{dinnerCount}</td>
                       <td className="p-3 text-center font-mono font-bold text-indigo-700">{totalMeals}</td>
                       <td className="p-3 text-left font-mono font-bold text-rose-600">
                         {totalCost.toLocaleString('fa-IR')} تومان
@@ -639,7 +685,7 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
       {activeTab === 'counseling' && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
           <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-800">تعداد رتبه‌های کسب‌شده در کلاس‌های مشاوره</h4>
+            <h4 className="text-xs font-bold text-slate-800">تعداد رتبه‌های کسب‌شده در کلاس‌های مشاوره در بازه انتخابی</h4>
           </div>
 
           <div className="overflow-x-auto">
@@ -664,7 +710,9 @@ export const ActivityInfoTabbedView: React.FC<ActivityInfoTabbedViewProps> = ({
                   let countD = 0;
 
                   counselingGrades.forEach(g => {
-                    if (g.studentId === st.id) {
+                    const normGDate = normalizeShamsiDateStr(g.sessionDate);
+                    const inRange = (!normStart || normGDate >= normStart) && (!normEnd || normGDate <= normEnd);
+                    if (g.studentId === st.id && inRange) {
                       // Check Factor 1: participationScore
                       const pScore = g.participationScore || (g as any).score;
                       if (pScore === 'الف') countA++;
