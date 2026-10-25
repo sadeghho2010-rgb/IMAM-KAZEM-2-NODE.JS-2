@@ -783,6 +783,10 @@ export interface StudyPeriod {
   deadlineDate?: string;
   isClosed?: boolean;
   closedManually?: boolean;
+  status?: 'active' | 'closed' | 'deleted' | 'inactive' | 'locked' | string;
+  isActive?: boolean;
+  isDeleted?: boolean;
+  deletedAt?: string;
   exemptStudentIds?: string[];
   exemptGrades?: string[];
   targetGrades?: string[];

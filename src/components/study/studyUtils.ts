@@ -1,4 +1,5 @@
 import { Student, StudyPeriod, PeriodicStudyLog, CourseStudyDetail } from '../../types';
+import { toEnglishDigits, shamsiToDate } from '../../lib/jalali';
 
 export interface LogMetric {
   studyHours: number;
@@ -16,16 +17,33 @@ export interface LogMetric {
 
 export function isPeriodClosed(period?: StudyPeriod | null): boolean {
   if (!period) return false;
-  if (period.isClosed) return true;
+  if (
+    period.isClosed === true ||
+    (period as any).isClosed === 'true' ||
+    period.status === 'closed' ||
+    period.isActive === false ||
+    (period as any).status === 'inactive' ||
+    (period as any).status === 'locked'
+  ) {
+    return true;
+  }
   if (period.deadlineDate) {
     try {
-      // Normalize deadline string (could be Shamsi 1403/08/10 or ISO)
-      const dStr = period.deadlineDate.trim();
-      // If deadline contains slash (Shamsi or date), compare
+      const dStr = toEnglishDigits(period.deadlineDate).trim();
       const now = new Date();
-      // Simple date check
-      const deadline = new Date(dStr);
-      if (!isNaN(deadline.getTime())) {
+      let deadline: Date | null = null;
+      if (dStr.includes('/') || dStr.includes('-')) {
+        const parts = dStr.replace(/-/g, '/').split('/');
+        if (parts.length === 3 && parseInt(parts[0], 10) < 1700) {
+          deadline = shamsiToDate(dStr);
+          deadline.setHours(23, 59, 59, 999);
+        } else {
+          deadline = new Date(dStr);
+        }
+      } else {
+        deadline = new Date(dStr);
+      }
+      if (deadline && !isNaN(deadline.getTime())) {
         return now.getTime() > deadline.getTime();
       }
     } catch {
@@ -74,25 +92,22 @@ export function getLogMetrics(log?: PeriodicStudyLog): LogMetric {
     };
   }
 
-  const sHours = log.studyHours !== undefined ? (Number(log.studyHours) || 0) : (Number(log.hours) || 0);
-  const dHours = log.discussionHours !== undefined ? (Number(log.discussionHours) || 0) : 0;
-  const tHours = (log.hours !== undefined && log.hours !== null) ? Number(log.hours) || (sHours + dHours) : (sHours + dHours);
+  const freeStudyMin = log.freeStudyMinutes !== undefined ? (Number(log.freeStudyMinutes) || 0) : 0;
+  const coreStudyMin = log.coreStudyMinutes !== undefined ? (Number(log.coreStudyMinutes) || 0) : Math.round((Number(log.studyHours) || 0) * 60);
+  const coreDiscMin = log.coreDiscussionMinutes !== undefined ? (Number(log.coreDiscussionMinutes) || 0) : Math.round((Number(log.discussionHours) || 0) * 60);
+  const coreTotalMin = log.coreTotalMinutes !== undefined ? (Number(log.coreTotalMinutes) || 0) : (coreStudyMin + coreDiscMin);
+  const totalMin = log.totalMinutes !== undefined ? (Number(log.totalMinutes) || 0) : (coreTotalMin + freeStudyMin);
 
-  const studyMin = Math.round(sHours * 60);
-  const discMin = Math.round(dHours * 60);
-  const totalMin = log.totalMinutes !== undefined ? log.totalMinutes : Math.round(tHours * 60);
-
-  const freeStudyMin = log.freeStudyMinutes !== undefined ? log.freeStudyMinutes : 0;
-  const coreStudyMin = log.coreStudyMinutes !== undefined ? log.coreStudyMinutes : studyMin;
-  const coreDiscMin = log.coreDiscussionMinutes !== undefined ? log.coreDiscussionMinutes : discMin;
-  const coreTotalMin = log.coreTotalMinutes !== undefined ? log.coreTotalMinutes : (coreStudyMin + coreDiscMin);
+  const sHours = Math.round((coreStudyMin / 60) * 100) / 100;
+  const dHours = Math.round((coreDiscMin / 60) * 100) / 100;
+  const tHours = Math.round((totalMin / 60) * 100) / 100;
 
   return {
     studyHours: sHours,
     discussionHours: dHours,
     totalHours: tHours,
-    studyMinutes: studyMin,
-    discussionMinutes: discMin,
+    studyMinutes: coreStudyMin,
+    discussionMinutes: coreDiscMin,
     totalMinutes: totalMin,
     coreStudyMinutes: coreStudyMin,
     coreDiscussionMinutes: coreDiscMin,
@@ -765,11 +780,12 @@ export async function syncAggregatePeriodicStudyLog(
         coreDiscussionMinutesSum += dMin;
 
         const rawTitle = (c.courseTitle || '').trim();
-        const key = rawTitle ? rawTitle.toLowerCase() : (c.courseId || 'unknown_course').trim().toLowerCase();
+        const rawId = (c.courseId || '').trim();
+        const key = rawId ? rawId.toLowerCase() : (rawTitle ? rawTitle.toLowerCase() : 'unknown_course');
 
         const existing = coursesAggMap.get(key) || {
-          courseId: c.courseId || key,
-          courseTitle: c.courseTitle || 'درس اصلی',
+          courseId: c.courseId || rawId || key,
+          courseTitle: c.courseTitle || rawTitle || 'درس اصلی',
           studyMinutes: 0,
           discussionMinutes: 0
         };
@@ -851,10 +867,13 @@ export async function syncAggregatePeriodicStudyLog(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
     window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
     window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
     window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+    window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
     try {
       localStorage.setItem('study_logs_updated_at', String(Date.now()));
+      localStorage.setItem('study_periods_updated_at', String(Date.now()));
     } catch (e) {}
   }
 }

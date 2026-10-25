@@ -152,7 +152,14 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       setStudents(activeStudents);
 
       const allPeriods = await localDb.getDocs<StudyPeriod>('study_periods');
-      const sortedPeriods = [...allPeriods].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+      const activePeriods = (allPeriods || []).filter(p => 
+        p && 
+        p.id && 
+        p.status !== 'deleted' && 
+        !(p as any).isDeleted && 
+        !(p as any).deletedAt
+      );
+      const sortedPeriods = [...activePeriods].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
       setPeriods(sortedPeriods);
 
       if (sortedPeriods.length > 0) {
@@ -204,19 +211,19 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       };
 
       // Automatically synthesize and merge any daily entries into periodic logs map
+      // UNIFIED KEY FORMAT: `${l.periodId}:::${canonicalStId}` to prevent duplicate/stale records
       const mergedLogsMap = new Map<string, PeriodicStudyLog>();
       (rawLogs || []).forEach(l => {
         const matched = findMatchedStudent(l.studentId, l.nationalId, l.studentCode, l);
         const canonicalStId = matched ? String(matched.id) : String(l.studentId);
+        const key = `${l.periodId}:::${canonicalStId}`;
         const logData = {
           ...l,
+          periodId: String(l.periodId),
           studentId: canonicalStId,
           studentName: matched?.name || l.studentName || ''
         };
-        mergedLogsMap.set(`${l.periodId}_${canonicalStId}`, logData);
-        if (l.studentId && l.studentId !== canonicalStId) {
-          mergedLogsMap.set(`${l.periodId}_${l.studentId}`, logData);
-        }
+        mergedLogsMap.set(key, logData);
       });
 
       // Group daily entries by period and canonical student ID
@@ -240,24 +247,29 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         const coursesMap = new Map<string, CourseStudyDetail>();
 
         entries.forEach(e => {
-          free += (e.freeStudyMinutes || 0);
+          free += (Number(e.freeStudyMinutes) || 0);
           if (Array.isArray(e.coursesBreakdown) && e.coursesBreakdown.length > 0) {
             e.coursesBreakdown.forEach(c => {
-              cStudy += (c.studyMinutes || 0);
-              cDisc += (c.discussionMinutes || 0);
-              const ex = coursesMap.get(c.courseId) || {
-                courseId: c.courseId,
-                courseTitle: c.courseTitle,
+              const sMin = Number(c.studyMinutes) || 0;
+              const dMin = Number(c.discussionMinutes) || 0;
+              cStudy += sMin;
+              cDisc += dMin;
+              const rawTitle = (c.courseTitle || '').trim();
+              const rawId = (c.courseId || '').trim();
+              const courseKey = rawId ? rawId.toLowerCase() : (rawTitle ? rawTitle.toLowerCase() : 'unknown_course');
+              const ex = coursesMap.get(courseKey) || {
+                courseId: c.courseId || rawId || courseKey,
+                courseTitle: c.courseTitle || rawTitle || 'درس اصلی',
                 studyMinutes: 0,
                 discussionMinutes: 0
               };
-              ex.studyMinutes += (c.studyMinutes || 0);
-              ex.discussionMinutes += (c.discussionMinutes || 0);
-              coursesMap.set(c.courseId, ex);
+              ex.studyMinutes += sMin;
+              ex.discussionMinutes += dMin;
+              coursesMap.set(courseKey, ex);
             });
           } else {
-            cStudy += Math.round((e.studyHours || 0) * 60);
-            cDisc += Math.round((e.discussionHours || 0) * 60);
+            cStudy += Math.round((Number(e.studyHours) || 0) * 60);
+            cDisc += Math.round((Number(e.discussionHours) || 0) * 60);
           }
         });
 
@@ -312,9 +324,10 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     window.addEventListener('app_data_change', handleDataChange);
     window.addEventListener('collection_change_periodic_study_logs', fetchData);
     window.addEventListener('collection_change_study_daily_entries', fetchData);
+    window.addEventListener('collection_change_study_periods', fetchData);
 
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'study_logs_updated_at' || (e.key && e.key.includes('study'))) {
+      if (e.key === 'study_logs_updated_at' || e.key === 'study_periods_updated_at' || (e.key && e.key.includes('study'))) {
         fetchData();
       }
     };
@@ -323,16 +336,18 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     // Background polling for manager sync
     const pollInterval = setInterval(async () => {
       try {
+        await localDb.syncCollectionFromCloud('study_periods', false);
         await localDb.syncCollectionFromCloud('periodic_study_logs', false);
         await localDb.syncCollectionFromCloud('study_daily_entries', false);
       } catch (e) {}
-    }, 10000);
+    }, 5000);
 
     return () => {
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
       window.removeEventListener('collection_change_periodic_study_logs', fetchData);
       window.removeEventListener('collection_change_study_daily_entries', fetchData);
+      window.removeEventListener('collection_change_study_periods', fetchData);
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(pollInterval);
     };
@@ -373,8 +388,21 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       const updatedStatus = !period.isClosed;
       await localDb.updateDoc('study_periods', period.id, {
         isClosed: updatedStatus,
+        status: updatedStatus ? 'closed' : 'active',
+        isActive: !updatedStatus,
         updatedAt: new Date().toISOString()
       });
+      await localDb.flushSyncQueue();
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
+        try {
+          localStorage.setItem('study_periods_updated_at', String(Date.now()));
+          localStorage.setItem('study_logs_updated_at', String(Date.now()));
+        } catch (e) {}
+      }
+
       await fetchData();
     } catch (err) {
       console.error("Error toggling period lock:", err);
@@ -440,17 +468,38 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const handleConfirmDeletePeriod = async () => {
     if (!deleteConfirmPeriod) return;
     try {
-      await localDb.deleteDoc('study_periods', deleteConfirmPeriod.id);
+      const targetPeriodId = deleteConfirmPeriod.id;
+      await localDb.deleteDoc('study_periods', targetPeriodId);
       
-      // Delete associated logs across all logs in database
+      // Delete associated logs across all periodic logs in database
       const rawLogs = await localDb.getDocs<PeriodicStudyLog>('periodic_study_logs');
-      const associatedLogs = rawLogs.filter(l => l.periodId === deleteConfirmPeriod.id);
+      const associatedLogs = rawLogs.filter(l => l.periodId === targetPeriodId || (l as any).period_id === targetPeriodId);
       for (const log of associatedLogs) {
         await localDb.deleteDoc('periodic_study_logs', log.id);
       }
 
+      // Delete associated daily entries across all daily entries in database
+      const rawEntries = await localDb.getDocs<StudyDailyEntry>('study_daily_entries');
+      const associatedEntries = rawEntries.filter(e => e.periodId === targetPeriodId || (e as any).period_id === targetPeriodId);
+      for (const entry of associatedEntries) {
+        await localDb.deleteDoc('study_daily_entries', entry.id);
+      }
+
+      await localDb.flushSyncQueue();
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
+        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+        window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
+        try {
+          localStorage.setItem('study_periods_updated_at', String(Date.now()));
+          localStorage.setItem('study_logs_updated_at', String(Date.now()));
+        } catch (e) {}
+      }
+
       setDeleteConfirmPeriod(null);
-      if (selectedPeriodId === deleteConfirmPeriod.id) {
+      if (selectedPeriodId === targetPeriodId) {
         setSelectedPeriodId(null);
       }
       await fetchData();

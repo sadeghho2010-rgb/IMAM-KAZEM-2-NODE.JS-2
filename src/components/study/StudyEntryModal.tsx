@@ -637,7 +637,9 @@ export default function StudyEntryModal({
           startDate: finalStartDate,
           endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
-          isClosed: isClosed || false,
+          isClosed: Boolean(isClosed),
+          status: isClosed ? 'closed' : 'active',
+          isActive: !isClosed,
           mandatoryHours: mandatoryInHours,
           mandatoryMinutes: finalMandatoryHours,
           mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
@@ -686,7 +688,9 @@ export default function StudyEntryModal({
           startDate: finalStartDate,
           endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
-          isClosed: isClosed || false,
+          isClosed: Boolean(isClosed),
+          status: isClosed ? 'closed' : 'active',
+          isActive: !isClosed,
           mandatoryHours: mandatoryInHours,
           mandatoryMinutes: finalMandatoryHours,
           mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
@@ -789,8 +793,17 @@ export default function StudyEntryModal({
         }
       }
 
+      await localDb.flushSyncQueue();
+
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
+        window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
+        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+        try {
+          localStorage.setItem('study_periods_updated_at', String(Date.now()));
+          localStorage.setItem('study_logs_updated_at', String(Date.now()));
+        } catch (e) {}
       }
 
       onSaveSuccess();

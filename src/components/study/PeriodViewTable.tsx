@@ -341,7 +341,12 @@ export default function PeriodViewTable({
       const log = periodLogs.find(l => {
         const lStId = String(l.studentId || (l as any).student_id || '').trim();
         const lNat = String((l as any).nationalId || (l as any).nationalCode || '').trim();
-        return (stIdStr && lStId === stIdStr) || (stNat && lNat === stNat) || (stNat && lStId === stNat);
+        const lCode = String((l as any).studentCode || '').trim().toUpperCase();
+        const sCode = String(student.studentCode || '').trim().toUpperCase();
+        return (stIdStr && lStId === stIdStr) || 
+               (stNat && lNat === stNat) || 
+               (stNat && lStId === stNat) ||
+               (sCode && lCode && lCode === sCode);
       });
       const metrics = getLogMetrics(log);
       const warningStatus = getStudyWarningStatus(period, log, student);
@@ -1181,7 +1186,15 @@ export default function PeriodViewTable({
 
                     {/* DETAILED COLUMNS: Each enrolled core course study and discussion */}
                     {displayMode === 'ALL_SPLIT' && allEnrolledCourses.map(course => {
-                      const cb = log?.coursesBreakdown?.find(c => c.courseId === course.id || c.courseTitle === course.title);
+                      const cb = log?.coursesBreakdown?.find(c => {
+                        if (c.courseId && course.id && String(c.courseId).trim() === String(course.id).trim()) return true;
+                        if (c.courseTitle && course.title) {
+                          const t1 = String(c.courseTitle).trim().toLowerCase();
+                          const t2 = String(course.title).trim().toLowerCase();
+                          return t1 === t2 || t1.includes(t2) || t2.includes(t1);
+                        }
+                        return false;
+                      });
                       const sM = cb?.studyMinutes || 0;
                       const dM = cb?.discussionMinutes || 0;
 

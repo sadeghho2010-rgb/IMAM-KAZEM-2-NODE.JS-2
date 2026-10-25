@@ -79,19 +79,35 @@ export default function StudentStudyPortal({
   // Top Student Sub-Tab State: 'daily_entry' (ثبت کارکرد روزانه) | 'stats_reports' (آمار و گزارشات جامع)
   const [activeSubTab, setActiveSubTab] = useState<'daily_entry' | 'stats_reports'>('daily_entry');
 
+  // Filter out any deleted periods strictly
+  const validPeriods = useMemo(() => {
+    return (periods || []).filter(p => 
+      p && 
+      p.id && 
+      p.status !== 'deleted' && 
+      !(p as any).isDeleted && 
+      !(p as any).deletedAt
+    );
+  }, [periods]);
+
   // Selected period for daily registration
   const [activePeriodId, setActivePeriodId] = useState<string>(() => {
-    const openP = periods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
-    return openP?.id || periods[0]?.id || '';
+    const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
+    return openP?.id || validPeriods[0]?.id || '';
   });
 
-  // Ensure activePeriodId is synchronized if periods load asynchronously
+  // Ensure activePeriodId is synchronized if periods load asynchronously or if current period was deleted
   useEffect(() => {
-    if (!activePeriodId && periods.length > 0) {
-      const openP = periods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
-      setActivePeriodId(openP?.id || periods[0]?.id || '');
+    if (validPeriods.length === 0) {
+      if (activePeriodId) setActivePeriodId('');
+      return;
     }
-  }, [periods, activePeriodId, student]);
+    const exists = validPeriods.some(p => p.id === activePeriodId);
+    if (!exists) {
+      const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
+      setActivePeriodId(openP?.id || validPeriods[0]?.id || '');
+    }
+  }, [validPeriods, activePeriodId, student]);
 
   // Daily entries list state
   const [dailyEntries, setDailyEntries] = useState<StudyDailyEntry[]>([]);
@@ -177,8 +193,9 @@ export default function StudentStudyPortal({
 
   // Active period object
   const currentPeriod = useMemo(() => {
-    return periods.find(p => p.id === activePeriodId) || periods[0] || null;
-  }, [periods, activePeriodId]);
+    if (validPeriods.length === 0) return null;
+    return validPeriods.find(p => p.id === activePeriodId) || validPeriods[0] || null;
+  }, [validPeriods, activePeriodId]);
 
   // Load daily entries for this student & active period
   const loadDailyEntries = async () => {
@@ -231,11 +248,25 @@ export default function StudentStudyPortal({
 
     const unsub = localDb.subscribe(handleDataChange);
     window.addEventListener('app_data_change', handleDataChange);
+    window.addEventListener('collection_change_study_periods', handleDataChange);
+    window.addEventListener('collection_change_study_daily_entries', handleDataChange);
+    window.addEventListener('collection_change_periodic_study_logs', handleDataChange);
+    window.addEventListener('storage', handleDataChange);
+
+    const pollInterval = setInterval(() => {
+      if (onRefresh) onRefresh();
+    }, 5000);
+
     return () => {
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
+      window.removeEventListener('collection_change_study_periods', handleDataChange);
+      window.removeEventListener('collection_change_study_daily_entries', handleDataChange);
+      window.removeEventListener('collection_change_periodic_study_logs', handleDataChange);
+      window.removeEventListener('storage', handleDataChange);
+      clearInterval(pollInterval);
     };
-  }, [activePeriodId, student.id]);
+  }, [activePeriodId, student.id, onRefresh]);
 
   // Find existing aggregated log for current student & active period
   const currentPeriodLog = useMemo(() => {
@@ -272,8 +303,8 @@ export default function StudentStudyPortal({
   const isCurrentPeriodClosed = isPeriodClosed(currentPeriod);
   const isCurrentStudentExempt = isStudentExempt(currentPeriod, student, currentPeriodLog);
 
-  // Can the student edit? (Level 1/2 can always edit; Level 3 only if not closed and not exempt)
-  const isReadOnlyForUser = currentUser?.level === 3 && (isCurrentPeriodClosed || isCurrentStudentExempt);
+  // When a period is closed or exempt, registration is strictly locked
+  const isReadOnlyForUser = isCurrentPeriodClosed || isCurrentStudentExempt || (currentUser?.level === 3 && !currentPeriod);
 
   // Quick preset minute addition helpers for courses and free study
   const handleQuickAddCourseStudy = (courseId: string, amountMinutes: number) => {
@@ -303,7 +334,10 @@ export default function StudentStudyPortal({
   // Handle Cumulative Submission (به دقیقه، با تفکیک کلاس‌های اصلی و مطالعه آزاد)
   const handleSaveHours = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentPeriod || isReadOnlyForUser) return;
+    if (!currentPeriod || isReadOnlyForUser || isCurrentPeriodClosed) {
+      alert('این دوره مطالعاتی بسته شده است و امکان ثبت ساعت کارکرد وجود ندارد.');
+      return;
+    }
     if (calculatedTotalMinutes <= 0) {
       alert('لطفاً حداقل مقدار برای یکی از دروس اصلی یا مطالعه آزاد را به دقیقه وارد نمایید.');
       return;
@@ -749,7 +783,7 @@ export default function StudentStudyPortal({
                   onChange={(e) => setActivePeriodId(e.target.value)}
                   className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer min-w-[210px]"
                 >
-                  {periods.map(p => {
+                  {validPeriods.map(p => {
                     const closed = isPeriodClosed(p);
                     const exempt = isStudentExempt(p, student);
                     return (
@@ -1088,7 +1122,12 @@ export default function StudentStudyPortal({
                     </span>
                   </div>
 
-                  {!isReadOnlyForUser && (
+                  {isReadOnlyForUser ? (
+                    <div className="w-full sm:w-auto px-6 py-3 bg-rose-50 border border-rose-200 text-rose-800 font-black text-xs rounded-2xl flex items-center justify-center gap-2">
+                      <Lock size={16} className="text-rose-600" />
+                      <span>{isCurrentPeriodClosed ? 'دوره مطالعاتی بسته شده است (ثبت کارکرد غیرفعال)' : 'معاف از ثبت موظفی'}</span>
+                    </div>
+                  ) : (
                     <button
                       type="submit"
                       disabled={isSaving}
