@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Clock, 
   BookOpen, 
@@ -79,35 +79,73 @@ export default function StudentStudyPortal({
   // Top Student Sub-Tab State: 'daily_entry' (ثبت کارکرد روزانه) | 'stats_reports' (آمار و گزارشات جامع)
   const [activeSubTab, setActiveSubTab] = useState<'daily_entry' | 'stats_reports'>('daily_entry');
 
+  // Track if user explicitly clicked a specific period in the dropdown
+  const [userSelectedPeriodId, setUserSelectedPeriodId] = useState<string | null>(null);
+
+  // Directly fetch/maintain periods to ensure strict synchronization with "لیست دوره‌های مطالعاتی ثبت‌شده"
+  const [directPeriods, setDirectPeriods] = useState<StudyPeriod[]>([]);
+
+  const loadDirectPeriods = useCallback(async () => {
+    try {
+      const allP = await localDb.getDocs<StudyPeriod>('study_periods');
+      if (Array.isArray(allP)) {
+        setDirectPeriods(allP);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadDirectPeriods();
+  }, [loadDirectPeriods]);
+
+  // Combined authoritative source: direct database query (if loaded) or prop periods
+  const sourcePeriods = useMemo(() => {
+    if (directPeriods.length > 0) return directPeriods;
+    return periods || [];
+  }, [directPeriods, periods]);
+
   // Filter out any deleted periods strictly
   const validPeriods = useMemo(() => {
-    return (periods || []).filter(p => 
+    return (sourcePeriods || []).filter(p => 
       p && 
       p.id && 
       p.status !== 'deleted' && 
       !(p as any).isDeleted && 
       !(p as any).deletedAt
     );
-  }, [periods]);
+  }, [sourcePeriods]);
 
-  // Selected period for daily registration
+  // Selected period for daily registration - automatically prefers open period
   const [activePeriodId, setActivePeriodId] = useState<string>(() => {
-    const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
+    const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student))
+               || validPeriods.find(p => !isPeriodClosed(p));
     return openP?.id || validPeriods[0]?.id || '';
   });
 
-  // Ensure activePeriodId is synchronized if periods load asynchronously or if current period was deleted
+  // Ensure activePeriodId is synchronized:
+  // 1. If activePeriod was deleted -> auto-switch to open period
+  // 2. "اگر بسته بود بسته بشه و اتومات بره روی دوره باز به صورت پیش فرض"
   useEffect(() => {
     if (validPeriods.length === 0) {
       if (activePeriodId) setActivePeriodId('');
       return;
     }
-    const exists = validPeriods.some(p => p.id === activePeriodId);
-    if (!exists) {
-      const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student));
+
+    const currentP = validPeriods.find(p => p.id === activePeriodId);
+    const openP = validPeriods.find(p => !isPeriodClosed(p) && !isStudentExempt(p, student))
+               || validPeriods.find(p => !isPeriodClosed(p));
+
+    // If current selected period is deleted or does not exist:
+    if (!currentP) {
       setActivePeriodId(openP?.id || validPeriods[0]?.id || '');
+      return;
     }
-  }, [validPeriods, activePeriodId, student]);
+
+    // If current period is closed and an open period exists, and student didn't manually pick this closed period:
+    if (isPeriodClosed(currentP) && openP && activePeriodId !== openP.id && userSelectedPeriodId !== currentP.id) {
+      setActivePeriodId(openP.id);
+    }
+  }, [validPeriods, activePeriodId, student, userSelectedPeriodId]);
 
   // Daily entries list state
   const [dailyEntries, setDailyEntries] = useState<StudyDailyEntry[]>([]);
@@ -242,6 +280,7 @@ export default function StudentStudyPortal({
   // Real-time synchronization for daily entries & logs across panels
   useEffect(() => {
     const handleDataChange = () => {
+      loadDirectPeriods();
       loadDailyEntries();
       if (onRefresh) onRefresh();
     };
@@ -254,6 +293,7 @@ export default function StudentStudyPortal({
     window.addEventListener('storage', handleDataChange);
 
     const pollInterval = setInterval(() => {
+      loadDirectPeriods();
       if (onRefresh) onRefresh();
     }, 5000);
 
@@ -780,7 +820,10 @@ export default function StudentStudyPortal({
                 <span className="text-xs font-bold text-slate-600 shrink-0">انتخاب دوره:</span>
                 <select
                   value={activePeriodId}
-                  onChange={(e) => setActivePeriodId(e.target.value)}
+                  onChange={(e) => {
+                    setActivePeriodId(e.target.value);
+                    setUserSelectedPeriodId(e.target.value);
+                  }}
                   className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer min-w-[210px]"
                 >
                   {validPeriods.map(p => {
@@ -788,7 +831,7 @@ export default function StudentStudyPortal({
                     const exempt = isStudentExempt(p, student);
                     return (
                       <option key={p.id} value={p.id}>
-                        {p.title} {closed ? '(🔒 بسته)' : exempt ? '(🛡️ معاف)' : '(🟢 فعال)'}
+                        {p.title} {closed ? '(🔒 بسته)' : exempt ? '(🛡️ معاف)' : '(🟢 باز / فعال)'}
                       </option>
                     );
                   })}

@@ -1162,10 +1162,13 @@ class LocalDatabase {
           }
         }
 
-        // Also guarantee any local doc not yet on cloud and not explicitly deleted locally is preserved
+        // Only preserve local documents that have pending local creations/edits that have not reached cloud yet!
+        // DO NOT resurrect documents that were deleted on the authoritative server!
         localDocMap.forEach((localDoc, id) => {
           if (!pendingDeleteIds.has(id) && !mergedDocsMap.has(id)) {
-            mergedDocsMap.set(id, localDoc);
+            if (pendingUpsertDocs.has(id)) {
+              mergedDocsMap.set(id, localDoc);
+            }
           }
         });
 

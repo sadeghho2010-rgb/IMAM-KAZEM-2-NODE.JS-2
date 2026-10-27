@@ -35,6 +35,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
   const [studentObj, setStudentObj] = useState<Student | null>(null);
   const [periods, setPeriods] = useState<StudyPeriod[]>([]);
   const [activePeriodId, setActivePeriodId] = useState<string>('');
+  const [userSelectedPeriodId, setUserSelectedPeriodId] = useState<string | null>(null);
   const [dailyEntries, setDailyEntries] = useState<StudyDailyEntry[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -136,9 +137,18 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
       setPeriods(sortedPeriods);
 
       setActivePeriodId(prev => {
-        if (prev && sortedPeriods.some(p => p.id === prev)) return prev;
+        const currentP = sortedPeriods.find(p => p.id === prev);
         const openP = sortedPeriods.find(p => !isPeriodClosed(p));
-        return openP?.id || sortedPeriods[0]?.id || '';
+        // If no period selected, or selected period was deleted (!currentP):
+        if (!prev || !currentP) {
+          return openP?.id || sortedPeriods[0]?.id || '';
+        }
+        // "اگر بسته بود بسته بشه و اتومات بره روی دوره باز به صورت پیش فرض"
+        // If current period is closed and an open period exists, and student did not explicitly click this closed period:
+        if (isPeriodClosed(currentP) && openP && userSelectedPeriodId !== prev) {
+          return openP.id;
+        }
+        return prev;
       });
 
       setPrograms(allProgs);
@@ -469,14 +479,17 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
           {periods.length > 0 && (
             <select
               value={activePeriodId}
-              onChange={(e) => setActivePeriodId(e.target.value)}
+              onChange={(e) => {
+                setActivePeriodId(e.target.value);
+                setUserSelectedPeriodId(e.target.value);
+              }}
               className="bg-white/15 text-white border border-white/20 rounded-xl px-2 py-1 text-[11px] font-bold focus:outline-hidden"
             >
               {periods.map(p => {
                 const closed = isPeriodClosed(p);
                 return (
                   <option key={p.id} value={p.id} className="text-slate-900">
-                    {p.title} {closed ? '(🔒 بسته)' : '(🟢 فعال)'}
+                    {p.title} {closed ? '(🔒 بسته)' : '(🟢 باز / فعال)'}
                   </option>
                 );
               })}

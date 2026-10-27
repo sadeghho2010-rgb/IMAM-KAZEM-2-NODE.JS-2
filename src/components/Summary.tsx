@@ -340,7 +340,8 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
       ]);
 
       // Filter study periods to match active periods in Study Statistics
-      const studyPeriods = studyPeriodsRaw
+      const studyPeriods = (studyPeriodsRaw || [])
+        .filter(p => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt)
         .filter(p => {
           if (currentMentorId === 'shahpoori') {
             if (shahpooriFilter === 'all') return true;

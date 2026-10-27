@@ -469,6 +469,13 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
     if (!deleteConfirmPeriod) return;
     try {
       const targetPeriodId = deleteConfirmPeriod.id;
+      // Mark as deleted first so any concurrent/cached reads treat it as deleted immediately
+      await localDb.updateDoc('study_periods', targetPeriodId, {
+        status: 'deleted',
+        isDeleted: true,
+        deletedAt: new Date().toISOString()
+      }).catch(() => {});
+
       await localDb.deleteDoc('study_periods', targetPeriodId);
       
       // Delete associated logs across all periodic logs in database
@@ -486,6 +493,9 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       }
 
       await localDb.flushSyncQueue();
+
+      // Immediately filter out from local component state
+      setPeriods(prev => prev.filter(p => p.id !== targetPeriodId));
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));

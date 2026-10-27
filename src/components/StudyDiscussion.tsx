@@ -184,38 +184,17 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       );
       setStudentWorkflowItems(myWfItems);
 
-      const defaultPeriods: StudyPeriod[] = [
-        {
-          id: 'period_1',
-          title: 'دوره ۱: مهر و آبان',
-          startDate: '1403/07/01',
-          endDate: '1403/08/30',
-          mandatoryHours: 80,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'period_2',
-          title: 'دوره ۲: آذر و دی',
-          startDate: '1403/09/01',
-          endDate: '1403/10/30',
-          mandatoryHours: 85,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'period_3',
-          title: 'دوره ۳: بهمن و اسفند',
-          startDate: '1403/11/01',
-          endDate: '1403/12/29',
-          mandatoryHours: 90,
-          createdAt: new Date().toISOString()
-        }
-      ];
-
-      const loadedPeriods = periods && periods.length > 0 ? periods : defaultPeriods;
-      setStudyPeriods(loadedPeriods);
+      const activePeriods = (periods || []).filter(p => 
+        p && 
+        p.id && 
+        p.status !== 'deleted' && 
+        !(p as any).isDeleted && 
+        !(p as any).deletedAt
+      );
+      setStudyPeriods(activePeriods);
 
       // Only include logs for periods that currently exist in studyPeriods
-      const validPeriodIds = new Set(loadedPeriods.map(p => p.id));
+      const validPeriodIds = new Set(activePeriods.map(p => p.id));
       const validLogs = (logs || []).filter(l => validPeriodIds.has(l.periodId));
       setPeriodicLogs(validLogs);
 
