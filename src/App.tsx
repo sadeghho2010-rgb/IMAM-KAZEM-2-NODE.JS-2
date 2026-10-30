@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
+import MouseAura from './components/MouseAura';
 import { localDb } from './lib/localDb';
 
 // Lazy loading all tab components for maximum initial page load speed
@@ -528,6 +529,9 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-vazir relative overflow-x-hidden" dir="rtl">
+      {/* Interactive Cursor Light Aura / Dynamic Spotlight following mouse */}
+      <MouseAura />
+
       {/* Sidebar Overlay (Drawer Backdrop) */}
       <AnimatePresence>
         {isSidebarOpen && (

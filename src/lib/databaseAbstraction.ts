@@ -472,10 +472,6 @@ export function validateMysqlConfig(): { isValid: boolean; errors: string[] } {
     errors.push('[MySQL Config Error] DB_USERNAME is not set');
   }
 
-  if (!conf.password) {
-    errors.push('[MySQL Config Error] DB_PASSWORD is not set');
-  }
-
   const isValid = errors.length === 0;
   if (!isValid && (conf.host || conf.database)) {
     errors.forEach(err => console.error(err));
