@@ -273,9 +273,10 @@ export const ModernDashboardCard: React.FC<ModernDashboardCardProps> = ({
             LAYER 3: Interactive Spotlight Following Mouse Pointer
            ======================================================== */}
         <div
-          className="pointer-events-none absolute -inset-px rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          className="pointer-events-none absolute inset-0 transition-opacity duration-200"
           style={{
-            background: `radial-gradient(280px circle at var(--mouse-x, 0px) var(--mouse-y, 0px), ${styleConfig.spotlight}, transparent 75%)`,
+            opacity: isHovered ? 1 : 0,
+            background: `radial-gradient(280px circle at ${mousePos.x}px ${mousePos.y}px, ${styleConfig.glow}, transparent 75%)`,
           }}
           aria-hidden="true"
         />
