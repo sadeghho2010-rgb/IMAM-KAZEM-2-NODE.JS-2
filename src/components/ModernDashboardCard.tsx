@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 
 /**
  * Color theme presets for the card lighting and glow accents.
@@ -190,21 +190,6 @@ export const ModernDashboardCard: React.FC<ModernDashboardCardProps> = ({
   className = '',
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  // Smooth mouse tracking relative to card coordinate plane
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    setMousePos({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  }, []);
-
-  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-  const handleMouseLeave = useCallback(() => setIsHovered(false), []);
 
   const styleConfig = ACCENT_STYLES[accent] || ACCENT_STYLES.indigo;
 
@@ -212,14 +197,9 @@ export const ModernDashboardCard: React.FC<ModernDashboardCardProps> = ({
     <div
       ref={cardRef}
       onClick={onClick}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       role={onClick ? 'button' : 'region'}
       tabIndex={onClick ? 0 : undefined}
       dir="rtl"
-      data-accent={accent}
-      data-card="true"
       className={`
         group relative isolate select-none
         rounded-2xl
@@ -229,23 +209,7 @@ export const ModernDashboardCard: React.FC<ModernDashboardCardProps> = ({
         hover:-translate-y-1.5
         ${className}
       `}
-      style={{
-        // Custom CSS variables for mouse coordinates
-        ['--mouse-x' as string]: `${mousePos.x}px`,
-        ['--mouse-y' as string]: `${mousePos.y}px`,
-      }}
     >
-      {/* ========================================================
-          LAYER 0: Ambient Diffuse Halo Underglow
-          Softly blooms outward on hover behind the card
-         ======================================================== */}
-      <div
-        className="pointer-events-none absolute -inset-1 rounded-2xl opacity-0 blur-xl transition-opacity duration-500 group-hover:opacity-100 -z-20"
-        style={{
-          background: `radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), ${styleConfig.glow}, transparent 70%)`,
-        }}
-      />
-
       {/* ========================================================
           LAYER 1: Main Card Base Body (Frosted Glass & Depth)
          ======================================================== */}
@@ -266,18 +230,6 @@ export const ModernDashboardCard: React.FC<ModernDashboardCardProps> = ({
            ======================================================== */}
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/80 dark:via-white/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity"
-          aria-hidden="true"
-        />
-
-        {/* ========================================================
-            LAYER 3: Interactive Spotlight Following Mouse Pointer
-           ======================================================== */}
-        <div
-          className="pointer-events-none absolute inset-0 transition-opacity duration-200"
-          style={{
-            opacity: isHovered ? 1 : 0,
-            background: `radial-gradient(280px circle at ${mousePos.x}px ${mousePos.y}px, ${styleConfig.glow}, transparent 75%)`,
-          }}
           aria-hidden="true"
         />
 
