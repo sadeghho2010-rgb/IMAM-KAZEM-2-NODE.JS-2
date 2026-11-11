@@ -16,8 +16,6 @@ import {
   ChevronDown,
   Activity
 } from 'lucide-react';
-import { testSupabaseConnection, ConnectionStatus } from '../lib/supabaseSync';
-import { getSupabaseCredentials, getSupabaseClient } from '../lib/supabase';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -35,7 +33,6 @@ export default function DatabaseConnectionTest() {
     lastError: string | null;
     engine: string;
   } | null>(null);
-  const [supabaseStatus, setSupabaseStatus] = useState<ConnectionStatus | null>(null);
   const [serverStatus, setServerStatus] = useState<{ connected: boolean; message: string; latency?: number } | null>(null);
   const [localStatus, setLocalStatus] = useState<{ connected: boolean; message: string; totalRecords: number; idbSupport: boolean } | null>(null);
   
@@ -177,13 +174,6 @@ DB_PASSWORD=your_password_here`;
       });
     }
 
-    // 3. Status of Supabase (Disconnected by configuration)
-    addLog('بررسی وضعیت Supabase: قطع شده طبق پیکربندی.');
-    setSupabaseStatus({
-      connected: false,
-      message: 'ارتباط با Supabase قطع شده است. پایگاه داده اصلی فقط MySQL 8 روی رانفلر (Runflare) می‌باشد.'
-    });
-
     addLog('عملیات عیب‌یابی به پایان رسید.');
     setLoading(false);
   };
@@ -191,8 +181,6 @@ DB_PASSWORD=your_password_here`;
   useEffect(() => {
     runAllDiagnostics();
   }, []);
-
-  const creds = getSupabaseCredentials();
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto font-vazir animate-in fade-in duration-300" dir="rtl">
@@ -350,7 +338,7 @@ DB_PASSWORD=your_password_here`;
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* 1. Local IndexedDB Database Card */}
         <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
@@ -454,62 +442,6 @@ DB_PASSWORD=your_password_here`;
           </div>
         </div>
 
-        {/* 3. Cloud Database (Supabase) Card */}
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center">
-                <Database size={18} />
-              </div>
-              <h3 className="text-xs font-black text-slate-800">پایگاه داده آنلاین کلاد</h3>
-            </div>
-            {supabaseStatus?.connected ? (
-              <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                وصل
-              </span>
-            ) : (
-              <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></span>
-                قطع
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 text-xs">
-              <div className="flex items-center justify-between text-slate-500">
-                <span>زمان پینگ کلاد:</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {latency !== null ? `${latency} ms` : "---"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-slate-500">
-                <span>جدول ساختارمند:</span>
-                <span className="font-mono text-violet-600 font-bold">
-                  {supabaseStatus?.tablesFound?.length || 0} ردیف تایید شد
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-slate-500">
-                <span>موتور سرور کلاد:</span>
-                <span className="text-slate-600 font-bold font-mono">PostgreSQL 15</span>
-              </div>
-            </div>
-
-            {supabaseStatus?.connected ? (
-              <div className="flex items-start gap-2 text-violet-700 bg-violet-50/50 p-2.5 rounded-xl border border-violet-100 text-[11px] font-semibold leading-relaxed">
-                <CheckCircle2 size={14} className="shrink-0 text-violet-600 mt-0.5" />
-                <span>{supabaseStatus.message}</span>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2 text-amber-700 bg-amber-50/50 p-2.5 rounded-xl border border-amber-100 text-[11px] font-semibold leading-relaxed">
-                <AlertTriangle size={14} className="shrink-0 text-amber-600 mt-0.5" />
-                <span className="line-clamp-4 hover:line-clamp-none transition-all">{supabaseStatus?.message || "دریافت اطلاعات اتصال کلاد با خطا مواجه شد."}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
       </div>
 
       {/* Interactive Diagnostics Console */}
@@ -553,7 +485,7 @@ DB_PASSWORD=your_password_here`;
         >
           <div className="flex items-center gap-2">
             <Info size={16} className="text-indigo-600" />
-            <span className="text-xs font-bold">نمایش اطلاعات و آدرس‌های اتصال به دیتابیس آنلاین</span>
+            <span className="text-xs font-bold">نمایش اطلاعات و متغیرهای اتصال به سرور</span>
           </div>
           <ChevronDown size={16} className={cn("transition-transform duration-200", showConfig && "rotate-180")} />
         </button>
@@ -569,16 +501,16 @@ DB_PASSWORD=your_password_here`;
             >
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 text-xs text-slate-600 leading-relaxed space-y-2">
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
-                  <span>آدرس دیتابیس ابری (VITE_SUPABASE_URL):</span>
-                  <span className="font-mono bg-slate-200/60 px-2 py-0.5 rounded text-[10px] text-slate-800 truncate select-all">{creds.url}</span>
+                  <span>میزبان پایگاه‌داده (DB_HOST):</span>
+                  <span className="font-mono bg-slate-200/60 px-2 py-0.5 rounded text-[10px] text-slate-800 truncate select-all">{mysqlStatus?.host || 'تنظیم در محیط سرور'}</span>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between border-t border-slate-200/50 pt-2">
-                  <span>کلید اتصال ناشناس (VITE_SUPABASE_ANON_KEY):</span>
-                  <span className="font-mono bg-slate-200/60 px-2 py-0.5 rounded text-[10px] text-slate-800 truncate select-all">{creds.anonKey?.substring(0, 15)}...{creds.anonKey?.substring(creds.anonKey.length - 15)}</span>
+                  <span>نام پایگاه‌داده (DB_DATABASE):</span>
+                  <span className="font-mono bg-slate-200/60 px-2 py-0.5 rounded text-[10px] text-slate-800 truncate select-all">{mysqlStatus?.database || 'madrasah_db'}</span>
                 </div>
               </div>
               <p className="text-[10px] text-slate-400">
-                نکته: اطلاعات فوق به صورت امن برای برقراری ارتباط در مرورگر مورد استفاده قرار می‌گیرند. هرگونه پکت ارسالی در شبکه با پروتکل امن SSL و گواهینامه احراز هویت رمزگذاری می‌شود.
+                نکته: اطلاعات فوق از طریق محیط امن سرور Node.js پردازش شده و ارتباط با دیتابیس MySQL 8 به‌صورت مستقیم و محافظت‌شده برقرار می‌گردد.
               </p>
             </motion.div>
           )}

@@ -653,7 +653,7 @@ export default function LockersManagement({ onNavigateTab }: LockersManagementPr
 
   // SQL Script Content
   const SQL_SCRIPT_CONTENT = `-- ==============================================================================
--- اسکریپت پایگاه داده اختصاص کمد و امانت کلید (PostgreSQL / Supabase)
+-- اسکریپت پایگاه داده اختصاص کمد و امانت کلید (MySQL)
 -- Database Script: Lockers Management & Key Lending System
 -- ==============================================================================
 
@@ -2052,7 +2052,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                 <div className="flex items-center gap-2">
                   <Database size={20} className="text-amber-400" />
                   <h3 className="font-extrabold text-base">
-                    اسکریپت کامل پایگاه داده (PostgreSQL / Supabase)
+                    اسکریپت کامل پایگاه داده
                   </h3>
                 </div>
                 <button
@@ -2083,7 +2083,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                 <div className="bg-amber-100/70 p-2.5 rounded-xl text-[11px] text-amber-900 leading-relaxed border border-amber-300/60">
                   <span className="font-bold">💡 نکته بسیار مهم: </span>
                   سامانه به صورت مستقل و هیبریدی طراحی شده و <strong>هیچ نیازی به اجرای اجباری این اسکریپت نیست</strong>؛ داده‌ها در پایگاه داده محلی (IndexedDB) و جدول ابری app_collections ذخیره می‌شوند.
-                  اگر در محیط Supabase با خطای <code className="bg-white/80 px-1 py-0.5 rounded font-mono text-rose-700">Failed to fetch (api.supabase.com)</code> روبرو شدید، به دلیل فیلترینگ یا تحریم دامنه api.supabase.com در ایران است. با فعال‌سازی فیلترشکن، DNS شکن یا بدون اجرای اسکریپت، برنامه بدون هیچ مشکلی به طور کامل کار می‌کند.
+                  در صورت بروز هرگونه اختلال یا خطای ارتباطی با سرور، نگران نباشید؛ برنامه اطلاعات را در حافظه محلی دستگاه (IndexedDB) حفظ کرده و پس از برقراری مجدد اتصال، داده‌ها به صورت خودکار با سرور همگام‌سازی می‌شوند.
                 </div>
               </div>
 
