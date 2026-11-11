@@ -1,6 +1,6 @@
 /**
  * Independent Real-time Synchronization Engine (Server-Sent Events & Polling)
- * Replaces Supabase Realtime with a 100% database-agnostic, lightweight mechanism
+ * 100% database-agnostic, lightweight realtime mechanism
  * that works seamlessly on MySQL, VPS, Docker, or Dedicated Hosting.
  */
 

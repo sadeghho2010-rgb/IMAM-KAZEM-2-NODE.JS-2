@@ -147,7 +147,7 @@ export default function TeacherPortal() {
   }, []);
 
   /**
-   * Eager Cloud Hydration: Non-blocking background sync from server / Supabase.
+   * Eager Cloud Hydration: Non-blocking background sync from server.
    * Never hangs or freezes the user interface.
    */
   const syncPortalData = useCallback(async (isManualRefresh = false) => {

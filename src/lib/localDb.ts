@@ -1006,7 +1006,7 @@ class LocalDatabase {
            localStorage.getItem('token') || sessionStorage.getItem('token');
   }
 
-  // Fetch and sync a collection from Server / Supabase Cloud / Firestore (Authoritative)
+  // Fetch and sync a collection from Server (Authoritative)
   async syncCollectionFromCloud(collectionName: CollectionName, force = false): Promise<any[]> {
     if (typeof window === 'undefined') return [];
     const resolvedCol = this.resolveCollection(collectionName as string);
@@ -1634,8 +1634,8 @@ class LocalDatabase {
     return { success: true, totalRecords };
   }
 
-  // Background Non-blocking Real-time Mirror to Server & Supabase
-  private mirrorToSupabase(action: 'upsert' | 'delete', collectionName: string, id: string, data?: any) {
+  // Background Non-blocking Real-time Mirror to Server
+  private mirrorToServer(action: 'upsert' | 'delete', collectionName: string, id: string, data?: any) {
     if (typeof window === 'undefined') return;
     try {
       const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');

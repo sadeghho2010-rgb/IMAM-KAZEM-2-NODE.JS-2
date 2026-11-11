@@ -1,7 +1,7 @@
 /**
  * Database Abstraction Layer (Repository Pattern & Dual-Engine Adapter)
- * Provides seamless interchangeability between MySQL (Primary Production Target)
- * and Supabase/Local JSON (Development Fallback).
+ * Provides seamless storage operations with MySQL (Primary Production Target)
+ * and Local File/IndexedDB fallback.
  * 
  * Runflare Deploy Refresh Commit
  * Features:

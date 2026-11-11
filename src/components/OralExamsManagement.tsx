@@ -44,7 +44,7 @@ export default function OralExamsManagement() {
   // Period being edited in Wizard (if any)
   const [editingPeriodInWizard, setEditingPeriodInWizard] = useState<OralExamPeriod | null>(null);
 
-  // Load all required collections from localDb (IndexedDB + Supabase mirror)
+  // Load all required collections from localDb (IndexedDB + Server mirror)
   const loadAllData = async () => {
     setLoading(true);
     try {

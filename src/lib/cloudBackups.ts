@@ -33,7 +33,6 @@ export interface CloudBackupRecord {
   totalRecords: number;
   studentCount: number;
   backupData: any;
-  supabaseUrl?: string;
 }
 
 export function formatBytes(bytes: number): string {
