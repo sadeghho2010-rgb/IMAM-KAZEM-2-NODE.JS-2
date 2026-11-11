@@ -3,7 +3,6 @@
  * Uses IndexedDB with automatic schema migration and fallback.
  * All photos are stored directly in the local database as Base64 data URLs.
  */
-import { isSupabaseConfigured, supabase } from './supabase';
 import { dispatchDatabaseErrorToast, dispatchDatabaseErrorToast as dispatchDatabaseToast } from './databaseToast';
 import { realtimeSync } from './realtimeSync';
 
@@ -1056,25 +1055,6 @@ class LocalDatabase {
         // Server API unreachable or network timeout
       }
 
-      // 2. Fallback to Supabase Cloud ONLY if Server API was not reachable AND Supabase is explicitly configured
-      if (!isServerAuthoritativeSuccess && isSupabaseConfigured) {
-        try {
-          const { data: appData, error: appErr } = await supabase
-            .from('app_collections')
-            .select('id, data')
-            .eq('collection_name', resolvedCol);
-
-          if (!appErr && Array.isArray(appData)) {
-            cloudDocs = appData
-              .filter(row => row && row.id)
-              .map(row => (row.data && typeof row.data === 'object' ? { ...row.data, id: row.id } : { id: row.id }));
-            isServerAuthoritativeSuccess = true;
-          }
-        } catch (sbErr) {
-          console.warn(`Supabase sync exception for ${resolvedCol}:`, sbErr);
-        }
-      }
-
       // CRITICAL DATA INTEGRITY: Merge authoritative cloud response with local pending edits (LOCAL EDITS ALWAYS WIN)
       if (isServerAuthoritativeSuccess && cloudDocs !== null) {
         const syncQueue = getSyncQueue();
@@ -1306,47 +1286,6 @@ class LocalDatabase {
         this.notify();
       }
     });
-
-    // 3. Fallback Supabase realtime channel if configured
-    if (isSupabaseConfigured) {
-      try {
-        supabase
-          .channel('app_collections_realtime')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'app_collections' },
-            async (payload: any) => {
-              const { eventType, new: newRecord, old: oldRecord } = payload;
-              const collectionName = newRecord?.collection_name || oldRecord?.collection_name;
-              const id = newRecord?.id || oldRecord?.id;
-              if (!collectionName || !id) return;
-              const resolvedCol = this.resolveCollection(collectionName);
-              if (eventType === 'DELETE') {
-                const db = await this.getDb();
-                if (db.objectStoreNames.contains(resolvedCol)) {
-                  try {
-                    const tx = db.transaction(resolvedCol, 'readwrite');
-                    tx.objectStore(resolvedCol).delete(id);
-                  } catch (e) {}
-                }
-                this.deleteLocalStorageDoc(resolvedCol, id);
-              } else {
-                const doc = { ...(newRecord.data || {}), id };
-                const db = await this.getDb();
-                if (db.objectStoreNames.contains(resolvedCol)) {
-                  try {
-                    const tx = db.transaction(resolvedCol, 'readwrite');
-                    tx.objectStore(resolvedCol).put(doc);
-                  } catch (e) {}
-                }
-                this.setLocalStorageDoc(resolvedCol, doc);
-              }
-              this.notify();
-            }
-          )
-          .subscribe();
-      } catch (e) {}
-    }
   }
 
   // Get all documents from a collection (Non-blocking cache with automatic background revalidation)
@@ -1659,7 +1598,7 @@ class LocalDatabase {
         if (payload.success && payload.data && typeof payload.data === 'object') {
           for (const [col, docs] of Object.entries(payload.data)) {
             if (Array.isArray(docs) && docs.length > 0) {
-              await this.bulkPut(col as CollectionName, docs);
+              await this.bulkPut(col as CollectionName, docs, true, true);
               totalRecords += docs.length;
             }
           }
@@ -1969,7 +1908,12 @@ class LocalDatabase {
   }
 
   // Bulk add or overwrite documents in a collection
-  async bulkPut(collectionName: CollectionName, items: any[], bypassPendingCheck: boolean = false): Promise<void> {
+  async bulkPut(
+    collectionName: CollectionName,
+    items: any[],
+    bypassPendingCheck: boolean = false,
+    skipServerSync: boolean = false
+  ): Promise<void> {
     if (!items || items.length === 0) return;
     const resolvedCol = this.resolveCollection(collectionName as string);
     const db = await this.getDb();
@@ -2018,45 +1962,76 @@ class LocalDatabase {
     }
     this.notify();
 
-    // Direct Cloud sync
-    try {
-      const rows = processedItems.map((item: any) => ({
-        collection_name: resolvedCol,
-        id: String(item.id),
-        data: sanitizeForCloud(item),
-        updated_at: new Date().toISOString()
-      }));
+    if (skipServerSync) {
+      return;
+    }
 
+    // Direct Cloud sync to MySQL server endpoint with fallback to syncQueue
+    try {
       const cloudPromise = (async () => {
-        if (isSupabaseConfigured) {
-          const chunkSize = 50;
-          for (let i = 0; i < rows.length; i += chunkSize) {
-            const chunk = rows.slice(i, i + chunkSize);
-            const { error } = await supabase
-              .from('app_collections')
-              .upsert(chunk, { onConflict: 'collection_name,id' });
-            if (error) {
-              if (error.code === '42501' && resolvedCol === 'finance_student_claims') {
-                const fallbackChunk = chunk.map((r: any) => ({ ...r, collection_name: 'student_claims' }));
-                const retry = await supabase
-                  .from('app_collections')
-                  .upsert(fallbackChunk, { onConflict: 'collection_name,id' });
-                if (retry.error) throw retry.error;
-              } else {
-                throw error;
+        const token = this.getAuthToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        // Process in chunks of 10 items for high-performance concurrent upserting
+        const chunkSize = 10;
+        const failedItems: any[] = [];
+        for (let i = 0; i < processedItems.length; i += chunkSize) {
+          const chunk = processedItems.slice(i, i + chunkSize);
+          await Promise.all(
+            chunk.map(async (item) => {
+              const itemId = String(item.id);
+              try {
+                const apiRes = await fetch(`/api/data/${resolvedCol}?_t=${Date.now()}`, {
+                  method: 'POST',
+                  headers: {
+                    ...headers,
+                    'x-idempotency-key': `bulk_${resolvedCol}_${itemId}_${Date.now()}`
+                  },
+                  cache: 'no-store',
+                  credentials: 'include',
+                  body: JSON.stringify({ ...item, id: itemId, _synced: true })
+                });
+
+                if (apiRes.ok) {
+                  setTimeout(() => removePendingLocalDoc(resolvedCol, itemId), 15000);
+                } else {
+                  console.warn(`[BulkSync Failure] Item ${itemId} in ${resolvedCol} status ${apiRes.status}`);
+                  failedItems.push(item);
+                  enqueueSync({ action: 'upsert', collectionName: resolvedCol, id: itemId, data: item });
+                }
+              } catch (itemErr) {
+                console.warn(`[BulkSync Network Error] Item ${itemId} in ${resolvedCol}:`, itemErr);
+                failedItems.push(item);
+                enqueueSync({ action: 'upsert', collectionName: resolvedCol, id: itemId, data: item });
               }
-            }
-          }
+            })
+          );
+        }
+
+        if (failedItems.length > 0 && failedItems.length === processedItems.length) {
+          throw new Error(`تمام ${failedItems.length} سند در ارسال به دیتابیس دچار خطا شدند`);
         }
       })();
 
-      const dynamicTimeout = Math.max(6000, rows.length * 150);
+      const dynamicTimeout = Math.max(8000, processedItems.length * 500);
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('مهلت ذخیره گروهی پایان یافت')), dynamicTimeout);
       });
 
       await Promise.race([cloudPromise, timeoutPromise]);
     } catch (err: any) {
+      // Guarantee: Enqueue any items into syncQueue on timeout/error if not already enqueued
+      for (const item of processedItems) {
+        enqueueSync({ action: 'upsert', collectionName: resolvedCol, id: String(item.id), data: item });
+      }
+
       if (isOfflineStorageAllowedForUser()) {
         console.warn(`[Offline Mode Permitted] Bulk write in ${resolvedCol} stored locally.`);
         return;
@@ -3296,75 +3271,9 @@ class LocalDatabase {
     }
   }
 
-  // Proactively fetch all major collections from Supabase on application launch
+  // Proactively fetch all major collections from Server API on application launch
   async initCloudSync(): Promise<void> {
-    if (!isSupabaseConfigured || typeof window === 'undefined') return;
-    const coreCollections: CollectionName[] = [
-      'classrooms',
-      'teachers',
-      'teacher_schedules',
-      'programs',
-      'students',
-      'enrollments',
-      'attendance',
-      'attendance_settings',
-      'study_stats',
-      'study_periods',
-      'periodic_study_logs',
-      'study_daily_entries',
-      'discussion_groups',
-      'research',
-      'research_history',
-      'research_skills_def',
-      'student_research_skills',
-      'conversation_archives',
-      'student_comments',
-      'oral_exams',
-      'counseling_session_grades',
-      'academic_calendar_periods',
-      'academic_holidays',
-      'academic_holiday_types',
-      'academic_sub_periods',
-      'academic_weekly_programs',
-      'tuition_settings',
-      'tuition_periods',
-      'tuition_records',
-      'student_financial_profiles',
-      'finance_loans',
-      'finance_fund_contributions',
-      'finance_student_claims',
-      'finance_claim_categories',
-      'finance_destination_accounts',
-      'finance_budget_rows',
-      'finance_operational_expenses',
-      'finance_expenses',
-      'finance_meal_holidays',
-      'finance_meal_periods',
-      'finance_meal_person_categories',
-      'finance_student_meal_reservations',
-      'finance_teachers_periods',
-      'finance_grade_mentor_periods',
-      'finance_grade_mentors',
-      'drivers',
-      'staff',
-      'teacher_transport_routines',
-      'teacher_transport_trips',
-      'todos',
-      'personal_todos',
-      'assigned_todos',
-      'user_todo_categories',
-      'workflow_items',
-      'workflow_settings',
-      'student_requests',
-      'global_requests_config',
-      'unit_request_settings',
-      'settings'
-    ];
-    try {
-      await Promise.allSettled(coreCollections.map(col => this.syncCollectionFromCloud(col)));
-    } catch (e) {
-      console.warn('Error during initCloudSync:', e);
-    }
+    return;
   }
 
   public async flushSyncQueue(): Promise<{ synced: number; failed: number }> {

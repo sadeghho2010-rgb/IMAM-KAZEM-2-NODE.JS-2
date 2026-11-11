@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { serverSupabase, isServerSupabaseConfigured, verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
+import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
@@ -816,51 +816,7 @@ export async function serverSaveDoc(
     }
   }
 
-  // 2. Exception: Cloudflare + Supabase mode (when MySQL is not configured)
-  if (isServerSupabaseConfigured) {
-    // Immediate local file cache write to guarantee zero data loss
-    localFileSaveDoc(collection, id, record);
 
-    try {
-      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
-
-      // Save to dedicated table if mapped
-      if (dedicatedTable) {
-        try {
-          const { error: dedicatedError } = await serverSupabase
-            .from(dedicatedTable)
-            .upsert(row, { onConflict: 'id' });
-          if (dedicatedError) {
-            console.warn(`[Supabase Dedicated Table Notice] ${dedicatedTable}:`, dedicatedError.message);
-          }
-        } catch (dErr: any) {
-          console.warn(`[Supabase Dedicated Table Bypass] ${dedicatedTable}:`, dErr?.message || dErr);
-        }
-      }
-
-      // Also mirror to app_collections for full persistence
-      const { error: appErr } = await serverSupabase
-        .from('app_collections')
-        .upsert({
-          collection_name: collection,
-          id,
-          data: record,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'collection_name,id' });
-
-      if (appErr) {
-        console.warn(`[Supabase Save Warning] Collection: "${collection}", ID: "${id}":`, appErr.message);
-        // Note: Data is already safely saved in local file store, so we do not reject
-      }
-
-      notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
-    } catch (err: any) {
-      console.warn(`[Supabase Save Non-fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err);
-      notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
-    }
-  }
 
   // 3. Fallback: Local JSON File Storage
   try {
@@ -926,39 +882,7 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
     }
   }
 
-  // 2. Exception: Supabase
-  if (isServerSupabaseConfigured) {
-    try {
-      const dedicatedTable = COLLECTION_TABLE_MAP[collection];
-      if (dedicatedTable) {
-        try {
-          await serverSupabase
-            .from(dedicatedTable)
-            .delete()
-            .eq('id', id);
-        } catch (dErr) {
-          console.warn(`[Supabase Dedicated Table Delete Bypass] ${dedicatedTable}:`, dErr);
-        }
-      }
 
-      const { error: appErr } = await serverSupabase
-        .from('app_collections')
-        .delete()
-        .eq('collection_name', collection)
-        .eq('id', id);
-
-      if (appErr) {
-        console.error(`[Supabase Delete Error] Collection: "${collection}", ID: "${id}":`, appErr.message);
-        return { success: false, error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.' };
-      }
-
-      notifyRealtimeChange(collection, id, 'delete');
-      return { success: true };
-    } catch (err: any) {
-      console.error(`[Supabase Delete Fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err, err?.stack);
-      return { success: false, error: 'خطا در حذف داده. لطفاً با مدیر سیستم تماس بگیرید.' };
-    }
-  }
 
   // 3. Fallback: Local JSON File Storage
   try {
@@ -991,41 +915,7 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
       items = [];
     }
-  } else if (isServerSupabaseConfigured) {
-    // 2. If Supabase is configured
-    try {
-      const dedicatedTable = COLLECTION_TABLE_MAP[collection];
 
-      // Query from dedicated table if available
-      if (dedicatedTable) {
-        const { data, error } = await serverSupabase
-          .from(dedicatedTable)
-          .select('*');
-
-        if (!error && data && data.length > 0) {
-          items = data.map((item: any) => {
-            if (item.data && typeof item.data === 'object') {
-              return { ...item.data, id: item.id };
-            }
-            return item;
-          });
-        }
-      }
-
-      // Fallback query to app_collections
-      if (items.length === 0) {
-        const { data, error } = await serverSupabase
-          .from('app_collections')
-          .select('id, data')
-          .eq('collection_name', collection);
-
-        if (!error && data && data.length > 0) {
-          items = (data || []).map(r => ({ ...(r.data || {}), id: r.id }));
-        }
-      }
-    } catch (err) {
-      console.error(`Query raw collection exception ${collection}:`, err);
-    }
   } else {
     // 3. Fallback: Local JSON File Storage
     items = localFileQueryCollection(collection);
@@ -1243,22 +1133,7 @@ async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promis
     }
   }
 
-  // 2. If Supabase is configured
-  if (isServerSupabaseConfigured) {
-    try {
-      const { data, error } = await serverSupabase
-        .from('app_collections')
-        .select('id, data')
-        .eq('collection_name', collection)
-        .in('id', ids);
 
-      if (!error && data) {
-        return data.map(r => ({ ...(r.data || {}), id: r.id }));
-      }
-    } catch (err) {
-      console.error(`Get raw documents exception ${collection}:`, err);
-    }
-  }
 
   // 3. Fallback: Local JSON File Storage
   try {

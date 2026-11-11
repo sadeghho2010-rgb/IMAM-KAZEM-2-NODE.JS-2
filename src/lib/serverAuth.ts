@@ -101,27 +101,7 @@ const JWT_SECRET = (rawJwtSecret && !rawJwtSecret.startsWith('{{'))
   ? rawJwtSecret
   : (JWT_REFRESH_SECRET + '_access_token_secret');
 
-export const SUPABASE_URL = '';
-export const SUPABASE_KEY = '';
 
-export const isServerSupabaseConfigured = false;
-
-export const serverSupabase: any = new Proxy({}, {
-  get() {
-    return () => ({
-      select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }), limit: () => Promise.resolve({ data: [], error: null }) }),
-      insert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
-      upsert: async () => ({ data: null, error: new Error('Supabase is disconnected.') }),
-      delete: async () => ({ eq: () => Promise.resolve({ data: null, error: null }) }),
-    });
-  }
-});
-
-let supabaseUserFailureBackoffUntil = 0;
-
-export async function querySupabaseWithTimeout<T>(_promise: any, _timeoutMs = 1200): Promise<T | null> {
-  return null;
-}
 
 
 // Revoked token IDs / tokens (Session invalidation / Logout / Invalidate all)
@@ -618,144 +598,6 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     } catch (mErr) {
       console.warn('[MySQL fetchAllUsers notice]:', mErr);
     }
-  } else if (isServerSupabaseConfigured && Date.now() >= supabaseUserFailureBackoffUntil) {
-    try {
-      // 1. Primary: Fetch all non-super-admin users from dedicated 'all_users' collection in app_collections
-      const allUsersPromise = serverSupabase
-        .from('app_collections')
-        .select('id, data')
-        .eq('collection_name', 'all_users');
-      const allUsersRes: any = await querySupabaseWithTimeout(allUsersPromise, 2500);
-
-      if (allUsersRes && !allUsersRes.error && Array.isArray(allUsersRes.data) && allUsersRes.data.length > 0) {
-        const listRow = allUsersRes.data.find((r: any) => r.id === 'users_list');
-        if (listRow && Array.isArray(listRow.data?.users)) {
-          listRow.data.users.forEach((u: StoredUser) => {
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-            }
-          });
-        }
-
-        // Merge individual user documents from all_users (these are authoritative)
-        for (const row of allUsersRes.data) {
-          if (row.id !== 'users_list' && row.data) {
-            const u = row.data as StoredUser;
-            if (u && (u.username || row.id)) {
-              const uname = (u.username || row.id).toUpperCase();
-              usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-            }
-          }
-        }
-      }
-
-      // 2. Fetch from dedicated 'all_users' SQL table if it exists
-      try {
-        const dedicatedAllUsersPromise = serverSupabase.from('all_users').select('*');
-        const dedicatedAllRes: any = await querySupabaseWithTimeout(dedicatedAllUsersPromise, 1500);
-        if (dedicatedAllRes && !dedicatedAllRes.error && Array.isArray(dedicatedAllRes.data) && dedicatedAllRes.data.length > 0) {
-          dedicatedAllRes.data.forEach((row: any) => {
-            const cleanName = (row.username || row.id || '').toUpperCase();
-            if (cleanName && cleanName !== 'SADEGH') {
-              const rowData = row.data || {};
-              usersMap.set(cleanName, {
-                id: row.id || cleanName,
-                username: cleanName,
-                name: row.name || cleanName,
-                role: row.role || 'student',
-                level: row.level || 3,
-                roleTitle: row.role_title || row.roleTitle,
-                allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || []),
-                editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : (rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || []),
-                modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
-                isReadOnly: row.is_read_only !== undefined ? row.is_read_only : (rowData.isReadOnly !== undefined ? rowData.isReadOnly : usersMap.get(cleanName)?.isReadOnly),
-                canEdit: row.can_edit !== undefined ? row.can_edit : (rowData.canEdit !== undefined ? rowData.canEdit : usersMap.get(cleanName)?.canEdit),
-                passwordHash: row.password_hash || row.passwordHash || usersMap.get(cleanName)?.passwordHash,
-                password: row.password || usersMap.get(cleanName)?.password,
-                mustChangePassword: !!row.must_change_password,
-                failedLoginAttempts: row.failed_login_attempts || 0,
-                accountLockedUntil: row.account_locked_until,
-                lastLogin: row.last_login,
-                ...rowData
-              });
-            }
-          });
-        }
-      } catch {}
-
-      // 3. Fallback/Mirror check: app_collections (system_users) - especially for super admin SADEGH
-      const appColPromise = serverSupabase
-        .from('app_collections')
-        .select('id, data')
-        .eq('collection_name', 'system_users');
-      const appColRes: any = await querySupabaseWithTimeout(appColPromise, 1500);
-
-      if (appColRes && !appColRes.error && Array.isArray(appColRes.data) && appColRes.data.length > 0) {
-        const allUsersRow = appColRes.data.find((r: any) => r.id === 'all_users');
-        if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
-          allUsersRow.data.users.forEach((u: StoredUser) => {
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              if (!usersMap.has(uname) || uname === 'SADEGH') {
-                usersMap.set(uname, { ...usersMap.get(uname), ...u });
-              }
-            }
-          });
-        }
-
-        // Merge individual user documents
-        for (const row of appColRes.data) {
-          if (row.id !== 'all_users' && row.data) {
-            const u = row.data as StoredUser;
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              // If not already in all_users, or if it is super admin SADEGH, add/merge
-              if (!usersMap.has(uname) || uname === 'SADEGH') {
-                usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-              }
-            }
-          }
-        }
-      }
-
-      // 4. Try dedicated system_users table if available (for super admin)
-      try {
-        const dedicatedPromise = serverSupabase.from('system_users').select('*');
-        const dedicatedRes: any = await querySupabaseWithTimeout(dedicatedPromise, 1200);
-        if (dedicatedRes && !dedicatedRes.error && Array.isArray(dedicatedRes.data) && dedicatedRes.data.length > 0) {
-          dedicatedRes.data.forEach((row: any) => {
-            const cleanName = (row.username || '').toUpperCase();
-            if (cleanName && (!usersMap.has(cleanName) || cleanName === 'SADEGH')) {
-              const rowData = row.data || {};
-              usersMap.set(cleanName, {
-                id: row.id || cleanName,
-                username: cleanName,
-                name: row.name || cleanName,
-                role: row.role || 'student',
-                level: row.level || 3,
-                roleTitle: row.role_title,
-                allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : (rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || []),
-                editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : (rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || []),
-                modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
-                isReadOnly: row.is_read_only !== undefined ? row.is_read_only : (rowData.isReadOnly !== undefined ? row.data.isReadOnly : usersMap.get(cleanName)?.isReadOnly),
-                canEdit: row.can_edit !== undefined ? row.can_edit : (rowData.canEdit !== undefined ? row.data.canEdit : usersMap.get(cleanName)?.canEdit),
-                passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
-                password: row.password || usersMap.get(cleanName)?.password,
-                mustChangePassword: !!row.must_change_password,
-                failedLoginAttempts: row.failed_login_attempts || 0,
-                accountLockedUntil: row.account_locked_until,
-                lastLogin: row.last_login,
-                ...rowData
-              });
-            }
-          });
-        }
-      } catch {}
-
-    } catch (err) {
-      supabaseUserFailureBackoffUntil = Date.now() + 60000;
-    }
   }
 
   // Ensure default super admin SADEGH is ALWAYS valid, present, and unlocked
@@ -951,24 +793,7 @@ export async function deleteUserFromStorage(userIdOrUsername: string): Promise<v
     } catch (e) {}
   }
 
-  if (!isServerSupabaseConfigured) return;
-  try {
-    try { await serverSupabase.from('all_users').delete().match({ username: clean }); } catch {}
-    try { await serverSupabase.from('system_users').delete().match({ username: clean }); } catch {}
-    try { await serverSupabase.from('app_collections').delete().match({ collection_name: 'all_users', id: clean }); } catch {}
-    try { await serverSupabase.from('app_collections').delete().match({ collection_name: 'system_users', id: clean }); } catch {}
 
-    const allNonAdmins = Array.from(serverMemoryUsers.values())
-      .filter(u => u.username?.toUpperCase() !== 'SADEGH' && u.role !== 'super_admin');
-    try {
-      await serverSupabase.from('app_collections').upsert({
-        collection_name: 'all_users',
-        id: 'users_list',
-        data: { count: allNonAdmins.length, users: allNonAdmins },
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'collection_name,id' });
-    } catch {}
-  } catch (e) {}
 }
 
 export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; migratedCount: number }> {
@@ -1083,15 +908,7 @@ export async function logServerAudit(params: {
       console.error('[STORAGE_FAILURE] audit log (login):', err?.message || err);
     });
 
-    // 3. Store in Supabase if configured
-    if (isServerSupabaseConfigured) {
-      await serverSupabase.from('app_collections').upsert({
-        collection_name: 'audit_logs',
-        id: logEntry.id,
-        data: logEntry,
-        updated_at: nowStr
-      });
-    }
+
   } catch (e: unknown) {
     console.error('Server audit log error:', e instanceof Error ? e.message : e);
   }

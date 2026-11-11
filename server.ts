@@ -158,7 +158,6 @@ async function startServer() {
         },
         services: {
           mysqlConfigured: true,
-          supabaseConfigured: false,
           primaryDatabase: "MySQL 8.0 (Runflare)"
         }
       });

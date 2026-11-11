@@ -1,5 +1,23 @@
 import { localDb } from './localDb';
-import { supabase, BUCKET_NAME, getFolderForMentor } from './supabase';
+
+export function getFolderForMentor(mentorId: string): string {
+  switch (mentorId) {
+    case 'hosseini':
+      return 'hosseini';
+    case 'hayati':
+      return 'hayati';
+    case 'soleimani':
+    case 'soleymani':
+      return 'soleymani';
+    case 'asadi':
+      return 'asadi';
+    case 'shahpoori':
+    case 'boss':
+      return 'boss';
+    default:
+      return 'boss';
+  }
+}
 
 export interface CloudBackupRecord {
   id: string;
@@ -148,36 +166,7 @@ export async function uploadBackupToCloud(
       savedOnServer = true;
     }
   } catch (serverErr) {
-    // Continue with cloud fallback
-  }
-
-  // 2. Upload file directly to Supabase Storage bucket under the user's folder (fallback)
-  try {
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(filePath, jsonBlob, {
-        contentType: 'application/json',
-        upsert: true
-      });
-
-    if (uploadError) {
-      console.warn('Supabase storage upload notice:', uploadError.message);
-      if (!savedOnServer) {
-        // Only throw if server backup also failed
-        if (uploadError.message.includes('not found') || uploadError.message.includes('Bucket')) {
-          console.warn(`باکت backups در Supabase یافت نشد.`);
-        }
-      }
-    } else {
-      const { data: urlData } = supabase.storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
-      supabasePublicUrl = urlData?.publicUrl || '';
-    }
-  } catch (err: any) {
-    if (!savedOnServer) {
-      console.warn('Supabase storage connection notice:', err);
-    }
+    console.warn('Server backup save notice:', serverErr);
   }
 
   const recordId = `backup_${mentorId}_${Date.now()}`;
@@ -224,7 +213,7 @@ export async function uploadBackupToCloud(
 }
 
 /**
- * Fetches backups from Database & Supabase Storage
+ * Fetches backups from Server Database & Local DB
  */
 export async function fetchCloudBackups(
   filterMentorId?: string,
@@ -244,39 +233,7 @@ export async function fetchCloudBackups(
       }
     }
   } catch (e) {
-    // Continue with cloud table check
-  }
-
-  // 2. Fetch from Supabase Table (fallback)
-  try {
-    const { data: supaRows, error: supaErr } = await supabase
-      .from('cloud_backups')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (!supaErr && supaRows) {
-      supaRows.forEach((row: any) => {
-        const item = row.data || row;
-        allRecordsMap.set(row.id, {
-          id: row.id,
-          mentorId: row.mentor_id || item.mentorId,
-          mentorName: row.mentor_name || item.mentorName,
-          mentorRole: row.mentor_role || item.mentorRole || '',
-          fileName: row.file_name || item.fileName,
-          folderPath: row.folder_path || item.folderPath,
-          createdAt: row.created_at || item.createdAt,
-          persianDate: row.persian_date || item.persianDate || '',
-          fileSizeBytes: row.file_size_bytes || item.fileSizeBytes || 0,
-          fileSizeFormatted: row.file_size_formatted || item.fileSizeFormatted || '',
-          totalRecords: row.total_records || item.totalRecords || 0,
-          studentCount: row.student_count || item.studentCount || 0,
-          supabaseUrl: row.supabase_url || item.supabaseUrl || '',
-          backupData: item.backupData
-        });
-      });
-    }
-  } catch (e) {
-    console.warn('Supabase cloud_backups table fetch fallback:', e);
+    console.warn('Server backups fetch notice:', e);
   }
 
   // 2. Fetch from Local IndexedDB store
@@ -291,67 +248,7 @@ export async function fetchCloudBackups(
     console.error('Error fetching local backups store:', e);
   }
 
-  // Determine effective mentor/folder to fetch
   const activeMentorId = isManager ? (filterMentorId || 'all') : filterMentorId;
-
-  // 3. Fetch list directly from Supabase Storage folders
-  const foldersToFetch = (isManager && (!activeMentorId || activeMentorId === 'all' || activeMentorId === 'shahpoori'))
-    ? ['hosseini', 'hayati', 'soleymani', 'asadi', 'boss']
-    : [getFolderForMentor(activeMentorId || '')];
-
-  for (const f of foldersToFetch) {
-    if (!f) continue;
-    try {
-      const { data: storageFiles, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .list(f);
-
-      if (!error && storageFiles) {
-        storageFiles.forEach(fileObj => {
-          if (fileObj.name && fileObj.name !== '.emptyFolderPlaceholder') {
-            const path = `${f}/${fileObj.name}`;
-            const exists = Array.from(allRecordsMap.values()).some(r => r.fileName === fileObj.name || r.folderPath === path);
-            if (!exists) {
-              // Convert storage file to record
-              let mentorName = 'استاد/کاربر';
-              let mentorId = f;
-              if (f === 'hosseini') { mentorName = 'استاد حسینی'; mentorId = 'hosseini'; }
-              if (f === 'hayati') { mentorName = 'استاد حیاتی'; mentorId = 'hayati'; }
-              if (f === 'soleymani') { mentorName = 'استاد سلیمانی'; mentorId = 'soleimani'; }
-              if (f === 'asadi') { mentorName = 'استاد اسدی'; mentorId = 'asadi'; }
-              if (f === 'boss') { mentorName = 'مدیریت'; mentorId = 'shahpoori'; }
-
-              const created = fileObj.created_at || new Date().toISOString();
-              const persianDt = getPersianDateTime(new Date(created));
-              const displayName = fileObj.name.startsWith('backup_')
-                ? `پشتیبان_${mentorName}_${persianDt}.json`
-                : fileObj.name;
-
-              const rec: CloudBackupRecord = {
-                id: `sp_${f}_${fileObj.id || fileObj.name}`,
-                mentorId,
-                mentorName,
-                mentorRole: f === 'boss' ? 'مدیر ارشد' : 'استاد راهنما',
-                fileName: displayName,
-                folderPath: path,
-                createdAt: created,
-                persianDate: persianDt,
-                fileSizeBytes: fileObj.metadata?.size || 0,
-                fileSizeFormatted: formatBytes(fileObj.metadata?.size || 0),
-                totalRecords: 1,
-                studentCount: 1,
-                backupData: null,
-                supabaseUrl: supabase.storage.from(BUCKET_NAME).getPublicUrl(path).data.publicUrl
-              };
-              allRecordsMap.set(rec.id, rec);
-            }
-          }
-        });
-      }
-    } catch (err) {
-      console.warn(`Supabase list folder ${f} notice:`, err);
-    }
-  }
 
   let list = Array.from(allRecordsMap.values());
 
@@ -381,33 +278,34 @@ export async function fetchCloudBackups(
 }
 
 /**
- * Downloads full backup content from Supabase Storage if backupData is missing
+ * Downloads full backup content from Server Storage if backupData is missing
  */
 export async function downloadBackupPackage(record: CloudBackupRecord): Promise<any> {
   if (record.backupData) {
     return record.backupData;
   }
 
-  if (record.folderPath) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .download(record.folderPath);
+  try {
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')) : '';
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (!error && data) {
-        const text = await data.text();
-        return JSON.parse(text);
+    const res = await fetch(`/api/backups/${encodeURIComponent(record.id)}`, { headers });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.item?.backupData) {
+        return json.item.backupData;
       }
-    } catch (e) {
-      console.error('Error downloading from Supabase Storage:', e);
     }
+  } catch (e) {
+    console.error('Error downloading from Server Storage:', e);
   }
 
   throw new Error('محتوای فایل پشتیبان یافت نشد.');
 }
 
 /**
- * Deletes a backup record from Dedicated Server, Database & Supabase Storage
+ * Deletes a backup record from Dedicated Server & Local DB
  */
 export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promise<void> {
   // 1. Delete from Server Storage API
@@ -423,15 +321,6 @@ export async function deleteCloudBackup(backupRecord: CloudBackupRecord): Promis
     });
   } catch (e) {
     console.warn('Server backup deletion notice:', e);
-  }
-
-  // Delete from Supabase Storage
-  if (backupRecord.folderPath) {
-    try {
-      await supabase.storage.from(BUCKET_NAME).remove([backupRecord.folderPath]);
-    } catch (e) {
-      console.warn('Supabase storage delete error:', e);
-    }
   }
 
   // Delete from Local DB
