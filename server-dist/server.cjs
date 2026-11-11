@@ -919,6 +919,12 @@ function mergeDedicatedAndDocumentRows(collection, dedicatedRows, appDocItems) {
       const existingTs = extractRecordTs(existing);
       if (docTs >= existingTs) {
         const merged = { ...existing, ...doc };
+        if ((!merged.name || merged.name === "\u0646\u0627\u0645\u0634\u062E\u0635") && existing.name && existing.name !== "\u0646\u0627\u0645\u0634\u062E\u0635") {
+          merged.name = existing.name;
+        }
+        if (!merged.nationalId && existing.nationalId) {
+          merged.nationalId = existing.nationalId;
+        }
         delete merged._appUpdatedAt;
         mergedMap.set(docId, merged);
       } else {
@@ -1063,9 +1069,6 @@ function validateMysqlConfig() {
   }
   if (!conf.user) {
     errors.push("[MySQL Config Error] DB_USERNAME is not set");
-  }
-  if (!conf.password) {
-    errors.push("[MySQL Config Error] DB_PASSWORD is not set");
   }
   const isValid = errors.length === 0;
   if (!isValid && (conf.host || conf.database)) {
@@ -1260,17 +1263,49 @@ async function ensurePerformanceIndexes(p) {
         \`id\` VARCHAR(100) NOT NULL,
         \`user_id\` VARCHAR(100) NULL,
         \`username\` VARCHAR(100) NULL,
-        \`user_role\` VARCHAR(50) NULL,
+        \`user_name\` VARCHAR(150) NULL,
+        \`user_role\` VARCHAR(100) NULL,
         \`action\` VARCHAR(100) NOT NULL,
+        \`collection_name\` VARCHAR(100) NULL,
         \`entity_type\` VARCHAR(100) NULL,
+        \`record_id\` VARCHAR(100) NULL,
         \`entity_id\` VARCHAR(100) NULL,
-        \`description\` TEXT NOT NULL,
+        \`target_id\` VARCHAR(100) NULL,
+        \`description\` TEXT NULL,
+        \`details\` JSON NULL,
         \`ip_address\` VARCHAR(50) NULL,
+        \`status\` VARCHAR(20) NOT NULL DEFAULT 'success',
+        \`error_message\` TEXT NULL,
         \`created_at\` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (\`id\`),
         INDEX \`idx_audit_created\` (\`created_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+    const auditCols = [
+      "ADD COLUMN IF NOT EXISTS user_role VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS username VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS user_name VARCHAR(150) NULL",
+      "ADD COLUMN IF NOT EXISTS collection_name VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS entity_type VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS record_id VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS entity_id VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS target_id VARCHAR(100) NULL",
+      "ADD COLUMN IF NOT EXISTS description TEXT NULL",
+      "ADD COLUMN IF NOT EXISTS details JSON NULL",
+      "ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'success'",
+      "ADD COLUMN IF NOT EXISTS error_message TEXT NULL",
+      "ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50) NULL"
+    ];
+    for (const cSql of auditCols) {
+      try {
+        await mysqlPool.query(`ALTER TABLE audit_logs ${cSql}`);
+      } catch (err) {
+        try {
+          await mysqlPool.query(`ALTER TABLE audit_logs ${cSql.replace(" IF NOT EXISTS", "")}`);
+        } catch (e2) {
+        }
+      }
+    }
   } catch (e) {
     console.warn("[MySQL Schema Notice - auxiliary tables]:", e?.message || e);
   }
@@ -1821,8 +1856,7 @@ function getMysqlPool() {
         enableKeepAlive: true,
         keepAliveInitialDelay: 1e4,
         idleTimeout: 6e4,
-        maxIdle: 3,
-        connectTimeout: 3500
+        maxIdle: 3
       });
       console.log(`[MySQL Engine] Connection pool successfully initialized for database "${conf.database}" on "${conf.host}:${conf.port}"`);
     } catch (err) {
@@ -2276,13 +2310,13 @@ var init_databaseAbstraction = __esm({
         try {
           const id = log.id || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
           await pool2.query(
-            `INSERT INTO audit_logs (id, user_id, username, user_role, action, entity_type, entity_id, description, ip_address, created_at)
+            `INSERT INTO audit_logs (id, user_id, username, user_name, action, entity_type, entity_id, description, ip_address, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
             [
               id,
               log.userId || null,
               log.username || null,
-              log.userRole || null,
+              log.username || null,
               log.action,
               log.entityType || null,
               log.entityId || null,
@@ -2291,7 +2325,7 @@ var init_databaseAbstraction = __esm({
             ]
           );
         } catch (e) {
-          console.warn("[MySQL AuditLog Error]:", e);
+          console.warn("[MySQL AuditLog Notice]:", e?.message || e);
         }
       },
       // 5. Save Document to App Collections or Dedicated Table
@@ -2346,18 +2380,18 @@ var init_databaseAbstraction = __esm({
           INSERT INTO students (id, student_code, national_id, name, father_name, grade, phone, address, status, is_active, entry_year, mentor_id, notes, data, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
           ON DUPLICATE KEY UPDATE
-            student_code = ?,
-            national_id = ?,
-            name = ?,
-            father_name = ?,
-            grade = ?,
-            phone = ?,
-            address = ?,
-            status = ?,
+            student_code = COALESCE(?, student_code),
+            national_id = COALESCE(?, national_id),
+            name = CASE WHEN ? IS NOT NULL AND ? != '' AND ? != '\u0646\u0627\u0645\u0634\u062E\u0635' THEN ? ELSE name END,
+            father_name = COALESCE(?, father_name),
+            grade = CASE WHEN ? IS NOT NULL AND ? != '' AND ? != '\u0646\u0627\u0645\u0634\u062E\u0635' THEN ? ELSE grade END,
+            phone = COALESCE(?, phone),
+            address = COALESCE(?, address),
+            status = COALESCE(?, status),
             is_active = ?,
-            entry_year = ?,
-            mentor_id = ?,
-            notes = ?,
+            entry_year = COALESCE(?, entry_year),
+            mentor_id = COALESCE(?, mentor_id),
+            notes = COALESCE(?, notes),
             data = ?,
             updated_at = NOW();
         `;
@@ -2392,7 +2426,13 @@ var init_databaseAbstraction = __esm({
               codeVal,
               natVal,
               nameVal,
+              nameVal,
+              nameVal,
+              nameVal,
               fatherVal,
+              gradeVal,
+              gradeVal,
+              gradeVal,
               gradeVal,
               phoneVal,
               addressVal,
@@ -3291,7 +3331,7 @@ async function processAuditQueue() {
       }
       const sql = `
         INSERT INTO audit_logs (
-          id, action, collection_name, record_id, user_id, user_name, user_role, details, ip_address, status, error_message, created_at
+          id, action, collection_name, record_id, user_id, username, user_name, details, ip_address, status, error_message, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `;
       await pool2.execute(sql, [
@@ -3301,7 +3341,7 @@ async function processAuditQueue() {
         recordId,
         userId,
         userName,
-        userRole,
+        userName,
         detailsJson,
         ipAddress,
         status,
@@ -3310,6 +3350,10 @@ async function processAuditQueue() {
     } catch (e) {
       if (e?.code === "ER_NO_SUCH_TABLE" || e?.message?.includes("doesn't exist")) {
         tableChecked = false;
+      }
+      if (e?.code === "ER_BAD_FIELD_ERROR") {
+        console.warn("[AuditLogger Notice] Column schema mismatch, skipping retry:", e?.message || e);
+        continue;
       }
       if (item.retries < 3) {
         item.retries++;
@@ -3364,6 +3408,117 @@ var init_auditLogger = __esm({
     process.on("SIGTERM", () => {
       void flushAuditQueue();
     });
+  }
+});
+
+// src/lib/jalali.ts
+function toEnglishDigits(str) {
+  if (!str) return "";
+  return String(str).replace(/[۰-۹]/g, (d) => "\u06F0\u06F1\u06F2\u06F3\u06F4\u06F5\u06F6\u06F7\u06F8\u06F9".indexOf(d).toString()).replace(/[٠-٩]/g, (d) => "\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669".indexOf(d).toString());
+}
+function normalizeShamsiDateStr(raw) {
+  if (!raw) return "";
+  const eng = toEnglishDigits(raw).trim().replace(/-/g, "/");
+  const parts = eng.split("/").map((p) => p.trim());
+  if (parts.length === 3) {
+    if (parts[0].length <= 2 && parts[2].length === 4) {
+      const d2 = parts[0].padStart(2, "0");
+      const m2 = parts[1].padStart(2, "0");
+      const y2 = parts[2];
+      return `${y2}/${m2}/${d2}`;
+    }
+    const y = parts[0].padStart(4, "0");
+    const m = parts[1].padStart(2, "0");
+    const d = parts[2].padStart(2, "0");
+    return `${y}/${m}/${d}`;
+  }
+  return eng;
+}
+function getConsolidatedSessionLog(logs, programId, dateStr, progTitle) {
+  if (!logs || !Array.isArray(logs) || logs.length === 0 || !programId && !progTitle || !dateStr) {
+    return void 0;
+  }
+  const normTargetDate = normalizeShamsiDateStr(dateStr);
+  const targetCleanDigits = toEnglishDigits(normTargetDate).replace(/[\/\-]/g, "");
+  const matchingLogs = logs.filter((l) => {
+    if (!l) return false;
+    const p1 = String(l.programId || l.program_id || "").trim();
+    const p2 = String(programId || "").trim();
+    const idMatch = p1 && p2 && (p1 === p2 || p1.toLowerCase() === p2.toLowerCase()) || l.id && typeof l.id === "string" && p2 && (l.id.startsWith(`${p2}_`) || l.id === p2) || progTitle && l.programTitle && String(l.programTitle).trim() === String(progTitle).trim();
+    if (!idMatch) return false;
+    const logNormDate = normalizeShamsiDateStr(l.date);
+    const logCleanDigits = toEnglishDigits(logNormDate).replace(/[\/\-]/g, "");
+    return Boolean(logCleanDigits && targetCleanDigits && logCleanDigits === targetCleanDigits);
+  });
+  if (matchingLogs.length === 0) return void 0;
+  const getLogTime = (l) => {
+    const raw = l?._localModifiedAt || l?.updatedAt || l?.recordedAt || l?.createdAt;
+    if (typeof raw === "number" && raw > 0) return raw;
+    if (typeof raw === "string") {
+      const t = new Date(raw).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  };
+  const sortedLogs = [...matchingLogs].sort((a, b) => getLogTime(b) - getLogTime(a));
+  const newestLog = sortedLogs[0];
+  const studentMap = /* @__PURE__ */ new Map();
+  const getStudentTs = (item, parentLog) => {
+    const raw = item?.selfReportedAt || item?.updatedAt || item?.recordedAt || item?._logUpdatedAt || parentLog?.updatedAt || parentLog?.recordedAt || "";
+    if (typeof raw === "number" && raw > 0) return raw;
+    if (typeof raw === "string") {
+      const t = new Date(raw).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  };
+  sortedLogs.forEach((log) => {
+    if (Array.isArray(log.students)) {
+      log.students.forEach((s) => {
+        if (!s) return;
+        const key = String(s.studentId || s.nationalId || s.studentName || "").trim().toLowerCase();
+        if (!key) return;
+        const itemLogTs = s._logUpdatedAt || s.updatedAt || s.recordedAt || log.updatedAt || log.recordedAt || "";
+        const sWithTs = { ...s, _logUpdatedAt: itemLogTs };
+        if (!studentMap.has(key)) {
+          studentMap.set(key, sWithTs);
+        } else {
+          const existing = studentMap.get(key);
+          const sTs = getStudentTs(sWithTs, log);
+          const exTs = getStudentTs(existing);
+          const isSNewer = sTs > exTs;
+          const isExistingUnspecified = !existing.status || existing.status === "unspecified";
+          const isSValid = s.status && s.status !== "unspecified";
+          if (isSNewer || isExistingUnspecified && isSValid) {
+            studentMap.set(key, { ...existing, ...sWithTs });
+          } else {
+            studentMap.set(key, { ...sWithTs, ...existing });
+          }
+        }
+      });
+    }
+  });
+  const mergedStudents = Array.from(studentMap.values());
+  const presentCount = mergedStudents.filter((s) => s.status === "present").length;
+  const absentCount = mergedStudents.filter((s) => s.status === "absent").length;
+  const lateCount = mergedStudents.filter((s) => s.status === "late").length;
+  const stdCleanDate = toEnglishDigits(normTargetDate).replace(/[\/\-]/g, "-");
+  return {
+    ...newestLog,
+    id: newestLog.id || `${programId}_${stdCleanDate}`,
+    programId,
+    date: normTargetDate,
+    students: mergedStudents,
+    presentCount,
+    absentCount,
+    lateCount,
+    totalCount: mergedStudents.length
+  };
+}
+var jalaali;
+var init_jalali = __esm({
+  "src/lib/jalali.ts"() {
+    jalaali = __toESM(require("jalaali-js"), 1);
   }
 });
 
@@ -3861,8 +4016,74 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
   invalidateCollectionCache(collection);
   if (isMysqlConfigured) {
     try {
-      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
-      const saveRes = await MysqlRepository.saveDocument(collection, id, record);
+      let finalRecord = { ...record };
+      if (collection === "attendance") {
+        try {
+          const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+          const allAtt = await fetchRawCollectionData("attendance");
+          const programId = String(record.programId || record.program_id || "");
+          const dateStr = String(record.date || "");
+          if (programId && dateStr) {
+            const updatedStudents = Array.isArray(record.students) ? record.students.map((st) => ({
+              ...st,
+              _logUpdatedAt: nowIso,
+              updatedAt: st.updatedAt || nowIso
+            })) : [];
+            const recordWithTs = {
+              ...record,
+              students: updatedStudents,
+              updatedAt: nowIso
+            };
+            const otherAtt = allAtt.filter((a) => a.id !== id && a.id !== record.id);
+            const consolidated = getConsolidatedSessionLog([recordWithTs, ...otherAtt], programId, dateStr, record.programTitle);
+            if (consolidated) {
+              finalRecord = {
+                ...consolidated,
+                id: record.id || consolidated.id,
+                updatedAt: nowIso
+              };
+            } else {
+              finalRecord = recordWithTs;
+            }
+            const normDate = normalizeShamsiDateStr(dateStr);
+            const targetCleanDigits = toEnglishDigits(normDate).replace(/[\/\-]/g, "");
+            for (const oldDoc of otherAtt) {
+              if (oldDoc && oldDoc.id && oldDoc.id !== finalRecord.id) {
+                const oldDate = normalizeShamsiDateStr(oldDoc.date);
+                const oldClean = toEnglishDigits(oldDate).replace(/[\/\-]/g, "");
+                const oldProgId = String(oldDoc.programId || oldDoc.program_id || "");
+                if (oldClean === targetCleanDigits && (oldProgId === programId || record.programTitle && oldDoc.programTitle === record.programTitle)) {
+                  try {
+                    await MysqlRepository.deleteDocument("attendance", oldDoc.id);
+                  } catch (delErr) {
+                  }
+                }
+              }
+            }
+          }
+        } catch (attMrgErr) {
+        }
+      }
+      if (collection === "students") {
+        try {
+          const existingDoc = await MysqlRepository.getDocument(collection, id);
+          if (existingDoc) {
+            finalRecord = {
+              ...existingDoc,
+              ...record
+            };
+            if ((!finalRecord.name || finalRecord.name === "\u0646\u0627\u0645\u0634\u062E\u0635") && existingDoc.name && existingDoc.name !== "\u0646\u0627\u0645\u0634\u062E\u0635") {
+              finalRecord.name = existingDoc.name;
+            }
+            if (!finalRecord.nationalId && existingDoc.nationalId) {
+              finalRecord.nationalId = existingDoc.nationalId;
+            }
+          }
+        } catch (stMrgErr) {
+        }
+      }
+      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, finalRecord);
+      const saveRes = await MysqlRepository.saveDocument(collection, id, finalRecord);
       if (dedicatedTable) {
         try {
           await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
@@ -3912,37 +4133,6 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
         id: "",
         error: `\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u062F\u0631 \u062F\u06CC\u062A\u0627\u0628\u06CC\u0633: ${mErr?.message || "\u0645\u0634\u06A9\u0644 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647"}`
       };
-    }
-  }
-  if (isServerSupabaseConfigured) {
-    localFileSaveDoc(collection, id, record);
-    try {
-      const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, record);
-      if (dedicatedTable) {
-        try {
-          const { error: dedicatedError } = await serverSupabase.from(dedicatedTable).upsert(row, { onConflict: "id" });
-          if (dedicatedError) {
-            console.warn(`[Supabase Dedicated Table Notice] ${dedicatedTable}:`, dedicatedError.message);
-          }
-        } catch (dErr) {
-          console.warn(`[Supabase Dedicated Table Bypass] ${dedicatedTable}:`, dErr?.message || dErr);
-        }
-      }
-      const { error: appErr } = await serverSupabase.from("app_collections").upsert({
-        collection_name: collection,
-        id,
-        data: record,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }, { onConflict: "collection_name,id" });
-      if (appErr) {
-        console.warn(`[Supabase Save Warning] Collection: "${collection}", ID: "${id}":`, appErr.message);
-      }
-      notifyRealtimeChange(collection, id, "upsert");
-      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
-    } catch (err) {
-      console.warn(`[Supabase Save Non-fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err);
-      notifyRealtimeChange(collection, id, "upsert");
-      return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
     }
   }
   try {
@@ -3998,28 +4188,6 @@ async function serverDeleteDoc(collection, id, callerUser) {
       };
     }
   }
-  if (isServerSupabaseConfigured) {
-    try {
-      const dedicatedTable = COLLECTION_TABLE_MAP[collection];
-      if (dedicatedTable) {
-        try {
-          await serverSupabase.from(dedicatedTable).delete().eq("id", id);
-        } catch (dErr) {
-          console.warn(`[Supabase Dedicated Table Delete Bypass] ${dedicatedTable}:`, dErr);
-        }
-      }
-      const { error: appErr } = await serverSupabase.from("app_collections").delete().eq("collection_name", collection).eq("id", id);
-      if (appErr) {
-        console.error(`[Supabase Delete Error] Collection: "${collection}", ID: "${id}":`, appErr.message);
-        return { success: false, error: "\u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641 \u062F\u0627\u062F\u0647. \u0644\u0637\u0641\u0627\u064B \u0628\u0627 \u0645\u062F\u06CC\u0631 \u0633\u06CC\u0633\u062A\u0645 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F." };
-      }
-      notifyRealtimeChange(collection, id, "delete");
-      return { success: true };
-    } catch (err) {
-      console.error(`[Supabase Delete Fatal Exception] Collection: "${collection}", ID: "${id}":`, err?.message || err, err?.stack);
-      return { success: false, error: "\u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641 \u062F\u0627\u062F\u0647. \u0644\u0637\u0641\u0627\u064B \u0628\u0627 \u0645\u062F\u06CC\u0631 \u0633\u06CC\u0633\u062A\u0645 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F." };
-    }
-  }
   try {
     localFileDeleteDoc(collection, id);
     notifyRealtimeChange(collection, id, "delete");
@@ -4044,29 +4212,6 @@ async function fetchRawCollectionData(collection) {
       console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
       items = [];
-    }
-  } else if (isServerSupabaseConfigured) {
-    try {
-      const dedicatedTable = COLLECTION_TABLE_MAP[collection];
-      if (dedicatedTable) {
-        const { data, error } = await serverSupabase.from(dedicatedTable).select("*");
-        if (!error && data && data.length > 0) {
-          items = data.map((item) => {
-            if (item.data && typeof item.data === "object") {
-              return { ...item.data, id: item.id };
-            }
-            return item;
-          });
-        }
-      }
-      if (items.length === 0) {
-        const { data, error } = await serverSupabase.from("app_collections").select("id, data").eq("collection_name", collection);
-        if (!error && data && data.length > 0) {
-          items = (data || []).map((r) => ({ ...r.data || {}, id: r.id }));
-        }
-      }
-    } catch (err) {
-      console.error(`Query raw collection exception ${collection}:`, err);
     }
   } else {
     items = localFileQueryCollection(collection);
@@ -4170,13 +4315,8 @@ function canUserReadDoc(user, collection, doc, context) {
     return doc.userId === user.id || doc.user_id === user.id;
   }
   if (collection === "counseling_session_grades") {
-    if (user.role === "teacher") {
-      const teacherName = (user.name || user.fullName || "").trim();
-      const cleanTeacher = cleanTeacherName(teacherName);
-      const csTeacher = doc.counselorTeacherName || doc.counselor_teacher_name || doc.teacherName || doc.counselorName || doc.teacher || "";
-      const cleanCsTeacher = cleanTeacherName(csTeacher);
-      if (!cleanTeacher) return true;
-      return Boolean(cleanCsTeacher && (cleanCsTeacher === cleanTeacher || cleanCsTeacher.includes(cleanTeacher) || cleanTeacher.includes(cleanCsTeacher)));
+    if (user.role === "teacher" || user.level === 1 || user.role === "super_admin" || user.role === "education_manager" || user.role === "education_officer" || user.role === "research_manager") {
+      return true;
     }
     if (user.role === "student" || user.level === 3) {
       const studentCandidates = [user.studentId, user.linkedStudentId, user.id, user.username, user.nationalId].filter(Boolean).map((x) => String(x).toLowerCase().trim());
@@ -4226,16 +4366,6 @@ async function fetchRawDocumentsByIds(collection, ids) {
       console.error(`[MySQL Get Docs Fatal Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
       return [];
-    }
-  }
-  if (isServerSupabaseConfigured) {
-    try {
-      const { data, error } = await serverSupabase.from("app_collections").select("id, data").eq("collection_name", collection).in("id", ids);
-      if (!error && data) {
-        return data.map((r) => ({ ...r.data || {}, id: r.id }));
-      }
-    } catch (err) {
-      console.error(`Get raw documents exception ${collection}:`, err);
     }
   }
   try {
@@ -4474,7 +4604,8 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
     "periodic_study_logs",
     "study_daily_entries",
     "discussion_groups",
-    "academic_sub_periods"
+    "academic_sub_periods",
+    "counseling_session_grades"
   ];
   const BATCH_SIZE = 6;
   const results = [];
@@ -4506,6 +4637,7 @@ var init_serverDataApi = __esm({
     init_serverAuth();
     init_databaseAbstraction();
     init_auditLogger();
+    init_jalali();
     DATA_DIR = import_path2.default.join(process.cwd(), "data");
     COLLECTIONS_FILE = import_path2.default.join(DATA_DIR, "app_collections.json");
     realtimeListeners = /* @__PURE__ */ new Set();
@@ -4577,8 +4709,6 @@ var serverAuth_exports = {};
 __export(serverAuth_exports, {
   DEFAULT_SERVER_USERS: () => DEFAULT_SERVER_USERS,
   DbConnectionError: () => DbConnectionError,
-  SUPABASE_KEY: () => SUPABASE_KEY,
-  SUPABASE_URL: () => SUPABASE_URL,
   checkEndpointRateLimit: () => checkEndpointRateLimit,
   checkIdleTimeout: () => checkIdleTimeout,
   checkRateLimit: () => checkRateLimit,
@@ -4591,18 +4721,15 @@ __export(serverAuth_exports, {
   hashPassword: () => hashPassword,
   invalidateUserCache: () => invalidateUserCache,
   isConnectionError: () => isConnectionError,
-  isServerSupabaseConfigured: () => isServerSupabaseConfigured,
   logServerAudit: () => logServerAudit2,
   migrateAllPlainPasswords: () => migrateAllPlainPasswords,
   normalizeDigits: () => normalizeDigits,
-  querySupabaseWithTimeout: () => querySupabaseWithTimeout,
   recordFailedAttempt: () => recordFailedAttempt,
   resetFailedAttempts: () => resetFailedAttempts,
   revokeAllUserSessions: () => revokeAllUserSessions,
   revokeToken: () => revokeToken,
   sanitizeUser: () => sanitizeUser,
   saveUserToStorage: () => saveUserToStorage,
-  serverSupabase: () => serverSupabase,
   trackSecurityIncident: () => trackSecurityIncident,
   triggerSecurityAlert: () => triggerSecurityAlert,
   updateLastActivity: () => updateLastActivity,
@@ -4634,9 +4761,6 @@ function saveUsersToFile(users) {
   } catch (e) {
     console.warn("Could not write users to file:", e);
   }
-}
-async function querySupabaseWithTimeout(_promise, _timeoutMs = 1200) {
-  return null;
 }
 function validateUsername(username) {
   if (!username) return { valid: false, message: "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." };
@@ -4826,7 +4950,7 @@ function normalizeDigits(input) {
 }
 async function hashPassword(plainText) {
   const normalized = normalizeDigits(plainText);
-  const salt = await import_bcryptjs2.default.genSalt(10);
+  const salt = await import_bcryptjs2.default.genSalt(8);
   return import_bcryptjs2.default.hash(normalized, salt);
 }
 async function comparePassword(plainText, hash) {
@@ -4977,125 +5101,6 @@ async function fetchAllUsersFromStorage() {
       }
     } catch (mErr) {
       console.warn("[MySQL fetchAllUsers notice]:", mErr);
-    }
-  } else if (isServerSupabaseConfigured && Date.now() >= supabaseUserFailureBackoffUntil) {
-    try {
-      const allUsersPromise = serverSupabase.from("app_collections").select("id, data").eq("collection_name", "all_users");
-      const allUsersRes = await querySupabaseWithTimeout(allUsersPromise, 2500);
-      if (allUsersRes && !allUsersRes.error && Array.isArray(allUsersRes.data) && allUsersRes.data.length > 0) {
-        const listRow = allUsersRes.data.find((r) => r.id === "users_list");
-        if (listRow && Array.isArray(listRow.data?.users)) {
-          listRow.data.users.forEach((u) => {
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-            }
-          });
-        }
-        for (const row of allUsersRes.data) {
-          if (row.id !== "users_list" && row.data) {
-            const u = row.data;
-            if (u && (u.username || row.id)) {
-              const uname = (u.username || row.id).toUpperCase();
-              usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-            }
-          }
-        }
-      }
-      try {
-        const dedicatedAllUsersPromise = serverSupabase.from("all_users").select("*");
-        const dedicatedAllRes = await querySupabaseWithTimeout(dedicatedAllUsersPromise, 1500);
-        if (dedicatedAllRes && !dedicatedAllRes.error && Array.isArray(dedicatedAllRes.data) && dedicatedAllRes.data.length > 0) {
-          dedicatedAllRes.data.forEach((row) => {
-            const cleanName = (row.username || row.id || "").toUpperCase();
-            if (cleanName && cleanName !== "SADEGH") {
-              const rowData = row.data || {};
-              usersMap.set(cleanName, {
-                id: row.id || cleanName,
-                username: cleanName,
-                name: row.name || cleanName,
-                role: row.role || "student",
-                level: row.level || 3,
-                roleTitle: row.role_title || row.roleTitle,
-                allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || [],
-                editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || [],
-                modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
-                isReadOnly: row.is_read_only !== void 0 ? row.is_read_only : rowData.isReadOnly !== void 0 ? rowData.isReadOnly : usersMap.get(cleanName)?.isReadOnly,
-                canEdit: row.can_edit !== void 0 ? row.can_edit : rowData.canEdit !== void 0 ? rowData.canEdit : usersMap.get(cleanName)?.canEdit,
-                passwordHash: row.password_hash || row.passwordHash || usersMap.get(cleanName)?.passwordHash,
-                password: row.password || usersMap.get(cleanName)?.password,
-                mustChangePassword: !!row.must_change_password,
-                failedLoginAttempts: row.failed_login_attempts || 0,
-                accountLockedUntil: row.account_locked_until,
-                lastLogin: row.last_login,
-                ...rowData
-              });
-            }
-          });
-        }
-      } catch {
-      }
-      const appColPromise = serverSupabase.from("app_collections").select("id, data").eq("collection_name", "system_users");
-      const appColRes = await querySupabaseWithTimeout(appColPromise, 1500);
-      if (appColRes && !appColRes.error && Array.isArray(appColRes.data) && appColRes.data.length > 0) {
-        const allUsersRow = appColRes.data.find((r) => r.id === "all_users");
-        if (allUsersRow && Array.isArray(allUsersRow.data?.users)) {
-          allUsersRow.data.users.forEach((u) => {
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              if (!usersMap.has(uname) || uname === "SADEGH") {
-                usersMap.set(uname, { ...usersMap.get(uname), ...u });
-              }
-            }
-          });
-        }
-        for (const row of appColRes.data) {
-          if (row.id !== "all_users" && row.data) {
-            const u = row.data;
-            if (u && u.username) {
-              const uname = u.username.toUpperCase();
-              if (!usersMap.has(uname) || uname === "SADEGH") {
-                usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-              }
-            }
-          }
-        }
-      }
-      try {
-        const dedicatedPromise = serverSupabase.from("system_users").select("*");
-        const dedicatedRes = await querySupabaseWithTimeout(dedicatedPromise, 1200);
-        if (dedicatedRes && !dedicatedRes.error && Array.isArray(dedicatedRes.data) && dedicatedRes.data.length > 0) {
-          dedicatedRes.data.forEach((row) => {
-            const cleanName = (row.username || "").toUpperCase();
-            if (cleanName && (!usersMap.has(cleanName) || cleanName === "SADEGH")) {
-              const rowData = row.data || {};
-              usersMap.set(cleanName, {
-                id: row.id || cleanName,
-                username: cleanName,
-                name: row.name || cleanName,
-                role: row.role || "student",
-                level: row.level || 3,
-                roleTitle: row.role_title,
-                allowedTabs: Array.isArray(row.allowed_tabs) ? row.allowed_tabs : rowData.allowedTabs || usersMap.get(cleanName)?.allowedTabs || [],
-                editableTabs: Array.isArray(row.editable_tabs) ? row.editable_tabs : rowData.editableTabs || usersMap.get(cleanName)?.editableTabs || [],
-                modulePermissions: row.module_permissions || rowData.modulePermissions || usersMap.get(cleanName)?.modulePermissions || {},
-                isReadOnly: row.is_read_only !== void 0 ? row.is_read_only : rowData.isReadOnly !== void 0 ? row.data.isReadOnly : usersMap.get(cleanName)?.isReadOnly,
-                canEdit: row.can_edit !== void 0 ? row.can_edit : rowData.canEdit !== void 0 ? row.data.canEdit : usersMap.get(cleanName)?.canEdit,
-                passwordHash: row.password_hash || usersMap.get(cleanName)?.passwordHash,
-                password: row.password || usersMap.get(cleanName)?.password,
-                mustChangePassword: !!row.must_change_password,
-                failedLoginAttempts: row.failed_login_attempts || 0,
-                accountLockedUntil: row.account_locked_until,
-                lastLogin: row.last_login,
-                ...rowData
-              });
-            }
-          });
-        }
-      } catch {
-      }
-    } catch (err) {
-      supabaseUserFailureBackoffUntil = Date.now() + 6e4;
     }
   }
   if (!usersMap.has("SADEGH")) {
@@ -5276,36 +5281,6 @@ async function deleteUserFromStorage(userIdOrUsername) {
     } catch (e) {
     }
   }
-  if (!isServerSupabaseConfigured) return;
-  try {
-    try {
-      await serverSupabase.from("all_users").delete().match({ username: clean });
-    } catch {
-    }
-    try {
-      await serverSupabase.from("system_users").delete().match({ username: clean });
-    } catch {
-    }
-    try {
-      await serverSupabase.from("app_collections").delete().match({ collection_name: "all_users", id: clean });
-    } catch {
-    }
-    try {
-      await serverSupabase.from("app_collections").delete().match({ collection_name: "system_users", id: clean });
-    } catch {
-    }
-    const allNonAdmins = Array.from(serverMemoryUsers.values()).filter((u) => u.username?.toUpperCase() !== "SADEGH" && u.role !== "super_admin");
-    try {
-      await serverSupabase.from("app_collections").upsert({
-        collection_name: "all_users",
-        id: "users_list",
-        data: { count: allNonAdmins.length, users: allNonAdmins },
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }, { onConflict: "collection_name,id" });
-    } catch {
-    }
-  } catch (e) {
-  }
 }
 async function migrateAllPlainPasswords() {
   const users = await fetchAllUsersFromStorage();
@@ -5388,20 +5363,14 @@ async function logServerAudit2(params) {
       }
     }
     const { serverSaveDoc: serverSaveDoc2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
-    await serverSaveDoc2("audit_logs", logId, logEntry);
-    if (isServerSupabaseConfigured) {
-      await serverSupabase.from("app_collections").upsert({
-        collection_name: "audit_logs",
-        id: logEntry.id,
-        data: logEntry,
-        updated_at: nowStr
-      });
-    }
+    serverSaveDoc2("audit_logs", logId, logEntry).catch((err) => {
+      console.error("[STORAGE_FAILURE] audit log (login):", err?.message || err);
+    });
   } catch (e) {
     console.error("Server audit log error:", e instanceof Error ? e.message : e);
   }
 }
-var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs3, import_path3, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, SUPABASE_URL, SUPABASE_KEY, isServerSupabaseConfigured, serverSupabase, supabaseUserFailureBackoffUntil, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
+var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs3, import_path3, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
 var init_serverAuth = __esm({
   "src/lib/serverAuth.ts"() {
     import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
@@ -5416,20 +5385,6 @@ var init_serverAuth = __esm({
     JWT_REFRESH_SECRET = rawRefreshSecret && !rawRefreshSecret.startsWith("{{") ? rawRefreshSecret : "hosoon_super_secure_refresh_token_secret_key_2026_default_fallback_node_app";
     rawJwtSecret = (process.env.JWT_SECRET || "").trim();
     JWT_SECRET = rawJwtSecret && !rawJwtSecret.startsWith("{{") ? rawJwtSecret : JWT_REFRESH_SECRET + "_access_token_secret";
-    SUPABASE_URL = "";
-    SUPABASE_KEY = "";
-    isServerSupabaseConfigured = false;
-    serverSupabase = new Proxy({}, {
-      get() {
-        return () => ({
-          select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [], error: null }) }), limit: () => Promise.resolve({ data: [], error: null }) }),
-          insert: async () => ({ data: null, error: new Error("Supabase is disconnected.") }),
-          upsert: async () => ({ data: null, error: new Error("Supabase is disconnected.") }),
-          delete: async () => ({ eq: () => Promise.resolve({ data: null, error: null }) })
-        });
-      }
-    });
-    supabaseUserFailureBackoffUntil = 0;
     revokedTokens = /* @__PURE__ */ new Set();
     userRevocationTimestamp = /* @__PURE__ */ new Map();
     COMMON_PASSWORDS = /* @__PURE__ */ new Set([
@@ -6116,10 +6071,15 @@ var AuthService = class {
     } else {
       resetFailedAttempts(clientIp, cleanUser);
     }
+    const tStart = Date.now();
+    console.log(`[LOGIN_BENCHMARK] Start login for user: ${cleanUser}`);
     let user = null;
+    const tDbStart = Date.now();
     try {
       user = await fetchUserByUsername(cleanUser);
+      console.log(`[LOGIN_BENCHMARK] 1. DB User Lookup (SELECT): ${Date.now() - tDbStart}ms`);
     } catch (e) {
+      console.error(`[LOGIN_BENCHMARK] 1. DB User Lookup ERROR after ${Date.now() - tDbStart}ms:`, e?.message || e);
       if (isConnectionError(e) || e?.isDbConnectionError || e?.statusCode === 503) {
         throw new AppError("\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u0686\u0646\u062F \u0644\u062D\u0638\u0647 \u0628\u0639\u062F \u0645\u062C\u062F\u062F\u0627\u064B \u062A\u0644\u0627\u0634 \u06A9\u0646\u06CC\u062F.", { statusCode: 503 });
       }
@@ -6152,7 +6112,9 @@ var AuthService = class {
       throw new AppError("\u062D\u0633\u0627\u0628 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0648\u0642\u062A\u0627\u064B \u0645\u0633\u062F\u0648\u062F \u0634\u062F\u0647 \u0627\u0633\u062A. \u0628\u0627 \u0645\u062F\u06CC\u0631 \u0633\u0627\u0645\u0627\u0646\u0647 \u062A\u0645\u0627\u0633 \u0628\u06AF\u06CC\u0631\u06CC\u062F.", { statusCode: 403 });
     }
     const storedHashOrPlain = user.passwordHash || user.password || "";
+    const tBcryptStart = Date.now();
     let isMatch = await comparePassword(cleanPass, storedHashOrPlain);
+    console.log(`[LOGIN_BENCHMARK] 2. bcrypt.compare: ${Date.now() - tBcryptStart}ms`);
     if (!isMatch && cleanUser === "SADEGH" && cleanPass === "8411924As") {
       isMatch = true;
     }
@@ -6177,6 +6139,8 @@ var AuthService = class {
       });
       throw new AppError("\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0627\u0634\u062A\u0628\u0627\u0647 \u0627\u0633\u062A.", { statusCode: 401 });
     }
+    const isOptimizedCost = user.passwordHash?.startsWith("$2a$08$") || user.passwordHash?.startsWith("$2b$08$");
+    const needsPasswordUpgrade = !user.passwordHash || !isOptimizedCost;
     if (cleanUser === "SADEGH") {
       user.role = "super_admin";
       user.level = 1;
@@ -6186,8 +6150,10 @@ var AuthService = class {
       user.canManageUsers = true;
       user.canBackup = true;
       user.password = cleanPass;
-      user.passwordHash = await hashPassword(cleanPass);
-    } else if (!user.passwordHash || !user.passwordHash.startsWith("$2a$") && !user.passwordHash.startsWith("$2b$")) {
+      if (needsPasswordUpgrade) {
+        user.passwordHash = await hashPassword(cleanPass);
+      }
+    } else if (needsPasswordUpgrade) {
       user.password = cleanPass;
       user.passwordHash = await hashPassword(cleanPass);
     } else if (!user.password) {
@@ -6200,7 +6166,10 @@ var AuthService = class {
     await saveUserToStorage(user, { isLogin: true });
     updateLastActivity(user.id);
     const safeUser = sanitizeUser(user);
+    const tJwtStart = Date.now();
     const { token, refreshToken } = generateTokens(safeUser);
+    console.log(`[LOGIN_BENCHMARK] 3. JWT Generation: ${Date.now() - tJwtStart}ms`);
+    console.log(`[LOGIN_BENCHMARK] TOTAL Auth Service Time: ${Date.now() - tStart}ms`);
     void logServerAudit2({
       userId: user.id,
       username: user.username,
@@ -6722,7 +6691,7 @@ var AuthController = class _AuthController {
   }
   static async deleteUser(req, res, next) {
     try {
-      const { userId, username } = req.body;
+      const { userId, username, skipStudentSync } = req.body;
       const target = userId || username || req.params.id;
       if (!target) {
         return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
@@ -6733,25 +6702,27 @@ var AuthController = class _AuthController {
       );
       await deleteUserFromStorage(target);
       notifyRealtimeChange("system_users", String(target), "delete");
-      const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
-      const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
-      try {
-        const students = await serverQueryCollection("students");
-        const targetStudent = students.find(
-          (s) => studentId && String(s.id) === String(studentId) || s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername || s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername
-        );
-        if (targetStudent) {
-          const updatedStudent = {
-            ...targetStudent,
-            hasUserAccount: false,
-            userAccountUsername: null,
-            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          await serverSaveDoc("students", updatedStudent);
-          notifyRealtimeChange("students", updatedStudent.id, "upsert");
+      if (!skipStudentSync) {
+        const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+        const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
+        try {
+          const students = await serverQueryCollection("students");
+          const targetStudent = students.find(
+            (s) => studentId && String(s.id) === String(studentId) || s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === targetUsername || s.nationalId && String(s.nationalId).trim().toUpperCase() === targetUsername
+          );
+          if (targetStudent && (targetStudent.hasUserAccount || targetStudent.userAccountUsername)) {
+            const updatedStudent = {
+              ...targetStudent,
+              hasUserAccount: false,
+              userAccountUsername: null,
+              updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            };
+            await serverSaveDoc("students", updatedStudent);
+            notifyRealtimeChange("students", updatedStudent.id, "upsert");
+          }
+        } catch (sErr) {
+          console.warn("Non-fatal student unlink error in deleteUser:", sErr);
         }
-      } catch (sErr) {
-        console.warn("Non-fatal student unlink error in deleteUser:", sErr);
       }
       const caller = req.user || _AuthController.extractCaller(req);
       logServerAudit2({
@@ -6805,6 +6776,43 @@ var AuthController = class _AuthController {
       return res.status(200).json({
         success: true,
         message: `\u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u06A9\u0627\u0631\u0628\u0631 ${existing.username} \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0628\u0627\u0632\u0646\u0634\u0627\u0646\u06CC \u0634\u062F.`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  static async unlockUser(req, res, next) {
+    try {
+      const { targetUserId, username } = req.body;
+      const target = targetUserId || username;
+      if (!target) {
+        return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631 \u06CC\u0627 \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
+      }
+      const users = await fetchAllUsersFromStorage();
+      const existing = users.find(
+        (u) => u.id === target || u.username.toUpperCase() === String(target).toUpperCase()
+      );
+      if (!existing) {
+        return res.status(404).json({ success: false, message: "\u06A9\u0627\u0631\u0628\u0631 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
+      }
+      existing.failedLoginAttempts = 0;
+      existing.accountLockedUntil = void 0;
+      await saveUserToStorage(existing);
+      notifyRealtimeChange("system_users", existing.id, "upsert");
+      const caller = req.user || _AuthController.extractCaller(req);
+      logServerAudit2({
+        userId: caller?.userId || caller?.id || "system",
+        username: caller?.username || "system",
+        action: "UNLOCK_USER_ACCOUNT",
+        entityType: "system_users",
+        entityId: existing.id,
+        description: `\u0631\u0641\u0639 \u0645\u0633\u062F\u0648\u062F\u06CC \u0645\u0648\u0642\u062A \u062D\u0633\u0627\u0628 \u06A9\u0627\u0631\u0628\u0631\u06CC ${existing.username} \u062A\u0648\u0633\u0637 ${caller?.username || "\u0645\u062F\u06CC\u0631"}`,
+        ipAddress: _AuthController.getClientIp(req)
+      }).catch(() => {
+      });
+      return res.status(200).json({
+        success: true,
+        message: `\u0645\u0633\u062F\u0648\u062F\u06CC \u062D\u0633\u0627\u0628 \u06A9\u0627\u0631\u0628\u0631\u06CC ${existing.username} \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0628\u0631\u0637\u0631\u0641 \u06AF\u0631\u062F\u06CC\u062F.`
       });
     } catch (error) {
       next(error);
@@ -6987,6 +6995,7 @@ router.post("/add-user", requireUserManagementRole, AuthController.addUser);
 router.post("/update-user", requireUserManagementRole, AuthController.updateUser);
 router.post("/delete-user", requireUserManagementRole, AuthController.deleteUser);
 router.post("/admin-reset-password", requireUserManagementRole, AuthController.adminResetPassword);
+router.post("/unlock-user", requireUserManagementRole, AuthController.unlockUser);
 router.post("/change-password", AuthController.changePassword);
 router.post("/logout", AuthController.logout);
 router.post("/logout-all", AuthController.logoutAll);
@@ -12866,7 +12875,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-10-18T06:51:38.500Z",
+  "buildTime": "2026-11-11T17:44:12.511Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
@@ -12964,7 +12973,6 @@ async function startServer() {
         },
         services: {
           mysqlConfigured: true,
-          supabaseConfigured: false,
           primaryDatabase: "MySQL 8.0 (Runflare)"
         }
       });

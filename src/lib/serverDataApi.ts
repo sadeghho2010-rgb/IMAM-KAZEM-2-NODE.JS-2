@@ -6,7 +6,7 @@ import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
 
-// Local Server File-based Storage (Fallback when neither MySQL nor Supabase is configured)
+// Local Server File-based Storage (Fallback when MySQL is not configured)
 const DATA_DIR = path.join(process.cwd(), 'data');
 const COLLECTIONS_FILE = path.join(DATA_DIR, 'app_collections.json');
 

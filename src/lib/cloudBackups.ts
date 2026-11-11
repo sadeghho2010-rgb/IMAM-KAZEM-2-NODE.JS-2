@@ -105,7 +105,7 @@ export function stripPhotosFromBackupPackage(backupPackage: any): any {
 }
 
 /**
- * Uploads a backup package to Supabase Storage & Firestore / Local DB
+ * Uploads a backup package to Dedicated Server Storage & Local DB
  */
 export async function uploadBackupToCloud(
   mentorId: string,
@@ -133,8 +133,6 @@ export async function uploadBackupToCloud(
 
   const totalRecords = sanitizedPackage._meta?.totalRecords || 
     (Array.isArray(sanitizedPackage.students) ? sanitizedPackage.students.length : 1);
-
-  let supabasePublicUrl = '';
 
   // 1. Try saving directly to Server Backups (/api/backups)
   let savedOnServer = false;
@@ -184,8 +182,7 @@ export async function uploadBackupToCloud(
     fileSizeFormatted: formatBytes(fileSizeBytes),
     totalRecords,
     studentCount,
-    backupData: backupPackage,
-    supabaseUrl: supabasePublicUrl
+    backupData: backupPackage
   };
 
   // 2. Sync metadata via Server Data API if not already persisted
