@@ -1,63 +1,8 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
 import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
-
-// Local Server File-based Storage (Fallback when MySQL is not configured)
-const DATA_DIR = path.join(process.cwd(), 'data');
-const COLLECTIONS_FILE = path.join(DATA_DIR, 'app_collections.json');
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
-  }
-}
-
-function loadLocalFileCollections(): Record<string, Record<string, any>> {
-  ensureDataDir();
-  if (!fs.existsSync(COLLECTIONS_FILE)) {
-    return {};
-  }
-  try {
-    const raw = fs.readFileSync(COLLECTIONS_FILE, 'utf-8');
-    return JSON.parse(raw) || {};
-  } catch (e) {
-    return {};
-  }
-}
-
-function saveLocalFileCollections(store: Record<string, Record<string, any>>) {
-  ensureDataDir();
-  try {
-    fs.writeFileSync(COLLECTIONS_FILE, JSON.stringify(store, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('[FileStore Write Error]:', e);
-  }
-}
-
-function localFileSaveDoc(collection: string, id: string, record: any) {
-  const store = loadLocalFileCollections();
-  if (!store[collection]) store[collection] = {};
-  store[collection][id] = record;
-  saveLocalFileCollections(store);
-}
-
-function localFileDeleteDoc(collection: string, id: string) {
-  const store = loadLocalFileCollections();
-  if (store[collection] && store[collection][id]) {
-    delete store[collection][id];
-    saveLocalFileCollections(store);
-  }
-}
-
-function localFileQueryCollection(collection: string): any[] {
-  const store = loadLocalFileCollections();
-  if (!store[collection]) return [];
-  return Object.values(store[collection]);
-}
 
 // Real-time synchronization event bus & change log buffer
 export interface ServerChangeEvent {
@@ -816,17 +761,13 @@ export async function serverSaveDoc(
     }
   }
 
-
-
-  // 3. Fallback: Local JSON File Storage
-  try {
-    localFileSaveDoc(collection, id, record);
-    notifyRealtimeChange(collection, id, 'upsert');
-    return { success: true, id, item: record, affectedRows: 1, changedRows: 1 } as any;
-  } catch (err: any) {
-    console.error(`[FileStore Save Error] Collection: "${collection}", ID: "${id}":`, err);
-    return { success: false, id: '', error: 'خطا در ذخیره‌سازی فایل محلی.' };
-  }
+  // Fail-Fast: MySQL is the sole authoritative persistence store
+  console.error(`[Data Layer Fatal] Database unavailable or MySQL unconfigured for collection: "${collection}", ID: "${id}"`);
+  return {
+    success: false,
+    id: '',
+    error: 'پایگاه داده MySQL در دسترس نیست. سرویس ذخیره‌سازی ابری موقتاً پاسخگو نیست (503 Service Unavailable).'
+  };
 }
 
 // Server CRUD Handler: Delete Document
@@ -843,6 +784,9 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
 
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
+
+      // Invalidate L1 collection cache immediately
+      invalidateCollectionCache(collection);
 
       // Log Audit Entry asynchronously (non-blocking) with full deleted record for 3-week rollback capability
       logAudit({
@@ -882,17 +826,12 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
     }
   }
 
-
-
-  // 3. Fallback: Local JSON File Storage
-  try {
-    localFileDeleteDoc(collection, id);
-    notifyRealtimeChange(collection, id, 'delete');
-    return { success: true };
-  } catch (err: any) {
-    console.error(`[FileStore Delete Error] Collection: "${collection}", ID: "${id}":`, err);
-    return { success: false, error: 'خطا در حذف از فایل محلی.' };
-  }
+  // Fail-Fast: MySQL is the sole authoritative persistence store
+  console.error(`[Data Layer Fatal] Database unavailable or MySQL unconfigured for delete collection: "${collection}", ID: "${id}"`);
+  return {
+    success: false,
+    error: 'پایگاه داده MySQL در دسترس نیست. عملیات حذف امکان‌پذیر نمی‌باشد (503 Service Unavailable).'
+  };
 }
 
 // Internal helper to retrieve raw collection data without filtering
@@ -905,7 +844,7 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
 
   let items: any[] = [];
 
-  // 1. If MySQL is configured, fetch from MySQL only
+  // Fetch exclusively from MySQL repository
   if (isMysqlConfigured) {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
@@ -915,10 +854,9 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
       items = [];
     }
-
   } else {
-    // 3. Fallback: Local JSON File Storage
-    items = localFileQueryCollection(collection);
+    console.error(`[MySQL Unconfigured Error]: Cannot fetch collection "${collection}" because MySQL is not configured.`);
+    items = [];
   }
 
   rawCollectionCache.set(collection, { data: items, timestamp: now });
@@ -1133,22 +1071,7 @@ async function fetchRawDocumentsByIds(collection: string, ids: string[]): Promis
     }
   }
 
-
-
-  // 3. Fallback: Local JSON File Storage
-  try {
-    const store = loadLocalFileCollections();
-    const colDocs = store[collection] || {};
-    const results: any[] = [];
-    for (const id of ids) {
-      if (colDocs[id]) {
-        results.push(colDocs[id]);
-      }
-    }
-    return results;
-  } catch (err) {
-    return [];
-  }
+  return [];
 }
 
 // Server CRUD Handler: Get Single Document from Candidate IDs with Strict Role-Based Filtering

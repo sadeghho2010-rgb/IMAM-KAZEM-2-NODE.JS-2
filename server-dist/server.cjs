@@ -382,8 +382,8 @@ function requestLogger(req, res, next) {
   res.setHeader("X-Request-Id", requestId);
   res.on("finish", () => {
     const duration = Date.now() - start;
-    const path8 = req.originalUrl || req.url;
-    const message = `${req.method} ${path8} ${res.statusCode} - ${duration}ms`;
+    const path7 = req.originalUrl || req.url;
+    const message = `${req.method} ${path7} ${res.statusCode} - ${duration}ms`;
     if (res.statusCode >= 500) {
       logger.error(message, { requestId, ip: req.ip, duration });
     } else if (res.statusCode >= 400) {
@@ -397,11 +397,11 @@ function requestLogger(req, res, next) {
           mod.recordMonitoringEvent({
             eventType: "slow_request",
             severity: "warn",
-            routePath: path8,
+            routePath: path7,
             statusCode: res.statusCode,
             durationMs: duration,
             requestId,
-            shortMessage: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u06A9\u0646\u062F: ${req.method} ${path8} (${duration}ms)`
+            shortMessage: `\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u06A9\u0646\u062F: ${req.method} ${path7} (${duration}ms)`
           });
         }).catch(() => {
         });
@@ -1463,11 +1463,11 @@ async function ensurePerformanceIndexes(p) {
     console.warn("[MySQL Startup Notice - SADEGH Seed]:", adminSeedErr?.message || adminSeedErr);
   }
   try {
-    const fs9 = await import("fs");
-    const path8 = await import("path");
-    const localUsersPath = path8.join(process.cwd(), "data", "system_users.json");
-    if (fs9.existsSync(localUsersPath)) {
-      const fileContent = fs9.readFileSync(localUsersPath, "utf8");
+    const fs8 = await import("fs");
+    const path7 = await import("path");
+    const localUsersPath = path7.join(process.cwd(), "data", "system_users.json");
+    if (fs8.existsSync(localUsersPath)) {
+      const fileContent = fs8.readFileSync(localUsersPath, "utf8");
       const localUsers = JSON.parse(fileContent);
       if (Array.isArray(localUsers)) {
         for (const u of localUsers) {
@@ -3542,52 +3542,6 @@ __export(serverDataApi_exports, {
   serverQueryCollection: () => serverQueryCollection,
   serverSaveDoc: () => serverSaveDoc
 });
-function ensureDataDir() {
-  if (!import_fs2.default.existsSync(DATA_DIR)) {
-    try {
-      import_fs2.default.mkdirSync(DATA_DIR, { recursive: true });
-    } catch (e) {
-    }
-  }
-}
-function loadLocalFileCollections() {
-  ensureDataDir();
-  if (!import_fs2.default.existsSync(COLLECTIONS_FILE)) {
-    return {};
-  }
-  try {
-    const raw = import_fs2.default.readFileSync(COLLECTIONS_FILE, "utf-8");
-    return JSON.parse(raw) || {};
-  } catch (e) {
-    return {};
-  }
-}
-function saveLocalFileCollections(store) {
-  ensureDataDir();
-  try {
-    import_fs2.default.writeFileSync(COLLECTIONS_FILE, JSON.stringify(store, null, 2), "utf-8");
-  } catch (e) {
-    console.error("[FileStore Write Error]:", e);
-  }
-}
-function localFileSaveDoc(collection, id, record) {
-  const store = loadLocalFileCollections();
-  if (!store[collection]) store[collection] = {};
-  store[collection][id] = record;
-  saveLocalFileCollections(store);
-}
-function localFileDeleteDoc(collection, id) {
-  const store = loadLocalFileCollections();
-  if (store[collection] && store[collection][id]) {
-    delete store[collection][id];
-    saveLocalFileCollections(store);
-  }
-}
-function localFileQueryCollection(collection) {
-  const store = loadLocalFileCollections();
-  if (!store[collection]) return [];
-  return Object.values(store[collection]);
-}
 function invalidateCollectionCache(collection) {
   if (collection) {
     rawCollectionCache.delete(collection);
@@ -4135,14 +4089,12 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       };
     }
   }
-  try {
-    localFileSaveDoc(collection, id, record);
-    notifyRealtimeChange(collection, id, "upsert");
-    return { success: true, id, item: record, affectedRows: 1, changedRows: 1 };
-  } catch (err) {
-    console.error(`[FileStore Save Error] Collection: "${collection}", ID: "${id}":`, err);
-    return { success: false, id: "", error: "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u0641\u0627\u06CC\u0644 \u0645\u062D\u0644\u06CC." };
-  }
+  console.error(`[Data Layer Fatal] Database unavailable or MySQL unconfigured for collection: "${collection}", ID: "${id}"`);
+  return {
+    success: false,
+    id: "",
+    error: "\u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 MySQL \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A. \u0633\u0631\u0648\u06CC\u0633 \u0630\u062E\u06CC\u0631\u0647\u200C\u0633\u0627\u0632\u06CC \u0627\u0628\u0631\u06CC \u0645\u0648\u0642\u062A\u0627\u064B \u067E\u0627\u0633\u062E\u06AF\u0648 \u0646\u06CC\u0633\u062A (503 Service Unavailable)."
+  };
 }
 async function serverDeleteDoc(collection, id, callerUser) {
   if (!id) return { success: false, error: "\u0634\u0646\u0627\u0633\u0647 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." };
@@ -4155,6 +4107,7 @@ async function serverDeleteDoc(collection, id, callerUser) {
       }
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
+      invalidateCollectionCache(collection);
       logAudit({
         action: "delete",
         collectionName: collection,
@@ -4188,14 +4141,11 @@ async function serverDeleteDoc(collection, id, callerUser) {
       };
     }
   }
-  try {
-    localFileDeleteDoc(collection, id);
-    notifyRealtimeChange(collection, id, "delete");
-    return { success: true };
-  } catch (err) {
-    console.error(`[FileStore Delete Error] Collection: "${collection}", ID: "${id}":`, err);
-    return { success: false, error: "\u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641 \u0627\u0632 \u0641\u0627\u06CC\u0644 \u0645\u062D\u0644\u06CC." };
-  }
+  console.error(`[Data Layer Fatal] Database unavailable or MySQL unconfigured for delete collection: "${collection}", ID: "${id}"`);
+  return {
+    success: false,
+    error: "\u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 MySQL \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A. \u0639\u0645\u0644\u06CC\u0627\u062A \u062D\u0630\u0641 \u0627\u0645\u06A9\u0627\u0646\u200C\u067E\u0630\u06CC\u0631 \u0646\u0645\u06CC\u200C\u0628\u0627\u0634\u062F (503 Service Unavailable)."
+  };
 }
 async function fetchRawCollectionData(collection) {
   const now = Date.now();
@@ -4214,7 +4164,8 @@ async function fetchRawCollectionData(collection) {
       items = [];
     }
   } else {
-    items = localFileQueryCollection(collection);
+    console.error(`[MySQL Unconfigured Error]: Cannot fetch collection "${collection}" because MySQL is not configured.`);
+    items = [];
   }
   rawCollectionCache.set(collection, { data: items, timestamp: now });
   return items;
@@ -4368,19 +4319,7 @@ async function fetchRawDocumentsByIds(collection, ids) {
       return [];
     }
   }
-  try {
-    const store = loadLocalFileCollections();
-    const colDocs = store[collection] || {};
-    const results = [];
-    for (const id of ids) {
-      if (colDocs[id]) {
-        results.push(colDocs[id]);
-      }
-    }
-    return results;
-  } catch (err) {
-    return [];
-  }
+  return [];
 }
 async function serverGetDocByCandidateIds(collection, candidateIds, user) {
   if (!candidateIds || candidateIds.length === 0) return null;
@@ -4629,17 +4568,13 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
   }
   return result;
 }
-var import_fs2, import_path2, DATA_DIR, COLLECTIONS_FILE, realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS;
+var realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS;
 var init_serverDataApi = __esm({
   "src/lib/serverDataApi.ts"() {
-    import_fs2 = __toESM(require("fs"), 1);
-    import_path2 = __toESM(require("path"), 1);
     init_serverAuth();
     init_databaseAbstraction();
     init_auditLogger();
     init_jalali();
-    DATA_DIR = import_path2.default.join(process.cwd(), "data");
-    COLLECTIONS_FILE = import_path2.default.join(DATA_DIR, "app_collections.json");
     realtimeListeners = /* @__PURE__ */ new Set();
     recentChangesBuffer = [];
     MAX_RECENT_CHANGES = 500;
@@ -4741,8 +4676,8 @@ __export(serverAuth_exports, {
 });
 function loadUsersFromFile() {
   try {
-    if (import_fs3.default.existsSync(USERS_FILE_PATH)) {
-      const content = import_fs3.default.readFileSync(USERS_FILE_PATH, "utf-8");
+    if (import_fs2.default.existsSync(USERS_FILE_PATH)) {
+      const content = import_fs2.default.readFileSync(USERS_FILE_PATH, "utf-8");
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) return parsed;
     }
@@ -4753,11 +4688,11 @@ function loadUsersFromFile() {
 }
 function saveUsersToFile(users) {
   try {
-    const dir = import_path3.default.dirname(USERS_FILE_PATH);
-    if (!import_fs3.default.existsSync(dir)) {
-      import_fs3.default.mkdirSync(dir, { recursive: true });
+    const dir = import_path2.default.dirname(USERS_FILE_PATH);
+    if (!import_fs2.default.existsSync(dir)) {
+      import_fs2.default.mkdirSync(dir, { recursive: true });
     }
-    import_fs3.default.writeFileSync(USERS_FILE_PATH, JSON.stringify(users, null, 2), "utf-8");
+    import_fs2.default.writeFileSync(USERS_FILE_PATH, JSON.stringify(users, null, 2), "utf-8");
   } catch (e) {
     console.warn("Could not write users to file:", e);
   }
@@ -5370,17 +5305,17 @@ async function logServerAudit2(params) {
     console.error("Server audit log error:", e instanceof Error ? e.message : e);
   }
 }
-var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs3, import_path3, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
+var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs2, import_path2, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
 var init_serverAuth = __esm({
   "src/lib/serverAuth.ts"() {
     import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
     import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
     import_dotenv2 = __toESM(require("dotenv"), 1);
-    import_fs3 = __toESM(require("fs"), 1);
-    import_path3 = __toESM(require("path"), 1);
+    import_fs2 = __toESM(require("fs"), 1);
+    import_path2 = __toESM(require("path"), 1);
     init_databaseAbstraction();
     import_dotenv2.default.config();
-    USERS_FILE_PATH = import_path3.default.join(process.cwd(), "data", "system_users.json");
+    USERS_FILE_PATH = import_path2.default.join(process.cwd(), "data", "system_users.json");
     rawRefreshSecret = (process.env.JWT_REFRESH_SECRET || "").trim();
     JWT_REFRESH_SECRET = rawRefreshSecret && !rawRefreshSecret.startsWith("{{") ? rawRefreshSecret : "hosoon_super_secure_refresh_token_secret_key_2026_default_fallback_node_app";
     rawJwtSecret = (process.env.JWT_SECRET || "").trim();
@@ -5617,8 +5552,8 @@ async function createFullDatabaseSnapshot(operatorName = "system", isAutomated =
   };
   try {
     const fileName = `madrasah_backup_${nowStr.replace(/[:.]/g, "-").substring(0, 19)}.json`;
-    const filePath = import_path4.default.join(BACKUP_DIR, fileName);
-    import_fs4.default.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+    const filePath = import_path3.default.join(BACKUP_DIR, fileName);
+    import_fs3.default.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
     applyBackupRetentionPolicy();
   } catch (err) {
     console.warn("Could not save snapshot file to disk:", err);
@@ -5681,18 +5616,18 @@ async function restoreDatabaseSnapshot(payload, operatorName = "super_admin", ip
 }
 function applyBackupRetentionPolicy() {
   try {
-    if (!import_fs4.default.existsSync(BACKUP_DIR)) return;
-    const files = import_fs4.default.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".json"));
+    if (!import_fs3.default.existsSync(BACKUP_DIR)) return;
+    const files = import_fs3.default.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".json"));
     const fileStats = files.map((f) => {
-      const fullPath = import_path4.default.join(BACKUP_DIR, f);
-      const stat = import_fs4.default.statSync(fullPath);
+      const fullPath = import_path3.default.join(BACKUP_DIR, f);
+      const stat = import_fs3.default.statSync(fullPath);
       return { name: f, path: fullPath, time: stat.mtimeMs };
     }).sort((a, b) => b.time - a.time);
     if (fileStats.length > 25) {
       const filesToDelete = fileStats.slice(25);
       for (const item of filesToDelete) {
         try {
-          import_fs4.default.unlinkSync(item.path);
+          import_fs3.default.unlinkSync(item.path);
           console.info(`[Backup Retention] Deleted old backup: ${item.name}`);
         } catch (e) {
         }
@@ -5704,14 +5639,14 @@ function applyBackupRetentionPolicy() {
 }
 function listOnDiskBackups() {
   try {
-    if (!import_fs4.default.existsSync(BACKUP_DIR)) return [];
-    const files = import_fs4.default.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".json"));
+    if (!import_fs3.default.existsSync(BACKUP_DIR)) return [];
+    const files = import_fs3.default.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".json"));
     return files.map((fileName) => {
-      const fullPath = import_path4.default.join(BACKUP_DIR, fileName);
-      const stat = import_fs4.default.statSync(fullPath);
+      const fullPath = import_path3.default.join(BACKUP_DIR, fileName);
+      const stat = import_fs3.default.statSync(fullPath);
       let isAutomated = false;
       try {
-        const content = import_fs4.default.readFileSync(fullPath, "utf8");
+        const content = import_fs3.default.readFileSync(fullPath, "utf8");
         const parsed = JSON.parse(content);
         isAutomated = !!parsed.metadata?.isAutomated;
       } catch (e) {
@@ -5742,18 +5677,18 @@ function initScheduledBackupService() {
     }
   }, 30 * 60 * 1e3);
 }
-var import_fs4, import_path4, import_crypto2, BACKUP_DIR, ALL_SYSTEM_COLLECTIONS, scheduledBackupTimer;
+var import_fs3, import_path3, import_crypto2, BACKUP_DIR, ALL_SYSTEM_COLLECTIONS, scheduledBackupTimer;
 var init_serverBackupEngine = __esm({
   "src/lib/serverBackupEngine.ts"() {
-    import_fs4 = __toESM(require("fs"), 1);
-    import_path4 = __toESM(require("path"), 1);
+    import_fs3 = __toESM(require("fs"), 1);
+    import_path3 = __toESM(require("path"), 1);
     import_crypto2 = __toESM(require("crypto"), 1);
     init_serverDataApi();
     init_serverAuth();
-    BACKUP_DIR = import_path4.default.join(process.cwd(), "data", "backups");
-    if (!import_fs4.default.existsSync(BACKUP_DIR)) {
+    BACKUP_DIR = import_path3.default.join(process.cwd(), "data", "backups");
+    if (!import_fs3.default.existsSync(BACKUP_DIR)) {
       try {
-        import_fs4.default.mkdirSync(BACKUP_DIR, { recursive: true });
+        import_fs3.default.mkdirSync(BACKUP_DIR, { recursive: true });
       } catch (e) {
       }
     }
@@ -5871,7 +5806,7 @@ __export(serverMaintenance_exports, {
 });
 function persistState() {
   try {
-    import_fs6.default.writeFileSync(STATE_FILE_PATH, JSON.stringify(currentState, null, 2), "utf-8");
+    import_fs5.default.writeFileSync(STATE_FILE_PATH, JSON.stringify(currentState, null, 2), "utf-8");
   } catch (e) {
     console.warn("[Maintenance State Persist Warning]:", e);
   }
@@ -5916,14 +5851,14 @@ function maintenanceMiddleware(req, res, next) {
     enabledAt: currentState.enabledAt
   });
 }
-var import_fs6, import_path6, STATE_FILE_PATH, currentState;
+var import_fs5, import_path5, STATE_FILE_PATH, currentState;
 var init_serverMaintenance = __esm({
   "src/lib/serverMaintenance.ts"() {
-    import_fs6 = __toESM(require("fs"), 1);
-    import_path6 = __toESM(require("path"), 1);
+    import_fs5 = __toESM(require("fs"), 1);
+    import_path5 = __toESM(require("path"), 1);
     init_monitoringAccess();
     init_serverAuth();
-    STATE_FILE_PATH = import_path6.default.join(process.cwd(), "data", "maintenance_state.json");
+    STATE_FILE_PATH = import_path5.default.join(process.cwd(), "data", "maintenance_state.json");
     currentState = {
       enabled: false,
       message: "\u0633\u0627\u0645\u0627\u0646\u0647 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0648 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u200C\u06AF\u06CC\u0631\u06CC \u062F\u0648\u0631\u0647\u200C\u0627\u06CC \u0645\u06CC\u200C\u0628\u0627\u0634\u062F. \u0644\u0637\u0641\u0627\u064B \u062F\u0642\u0627\u06CC\u0642\u06CC \u062F\u06CC\u06AF\u0631 \u0645\u0631\u0627\u062C\u0639\u0647 \u0641\u0631\u0645\u0627\u06CC\u06CC\u062F.",
@@ -5932,12 +5867,12 @@ var init_serverMaintenance = __esm({
       estimatedDuration: "\u06F1\u06F5 \u062F\u0642\u06CC\u0642\u0647"
     };
     try {
-      const dataDir = import_path6.default.join(process.cwd(), "data");
-      if (!import_fs6.default.existsSync(dataDir)) {
-        import_fs6.default.mkdirSync(dataDir, { recursive: true });
+      const dataDir = import_path5.default.join(process.cwd(), "data");
+      if (!import_fs5.default.existsSync(dataDir)) {
+        import_fs5.default.mkdirSync(dataDir, { recursive: true });
       }
-      if (import_fs6.default.existsSync(STATE_FILE_PATH)) {
-        const raw = import_fs6.default.readFileSync(STATE_FILE_PATH, "utf-8");
+      if (import_fs5.default.existsSync(STATE_FILE_PATH)) {
+        const raw = import_fs5.default.readFileSync(STATE_FILE_PATH, "utf-8");
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.enabled === "boolean") {
           currentState = { ...currentState, ...parsed };
@@ -5951,8 +5886,8 @@ var init_serverMaintenance = __esm({
 
 // server.ts
 var import_express25 = __toESM(require("express"), 1);
-var import_path7 = __toESM(require("path"), 1);
-var import_fs7 = __toESM(require("fs"), 1);
+var import_path6 = __toESM(require("path"), 1);
+var import_fs6 = __toESM(require("fs"), 1);
 var import_cookie_parser = __toESM(require("cookie-parser"), 1);
 var import_cors = __toESM(require("cors"), 1);
 var import_compression = __toESM(require("compression"), 1);
@@ -11848,8 +11783,8 @@ var counselingRoutes_default = router19;
 
 // src/routes/dataRoutes.ts
 var import_express20 = require("express");
-var import_path5 = __toESM(require("path"), 1);
-var import_fs5 = __toESM(require("fs"), 1);
+var import_path4 = __toESM(require("path"), 1);
+var import_fs4 = __toESM(require("fs"), 1);
 init_serverDataApi();
 init_serverAuth();
 init_logger();
@@ -12308,11 +12243,11 @@ router20.post("/system/save-background-image", async (req, res) => {
       return res.status(400).json({ success: false, message: "\u0641\u0642\u0637 \u062A\u0635\u0627\u0648\u06CC\u0631 \u0628\u0627 \u0641\u0631\u0645\u062A \u0648\u0627\u0642\u0639\u06CC WebP \u0645\u062C\u0627\u0632 \u0645\u06CC\u200C\u0628\u0627\u0634\u0646\u062F." });
     }
     const filename = target === "mobile" ? "000-mobile.webp" : "000.webp";
-    const publicDir = import_path5.default.join(process.cwd(), "public");
-    if (!import_fs5.default.existsSync(publicDir)) {
-      import_fs5.default.mkdirSync(publicDir, { recursive: true });
+    const publicDir = import_path4.default.join(process.cwd(), "public");
+    if (!import_fs4.default.existsSync(publicDir)) {
+      import_fs4.default.mkdirSync(publicDir, { recursive: true });
     }
-    import_fs5.default.writeFileSync(import_path5.default.join(publicDir, filename), buffer);
+    import_fs4.default.writeFileSync(import_path4.default.join(publicDir, filename), buffer);
     return res.json({ success: true, message: `\u062A\u0635\u0648\u06CC\u0631 \u067E\u0633\u200C\u0632\u0645\u06CC\u0646\u0647 (${filename}) \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F.` });
   } catch (e) {
     const message = e instanceof Error ? e.message : "\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647 \u062A\u0635\u0648\u06CC\u0631";
@@ -12875,7 +12810,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-11T18:12:16.313Z",
+  "buildTime": "2026-11-11T20:17:26.489Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
@@ -12917,6 +12852,13 @@ async function startServer() {
   app.use((0, import_cookie_parser.default)());
   app.use(requestLogger);
   app.use(maintenanceMiddleware);
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    next();
+  });
   app.get("/api/version", (_req, res) => {
     res.json({
       commit: BUILD_INFO.version,
@@ -12981,9 +12923,9 @@ async function startServer() {
       return res.status(503).json({ status: "error", message });
     }
   });
-  app.use(import_express25.default.static(import_path7.default.join(process.cwd(), "public")));
-  const distPath = import_path7.default.join(process.cwd(), "dist");
-  const hasDist = import_fs7.default.existsSync(distPath) && import_fs7.default.existsSync(import_path7.default.join(distPath, "index.html"));
+  app.use(import_express25.default.static(import_path6.default.join(process.cwd(), "public")));
+  const distPath = import_path6.default.join(process.cwd(), "dist");
+  const hasDist = import_fs6.default.existsSync(distPath) && import_fs6.default.existsSync(import_path6.default.join(distPath, "index.html"));
   if (hasDist || process.env.NODE_ENV === "production") {
     app.use(import_express25.default.static(distPath, {
       setHeaders: (res, filePath) => {
@@ -12996,8 +12938,8 @@ async function startServer() {
     }));
     app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      const indexPath = import_path7.default.join(distPath, "index.html");
-      if (import_fs7.default.existsSync(indexPath)) {
+      const indexPath = import_path6.default.join(distPath, "index.html");
+      if (import_fs6.default.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
         res.status(200).send("<!DOCTYPE html><html><body><h1>\u0633\u06CC\u0633\u062A\u0645 \u062F\u0631 \u062D\u0627\u0644 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC \u0627\u0648\u0644\u06CC\u0647 \u0627\u0633\u062A...</h1><p>\u0644\u0637\u0641\u0627\u064B \u0686\u0646\u062F \u0644\u062D\u0638\u0647 \u062F\u06CC\u06AF\u0631 \u0635\u0641\u062D\u0647 \u0631\u0627 \u062A\u0627\u0632\u0647\u200C\u0633\u0627\u0632\u06CC \u0646\u0645\u0627\u06CC\u06CC\u062F.</p></body></html>");

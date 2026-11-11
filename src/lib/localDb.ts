@@ -873,6 +873,8 @@ class LocalDatabase {
   }
 
   private resolveCollection(name: string): string {
+    if (name === 'attendances') return 'attendance';
+    if (name === 'study_logs') return 'periodic_study_logs';
     if (name === 'classes') return 'classrooms';
     if (name === 'users') return 'system_users';
     if (name === 'research_records') return 'research';
@@ -1270,12 +1272,24 @@ class LocalDatabase {
               }
               this.setLocalStorageDoc(resolvedCol, doc);
               this.notify();
+
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: resolvedCol, id } }));
+                window.dispatchEvent(new CustomEvent(`collection_change_${resolvedCol}`, { detail: { id, item: doc } }));
+                if (resolvedCol === 'attendance') {
+                  window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { id, item: doc } }));
+                }
+              }
               return;
             }
           }
         } catch (e) {}
         // Fallback: sync full collection
         await this.syncCollectionFromCloud(resolvedCol, true);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: resolvedCol, id } }));
+          window.dispatchEvent(new CustomEvent(`collection_change_${resolvedCol}`, { detail: { id } }));
+        }
       }
     });
 

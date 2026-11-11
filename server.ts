@@ -95,6 +95,15 @@ async function startServer() {
   // System Maintenance Mode Enforcement (bypassed by Super Admin, Education Manager, Finance Manager)
   app.use(maintenanceMiddleware);
 
+  // Anti-stale cache policy for API endpoints to prevent stale browser and proxy caching
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+    next();
+  });
+
   // Unauthenticated diagnostic endpoints for version tracking and container health checks (MOVED TO TOP BEFORE ALL ROUTERS)
   app.get('/api/version', (_req, res) => {
     res.json({
