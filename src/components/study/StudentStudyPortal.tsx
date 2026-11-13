@@ -54,7 +54,7 @@ import {
   isPeriodClosed, 
   isStudentExempt, 
   formatMinutesToHoursAndMinutes,
-  addStudyDailyEntry,
+  addStudyDailyEntryStrict,
   updateStudyDailyEntry,
   deleteStudyDailyEntry,
   getStudyWarningStatus,
@@ -283,12 +283,16 @@ export default function StudentStudyPortal({
     }
   }, [activePeriodId, student.id, currentUser?.id]);
 
-  // Real-time synchronization for daily entries & logs across panels
+  // Real-time synchronization for daily entries & logs across panels (debounced to prevent post-save cascades)
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const handleDataChange = () => {
-      loadDirectPeriods();
-      loadDailyEntries();
-      if (onRefresh) onRefresh();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadDirectPeriods();
+        loadDailyEntries();
+        if (onRefresh) onRefresh();
+      }, 150);
     };
 
     const unsub = localDb.subscribe(handleDataChange);
@@ -304,6 +308,7 @@ export default function StudentStudyPortal({
     }, 5000);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
       window.removeEventListener('collection_change_study_periods', handleDataChange);
@@ -418,8 +423,8 @@ export default function StudentStudyPortal({
         discussionMinutes: parseInt(courseDiscussionMinutes[c.id] || '0') || 0
       }));
 
-      // Create new daily entry (Cumulative)
-      const createdEntry = await addStudyDailyEntry({
+      // Fast strict parallel write with 20s deadline confirmation
+      const createdEntry = await addStudyDailyEntryStrict({
         periodId: currentPeriod.id,
         studentId: student.id,
         nationalId: student.nationalId || currentUser?.username,
@@ -433,18 +438,18 @@ export default function StudentStudyPortal({
         totalMinutes: calculatedTotalMinutes,
         submittedBy: currentUser?.level === 3 ? 'student' : 'officer',
         note: entryNoteInput.trim()
-      } as any);
+      }, 20000);
 
-      // Immediately reflect newly created entry in UI state without blocking on extra network GET
+      // Immediately reflect newly confirmed entry in UI state without blocking on extra network GET
       setDailyEntries(prev => [createdEntry, ...prev.filter(item => item.id !== createdEntry.id)]);
 
-      // Clear input boxes immediately after success
+      // Clear input boxes immediately after confirmed server save
       setCourseStudyMinutes({});
       setCourseDiscussionMinutes({});
       setFreeStudyMinutesInput('');
       setEntryNoteInput('');
 
-      const successText = 'دقایق جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.';
+      const successText = 'دقایق جدید با موفقیت در سرور ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.';
       setSaveSuccessMessage(successText);
       emitSaveConfirmation({
         variant: 'success',
@@ -459,11 +464,17 @@ export default function StudentStudyPortal({
 
       setTimeout(() => setSaveSuccessMessage(''), 4500);
     } catch (err: any) {
-      console.error('Error adding study daily entry:', err);
+      console.error('[STORAGE_FAILURE] Error adding study daily entry:', err);
+      const errMsg =
+        err?.message && String(err.message).includes('دیتای شما ثبت نشد')
+          ? String(err.message)
+          : `دیتای شما ثبت نشد! ${err?.message || 'خطا در ذخیره‌سازی ساعت مطالعه. لطفاً مجدداً تلاش کنید.'}`;
       emitSaveConfirmation({
         variant: 'error',
-        title: 'خطا در ثبت ساعت مطالعه',
-        message: 'خطا در ذخیره‌سازی ساعت مطالعه: ' + (err?.message || 'لطفاً مجدداً تلاش کنید.')
+        title: 'دیتای شما ثبت نشد',
+        message: errMsg,
+        subtitle: 'اطلاعات در سرور ذخیره نگردید؛ لطفاً اتصال را بررسی کرده و دوباره ثبت نمایید.',
+        durationMs: 10000
       });
     } finally {
       setWriteInProgress('study_save', false);

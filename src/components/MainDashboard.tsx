@@ -61,6 +61,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
 import { StudentMobilePanel } from './student/StudentMobilePanel';
+import { AdminMobileDashboard } from './admin/mobile/AdminMobileDashboard';
 import { StudentRequest, AnomalyLog, Student, AcademicCalendarPeriod, AcademicHolidayItem, AcademicSubPeriod, Program, WorkflowItem } from '../types';
 import { 
   getTodayShamsi, 
@@ -124,18 +125,28 @@ interface MainCategoryDef {
   highlight?: boolean;
 }
 
+const STAFF_DEFAULT_PRIORITY_ORDER = [
+  'active-students',
+  'programs',
+  'attendance',
+  'stats',
+  'teachers-bank',
+];
+
 interface MainDashboardProps {
   onNavigateTab: (tabId: string, studentId?: string) => void;
   onOpenSettings?: () => void;
   initialCategoryGroup?: string | null;
   onCategoryGroupChange?: (group: string | null) => void;
+  isInsideShell?: boolean;
 }
 
 export default function MainDashboard({ 
   onNavigateTab, 
   onOpenSettings,
   initialCategoryGroup,
-  onCategoryGroupChange
+  onCategoryGroupChange,
+  isInsideShell = false
 }: MainDashboardProps) {
   const { currentUser, isSuperAdmin, isTabAllowed } = useAuth();
 
@@ -1259,11 +1270,42 @@ export default function MainDashboard({
     });
   }, [allowedCardsMap, systemHealthAlert]);
 
-  // Ordered Cards List according to user preference in flat mode
+  const isStaffPriorityDefault = useMemo(() => {
+    if (!currentUser || currentUser.level >= 3) return false;
+    const roleLower = String(currentUser.role || '').toLowerCase();
+    const titleStr = String(currentUser.roleTitle || '');
+    const nameStr = String(currentUser.name || '');
+    const isDeputy =
+      roleLower.includes('deputy') ||
+      roleLower.includes('assistant') ||
+      titleStr.includes('معاون') ||
+      nameStr.includes('معاون');
+    return Boolean(
+      isSuperAdmin ||
+      isEducationManager ||
+      isGradeMentor ||
+      isDeputy ||
+      (!isFinanceManager && !isResearchManager && !isCulturalManager)
+    );
+  }, [currentUser, isSuperAdmin, isEducationManager, isGradeMentor, isFinanceManager, isResearchManager, isCulturalManager]);
+
+  // Ordered Cards List according to user preference in flat mode (with اصلاح ۲۸ priority default)
   const sortedCards = useMemo(() => {
     const allowed = Array.from(allowedCardsMap.values());
     if (!customOrder || customOrder.length === 0) {
-      return allowed;
+      if (!isStaffPriorityDefault) {
+        return allowed;
+      }
+      const orderedDefault: DashboardCardDef[] = [];
+      const remainingDefault = new Map(allowedCardsMap);
+      STAFF_DEFAULT_PRIORITY_ORDER.forEach(id => {
+        if (remainingDefault.has(id)) {
+          orderedDefault.push(remainingDefault.get(id)!);
+          remainingDefault.delete(id);
+        }
+      });
+      remainingDefault.forEach(card => orderedDefault.push(card));
+      return orderedDefault;
     }
 
     const ordered: DashboardCardDef[] = [];
@@ -1280,7 +1322,7 @@ export default function MainDashboard({
     remaining.forEach(card => ordered.push(card));
 
     return ordered;
-  }, [allowedCardsMap, customOrder]);
+  }, [allowedCardsMap, customOrder, isStaffPriorityDefault]);
 
   // Filtered Cards when inside a specific active category in grouped mode
   const activeGroupCards = useMemo(() => {
@@ -1296,7 +1338,7 @@ export default function MainDashboard({
     return MAIN_CATEGORY_CARDS.find(c => c.id === activeCategoryGroup) || null;
   }, [activeCategoryGroup]);
 
-  // Quick Access Cards State (Persisted in LocalStorage - Max 5)
+  // Quick Access Cards State (Persisted in LocalStorage - Max 5, honoring اصلاح ۲۸ default)
   const [quickAccessCardIds, setQuickAccessCardIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('dashboard_quick_access_cards');
@@ -1305,9 +1347,33 @@ export default function MainDashboard({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed.slice(0, 5);
       }
     } catch (e) {}
-    return ['attendance', 'student-requests', 'student-schedule', 'stats', 'finance-tuition'];
+    return [...STAFF_DEFAULT_PRIORITY_ORDER];
+  });
+  const [hasCustomQuickAccess] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('dashboard_quick_access_cards');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) && parsed.length > 0;
+      }
+    } catch (e) {}
+    return false;
   });
   const [isQuickAccessModalOpen, setIsQuickAccessModalOpen] = useState(false);
+
+  // If user has no saved quick access override and is NOT in priority staff roles (e.g. finance/research/student), fall back cleanly
+  useEffect(() => {
+    if (hasCustomQuickAccess) return;
+    if (currentUser && !isStaffPriorityDefault) {
+      setQuickAccessCardIds(
+        isFinanceManager
+          ? ['finance-tuition', 'finance-teachers', 'finance-lunch', 'finance-loans-fund', 'finance-expenses-reports']
+          : ['attendance', 'student-requests', 'student-schedule', 'stats', 'finance-tuition']
+      );
+    } else if (currentUser && isStaffPriorityDefault) {
+      setQuickAccessCardIds([...STAFF_DEFAULT_PRIORITY_ORDER]);
+    }
+  }, [currentUser, hasCustomQuickAccess, isStaffPriorityDefault, isFinanceManager]);
 
   const saveQuickAccessIds = (ids: string[]) => {
     const valid = ids.slice(0, 5);
@@ -1434,6 +1500,38 @@ export default function MainDashboard({
       <StudentMobilePanel 
         onNavigateTab={onNavigateTab} 
         onSwitchToDesktopView={() => setForceDesktopMode(true)} 
+      />
+    );
+  }
+
+  // Dedicated 100% Mobile-Only Executive Dashboard for Staff/Managers/Mentors/Admins (اصلاح ۲۹)
+  if (currentUser && currentUser.level < 3 && currentUser.role !== 'teacher' && (isInsideShell || (isMobileDevice && !forceDesktopMode))) {
+    return (
+      <AdminMobileDashboard
+        currentUser={currentUser}
+        todayFormatted={todayFormatted}
+        activeStudentsCount={activeStudentsCount}
+        activeTeachersCount={activeTeachersCount}
+        passedStudyDays={passedStudyDays}
+        remainingStudyDays={remainingStudyDays}
+        unreadRequestsCount={unreadRequestsCount}
+        pendingWorkflowCount={pendingWorkflowCount}
+        unresolvedAnomaliesCount={unresolvedAnomaliesCount}
+        systemHealthAlert={systemHealthAlert}
+        sortedCards={sortedCards}
+        allowedCardsMap={allowedCardsMap}
+        customOrder={customOrder}
+        onSaveCustomOrder={(newIds) => {
+          setCustomOrder(newIds);
+          localStorage.setItem('dashboard_cards_order_v1', JSON.stringify(newIds));
+        }}
+        onResetLayout={() => {
+          setCustomOrder([]);
+          localStorage.removeItem('dashboard_cards_order_v1');
+        }}
+        onNavigateTab={onNavigateTab}
+        isCounterAnimDisabled={isCounterAnimDisabled}
+        hadith={currentHadith}
       />
     );
   }

@@ -195,63 +195,6 @@ const ALL_DRAWER_SERVICES: DrawerServiceItem[] = [
   },
 ];
 
-function getPageMotionProps(tab: string, reduced: boolean | null) {
-  if (reduced) {
-    return {
-      initial: { opacity: 0 },
-      animate: { opacity: 1 },
-      exit: { opacity: 0 },
-      transition: { duration: 0.08 },
-    };
-  }
-  switch (tab) {
-    case 'dashboard':
-      return {
-        initial: { opacity: 0, scale: 0.975 },
-        animate: { opacity: 1, scale: 1 },
-        exit: { opacity: 0, scale: 0.985 },
-        transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
-      };
-    case 'stats':
-    case 'student-portal':
-    case 'summary':
-    case 'research':
-    case 'passed-courses':
-      return {
-        initial: { opacity: 0, x: -20 },
-        animate: { opacity: 1, x: 0 },
-        exit: { opacity: 0, x: 14 },
-        transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
-      };
-    case 'attendance':
-    case 'self-reporting':
-    case 'rep-attendance':
-      return {
-        initial: { opacity: 0, y: 16 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -10 },
-        transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const },
-      };
-    case 'student-schedule':
-    case 'academic-calendar':
-    case 'discussion':
-    case 'course-selection':
-      return {
-        initial: { opacity: 0, x: 18, y: 8 },
-        animate: { opacity: 1, x: 0, y: 0 },
-        exit: { opacity: 0, x: -12, y: -6 },
-        transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] as const },
-      };
-    default:
-      return {
-        initial: { opacity: 0, scale: 0.96, y: 12 },
-        animate: { opacity: 1, scale: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.98, y: -8 },
-        transition: { duration: 0.2, ease: 'easeOut' as const },
-      };
-  }
-}
-
 export const StudentMobileShell: React.FC<StudentMobileShellProps> = ({
   activeTab,
   tabTitle,
@@ -349,7 +292,6 @@ export const StudentMobileShell: React.FC<StudentMobileShellProps> = ({
 
   const isDashboard = activeTab === 'dashboard';
   const normalizedActiveNav = activeTab === 'summary' ? 'student-portal' : activeTab;
-  const pageMotion = getPageMotionProps(activeTab, prefersReducedMotion);
 
   const handleSelectTab = (tabId: string) => {
     setIsDrawerOpen(false);
@@ -433,20 +375,11 @@ export const StudentMobileShell: React.FC<StudentMobileShellProps> = ({
         </div>
       </header>
 
-      {/* Main Scrollable Viewport (>85% screen height) */}
+      {/* Main Scrollable Viewport (>85% screen height) — Instant tab mount without blocking exit transitions */}
       <main className="flex-1 w-full max-w-xl mx-auto px-3 pt-3 pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))]">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={pageMotion.initial}
-            animate={pageMotion.animate}
-            exit={pageMotion.exit}
-            transition={pageMotion.transition}
-            className="w-full"
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
+        <div className="w-full">
+          {children}
+        </div>
       </main>
 
       {/* Floating Curved Glassmorphic Thumb-Zone Navigation Dock */}

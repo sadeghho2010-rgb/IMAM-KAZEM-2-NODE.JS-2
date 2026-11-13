@@ -6,12 +6,24 @@ import {
   XCircle,
   BookOpen,
   Info,
+  CalendarRange,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Program, AttendanceSessionLog, Student } from '../../../types';
 import { StudentSelfReportingModal } from '../../attendance/StudentSelfReportingModal';
+import { ShamsiDatePicker } from '../../ShamsiDatePicker';
+import {
+  getTodayShamsi,
+  getShamsiDayOfWeek,
+  subtractDaysShamsi,
+  parseShamsiDate,
+  formatShamsiDate,
+  compareShamsi,
+  normalizeShamsiDateStr,
+} from '../../../lib/jalali';
 import { AnimatedRingGauge } from './AnimatedRingGauge';
 import { GlyphAttendanceCheck, GlyphSelfReportSpark } from './StudentMobileIcons';
 import {
@@ -34,10 +46,33 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
   const [studentObj, setStudentObj] = useState<Student | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'absent' | 'late' | 'excused'>('all');
   const [selectedProgramFilter, setSelectedProgramFilter] = useState<string>('all');
+  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'week' | 'month' | 'custom'>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [isSelfReportingModalOpen, setIsSelfReportingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const initialLoadDoneRef = React.useRef(false);
+
+  const handleApplyDatePreset = (preset: 'all' | 'week' | 'month') => {
+    setDateRangePreset(preset);
+    if (preset === 'all') {
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+    const today = getTodayShamsi();
+    if (preset === 'week') {
+      const dow = getShamsiDayOfWeek(today);
+      const weekStart = dow > 0 ? subtractDaysShamsi(today, dow) : normalizeShamsiDateStr(today);
+      setStartDate(weekStart);
+      setEndDate(normalizeShamsiDateStr(today));
+      return;
+    }
+    const p = parseShamsiDate(today);
+    setStartDate(formatShamsiDate(p.year, p.month, 1));
+    setEndDate(normalizeShamsiDateStr(today));
+  };
 
   useEffect(() => {
     loadData(true);
@@ -180,40 +215,54 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
     return events.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   }, [attendanceRecords, studentIdentifiers, studentObj, enrolledProgramIdSet]);
 
+  const dateFilteredEvents = useMemo(() => {
+    const normStart = startDate ? normalizeShamsiDateStr(startDate) : '';
+    const normEnd = endDate ? normalizeShamsiDateStr(endDate) : '';
+    if (!normStart && !normEnd) return studentEvents;
+
+    return studentEvents.filter((ev) => {
+      const normEv = normalizeShamsiDateStr(ev.date);
+      if (!normEv) return false;
+      if (normStart && compareShamsi(normEv, normStart) < 0) return false;
+      if (normEnd && compareShamsi(normEv, normEnd) > 0) return false;
+      return true;
+    });
+  }, [studentEvents, startDate, endDate]);
+
   const metrics = useMemo(() => {
     let present = 0;
     let absent = 0;
     let excused = 0;
     let late = 0;
-    studentEvents.forEach((e) => {
+    dateFilteredEvents.forEach((e) => {
       if (e.status === 'present') present++;
       else if (e.status === 'absent') absent++;
       else if (e.status === 'excused') excused++;
       else if (e.status === 'late') late++;
     });
     return {
-      total: studentEvents.length,
+      total: dateFilteredEvents.length,
       present,
       absent,
       excused,
       late,
-      attendanceRate: studentEvents.length > 0 ? Math.round(((present + late) / studentEvents.length) * 100) : 100,
+      attendanceRate: dateFilteredEvents.length > 0 ? Math.round(((present + late) / dateFilteredEvents.length) * 100) : 100,
     };
-  }, [studentEvents]);
+  }, [dateFilteredEvents]);
 
   const filteredEvents = useMemo(() => {
-    return studentEvents.filter((e) => {
+    return dateFilteredEvents.filter((e) => {
       if (selectedProgramFilter !== 'all' && e.programId !== selectedProgramFilter) return false;
       if (selectedFilter === 'absent') return e.status === 'absent';
       if (selectedFilter === 'late') return e.status === 'late';
       if (selectedFilter === 'excused') return e.status === 'excused';
       return true;
     });
-  }, [studentEvents, selectedFilter, selectedProgramFilter]);
+  }, [dateFilteredEvents, selectedFilter, selectedProgramFilter]);
 
   const courseSummaries = useMemo(() => {
     return enrolledPrograms.map((p) => {
-      const courseEvents = studentEvents.filter((e) => e.programId === p.id);
+      const courseEvents = dateFilteredEvents.filter((e) => e.programId === p.id);
       const abs = courseEvents.filter((e) => e.status === 'absent').length;
       const exc = courseEvents.filter((e) => e.status === 'excused').length;
       const pres = courseEvents.filter((e) => e.status === 'present').length;
@@ -231,7 +280,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
         hasWarning: abs >= 3,
       };
     });
-  }, [enrolledPrograms, studentEvents]);
+  }, [enrolledPrograms, dateFilteredEvents]);
 
   const filterTabs: Array<{ id: 'all' | 'absent' | 'late' | 'excused'; label: string }> = [
     { id: 'all', label: `همه (${metrics.total})` },
@@ -330,6 +379,74 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
           </button>
         </motion.div>
       )}
+
+      {/* Shamsi Date Range Filter Card (اصلاح ۳۲) */}
+      <div className="bg-white rounded-3xl p-3.5 border border-slate-200/90 shadow-2xs space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+            <CalendarRange size={15} className="text-indigo-600" />
+            <span>بازه زمانی گزارش حضور و غیاب</span>
+          </h3>
+          {(startDate || endDate) && (
+            <button
+              type="button"
+              onClick={() => handleApplyDatePreset('all')}
+              className="min-h-[34px] px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10.5px] font-black flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw size={12} />
+              <span>حذف فیلتر</span>
+            </button>
+          )}
+        </div>
+
+        {/* Quick Preset Chips */}
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { id: 'all' as const, label: 'کل دوره' },
+            { id: 'week' as const, label: 'هفته جاری' },
+            { id: 'month' as const, label: 'ماه جاری' },
+          ].map((p) => {
+            const active = dateRangePreset === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handleApplyDatePreset(p.id)}
+                className={cn(
+                  'min-h-[38px] rounded-xl text-[11px] font-black transition-all cursor-pointer border',
+                  active
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                    : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 border-slate-200'
+                )}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Custom Shamsi From/To Pickers */}
+        <div className="grid grid-cols-2 gap-2 pt-0.5">
+          <ShamsiDatePicker
+            label="از تاریخ"
+            value={startDate}
+            onChange={(d) => {
+              setStartDate(d);
+              setDateRangePreset('custom');
+            }}
+            placeholder="مثلاً 1405/01/01"
+          />
+          <ShamsiDatePicker
+            label="تا تاریخ"
+            value={endDate}
+            onChange={(d) => {
+              setEndDate(d);
+              setDateRangePreset('custom');
+            }}
+            placeholder="تا امروز"
+          />
+        </div>
+      </div>
 
       {/* 2. Course-by-Course Breakdown */}
       <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-2xs space-y-2.5">

@@ -17,7 +17,17 @@ import {
   AttendanceSessionLog,
   Student,
 } from '../../types';
-import { getTodayShamsi, getShamsiDayOfWeekName, toEnglishDigits } from '../../lib/jalali';
+import {
+  getTodayShamsi,
+  getShamsiDayOfWeek,
+  getShamsiDayOfWeekName,
+  subtractDaysShamsi,
+  shamsiToDate,
+  dateToShamsi,
+  normalizeShamsiDateStr,
+  compareShamsi,
+  toEnglishDigits,
+} from '../../lib/jalali';
 import { StudentSelfReportingModal } from '../attendance/StudentSelfReportingModal';
 import { AnimatedRingGauge } from './mobile/AnimatedRingGauge';
 import {
@@ -105,10 +115,196 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   const todayShamsi = useMemo(() => getTodayShamsi(), []);
   const todayDayName = useMemo(() => getShamsiDayOfWeekName(todayShamsi), [todayShamsi]);
 
+  const processStudentData = (
+    allProgs: Program[],
+    allReqs: StudentRequest[],
+    allStudents: Student[],
+    courseEnrs: any[],
+    legacyEnrs: any[],
+    allPeriods: StudyPeriod[],
+    allDailyEntries: StudyDailyEntry[],
+    allAttendance: AttendanceSessionLog[]
+  ) => {
+    const combinedEnrollments = [...(courseEnrs || []), ...(legacyEnrs || [])];
+    const activeProgs = (allProgs || []).filter(isProgramActiveAndValid);
+    setAllProgramsList(activeProgs);
+    setEnrollmentsList(combinedEnrollments);
+
+    const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
+    const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
+    const uName = (currentUser?.username || '').trim().toLowerCase();
+
+    const matchedSt = (allStudents || []).find(
+      (s) =>
+        (sId && String(s.id) === String(sId)) ||
+        (uName && (s.nationalId?.toLowerCase() === uName || s.studentCode?.toLowerCase() === uName)) ||
+        (cName && s.name?.toLowerCase().includes(cName))
+    );
+    setMatchedStudent(matchedSt || null);
+
+    const candidateIdSet = buildStudentCandidateIds(
+      matchedSt || null,
+      [sId, currentUser?.id, currentUser?.linkedStudentId, currentUser?.username].filter(Boolean) as string[]
+    );
+    const candidateIdsLower = Array.from(candidateIdSet).map((x) => x.toLowerCase().trim());
+    const candidateNames = [cName, matchedSt?.name?.toLowerCase()].filter(Boolean) as string[];
+
+    const myActiveCourses = activeProgs.filter((p) =>
+      isStudentEnrolledInProgram(p, matchedSt || null, combinedEnrollments, candidateIdSet)
+    );
+    const myCourseIdSet = new Set(myActiveCourses.map((p) => String(p.id)));
+
+    const normDay = (d: string) => d.replace(/[\u200c\s]/g, '').trim();
+    const todayNorm = normDay(todayDayName);
+    const filteredToday = myActiveCourses
+      .filter((p) => getProgramDays(p).some((d) => normDay(d) === todayNorm))
+      .sort((a, b) => {
+        const rA = parseProgramTimeRangeMinutes(a.time);
+        const rB = parseProgramTimeRangeMinutes(b.time);
+        return (rA?.start ?? 9999) - (rB?.start ?? 9999);
+      });
+    setTodayPrograms(filteredToday);
+
+    const repProg = activeProgs.find((p) => {
+      const repIds = Array.isArray((p as any).representativeStudentIds)
+        ? (p as any).representativeStudentIds.map((x: any) => String(x).toLowerCase().trim())
+        : [];
+      if (repIds.some((id: string) => candidateIdsLower.includes(id))) return true;
+      const repNames = Array.isArray((p as any).representativeNames)
+        ? (p as any).representativeNames
+            .map((n: string) => n.replace(/\(.*?\)/g, '').trim().toLowerCase())
+            .filter(Boolean)
+        : [];
+      if (repNames.some((rn: string) => candidateNames.some((cn) => cn.includes(rn) || rn.includes(cn)))) {
+        return true;
+      }
+      if (p.customRepresentative) {
+        const cust = String(p.customRepresentative).replace(/\(.*?\)/g, '').trim().toLowerCase();
+        return candidateNames.some((cn) => cn.includes(cust) || cust.includes(cn));
+      }
+      return false;
+    });
+    setHasRepProgram(Boolean(repProg));
+    setMyRepProgramTitle(repProg ? repProg.title || 'کلاس درس' : '');
+
+    const selfProgs = myActiveCourses.filter((p) => p.attendanceType === 'self_reporting');
+    setSelfReportingCount(selfProgs.length);
+
+    if (Array.isArray(allReqs)) {
+      const myReqs = allReqs.filter(
+        (r) =>
+          (r.studentId && candidateIdsLower.includes(String(r.studentId).toLowerCase().trim())) ||
+          ((r as any).nationalId &&
+            (String((r as any).nationalId).toLowerCase() === uName ||
+              (matchedSt && String((r as any).nationalId).toLowerCase() === String(matchedSt.nationalId).toLowerCase())))
+      );
+      setMyRequestsCount(myReqs.filter((r) => r.status === 'pending').length);
+    }
+
+    const validPeriods = (allPeriods || [])
+      .filter((p) => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt)
+      .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    const openPeriod = validPeriods.find((p) => !isPeriodClosed(p)) || validPeriods[0];
+
+    if (openPeriod) {
+      setActivePeriodTitle(openPeriod.title || 'دوره جاری');
+      const mandMin = openPeriod.mandatoryMinutes || Math.round((openPeriod.mandatoryHours || 0) * 60) || 800;
+      setStudyMandatoryMinutes(mandMin);
+
+      const myEntries = (allDailyEntries || []).filter((e) => {
+        if (e.periodId !== openPeriod.id) return false;
+        const eIds = [e.studentId, (e as any).student_id, (e as any).userId, (e as any).nationalId, (e as any).studentCode]
+          .filter(Boolean)
+          .map((x) => String(x).toLowerCase().trim());
+        return candidateIdsLower.some((cid) => eIds.includes(cid));
+      });
+
+      let periodMin = 0;
+      myEntries.forEach((entry) => {
+        if (typeof entry.totalMinutes === 'number' && entry.totalMinutes > 0) {
+          periodMin += entry.totalMinutes;
+        } else {
+          let core = 0;
+          if (Array.isArray(entry.coursesBreakdown)) {
+            entry.coursesBreakdown.forEach((c) => {
+              core += (c.studyMinutes || 0) + (c.discussionMinutes || 0);
+            });
+          } else {
+            core += Math.round(((entry.studyHours || 0) + (entry.discussionHours || 0)) * 60);
+          }
+          periodMin += core + (entry.freeStudyMinutes || 0);
+        }
+      });
+      setStudyMinutes(periodMin);
+    } else {
+      setActivePeriodTitle('');
+      setStudyMinutes(0);
+    }
+
+    // Current Shamsi week range (Saturday -> Friday) for weekly attendance KPI
+    const dayIdx = getShamsiDayOfWeek(todayShamsi); // 0 = Saturday .. 6 = Friday
+    const weekStart = dayIdx > 0 ? subtractDaysShamsi(todayShamsi, dayIdx) : normalizeShamsiDateStr(todayShamsi);
+    const weekStartDate = shamsiToDate(weekStart);
+    const weekEndDate = new Date(weekStartDate.getTime() + 6 * 86400000);
+    const weekEnd = normalizeShamsiDateStr(dateToShamsi(weekEndDate));
+
+    let presentOrLate = 0;
+    let totalAtt = 0;
+    (allAttendance || []).forEach((rec) => {
+      if ((rec as any).isCancelled) return;
+      if (rec.programId && !myCourseIdSet.has(String(rec.programId))) return;
+      const normRecDate = normalizeShamsiDateStr(rec.date);
+      if (!normRecDate || compareShamsi(normRecDate, weekStart) < 0 || compareShamsi(normRecDate, weekEnd) > 0) {
+        return;
+      }
+      const detail = rec.students?.find(
+        (st) =>
+          candidateIdsLower.includes(String(st.studentId).toLowerCase().trim()) ||
+          (matchedSt?.name && st.studentName?.toLowerCase().includes(matchedSt.name.toLowerCase()))
+      );
+      if (detail) {
+        totalAtt++;
+        if (detail.status === 'present' || detail.status === 'late') {
+          presentOrLate++;
+        }
+      }
+    });
+    setAttendanceSessionsCount(totalAtt);
+    setAttendanceRate(totalAtt > 0 ? Math.round((presentOrLate / totalAtt) * 100) : 100);
+  };
+
   useEffect(() => {
+    let mounted = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    Promise.all([
+      localDb.getLocalDocsSnapshot<Program>('programs'),
+      localDb.getLocalDocsSnapshot<StudentRequest>('student_requests'),
+      localDb.getLocalDocsSnapshot<Student>('students'),
+      localDb.getLocalDocsSnapshot<any>('course_enrollments'),
+      localDb.getLocalDocsSnapshot<any>('enrollments'),
+      localDb.getLocalDocsSnapshot<StudyPeriod>('study_periods'),
+      localDb.getLocalDocsSnapshot<StudyDailyEntry>('study_daily_entries'),
+      localDb.getLocalDocsSnapshot<AttendanceSessionLog>('attendance'),
+    ]).then(([pg, rq, st, ce, le, pr, dl, at]) => {
+      if (!mounted) return;
+      if ((pg && pg.length > 0) || (at && at.length > 0)) {
+        processStudentData(pg, rq, st, ce, le, pr, dl, at);
+        initialLoadDoneRef.current = true;
+        setIsLoading(false);
+      }
+    }).catch((err) => {
+      console.warn('[StudentMobilePanel] Snapshot preload warning:', err);
+    });
+
     loadStudentData(true);
 
-    const handleRefresh = () => loadStudentData(false);
+    const handleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        if (mounted) loadStudentData(false);
+      }, 150);
+    };
     const unsub = localDb.subscribe(handleRefresh);
     const handleStorage = (e: StorageEvent) => {
       if (
@@ -116,7 +312,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         e.key === 'study_periods_updated_at' ||
         e.key === 'study_logs_updated_at'
       ) {
-        loadStudentData(false);
+        handleRefresh();
       }
     };
 
@@ -129,6 +325,8 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
     window.addEventListener('storage', handleStorage);
 
     return () => {
+      mounted = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
       unsub();
       window.removeEventListener('collection_change_programs', handleRefresh);
       window.removeEventListener('collection_change_study_periods', handleRefresh);
@@ -138,7 +336,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       window.removeEventListener('app_data_change', handleRefresh);
       window.removeEventListener('storage', handleStorage);
     };
-  }, [currentUser, todayDayName]);
+  }, [currentUser, todayDayName, todayShamsi]);
 
   const loadStudentData = async (isInitial = false) => {
     try {
@@ -166,140 +364,16 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         localDb.getDocs<AttendanceSessionLog>('attendance'),
       ]);
 
-      const combinedEnrollments = [...(courseEnrs || []), ...(legacyEnrs || [])];
-      const activeProgs = (allProgs || []).filter(isProgramActiveAndValid);
-      setAllProgramsList(activeProgs);
-      setEnrollmentsList(combinedEnrollments);
-
-      const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
-      const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
-      const uName = (currentUser?.username || '').trim().toLowerCase();
-
-      const matchedSt = (allStudents || []).find(
-        (s) =>
-          (sId && String(s.id) === String(sId)) ||
-          (uName && (s.nationalId?.toLowerCase() === uName || s.studentCode?.toLowerCase() === uName)) ||
-          (cName && s.name?.toLowerCase().includes(cName))
+      processStudentData(
+        allProgs,
+        allReqs,
+        allStudents,
+        courseEnrs,
+        legacyEnrs,
+        allPeriods,
+        allDailyEntries,
+        allAttendance
       );
-      setMatchedStudent(matchedSt || null);
-
-      const candidateIdSet = buildStudentCandidateIds(
-        matchedSt || null,
-        [sId, currentUser?.id, currentUser?.linkedStudentId, currentUser?.username].filter(Boolean) as string[]
-      );
-      const candidateIdsLower = Array.from(candidateIdSet).map((x) => x.toLowerCase().trim());
-      const candidateNames = [cName, matchedSt?.name?.toLowerCase()].filter(Boolean) as string[];
-
-      const myActiveCourses = activeProgs.filter((p) =>
-        isStudentEnrolledInProgram(p, matchedSt || null, combinedEnrollments, candidateIdSet)
-      );
-      const myCourseIdSet = new Set(myActiveCourses.map((p) => String(p.id)));
-
-      const normDay = (d: string) => d.replace(/[\u200c\s]/g, '').trim();
-      const todayNorm = normDay(todayDayName);
-      const filteredToday = myActiveCourses
-        .filter((p) => getProgramDays(p).some((d) => normDay(d) === todayNorm))
-        .sort((a, b) => {
-          const rA = parseProgramTimeRangeMinutes(a.time);
-          const rB = parseProgramTimeRangeMinutes(b.time);
-          return (rA?.start ?? 9999) - (rB?.start ?? 9999);
-        });
-      setTodayPrograms(filteredToday);
-
-      const repProg = activeProgs.find((p) => {
-        const repIds = Array.isArray((p as any).representativeStudentIds)
-          ? (p as any).representativeStudentIds.map((x: any) => String(x).toLowerCase().trim())
-          : [];
-        if (repIds.some((id: string) => candidateIdsLower.includes(id))) return true;
-        const repNames = Array.isArray((p as any).representativeNames)
-          ? (p as any).representativeNames
-              .map((n: string) => n.replace(/\(.*?\)/g, '').trim().toLowerCase())
-              .filter(Boolean)
-          : [];
-        if (repNames.some((rn: string) => candidateNames.some((cn) => cn.includes(rn) || rn.includes(cn)))) {
-          return true;
-        }
-        if (p.customRepresentative) {
-          const cust = String(p.customRepresentative).replace(/\(.*?\)/g, '').trim().toLowerCase();
-          return candidateNames.some((cn) => cn.includes(cust) || cust.includes(cn));
-        }
-        return false;
-      });
-      setHasRepProgram(Boolean(repProg));
-      setMyRepProgramTitle(repProg ? repProg.title || 'کلاس درس' : '');
-
-      const selfProgs = myActiveCourses.filter((p) => p.attendanceType === 'self_reporting');
-      setSelfReportingCount(selfProgs.length);
-
-      if (Array.isArray(allReqs)) {
-        const myReqs = allReqs.filter(
-          (r) =>
-            (r.studentId && candidateIdsLower.includes(String(r.studentId).toLowerCase().trim())) ||
-            ((r as any).nationalId &&
-              (String((r as any).nationalId).toLowerCase() === uName ||
-                (matchedSt && String((r as any).nationalId).toLowerCase() === String(matchedSt.nationalId).toLowerCase())))
-        );
-        setMyRequestsCount(myReqs.filter((r) => r.status === 'pending').length);
-      }
-
-      const validPeriods = (allPeriods || [])
-        .filter((p) => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt)
-        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
-      const openPeriod = validPeriods.find((p) => !isPeriodClosed(p)) || validPeriods[0];
-
-      if (openPeriod) {
-        setActivePeriodTitle(openPeriod.title || 'دوره جاری');
-        const mandMin = openPeriod.mandatoryMinutes || Math.round((openPeriod.mandatoryHours || 0) * 60) || 800;
-        setStudyMandatoryMinutes(mandMin);
-
-        const myEntries = (allDailyEntries || []).filter((e) => {
-          if (e.periodId !== openPeriod.id) return false;
-          const eIds = [e.studentId, (e as any).student_id, (e as any).userId, (e as any).nationalId, (e as any).studentCode]
-            .filter(Boolean)
-            .map((x) => String(x).toLowerCase().trim());
-          return candidateIdsLower.some((cid) => eIds.includes(cid));
-        });
-
-        let periodMin = 0;
-        myEntries.forEach((entry) => {
-          if (typeof entry.totalMinutes === 'number' && entry.totalMinutes > 0) {
-            periodMin += entry.totalMinutes;
-          } else {
-            let core = 0;
-            if (Array.isArray(entry.coursesBreakdown)) {
-              entry.coursesBreakdown.forEach((c) => {
-                core += (c.studyMinutes || 0) + (c.discussionMinutes || 0);
-              });
-            } else {
-              core += Math.round(((entry.studyHours || 0) + (entry.discussionHours || 0)) * 60);
-            }
-            periodMin += core + (entry.freeStudyMinutes || 0);
-          }
-        });
-        setStudyMinutes(periodMin);
-      } else {
-        setActivePeriodTitle('');
-        setStudyMinutes(0);
-      }
-
-      let presentOrLate = 0;
-      let totalAtt = 0;
-      (allAttendance || []).forEach((rec) => {
-        if (rec.programId && !myCourseIdSet.has(String(rec.programId))) return;
-        const detail = rec.students?.find(
-          (st) =>
-            candidateIdsLower.includes(String(st.studentId).toLowerCase().trim()) ||
-            (matchedSt?.name && st.studentName?.toLowerCase().includes(matchedSt.name.toLowerCase()))
-        );
-        if (detail) {
-          totalAtt++;
-          if (detail.status === 'present' || detail.status === 'late') {
-            presentOrLate++;
-          }
-        }
-      });
-      setAttendanceSessionsCount(totalAtt);
-      setAttendanceRate(totalAtt > 0 ? Math.round((presentOrLate / totalAtt) * 100) : 100);
     } catch (e) {
       console.warn('Error loading mobile student data:', e);
     } finally {
@@ -510,9 +584,9 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               size={54}
               strokeWidth={5.5}
               progressClassName={attendanceRate >= 85 ? 'text-emerald-400' : 'text-amber-400'}
-              label="حضور در کلاس"
+              label="حضور هفته جاری"
               valueText={`${attendanceRate}٪`}
-              subText={`${attendanceSessionsCount} جلسه ثبت‌شده`}
+              subText={attendanceSessionsCount > 0 ? `از ${attendanceSessionsCount} جلسه این هفته` : 'جلسه‌ای در این هفته ثبت نشده'}
             />
           </motion.button>
         </div>
@@ -574,7 +648,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               )}
 
               <div className="relative z-10 flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center border border-white/25 shadow-xs">
                   <GlyphStudyOrbit size={21} className="text-cyan-100" />
                 </div>
                 <span className="text-[10.5px] font-black text-cyan-100 tabular-nums">
@@ -608,7 +682,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               )}
 
               <div className="relative z-10 flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center border border-white/25 shadow-xs">
                   <GlyphRequestPaperPlane size={20} className="text-emerald-100" />
                 </div>
                 <span
@@ -647,7 +721,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               )}
 
               <div className="relative z-10 flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center border border-white/25 shadow-xs">
                   <GlyphSelfReportSpark size={21} className="text-teal-100" />
                 </div>
                 <span className="text-[10.5px] font-black text-teal-100 tabular-nums">
@@ -694,7 +768,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               )}
 
               <div className="relative z-10 flex items-center justify-between">
-                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center border border-white/25 shadow-xs">
                   <GlyphRepShieldCrown size={21} className="text-indigo-100" />
                 </div>
                 <span className="text-[10.5px] font-black text-indigo-100">

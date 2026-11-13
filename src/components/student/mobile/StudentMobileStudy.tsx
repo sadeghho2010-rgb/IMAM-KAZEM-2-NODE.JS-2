@@ -29,6 +29,7 @@ import { getTodayShamsi } from '../../../lib/jalali';
 import {
   formatMinutesToHoursAndMinutes,
   getStudyWarningStatus,
+  addStudyDailyEntryStrict,
   syncAggregatePeriodicStudyLog,
   isPeriodClosed,
   isCoreCurriculumProgram,
@@ -70,10 +71,110 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
   const [showFreeRulesModal, setShowFreeRulesModal] = useState<boolean>(false);
   const [entryToDelete, setEntryToDelete] = useState<StudyDailyEntry | null>(null);
 
+  const applyLoadedStudyState = (
+    allStudents: Student[],
+    allPeriods: StudyPeriod[],
+    allProgs: Program[],
+    courseEnrolls: any[],
+    legacyEnrolls: Enrollment[],
+    allDaily: StudyDailyEntry[]
+  ) => {
+    const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
+    const uName = (currentUser?.username || '').trim().toLowerCase();
+    const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
+
+    const matched = (allStudents || []).find(
+      (s) =>
+        (sId && String(s.id) === String(sId)) ||
+        (uName && (s.nationalId?.toLowerCase() === uName || s.studentCode?.toLowerCase() === uName)) ||
+        (cName && s.name?.toLowerCase().includes(cName))
+    );
+    if (matched) setStudentObj(matched);
+
+    const validPeriods = (allPeriods || []).filter(
+      (p) => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt
+    );
+
+    const sortedPeriods = [...validPeriods].sort(
+      (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+    );
+    setPeriods(sortedPeriods);
+
+    setActivePeriodId((prev) => {
+      const currentP = sortedPeriods.find((p) => p.id === prev);
+      const openP = sortedPeriods.find((p) => !isPeriodClosed(p));
+      if (!prev || !currentP) {
+        return openP?.id || sortedPeriods[0]?.id || '';
+      }
+      if (isPeriodClosed(currentP) && openP && userSelectedPeriodId !== prev) {
+        return openP.id;
+      }
+      return prev;
+    });
+
+    setPrograms(allProgs || []);
+    setEnrollments([...(courseEnrolls || []), ...(legacyEnrolls || [])]);
+
+    const targetStudentId = matched?.id || sId || currentUser?.id;
+    const candidateIds = [
+      targetStudentId,
+      matched?.id,
+      matched?.studentCode,
+      matched?.nationalId,
+      sId,
+      currentUser?.id,
+      currentUser?.username,
+    ]
+      .filter(Boolean)
+      .map((x) => String(x).toLowerCase().trim());
+
+    const myEntries = (allDaily || []).filter((e) => {
+      const eIds = [
+        e.studentId,
+        (e as any).student_id,
+        (e as any).userId,
+        (e as any).nationalId,
+        (e as any).studentCode,
+      ]
+        .filter(Boolean)
+        .map((x) => String(x).toLowerCase().trim());
+      return candidateIds.some((cid) => eIds.includes(cid));
+    });
+
+    setDailyEntries(myEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+  };
+
   useEffect(() => {
+    let mounted = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Instant paint from local cache snapshot (<10ms) before background network sync
+    Promise.all([
+      localDb.getLocalDocsSnapshot<Student>('students'),
+      localDb.getLocalDocsSnapshot<StudyPeriod>('study_periods'),
+      localDb.getLocalDocsSnapshot<Program>('programs'),
+      localDb.getLocalDocsSnapshot<any>('course_enrollments'),
+      localDb.getLocalDocsSnapshot<Enrollment>('enrollments'),
+      localDb.getLocalDocsSnapshot<StudyDailyEntry>('study_daily_entries'),
+    ]).then(([st, pr, pg, ce, le, dl]) => {
+      if (!mounted) return;
+      if ((pr && pr.length > 0) || (dl && dl.length > 0)) {
+        applyLoadedStudyState(st, pr, pg, ce, le, dl);
+        initialLoadDoneRef.current = true;
+        setIsLoading(false);
+      }
+    }).catch((err) => {
+      console.warn('[StudentMobileStudy] Snapshot preload warning:', err);
+    });
+
     loadAllData(true);
 
-    const handleSilentRefresh = () => loadAllData(false);
+    const handleSilentRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        if (mounted) loadAllData(false);
+      }, 150);
+    };
     const unsub = localDb.subscribe(handleSilentRefresh);
 
     const handleDataChange = (e: any) => {
@@ -87,7 +188,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
         col === 'enrollments' ||
         col === 'all'
       ) {
-        loadAllData(false);
+        handleSilentRefresh();
       }
     };
 
@@ -98,7 +199,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
         e.key === 'programs_updated_at' ||
         (e.key && e.key.includes('study'))
       ) {
-        loadAllData(false);
+        handleSilentRefresh();
       }
     };
 
@@ -110,6 +211,8 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
     window.addEventListener('storage', handleStorage);
 
     return () => {
+      mounted = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
       unsub();
       window.removeEventListener('app_data_change', handleDataChange);
       window.removeEventListener('collection_change_study_periods', handleSilentRefresh);
@@ -134,69 +237,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
         localDb.getDocs<StudyDailyEntry>('study_daily_entries'),
       ]);
 
-      const sId = currentUser?.studentId || currentUser?.linkedStudentId || currentUser?.id;
-      const uName = (currentUser?.username || '').trim().toLowerCase();
-      const cName = (currentUser?.name || currentUser?.fullName || '').trim().toLowerCase();
-
-      const matched = (allStudents || []).find(
-        (s) =>
-          (sId && String(s.id) === String(sId)) ||
-          (uName && (s.nationalId?.toLowerCase() === uName || s.studentCode?.toLowerCase() === uName)) ||
-          (cName && s.name?.toLowerCase().includes(cName))
-      );
-      if (matched) setStudentObj(matched);
-
-      const validPeriods = (allPeriods || []).filter(
-        (p) => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt
-      );
-
-      const sortedPeriods = [...validPeriods].sort(
-        (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-      );
-      setPeriods(sortedPeriods);
-
-      setActivePeriodId((prev) => {
-        const currentP = sortedPeriods.find((p) => p.id === prev);
-        const openP = sortedPeriods.find((p) => !isPeriodClosed(p));
-        if (!prev || !currentP) {
-          return openP?.id || sortedPeriods[0]?.id || '';
-        }
-        if (isPeriodClosed(currentP) && openP && userSelectedPeriodId !== prev) {
-          return openP.id;
-        }
-        return prev;
-      });
-
-      setPrograms(allProgs || []);
-      setEnrollments([...(courseEnrolls || []), ...(legacyEnrolls || [])]);
-
-      const targetStudentId = matched?.id || sId || currentUser?.id;
-      const candidateIds = [
-        targetStudentId,
-        matched?.id,
-        matched?.studentCode,
-        matched?.nationalId,
-        sId,
-        currentUser?.id,
-        currentUser?.username,
-      ]
-        .filter(Boolean)
-        .map((x) => String(x).toLowerCase().trim());
-
-      const myEntries = (allDaily || []).filter((e) => {
-        const eIds = [
-          e.studentId,
-          (e as any).student_id,
-          (e as any).userId,
-          (e as any).nationalId,
-          (e as any).studentCode,
-        ]
-          .filter(Boolean)
-          .map((x) => String(x).toLowerCase().trim());
-        return candidateIds.some((cid) => eIds.includes(cid));
-      });
-
-      setDailyEntries(myEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      applyLoadedStudyState(allStudents, allPeriods, allProgs, courseEnrolls, legacyEnrolls, allDaily);
     } catch (e) {
       console.warn('Error loading study data:', e);
     } finally {
@@ -381,40 +422,34 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
 
     try {
       setIsSaving(true);
+      setSaveSuccessMsg('');
       setWriteInProgress('study_save_mobile', true, 'در حال ثبت و ذخیره کارکرد مطالعه در سرور... لطفاً از صفحه خارج نشوید.');
       const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
-      const nowIso = new Date().toISOString();
-      const newEntry: StudyDailyEntry = {
-        id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        studentId: effectiveStudentId,
-        periodId: activePeriod.id,
-        entryDate,
-        studyHours: Math.round((totalCoreStudyMin / 60) * 10) / 10,
-        discussionHours: Math.round((totalCoreDiscMin / 60) * 10) / 10,
-        totalHours: Math.round((totalMin / 60) * 10) / 10,
-        totalMinutes: totalMin,
-        coreTotalMinutes: totalCoreStudyMin + totalCoreDiscMin,
-        coursesBreakdown: breakdown,
-        freeStudyMinutes: parsedFreeMin,
-        freeStudyBookTitle: freeStudyBookTitle.trim() || undefined,
-        note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : 'ثبت کارکرد روزانه دروس اصلی',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        version: 1,
-        studentCode: studentObj?.studentCode || currentUser?.username,
-        nationalId: studentObj?.nationalId || currentUser?.username,
-        studentName: studentObj?.name || currentUser?.name || currentUser?.fullName || '',
-        userId: currentUser?.id,
-      } as StudyDailyEntry;
+      const confirmedEntry = await addStudyDailyEntryStrict(
+        {
+          id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          studentId: effectiveStudentId,
+          periodId: activePeriod.id,
+          entryDate,
+          studyHours: Math.round((totalCoreStudyMin / 60) * 10) / 10,
+          discussionHours: Math.round((totalCoreDiscMin / 60) * 10) / 10,
+          totalMinutes: totalMin,
+          coreTotalMinutes: totalCoreStudyMin + totalCoreDiscMin,
+          coursesBreakdown: breakdown,
+          freeStudyMinutes: parsedFreeMin,
+          freeStudyBookTitle: freeStudyBookTitle.trim() || undefined,
+          submittedBy: 'student',
+          note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : 'ثبت کارکرد روزانه دروس اصلی',
+          studentCode: studentObj?.studentCode || currentUser?.username,
+          nationalId: studentObj?.nationalId || currentUser?.username,
+          studentName: studentObj?.name || currentUser?.name || currentUser?.fullName || '',
+          userId: currentUser?.id,
+        },
+        20000
+      );
 
-      // Parallel persistence of daily entry + aggregate periodic log (eliminates sequential round-trip & duplicate sync)
-      await Promise.all([
-        localDb.setDoc('study_daily_entries', newEntry),
-        syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student', newEntry)
-      ]);
-
-      setDailyEntries((prev) => [newEntry, ...prev]);
-      const msg = 'کارکرد روزانه شما با موفقیت ثبت شد و به مجموع دوره افزوده گردید!';
+      setDailyEntries((prev) => [confirmedEntry, ...prev.filter((item) => item.id !== confirmedEntry.id)]);
+      const msg = 'کارکرد روزانه شما با موفقیت در سرور ثبت شد و به مجموع دوره افزوده گردید!';
       setSaveSuccessMsg(msg);
       emitSaveConfirmation({
         variant: 'success',
@@ -424,19 +459,24 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
       });
       setTimeout(() => setSaveSuccessMsg(''), 3500);
 
-      // Reset ALL inputs strictly
+      // Reset ALL inputs strictly after confirmed server write
       setCourseStudyMinutes({});
       setCourseDiscussionMinutes({});
       setFreeStudyMinutesInput('');
       setFreeStudyBookTitle('');
     } catch (err: any) {
-      console.error('Error saving study entry:', err);
-      const errMsg = 'خطا در ذخیره‌سازی اطلاعات مطالعه. لطفاً دوباره تلاش کنید.';
+      console.error('[STORAGE_FAILURE] Error saving mobile study entry:', err);
+      const errMsg =
+        err?.message && String(err.message).includes('دیتای شما ثبت نشد')
+          ? String(err.message)
+          : `دیتای شما ثبت نشد! ${err?.message || 'خطا در ذخیره‌سازی اطلاعات مطالعه در سرور. لطفاً دوباره تلاش کنید.'}`;
       setValidationError(errMsg);
       emitSaveConfirmation({
         variant: 'error',
-        title: 'خطا در ثبت ساعت مطالعه',
-        message: err?.message || errMsg
+        title: 'دیتای شما ثبت نشد',
+        message: errMsg,
+        subtitle: 'ثبت در سرور تایید نشد؛ لطفاً اتصال اینترنت را بررسی کرده و مجدداً دکمه ثبت را بزنید.',
+        durationMs: 10000
       });
     } finally {
       setWriteInProgress('study_save_mobile', false);

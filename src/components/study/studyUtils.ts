@@ -791,6 +791,233 @@ export async function addStudyDailyEntry(entry: {
   return createdDoc;
 }
 
+/**
+ * Fast, single-roundtrip strict study registration with a 20-second server confirmation deadline.
+ * Never claims success if server fails or takes >20s; throws a clear error for bright-red UI feedback.
+ */
+export async function addStudyDailyEntryStrict(
+  entry: {
+    id?: string;
+    periodId: string;
+    studentId: string;
+    nationalId?: string;
+    studentCode?: string;
+    studentName?: string;
+    userId?: string;
+    entryDate?: string;
+    freeStudyBookTitle?: string;
+    studyHours?: number;
+    discussionHours?: number;
+    coursesBreakdown?: CourseStudyDetail[];
+    freeStudyMinutes?: number;
+    totalMinutes?: number;
+    coreTotalMinutes?: number;
+    submittedBy?: string;
+    note?: string;
+  },
+  timeoutMs = 20000
+): Promise<StudyDailyEntry> {
+  const breakdown = entry.coursesBreakdown || [];
+  const freeMin = entry.freeStudyMinutes || 0;
+
+  let coreStudyMin = 0;
+  let coreDiscMin = 0;
+  breakdown.forEach(c => {
+    coreStudyMin += Number(c.studyMinutes) || 0;
+    coreDiscMin += Number(c.discussionMinutes) || 0;
+  });
+
+  const coreTotalMin = entry.coreTotalMinutes ?? (coreStudyMin + coreDiscMin);
+  const totalMin = entry.totalMinutes ?? (coreTotalMin + freeMin);
+
+  const studyHours = Math.round((coreStudyMin / 60) * 100) / 100;
+  const discussionHours = Math.round((coreDiscMin / 60) * 100) / 100;
+  const totalHours = Math.round((totalMin / 60) * 100) / 100;
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const todayShamsi = entry.entryDate || getTodayShamsi();
+  const timeStr = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+  const newEntryId = entry.id || `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  const createdDoc: StudyDailyEntry = {
+    id: newEntryId,
+    periodId: entry.periodId,
+    studentId: entry.studentId,
+    student_id: entry.studentId,
+    nationalId: entry.nationalId || '',
+    studentCode: entry.studentCode || '',
+    studentName: entry.studentName || '',
+    userId: entry.userId || '',
+    studyHours,
+    discussionHours,
+    totalHours,
+    totalMinutes: totalMin,
+    coreTotalMinutes: coreTotalMin,
+    freeStudyMinutes: freeMin,
+    freeStudyBookTitle: entry.freeStudyBookTitle,
+    coursesBreakdown: breakdown,
+    entryDate: todayShamsi,
+    entryTime: timeStr,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    version: 1,
+    submittedBy: entry.submittedBy || 'student',
+    note: entry.note || ''
+  } as StudyDailyEntry;
+
+  // Build aggregate payload in memory (~1ms) so both server writes execute in parallel within a single 20s window
+  const targetStudentId = String(entry.studentId || '').trim();
+  const [allEntries, allStudents, existingLogs] = await Promise.all([
+    localDb.getLocalDocsSnapshot<StudyDailyEntry>('study_daily_entries'),
+    localDb.getLocalDocsSnapshot<Student>('students'),
+    localDb.getLocalDocsSnapshot<PeriodicStudyLog>('periodic_study_logs')
+  ]);
+
+  const studentObj = allStudents.find(s =>
+    String(s.id).trim() === targetStudentId ||
+    (s.nationalId && String(s.nationalId).trim() === targetStudentId) ||
+    (s.studentCode && String(s.studentCode).trim() === targetStudentId)
+  );
+  const canonicalId = studentObj ? String(studentObj.id).trim() : targetStudentId;
+  const canonicalNat = studentObj?.nationalId ? String(studentObj.nationalId).trim() : (entry.nationalId || '');
+  const canonicalCode = studentObj?.studentCode ? String(studentObj.studentCode).trim() : (entry.studentCode || '');
+  const canonicalName = studentObj?.name ? String(studentObj.name).trim() : (entry.studentName || '');
+
+  const studentEntries = allEntries.filter(e => {
+    const pMatch = String(e.periodId || (e as any).period_id || '').trim() === String(entry.periodId).trim();
+    if (!pMatch) return false;
+    const eStId = String(e.studentId || (e as any).student_id || '').trim();
+    const eNat = String((e as any).nationalId || (e as any).nationalCode || '').trim();
+    const eCode = String((e as any).studentCode || '').trim();
+    const eUser = String((e as any).userId || '').trim();
+    return (
+      (targetStudentId && eStId === targetStudentId) ||
+      (canonicalId && eStId === canonicalId) ||
+      (canonicalNat && (eNat === canonicalNat || eStId === canonicalNat)) ||
+      (canonicalCode && eCode === canonicalCode) ||
+      (entry.userId && eUser === entry.userId)
+    );
+  });
+  studentEntries.push(createdDoc);
+
+  let totalMinutesSum = 0;
+  let coreStudyMinutesSum = 0;
+  let coreDiscussionMinutesSum = 0;
+  let freeStudyMinutesSum = 0;
+  const coursesAggMap = new Map<string, CourseStudyDetail>();
+
+  studentEntries.forEach(e => {
+    freeStudyMinutesSum += Number(e.freeStudyMinutes) || 0;
+    if (Array.isArray(e.coursesBreakdown) && e.coursesBreakdown.length > 0) {
+      e.coursesBreakdown.forEach(c => {
+        const sMin = Number(c.studyMinutes) || 0;
+        const dMin = Number(c.discussionMinutes) || 0;
+        coreStudyMinutesSum += sMin;
+        coreDiscussionMinutesSum += dMin;
+        const rawTitle = (c.courseTitle || '').trim();
+        const rawId = (c.courseId || '').trim();
+        const key = rawId ? rawId.toLowerCase() : (rawTitle ? rawTitle.toLowerCase() : 'unknown_course');
+        const existing = coursesAggMap.get(key) || {
+          courseId: c.courseId || rawId || key,
+          courseTitle: c.courseTitle || rawTitle || 'درس اصلی',
+          studyMinutes: 0,
+          discussionMinutes: 0
+        };
+        existing.studyMinutes += sMin;
+        existing.discussionMinutes += dMin;
+        coursesAggMap.set(key, existing);
+      });
+    } else {
+      coreStudyMinutesSum += Math.round((Number(e.studyHours) || 0) * 60);
+      coreDiscussionMinutesSum += Math.round((Number(e.discussionHours) || 0) * 60);
+    }
+  });
+
+  const coreTotalMinutesSum = coreStudyMinutesSum + coreDiscussionMinutesSum;
+  totalMinutesSum = coreTotalMinutesSum + freeStudyMinutesSum;
+
+  const matchingLogs = existingLogs.filter(l => {
+    const pMatch = String(l.periodId || (l as any).period_id || '').trim() === String(entry.periodId).trim();
+    if (!pMatch) return false;
+    const lStId = String(l.studentId || (l as any).student_id || '').trim();
+    const lNat = String((l as any).nationalId || (l as any).nationalCode || '').trim();
+    return (
+      (targetStudentId && lStId === targetStudentId) ||
+      (canonicalId && lStId === canonicalId) ||
+      (canonicalNat && (lNat === canonicalNat || lStId === canonicalNat))
+    );
+  });
+
+  const primaryLog = matchingLogs[0];
+  const aggId = primaryLog?.id || `plog_${entry.periodId}_${canonicalId}_${Date.now()}`;
+  const aggregateDoc: Record<string, any> & { id: string } = {
+    id: aggId,
+    periodId: String(entry.periodId).trim(),
+    studentId: canonicalId,
+    studentName: canonicalName || primaryLog?.studentName || '',
+    studentCode: canonicalCode || primaryLog?.studentCode || '',
+    nationalId: canonicalNat || primaryLog?.nationalId || '',
+    grade: studentObj?.grade || primaryLog?.grade || '',
+    hours: Math.round((totalMinutesSum / 60) * 100) / 100,
+    totalMinutes: totalMinutesSum,
+    studyHours: Math.round((coreStudyMinutesSum / 60) * 100) / 100,
+    discussionHours: Math.round((coreDiscussionMinutesSum / 60) * 100) / 100,
+    coreStudyMinutes: coreStudyMinutesSum,
+    coreDiscussionMinutes: coreDiscussionMinutesSum,
+    coreTotalMinutes: coreTotalMinutesSum,
+    freeStudyMinutes: freeStudyMinutesSum,
+    coursesBreakdown: Array.from(coursesAggMap.values()),
+    submittedBy: (entry.submittedBy as any) || primaryLog?.submittedBy || 'student',
+    createdAt: (primaryLog as any)?.createdAt || nowIso,
+    lastModifiedAt: nowIso,
+    updatedAt: nowIso,
+    version: ((primaryLog as any)?.version || 0) + 1
+  };
+
+  type StudyStrictWriteResult = { success: boolean; item?: any; message?: string; timedOut?: boolean };
+  type StudyRaceResult =
+    | { timedOut: true }
+    | { timedOut: false; entryRes: StudyStrictWriteResult; aggRes: StudyStrictWriteResult };
+
+  // Race both parallel strict writes against the 20-second deadline
+  const watchdogPromise = new Promise<StudyRaceResult>((resolve) => {
+    setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+  });
+
+  const parallelWritesPromise: Promise<StudyRaceResult> = Promise.all([
+    localDb.setDocStrict('study_daily_entries', createdDoc, timeoutMs),
+    localDb.setDocStrict('periodic_study_logs', aggregateDoc, timeoutMs)
+  ]).then(([entryRes, aggRes]) => ({ timedOut: false, entryRes, aggRes }));
+
+  const raceResult = await Promise.race([parallelWritesPromise, watchdogPromise]);
+
+  if (raceResult.timedOut || !('entryRes' in raceResult)) {
+    console.error('[STORAGE_FAILURE] Study save exceeded 20s deadline:', newEntryId);
+    throw new Error('دیتای شما ثبت نشد! زمان انتظار (۲۰ ثانیه) به پایان رسید. لطفاً اتصال اینترنت را بررسی کرده و دوباره تلاش نمایید.');
+  }
+
+  if (!raceResult.entryRes.success || !raceResult.aggRes.success) {
+    const reason = raceResult.entryRes.message || raceResult.aggRes.message || 'خطا در ثبت اطلاعات در سرور';
+    console.error('[STORAGE_FAILURE] Study save rejected:', reason);
+    throw new Error(`دیتای شما ثبت نشد! ${reason}`);
+  }
+
+  const confirmedEntry = (raceResult.entryRes.item as StudyDailyEntry) || createdDoc;
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries', id: confirmedEntry.id } }));
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs', id: aggId } }));
+    try {
+      localStorage.setItem('study_logs_updated_at', String(Date.now()));
+    } catch (storageErr) {
+      console.warn('[STUDY_CACHE_STAMP_WARNING]', storageErr);
+    }
+  }
+
+  return confirmedEntry;
+}
+
 export async function updateStudyDailyEntry(
   entryId: string, 
   updated: { 

@@ -78,6 +78,7 @@ import { StudentMobileSummary } from './components/student/mobile/StudentMobileS
 import { StudentMobileDiscussion } from './components/student/mobile/StudentMobileDiscussion';
 import { StudentMobileShell } from './components/student/mobile/StudentMobileShell';
 import { StudentMobilePanel } from './components/student/StudentMobilePanel';
+import { AdminMobileShell } from './components/admin/mobile/AdminMobileShell';
 import { RepresentativeQuickAttendanceView } from './components/attendance/RepresentativeQuickAttendanceView';
 import { StudentQuickSelfReportingView } from './components/attendance/StudentQuickSelfReportingView';
 import { motion, AnimatePresence } from 'motion/react';
@@ -233,6 +234,13 @@ function AppContent() {
   }, []);
 
   const isStudentMobile = Boolean(currentUser?.level === 3 && isMobileDevice && !forceDesktopMode);
+  const isStaffMobile = Boolean(
+    currentUser &&
+    currentUser.level < 3 &&
+    currentUser.role !== 'teacher' &&
+    isMobileDevice &&
+    !forceDesktopMode
+  );
 
   const navigateToTab = (tab: string, studentId?: string) => {
     setSelectedStudentIdForTab(studentId || undefined);
@@ -382,6 +390,7 @@ function AppContent() {
             onOpenSettings={() => setIsSettingsModalOpen(true)}
             initialCategoryGroup={dashboardCategoryGroup}
             onCategoryGroupChange={setDashboardCategoryGroup}
+            isInsideShell={isStaffMobile}
           />
         );
       case 'students':
@@ -598,6 +607,48 @@ function AppContent() {
     );
   }
 
+  if (isStaffMobile) {
+    return (
+      <>
+        <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+        <BugReportModal
+          isOpen={isBugModalOpen}
+          onClose={() => {
+            setIsBugModalOpen(false);
+            setBugModalInitialValues(undefined);
+          }}
+          initialValues={bugModalInitialValues}
+        />
+        <SecurityPinModal />
+        <AdminMobileShell
+          activeTab={activeTab}
+          tabTitle={getActiveTabTitle(activeTab)}
+          onNavigateTab={handleNavigate}
+          onBack={handleBack}
+          onSwitchToDesktopView={() => setForceDesktopMode(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onOpenBugReport={() => {
+            setBugModalInitialValues(undefined);
+            setIsBugModalOpen(true);
+          }}
+        >
+          <TabErrorBoundary tabName={getActiveTabTitle(activeTab)} onNavigateHome={() => navigateToTab('dashboard')}>
+            <Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center p-10 space-y-3 text-slate-600 font-bold bg-white rounded-3xl border border-slate-200/80 shadow-2xs" dir="rtl">
+                  <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">در حال بارگذاری بخش...</span>
+                </div>
+              }
+            >
+              {renderContent()}
+            </Suspense>
+          </TabErrorBoundary>
+        </AdminMobileShell>
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex font-vazir relative overflow-x-hidden" dir="rtl">
       {/* Sidebar Overlay (Drawer Backdrop) */}
@@ -741,6 +792,19 @@ function AppContent() {
               </button>
             </div>
           </div>
+
+          {isMobileDevice && forceDesktopMode && (
+            <div className="bg-indigo-950 text-white px-4 py-1.5 flex items-center justify-between text-[11px] font-bold">
+              <span>در حال مشاهده نسخه دسکتاپ/لپ‌تاپ روی موبایل هستید</span>
+              <button
+                type="button"
+                onClick={() => setForceDesktopMode(false)}
+                className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-cyan-200 font-black cursor-pointer"
+              >
+                بازگشت به نمای موبایل
+              </button>
+            </div>
+          )}
         </header>
 
         {/* Universal Sub-Header Back Button - Positioned on the LEFT side and slightly lower */}

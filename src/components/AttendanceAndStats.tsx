@@ -64,6 +64,7 @@ import {
   shamsiToDate,
   dateToShamsi,
   normalizeShamsiDateStr,
+  compareShamsi,
   toEnglishDigits,
   getConsolidatedSessionLog
 } from '../lib/jalali';
@@ -1502,8 +1503,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
       if (reportGradeFilter !== 'all' && r.grade !== reportGradeFilter) return false;
       if (reportProgramFilter !== 'all' && r.programId !== reportProgramFilter) return false;
-      if (reportStartDate && r.date < reportStartDate) return false;
-      if (reportEndDate && r.date > reportEndDate) return false;
+      if (reportStartDate && compareShamsi(normalizeShamsiDateStr(r.date), normalizeShamsiDateStr(reportStartDate)) < 0) return false;
+      if (reportEndDate && compareShamsi(normalizeShamsiDateStr(r.date), normalizeShamsiDateStr(reportEndDate)) > 0) return false;
 
       // Course category filter: academic (دروس اصلی), counseling (دروس مشاوره), thursday (جلسات پنج‌شنبه)
       if (reportCourseCategory !== 'all') {

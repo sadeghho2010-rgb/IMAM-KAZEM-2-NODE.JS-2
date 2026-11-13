@@ -1633,6 +1633,125 @@ class LocalDatabase {
     return id;
   }
 
+  /**
+   * Fast direct server write with strict deadline (no silent swallow, returns real server confirmation).
+   * Used for high-assurance flows like study hour logging where a 20s timeout must notify the user.
+   */
+  async setDocStrict(
+    collectionName: CollectionName,
+    data: any,
+    timeoutMs = 20000
+  ): Promise<{ success: boolean; item?: any; message?: string; timedOut?: boolean }> {
+    const resolvedCol = this.resolveCollection(collectionName as string);
+    const db = await this.getDb();
+    const nowIso = new Date().toISOString();
+    const id = String(data?.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+    const record = {
+      ...data,
+      id,
+      createdAt: data?.createdAt || nowIso,
+      updatedAt: nowIso,
+      _localModifiedAt: Date.now(),
+    };
+
+    const token = this.getAuthToken();
+    const idempotencyKey = `strict_${resolvedCol}_${id}_${record._localModifiedAt}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-idempotency-key': idempotencyKey,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const controller = new AbortController();
+    let didTimeout = false;
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const apiRes = await fetch(`/api/data/${resolvedCol}?_t=${Date.now()}`, {
+        method: 'POST',
+        headers,
+        cache: 'no-store',
+        credentials: 'include',
+        body: JSON.stringify({ ...record, _synced: true, _idempotencyKey: idempotencyKey }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if ((apiRes.status === 401 || apiRes.status === 403)) {
+        const refreshedToken = await tryRefreshToken();
+        if (refreshedToken) {
+          headers['Authorization'] = `Bearer ${refreshedToken}`;
+          const retryController = new AbortController();
+          const retryTimer = setTimeout(() => {
+            didTimeout = true;
+            retryController.abort();
+          }, Math.max(5000, timeoutMs - 4000));
+          const retryRes = await fetch(`/api/data/${resolvedCol}?_t=${Date.now()}`, {
+            method: 'POST',
+            headers,
+            cache: 'no-store',
+            credentials: 'include',
+            body: JSON.stringify({ ...record, _synced: true, _idempotencyKey: idempotencyKey }),
+            signal: retryController.signal,
+          });
+          clearTimeout(retryTimer);
+          if (retryRes.ok) {
+            const json = await retryRes.json().catch(() => ({}));
+            const finalDoc = json.item && typeof json.item === 'object' ? { ...record, ...json.item } : record;
+            this.setLocalStorageDoc(resolvedCol, finalDoc);
+            if (db.objectStoreNames.contains(resolvedCol)) {
+              try {
+                const tx = db.transaction(resolvedCol, 'readwrite');
+                tx.objectStore(resolvedCol).put(finalDoc);
+              } catch (e) {}
+            }
+            markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
+            setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+            this.notify();
+            return { success: true, item: finalDoc };
+          }
+        }
+      }
+
+      if (apiRes.ok) {
+        const resJson = await apiRes.json().catch(() => ({}));
+        const finalDoc = resJson.item && typeof resJson.item === 'object' ? { ...record, ...resJson.item } : record;
+        this.setLocalStorageDoc(resolvedCol, finalDoc);
+        if (db.objectStoreNames.contains(resolvedCol)) {
+          try {
+            const tx = db.transaction(resolvedCol, 'readwrite');
+            tx.objectStore(resolvedCol).put(finalDoc);
+          } catch (e) {}
+        }
+        markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
+        this.notify();
+        return { success: true, item: finalDoc };
+      }
+
+      const errJson = await apiRes.json().catch(() => ({}));
+      const errMsg = errJson.message || `خطای سرور (کد ${apiRes.status})`;
+      console.error(`[STORAGE_FAILURE] setDocStrict failed for "${resolvedCol}" id "${id}":`, errMsg);
+      return { success: false, message: errMsg, timedOut: false };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      const isAbort = didTimeout || err?.name === 'AbortError';
+      console.error(`[STORAGE_FAILURE] setDocStrict ${isAbort ? 'timeout' : 'network'} error for "${resolvedCol}" id "${id}":`, err?.message || err);
+      return {
+        success: false,
+        timedOut: isAbort,
+        message: isAbort
+          ? 'زمان انتظار برای ثبت در سرور (۲۰ ثانیه) به پایان رسید.'
+          : (err?.message || 'خطا در برقراری ارتباط با سرور'),
+      };
+    }
+  }
+
   // Update existing document (Optimistic UI: Local Cache First, Awaited Server Sync, Zero Rollback)
   async updateDoc(collectionName: CollectionName, id: string, data: any): Promise<void> {
     const resolvedCol = this.resolveCollection(collectionName as string);

@@ -86,49 +86,77 @@
 
 @keyframes electricSweep {
   0% {
-    transform: translate3d(-220%, 0, 0) skewX(-24deg);
+    transform: translate3d(-180%, 0, 0) skewX(-22deg);
     opacity: 0;
   }
-  12% {
-    opacity: 0.95;
-  }
-  42% {
-    transform: translate3d(380%, 0, 0) skewX(-24deg);
+  8% {
     opacity: 0.9;
   }
-  48%, 100% {
-    transform: translate3d(380%, 0, 0) skewX(-24deg);
+  42% {
+    opacity: 0.92;
+  }
+  52% {
+    transform: translate3d(340%, 0, 0) skewX(-22deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(340%, 0, 0) skewX(-22deg);
     opacity: 0;
   }
 }
 
 .animate-electric-sweep {
-  animation: electricSweep 4.8s cubic-bezier(0.35, 0, 0.15, 1) infinite;
+  animation: electricSweep 4.6s linear infinite;
   will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
 .student-electric-beam {
   position: absolute;
-  inset-block: -20%;
-  width: 44%;
+  left: 0;
+  top: -24%;
+  bottom: -24%;
+  width: 46%;
   pointer-events: none;
+  contain: layout style paint;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translate3d(-180%, 0, 0) skewX(-22deg);
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.04) 22%,
-    rgba(255, 255, 255, 0.28) 48%,
-    rgba(186, 230, 253, 0.48) 52%,
-    rgba(255, 255, 255, 0.12) 66%,
+    rgba(255, 255, 255, 0.05) 22%,
+    rgba(255, 255, 255, 0.30) 48%,
+    rgba(186, 230, 253, 0.50) 52%,
+    rgba(255, 255, 255, 0.12) 68%,
     transparent 100%
   );
-  animation: electricSweep 5.2s cubic-bezier(0.32, 0, 0.16, 1) infinite;
+  animation: electricSweep 4.8s linear infinite;
   will-change: transform, opacity;
 }
 
 .student-electric-beam-delay-1 { animation-delay: 0s; }
-.student-electric-beam-delay-2 { animation-delay: 1.3s; }
-.student-electric-beam-delay-3 { animation-delay: 2.6s; }
-.student-electric-beam-delay-4 { animation-delay: 3.9s; }
+.student-electric-beam-delay-2 { animation-delay: 1.2s; }
+.student-electric-beam-delay-3 { animation-delay: 2.4s; }
+.student-electric-beam-delay-4 { animation-delay: 3.6s; }
+
+/* Scoped mobile responsiveness rules for Staff Mobile Portal sub-pages ONLY (desktop unaffected) */
+.admin-mobile-viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.admin-mobile-viewport table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.admin-mobile-viewport > div {
+  max-width: 100%;
+}
 
 @keyframes microWaveDrift {
   0% {
