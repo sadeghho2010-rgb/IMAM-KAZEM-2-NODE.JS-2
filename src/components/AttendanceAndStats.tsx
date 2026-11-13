@@ -53,6 +53,7 @@ import {
 import * as XLSX from 'xlsx';
 import { cn, getProgramDays, matchesGradeFilter } from '../lib/utils';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { useAuth } from '../context/AuthContext';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import { 
@@ -1266,15 +1267,25 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId: recordId, programId: currentProgram.id, date: selectedDate } }));
 
       setIsSavedRecently(true);
-      showToast("حضور و غیاب با موفقیت در سیستم ثبت گردید.");
-
-      // In representative mode, only notify the user without returning or resetting selection
-      if (isRepresentative) {
-        showToast("ثبت نهایی و ثبت در دیتابیس با موفقیت انجام شد.");
-      }
+      const saveMsg = isRepresentative
+        ? `حضور و غیاب کلاس «${currentProgram.title}» (${selectedDate}) با موفقیت در دیتابیس ثبت نهایی شد.`
+        : `حضور و غیاب کلاس «${currentProgram.title}» (${selectedDate}) با موفقیت در سیستم ثبت گردید.`;
+      showToast(saveMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت حضور و غیاب با موفقیت انجام شد',
+        message: saveMsg,
+        subtitle: warningEmitted
+          ? 'تغییرات حضور و غیاب و اخطارهای صادره در سرور ذخیره گردید.'
+          : 'اطلاعات حضور و غیاب با موفقیت در سرور ذخیره شد.'
+      });
     } catch (err) {
       console.error('Error saving attendance:', err);
-      alert('خطا در ذخیره حضور و غیاب.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ذخیره حضور و غیاب',
+        message: 'خطا در ذخیره حضور و غیاب. لطفاً مجدداً تلاش کنید.'
+      });
     } finally {
       setIsSaving(false);
     }
@@ -1387,11 +1398,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       };
       await localDb.setDoc('attendance', updatedRecord);
       setAttendanceRecords(prev => [updatedRecord, ...prev.filter(r => r.id !== recordId)]);
-      showToast(`حضور تمام طلاب در کلاس «${prog.title}» ثبت شد (سبز).`);
+      const allPresentMsg = `حضور تمام طلاب در کلاس «${prog.title}» ثبت شد (سبز).`;
+      showToast(allPresentMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت حضور همگانی انجام شد',
+        message: allPresentMsg
+      });
       setQuickStatusModal(null);
     } catch (err) {
       console.error(err);
-      alert('خطا در ثبت حضور.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت حضور',
+        message: 'خطا در ثبت حضور.'
+      });
     } finally {
       setQuickIsSubmitting(false);
     }
@@ -1399,7 +1420,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   const handleQuickMarkSubstitute = async (prog: any, subName: string, subNotes: string) => {
     if (!subName.trim()) {
-      alert('لطفاً نام استاد جایگزین را وارد نمایید.');
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'نام استاد جایگزین وارد نشده است',
+        message: 'لطفاً نام استاد جایگزین را وارد نمایید.'
+      });
       return;
     }
     setQuickIsSubmitting(true);
@@ -1426,11 +1451,21 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       };
       await localDb.setDoc('attendance', updatedRecord);
       setAttendanceRecords(prev => [updatedRecord, ...prev.filter(r => r.id !== recordId)]);
-      showToast(`استاد جایگزین برای کلاس «${prog.title}» با موفقیت ثبت شد (آبی).`);
+      const subMsg = `استاد جایگزین برای کلاس «${prog.title}» با موفقیت ثبت شد (آبی).`;
+      showToast(subMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت استاد جایگزین انجام شد',
+        message: subMsg
+      });
       setQuickStatusModal(null);
     } catch (err) {
       console.error(err);
-      alert('خطا در ثبت استاد جایگزین.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت استاد جایگزین',
+        message: 'خطا در ثبت استاد جایگزین.'
+      });
     } finally {
       setQuickIsSubmitting(false);
     }
@@ -2336,13 +2371,23 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       });
 
       setEditingSessionIdx(null);
-      showToast(`جلسه «${sessionItem.programTitle}» در تاریخ ${sessionDate} با موفقیت ویرایش شد.`);
+      const editSessionMsg = `جلسه «${sessionItem.programTitle}» در تاریخ ${sessionDate} با موفقیت ویرایش شد.`;
+      showToast(editSessionMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ویرایش حضور و غیاب جلسه ثبت شد',
+        message: editSessionMsg
+      });
 
       window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: updatedLog.id } }));
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId: updatedLog.id, programId: progId, date: sessionDate } }));
     } catch (err: any) {
       console.error('Error saving session edit:', err);
-      alert('خطا در ذخیره‌سازی تغییرات جلسه: ' + (err?.message || 'لطفاً دوباره امتحان کنید'));
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ویرایش جلسه',
+        message: 'خطا در ذخیره‌سازی تغییرات جلسه: ' + (err?.message || 'لطفاً دوباره امتحان کنید')
+      });
     } finally {
       setIsSavingSessionEdit(false);
     }

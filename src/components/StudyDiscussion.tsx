@@ -41,6 +41,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { localDb, isStudentActive } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { Student, DiscussionGroup, PeriodicStudyLog, StudyStat, StudyPeriod, Program, Enrollment, WorkflowItem } from '../types';
 import { useMentor, MENTORS } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -97,8 +98,9 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
 
   // Form State
   const [formTitle, setFormTitle] = useState<string>('');
-  const [formProgramId, setFormProgramId] = useState<string>(''); // '' | 'other' | specific program ID
-  const [formProgramIds, setFormProgramIds] = useState<string[]>([]); // Multi-select program IDs
+  const [formProgramId, setFormProgramId] = useState<string>(''); // '' | 'other' | primary program ID
+  const [formProgramIds, setFormProgramIds] = useState<string[]>([]); // Multi-select program IDs (may include 'other')
+  const [courseSearchQuery, setCourseSearchQuery] = useState<string>('');
   const [customProgramTitle, setCustomProgramTitle] = useState<string>('');
   const [showOtherStudentsInModal, setShowOtherStudentsInModal] = useState<boolean>(false);
   const [modalMemberFilterTab, setModalMemberFilterTab] = useState<'same_grade' | 'all_school'>('same_grade');
@@ -229,6 +231,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const handleOpenCreateModal = (prefillStudentId?: string, prefillSubject?: string, prefillProgramId?: string) => {
     setEditingGroup(null);
     setFormTitle('');
+    setCourseSearchQuery('');
     if (prefillProgramId) {
       setFormProgramId(prefillProgramId);
       setFormProgramIds([prefillProgramId]);
@@ -263,6 +266,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
   const handleOpenEditModal = (group: DiscussionGroup) => {
     setEditingGroup(group);
     setFormTitle(group.title);
+    setCourseSearchQuery('');
     setFormSubject(group.subject || 'فقه و اصول');
     setFormSubjects(Array.isArray(group.subjects) && group.subjects.length > 0 
       ? group.subjects 
@@ -270,25 +274,30 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setFormGrade(group.grade || userGrade || 'پایه ۷');
     setFormRoom(group.room || '');
     
-    const existingPids = group.programIds || (group.programId ? [group.programId] : []);
-    setFormProgramIds(existingPids);
+    const rawPids = (group.programIds && group.programIds.length > 0)
+      ? group.programIds.filter(id => id && id !== 'other')
+      : (group.programId && group.programId !== 'other' ? [group.programId] : []);
 
-    if (group.programId) {
-      setFormProgramId(group.programId);
-      setCustomProgramTitle('');
-    } else if (group.programTitle) {
-      const matched = programs.find(p => p.title === group.programTitle);
-      if (matched) {
-        setFormProgramId(matched.id);
-        setCustomProgramTitle('');
-      } else {
-        setFormProgramId('other');
-        setCustomProgramTitle(group.programTitle);
-      }
-    } else {
-      setFormProgramId(existingPids[0] || '');
-      setCustomProgramTitle('');
-    }
+    const matchedProgramTitles = new Set(
+      programs.filter(p => rawPids.includes(p.id)).map(p => p.title)
+    );
+    const allGroupTitles = group.programTitles && group.programTitles.length > 0
+      ? group.programTitles
+      : (group.programTitle ? group.programTitle.split('،').map(s => s.trim()).filter(Boolean) : []);
+
+    // Any title not matching an active program ID is treated as custom title
+    const unmatchedTitles = allGroupTitles.filter(t => !matchedProgramTitles.has(t) && !programs.some(p => p.title === t));
+    // Also match any titles that match programs by name if rawPids missed them
+    const matchedByTitleIds = allGroupTitles
+      .map(t => programs.find(p => p.title === t)?.id)
+      .filter((id): id is string => Boolean(id));
+
+    const combinedRealPids = Array.from(new Set([...rawPids, ...matchedByTitleIds]));
+    const nextFormPids = unmatchedTitles.length > 0 ? [...combinedRealPids, 'other'] : combinedRealPids;
+
+    setFormProgramIds(nextFormPids);
+    setFormProgramId(combinedRealPids[0] || (unmatchedTitles.length > 0 ? 'other' : ''));
+    setCustomProgramTitle(unmatchedTitles.join(' ، '));
 
     setShowOtherStudentsInModal(false);
     setModalMemberFilterTab('same_grade');
@@ -321,23 +330,68 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     setFormExternalMembers(formExternalMembers.filter(m => m !== name));
   };
 
+  // Toggle program selection in multi-select course picker
+  const handleToggleProgramSelection = (progId: string) => {
+    setFormProgramIds(prev => {
+      const exists = prev.includes(progId);
+      const next = exists ? prev.filter(id => id !== progId) : [...prev, progId];
+
+      const realIds = next.filter(id => id !== 'other');
+      const selectedProgs = programs.filter(p => realIds.includes(p.id));
+      const titles = selectedProgs.map(p => p.title);
+      if (next.includes('other') && customProgramTitle.trim()) {
+        titles.push(customProgramTitle.trim());
+      }
+
+      setFormProgramId(realIds[0] || (next.includes('other') ? 'other' : ''));
+      if (titles.length > 0) {
+        setFormSubject(titles.join(' و '));
+        if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
+          setFormTitle(`گروه مباحثه ${titles.join(' و ')}`);
+        }
+      } else {
+        setFormSubject('');
+        if (formTitle.startsWith('گروه مباحثه')) {
+          setFormTitle('');
+        }
+      }
+      if (selectedProgs[0]?.grade && selectedProgs[0].grade !== 'همه پایه‌ها') {
+        setFormGrade(selectedProgs[0].grade);
+      }
+      if (!next.includes('other')) {
+        setCustomProgramTitle('');
+      }
+      return next;
+    });
+  };
+
   // Save Group (Create / Update or Student Workflow Request)
   const handleSaveGroup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim()) return;
 
+    const hasOtherSelected = formProgramIds.includes('other') || formProgramId === 'other';
+    const rawSelectedIds = formProgramIds.length > 0
+      ? formProgramIds.filter(id => id !== 'other')
+      : (formProgramId && formProgramId !== 'other' ? [formProgramId] : []);
+
+    if (rawSelectedIds.length === 0 && !(hasOtherSelected && customProgramTitle.trim())) {
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'درس مباحثه انتخاب نشده است',
+        message: 'لطفاً حداقل یک درس / کلاس اصلی مباحثه را انتخاب یا به صورت دستی وارد نمایید.'
+      });
+      return;
+    }
+
     try {
       const now = new Date().toISOString();
-      const effectiveProgramIds = formProgramIds.length > 0 
-        ? formProgramIds 
-        : (formProgramId && formProgramId !== 'other' ? [formProgramId] : []);
+      const effectiveProgramIds = rawSelectedIds;
 
       const selProgs = programs.filter(p => effectiveProgramIds.includes(p.id));
       const effectiveProgramTitlesList = selProgs.map(p => p.title);
-      if (formProgramIds.includes('other') || formProgramId === 'other') {
-        if (customProgramTitle.trim()) {
-          effectiveProgramTitlesList.push(customProgramTitle.trim());
-        }
+      if (hasOtherSelected && customProgramTitle.trim()) {
+        effectiveProgramTitlesList.push(customProgramTitle.trim());
       }
 
       const effectiveProgramTitle = effectiveProgramTitlesList.length > 0 
@@ -385,7 +439,14 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('workflow_items_updated'));
         }
-        setToastMessage('درخواست ثبت/ویرایش گروه مباحثه با موفقیت ارسال شد و پس از تایید مسئول پایه و آموزش اعمال خواهد شد.');
+        const msg = 'درخواست ثبت/ویرایش گروه مباحثه با موفقیت ارسال شد و پس از تایید مسئول پایه و آموزش اعمال خواهد شد.';
+        setToastMessage(msg);
+        emitSaveConfirmation({
+          variant: 'success',
+          title: 'درخواست گروه مباحثه ثبت شد',
+          message: msg,
+          subtitle: `دروس انتخابی: ${effectiveProgramTitle}`
+        });
         setShowModal(false);
         await loadData();
         setTimeout(() => setToastMessage(''), 6000);
@@ -414,7 +475,14 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           updatedAt: now
         };
         await localDb.updateDoc('discussion_groups', editingGroup.id, updated);
-        setToastMessage('گروه مباحثه با موفقیت ویرایش و بروزرسانی شد.');
+        const editMsg = 'گروه مباحثه با موفقیت ویرایش و بروزرسانی شد.';
+        setToastMessage(editMsg);
+        emitSaveConfirmation({
+          variant: 'success',
+          title: 'گروه مباحثه ویرایش شد',
+          message: editMsg,
+          subtitle: `دروس: ${effectiveProgramTitle}`
+        });
       } else if (existingDup) {
         // MERGE with existing duplicate group rather than creating duplicate
         const mergedMembers = Array.from(new Set([...(existingDup.memberStudentIds || []), ...formMemberStudentIds]));
@@ -435,7 +503,13 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           room: formRoom.trim() || existingDup.room,
           updatedAt: now
         });
-        setToastMessage(`اطلاعات و اعضای جدید با گروه مباحثه موجود («${existingDup.title}») ادغام گردید.`);
+        const mergeMsg = `اطلاعات و اعضای جدید با گروه مباحثه موجود («${existingDup.title}») ادغام گردید.`;
+        setToastMessage(mergeMsg);
+        emitSaveConfirmation({
+          variant: 'success',
+          title: 'گروه مباحثه بروزرسانی شد',
+          message: mergeMsg
+        });
       } else {
         const newGroup: DiscussionGroup = {
           id: `group_${Date.now()}`,
@@ -456,14 +530,25 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           updatedAt: now
         };
         await localDb.addDoc('discussion_groups', newGroup);
-        setToastMessage('گروه مباحثه جدید با موفقیت ایجاد گردید.');
+        const createMsg = 'گروه مباحثه جدید با موفقیت ایجاد گردید.';
+        setToastMessage(createMsg);
+        emitSaveConfirmation({
+          variant: 'success',
+          title: 'گروه مباحثه ثبت شد',
+          message: createMsg,
+          subtitle: `دروس: ${effectiveProgramTitle}`
+        });
       }
       setShowModal(false);
       await loadData();
       setTimeout(() => setToastMessage(''), 5000);
     } catch (err) {
       console.error('Error saving discussion group:', err);
-      alert('خطا در ذخیره‌سازی گروه مباحثه!');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ذخیره‌سازی گروه مباحثه',
+        message: 'خطا در ذخیره‌سازی گروه مباحثه! لطفاً مجدداً تلاش کنید.'
+      });
     }
   };
 
@@ -834,43 +919,54 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
     }
   };
 
-  // Enrolled student IDs for the selected program in create/edit modal
+  const selectedRealProgramIds = useMemo(() => {
+    if (formProgramIds.length > 0) {
+      return formProgramIds.filter(id => id && id !== 'other');
+    }
+    return formProgramId && formProgramId !== 'other' ? [formProgramId] : [];
+  }, [formProgramIds, formProgramId]);
+
+  // Enrolled student IDs across ALL selected programs in create/edit modal
   const enrolledIdsForSelectedProgram = useMemo(() => {
-    if (!formProgramId || formProgramId === 'other') return new Set<string>();
-    const eIds = new Set(enrollments.filter(e => e.programId === formProgramId).map(e => e.studentId));
-    const selectedProg = programs.find(p => p.id === formProgramId);
-    if (selectedProg) {
+    if (selectedRealProgramIds.length === 0) return new Set<string>();
+    const selectedIdSet = new Set(selectedRealProgramIds);
+    const eIds = new Set(enrollments.filter(e => selectedIdSet.has(e.programId)).map(e => e.studentId));
+    const selectedProgs = programs.filter(p => selectedIdSet.has(p.id));
+    selectedProgs.forEach(selectedProg => {
+      if (Array.isArray((selectedProg as any).studentIds)) {
+        (selectedProg as any).studentIds.forEach((sid: string) => eIds.add(sid));
+      }
       allStudentsList.forEach(s => {
         const courses = (s as any).currentCourses as string[] | undefined;
         if (courses && courses.some(c => c.includes(selectedProg.title) || selectedProg.title.includes(c))) {
           eIds.add(s.id);
         }
       });
-    }
+    });
     return eIds;
-  }, [formProgramId, enrollments, programs, allStudentsList]);
+  }, [selectedRealProgramIds, enrollments, programs, allStudentsList]);
 
-  // Students actively enrolled in the selected program/class
+  // Students actively enrolled in any of the selected programs/classes
   const classStudentsForModal = useMemo(() => {
-    if (!formProgramId || formProgramId === 'other') return [];
+    if (selectedRealProgramIds.length === 0) return [];
     const directEnrolled = allStudentsList.filter(s => isStudentActive(s) && enrolledIdsForSelectedProgram.has(s.id));
     if (directEnrolled.length > 0) return directEnrolled;
     
-    // Fallback: If no explicit enrollments exist, students in that program's grade
-    const selectedProg = programs.find(p => p.id === formProgramId);
-    if (selectedProg?.grade) {
-      const normGrade = selectedProg.grade.replace(/پایه\s*/g, '').trim();
-      return allStudentsList.filter(s => isStudentActive(s) && (s.grade || '').replace(/پایه\s*/g, '').trim() === normGrade);
+    // Fallback: If no explicit enrollments exist, students in those programs' grades
+    const selectedProgs = programs.filter(p => selectedRealProgramIds.includes(p.id));
+    const targetGrades = new Set(selectedProgs.map(p => (p.grade || '').replace(/پایه\s*/g, '').trim()).filter(Boolean));
+    if (targetGrades.size > 0) {
+      return allStudentsList.filter(s => isStudentActive(s) && targetGrades.has((s.grade || '').replace(/پایه\s*/g, '').trim()));
     }
     return [];
-  }, [allStudentsList, formProgramId, enrolledIdsForSelectedProgram, programs]);
+  }, [allStudentsList, selectedRealProgramIds, enrolledIdsForSelectedProgram, programs]);
 
   // Other active students in the school (for optional selection)
   const otherStudentsForModal = useMemo(() => {
     const classIdSet = new Set(classStudentsForModal.map(s => s.id));
     return allStudentsList.filter(s => {
       if (!isStudentActive(s)) return false;
-      if (formProgramId && formProgramId !== 'other' && classIdSet.has(s.id)) return false;
+      if (selectedRealProgramIds.length > 0 && classIdSet.has(s.id)) return false;
 
       // Grade filter
       if (modalGradeFilter !== 'all') {
@@ -890,7 +986,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
 
       return true;
     });
-  }, [allStudentsList, classStudentsForModal, formProgramId, modalGradeFilter, modalSearchQuery]);
+  }, [allStudentsList, classStudentsForModal, selectedRealProgramIds, modalGradeFilter, modalSearchQuery]);
 
   // Active students available for modal selection (when no program selected or in "other" mode)
   const availableStudentsForModal = useMemo(() => {
@@ -1295,12 +1391,21 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                         )}
                       </div>
 
-                      {group.subject && (
+                      {(group.programTitles && group.programTitles.length > 0) ? (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <BookOpen size={13} className="text-indigo-500 shrink-0" />
+                          {group.programTitles.map((pt, idx) => (
+                            <span key={idx} className="text-[11px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-800 rounded-lg border border-indigo-100">
+                              {pt}
+                            </span>
+                          ))}
+                        </div>
+                      ) : group.subject ? (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
                           <BookOpen size={14} className="text-indigo-500 shrink-0" />
                           <span>موضوع مباحثه: {group.subject}</span>
                         </div>
-                      )}
+                      ) : null}
 
                       {group.room && (
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
@@ -2009,72 +2114,164 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
               )}
 
               <form onSubmit={handleSaveGroup} className="space-y-4 text-xs font-bold text-slate-700">
-                {/* 1. Course / Class Selection */}
+                {/* 1. Multi-Course / Class Selection (Reform 25) */}
                 <div className="p-4 bg-indigo-50/60 border border-indigo-100/80 rounded-2xl space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
-                      <GraduationCap size={15} className="text-indigo-600" />
-                      <span>انتخاب درس / کلاس اصلی مباحثه *</span>
-                    </label>
-                    <p className="text-[11px] text-slate-500 font-normal">
-                      با انتخاب درس، لیست طلاب آن کلاس در مرحله بعد آماده انتخاب شده و اطلاعات درس به صورت خودکار بارگذاری می‌گردد.
-                    </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                        <GraduationCap size={15} className="text-indigo-600" />
+                        <span>انتخاب درس / کلاس اصلی مباحثه *</span>
+                      </label>
+                      <p className="text-[11px] text-slate-500 font-normal">
+                        می‌توانید یک یا چند درس را به صورت همزمان انتخاب کنید؛ لیست طلاب کلاس‌های انتخابی به طور خودکار در مرحله بعد نمایش داده می‌شود.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 bg-white border border-indigo-200 text-indigo-800 rounded-xl text-[11px] font-black shrink-0 self-start">
+                      {selectedRealProgramIds.length + (formProgramIds.includes('other') ? 1 : 0)} مورد انتخاب‌شده
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-600">انتخاب از دروس فعال مدرسه:</label>
-                      <select
-                        value={formProgramId}
+                  {/* Selected Course Chips */}
+                  {(selectedRealProgramIds.length > 0 || formProgramIds.includes('other')) && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {programs
+                        .filter(p => selectedRealProgramIds.includes(p.id))
+                        .map(p => (
+                          <span
+                            key={p.id}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600 text-white rounded-xl text-[11px] font-bold shadow-2xs"
+                          >
+                            <span>{p.title}{p.grade ? ` (${p.grade})` : ''}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleProgramSelection(p.id)}
+                              className="hover:bg-white/20 rounded-full p-0.5 transition-colors cursor-pointer"
+                              title="حذف این درس"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      {formProgramIds.includes('other') && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-600 text-white rounded-xl text-[11px] font-bold shadow-2xs">
+                          <span>سایر / متفرقه{customProgramTitle.trim() ? `: ${customProgramTitle.trim()}` : ''}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProgramSelection('other')}
+                            className="hover:bg-white/20 rounded-full p-0.5 transition-colors cursor-pointer"
+                            title="حذف درس متفرقه"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Search inside courses if list is large */}
+                  <div className="relative">
+                    <Search size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={courseSearchQuery}
+                      onChange={(e) => setCourseSearchQuery(e.target.value)}
+                      placeholder="جستجوی نام درس، استاد یا پایه..."
+                      className="w-full pr-8 pl-3 py-2 bg-white border border-indigo-200/80 rounded-xl text-[11px] font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Multi-select Course Checklist */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-0.5">
+                    {programs
+                      .filter(prog => {
+                        if ((prog as any).status === 'deleted') return false;
+                        const q = courseSearchQuery.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          (prog.title || '').toLowerCase().includes(q) ||
+                          (prog.teacher || '').toLowerCase().includes(q) ||
+                          (prog.grade || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map(prog => {
+                        const isChecked = formProgramIds.includes(prog.id);
+                        return (
+                          <button
+                            key={prog.id}
+                            type="button"
+                            onClick={() => handleToggleProgramSelection(prog.id)}
+                            className={cn(
+                              'w-full text-right px-3 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer',
+                              isChecked
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white text-slate-800 border-indigo-100 hover:border-indigo-300 hover:bg-indigo-50/40'
+                            )}
+                          >
+                            <div className="min-w-0 text-right">
+                              <div className="text-xs font-black truncate">{prog.title}</div>
+                              <div className={cn('text-[10px] truncate mt-0.5', isChecked ? 'text-indigo-100' : 'text-slate-500')}>
+                                {prog.teacher ? `استاد ${prog.teacher}` : 'درس مدرسه'}
+                                {prog.grade ? ` · ${prog.grade}` : ''}
+                              </div>
+                            </div>
+                            <span
+                              className={cn(
+                                'w-5 h-5 rounded-md flex items-center justify-center shrink-0 border',
+                                isChecked ? 'bg-white text-indigo-600 border-white' : 'bg-slate-50 border-slate-300 text-transparent'
+                              )}
+                            >
+                              <CheckCircle2 size={13} />
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                    {/* Manual / Other Option */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleProgramSelection('other')}
+                      className={cn(
+                        'w-full text-right px-3 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer sm:col-span-2',
+                        formProgramIds.includes('other')
+                          ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                          : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50/60'
+                      )}
+                    >
+                      <span className="text-xs font-black">🌟 سایر کلاس‌ها / درس متفرقه (ورود دستی در کنار یا مستقل از دروس بالا)</span>
+                      <span
+                        className={cn(
+                          'w-5 h-5 rounded-md flex items-center justify-center shrink-0 border',
+                          formProgramIds.includes('other') ? 'bg-white text-amber-700 border-white' : 'bg-amber-50 border-amber-300 text-transparent'
+                        )}
+                      >
+                        <CheckCircle2 size={13} />
+                      </span>
+                    </button>
+                  </div>
+
+                  {formProgramIds.includes('other') && (
+                    <div className="space-y-1 pt-1">
+                      <label className="text-[11px] font-bold text-amber-800">نام درس یا کلاس متفرقه (دستی) *</label>
+                      <input
+                        type="text"
+                        value={customProgramTitle}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setFormProgramId(val);
-                          if (val && val !== 'other') {
-                            const prog = programs.find(p => p.id === val);
-                            if (prog) {
-                              setFormSubject(prog.title);
-                              if (prog.grade) setFormGrade(prog.grade);
-                              if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
-                                setFormTitle(`گروه مباحثه ${prog.title}`);
-                              }
-                            }
-                          } else if (val === 'other') {
-                            setCustomProgramTitle('');
-                            setFormSubject('');
+                          setCustomProgramTitle(val);
+                          const selectedTitles = programs.filter(p => selectedRealProgramIds.includes(p.id)).map(p => p.title);
+                          if (val.trim()) selectedTitles.push(val.trim());
+                          const joined = selectedTitles.join(' و ');
+                          setFormSubject(joined);
+                          if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
+                            setFormTitle(joined ? `گروه مباحثه ${joined}` : '');
                           }
                         }}
-                        className="w-full px-3.5 py-2.5 border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-xs font-bold text-slate-800"
-                      >
-                        <option value="">-- انتخاب درس / کلاس --</option>
-                        {programs.map(prog => (
-                          <option key={prog.id} value={prog.id}>
-                            {prog.title} {prog.teacher ? `(استاد ${prog.teacher})` : ''} {prog.grade ? `[${prog.grade}]` : ''}
-                          </option>
-                        ))}
-                        <option value="other">🌟 سایر کلاس‌ها / درس متفرقه (ورود دستی)</option>
-                      </select>
+                        placeholder="مثال: بدایه الحکمه، صمدیه، حلقات..."
+                        required={formProgramIds.includes('other') && selectedRealProgramIds.length === 0}
+                        className="w-full px-3.5 py-2.5 border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white text-xs font-bold text-slate-800"
+                      />
                     </div>
-
-                    {formProgramId === 'other' && (
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-amber-700">نام درس یا کلاس متفرقه (دستی) *</label>
-                        <input
-                          type="text"
-                          value={customProgramTitle}
-                          onChange={(e) => {
-                            setCustomProgramTitle(e.target.value);
-                            setFormSubject(e.target.value);
-                            if (!formTitle || formTitle.startsWith('گروه مباحثه')) {
-                              setFormTitle(e.target.value ? `گروه مباحثه ${e.target.value}` : '');
-                            }
-                          }}
-                          placeholder="مثال: بدایه الحکمه، صمدیه، حلقات..."
-                          required={formProgramId === 'other'}
-                          className="w-full px-3.5 py-2.5 border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50/40 text-xs font-bold text-slate-800"
-                        />
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
 
                 {/* 2. Title, Grade, & Subject */}
@@ -2176,8 +2373,8 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                     )}
                   </div>
 
-                  {/* If a specific course is selected, show enrolled students first */}
-                  {formProgramId && formProgramId !== 'other' && (
+                  {/* If specific course(s) are selected, show enrolled students first */}
+                  {selectedRealProgramIds.length > 0 && (
                     <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl space-y-2.5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -2250,7 +2447,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
                   )}
 
                   {/* Section for choosing other students from the school */}
-                  {formProgramId && formProgramId !== 'other' ? (
+                  {selectedRealProgramIds.length > 0 ? (
                     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
                       <button
                         type="button"

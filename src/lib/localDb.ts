@@ -1366,6 +1366,31 @@ class LocalDatabase {
     return localItems;
   }
 
+  // Fast local-only snapshot read (does NOT trigger background cloud GET storm during hot write paths)
+  async getLocalDocsSnapshot<T = any>(collectionName: CollectionName): Promise<T[]> {
+    const resolvedCol = this.resolveCollection(collectionName as string);
+    const db = await this.getDb();
+
+    if (!db.objectStoreNames.contains(resolvedCol)) {
+      return this.getLocalStorageDocs<T>(resolvedCol);
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const transaction = db.transaction(resolvedCol, 'readonly');
+        const store = transaction.objectStore(resolvedCol);
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const idbResult = (request.result || []) as T[];
+          resolve(idbResult.length > 0 ? idbResult : this.getLocalStorageDocs<T>(resolvedCol));
+        };
+        request.onerror = () => resolve(this.getLocalStorageDocs<T>(resolvedCol));
+      } catch {
+        resolve(this.getLocalStorageDocs<T>(resolvedCol));
+      }
+    });
+  }
+
   // Get single document by ID
   async getDoc<T = any>(collectionName: CollectionName, id: string): Promise<T | null> {
     const resolvedCol = this.resolveCollection(collectionName as string);

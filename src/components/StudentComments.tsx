@@ -22,6 +22,7 @@ import {
   FileText
 } from 'lucide-react';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { Student, StudentComment, CommentPriority, OralExam, OralExamSubjectType } from '../types';
 import { useMentor } from '../context/MentorContext';
 import { cn } from '../lib/utils';
@@ -402,9 +403,18 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
 
       setShowOralExamModal(false);
       fetchData();
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'نمره ارزیابی امتحان شفاهی ثبت شد',
+        message: `نمره ${numericScore} برای درس «${examTitle.trim()}» (${selectedStudent.name}) با موفقیت در سرور ذخیره گردید.`
+      });
     } catch (err) {
       console.error("Error saving oral exam:", err);
-      alert("خطا در ثبت نمره امتحان شفاهی: " + (err instanceof Error ? err.message : String(err)));
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت نمره امتحان شفاهی',
+        message: 'خطا در ثبت نمره امتحان شفاهی: ' + (err instanceof Error ? err.message : String(err))
+      });
     } finally {
       setLoading(false);
     }

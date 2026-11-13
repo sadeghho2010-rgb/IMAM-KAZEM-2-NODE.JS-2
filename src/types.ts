@@ -821,6 +821,8 @@ export interface PeriodicStudyLog {
   warningReasons?: ('below_mandatory_total' | 'below_mandatory_core')[];
   submittedBy?: 'student' | 'education_officer' | 'grade_supervisor' | 'officer';
   lastModifiedAt?: string;
+  updatedAt?: string;
+  version?: number;
 }
 
 export interface StudyDailyEntry {

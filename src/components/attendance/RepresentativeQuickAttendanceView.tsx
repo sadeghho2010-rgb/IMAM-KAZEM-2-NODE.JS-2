@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn, getProgramDays } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation } from '../../lib/saveFeedback';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Program, 
@@ -540,14 +541,27 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       // Reset log key ref so fresh saved session log is acknowledged
       loadedLogKeyRef.current = `${currentProgram.id}_${selectedDate}`;
 
-      setSaveSuccessMsg(`حضور و غیاب کلاس «${currentProgram.title}» برای تاریخ ${selectedDate} با موفقیت ثبت و ذخیره گردید.`);
+      const successText = `حضور و غیاب کلاس «${currentProgram.title}» برای تاریخ ${selectedDate} با موفقیت ثبت و ذخیره گردید.`;
+      setSaveSuccessMsg(successText);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'حضور و غیاب کلاس با موفقیت ثبت شد',
+        message: successText,
+        subtitle: 'اطلاعات جلسه در سرور ذخیره و در آمار حضور و غیاب ثبت گردید.'
+      });
       setTimeout(() => setSaveSuccessMsg(''), 4500);
 
       window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'attendance', id: logId } }));
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: currentProgram.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving representative attendance:', e);
-      setSaveErrorMsg('خطا در ذخیره حضور و غیاب: ' + (e?.message || 'مجدداً تلاش فرمایید'));
+      const errText = 'خطا در ذخیره حضور و غیاب: ' + (e?.message || 'مجدداً تلاش فرمایید');
+      setSaveErrorMsg(errText);
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت حضور و غیاب',
+        message: errText
+      });
     } finally {
       setIsSaving(false);
     }

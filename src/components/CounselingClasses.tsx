@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { 
   Student, 
   Teacher, 
@@ -471,10 +472,18 @@ export default function CounselingClasses() {
 
       setIsClassBatchModalOpen(false);
       await fetchData();
-      alert(`ارزیابی جلسه مشاوره برای ${batchStudentsList.length} طلبه با موفقیت بروزرسانی و ثبت گردید.`);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت گروهی ارزیابی کلاس مشاوره انجام شد',
+        message: `ارزیابی جلسه مشاوره برای ${batchStudentsList.length} طلبه با موفقیت بروزرسانی و ثبت گردید.`
+      });
     } catch (err) {
       console.error('Error saving batch evaluation:', err);
-      alert('خطا در ثبت گروهی ارزیابی کلاس مشاوره.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت ارزیابی مشاوره',
+        message: 'خطا در ثبت گروهی ارزیابی کلاس مشاوره.'
+      });
     } finally {
       setIsSavingBatch(false);
     }

@@ -23,6 +23,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation } from '../../lib/saveFeedback';
 import { useAuth } from '../../context/AuthContext';
 import { 
   getTodayShamsi, 
@@ -314,10 +315,22 @@ export default function StudentMealReservationView() {
 
       await localDb.setDoc('finance_student_meal_reservations', recordId, updatedReservation);
       setReservation(updatedReservation);
-      showToast('رزرو نهار و شام شما با موفقیت در سیستم ثبت گردید.');
+      const successMsg = 'رزرو نهار و شام شما با موفقیت در سیستم ثبت گردید.';
+      showToast(successMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت رزرو غذا با موفقیت انجام شد',
+        message: successMsg,
+        subtitle: `دوره «${currentPeriod.title}» — ناهار: ${stats.totalLunches} وعده · شام: ${stats.totalDinners} وعده (ذخیره قطعی در سرور)`
+      });
     } catch (err) {
       console.error('Error saving meal reservation:', err);
       showToast('خطا در ذخیره اطلاعات رزرو.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت رزرو غذا',
+        message: 'خطا در ذخیره اطلاعات رزرو. لطفاً مجدداً تلاش کنید.'
+      });
     } finally {
       setIsSaving(false);
     }

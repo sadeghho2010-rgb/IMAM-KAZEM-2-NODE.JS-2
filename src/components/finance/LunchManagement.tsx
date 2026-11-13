@@ -37,6 +37,7 @@ import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation } from '../../lib/saveFeedback';
 import { useAuth } from '../../context/AuthContext';
 import { 
   getTodayShamsi, 
@@ -900,9 +901,19 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       });
       setIsManualReservationModalOpen(false);
       showToast('رزرو فرد با موفقیت ثبت/ویرایش شد.');
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت رزرو غذا با موفقیت انجام شد',
+        message: `رزرو «${studentName}» با موفقیت ثبت/ویرایش گردید.`
+      });
     } catch (err) {
       console.error('Error saving manual reservation:', err);
       showToast('خطا در ذخیره رزرو فرد.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت رزرو غذا',
+        message: 'خطا در ذخیره رزرو فرد.'
+      });
     }
   };
 

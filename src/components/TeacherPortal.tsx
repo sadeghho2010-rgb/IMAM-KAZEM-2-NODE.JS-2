@@ -31,6 +31,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { localDb, CollectionName } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { 
   Teacher, 
   Program, 
@@ -751,13 +752,31 @@ export default function TeacherPortal() {
           } catch (e) {}
         }
 
-        showToast(`✓ ارزیابی و ویرایش نمرات ${toPersianDigits(updates.length)} طلبه برای جلسه ${normSelectedDate} با موفقیت در دیتابیس ثبت شد.`);
+        const msg = `✓ ارزیابی و ویرایش نمرات ${toPersianDigits(updates.length)} طلبه برای جلسه ${normSelectedDate} با موفقیت در دیتابیس ثبت شد.`;
+        showToast(msg);
+        emitSaveConfirmation({
+          variant: 'success',
+          title: 'ثبت ارزیابی اساتید با موفقیت انجام شد',
+          message: msg,
+          subtitle: `کلاس «${activeCounselingCourse.title}» — ذخیره قطعی در سرور`
+        });
       } else {
-        showToast('لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.');
+        const warnMsg = 'لطفاً نمره حداقل یک طلبه را تعیین فرمایید و سپس ثبت را بزنید.';
+        showToast(warnMsg);
+        emitSaveConfirmation({
+          variant: 'warning',
+          title: 'نمره‌ای انتخاب نشده است',
+          message: warnMsg
+        });
       }
     } catch (err) {
       console.error('Error saving all evaluations:', err);
       showToast('خطا در ثبت و ذخیره ارزیابی‌ها در دیتابیس.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت ارزیابی‌ها',
+        message: 'خطا در ثبت و ذخیره ارزیابی‌ها در دیتابیس.'
+      });
     } finally {
       setIsSavingAll(false);
     }
@@ -773,8 +792,9 @@ export default function TeacherPortal() {
       const updated: CounselingSessionGrade = {
         ...existing,
         counselorFeedback: note.trim() || undefined,
-        updatedAt: new Date().toISOString()
-      };
+        updatedAt: new Date().toISOString(),
+        version: ((existing as any)?.version || 0) + 1
+      } as CounselingSessionGrade;
       await localDb.setDoc('counseling_session_grades', updated);
       setGrades(prev => prev.map(g => g.id === existing.id ? updated : g));
       setLocalDraftGrades(prev => ({
@@ -785,6 +805,11 @@ export default function TeacherPortal() {
         }
       }));
       setFeedbackSavedStudentId(studentId);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'یادداشت ارزیابی استاد ثبت شد',
+        message: `بازخورد مشاوره‌ای برای «${studentName}» با موفقیت ذخیره گردید.`
+      });
       setTimeout(() => setFeedbackSavedStudentId(null), 1500);
     }
   };

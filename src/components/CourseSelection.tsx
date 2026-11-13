@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { 
   CourseSelectionPeriod, 
   CourseSelectionRequest, 
@@ -294,9 +295,18 @@ export default function CourseSelection() {
       }
       setIsPeriodModalOpen(false);
       fetchData();
+      emitSaveConfirmation({
+        variant: 'success',
+        title: editingPeriod ? 'دوره انتخاب واحد ویرایش شد' : 'دوره انتخاب واحد ایجاد شد',
+        message: `دوره «${payload.title}» با موفقیت در سیستم ذخیره گردید.`
+      });
     } catch (err) {
       console.error('Error saving period:', err);
-      alert('خطا در ذخیره دوره انتخاب واحد.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ذخیره دوره انتخاب واحد',
+        message: 'خطا در ذخیره دوره انتخاب واحد. لطفاً مجدداً تلاش کنید.'
+      });
     }
   };
 
@@ -392,14 +402,26 @@ export default function CourseSelection() {
         await localDb.addDoc('course_selection_requests', payload);
       }
 
+      const successText = 'درخواست انتخاب واحد شما با موفقیت ثبت شد و در انتظار بررسی مسئول آموزش قرار گرفت.';
       setStudentFeedback({
         type: 'success',
-        text: 'درخواست انتخاب واحد شما با موفقیت ثبت شد و در انتظار بررسی مسئول آموزش قرار گرفت.'
+        text: successText
+      });
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت انتخاب واحد با موفقیت انجام شد',
+        message: successText,
+        subtitle: `دوره «${activePeriod.title}» — تعداد ${choices.length} درس انتخاب شده و در سرور ثبت گردید.`
       });
       fetchData();
     } catch (err) {
       console.error('Error submitting selection:', err);
       setStudentFeedback({ type: 'error', text: 'خطا در ثبت درخواست انتخاب واحد.' });
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت انتخاب واحد',
+        message: 'خطا در ثبت درخواست انتخاب واحد. لطفاً مجدداً تلاش نمایید.'
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -443,9 +465,18 @@ export default function CourseSelection() {
       });
 
       fetchData();
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'تایید انتخاب واحد انجام شد',
+        message: `انتخاب واحد طلبه ${req.studentName} با موفقیت تایید و ثبت‌نام خودکار انجام گردید.`
+      });
     } catch (err) {
       console.error('Error approving request:', err);
-      alert('خطا در تایید انتخاب واحد.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در تایید انتخاب واحد',
+        message: 'خطا در تایید انتخاب واحد.'
+      });
     }
   };
 
@@ -463,9 +494,18 @@ export default function CourseSelection() {
       setRejectModalRequest(null);
       setRejectionReason('');
       fetchData();
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'درخواست انتخاب واحد رد شد',
+        message: 'وضعیت درخواست با موفقیت به «رد شده» تغییر یافت.'
+      });
     } catch (err) {
       console.error('Error rejecting request:', err);
-      alert('خطا در رد درخواست.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در رد درخواست',
+        message: 'خطا در رد درخواست انتخاب واحد.'
+      });
     }
   };
 

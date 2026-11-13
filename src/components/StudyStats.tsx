@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { Student, StudyPeriod, PeriodicStudyLog, StudyDailyEntry, CourseStudyDetail } from '../types';
 import { useMentor, getStudentMentorKey } from '../context/MentorContext';
 import { useAuth } from '../context/AuthContext';
@@ -1357,6 +1358,11 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         onSaveSuccess={(toastMsg?: string) => {
           if (toastMsg) {
             showToast(toastMsg, 'success');
+            emitSaveConfirmation({
+              variant: 'success',
+              title: 'ثبت دوره / کارکرد مطالعاتی انجام شد',
+              message: toastMsg
+            });
           }
           fetchData(true);
         }}

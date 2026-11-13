@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
+import { emitSaveConfirmation, setWriteInProgress } from '../../../lib/saveFeedback';
 import { useAuth } from '../../../context/AuthContext';
 import {
   Student,
@@ -366,7 +367,9 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
 
     try {
       setIsSaving(true);
+      setWriteInProgress('study_save_mobile', true, 'در حال ثبت و ذخیره کارکرد مطالعه در سرور... لطفاً از صفحه خارج نشوید.');
       const effectiveStudentId = String(studentObj?.id || studentId || currentUser?.id);
+      const nowIso = new Date().toISOString();
       const newEntry: StudyDailyEntry = {
         id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         studentId: effectiveStudentId,
@@ -381,38 +384,30 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
         freeStudyMinutes: parsedFreeMin,
         freeStudyBookTitle: freeStudyBookTitle.trim() || undefined,
         note: freeStudyBookTitle.trim() ? `کتاب آزاد: ${freeStudyBookTitle.trim()}` : 'ثبت کارکرد روزانه دروس اصلی',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        version: 1,
         studentCode: studentObj?.studentCode || currentUser?.username,
         nationalId: studentObj?.nationalId || currentUser?.username,
         studentName: studentObj?.name || currentUser?.name || currentUser?.fullName || '',
         userId: currentUser?.id,
-      };
+      } as StudyDailyEntry;
 
-      await localDb.setDoc('study_daily_entries', newEntry);
-
-      try {
-        await syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student');
-        if (studentObj?.id && String(studentObj.id) !== effectiveStudentId) {
-          await syncAggregatePeriodicStudyLog(activePeriod.id, String(studentObj.id), 'student');
-        }
-      } catch (aggErr) {
-        console.warn('Error syncing aggregate periodic log:', aggErr);
-      }
-
-      localDb.flushSyncQueue().catch(() => {});
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_daily_entries' } }));
-        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'periodic_study_logs' } }));
-        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
-        window.dispatchEvent(new CustomEvent('collection_change_study_daily_entries'));
-        try {
-          localStorage.setItem('study_logs_updated_at', String(Date.now()));
-        } catch {}
-      }
+      // Parallel persistence of daily entry + aggregate periodic log (eliminates sequential round-trip & duplicate sync)
+      await Promise.all([
+        localDb.setDoc('study_daily_entries', newEntry),
+        syncAggregatePeriodicStudyLog(activePeriod.id, effectiveStudentId, 'student', newEntry)
+      ]);
 
       setDailyEntries((prev) => [newEntry, ...prev]);
-      setSaveSuccessMsg('کارکرد روزانه شما با موفقیت ثبت شد!');
+      const msg = 'کارکرد روزانه شما با موفقیت ثبت شد و به مجموع دوره افزوده گردید!';
+      setSaveSuccessMsg(msg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت کارکرد مطالعاتی با موفقیت انجام شد',
+        message: msg,
+        subtitle: `دوره «${activePeriod.title}» — جمع ثبت‌شده: ${formatMinutesToHoursAndMinutes(totalMin)} (ذخیره قطعی در سرور)`
+      });
       setTimeout(() => setSaveSuccessMsg(''), 3500);
 
       // Reset ALL inputs strictly
@@ -420,10 +415,17 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
       setCourseDiscussionMinutes({});
       setFreeStudyMinutesInput('');
       setFreeStudyBookTitle('');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving study entry:', err);
-      setValidationError('خطا در ذخیره‌سازی اطلاعات مطالعه. لطفاً دوباره تلاش کنید.');
+      const errMsg = 'خطا در ذخیره‌سازی اطلاعات مطالعه. لطفاً دوباره تلاش کنید.';
+      setValidationError(errMsg);
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت ساعت مطالعه',
+        message: err?.message || errMsg
+      });
     } finally {
+      setWriteInProgress('study_save_mobile', false);
       setIsSaving(false);
     }
   };
@@ -789,7 +791,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
             className="w-full min-h-[48px] py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-600/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             <Save size={16} />
-            <span>{isSaving ? 'در حال ثبت...' : 'ثبت نهایی کارکرد روزانه'}</span>
+            <span>{isSaving ? 'در حال ثبت در سرور... لطفاً خارج نشوید' : 'ثبت نهایی کارکرد روزانه'}</span>
           </motion.button>
         )}
       </form>

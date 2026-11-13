@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { localDb } from '../../../lib/localDb';
+import { emitSaveConfirmation } from '../../../lib/saveFeedback';
 import { useAuth } from '../../../context/AuthContext';
 import { DiscussionGroup, Student, Program, WorkflowItem } from '../../../types';
 import { isProgramActiveAndValid } from '../../study/studyUtils';
@@ -246,14 +247,27 @@ export const StudentMobileDiscussion: React.FC<StudentMobileDiscussionProps> = (
 
       setPendingRequests((prev) => [workflowItem, ...prev]);
       setShowModal(false);
-      setSuccessToast('درخواست معرفی گروه مباحثه با موفقیت به کارتابل تایید ارسال شد.');
+      const msg = 'درخواست معرفی گروه مباحثه با موفقیت به کارتابل تایید ارسال شد.';
+      setSuccessToast(msg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'درخواست گروه مباحثه ثبت شد',
+        message: msg,
+        subtitle: `دروس انتخابی: ${effectiveTitle}`
+      });
       setTimeout(() => setSuccessToast(''), 5000);
 
       window.dispatchEvent(new CustomEvent('workflow_items_updated'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
     } catch (err: any) {
       console.error('Error submitting discussion proposal:', err);
-      setFormError('خطا در ثبت درخواست: ' + (err?.message || 'لطفاً مجدداً تلاش فرمایید'));
+      const errMsg = 'خطا در ثبت درخواست: ' + (err?.message || 'لطفاً مجدداً تلاش فرمایید');
+      setFormError(errMsg);
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت درخواست گروه مباحثه',
+        message: errMsg
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -471,7 +485,7 @@ export const StudentMobileDiscussion: React.FC<StudentMobileDiscussionProps> = (
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-purple-950 flex items-center gap-1.5">
                       <BookOpen size={13} className="text-purple-600" />
-                      <span>انتخاب دروس مباحثه *</span>
+                      <span>انتخاب درس / کلاس اصلی مباحثه *</span>
                     </span>
                     <span className="text-[10px] text-purple-700 font-bold tabular-nums">
                       {formProgramIds.length} کلاس انتخاب‌شده

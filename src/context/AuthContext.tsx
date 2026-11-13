@@ -9,6 +9,7 @@ import {
   StudentPortalAccessConfig,
   STUDENT_PORTAL_CONFIG_DOC_ID
 } from '../components/education/StudentAccessManagement';
+import { hasActiveCriticalWrite, waitForActiveWrites, setWriteInProgress } from '../lib/saveFeedback';
 
 export interface SystemTabDef {
   id: string;
@@ -957,7 +958,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (hasActiveCriticalWrite()) {
+      setWriteInProgress('logout_wait', true, 'در حال تکمیل ثبت اطلاعات در سرور قبل از خروج... لطفاً چند لحظه صبر کنید.');
+      try {
+        await localDb.flushSyncQueue();
+        await waitForActiveWrites(6000);
+      } finally {
+        setWriteInProgress('logout_wait', false);
+      }
+    }
+
     setCurrentUser(null);
     currentUserRef.current = null;
     try {
@@ -971,14 +982,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {}
 
     // Clear IndexedDB caches and reset seeding flag
-    localDb.clearAllLocalDataAndCaches().catch(() => {});
+    localDb.clearAllLocalDataAndCaches().catch((err) => {
+      console.warn('[LOGOUT_CACHE_CLEAR_WARN]', err);
+    });
     realtimeSync.stop();
 
     fetch('/api/auth/logout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include'
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('[LOGOUT_API_WARN]', err);
+    });
   };
 
   const logoutAllSessions = async (): Promise<{ success: boolean; message?: string }> => {

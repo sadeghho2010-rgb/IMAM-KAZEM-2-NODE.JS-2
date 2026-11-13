@@ -16,6 +16,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabErrorBoundary } from './components/TabErrorBoundary';
 import BugReportModal from './components/BugReportModal';
 import { localDb } from './lib/localDb';
+import { GlobalSaveFeedbackOverlay } from './components/GlobalSaveFeedbackOverlay';
 
 // Lazy loading all tab components for maximum initial page load speed
 const StudentList = lazy(() => import('./components/StudentList'));
@@ -820,6 +821,7 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <MentorProvider>
+          <GlobalSaveFeedbackOverlay />
           <AppContent />
         </MentorProvider>
       </AuthProvider>

@@ -23,6 +23,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { localDb } from '../lib/localDb';
+import { emitSaveConfirmation } from '../lib/saveFeedback';
 import { 
   Student, 
   ResearchRecord, 
@@ -216,7 +217,11 @@ export default function ArticleEvaluations() {
         }
       }
 
-      alert("مقالات انتخاب شده با موفقیت به بخش ارزیابی مقالات اضافه شدند.");
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'مقالات به بخش ارزیابی اضافه شدند',
+        message: 'مقالات انتخاب شده با موفقیت به بخش ارزیابی مقالات اضافه شدند.'
+      });
       setSelectedArticleIds([]);
       setHasAbstract(false);
       setAbstractText('');
@@ -225,7 +230,11 @@ export default function ArticleEvaluations() {
       setManagerTab('reports');
     } catch (err) {
       console.error("Error activating articles:", err);
-      alert("خطا در فعال‌سازی ارزیابی مقالات.");
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در فعال‌سازی ارزیابی',
+        message: 'خطا در فعال‌سازی ارزیابی مقالات.'
+      });
     }
   };
 
@@ -255,7 +264,11 @@ export default function ArticleEvaluations() {
         createdAt: new Date().toISOString()
       });
 
-      alert("مقاله جدید به همراه تنظیمات ارزیابی با موفقیت ثبت شد.");
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت مقاله برای ارزیابی انجام شد',
+        message: 'مقاله جدید به همراه تنظیمات ارزیابی با موفقیت ثبت شد.'
+      });
       setShowManualModal(false);
       setManualTitle('');
       setManualPresenter('');
@@ -266,7 +279,11 @@ export default function ArticleEvaluations() {
       setManagerTab('reports');
     } catch (err) {
       console.error("Error creating manual evaluation article:", err);
-      alert("خطا در ایجاد مقاله جدید برای ارزیابی.");
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت مقاله',
+        message: 'خطا در ایجاد مقاله جدید برای ارزیابی.'
+      });
     }
   };
 
@@ -322,10 +339,18 @@ export default function ArticleEvaluations() {
         }
       }
 
-      alert(`درخواست با موفقیت ${newStatus === 'approved' ? 'تایید' : 'رد'} شد.`);
+      emitSaveConfirmation({
+        variant: newStatus === 'approved' ? 'success' : 'warning',
+        title: `درخواست ${newStatus === 'approved' ? 'تایید' : 'رد'} شد`,
+        message: `درخواست با موفقیت ${newStatus === 'approved' ? 'تایید' : 'رد'} شد.`
+      });
     } catch (err) {
       console.error("Error updating request:", err);
-      alert("خطا در به‌روزرسانی درخواست.");
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در به‌روزرسانی درخواست',
+        message: 'خطا در به‌روزرسانی درخواست.'
+      });
     }
   };
 
@@ -349,10 +374,18 @@ export default function ArticleEvaluations() {
         createdAt: new Date().toISOString()
       });
 
-      alert("درخواست ارزیابی مقاله شما با موفقیت برای مسئول پژوهش ارسال شد.");
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'درخواست ارزیابی مقاله ارسال شد',
+        message: 'درخواست ارزیابی مقاله شما با موفقیت برای مسئول پژوهش ارسال شد.'
+      });
     } catch (err) {
       console.error("Error submitting evaluation request:", err);
-      alert("خطا در ارسال درخواست.");
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ارسال درخواست',
+        message: 'خطا در ارسال درخواست.'
+      });
     }
   };
 
@@ -365,7 +398,11 @@ export default function ArticleEvaluations() {
     );
 
     if (existingReq) {
-      alert(`شما قبلاً درخواست ثبت‌نام به‌عنوان ${roleLabel} برای این مقاله ارسال کرده‌اید.`);
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'درخواست تکراری',
+        message: `شما قبلاً درخواست ثبت‌نام به‌عنوان ${roleLabel} برای این مقاله ارسال کرده‌اید.`
+      });
       return;
     }
 
@@ -382,10 +419,18 @@ export default function ArticleEvaluations() {
         createdAt: new Date().toISOString()
       });
 
-      alert(`درخواست ثبت‌نام شما به‌عنوان ${roleLabel} مقاله با موفقیت ثبت گردید.`);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: `ثبت‌نام به‌عنوان ${roleLabel} انجام شد`,
+        message: `درخواست ثبت‌نام شما به‌عنوان ${roleLabel} مقاله با موفقیت ثبت گردید.`
+      });
     } catch (err) {
       console.error("Error registering role request:", err);
-      alert("خطا در ثبت درخواست.");
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت درخواست',
+        message: 'خطا در ثبت درخواست.'
+      });
     }
   };
 

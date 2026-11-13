@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation } from '../../lib/saveFeedback';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Program, 
@@ -391,10 +392,17 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         return [updatedLog, ...filtered];
       });
 
+      const successText = `خوداظهاری «${prog.title}» برای تاریخ ${selectedDate} با موفقیت ثبت شد.`;
       setSuccessMessages(prev => ({
         ...prev,
-        [prog.id]: `خوداظهاری «${prog.title}» برای تاریخ ${selectedDate} با موفقیت ثبت شد.`
+        [prog.id]: successText
       }));
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت خوداظهاری حضور و غیاب انجام شد',
+        message: successText,
+        subtitle: 'وضعیت حضور شما در سرور ذخیره گردید.'
+      });
 
       setTimeout(() => {
         setSuccessMessages(prev => {
@@ -408,10 +416,16 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: prog.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving self-reporting:', e);
+      const errText = 'خطا در ثبت خوداظهاری: ' + (e?.message || 'لطفاً مجدداً امتحان کنید');
       setErrorMessages(prev => ({
         ...prev,
-        [prog.id]: 'خطا در ثبت خوداظهاری: ' + (e?.message || 'لطفاً مجدداً امتحان کنید')
+        [prog.id]: errText
       }));
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت خوداظهاری',
+        message: errText
+      });
     } finally {
       setSavingProgramId(null);
     }

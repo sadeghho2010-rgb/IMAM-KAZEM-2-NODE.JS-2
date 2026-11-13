@@ -44,6 +44,7 @@ import {
 } from 'recharts';
 import { Student, StudyPeriod, PeriodicStudyLog, StudyDailyEntry, Program, Enrollment, CourseStudyDetail } from '../../types';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation, setWriteInProgress } from '../../lib/saveFeedback';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
 import FreeStudyRulesModal from './FreeStudyRulesModal';
@@ -380,19 +381,32 @@ export default function StudentStudyPortal({
   const handleSaveHours = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPeriod || isReadOnlyForUser || isCurrentPeriodClosed) {
-      alert('این دوره مطالعاتی بسته شده است و امکان ثبت ساعت کارکرد وجود ندارد.');
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'دوره مطالعاتی بسته است',
+        message: 'این دوره مطالعاتی بسته شده است و امکان ثبت ساعت کارکرد وجود ندارد.'
+      });
       return;
     }
     if (calculatedTotalMinutes <= 0) {
-      alert('لطفاً حداقل مقدار برای یکی از دروس اصلی یا مطالعه آزاد را به دقیقه وارد نمایید.');
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'مقدار مطالعه وارد نشده است',
+        message: 'لطفاً حداقل مقدار برای یکی از دروس اصلی یا مطالعه آزاد را به دقیقه وارد نمایید.'
+      });
       return;
     }
     if (calculatedTotalMinutes > 2400) {
-      alert('سقف مقدار قابل ثبت در یک نوبت حداکثر ۲۴۰۰ دقیقه (۴۰ ساعت) می‌باشد.');
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'سقف مجاز دقیقه رعایت نشده است',
+        message: 'سقف مقدار قابل ثبت در یک نوبت حداکثر ۲۴۰۰ دقیقه (۴۰ ساعت) می‌باشد.'
+      });
       return;
     }
 
     setIsSaving(true);
+    setWriteInProgress('study_save', true, 'در حال ثبت و ذخیره ساعت مطالعه در سرور و افزودن به کارکرد دوره... لطفاً از نرم‌افزار خارج نشوید.');
     try {
       const coursesBreakdown: CourseStudyDetail[] = studentMainCourses.map(c => ({
         courseId: c.id,
@@ -402,7 +416,7 @@ export default function StudentStudyPortal({
       }));
 
       // Create new daily entry (Cumulative)
-      await addStudyDailyEntry({
+      const createdEntry = await addStudyDailyEntry({
         periodId: currentPeriod.id,
         studentId: student.id,
         nationalId: student.nationalId || currentUser?.username,
@@ -418,23 +432,38 @@ export default function StudentStudyPortal({
         note: entryNoteInput.trim()
       } as any);
 
+      // Immediately reflect newly created entry in UI state without blocking on extra network GET
+      setDailyEntries(prev => [createdEntry, ...prev.filter(item => item.id !== createdEntry.id)]);
+
       // Clear input boxes immediately after success
       setCourseStudyMinutes({});
       setCourseDiscussionMinutes({});
       setFreeStudyMinutesInput('');
       setEntryNoteInput('');
 
-      setSaveSuccessMessage('دقایق جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.');
-      await loadDailyEntries();
+      const successText = 'دقایق جدید با موفقیت ثبت شد و به مجموع کارکرد شما در این دوره افزوده گردید.';
+      setSaveSuccessMessage(successText);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ثبت کارکرد مطالعاتی با موفقیت انجام شد',
+        message: successText,
+        subtitle: `دوره «${currentPeriod.title}» — جمع ثبت‌شده: ${formatMinutesToHoursAndMinutes(calculatedTotalMinutes)} (ذخیره قطعی در سرور و ارسال به پنل مسئول آموزش)`
+      });
+
       if (onRefresh) {
-        setTimeout(() => onRefresh(), 50);
+        setTimeout(() => onRefresh(), 60);
       }
 
       setTimeout(() => setSaveSuccessMessage(''), 4500);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error adding study daily entry:', err);
-      alert('خطا در ثبت ساعت مطالعه');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت ساعت مطالعه',
+        message: 'خطا در ذخیره‌سازی ساعت مطالعه: ' + (err?.message || 'لطفاً مجدداً تلاش کنید.')
+      });
     } finally {
+      setWriteInProgress('study_save', false);
       setIsSaving(false);
     }
   };
@@ -490,6 +519,7 @@ export default function StudentStudyPortal({
     const editTotalMin = editCoreTotalMin + editFreeMin;
 
     setIsUpdatingEntry(true);
+    setWriteInProgress('study_edit', true, 'در حال ذخیره ویرایش ساعت مطالعه در سرور...');
     try {
       await updateStudyDailyEntry(
         editingEntry.id,
@@ -510,12 +540,23 @@ export default function StudentStudyPortal({
       setEditingEntry(null);
       await loadDailyEntries();
       if (onRefresh) onRefresh();
-      setSaveSuccessMessage('ثبت انتخابی با موفقیت ویرایش شد.');
+      const editMsg = 'ثبت انتخابی با موفقیت ویرایش و در سرور ذخیره شد.';
+      setSaveSuccessMessage(editMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'ویرایش ساعت مطالعه ثبت شد',
+        message: editMsg
+      });
       setTimeout(() => setSaveSuccessMessage(''), 3500);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating entry:', err);
-      alert('خطا در ویرایش ثبت');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ویرایش ثبت مطالعه',
+        message: 'خطا در ویرایش ثبت: ' + (err?.message || 'لطفاً مجدداً تلاش کنید.')
+      });
     } finally {
+      setWriteInProgress('study_edit', false);
       setIsUpdatingEntry(false);
     }
   };
@@ -526,6 +567,7 @@ export default function StudentStudyPortal({
     const totalMinutesLabel = entry.totalMinutes ? `${entry.totalMinutes} دقیقه` : `${entry.totalHours} ساعت`;
     if (!window.confirm(`آیا از حذف این ثبت (${totalMinutesLabel}) اطمینان دارید؟`)) return;
 
+    setWriteInProgress('study_delete', true, 'در حال حذف ثبت مطالعه و بروزرسانی کارکرد...');
     try {
       await deleteStudyDailyEntry(
         entry.id,
@@ -535,11 +577,23 @@ export default function StudentStudyPortal({
       );
       await loadDailyEntries();
       if (onRefresh) onRefresh();
-      setSaveSuccessMessage('ثبت مورد نظر با موفقیت حذف گردید.');
+      const delMsg = 'ثبت مورد نظر با موفقیت حذف گردید.';
+      setSaveSuccessMessage(delMsg);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'حذف ثبت مطالعه انجام شد',
+        message: delMsg
+      });
       setTimeout(() => setSaveSuccessMessage(''), 3500);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting entry:', err);
-      alert('خطا در حذف ثبت');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در حذف ثبت مطالعه',
+        message: 'خطا در حذف ثبت: ' + (err?.message || 'لطفاً مجدداً تلاش کنید.')
+      });
+    } finally {
+      setWriteInProgress('study_delete', false);
     }
   };
 
@@ -1182,7 +1236,7 @@ export default function StudentStudyPortal({
                       className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isSaving ? <RefreshCw size={16} className="animate-spin" /> : <Plus size={18} />}
-                      <span>ثبت و افزوده شدن به کارکرد دوره</span>
+                      <span>{isSaving ? 'در حال ثبت در سرور... لطفاً خارج نشوید' : 'ثبت و افزوده شدن به کارکرد دوره'}</span>
                     </button>
                   )}
                 </div>

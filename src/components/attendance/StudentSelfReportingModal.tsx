@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Program, AttendanceSessionLog, StudentAttendanceDetail, AttendanceStatus } from '../../types';
 import { localDb } from '../../lib/localDb';
+import { emitSaveConfirmation } from '../../lib/saveFeedback';
 import { getTodayShamsi, getShamsiDayOfWeek, toEnglishDigits, getConsolidatedSessionLog } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
 import { isProgramActiveAndValid, isStudentEnrolledInProgram, buildStudentCandidateIds } from '../study/studyUtils';
@@ -240,14 +241,23 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
       window.dispatchEvent(new CustomEvent('app_data_change'));
       window.dispatchEvent(new CustomEvent('attendance_updated'));
 
-      alert(`✅ وضعیت «${selectedStatus === 'present' ? 'حاضر' : selectedStatus === 'late' ? 'با تاخیر' : 'غایب'}» با موفقیت در درس «${currentProgram.title}» برای تاریخ ${selectedDate} ثبت گردید.`);
+      emitSaveConfirmation({
+        variant: 'success',
+        title: 'خوداظهاری حضور و غیاب ثبت شد',
+        message: `وضعیت «${selectedStatus === 'present' ? 'حاضر' : selectedStatus === 'late' ? 'با تاخیر' : 'غایب'}» با موفقیت در درس «${currentProgram.title}» برای تاریخ ${selectedDate} ثبت گردید.`,
+        subtitle: 'ثبت شما با موفقیت در سرور ذخیره شد.'
+      });
       
       if (onAttendanceSaved) {
         onAttendanceSaved();
       }
       onClose();
     } catch (err: any) {
-      alert('خطا در ثبت خوداظهاری: ' + (err?.message || 'خطای نامشخص'));
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'خطا در ثبت خوداظهاری',
+        message: 'خطا در ثبت خوداظهاری: ' + (err?.message || 'خطای نامشخص')
+      });
     } finally {
       setIsSubmitting(false);
     }
