@@ -165,7 +165,7 @@ interface WorkflowManagerProps {
 
 const DEFAULT_SETTINGS: WorkflowSettings = {
   id: 'default_workflow_settings',
-  requireEducationApprovalForAttendanceWarning: true,
+  requireEducationApprovalForAttendanceWarning: false,
   requireEducationApprovalForStudyWarning: true,
   requireAccountCreationPrompt: true,
   notifyGradeSupervisorOnWarning: true,
@@ -765,7 +765,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
           tabTarget: 'stats' as AppModuleId
         };
       } else if (newEventCategory === 'unexcused_absence_warning') {
-        type = settings.requireEducationApprovalForAttendanceWarning ? 'approval' : 'report_notice';
+        type = 'report_notice';
         reportAction = {
           label: 'گزارش حضور و غیاب',
           tabTarget: 'attendance' as AppModuleId
@@ -779,6 +779,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
       }
 
       const selStu = students.find(s => s.id === selectedStudentForEvent);
+      const isDirectAbsenceWarn = newEventCategory === 'unexcused_absence_warning';
 
       const newItem: WorkflowItem = {
         id: `wf_custom_${Date.now()}`,
@@ -786,12 +787,15 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
         category: newEventCategory,
         title: newEventTitle.trim(),
         description: newEventDescription.trim(),
-        status: type === 'approval' ? 'pending' : 'acknowledged',
+        status: isDirectAbsenceWarn ? 'approved' : (type === 'approval' ? 'pending' : 'acknowledged'),
         grade: newEventGrade,
         studentId: selStu?.id,
         studentName: selStu?.name,
         dateRange: newPeriodRange.trim() || undefined,
-        requiresEducationApproval: type === 'approval',
+        requiresEducationApproval: isDirectAbsenceWarn ? false : (type === 'approval'),
+        approvedByUserId: isDirectAbsenceWarn ? currentUser?.id : undefined,
+        approvedByName: isDirectAbsenceWarn ? (currentUser?.name || currentUser?.roleTitle) : undefined,
+        approvedAt: isDirectAbsenceWarn ? new Date().toISOString() : undefined,
         reportAction,
         createdByUserId: currentUser?.id,
         createdByName: currentUser?.name || currentUser?.roleTitle,

@@ -137,6 +137,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceSessionLog[]>([]);
+  const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
   const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
   const [academicPeriods, setAcademicPeriods] = useState<AcademicCalendarPeriod[]>([]);
   const [settings, setSettings] = useState<AttendanceSettings>({
@@ -200,6 +201,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportSortBy, setReportSortBy] = useState<'absent' | 'class'>('absent');
   const [reportCourseCategory, setReportCourseCategory] = useState<'all' | 'academic' | 'counseling' | 'thursday'>('all');
   const [reportViewMode, setReportViewMode] = useState<'student' | 'class' | 'summary'>('student');
+  const [showSummaryCourseBreakdown, setShowSummaryCourseBreakdown] = useState<boolean>(false);
   const [selectedStudentDrilldown, setSelectedStudentDrilldown] = useState<any | null>(null);
   const [editingSessionIdx, setEditingSessionIdx] = useState<number | null>(null);
   const [sessionEditDraft, setSessionEditDraft] = useState<{
@@ -396,7 +398,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setIsLoading(true);
     }
     try {
-      const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList, reqList] = await Promise.all([
+      const [progs, studs, teaList, enrolls, atts, settList, hols, periods, userList, notesList, reqList, wfList] = await Promise.all([
         localDb.getDocs('programs'),
         localDb.getDocs('students'),
         localDb.getDocs<Teacher>('teachers'),
@@ -407,7 +409,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods'),
         localDb.getDocs('users'),
         localDb.getDocs('representative_notes'),
-        localDb.getDocs<StudentRequest>('student_requests')
+        localDb.getDocs<StudentRequest>('student_requests'),
+        localDb.getDocs<WorkflowItem>('workflow_items')
       ]);
 
       const activeStudents = (studs || []).filter((s: any) => s.status !== 'deleted' && !s.isDeleted && !s.deletedAt);
@@ -434,6 +437,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       setAcademicHolidays(prev => isDeepEqual(prev, hols || []) ? prev : (hols || []));
       setAcademicPeriods(prev => isDeepEqual(prev, periods || []) ? prev : (periods || []));
       setUsers(prev => isDeepEqual(prev, userList || []) ? prev : (userList || []));
+      setWorkflowItems(prev => isDeepEqual(prev, wfList || []) ? prev : (wfList || []));
 
       if (Array.isArray(reqList)) {
         const leaves = reqList.filter(r => r.isLeaveRequest || r.category === 'درخواست مرخصی');
@@ -467,28 +471,42 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     const handleDataEvent = async () => {
       try {
-        await localDb.syncCollectionFromCloud('attendance', true);
-      } catch (e) {}
+        await Promise.all([
+          localDb.syncCollectionFromCloud('attendance', true),
+          localDb.syncCollectionFromCloud('workflow_items', true)
+        ]);
+      } catch (e) {
+        console.warn('[STORAGE_FAILURE] Cloud sync in AttendanceAndStats failed:', e);
+      }
       await loadData(false);
     };
 
     window.addEventListener('app_data_change', handleDataEvent);
     window.addEventListener('attendance_updated', handleDataEvent);
+    window.addEventListener('workflow_items_updated', handleDataEvent);
     window.addEventListener('collection_change_attendance', handleDataEvent);
+    window.addEventListener('collection_change_workflow_items', handleDataEvent);
 
-    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance changes from cloud
+    // Fast sync polling (every 3 seconds) for Education Manager to fetch fresh attendance & warning changes from cloud
     const fastSyncTimer = setInterval(async () => {
       try {
-        await localDb.syncCollectionFromCloud('attendance', true);
+        await Promise.all([
+          localDb.syncCollectionFromCloud('attendance', true),
+          localDb.syncCollectionFromCloud('workflow_items', true)
+        ]);
         await loadData(false);
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[STORAGE_FAILURE] Fast sync polling error in AttendanceAndStats:', e);
+      }
     }, 3000);
 
     return () => {
       unsub();
       window.removeEventListener('app_data_change', handleDataEvent);
       window.removeEventListener('attendance_updated', handleDataEvent);
+      window.removeEventListener('workflow_items_updated', handleDataEvent);
       window.removeEventListener('collection_change_attendance', handleDataEvent);
+      window.removeEventListener('collection_change_workflow_items', handleDataEvent);
       clearInterval(fastSyncTimer);
     };
   }, []);
@@ -1188,31 +1206,47 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         }
       }
 
-      // Create workflow item if any student has educational warning
+      // Issue definitive educational warning immediately (no Workflow pending approval needed)
+      let warningEmitted = false;
       for (const s of enrolledStudents) {
         if (studentWarnings[s.id]) {
+          const issuerName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'مسئول آموزش';
+          const deterministicWarnId = `wf-att-warn-${s.id}-${currentProgram.id}-${cleanDate}`;
           const wfItem: WorkflowItem = {
-            id: `wf-att-warn-${s.id}-${Date.now()}`,
-            type: 'notice',
+            id: deterministicWarnId,
+            type: 'report_notice',
             category: 'unexcused_absence_warning',
             title: `اخطار آموزشی حضور و غیاب: ${s.name}`,
-            description: `اخطار آموزشی برای طلبه ${s.name} (${currentProgram.grade || ''}) در درس ${currentProgram.title} به علت غیبت در تاریخ ${selectedDate} ثبت گردید.`,
-            status: 'pending',
+            description: `اخطار آموزشی قطعی برای طلبه ${s.name} (${currentProgram.grade || ''}) در درس ${currentProgram.title} در تاریخ ${selectedDate} صادر و ثبت گردید.`,
+            status: 'approved',
             grade: currentProgram.grade || 'عمومی',
             studentId: s.id,
             studentName: s.name,
+            nationalId: s.nationalId,
             requiresEducationApproval: false,
+            approvedByUserId: currentUser?.id,
+            approvedByName: issuerName,
+            approvedAt: nowIso,
             createdByUserId: currentUser?.id,
-            createdByName: currentUser?.fullName || currentUser?.name || currentUser?.username,
+            createdByName: issuerName,
             createdAt: nowIso,
+            updatedAt: nowIso,
             details: {
+              programId: currentProgram.id,
               programTitle: currentProgram.title,
-              date: selectedDate,
-              reason: studentNotes[s.id] || 'غیبت غیرموجه در کلاس'
+              date: normDate,
+              issuedDateShamsi: normDate,
+              reason: studentNotes[s.id] || 'غیبت غیرموجه در کلاس',
+              definitive: true
             }
           };
           await localDb.setDoc('workflow_items', wfItem);
+          setWorkflowItems(prev => [wfItem, ...prev.filter(w => w.id !== deterministicWarnId)]);
+          warningEmitted = true;
         }
+      }
+      if (warningEmitted) {
+        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
       }
 
       setAttendanceRecords(prev => {
@@ -1522,6 +1556,98 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     };
   }, [consolidatedReportRecords, programs, academicHolidays]);
 
+  // Compute All-Time Absence Educational Warnings per Student (from start of year until now, deduplicated across attendance logs & workflow_items)
+  const allTimeAbsenceWarningsByStudent = useMemo(() => {
+    const countsByStudent: Record<string, number> = {};
+    const seenSessionKeysByStudent: Record<string, Set<string>> = {};
+
+    const studentLookupMap = new Map<string, string>();
+    students.forEach(s => {
+      if (s.id) studentLookupMap.set(String(s.id).trim(), s.id);
+      if (s.nationalId) studentLookupMap.set(String(s.nationalId).trim(), s.id);
+      if (s.studentCode) studentLookupMap.set(String(s.studentCode).trim().toUpperCase(), s.id);
+    });
+
+    const addWarning = (canonicalId: string, dedupKey?: string) => {
+      if (!canonicalId) return;
+      if (!seenSessionKeysByStudent[canonicalId]) {
+        seenSessionKeysByStudent[canonicalId] = new Set<string>();
+      }
+      if (dedupKey) {
+        if (seenSessionKeysByStudent[canonicalId].has(dedupKey)) return;
+        seenSessionKeysByStudent[canonicalId].add(dedupKey);
+      }
+      countsByStudent[canonicalId] = (countsByStudent[canonicalId] || 0) + 1;
+    };
+
+    // 1. All non-rejected attendance educational warnings recorded in workflow_items (from start until now)
+    workflowItems.forEach(w => {
+      if (!w || w.status === 'rejected') return;
+      if (w.details?.isFormalNoticeLetter) return;
+      const isAttWarn =
+        w.category === 'unexcused_absence_warning' ||
+        (w.category !== 'study_deficit_warning' &&
+          (w.title?.includes('اخطار') && (w.title?.includes('غیبت') || w.title?.includes('حضور'))));
+      if (!isAttWarn) return;
+
+      const rawId = String(w.studentId || '').trim();
+      const rawNat = String(w.nationalId || '').trim();
+      const matchedByName = !rawId && !rawNat && w.studentName
+        ? students.find(s => s.name?.trim() === w.studentName?.trim())?.id
+        : undefined;
+      const canonicalId = (rawId && studentLookupMap.get(rawId)) || (rawNat && studentLookupMap.get(rawNat)) || matchedByName || rawId;
+      if (!canonicalId) return;
+
+      const warnDateNorm = normalizeShamsiDateStr(w.details?.date || '');
+      const progRef = String(w.details?.programId || w.details?.programTitle || '').trim();
+      const sessionKey = (warnDateNorm && progRef)
+        ? `sess_${progRef}_${warnDateNorm}`
+        : `wf_${w.id}`;
+      addWarning(canonicalId, sessionKey);
+    });
+
+    // 2. Consolidate all attendance logs from start of year until now for session-level hasEducationalWarning flags
+    const allLogsMap = new Map<string, AttendanceSessionLog>();
+    attendanceRecords.forEach(r => {
+      const prog = programs.find(p => p.id === r.programId);
+      if (!prog || prog.isDeleted || prog.status === 'inactive' || prog.status === 'deleted') return;
+      const normDate = toEnglishDigits(normalizeShamsiDateStr(r.date)).replace(/[\/\-]/g, '-');
+      const key = `${r.programId}_${normDate}`;
+      const existing = allLogsMap.get(key);
+      if (!existing) {
+        allLogsMap.set(key, r);
+      } else {
+        const merged = getConsolidatedSessionLog([r, existing], r.programId, r.date, prog?.title);
+        if (merged) allLogsMap.set(key, merged);
+      }
+    });
+
+    allLogsMap.forEach(rec => {
+      const prog = programs.find(p => p.id === rec.programId);
+      const isCalendarHoliday = Boolean(getHolidayForDate(rec.date, prog?.grade));
+      if (rec.isCancelled || isCalendarHoliday || !Array.isArray(rec.students)) return;
+      const recDateNorm = normalizeShamsiDateStr(rec.date);
+      rec.students.forEach(stItem => {
+        if (!stItem.hasEducationalWarning) return;
+        const sid = String(stItem.studentId || '').trim();
+        const nat = String(stItem.nationalId || '').trim();
+        const canonicalId = studentLookupMap.get(sid) || (nat ? studentLookupMap.get(nat) : undefined) || sid;
+        if (!canonicalId) return;
+
+        // Deduplicate against workflow items matching same student & date (either by programId or programTitle)
+        const existingSet = seenSessionKeysByStudent[canonicalId];
+        const byIdKey = `sess_${rec.programId}_${recDateNorm}`;
+        const byTitleKey = `sess_${String(rec.programTitle || '').trim()}_${recDateNorm}`;
+        if (existingSet && (existingSet.has(byIdKey) || existingSet.has(byTitleKey))) {
+          return;
+        }
+        addWarning(canonicalId, byIdKey);
+      });
+    });
+
+    return countsByStudent;
+  }, [workflowItems, attendanceRecords, programs, students, academicHolidays]);
+
   // Aggregated Per-Student Report Data
   const studentReportList = useMemo(() => {
     const isLevel3OrStudentOrRep = currentUser?.level === 3 || isOrdinaryStudent || isRepresentative;
@@ -1542,6 +1668,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       excusedCount: number;
       unspecifiedCount: number;
       warningCount: number;
+      allTimeAbsenceWarningCount: number;
       history: { date: string; programTitle: string; status: AttendanceStatus | 'holiday'; isCancelled: boolean; note?: string; excuseReason?: string; hasWarning?: boolean }[];
     }> = {};
 
@@ -1579,6 +1706,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         excusedCount: 0,
         unspecifiedCount: 0,
         warningCount: 0,
+        allTimeAbsenceWarningCount: allTimeAbsenceWarningsByStudent[s.id] || 0,
         history: []
       };
     });
@@ -1698,7 +1826,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
     if (reportWarningOnlyFilter) {
       const threshold = settings.unexcusedWarningThreshold || 3;
-      list = list.filter(item => item.absentCount >= threshold || item.warningCount > 0);
+      list = list.filter(item => item.absentCount >= threshold || item.warningCount > 0 || item.allTimeAbsenceWarningCount > 0);
     }
 
     if (reportSortBy === 'class') {
@@ -1714,7 +1842,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     }
 
     return list;
-  }, [students, consolidatedReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs]);
+  }, [students, consolidatedReportRecords, reportGradeFilter, reportSearchQuery, reportWarningOnlyFilter, reportShowAllStudents, reportMethodFilter, reportSortBy, settings, programs, allTimeAbsenceWarningsByStudent]);
 
   // Grouped by Class Report Data (for reportViewMode === 'class')
   const classGroupedReportList = useMemo(() => {
@@ -1724,13 +1852,16 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       teacherName: string;
       grade: string;
       attendanceType?: string;
+      eligibleDatesSet: Set<string>;
       studentsMap: Record<string, {
         student: any;
+        eligibleDaysCount: number;
         absentCount: number;
         excusedCount: number;
         lateCount: number;
         presentCount: number;
         warningCount: number;
+        allTimeAbsenceWarningCount: number;
         history: any[];
       }>;
     }> = {};
@@ -1740,6 +1871,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       const progKey = rec.programId || rec.programTitle || 'عمومی';
       const matchingProg = programs.find(p => p.id === rec.programId);
       if (!matchingProg || matchingProg.isDeleted || matchingProg.status === 'inactive' || matchingProg.status === 'deleted') return;
+      if (getHolidayForDate(rec.date, matchingProg?.grade)) return;
       const attType = matchingProg?.attendanceType || (rec as any).attendanceType || 'representative';
       if (reportMethodFilter === 'self_reporting' && attType !== 'self_reporting') return;
       if (reportMethodFilter === 'representative' && attType === 'self_reporting') return;
@@ -1751,11 +1883,15 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           teacherName: matchingProg?.teacher || matchingProg?.teacherName || (rec as any).teacherName || 'استاد محترم',
           grade: rec.grade || matchingProg?.grade || 'عمومی',
           attendanceType: attType,
+          eligibleDatesSet: new Set<string>(),
           studentsMap: {}
         };
       }
 
       const cEntry = classMap[progKey];
+      const normRecDate = normalizeShamsiDateStr(rec.date);
+      if (normRecDate) cEntry.eligibleDatesSet.add(normRecDate);
+
       if (Array.isArray(rec.students)) {
         rec.students.forEach(stItem => {
           const stObj = students.find(s => String(s.id) === String(stItem.studentId)) || {
@@ -1771,16 +1907,19 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           if (!cEntry.studentsMap[stItem.studentId]) {
             cEntry.studentsMap[stItem.studentId] = {
               student: stObj,
+              eligibleDaysCount: 0,
               absentCount: 0,
               excusedCount: 0,
               lateCount: 0,
               presentCount: 0,
               warningCount: 0,
+              allTimeAbsenceWarningCount: allTimeAbsenceWarningsByStudent[stObj.id] || 0,
               history: []
             };
           }
 
           const stMapEntry = cEntry.studentsMap[stItem.studentId];
+          stMapEntry.eligibleDaysCount++;
           if (stItem.status === 'absent') stMapEntry.absentCount++;
           else if (stItem.status === 'excused') stMapEntry.excusedCount++;
           else if (stItem.status === 'late') stMapEntry.lateCount++;
@@ -1811,10 +1950,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       stList.sort((a, b) => (b?.absentCount || 0) - (a?.absentCount || 0) || String(a?.student?.name || '').localeCompare(String(b?.student?.name || ''), 'fa'));
       return {
         ...cGroup,
+        classEligibleDaysCount: cGroup.eligibleDatesSet.size,
         studentsList: stList
       };
     }).filter(cGroup => cGroup.studentsList.length > 0);
-  }, [consolidatedReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents, reportMethodFilter]);
+  }, [consolidatedReportRecords, programs, students, reportGradeFilter, reportSearchQuery, reportShowAllStudents, reportMethodFilter, academicHolidays, allTimeAbsenceWarningsByStudent]);
 
   // Aggregated Representatives List for Education Manager
   const representativesList = useMemo(() => {
@@ -2253,43 +2393,61 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     };
   }, [currentUser, isOrdinaryStudent, studentReportList, overallReportMetrics]);
 
-  // Handler to issue educational warning
+  // Handler to issue educational warning (Definitive & Immediate without Workflow Pending Approval)
   const handleConfirmIssueWarning = async () => {
     if (!issuingWarningStudent) return;
     const s = issuingWarningStudent.student;
     const progTitle = issuingWarningStudent.programTitle || 'دروس مدرسه';
     const reason = warningReasonInput.trim() || `ثبت اخطار آموزشی برای طلبه ${s.name} (${s.grade || 'عمومی'}) به علت داشتن ${issuingWarningStudent.absentCount} جلسه غیبت غیرموجه در درس ${progTitle}.`;
+    const nowIso = new Date().toISOString();
+    const todayShamsi = getTodayShamsi();
+    const issuerName = currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول آموزش';
 
     try {
       const wfItem: WorkflowItem = {
         id: `wf_warn_${s.id}_${Date.now()}`,
-        type: 'notice',
+        type: 'report_notice',
         category: 'unexcused_absence_warning',
         title: `اخطار آموزشی غیبت غیرموجه: ${s.name}`,
         description: reason,
-        status: 'pending',
+        status: 'approved',
         grade: s.grade || 'عمومی',
         studentId: s.id,
         studentName: s.name,
         nationalId: s.nationalId,
         requiresEducationApproval: false,
+        approvedByUserId: currentUser?.id,
+        approvedByName: issuerName,
+        approvedAt: nowIso,
         createdByUserId: currentUser?.id,
-        createdByName: currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول آموزش',
-        createdAt: new Date().toISOString(),
+        createdByName: issuerName,
+        createdAt: nowIso,
+        updatedAt: nowIso,
         details: {
           absentCount: issuingWarningStudent.absentCount,
           programTitle: progTitle,
-          reason
+          date: todayShamsi,
+          issuedDateShamsi: todayShamsi,
+          periodStart: reportStartDate,
+          periodEnd: reportEndDate,
+          reason,
+          definitive: true
         }
       };
 
       await localDb.setDoc('workflow_items', wfItem);
+      const refreshedList = await localDb.getDocs<WorkflowItem>('workflow_items');
+      setWorkflowItems(refreshedList && refreshedList.length > 0 ? refreshedList : [wfItem, ...workflowItems]);
+
+      window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'workflow_items', id: wfItem.id } }));
+
       setIssuingWarningStudent(null);
       setWarningReasonInput('');
-      showToast(`اخطار آموزشی برای ${s.name} با موفقیت در جریان کار ثبت شد.`);
-    } catch (err) {
-      console.error('Error creating warning item:', err);
-      alert('خطا در ثبت اخطار آموزشی.');
+      showToast(`اخطار آموزشی برای ${s.name} به صورت قطعی صادر و ثبت گردید.`);
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE] Error creating definitive warning item:', err);
+      showToast('خطا در صدور و ثبت قطعی اخطار آموزشی.');
     }
   };
 
@@ -2308,28 +2466,36 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               'نام کلاس / درس': cGroup.programTitle,
               'استاد مربوطه': cGroup.teacherName,
               'پایه': cGroup.grade,
+              'تعداد روزهای مشمول': stItem.eligibleDaysCount,
               'نام و نام خانوادگی طلبه': stItem.student.name,
               'کد ملی': stItem.student.nationalId || '',
               'غیبت غیرموجه': stItem.absentCount,
               'غیبت موجه': stItem.excusedCount,
               'تاخیر': stItem.lateCount,
-              'تعداد اخطارها': stItem.warningCount
+              'تعداد اخطارها (بازه)': stItem.warningCount,
+              'اخطارهای آموزشی غیبت از ابتدا تا کنون': stItem.allTimeAbsenceWarningCount
             });
           });
         });
       } else if (reportViewMode === 'summary') {
         // Export concise aggregated summary per student
-        rows = studentReportList.map((item, idx) => ({
-          'ردیف': idx + 1,
-          'نام و نام خانوادگی طلبه': item.student.name,
-          'کد ملی': item.student.nationalId || '',
-          'پایه تحصیلی': item.student.grade || '',
-          'خلاصه غیبت‌ها به تفکیک دروس': (item as any).compactCourseSummary || 'بدون غیبت',
-          'مجموع غیبت غیرموجه': item.absentCount,
-          'مجموع غیبت موجه': item.excusedCount,
-          'کل تاخیرها': item.lateCount,
-          'تعداد اخطارهای آموزشی': item.warningCount
-        }));
+        rows = studentReportList.map((item, idx) => {
+          const row: Record<string, any> = {
+            'ردیف': idx + 1,
+            'نام و نام خانوادگی طلبه': item.student.name,
+            'کد ملی': item.student.nationalId || '',
+            'پایه تحصیلی': item.student.grade || '',
+          };
+          if (showSummaryCourseBreakdown) {
+            row['خلاصه غیبت‌ها به تفکیک دروس'] = (item as any).compactCourseSummary || 'بدون غیبت';
+          }
+          row['مجموع غیبت غیرموجه'] = item.absentCount;
+          row['مجموع غیبت موجه'] = item.excusedCount;
+          row['کل تاخیرها'] = item.lateCount;
+          row['اخطارهای بازه'] = item.warningCount;
+          row['اخطارهای آموزشی غیبت از ابتدا تا کنون'] = item.allTimeAbsenceWarningCount;
+          return row;
+        });
       } else {
         // Export full per-student list
         rows = studentReportList.map((item, idx) => ({
@@ -2344,7 +2510,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           'غیبت موجه': item.excusedCount,
           'تاخیر در ورود': item.lateCount,
           'نامشخص': item.unspecifiedCount,
-          'تعداد اخطارهای آموزشی': item.warningCount,
+          'اخطارهای بازه': item.warningCount,
+          'اخطارهای آموزشی غیبت از ابتدا تا کنون': item.allTimeAbsenceWarningCount,
           'درصد حضور': item.heldSessionsEnrolled > 0 ? `${Math.round((item.presentCount / item.heldSessionsEnrolled) * 100)}%` : '۰%'
         }));
       }
@@ -2358,7 +2525,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       showToast('فایل اکسل گزارش با موفقیت دریافت شد.');
     } catch (err) {
       console.error('Export error:', err);
-      alert('خطا در ایجاد فایل اکسل.');
+      showToast('خطا در ایجاد فایل اکسل.');
     }
   };
 
@@ -5017,6 +5184,17 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   <AlertOctagon size={14} />
                   <span>فقط مشمولین اخطار</span>
                 </button>
+                {reportViewMode === 'summary' && (
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-teal-200 bg-teal-50/70 text-teal-800 cursor-pointer select-none hover:bg-teal-100/70 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={showSummaryCourseBreakdown}
+                      onChange={(e) => setShowSummaryCourseBreakdown(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-teal-700 rounded cursor-pointer"
+                    />
+                    <span>نمایش خلاصه غیبت‌ها به تفکیک دروس</span>
+                  </label>
+                )}
                 <button
                   type="button"
                   onClick={handleExportReportToExcel}
@@ -5055,9 +5233,14 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             </span>
                           )}
                         </div>
-                        <span className="text-[11px] font-bold bg-amber-400/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30 self-start sm:self-auto">
-                          تعداد طلاب: {cGroup.studentsList.length} نفر
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                          <span className="text-[11px] font-bold bg-emerald-400/20 text-emerald-200 px-2.5 py-0.5 rounded-full border border-emerald-300/30">
+                            تعداد روزهای مشمول: {cGroup.classEligibleDaysCount} روز
+                          </span>
+                          <span className="text-[11px] font-bold bg-amber-400/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30">
+                            تعداد طلاب: {cGroup.studentsList.length} نفر
+                          </span>
+                        </div>
                       </div>
 
                       {/* Class Student Sub-table */}
@@ -5067,10 +5250,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
                               <th className="p-2.5">ردیف</th>
                               <th className="p-2.5">نام و نام خانوادگی طلبه</th>
+                              <th className="p-2.5 text-center text-slate-700">تعداد روزهای مشمول</th>
                               <th className="p-2.5 text-center text-rose-700">غیبت غیرموجه</th>
                               <th className="p-2.5 text-center text-indigo-700">غیبت موجه</th>
                               <th className="p-2.5 text-center text-amber-700">تاخیر</th>
-                              <th className="p-2.5 text-center text-rose-800">اخطار آموزشی</th>
+                              <th className="p-2.5 text-center text-rose-800">اخطارهای آموزشی غیبت از ابتدا تا کنون</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
@@ -5078,6 +5262,11 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               <tr key={stItem.student.id} className="hover:bg-slate-50/80 transition-colors">
                                 <td className="p-2.5 font-mono text-slate-400 font-bold">{idx + 1}</td>
                                 <td className="p-2.5 font-black text-slate-900">{stItem.student.name}</td>
+                                <td className="p-2.5 text-center font-mono font-bold text-slate-700">
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md border border-slate-200">
+                                    {stItem.eligibleDaysCount} روز
+                                  </span>
+                                </td>
                                 <td className="p-2.5 text-center font-mono font-black text-rose-600">
                                   {stItem.absentCount > 0 ? (
                                     <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md">
@@ -5092,9 +5281,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                   {stItem.lateCount > 0 ? `${stItem.lateCount} مورد` : '0'}
                                 </td>
                                 <td className="p-2.5 text-center font-mono font-black text-rose-800">
-                                  {stItem.warningCount > 0 ? (
+                                  {stItem.allTimeAbsenceWarningCount > 0 ? (
                                     <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md text-[10px]">
-                                      {stItem.warningCount} اخطار
+                                      {stItem.allTimeAbsenceWarningCount} اخطار
                                     </span>
                                   ) : '---'}
                                 </td>
@@ -5108,7 +5297,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                 )}
               </div>
             ) : reportViewMode === 'summary' ? (
-              /* VIEW MODE 2: AGGREGATED CONCISE SUMMARY (یک سطر برای هر طلبه + ستون خلاصه تفکیک دروس) */
+              /* VIEW MODE 2: AGGREGATED CONCISE SUMMARY (یک سطر برای هر طلبه؛ ستون تفکیک دروس فقط با تیک فعال‌سازی) */
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead>
@@ -5117,11 +5306,13 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <th className="p-3">نام طلبه</th>
                       <th className="p-3">پایه</th>
                       <th className="p-3 text-center">شیوه ثبت</th>
-                      <th className="p-3">خلاصه غیبت‌ها به تفکیک دروس</th>
+                      {showSummaryCourseBreakdown && (
+                        <th className="p-3">خلاصه غیبت‌ها به تفکیک دروس</th>
+                      )}
                       <th className="p-3 text-center text-rose-700">کل غیرموجه</th>
                       <th className="p-3 text-center text-indigo-700">کل موجه</th>
                       <th className="p-3 text-center text-amber-700">تاخیرها</th>
-                      <th className="p-3 text-center text-rose-800">اخطار آموزشی</th>
+                      <th className="p-3 text-center text-rose-800">اخطارهای آموزشی غیبت از ابتدا تا کنون</th>
                       <th className="p-3 text-center">جزئیات</th>
                     </tr>
                   </thead>
@@ -5153,28 +5344,36 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               </span>
                             )}
                           </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {Object.entries((item as any).courseBreakdown || {}).length === 0 ? (
-                                <span className="text-[11px] text-slate-400 font-medium">بدون غیبت</span>
-                              ) : (
-                                Object.entries((item as any).courseBreakdown || {}).map(([pTitle, counts]: [string, any]) => {
-                                  if (counts.absent === 0 && counts.excused === 0) return null;
-                                  return (
-                                    <span key={pTitle} className="px-2 py-1 rounded-lg text-[10.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1">
-                                      <span>{pTitle}:</span>
-                                      <span className="font-mono text-rose-700 font-black">{counts.absent} غیرموجه</span>
-                                      {counts.excused > 0 && <span className="font-mono text-indigo-700 font-bold">(+{counts.excused} موجه)</span>}
-                                    </span>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </td>
+                          {showSummaryCourseBreakdown && (
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {Object.entries((item as any).courseBreakdown || {}).length === 0 ? (
+                                  <span className="text-[11px] text-slate-400 font-medium">بدون غیبت</span>
+                                ) : (
+                                  Object.entries((item as any).courseBreakdown || {}).map(([pTitle, counts]: [string, any]) => {
+                                    if (counts.absent === 0 && counts.excused === 0) return null;
+                                    return (
+                                      <span key={pTitle} className="px-2 py-1 rounded-lg text-[10.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1">
+                                        <span>{pTitle}:</span>
+                                        <span className="font-mono text-rose-700 font-black">{counts.absent} غیرموجه</span>
+                                        {counts.excused > 0 && <span className="font-mono text-indigo-700 font-bold">(+{counts.excused} موجه)</span>}
+                                      </span>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </td>
+                          )}
                           <td className="p-3 text-center font-mono font-black text-rose-600">{item.absentCount}</td>
                           <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
                           <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
-                          <td className="p-3 text-center font-mono font-black text-rose-800">{item.warningCount > 0 ? item.warningCount : '---'}</td>
+                          <td className="p-3 text-center font-mono font-black text-rose-800">
+                            {item.allTimeAbsenceWarningCount > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md">
+                                {item.allTimeAbsenceWarningCount} اخطار
+                              </span>
+                            ) : '---'}
+                          </td>
                           <td className="p-3 text-center">
                             <button
                               type="button"
@@ -5206,7 +5405,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                       <th className="p-3 text-center text-rose-700">غیبت غیرموجه</th>
                       <th className="p-3 text-center text-indigo-700">غیبت موجه</th>
                       <th className="p-3 text-center text-amber-700">تاخیر</th>
-                      <th className="p-3 text-center text-rose-800">اخطار آموزشی</th>
+                      <th className="p-3 text-center text-rose-800">اخطارهای آموزشی غیبت از ابتدا تا کنون</th>
                       <th className="p-3 text-center">عملیات و جزئیات</th>
                     </tr>
                   </thead>
@@ -5265,9 +5464,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                           <td className="p-3 text-center font-mono font-bold text-indigo-700">{item.excusedCount}</td>
                           <td className="p-3 text-center font-mono font-bold text-amber-700">{item.lateCount}</td>
                           <td className="p-3 text-center font-mono font-black text-rose-800">
-                            {item.warningCount > 0 ? (
-                              <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md">
-                                {item.warningCount}
+                            {item.allTimeAbsenceWarningCount > 0 ? (
+                              <span className="px-2 py-0.5 bg-rose-600 text-white rounded-md" title={`تعداد اخطار ثبت شده در بازه: ${item.warningCount}`}>
+                                {item.allTimeAbsenceWarningCount} اخطار
                               </span>
                             ) : '---'}
                           </td>
@@ -6584,8 +6783,9 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                     className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white text-xs outline-none resize-none font-medium leading-relaxed"
                     placeholder="توضیحات و علت اخطار..."
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    با صدور این اخطار، یک کارتابل پیگیری آموزشی در جریان کار مدرسه ایجاد شده و به مسئول آموزش ارسال می‌گردد.
+                  <p className="text-[11px] text-emerald-700 font-bold mt-1.5 flex items-center gap-1">
+                    <CheckCircle2 size={13} className="shrink-0" />
+                    <span>با کلیک روی دکمه زیر، اخطار آموزشی به صورت قطعی و فوری ثبت می‌گردد و نیازی به تایید در جریان کار و کارتابل ندارد.</span>
                   </p>
                 </div>
               </div>
@@ -6604,7 +6804,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                   className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer flex items-center gap-1.5 shadow-xs"
                 >
                   <AlertTriangle size={14} />
-                  <span>تایید و ارسال اخطار آموزشی</span>
+                  <span>تایید و صدور قطعی اخطار</span>
                 </button>
               </div>
             </motion.div>

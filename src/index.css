@@ -469,4 +469,22 @@ html, body {
     size: A4 portrait;
     margin: 10mm;
   }
+  body.printing-warning-form * {
+    visibility: hidden !important;
+  }
+  body.printing-warning-form #warning-form-print-sheet,
+  body.printing-warning-form #warning-form-print-sheet * {
+    visibility: visible !important;
+  }
+  body.printing-warning-form #warning-form-print-sheet {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm !important;
+    background: #ffffff !important;
+    z-index: 99999 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
 }

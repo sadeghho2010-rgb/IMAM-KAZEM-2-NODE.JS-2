@@ -33,7 +33,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', group: 'آموزش و تدریس', description: 'ثبت نمرات، کیفیت و مشارکت جلسات مشاوره' },
   { id: 'attendance', label: 'حضور و غیاب طلاب', group: 'آموزش و تدریس', description: 'ثبت غیبت، تاخیر، اخطارها و آمار حضور' },
   { id: 'held-sessions', label: 'تعداد جلسات برگزار شده', group: 'آموزش و تدریس', description: 'محاسبه جلسات تشکیل‌شده کلاس‌ها با تفکیک استاد اصلی، جایگزین و تعطیلات تقویم آموزشی' },
-  { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', group: 'آموزش و تدریس', description: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب به صورت سراسری یا اختصاصی برای هر طلبه' },
+  { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', group: 'مدیریت طلاب و کاربران', description: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب به صورت سراسری یا اختصاصی برای هر طلبه' },
 
   // مدیریت طلاب و کاربران
   { id: 'student-requests', label: 'سامانه درخواست‌های طلاب', group: 'مدیریت طلاب و کاربران', description: 'ثبت، پیگیری و گردش آنلاین درخواست‌های آموزشی، مالی و رفاهی طلاب' },
@@ -42,6 +42,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'student-portal', label: 'پرتال اختصاصی طلبه', group: 'مدیریت طلاب و کاربران', description: 'صفحه کاربری طلبه جهت ثبت فعالیت و مشاهده پرونده' },
   { id: 'comments', label: 'نظرات و پرونده تربیتی', group: 'مدیریت طلاب و کاربران', description: 'یادداشت‌های تربیتی، اخلاقی و جلسات مصاحبه' },
   { id: 'oral-exams', label: 'آزمون شفاهی طلاب', group: 'مدیریت طلاب و کاربران', description: 'ثبت نمرات و محدوده‌های آزمون شفاهی فقه و اصول' },
+  { id: 'warnings-management', label: 'مدیریت اخطارها', group: 'مدیریت طلاب و کاربران', description: 'پایش اخطارهای حضور و غیاب و ثبت مطالعه طلاب و چاپ فرم تعهدنامه و ابلاغیه قابل ویرایش' },
   { id: 'stats', label: 'آمار و ساعات مطالعه', group: 'مدیریت طلاب و کاربران', description: 'ثبت ساعات مطالعه دوره‌ای و گزارشات تجمعی' },
 
   // امور مالی و تغذیه
@@ -198,7 +199,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
     const allowed = [
       'student-requests', 'todos', 'workflow', 'academic-calendar', 'presence-hours', 'students', 'active-students',
       'passed-courses', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'consultation-advisor',
-      'counseling-classes', 'discussion', 'stats', 'attendance', 'held-sessions', 'oral-exams', 'comments',
+      'counseling-classes', 'discussion', 'stats', 'attendance', 'warnings-management', 'held-sessions', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ];
     return allowed.includes(tabId);

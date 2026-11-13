@@ -698,7 +698,7 @@ export default function MainDashboard({
       id: 'student-access-management',
       title: 'مدیریت دسترسی بخش‌های طلاب',
       subtitle: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب (رزرو غذا، مطالعه، تقاضا و...) به صورت سراسری یا اختصاصی هر طلبه',
-      category: 'education',
+      category: 'students',
       icon: ShieldCheck,
       iconBg: 'bg-gradient-to-br from-indigo-600 via-purple-600 to-rose-600 text-white shadow-lg shadow-indigo-600/30',
       cardGradient: 'from-indigo-600/10 via-purple-500/5 to-transparent',
@@ -750,6 +750,17 @@ export default function MainDashboard({
       cardGradient: 'from-emerald-500/10 via-teal-500/5 to-transparent',
       borderGlow: 'hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/20',
       accentText: 'text-emerald-600'
+    },
+    {
+      id: 'warnings-management',
+      title: 'مدیریت اخطارها',
+      subtitle: 'مشاهده اخطارهای حضور و غیاب و ثبت مطالعه طلاب و صدور فرم قابل ویرایش تعهد، شورا و توضیحات',
+      category: 'students',
+      icon: ShieldAlert,
+      iconBg: 'bg-gradient-to-br from-rose-600 via-red-600 to-amber-600 text-white shadow-lg shadow-rose-500/30',
+      cardGradient: 'from-rose-500/10 via-amber-500/5 to-transparent',
+      borderGlow: 'hover:border-rose-400 hover:shadow-2xl hover:shadow-rose-500/20',
+      accentText: 'text-rose-600'
     },
     {
       id: 'discussion',
@@ -1160,7 +1171,7 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'student-access-management', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'teachers-bank']
     },
     {
       id: 'students_group',
@@ -1172,7 +1183,7 @@ export default function MainDashboard({
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
+      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'warnings-management', 'student-access-management', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
     },
     {
       id: 'research_group',
@@ -1221,7 +1232,7 @@ export default function MainDashboard({
         ? `🚨 مصرف بالای CPU/RAM` 
         : (unresolvedAnomaliesCount > 0 ? `${unresolvedAnomaliesCount} هشدار` : undefined),
       highlight: systemHealthAlert?.isHigh || unresolvedAnomaliesCount > 0,
-      itemIds: ['user-management', 'user-credentials', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test', 'system-audit-logs']
+      itemIds: ['user-management', 'user-credentials', 'student-access-management', 'backup', 'audit-logs', 'app-logs', 'db-save-errors', 'anomaly-detection', 'system-health', 'db-connection-test', 'system-audit-logs']
     }
   ];
 

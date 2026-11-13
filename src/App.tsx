@@ -35,6 +35,7 @@ const EducationFinancialReportSettings = lazy(() => import('./components/educati
 const TeacherTransportManagement = lazy(() => import('./components/education/TeacherTransportManagement'));
 const HeldSessionsReport = lazy(() => import('./components/education/HeldSessionsReport'));
 const StudentAccessManagement = lazy(() => import('./components/education/StudentAccessManagement'));
+const StudentWarningsManagement = lazy(() => import('./components/student/StudentWarningsManagement'));
 const TodoList = lazy(() => import('./components/TodoList'));
 const StudentComments = lazy(() => import('./components/StudentComments'));
 const StudyDiscussion = lazy(() => import('./components/StudyDiscussion'));
@@ -115,7 +116,6 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'oral-exams': 'education_group',
   'academic-calendar': 'education_group',
   'held-sessions': 'education_group',
-  'student-access-management': 'education_group',
   'teachers-bank': 'education_group',
 
   'student-requests': 'requests_group',
@@ -124,6 +124,9 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
 
   'students': 'students_group',
   'active-students': 'students_group',
+  'attendance': 'students_group',
+  'warnings-management': 'students_group',
+  'student-access-management': 'students_group',
   'comments': 'students_group',
   'stats': 'students_group',
   'lockers': 'students_group',
@@ -283,6 +286,7 @@ function AppContent() {
       case 'research': return 'پژوهش و مقالات علمی';
       case 'article-evaluations': return 'ارزیابی مقالات علمی';
       case 'attendance': return 'حضور و غیاب طلاب';
+      case 'warnings-management': return 'مدیریت اخطارهای طلاب';
       case 'rep-attendance': return 'ثبت حضور و غیاب (مخصوص نمایندگان)';
       case 'self-reporting': return 'ثبت خوداظهاری حضور در کلاس';
       case 'course-selection': return 'سامانه انتخاب واحد';
@@ -414,6 +418,8 @@ function AppContent() {
           return <StudentMobileAttendance onNavigateTab={handleNavigate} />;
         }
         return <AttendanceAndStats initialStudentId={selectedStudentIdForTab} />;
+      case 'warnings-management':
+        return <StudentWarningsManagement />;
       case 'rep-attendance':
         return <RepresentativeQuickAttendanceView onNavigateTab={handleNavigate} />;
       case 'self-reporting':

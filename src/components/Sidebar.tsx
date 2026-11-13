@@ -92,7 +92,6 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'oral-exams',
       'academic-calendar',
       'held-sessions',
-      'student-access-management',
       'teachers-bank'
     ]
   },
@@ -106,6 +105,8 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'rep-attendance',
       'self-reporting',
       'attendance',
+      'warnings-management',
+      'student-access-management',
       'discussion',
       'stats',
       'comments',
@@ -147,6 +148,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
     itemIds: [
       'user-management',
       'user-credentials',
+      'student-access-management',
       'backup',
       'system-health',
       'audit-logs',
@@ -187,6 +189,7 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'research', label: 'بخش پژوهش و مقالات', icon: BookOpen },
   { id: 'article-evaluations', label: 'ارزیابی مقالات', icon: Award },
   { id: 'attendance', label: 'حضور و غیاب طلاب', icon: CheckSquare },
+  { id: 'warnings-management', label: 'مدیریت اخطارها', icon: ShieldAlert },
   { id: 'rep-attendance', label: 'ثبت حضور و غیاب (مخصوص نمایندگان)', icon: UserCheck },
   { id: 'self-reporting', label: 'ثبت خوداظهاری حضور در کلاس', icon: CheckSquare },
   { id: 'course-selection', label: 'سامانه انتخاب واحد', icon: BookOpenCheck },
@@ -396,6 +399,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
 
   const siteManagementSubItems = [
     { id: 'security-pin-settings', label: 'افزایش سطح امنیتی حساب', icon: KeyRound },
+    { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', icon: Lock },
     { id: 'anomaly-detection', label: 'تشخیص ناهنجاری‌ها و رولبک', icon: ShieldAlert, badge: unresolvedAnomaliesCount },
     { id: 'backup', label: 'پشتیبان‌گیری از دیتابیس', icon: HardDrive },
     { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },

@@ -49,6 +49,7 @@ import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { exportElementToImage } from '../lib/imageExport';
+import { GradeAwareStudentPicker, normalizeGradeKey } from './programs/GradeAwareStudentPicker';
 
 export const GRADE_FILTER_OPTIONS = [
   { id: 'all', label: 'نمایش کلیه پایه‌ها' },
@@ -747,7 +748,11 @@ export default function Programs() {
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedEnrollments, setSelectedEnrollments] = useState<string[]>([]);
-  const [enrollSearchTerm, setEnrollSearchTerm] = useState('');
+  const [enrollPickerResetKey, setEnrollPickerResetKey] = useState(0);
+  const [showAddStudentsSection, setShowAddStudentsSection] = useState(false);
+  const [showEditStudentsSection, setShowEditStudentsSection] = useState(false);
+  const [editSelectedStudentIds, setEditSelectedStudentIds] = useState<string[]>([]);
+  const [editStudentIdsModified, setEditStudentIdsModified] = useState(false);
 
   // Hierarchy Display Toggles
   const [showMainStudents, setShowMainStudents] = useState<boolean>(true);
@@ -1051,6 +1056,7 @@ export default function Programs() {
     const combined = Array.from(new Set([...(currentProgram?.studentIds || []), ...fromEnrollments]));
     setSelectedEnrollments(combined);
     setSelectedProgramId(programId);
+    setEnrollPickerResetKey(prev => prev + 1);
     setShowEnrollModal(true);
   };
 
@@ -1062,26 +1068,28 @@ export default function Programs() {
       const currentEnrollments = enrollments.filter(e => String(e.programId) === String(selectedProgramId));
       const fromEnrollmentIds = currentEnrollments.map(e => e.studentId);
       const currentStudentIds = Array.from(new Set([...(targetProgram?.studentIds || []), ...fromEnrollmentIds]));
+      const uniqueSelected = Array.from(new Set(selectedEnrollments));
 
-      // 1. Update program document first with authoritative timestamp
+      // 1. Update program document first with authoritative timestamp & version
       if (targetProgram) {
         const updatedProg: Program = {
           ...targetProgram,
-          studentIds: selectedEnrollments,
+          studentIds: uniqueSelected,
           hasExplicitEnrollment: true,
+          version: ((targetProgram as any).version || 0) + 1,
           updated_at: new Date().toISOString()
         };
         await localDb.setDoc('programs', updatedProg);
       } else {
         await localDb.updateDoc('programs', selectedProgramId, {
-          studentIds: selectedEnrollments,
+          studentIds: uniqueSelected,
           hasExplicitEnrollment: true,
           updated_at: new Date().toISOString()
         });
       }
 
       // 2. Add new enrollments
-      const toAdd = selectedEnrollments.filter(id => !fromEnrollmentIds.includes(id));
+      const toAdd = uniqueSelected.filter(id => !fromEnrollmentIds.includes(id));
       for (const studentId of toAdd) {
         await localDb.addDoc('enrollments', {
           studentId,
@@ -1090,7 +1098,7 @@ export default function Programs() {
       }
 
       // 3. Remove deselected enrollments
-      const toRemove = currentEnrollments.filter(e => !selectedEnrollments.includes(e.studentId));
+      const toRemove = currentEnrollments.filter(e => !uniqueSelected.includes(e.studentId));
       for (const enrollment of toRemove) {
         await localDb.deleteDoc('enrollments', enrollment.id);
       }
@@ -1099,31 +1107,43 @@ export default function Programs() {
       try {
         const allCourseEnrolls = await localDb.getDocs<any>('course_enrollments');
         const courseToRemove = (allCourseEnrolls || []).filter(e => 
-          String(e.programId) === String(selectedProgramId) && !selectedEnrollments.includes(String(e.studentId))
+          String(e.programId) === String(selectedProgramId) && !uniqueSelected.includes(String(e.studentId))
         );
         for (const ce of courseToRemove) {
           await localDb.deleteDoc('course_enrollments', ce.id);
         }
+        const existingCourseEnrollStudentIds = new Set(
+          (allCourseEnrolls || [])
+            .filter(e => String(e.programId) === String(selectedProgramId))
+            .map(e => String(e.studentId))
+        );
         for (const studentId of toAdd) {
-          await localDb.addDoc('course_enrollments', {
-            studentId,
-            programId: selectedProgramId
-          });
+          if (!existingCourseEnrollStudentIds.has(String(studentId))) {
+            await localDb.addDoc('course_enrollments', {
+              studentId,
+              programId: selectedProgramId
+            });
+          }
         }
-      } catch (ceErr) {}
+      } catch (ceErr) {
+        console.error('[STORAGE_FAILURE] Error syncing course_enrollments:', ceErr);
+        dispatchDatabaseToast('خطا در همگام‌سازی جدول فرعی ثبت‌نام دروس.', 'warning');
+      }
 
       // 5. Synchronize in-progress & remaining courses progress for students in this class
       if (targetProgram) {
         const updatedProg: Program = {
           ...targetProgram,
-          studentIds: selectedEnrollments,
+          studentIds: uniqueSelected,
           hasExplicitEnrollment: true
         };
         await StudentCourseProgressService.syncProgramEnrollmentProgress(
           updatedProg,
-          selectedEnrollments,
+          uniqueSelected,
           currentStudentIds
-        ).catch(console.error);
+        ).catch(err => {
+          console.error('[STORAGE_FAILURE] Error syncing course progress on enroll:', err);
+        });
       }
 
       window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
@@ -1135,7 +1155,7 @@ export default function Programs() {
       setShowEnrollModal(false);
       dispatchDatabaseToast('لیست طلاب کلاس و وضعیت دروس در حال جریان با موفقیت بروزرسانی شد.', 'success');
     } catch (error) {
-      console.error("Error saving enrollments:", error);
+      console.error('[STORAGE_FAILURE] Error saving enrollments:', error);
       dispatchDatabaseToast('خطا در بروزرسانی لیست طلاب کلاس.', 'error');
     } finally {
       setIsSavingEnrollments(false);
@@ -1529,6 +1549,7 @@ export default function Programs() {
 
       const tempId = `prog_${Date.now()}`;
       const nowIso = new Date().toISOString();
+      const initialStudentIds = Array.from(new Set(newProgram.studentIds || []));
       const programPayload: Program = {
         id: tempId,
         title,
@@ -1549,17 +1570,19 @@ export default function Programs() {
         subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
         subjectChapter: newProgram.type === 'اصلی' ? newProgram.subjectChapter : undefined,
         chapterId: newProgram.type === 'اصلی' ? newProgram.chapterId : undefined,
-        studentIds: newProgram.studentIds || [],
+        studentIds: initialStudentIds,
         hasExplicitEnrollment: true,
         status: 'active',
         isDeleted: false,
         mentorId: currentMentorId || 'admin',
+        version: 1,
         updated_at: nowIso
       };
 
       // 1. Optimistic UI Update & Save Program to localDb FIRST before any secondary sync
       setPrograms(prev => [programPayload, ...prev.filter(p => p.id !== tempId)]);
       setShowAddModal(false);
+      setShowAddStudentsSection(false);
 
       await localDb.setDoc('programs', programPayload);
 
@@ -1585,6 +1608,7 @@ export default function Programs() {
         representativeStudentIds: [],
         representativeNames: [],
         customRepresentative: '',
+        studentIds: [],
         subjectCategory: defaultCat as any,
         subjectBook: defaultBk,
         subjectChapter: '',
@@ -1607,17 +1631,57 @@ export default function Programs() {
         await syncRepresentativeUsers([programPayload]);
       }
 
-      if (Array.isArray(programPayload.studentIds) && programPayload.studentIds.length > 0) {
-        await StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, programPayload.studentIds).catch(console.error);
+      if (initialStudentIds.length > 0) {
+        try {
+          for (const studentId of initialStudentIds) {
+            await localDb.addDoc('enrollments', {
+              studentId,
+              programId: programPayload.id
+            });
+            await localDb.addDoc('course_enrollments', {
+              studentId,
+              programId: programPayload.id
+            });
+          }
+          window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
+        } catch (enrollErr) {
+          console.error('[STORAGE_FAILURE] Error saving initial student enrollments for new program:', enrollErr);
+          dispatchDatabaseToast('برنامه ثبت شد اما همگام‌سازی ثبت‌نام برخی طلاب با خطا مواجه شد.', 'warning');
+        }
+        await StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, initialStudentIds).catch(err => {
+          console.error('[STORAGE_FAILURE] Error syncing course progress for new program:', err);
+        });
+        window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       }
 
       await fetchData(false);
     } catch (error: any) {
-      console.error("Error adding program:", error);
+      console.error('[STORAGE_FAILURE] Error adding program:', error);
       dispatchDatabaseToast(error?.message || 'خطا در افزودن برنامه. در حال بازهمگام‌سازی...', 'error');
       fetchData(false);
     } finally {
       setIsSavingProgram(false);
+    }
+  };
+
+  const openEditProgramModal = (program: Program) => {
+    setIsCustomTeacherEdit(false);
+    setIsCustomRoomEdit(false);
+    const fromEnrollments = enrollments
+      .filter(e => String(e.programId) === String(program.id))
+      .map(e => e.studentId);
+    const combinedIds = Array.from(new Set([...(program.studentIds || []), ...fromEnrollments]));
+    setEditSelectedStudentIds(combinedIds);
+    setEditStudentIdsModified(false);
+    setShowEditStudentsSection(false);
+    setEditingProgram(program);
+    setEditModalDays(getProgramDays(program));
+    if (program.time) {
+      const parts = program.time.split('الی').map(p => p.trim());
+      if (parts.length === 2) {
+        setCustomStartEdit(parts[0]);
+        setCustomEndEdit(parts[1]);
+      }
     }
   };
 
@@ -1650,6 +1714,7 @@ export default function Programs() {
     try {
       const dayStr = editModalDays.join(' ، ');
       const nowIso = new Date().toISOString();
+      const uniqueEditedStudentIds = Array.from(new Set(editSelectedStudentIds));
 
       const updatedProgram: Program = {
         ...editingProgram,
@@ -1670,12 +1735,19 @@ export default function Programs() {
         subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined,
         subjectChapter: editingProgram.type === 'اصلی' ? editingProgram.subjectChapter : undefined,
         chapterId: editingProgram.type === 'اصلی' ? editingProgram.chapterId : undefined,
+        studentIds: editStudentIdsModified ? uniqueEditedStudentIds : editingProgram.studentIds,
+        hasExplicitEnrollment: editStudentIdsModified ? true : editingProgram.hasExplicitEnrollment,
+        version: ((editingProgram as any).version || 0) + 1,
         updated_at: nowIso
       };
+
+      const shouldSyncEnrollmentsFromEdit = editStudentIdsModified;
 
       // 1. Optimistic UI update & Persist program FIRST before secondary syncs
       setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updatedProgram : p));
       setEditingProgram(null);
+      setShowEditStudentsSection(false);
+      setEditStudentIdsModified(false);
 
       await localDb.setDoc('programs', updatedProgram);
 
@@ -1692,14 +1764,64 @@ export default function Programs() {
         await syncTeacherWithBank(targetTeacher, updatedProgram.title);
       }
 
-      const enrolledStudentIds = getProgramStudents(updatedProgram.id).map(s => s.id);
-      await StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, enrolledStudentIds).catch(console.error);
+      if (shouldSyncEnrollmentsFromEdit) {
+        const currentEnrollments = enrollments.filter(e => String(e.programId) === String(updatedProgram.id));
+        const fromEnrollmentIds = currentEnrollments.map(e => e.studentId);
+        const previousStudentIds = Array.from(new Set([...(editingProgram.studentIds || []), ...fromEnrollmentIds]));
+        const toAdd = uniqueEditedStudentIds.filter(id => !fromEnrollmentIds.includes(id));
+        const toRemove = currentEnrollments.filter(e => !uniqueEditedStudentIds.includes(e.studentId));
 
-      await syncRepresentativeUsers([updatedProgram]).catch(console.error);
+        try {
+          for (const studentId of toAdd) {
+            await localDb.addDoc('enrollments', { studentId, programId: updatedProgram.id });
+          }
+          for (const enr of toRemove) {
+            await localDb.deleteDoc('enrollments', enr.id);
+          }
+          const allCourseEnrolls = await localDb.getDocs<any>('course_enrollments');
+          for (const ce of (allCourseEnrolls || [])) {
+            if (String(ce.programId) === String(updatedProgram.id) && !uniqueEditedStudentIds.includes(String(ce.studentId))) {
+              await localDb.deleteDoc('course_enrollments', ce.id);
+            }
+          }
+          const existingCeIds = new Set(
+            (allCourseEnrolls || [])
+              .filter(ce => String(ce.programId) === String(updatedProgram.id))
+              .map(ce => String(ce.studentId))
+          );
+          for (const studentId of toAdd) {
+            if (!existingCeIds.has(String(studentId))) {
+              await localDb.addDoc('course_enrollments', { studentId, programId: updatedProgram.id });
+            }
+          }
+          window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
+        } catch (enrollErr) {
+          console.error('[STORAGE_FAILURE] Error syncing edited enrollments:', enrollErr);
+          dispatchDatabaseToast('خطا در همگام‌سازی طلاب ویرایش‌شده کلاس.', 'warning');
+        }
+
+        await StudentCourseProgressService.syncProgramEnrollmentProgress(
+          updatedProgram,
+          uniqueEditedStudentIds,
+          previousStudentIds
+        ).catch(err => {
+          console.error('[STORAGE_FAILURE] Error syncing course progress on edit:', err);
+        });
+        window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
+      } else {
+        const enrolledStudentIds = getProgramStudents(updatedProgram.id).map(s => s.id);
+        await StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, enrolledStudentIds).catch(err => {
+          console.error('[STORAGE_FAILURE] Error syncing course progress on edit:', err);
+        });
+      }
+
+      await syncRepresentativeUsers([updatedProgram]).catch(err => {
+        console.error('[STORAGE_FAILURE] Error syncing representative users on edit:', err);
+      });
 
       await fetchData(false);
     } catch (error: any) {
-      console.error("Error editing program:", error);
+      console.error('[STORAGE_FAILURE] Error editing program:', error);
       dispatchDatabaseToast(error?.message || 'خطا در بروزرسانی برنامه درسی.', 'error');
       fetchData(false);
     } finally {
@@ -1842,10 +1964,15 @@ export default function Programs() {
   };
 
   const getProgramStudents = (programId: string) => {
-    const studentIds = enrollments
-      .filter(e => e.programId === programId)
+    const prog = programs.find(p => String(p.id) === String(programId));
+    const fromEnrollments = enrollments
+      .filter(e => String(e.programId) === String(programId))
       .map(e => e.studentId);
-    return students.filter(s => studentIds.includes(s.id));
+    const combinedIds = new Set<string>([
+      ...(prog?.studentIds || []),
+      ...fromEnrollments
+    ]);
+    return students.filter(s => combinedIds.has(s.id));
   };
 
   // Get discussion groups linked to a program
@@ -2446,17 +2573,7 @@ export default function Programs() {
                             type="button"
                             onClick={() => {
                               setOpenMenuCardId(null);
-                              setIsCustomTeacherEdit(false);
-                              setIsCustomRoomEdit(false);
-                              setEditingProgram(program);
-                              setEditModalDays(getProgramDays(program));
-                              if (program.time) {
-                                const parts = program.time.split('الی').map(p => p.trim());
-                                if (parts.length === 2) {
-                                  setCustomStartEdit(parts[0]);
-                                  setCustomEndEdit(parts[1]);
-                                }
-                              }
+                              openEditProgramModal(program);
                             }}
                             className="w-full px-3.5 py-2.5 text-right text-blue-800 hover:bg-blue-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                           >
@@ -2597,6 +2714,7 @@ export default function Programs() {
             <button 
               onClick={() => {
                 setEditingProgram(null);
+                setShowAddStudentsSection(false);
                 setNewProgram({ 
                   title: '', 
                   type: 'اصلی', 
@@ -2607,7 +2725,8 @@ export default function Programs() {
                   madrasRoom: '',
                   parentProgramId: '',
                   representativeStudentIds: [],
-                  representativeNames: []
+                  representativeNames: [],
+                  studentIds: []
                 });
                 setShowAddModal(true);
               }}
@@ -3311,7 +3430,8 @@ export default function Programs() {
                               <button 
                                 onClick={() => {
                                   setEditingProgram(null);
-                                  setNewProgram({ title: `مشاوره ${mainProg.title}`, type: 'مشاوره', parentProgramId: mainProg.id, day: '', time: '', teacher: '' });
+                                  setShowAddStudentsSection(false);
+                                  setNewProgram({ title: `مشاوره ${mainProg.title}`, type: 'مشاوره', grade: mainProg.grade || 'پایه 7', parentProgramId: mainProg.id, day: '', time: '', teacher: '', studentIds: [] });
                                   setShowAddModal(true);
                                 }}
                                 className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg text-[11px] font-bold transition-all shadow-2xs"
@@ -3424,7 +3544,7 @@ export default function Programs() {
                         <div className="flex items-center justify-between font-black text-slate-900 border-b border-slate-200 pb-1.5">
                           <span>{cp.title}</span>
                           <button 
-                            onClick={() => setEditingProgram(cp)}
+                            onClick={() => openEditProgramModal(cp)}
                             className="text-[10px] font-bold text-indigo-600 underline"
                           >
                             اتصال به درس اصلی
@@ -4334,6 +4454,49 @@ export default function Programs() {
                   </div>
                 </div>
 
+                {/* Students Selection Section for Add Modal */}
+                <div className="p-3.5 bg-emerald-50/60 rounded-2xl border border-emerald-200/80 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Users size={14} className="text-emerald-600" />
+                        <span>افزودن و انتخاب طلاب کلاس</span>
+                      </label>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                        ابتدا طلاب {newProgram.grade || 'پایه 7'} نمایش داده می‌شوند؛ امکان «افزودن از سایر پایه‌ها» نیز فعال است.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddStudentsSection(prev => !prev)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Users size={13} />
+                      <span>
+                        {showAddStudentsSection
+                          ? 'بستن لیست طلاب'
+                          : `انتخاب طلاب (${(newProgram.studentIds || []).length.toLocaleString('fa-IR')} نفر)`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {showAddStudentsSection && (
+                    <div className="pt-2 border-t border-emerald-200/70">
+                      <GradeAwareStudentPicker
+                        students={filterStudents(students, true)}
+                        programGrade={newProgram.grade || 'پایه 7'}
+                        selectedIds={newProgram.studentIds || []}
+                        onChangeSelectedIds={(nextIds) =>
+                          setNewProgram({ ...newProgram, studentIds: nextIds })
+                        }
+                        maxListHeightClass="max-h-56"
+                        compact
+                        resetKey={showAddModal ? 'add-open' : 'add-closed'}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Class Representative Section */}
                 <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -4999,6 +5162,50 @@ export default function Programs() {
                   </div>
                 </div>
 
+                {/* Students Selection Section for Edit Modal */}
+                <div className="p-3.5 bg-emerald-50/60 rounded-2xl border border-emerald-200/80 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Users size={14} className="text-emerald-600" />
+                        <span>مدیریت طلاب کلاس</span>
+                      </label>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                        لیست طلاب {editingProgram.grade || 'پایه 7'} و امکان «افزودن از سایر پایه‌ها»
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditStudentsSection(prev => !prev)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Users size={13} />
+                      <span>
+                        {showEditStudentsSection
+                          ? 'بستن لیست طلاب'
+                          : `ویرایش طلاب (${editSelectedStudentIds.length.toLocaleString('fa-IR')} نفر)`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {showEditStudentsSection && (
+                    <div className="pt-2 border-t border-emerald-200/70">
+                      <GradeAwareStudentPicker
+                        students={filterStudents(students, true)}
+                        programGrade={editingProgram.grade || 'پایه 7'}
+                        selectedIds={editSelectedStudentIds}
+                        onChangeSelectedIds={(nextIds) => {
+                          setEditSelectedStudentIds(nextIds);
+                          setEditStudentIdsModified(true);
+                        }}
+                        maxListHeightClass="max-h-56"
+                        compact
+                        resetKey={editingProgram.id}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Class Representative Section for Edit */}
                 <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -5142,9 +5349,12 @@ export default function Programs() {
                   const activeRepProg = repModalTarget === 'card' ? repTargetProgram : (editingProgram || repTargetProgram);
                   const targetClassStudents = (repModalTarget === 'edit' || repModalTarget === 'card') && activeRepProg
                     ? getProgramStudents(activeRepProg.id).filter(s => s.isActive !== false)
-                    : (newProgram.grade && newProgram.grade !== 'عمومی / سایر'
-                        ? students.filter(s => s.isActive !== false && s.grade === newProgram.grade)
-                        : students.filter(s => s.isActive !== false)
+                    : (newProgram.studentIds && newProgram.studentIds.length > 0
+                        ? students.filter(s => s.isActive !== false && newProgram.studentIds!.includes(s.id))
+                        : (newProgram.grade && normalizeGradeKey(newProgram.grade) !== 'عمومی / سایر'
+                            ? students.filter(s => s.isActive !== false && normalizeGradeKey(s.grade) === normalizeGradeKey(newProgram.grade))
+                            : students.filter(s => s.isActive !== false)
+                          )
                       );
 
                   const filteredRepStudents = targetClassStudents.filter(s => {
@@ -5307,97 +5517,83 @@ export default function Programs() {
 
       {/* Enroll Students Modal */}
       <AnimatePresence>
-        {showEnrollModal && (
-          <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl flex flex-col max-h-[85vh] space-y-5"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div>
-                  <h3 className="text-xl font-black text-slate-900">مدیریت طلاب کلاس</h3>
-                  <p className="text-xs text-slate-500 font-medium">انتخاب طلاب شرکت‌کننده در برنامه</p>
+        {showEnrollModal && (() => {
+          const targetEnrollProgram = programs.find(p => String(p.id) === String(selectedProgramId));
+          return (
+            <div className="fixed inset-0 bg-[#00000080] flex items-center justify-center z-50 p-4">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white rounded-2xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl flex flex-col max-h-[88vh] space-y-4"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2 flex-wrap">
+                      <span>مدیریت طلاب کلاس</span>
+                      {targetEnrollProgram?.title && (
+                        <span className="text-sm font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-200">
+                          {targetEnrollProgram.title}
+                        </span>
+                      )}
+                      {targetEnrollProgram?.grade && (
+                        <span className="text-xs font-black text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                          {targetEnrollProgram.grade}
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      ابتدا طلاب پایه مرتبط با کلاس نمایش داده می‌شوند و از گزینه «افزودن از سایر پایه‌ها» می‌توانید طلاب دیگر پایه‌ها را نیز اضافه کنید.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowEnrollModal(false)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                  >
+                    <X size={18} />
+                  </button>
                 </div>
-                <div className="relative">
-                  <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="جستجوی نام طالب..."
-                    className="pr-10 pl-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-60"
-                    value={enrollSearchTerm}
-                    onChange={(e) => setEnrollSearchTerm(e.target.value)}
+
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <GradeAwareStudentPicker
+                    students={filterStudents(students, true)}
+                    programGrade={targetEnrollProgram?.grade}
+                    selectedIds={selectedEnrollments}
+                    onChangeSelectedIds={setSelectedEnrollments}
+                    maxListHeightClass="max-h-[45vh]"
+                    resetKey={enrollPickerResetKey}
                   />
                 </div>
-              </div>
 
-              <div className="flex-1 overflow-y-auto pr-1">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {filterStudents(students, true)
-                    .filter(s => s.name.toLowerCase().includes(enrollSearchTerm.toLowerCase()))
-                    .map(student => {
-                      const isSelected = selectedEnrollments.includes(student.id);
-                      return (
-                        <label 
-                          key={student.id} 
-                          className={cn(
-                            "flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer select-none",
-                            isSelected ? "bg-indigo-50/80 border-indigo-300 text-indigo-950 shadow-2xs" : "bg-white border-slate-200 hover:border-slate-300 text-slate-700"
-                          )}
-                        >
-                          <input 
-                            type="checkbox"
-                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedEnrollments([...selectedEnrollments, student.id]);
-                              } else {
-                                setSelectedEnrollments(selectedEnrollments.filter(id => id !== student.id));
-                              }
-                            }}
-                          />
-                          <div className="flex-1">
-                            <p className="text-xs font-black leading-tight">{student.name}</p>
-                            <p className="text-[10px] text-slate-500 font-medium">پایه {student.grade || '---'}</p>
-                          </div>
-                          {isSelected && (
-                            <CheckCircle2 size={16} className="text-indigo-600" />
-                          )}
-                        </label>
-                      );
-                    })}
+                <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
+                  <button 
+                    type="button"
+                    onClick={handleSaveEnrollments}
+                    disabled={isSavingEnrollments}
+                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isSavingEnrollments ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>در حال ثبت...</span>
+                      </>
+                    ) : (
+                      <span>ثبت و بروزرسانی لیست طلاب</span>
+                    )}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setShowEnrollModal(false)}
+                    className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
+                  >
+                    انصراف
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-                <button 
-                  type="button"
-                  onClick={handleSaveEnrollments}
-                  disabled={isSavingEnrollments}
-                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isSavingEnrollments ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>در حال ثبت...</span>
-                    </>
-                  ) : (
-                    <span>ثبت و بروزرسانی لیست طلاب</span>
-                  )}
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setShowEnrollModal(false)}
-                  className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
-                >
-                  انصراف
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
       {/* Safe Delete / Inactivation Confirmation Modal */}
       <AnimatePresence>
