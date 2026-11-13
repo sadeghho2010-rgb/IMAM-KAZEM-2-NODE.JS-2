@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, STUDENT_DEFAULT_ALLOWED_TABS } from '../../context/AuthContext';
 import { AppUser, UserLevel, UserRole } from '../../types/auth';
 import { Student } from '../../types';
 import { localDb } from '../../lib/localDb';
@@ -161,7 +161,7 @@ export default function UserCredentialsSettings() {
         studentName: student.name,
         isActive: true,
         avatarBg: 'bg-emerald-600',
-        allowedTabs: ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
+        allowedTabs: STUDENT_DEFAULT_ALLOWED_TABS
       });
 
       if (result.success) {
@@ -271,7 +271,9 @@ export default function UserCredentialsSettings() {
         scope: formLevel === 3 ? 'self' : 'all',
         avatarBg: formLevel === 1 ? 'bg-indigo-700' : formLevel === 2 ? 'bg-amber-600' : 'bg-emerald-600',
         allowedTabs: formLevel === 3 
-          ? ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
+          ? (formRole === 'teacher'
+            ? ['teacher-portal', 'teachers-schedule', 'academic-calendar', 'counseling-classes']
+            : STUDENT_DEFAULT_ALLOWED_TABS)
           : ['todos', 'academic-calendar', 'students', 'active-students', 'programs', 'classrooms', 'student-schedule', 'discussion', 'stats', 'attendance', 'comments', 'summary', 'teachers-bank', 'manager-files', 'backup', 'user-credentials']
       });
 

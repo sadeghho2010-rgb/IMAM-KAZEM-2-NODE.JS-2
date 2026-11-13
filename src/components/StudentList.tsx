@@ -45,7 +45,7 @@ import {
 import { localDb, isStudentActive, DuplicateGroup, MergeResult } from '../lib/localDb';
 import { Student, Program, Enrollment, StudentDeactivationReason } from '../types';
 import { useMentor } from '../context/MentorContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, STUDENT_DEFAULT_ALLOWED_TABS } from '../context/AuthContext';
 import { AppUser } from '../types/auth';
 import { cn, matchesGradeFilter } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -277,7 +277,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           studentName: selectedStudentForCredentials.name,
           isActive: true,
           avatarBg: 'bg-emerald-600',
-          allowedTabs: ['attendance', 'student-schedule', 'discussion', 'stats', 'comments', 'manager-files']
+          allowedTabs: STUDENT_DEFAULT_ALLOWED_TABS
         });
 
         if (result.success) {

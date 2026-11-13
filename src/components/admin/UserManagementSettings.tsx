@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth, ALL_SYSTEM_TABS, SystemTabDef } from '../../context/AuthContext';
+import { useAuth, ALL_SYSTEM_TABS, SystemTabDef, STUDENT_DEFAULT_ALLOWED_TABS } from '../../context/AuthContext';
 import { AppUser, UserLevel, UserRole, UserScope } from '../../types/auth';
 import { 
   Users, 
@@ -123,9 +123,13 @@ export default function UserManagementSettings() {
         const teacherTabs = ['teacher-portal', 'teachers-schedule', 'academic-calendar', 'counseling-classes'];
         perms[tab.id] = teacherTabs.includes(tab.id) ? (tab.id === 'counseling-classes' ? 'edit' : 'view') : 'none';
       } else if (role === 'student' || role === 'class_representative') {
-        const studentTabs = ['student-portal', 'student-meals', 'student-schedule', 'academic-calendar', 'discussion', 'attendance', 'stats', 'course-selection'];
-        if (studentTabs.includes(tab.id)) {
-          perms[tab.id] = (tab.id === 'student-portal' || tab.id === 'student-meals' || tab.id === 'attendance') ? 'edit' : 'view';
+        const studentEditableTabs = new Set([
+          'student-portal', 'student-meals', 'attendance', 'student-requests',
+          'stats', 'self-reporting', 'rep-attendance', 'course-selection',
+          'todos', 'discussion', 'research'
+        ]);
+        if (STUDENT_DEFAULT_ALLOWED_TABS.includes(tab.id)) {
+          perms[tab.id] = studentEditableTabs.has(tab.id) ? 'edit' : 'view';
         } else {
           perms[tab.id] = 'none';
         }

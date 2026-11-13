@@ -160,6 +160,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const USERS_STORAGE_KEY = 'hawzah_app_system_users_v3';
 const CURRENT_USER_KEY = 'hawzah_app_current_user_v3';
 
+export const STUDENT_DEFAULT_ALLOWED_TABS: string[] = [
+  'dashboard', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments',
+  'student-schedule', 'academic-calendar', 'discussion', 'research', 'attendance', 'stats',
+  'course-selection', 'programs', 'classrooms', 'passed-courses', 'rep-attendance', 'self-reporting',
+  'todos', 'security-pin-settings'
+];
+
 function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
   if (user.level === 1) return true;
 
@@ -216,12 +223,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
 
   // Level 3 (Students & class rep)
   if (user.level === 3 || role === 'student' || role === 'class_representative') {
-    const allowed = [
-      'dashboard', 'student-requests', 'student-portal', 'summary', 'student-meals', 'student-payments', 'student-schedule', 'academic-calendar',
-      'discussion', 'research', 'attendance', 'stats', 'course-selection', 'programs', 'classrooms', 'passed-courses',
-      'rep-attendance', 'self-reporting'
-    ];
-    return allowed.includes(tabId);
+    return STUDENT_DEFAULT_ALLOWED_TABS.includes(tabId);
   }
 
   return false;
@@ -438,11 +440,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadPortalConfig();
     });
     const handlePortalEvent = () => loadPortalConfig();
+    const handleAppDataChange = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.collection || detail.collection === 'student_portal_access_config') {
+        loadPortalConfig();
+      }
+    };
     window.addEventListener('student_portal_access_updated', handlePortalEvent);
+    window.addEventListener('collection_change_student_portal_access_config', handlePortalEvent);
+    window.addEventListener('app_data_change', handleAppDataChange);
     return () => {
       isMounted = false;
       unsub();
       window.removeEventListener('student_portal_access_updated', handlePortalEvent);
+      window.removeEventListener('collection_change_student_portal_access_config', handlePortalEvent);
+      window.removeEventListener('app_data_change', handleAppDataChange);
     };
   }, []);
 
@@ -1069,7 +1081,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const allowedTabs = newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : ['todos', 'students']);
+    const isNewUserStudent = (newUser.level === 3 || newUser.role === 'student' || newUser.role === 'class_representative') && newUser.role !== 'teacher';
+    const allowedTabs = newUser.allowedTabs || (newUser.allowedModules ? (newUser.allowedModules as string[]) : (isNewUserStudent ? STUDENT_DEFAULT_ALLOWED_TABS : ['todos', 'students']));
     const editableTabs = newUser.editableTabs || allowedTabs;
     const modulePermissions = newUser.modulePermissions || allowedTabs.reduce((acc, t) => {
       acc[t] = editableTabs.includes(t) ? 'edit' : 'view';
@@ -1618,7 +1631,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Student Portal Access Control (Global & Per-Student Overrides managed by Education Manager / Super Admin)
-    if ((target.level === 3 || target.role === 'student' || target.role === 'class_representative') && target.role !== 'teacher') {
+    // All standard student tabs are uniformly governed by StudentAccessManagement (not legacy per-account modulePermissions 'none' leftovers).
+    const isStudentAccount = (target.level === 3 || target.role === 'student' || target.role === 'class_representative') && target.role !== 'teacher';
+    if (isStudentAccount) {
       const candidateIds = [
         target.studentId,
         target.linkedStudentId,
@@ -1629,6 +1644,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ];
       if (!isStudentPortalTargetAllowed(studentPortalAccessConfig, candidateIds, tabId)) {
         return false;
+      }
+      if (getDefaultRoleTabAllowed(tabId, target)) {
+        return true;
       }
     }
 

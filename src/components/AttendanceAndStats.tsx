@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   CheckSquare, 
   Calendar as CalendarIcon, 
@@ -48,7 +48,9 @@ import {
   PhoneCall,
   BarChart3,
   PieChart,
-  TrendingUp
+  TrendingUp,
+  Lock,
+  Loader2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn, getProgramDays, matchesGradeFilter } from '../lib/utils';
@@ -190,6 +192,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
     programTitle?: string;
   } | null>(null);
   const [warningReasonInput, setWarningReasonInput] = useState('');
+  const [isIssuingWarning, setIsIssuingWarning] = useState(false);
 
   // Report filters
   const [reportGradeFilter, setReportGradeFilter] = useState<string>('all');
@@ -197,6 +200,50 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
   const [reportSearchQuery, setReportSearchQuery] = useState<string>('');
   const [reportStartDate, setReportStartDate] = useState<string>('1403/07/01');
   const [reportEndDate, setReportEndDate] = useState<string>(getTodayShamsi());
+
+  // Track students whose warning button is locked for the current date-range visit.
+  // Changing the date range clears this lock so returning to the same range unlocks it again.
+  const WARNING_RANGE_LOCK_KEY = 'attendance_warning_range_visit_lock_v1';
+  const normalizedReportRangeKey = useMemo(() => {
+    const startNorm = normalizeShamsiDateStr(reportStartDate || '');
+    const endNorm = normalizeShamsiDateStr(reportEndDate || '');
+    return `${startNorm}__${endNorm}`;
+  }, [reportStartDate, reportEndDate]);
+
+  const [lockedWarningStudentIds, setLockedWarningStudentIds] = useState<Record<string, boolean>>(() => {
+    try {
+      const initialKey = `${normalizeShamsiDateStr('1403/07/01')}__${normalizeShamsiDateStr(getTodayShamsi())}`;
+      const raw = sessionStorage.getItem(WARNING_RANGE_LOCK_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.rangeKey === initialKey && Array.isArray(parsed.studentIds)) {
+        const map: Record<string, boolean> = {};
+        parsed.studentIds.forEach((sid: string) => {
+          if (sid) map[String(sid)] = true;
+        });
+        return map;
+      }
+    } catch (storageErr) {
+      console.warn('[WARNING_LOCK_READ_ERROR]', storageErr);
+    }
+    return {};
+  });
+
+  const prevReportRangeKeyRef = useRef<string>(normalizedReportRangeKey);
+  useEffect(() => {
+    if (prevReportRangeKeyRef.current !== normalizedReportRangeKey) {
+      prevReportRangeKeyRef.current = normalizedReportRangeKey;
+      setLockedWarningStudentIds({});
+      try {
+        sessionStorage.setItem(
+          WARNING_RANGE_LOCK_KEY,
+          JSON.stringify({ rangeKey: normalizedReportRangeKey, studentIds: [] })
+        );
+      } catch (storageErr) {
+        console.warn('[WARNING_LOCK_RESET_ERROR]', storageErr);
+      }
+    }
+  }, [normalizedReportRangeKey]);
   const [reportWarningOnlyFilter, setReportWarningOnlyFilter] = useState<boolean>(false);
   const [reportShowAllStudents, setReportShowAllStudents] = useState<boolean>(true); // default true: show all students by default!
   const [reportMethodFilter, setReportMethodFilter] = useState<'all' | 'representative' | 'self_reporting'>('all');
@@ -2441,16 +2488,28 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
   // Handler to issue educational warning (Definitive & Immediate without Workflow Pending Approval)
   const handleConfirmIssueWarning = async () => {
-    if (!issuingWarningStudent) return;
+    if (!issuingWarningStudent || isIssuingWarning) return;
     const s = issuingWarningStudent.student;
+
+    if (lockedWarningStudentIds[s.id]) {
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'صدور اخطار در این بازه قفل است',
+        message: `برای ${s.name} در بازه زمانی فعلی قبلاً اخطار ثبت شده است. برای صدور مجدد باید بازه زمانی را تغییر داده و دوباره برگردید.`,
+        durationMs: 6000,
+      });
+      return;
+    }
+
     const progTitle = issuingWarningStudent.programTitle || 'دروس مدرسه';
     const reason = warningReasonInput.trim() || `ثبت اخطار آموزشی برای طلبه ${s.name} (${s.grade || 'عمومی'}) به علت داشتن ${issuingWarningStudent.absentCount} جلسه غیبت غیرموجه در درس ${progTitle}.`;
     const nowIso = new Date().toISOString();
     const todayShamsi = getTodayShamsi();
     const issuerName = currentUser?.fullName || currentUser?.name || currentUser?.roleTitle || 'مسئول آموزش';
 
+    setIsIssuingWarning(true);
     try {
-      const wfItem: WorkflowItem = {
+      const wfItem: WorkflowItem & { version?: number } = {
         id: `wf_warn_${s.id}_${Date.now()}`,
         type: 'report_notice',
         category: 'unexcused_absence_warning',
@@ -2469,6 +2528,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         createdByName: issuerName,
         createdAt: nowIso,
         updatedAt: nowIso,
+        version: 1,
         details: {
           absentCount: issuingWarningStudent.absentCount,
           programTitle: progTitle,
@@ -2481,19 +2541,69 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
         }
       };
 
-      await localDb.setDoc('workflow_items', wfItem);
+      const writeRes = await localDb.setDocStrict('workflow_items', wfItem, 20000);
+      if (!writeRes.success) {
+        const failReason = writeRes.message || 'خطا در برقراری ارتباط با سرور';
+        console.error('[STORAGE_FAILURE] Strict warning save rejected:', failReason);
+        emitSaveConfirmation({
+          variant: 'error',
+          title: 'دیتای شما ثبت نشد',
+          message: `ثبت اخطار آموزشی برای ${s.name} ناموفق بود: ${failReason}`,
+          durationMs: 7000,
+        });
+        return;
+      }
+
+      const confirmedItem = (writeRes.item as WorkflowItem) || wfItem;
       const refreshedList = await localDb.getDocs<WorkflowItem>('workflow_items');
-      setWorkflowItems(refreshedList && refreshedList.length > 0 ? refreshedList : [wfItem, ...workflowItems]);
+      const hasConfirmed = refreshedList?.some((it) => it.id === confirmedItem.id);
+      setWorkflowItems(
+        refreshedList && refreshedList.length > 0
+          ? (hasConfirmed ? refreshedList : [confirmedItem, ...refreshedList])
+          : [confirmedItem, ...workflowItems]
+      );
+
+      // Lock the issue-warning button for this student in the current date-range visit
+      setLockedWarningStudentIds((prev) => {
+        const next = { ...prev, [s.id]: true };
+        try {
+          sessionStorage.setItem(
+            WARNING_RANGE_LOCK_KEY,
+            JSON.stringify({
+              rangeKey: normalizedReportRangeKey,
+              studentIds: Object.keys(next).filter((k) => next[k]),
+            })
+          );
+        } catch (storageErr) {
+          console.warn('[WARNING_LOCK_WRITE_ERROR]', storageErr);
+        }
+        return next;
+      });
 
       window.dispatchEvent(new CustomEvent('workflow_items_updated'));
-      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'workflow_items', id: wfItem.id } }));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'workflow_items', id: confirmedItem.id } }));
 
       setIssuingWarningStudent(null);
       setWarningReasonInput('');
-      showToast(`اخطار آموزشی برای ${s.name} به صورت قطعی صادر و ثبت گردید.`);
+
+      // Show explicit red popup confirmation: «اخطار ثبت شد»
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'اخطار ثبت شد',
+        message: `اخطار آموزشی غیبت برای ${s.name} در بازه ${reportStartDate} تا ${reportEndDate} به صورت قطعی ثبت شد.`,
+        subtitle: 'دکمه صدور اخطار برای این بازه زمانی قفل شد؛ برای صدور مجدد، بازه زمانی را تغییر داده و دوباره به این بازه برگردید.',
+        durationMs: 7000,
+      });
     } catch (err: any) {
       console.error('[STORAGE_FAILURE] Error creating definitive warning item:', err);
-      showToast('خطا در صدور و ثبت قطعی اخطار آموزشی.');
+      emitSaveConfirmation({
+        variant: 'error',
+        title: 'دیتای شما ثبت نشد',
+        message: err?.message || 'خطا در صدور و ثبت قطعی اخطار آموزشی.',
+        durationMs: 7000,
+      });
+    } finally {
+      setIsIssuingWarning(false);
     }
   };
 
@@ -5421,13 +5531,47 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             ) : '---'}
                           </td>
                           <td className="p-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedStudentDrilldown(item)}
-                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[11px] border border-indigo-200 transition-colors cursor-pointer"
-                            >
-                              ریز جلسات
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedStudentDrilldown(item)}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold text-[11px] border border-indigo-200 transition-colors cursor-pointer"
+                              >
+                                ریز جلسات
+                              </button>
+                              {(isEducationManager || isSuperAdmin || isGradeSupervisor) && (() => {
+                                const isWarningLockedInRange = Boolean(lockedWarningStudentIds[item.student.id]);
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={isWarningLockedInRange}
+                                    onClick={() => {
+                                      if (isWarningLockedInRange) return;
+                                      setIssuingWarningStudent({
+                                        student: item.student,
+                                        absentCount: item.absentCount,
+                                        programTitle: reportProgramFilter !== 'all' ? programs.find(p => p.id === reportProgramFilter)?.title : 'دروس مدرسه'
+                                      });
+                                      setWarningReasonInput(`اخطار آموزشی به دلیل ${item.absentCount} جلسه غیبت غیرموجه در درس.`);
+                                    }}
+                                    className={cn(
+                                      "px-2 py-1 rounded-lg font-bold text-[11px] border transition-colors flex items-center gap-1",
+                                      isWarningLockedInRange
+                                        ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-75"
+                                        : "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 cursor-pointer"
+                                    )}
+                                    title={
+                                      isWarningLockedInRange
+                                        ? "اخطار در این بازه ثبت شد؛ برای صدور مجدد، بازه زمانی را تغییر دهید و سپس به این بازه برگردید."
+                                        : "صدور اخطار آموزشی رسمی"
+                                    }
+                                  >
+                                    {isWarningLockedInRange ? <Lock size={11} /> : <AlertTriangle size={11} />}
+                                    <span>{isWarningLockedInRange ? 'اخطار ثبت شد' : 'صدور اخطار'}</span>
+                                  </button>
+                                );
+                              })()}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -5526,24 +5670,38 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 ریز جلسات
                               </button>
 
-                              {(isEducationManager || isSuperAdmin || isGradeSupervisor) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIssuingWarningStudent({
-                                      student: item.student,
-                                      absentCount: item.absentCount,
-                                      programTitle: reportProgramFilter !== 'all' ? programs.find(p => p.id === reportProgramFilter)?.title : 'دروس مدرسه'
-                                    });
-                                    setWarningReasonInput(`اخطار آموزشی به دلیل ${item.absentCount} جلسه غیبت غیرموجه در درس.`);
-                                  }}
-                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg font-bold text-[11px] border border-rose-200 transition-colors cursor-pointer flex items-center gap-1"
-                                  title="صدور اخطار آموزشی رسمی"
-                                >
-                                  <AlertTriangle size={11} />
-                                  <span>صدور اخطار</span>
-                                </button>
-                              )}
+                              {(isEducationManager || isSuperAdmin || isGradeSupervisor) && (() => {
+                                const isWarningLockedInRange = Boolean(lockedWarningStudentIds[item.student.id]);
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={isWarningLockedInRange}
+                                    onClick={() => {
+                                      if (isWarningLockedInRange) return;
+                                      setIssuingWarningStudent({
+                                        student: item.student,
+                                        absentCount: item.absentCount,
+                                        programTitle: reportProgramFilter !== 'all' ? programs.find(p => p.id === reportProgramFilter)?.title : 'دروس مدرسه'
+                                      });
+                                      setWarningReasonInput(`اخطار آموزشی به دلیل ${item.absentCount} جلسه غیبت غیرموجه در درس.`);
+                                    }}
+                                    className={cn(
+                                      "px-2 py-1 rounded-lg font-bold text-[11px] border transition-colors flex items-center gap-1",
+                                      isWarningLockedInRange
+                                        ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-75"
+                                        : "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 cursor-pointer"
+                                    )}
+                                    title={
+                                      isWarningLockedInRange
+                                        ? "اخطار در این بازه ثبت شد؛ برای صدور مجدد، بازه زمانی را تغییر دهید و سپس به این بازه برگردید."
+                                        : "صدور اخطار آموزشی رسمی"
+                                    }
+                                  >
+                                    {isWarningLockedInRange ? <Lock size={11} /> : <AlertTriangle size={11} />}
+                                    <span>{isWarningLockedInRange ? 'اخطار ثبت شد' : 'صدور اخطار'}</span>
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </td>
                         </tr>
@@ -6839,18 +6997,29 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isIssuingWarning}
                   onClick={() => setIssuingWarningStudent(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
                 >
                   انصراف
                 </button>
                 <button
                   type="button"
+                  disabled={isIssuingWarning || Boolean(lockedWarningStudentIds[issuingWarningStudent.student.id])}
                   onClick={handleConfirmIssueWarning}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white cursor-pointer flex items-center gap-1.5 shadow-xs"
                 >
-                  <AlertTriangle size={14} />
-                  <span>تایید و صدور قطعی اخطار</span>
+                  {isIssuingWarning ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>در حال ثبت در سرور...</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle size={14} />
+                      <span>تایید و صدور قطعی اخطار</span>
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>
