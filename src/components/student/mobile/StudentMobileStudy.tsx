@@ -366,6 +366,19 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
       return;
     }
 
+    const MAX_PERIOD_MINUTES_CAP = 5000;
+    if (totals.overallTotal + totalMin > MAX_PERIOD_MINUTES_CAP) {
+      const remainingMinutes = Math.max(0, MAX_PERIOD_MINUTES_CAP - totals.overallTotal);
+      const capMsg = `سقف کل دقایق قابل ثبت در این بازه ۵۰۰۰ دقیقه می‌باشد. شما تاکنون ${totals.overallTotal} دقیقه ثبت کرده‌اید و حداکثر ${remainingMinutes} دقیقه دیگر می‌توانید ثبت کنید.`;
+      setValidationError(capMsg);
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'سقف مجاز ۵۰۰۰ دقیقه در این بازه رعایت نشده است',
+        message: capMsg
+      });
+      return;
+    }
+
     try {
       setIsSaving(true);
       setWriteInProgress('study_save_mobile', true, 'در حال ثبت و ذخیره کارکرد مطالعه در سرور... لطفاً از صفحه خارج نشوید.');
@@ -627,7 +640,6 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
                       <input
                         type="number"
                         min="0"
-                        max="1440"
                         inputMode="numeric"
                         disabled={isCurrentPeriodClosed}
                         value={studyVal}
@@ -673,7 +685,6 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
                       <input
                         type="number"
                         min="0"
-                        max="1440"
                         inputMode="numeric"
                         disabled={isCurrentPeriodClosed}
                         value={discVal}

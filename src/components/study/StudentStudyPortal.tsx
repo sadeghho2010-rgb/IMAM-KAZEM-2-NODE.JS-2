@@ -396,11 +396,14 @@ export default function StudentStudyPortal({
       });
       return;
     }
-    if (calculatedTotalMinutes > 2400) {
+    const MAX_PERIOD_MINUTES_CAP = 5000;
+    const currentPeriodRegistered = activePeriodTotals.totalSumMin;
+    if (currentPeriodRegistered + calculatedTotalMinutes > MAX_PERIOD_MINUTES_CAP) {
+      const remainingMinutes = Math.max(0, MAX_PERIOD_MINUTES_CAP - currentPeriodRegistered);
       emitSaveConfirmation({
         variant: 'warning',
-        title: 'سقف مجاز دقیقه رعایت نشده است',
-        message: 'سقف مقدار قابل ثبت در یک نوبت حداکثر ۲۴۰۰ دقیقه (۴۰ ساعت) می‌باشد.'
+        title: 'سقف مجاز ۵۰۰۰ دقیقه در این بازه رعایت نشده است',
+        message: `مجموع کل دقایق قابل ثبت در این بازه حداکثر ۵۰۰۰ دقیقه می‌باشد. شما تاکنون ${currentPeriodRegistered} دقیقه ثبت کرده‌اید و حداکثر ${remainingMinutes} دقیقه دیگر می‌توانید ثبت نمایید.`
       });
       return;
     }
@@ -517,6 +520,33 @@ export default function StudentStudyPortal({
     const editCoreTotalMin = editCoreStudyMin + editCoreDiscMin;
     const editFreeMin = parseInt(editFreeStudyMinutes || '0') || 0;
     const editTotalMin = editCoreTotalMin + editFreeMin;
+
+    if (editTotalMin <= 0) {
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'مقدار مطالعه نامعتبر است',
+        message: 'مجموع دقایق ثبت‌شده باید بیشتر از صفر باشد.'
+      });
+      return;
+    }
+
+    const MAX_PERIOD_MINUTES_CAP = 5000;
+    const previousEntryMinutes =
+      (Number(editingEntry.totalMinutes) || 0) > 0
+        ? Number(editingEntry.totalMinutes)
+        : (Array.isArray(editingEntry.coursesBreakdown) && editingEntry.coursesBreakdown.length > 0
+            ? editingEntry.coursesBreakdown.reduce((s, c) => s + (Number(c.studyMinutes) || 0) + (Number(c.discussionMinutes) || 0), 0)
+            : Math.round(((Number(editingEntry.studyHours) || 0) + (Number(editingEntry.discussionHours) || 0)) * 60)) + (Number(editingEntry.freeStudyMinutes) || 0);
+    const otherEntriesMinutes = Math.max(0, activePeriodTotals.totalSumMin - previousEntryMinutes);
+    if (otherEntriesMinutes + editTotalMin > MAX_PERIOD_MINUTES_CAP) {
+      const remainingForEntry = Math.max(0, MAX_PERIOD_MINUTES_CAP - otherEntriesMinutes);
+      emitSaveConfirmation({
+        variant: 'warning',
+        title: 'سقف مجاز ۵۰۰۰ دقیقه در این بازه رعایت نشده است',
+        message: `مجموع کل دقایق این بازه نباید از ۵۰۰۰ دقیقه بیشتر شود. حداکثر مقدار مجاز برای این ثبت ${remainingForEntry} دقیقه است.`
+      });
+      return;
+    }
 
     setIsUpdatingEntry(true);
     setWriteInProgress('study_edit', true, 'در حال ذخیره ویرایش ساعت مطالعه در سرور...');
@@ -997,7 +1027,6 @@ export default function StudentStudyPortal({
                                 <input
                                   type="number"
                                   min="0"
-                                  max="1440"
                                   disabled={isReadOnlyForUser}
                                   value={sVal}
                                   onChange={(e) => setCourseStudyMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
@@ -1044,7 +1073,6 @@ export default function StudentStudyPortal({
                                 <input
                                   type="number"
                                   min="0"
-                                  max="1440"
                                   disabled={isReadOnlyForUser}
                                   value={dVal}
                                   onChange={(e) => setCourseDiscussionMinutes(prev => ({ ...prev, [course.id]: e.target.value }))}
