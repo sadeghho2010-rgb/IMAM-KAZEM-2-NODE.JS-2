@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage } from './serverAuth';
+import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage, purgeAllStudentUsersFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
@@ -207,11 +207,15 @@ function cleanTeacherName(raw: string | undefined | null): string {
   return str.replace(/\s+/g, ' ').toLowerCase().trim();
 }
 
-// Public collections strictly limited to public calendars and holidays
+// Public collections strictly limited to public calendars, holidays, and approved curriculum bank
 const PUBLIC_READ_COLLECTIONS = new Set([
   'academic_holidays',
   'academic_calendar_periods',
-  'school_events'
+  'school_events',
+  'curriculum_subjects',
+  'curriculum_books',
+  'curriculum_chapters',
+  'student_portal_access_config'
 ]);
 
 // Helper to check caller permission
@@ -231,6 +235,23 @@ export function authorizeCollectionAccess(
   // Level 1: Super Admin has full unrestricted access
   if (user.level === 1 || user.role === 'super_admin' || user.role === 'school_manager') {
     return { allowed: true };
+  }
+
+  // Student Portal Access Config: Read allowed for all authenticated users; Write allowed for Super Admin & Education Manager
+  if (collection === 'student_portal_access_config') {
+    if (action === 'read') return { allowed: true };
+    const uName = String(user.username || '').toUpperCase();
+    const canManageAccess =
+      user.level === 1 ||
+      user.role === 'super_admin' ||
+      user.role === 'school_manager' ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      uName === 'SHAH' ||
+      uName === 'SHAHPOORI' ||
+      uName === 'SADEGH';
+    if (canManageAccess) return { allowed: true };
+    return { allowed: false, reason: 'مدیریت دسترسی بخش‌های طلاب منحصراً در اختیار مسئول آموزش و سوپر ادمین است.' };
   }
 
   // Student Profiles Access Policy:
@@ -292,15 +313,28 @@ export function authorizeCollectionAccess(
 
   // System Users Security Check (Strict: Only Level 1 or Authorized Managers)
   if (collection === 'system_users') {
-    if (user.level > 1 && user.role !== 'education_manager') {
-      return { allowed: false, reason: 'مشاهده و مدیریت کاربران سیستم منحصراً در اختیار مدیر ارشد است.' };
+    if (user.level > 1 && user.role !== 'education_manager' && user.role !== 'education_officer' && String(user.username || '').toUpperCase() !== 'SHAH') {
+      return { allowed: false, reason: 'مشاهده و مدیریت کاربران سیستم منحصراً در اختیار مدیر ارشد و مسئول آموزش است.' };
     }
   }
 
-  // Audit Logs (Write is server-only, Read is Admin-only)
+  // Audit Logs (Read and Revert status update allowed for Super Admin and Education Manager)
   if (collection === 'audit_logs') {
-    if (action === 'delete' || action === 'write') return { allowed: false, reason: 'ویرایش یا حذف لاگ‌های امنیتی امکان‌پذیر نیست.' };
-    if (action === 'read' && user.level > 1) return { allowed: false, reason: 'مشاهده لاگ‌های امنیتی منحصراً در اختیار مدیر ارشد است.' };
+    const uName = String(user.username || '').toUpperCase();
+    const isAuditAuthorized =
+      user.level === 1 ||
+      user.role === 'super_admin' ||
+      user.role === 'school_manager' ||
+      user.role === 'education_manager' ||
+      user.role === 'education_officer' ||
+      uName === 'SADEGH' ||
+      uName === 'SHAH' ||
+      uName === 'SHAHPOORI' ||
+      uName === 'RAHNAMA';
+    if (!isAuditAuthorized) {
+      return { allowed: false, reason: 'مشاهده و مدیریت لاگ‌های فعالیت سایت منحصراً در اختیار مدیر ارشد و مسئول آموزش است.' };
+    }
+    return { allowed: true };
   }
 
   // Grade Mentor restrictions
@@ -516,16 +550,6 @@ export function prepareRecordForDedicatedTable(collection: string, data: any): {
       row.history = Array.isArray(data.history) ? data.history : [];
       break;
 
-    case 'student_requests':
-      row.student_id = data.studentId || data.student_id || 'unknown';
-      row.student_name = data.studentName || data.student_name || null;
-      row.title = data.title || 'درخواست بدون عنوان';
-      row.category = data.category || 'educational';
-      row.status = data.status || 'pending';
-      row.description = data.description || null;
-      row.data = data;
-      break;
-
     default:
       break;
   }
@@ -623,7 +647,16 @@ export async function serverSaveDoc(
   // 1. If MySQL is configured: MySQL is the SINGLE source of truth (no disk/memory fallback)
   if (isMysqlConfigured) {
     try {
-      let finalRecord = { ...record };
+      let existingDocForAudit: any = null;
+      if (collection !== 'audit_logs') {
+        try {
+          existingDocForAudit = await MysqlRepository.getDocument(collection, id);
+        } catch {}
+      }
+
+      let finalRecord = existingDocForAudit && typeof existingDocForAudit === 'object'
+        ? { ...existingDocForAudit, ...record }
+        : { ...record };
 
       // Intelligent Merge for Attendance: Never overwrite concurrent student self-reporting sessions
       if (collection === 'attendance') {
@@ -680,7 +713,7 @@ export async function serverSaveDoc(
       // Intelligent Merge for Students: Preserve name and nationalId from being replaced by نامشخص on partial patches
       if (collection === 'students') {
         try {
-          const existingDoc = await MysqlRepository.getDocument(collection, id);
+          const existingDoc = existingDocForAudit || await MysqlRepository.getDocument(collection, id);
           if (existingDoc) {
             finalRecord = {
               ...existingDoc,
@@ -696,13 +729,20 @@ export async function serverSaveDoc(
         } catch (stMrgErr) {}
       }
 
+      const authoritativeNowIso = new Date().toISOString();
+      finalRecord = {
+        ...finalRecord,
+        id,
+        updatedAt: authoritativeNowIso
+      };
+
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, finalRecord);
 
       // Primary JSON document persistence
       const saveRes = await MysqlRepository.saveDocument(collection, id, finalRecord);
 
       // Secondary dedicated table sync (non-fatal if column constraint/type mismatch occurs)
-      if (dedicatedTable) {
+      if (dedicatedTable && collection !== 'audit_logs') {
         try {
           await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
         } catch (dErr: any) {
@@ -712,7 +752,7 @@ export async function serverSaveDoc(
 
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
         try {
-          await MysqlRepository.saveUser(record);
+          await MysqlRepository.saveUser(finalRecord);
         } catch (uErr: any) {
           console.warn('[MySQL SaveUser Non-fatal Notice]:', uErr?.message || uErr);
         }
@@ -724,20 +764,51 @@ export async function serverSaveDoc(
 
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
 
-      // Log Audit Entry asynchronously in background (non-blocking)
-      logAudit({
-        action: affectedRows > 1 ? 'update' : 'insert',
-        collectionName: collection,
-        recordId: id,
-        userId: callerUser?.id || callerUser?.userId,
-        userName: callerUser?.username || callerUser?.name,
-        userRole: callerUser?.role,
-        details: record,
-        status: 'success'
-      }).catch(() => {});
+      if (collection !== 'audit_logs') {
+        const isUpdate = Boolean(existingDocForAudit);
+        const entityLabel =
+          finalRecord.title ||
+          finalRecord.name ||
+          finalRecord.fullName ||
+          finalRecord.studentName ||
+          finalRecord.programTitle ||
+          finalRecord.username ||
+          id;
+        const actorName = callerUser?.fullName || callerUser?.name || callerUser?.username || 'سیستم هوشمند';
+
+        // 1. Legacy MySQL audit_logs table
+        logAudit({
+          action: isUpdate ? 'update' : 'insert',
+          collectionName: collection,
+          recordId: id,
+          userId: callerUser?.id || callerUser?.userId,
+          userName: callerUser?.username || callerUser?.name,
+          userRole: callerUser?.role,
+          details: finalRecord,
+          status: 'success'
+        }).catch(() => {});
+
+        // 2. Rich AuditLog document in app_collections ('audit_logs') with previousState & newState for Revert
+        logServerAudit({
+          userId: callerUser?.id || callerUser?.userId || 'system',
+          username: callerUser?.username || 'system',
+          userName: actorName,
+          userRole: callerUser?.role || 'system',
+          userRoleTitle: callerUser?.roleTitle,
+          userLevel: callerUser?.level,
+          action: isUpdate ? 'DATA_UPDATE' : 'DATA_CREATE',
+          actionType: isUpdate ? 'update' : 'create',
+          entityType: collection,
+          entityId: id,
+          entityName: String(entityLabel),
+          description: `${isUpdate ? 'ویرایش' : 'ایجاد'} «${entityLabel}» در بخش ${collection} توسط ${actorName}`,
+          previousState: existingDocForAudit || null,
+          newState: finalRecord
+        }).catch(() => {});
+      }
 
       notifyRealtimeChange(collection, id, 'upsert');
-      return { success: true, id, item: record, affectedRows, changedRows } as any;
+      return { success: true, id, item: finalRecord, affectedRows, changedRows } as any;
     } catch (mErr: any) {
       console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}":`, mErr?.message || mErr);
 
@@ -785,20 +856,65 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
 
+      // If deleting a user or a student, also remove corresponding user account from storage
+      if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
+        await deleteUserFromStorage(id).catch(() => {});
+        if (existingRecord?.username) {
+          await deleteUserFromStorage(String(existingRecord.username)).catch(() => {});
+        }
+      } else if (collection === 'students') {
+        await deleteUserFromStorage(id).catch(() => {});
+        if (existingRecord?.nationalId) {
+          await deleteUserFromStorage(String(existingRecord.nationalId)).catch(() => {});
+        }
+        if (existingRecord?.studentCode) {
+          await deleteUserFromStorage(String(existingRecord.studentCode)).catch(() => {});
+        }
+      }
+
       // Invalidate L1 collection cache immediately
       invalidateCollectionCache(collection);
 
-      // Log Audit Entry asynchronously (non-blocking) with full deleted record for 3-week rollback capability
-      logAudit({
-        action: 'delete',
-        collectionName: collection,
-        recordId: id,
-        userId: callerUser?.id || callerUser?.userId,
-        userName: callerUser?.username || callerUser?.name,
-        userRole: callerUser?.role,
-        details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
-        status: 'success'
-      }).catch(() => {});
+      if (collection !== 'audit_logs') {
+        const entityLabel =
+          existingRecord?.title ||
+          existingRecord?.name ||
+          existingRecord?.fullName ||
+          existingRecord?.studentName ||
+          existingRecord?.programTitle ||
+          existingRecord?.username ||
+          id;
+        const actorName = callerUser?.fullName || callerUser?.name || callerUser?.username || 'سیستم هوشمند';
+
+        // Log Audit Entry asynchronously (non-blocking) with full deleted record for rollback capability
+        logAudit({
+          action: 'delete',
+          collectionName: collection,
+          recordId: id,
+          userId: callerUser?.id || callerUser?.userId,
+          userName: callerUser?.username || callerUser?.name,
+          userRole: callerUser?.role,
+          details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
+          status: 'success'
+        }).catch(() => {});
+
+        logServerAudit({
+          userId: callerUser?.id || callerUser?.userId || 'system',
+          username: callerUser?.username || 'system',
+          userName: actorName,
+          userRole: callerUser?.role || 'system',
+          userRoleTitle: callerUser?.roleTitle,
+          userLevel: callerUser?.level,
+          action: 'DATA_DELETE',
+          actionType: 'delete',
+          entityType: collection,
+          entityId: id,
+          entityName: String(entityLabel),
+          description: `حذف «${entityLabel}» از بخش ${collection} توسط ${actorName}`,
+          previousState: existingRecord || { id },
+          newState: null
+        }).catch(() => {});
+      }
 
       notifyRealtimeChange(collection, id, 'delete');
       return { success: true };
@@ -849,6 +965,22 @@ async function fetchRawCollectionData(collection: string): Promise<any[]> {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
       items = mysqlItems || [];
+
+      // Auto-purge any soft-deleted or inactive programs permanently from MySQL
+      if (collection === 'programs' && items.length > 0) {
+        const toPurge = items.filter((p: any) => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted'));
+        if (toPurge.length > 0) {
+          for (const deadProg of toPurge) {
+            if (deadProg.id) {
+              try {
+                await MysqlRepository.deleteDocument('programs', String(deadProg.id));
+                notifyRealtimeChange('programs', String(deadProg.id), 'delete');
+              } catch (purgeErr) {}
+            }
+          }
+          items = items.filter((p: any) => !p || (p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted'));
+        }
+      }
     } catch (mErr: any) {
       console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
@@ -1339,7 +1471,9 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'student_lockers', 'personal_todos', 'assigned_todos',
     'evaluation_requests', 'research', 'study_stats',
     'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods',
-    'counseling_session_grades'
+    'counseling_session_grades',
+    'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress',
+    'student_portal_access_config', 'audit_logs'
   ];
 
   const BATCH_SIZE = 6;
@@ -1366,3 +1500,164 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
   }
   return result;
 }
+
+/**
+ * Fix #12: One-time complete and permanent purge of all pre-existing students,
+ * student user accounts, and residual student records across MySQL and server storage.
+ * Guarded by 'purge_all_students_v1_1405' in system_migrations so newly added students after this migration are preserved.
+ */
+let hasStartedStudentPurgeV1 = false;
+export async function executeOneTimeStudentPurgeV1(): Promise<void> {
+  if (hasStartedStudentPurgeV1) return;
+  hasStartedStudentPurgeV1 = true;
+
+  try {
+    const MIGRATION_KEY = 'purge_all_students_v1_1405';
+    if (isMysqlConfigured) {
+      const existingMigration = await MysqlRepository.getDocument('system_migrations', MIGRATION_KEY);
+      if (existingMigration && existingMigration.completed) {
+        return;
+      }
+    }
+
+    console.log('[Student Purge V1] 🧹 آغاز پاکسازی کامل و دائمی تمامی طلاب و حساب‌های کاربری طلاب قدیمی...');
+
+    // 1. Purge all student user accounts from memory, file, and MySQL users tables
+    const removedUsers = await purgeAllStudentUsersFromStorage();
+
+    if (isMysqlConfigured) {
+      const pool = (await import('./databaseAbstraction')).getMysqlPool();
+      if (pool) {
+        // Hard-delete all rows in students and student-related dedicated tables
+        const tablesToClear = [
+          'students',
+          'enrollments',
+          'attendance',
+          'periodic_study_logs',
+          'study_daily_entries',
+          'study_stats',
+          'student_requests',
+          'received_articles',
+          'article_evaluations',
+          'evaluation_requests',
+          'tuition_records'
+        ];
+        for (const tbl of tablesToClear) {
+          try {
+            await pool.execute(`DELETE FROM \`${tbl}\``);
+          } catch (e) {}
+        }
+
+        // Hard-delete all student-related collections from app_collections
+        const collectionsToClear = [
+          'students',
+          'enrollments',
+          'course_enrollments',
+          'student_course_progress',
+          'attendance',
+          'periodic_study_logs',
+          'study_daily_entries',
+          'study_stats',
+          'student_requests',
+          'received_articles',
+          'article_evaluations',
+          'evaluation_requests',
+          'tuition_records',
+          'student_comments',
+          'oral_exams',
+          'counseling_session_grades',
+          'discussion_groups',
+          'course_selection_requests'
+        ];
+        for (const col of collectionsToClear) {
+          try {
+            await pool.execute(`DELETE FROM app_collections WHERE collection_name = ?`, [col]);
+          } catch (e) {}
+        }
+
+        // Delete student user accounts from all_users, system_users, and app_collections
+        try {
+          await pool.execute(
+            `DELETE FROM all_users WHERE (level = 3 AND role != 'teacher') OR role IN ('student', 'class_representative')`
+          );
+        } catch (e) {}
+        try {
+          await pool.execute(
+            `DELETE FROM system_users WHERE (level = 3 AND role != 'teacher') OR role IN ('student', 'class_representative')`
+          );
+        } catch (e) {}
+
+        for (const userCol of ['system_users', 'all_users', 'users']) {
+          try {
+            const docs = await MysqlRepository.queryCollection(userCol);
+            for (const doc of docs || []) {
+              const uname = String(doc.username || '').trim().toUpperCase();
+              if (uname === 'SADEGH' || uname === 'RAHNAMA' || uname === 'SHAH' || uname === 'SHAHPOORI' || uname === 'MALI') continue;
+              if (doc.role === 'teacher' || doc.level === 1 || doc.level === 2) continue;
+              if (doc.level === 3 || doc.role === 'student' || doc.role === 'class_representative' || doc.studentId || doc.linkedStudentId) {
+                await MysqlRepository.deleteDocument(userCol, doc.id || doc.username);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Clean studentIds and representativeStudentIds from active programs
+        try {
+          const allPrograms = await MysqlRepository.queryCollection('programs');
+          for (const prog of allPrograms || []) {
+            if (prog && prog.id) {
+              const cleanedProg = {
+                ...prog,
+                studentIds: [],
+                representativeStudentIds: [],
+                representativeNames: [],
+                customRepresentative: ''
+              };
+              const { row, dedicatedTable } = prepareRecordForDedicatedTable('programs', cleanedProg);
+              await MysqlRepository.saveDocument('programs', String(prog.id), cleanedProg);
+              if (dedicatedTable) {
+                await MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch(() => {});
+              }
+            }
+          }
+        } catch (e) {}
+
+        // Empty assigned students from student_lockers
+        try {
+          const allLockers = await MysqlRepository.queryCollection('student_lockers');
+          for (const locker of allLockers || []) {
+            if (locker && locker.id && (locker.studentId || locker.status === 'occupied')) {
+              const cleanedLocker = {
+                ...locker,
+                status: 'empty',
+                studentId: undefined,
+                studentName: undefined,
+                studentGrade: undefined,
+                assignedAt: undefined
+              };
+              await MysqlRepository.saveDocument('student_lockers', String(locker.id), cleanedLocker);
+            }
+          }
+        } catch (e) {}
+      }
+
+      await MysqlRepository.saveDocument('system_migrations', MIGRATION_KEY, {
+        id: MIGRATION_KEY,
+        completed: true,
+        completedAt: new Date().toISOString(),
+        removedUsersCount: removedUsers
+      });
+    }
+
+    invalidateCollectionCache();
+    console.log(`[Student Purge V1] ✅ پاکسازی کامل طلاب و حساب‌های کاربری آنان با موفقیت انجام شد.`);
+  } catch (err) {
+    console.warn('[Student Purge V1 Notice]:', err);
+  }
+}
+
+// Run one-time purge automatically shortly after server module initialization
+setTimeout(() => {
+  executeOneTimeStudentPurgeV1().catch(() => {});
+}, 1500);
+

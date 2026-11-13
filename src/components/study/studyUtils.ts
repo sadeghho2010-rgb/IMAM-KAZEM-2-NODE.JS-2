@@ -15,6 +15,42 @@ export interface LogMetric {
   coursesBreakdown: CourseStudyDetail[];
 }
 
+export const STANDARD_SYSTEM_GRADES = ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'];
+
+export function normalizeGradeLabel(rawGrade?: string | null): string {
+  if (!rawGrade) return '';
+  const trimmed = String(rawGrade).trim();
+  if (!trimmed) return '';
+  if (trimmed === 'همه پایه‌ها' || trimmed === 'همه') return trimmed;
+  const eng = toEnglishDigits(trimmed);
+  if (eng.includes('10')) return 'پایه ۱۰';
+  if (eng.includes('7')) return 'پایه ۷';
+  if (eng.includes('8')) return 'پایه ۸';
+  if (eng.includes('9')) return 'پایه ۹';
+  const withoutDuplicatePrefix = trimmed.replace(/^(پایه\s*)+/, '').trim();
+  return withoutDuplicatePrefix ? `پایه ${withoutDuplicatePrefix}` : trimmed;
+}
+
+export function getAllSystemGrades(students?: Student[]): string[] {
+  const gradeSet = new Set<string>(STANDARD_SYSTEM_GRADES);
+  if (Array.isArray(students)) {
+    students.forEach(s => {
+      if (s?.grade) {
+        const norm = normalizeGradeLabel(s.grade);
+        if (norm && norm !== 'همه پایه‌ها' && norm !== 'همه') {
+          gradeSet.add(norm);
+        }
+      }
+    });
+  }
+  return Array.from(gradeSet).sort((a, b) => {
+    const numA = parseInt(toEnglishDigits(a).replace(/\D/g, ''), 10) || 99;
+    const numB = parseInt(toEnglishDigits(b).replace(/\D/g, ''), 10) || 99;
+    if (numA !== numB) return numA - numB;
+    return a.localeCompare(b, 'fa');
+  });
+}
+
 export function isPeriodClosed(period?: StudyPeriod | null): boolean {
   if (!period) return false;
   if (
@@ -26,6 +62,9 @@ export function isPeriodClosed(period?: StudyPeriod | null): boolean {
     (period as any).status === 'locked'
   ) {
     return true;
+  }
+  if ((period as any).manuallyOpened === true && period.isClosed === false) {
+    return false;
   }
   if (period.deadlineDate) {
     try {
@@ -400,37 +439,154 @@ export interface CoreCourseItem {
   subjectType: string;
 }
 
-export function getStudentCoreCourses(student?: Student | null, programs?: Program[]): CoreCourseItem[] {
-  const grade = student?.grade || 'پایه ۷';
+export function isProgramActiveAndValid(p: any): boolean {
+  if (!p || typeof p !== 'object') return false;
+  if (
+    p.status === 'deleted' ||
+    p.status === 'inactive' ||
+    p.isDeleted === true ||
+    p.isDeleted === 'true' ||
+    p.isActive === false ||
+    p.isActive === 0
+  ) {
+    return false;
+  }
+  return true;
+}
 
-  // 1. If programs array is provided, filter active non-deleted programs matching student
-  if (Array.isArray(programs)) {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-    const studentProgs = activeProgs.filter(p => {
-      if (p.type && p.type !== 'اصلی') return false;
-      const typeStr = (p.type || '').trim();
-      const titleStr = (p.title || '').trim();
-      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
-      if (isExcluded) return false;
+export function isCoreCurriculumProgram(p: any): boolean {
+  if (!isProgramActiveAndValid(p)) return false;
+  if (p.type && p.type !== 'اصلی') return false;
+  const typeStr = (p.type || '').trim();
+  const titleStr = (p.title || p.name || '').trim();
+  if (!titleStr) return false;
+  const isExcluded = [
+    'مشاوره',
+    'پژوهش',
+    'دروس 5 شنبه',
+    'دروس ۵ شنبه',
+    'دروس پنج شنبه',
+    'دروس پنج‌شنبه',
+    'پنج شنبه',
+    'پنج‌شنبه',
+    'سایر'
+  ].some(k => typeStr.includes(k) || titleStr.includes(k));
+  return !isExcluded;
+}
 
-      const matchesGrade = !p.grade || p.grade === grade || p.grade === 'همه پایه‌ها' || p.grade === 'همه';
-      const matchesId = student?.id && (
-        (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(student.id)) ||
-        (Array.isArray((p as any).representativeStudentIds) && (p as any).representativeStudentIds.includes(student.id))
-      );
-      return matchesGrade || matchesId;
+export function buildStudentCandidateIds(student?: Student | null, extraIds?: string[]): Set<string> {
+  const ids = new Set<string>();
+  if (student) {
+    if (student.id) ids.add(String(student.id).trim());
+    if ((student as any).studentId) ids.add(String((student as any).studentId).trim());
+    if ((student as any).userId) ids.add(String((student as any).userId).trim());
+    if (student.nationalId) ids.add(String(student.nationalId).trim());
+    if (student.studentCode) ids.add(String(student.studentCode).trim());
+  }
+  if (Array.isArray(extraIds)) {
+    extraIds.forEach(id => {
+      if (id) ids.add(String(id).trim());
     });
+  }
+  return ids;
+}
+
+export function isStudentEnrolledInProgram(
+  p: any,
+  student?: Student | null,
+  enrollments?: any[],
+  candidateIds?: Set<string>
+): boolean {
+  if (!isProgramActiveAndValid(p)) return false;
+  const studentIdsSet = candidateIds || buildStudentCandidateIds(student);
+  const progId = String(p.id || '').trim();
+
+  // 1. Check if student has an explicit removed/dropped status in enrollments for this program
+  const progEnrollments = Array.isArray(enrollments) && progId
+    ? enrollments.filter((e: any) => String(e?.programId || e?.program_id || e?.courseId || '').trim() === progId)
+    : [];
+
+  if (progEnrollments.length > 0 && studentIdsSet.size > 0) {
+    const studentEnrollmentRecords = progEnrollments.filter((e: any) => {
+      const eSid = String(e?.studentId || e?.student_id || '').trim();
+      return eSid && studentIdsSet.has(eSid);
+    });
+    if (studentEnrollmentRecords.length > 0) {
+      const hasActive = studentEnrollmentRecords.some(
+        (e: any) =>
+          e.status !== 'deleted' &&
+          e.status !== 'removed' &&
+          e.status !== 'dropped' &&
+          e.status !== 'cancelled' &&
+          e.status !== 'unenrolled' &&
+          !e.isDeleted
+      );
+      if (!hasActive) return false;
+    }
+  }
+
+  // 2. Check program.studentIds (Authoritative roster maintained by Programs.tsx when adding/removing students)
+  const hasExplicitStudentIdsArray = Array.isArray(p.studentIds);
+  const hasExplicitEnrollmentFlag = Boolean((p as any).hasExplicitEnrollment);
+
+  if (hasExplicitStudentIdsArray && (hasExplicitEnrollmentFlag || p.studentIds.length > 0)) {
+    if (studentIdsSet.size === 0) return false;
+    const inStudentIds = p.studentIds.some((sid: any) => studentIdsSet.has(String(sid).trim()));
+    const inRepIds =
+      Array.isArray(p.representativeStudentIds) &&
+      p.representativeStudentIds.some((sid: any) => studentIdsSet.has(String(sid).trim()));
+    return inStudentIds || inRepIds;
+  }
+
+  // 3. If program.studentIds is empty and not explicitly locked, check active enrollments table for this program
+  const activeProgEnrollments = progEnrollments.filter(
+    (e: any) =>
+      e.status !== 'deleted' &&
+      e.status !== 'removed' &&
+      e.status !== 'dropped' &&
+      e.status !== 'cancelled' &&
+      e.status !== 'unenrolled' &&
+      !e.isDeleted
+  );
+  if (activeProgEnrollments.length > 0) {
+    if (studentIdsSet.size === 0) return false;
+    return activeProgEnrollments.some((e: any) => {
+      const eSid = String(e?.studentId || e?.student_id || '').trim();
+      return eSid && studentIdsSet.has(eSid);
+    });
+  }
+
+  // 4. Only if the program has NO explicit student roster at all, match by normalized student grade
+  const studentGrade = normalizeGradeLabel(student?.grade);
+  const progGrade = normalizeGradeLabel(p.grade);
+  if (!progGrade || progGrade === 'همه پایه‌ها' || progGrade === 'همه') return true;
+  return Boolean(studentGrade && progGrade === studentGrade);
+}
+
+export function getStudentCoreCourses(
+  student?: Student | null,
+  programs?: Program[],
+  enrollments?: any[]
+): CoreCourseItem[] {
+  const grade = normalizeGradeLabel(student?.grade) || 'پایه ۷';
+
+  // 1. If programs array is provided, strictly filter active non-deleted programs where the student is enrolled
+  if (Array.isArray(programs)) {
+    const studentIdsSet = buildStudentCandidateIds(student);
+    const studentProgs = programs.filter(
+      p => isCoreCurriculumProgram(p) && isStudentEnrolledInProgram(p, student, enrollments, studentIdsSet)
+    );
 
     if (studentProgs.length > 0) {
       const courseMap = new Map<string, CoreCourseItem>();
       studentProgs.forEach(p => {
-        const cleanTitle = (p.title || '').trim();
+        const cleanTitle = (p.title || (p as any).name || '').trim();
         if (cleanTitle && !courseMap.has(cleanTitle)) {
           let sType = 'سایر';
           if (/اصول|رسائل|کفایه|حلقه/i.test(cleanTitle)) sType = 'اصول';
           else if (/فقه|مکاسب|لمعه/i.test(cleanTitle)) sType = 'فقه';
           else if (/فلسفه|بدایه|نهایه/i.test(cleanTitle)) sType = 'فلسفه';
-          
+
           courseMap.set(cleanTitle, {
             id: p.id || `c_${cleanTitle}`,
             title: cleanTitle,
@@ -443,11 +599,11 @@ export function getStudentCoreCourses(student?: Student | null, programs?: Progr
       }
     }
 
-    // If programs array was explicitly provided, do not fall back to fake deleted courses
+    // If programs array was explicitly provided, never fall back to fake/deleted courses
     return [];
   }
 
-  // 2. Fallback standard seminary courses per grade
+  // 2. Fallback standard seminary courses per grade ONLY when programs array is not passed at all
   if (grade.includes('۷') || grade.includes('7')) {
     return [
       { id: 'c_usul_7', title: 'اصول {حلقه ثالثه}', subjectType: 'اصول' },

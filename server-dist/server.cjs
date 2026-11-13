@@ -787,52 +787,52 @@ function mapDedicatedRowToRecord(collection, row) {
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === "programs") {
-    if (row.title && row.title !== "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646") record.title = row.title;
-    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635") record.grade = row.grade;
-    if (row.type) record.type = row.type;
-    if (row.parent_program_id !== void 0 && row.parent_program_id !== null) {
+    if (row.title && row.title !== "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646" && !record.title) record.title = row.title;
+    if (row.grade && row.grade !== "\u0646\u0627\u0645\u0634\u062E\u0635" && !record.grade) record.grade = row.grade;
+    if (row.type && !record.type) record.type = row.type;
+    if (row.parent_program_id !== void 0 && row.parent_program_id !== null && !record.parentProgramId) {
       record.parentProgramId = row.parent_program_id || record.parentProgramId || "";
     }
-    if (row.teacher_id) record.teacherId = row.teacher_id;
-    if (row.teacher_name) {
-      record.teacherName = row.teacher_name;
-      record.teacher = row.teacher_name;
+    if (row.teacher_id && !record.teacherId) record.teacherId = row.teacher_id;
+    if (row.teacher_name && row.teacher_name !== "\u0646\u0627\u0645\u0634\u062E\u0635") {
+      if (!record.teacherName || record.teacherName === "\u062A\u0639\u06CC\u06CC\u0646 \u0646\u0634\u062F\u0647") record.teacherName = row.teacher_name;
+      if (!record.teacher || record.teacher === "\u062A\u0639\u06CC\u06CC\u0646 \u0646\u0634\u062F\u0647") record.teacher = row.teacher_name;
     }
     if (row.classroom_id) {
-      record.classroomId = row.classroom_id;
-      record.classroom = row.classroom_id;
-      record.madrasRoom = row.classroom_id;
+      if (!record.classroomId) record.classroomId = row.classroom_id;
+      if (!record.classroom) record.classroom = row.classroom_id;
+      if (!record.madrasRoom) record.madrasRoom = row.classroom_id;
     }
     if (row.day_of_week) {
-      record.day = row.day_of_week;
+      if (!record.day) record.day = row.day_of_week;
       if (!record.days || !Array.isArray(record.days) || record.days.length === 0) {
         record.days = row.day_of_week.split(" \u060C ").map((d) => d.trim()).filter(Boolean);
       }
     }
     if (row.start_time || row.end_time) {
-      record.startTime = row.start_time || record.startTime || "";
-      record.endTime = row.end_time || record.endTime || "";
-      if (row.start_time && row.end_time) {
+      if (!record.startTime) record.startTime = row.start_time || "";
+      if (!record.endTime) record.endTime = row.end_time || "";
+      if (!record.time && row.start_time && row.end_time && row.start_time !== "00:00:00") {
         record.time = `${row.start_time} \u0627\u0644\u06CC ${row.end_time}`;
       }
     }
-    if (row.representative_student_ids) {
+    if (row.representative_student_ids !== void 0 && row.representative_student_ids !== null && !Array.isArray(record.representativeStudentIds)) {
       try {
         const parsed = typeof row.representative_student_ids === "string" ? JSON.parse(row.representative_student_ids) : row.representative_student_ids;
-        if (Array.isArray(parsed) && parsed.length > 0) record.representativeStudentIds = parsed;
+        if (Array.isArray(parsed)) record.representativeStudentIds = parsed;
       } catch (e) {
       }
     }
-    if (row.representative_names) {
+    if (row.representative_names !== void 0 && row.representative_names !== null && !Array.isArray(record.representativeNames)) {
       try {
         const parsed = typeof row.representative_names === "string" ? JSON.parse(row.representative_names) : row.representative_names;
-        if (Array.isArray(parsed) && parsed.length > 0) record.representativeNames = parsed;
+        if (Array.isArray(parsed)) record.representativeNames = parsed;
       } catch (e) {
       }
     }
-    if (row.term) record.term = row.term;
-    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
-    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+    if (row.term && !record.term) record.term = row.term;
+    if (row.created_at && !record.createdAt) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at && !record.updatedAt) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === "attendance") {
     if (row.student_id) record.studentId = row.student_id;
     if (row.date) record.date = row.date;
@@ -917,7 +917,7 @@ function mergeDedicatedAndDocumentRows(collection, dedicatedRows, appDocItems) {
     if (existing) {
       const docTs = extractRecordTs(doc);
       const existingTs = extractRecordTs(existing);
-      if (docTs >= existingTs) {
+      if (docTs > 0 || docTs >= existingTs) {
         const merged = { ...existing, ...doc };
         if ((!merged.name || merged.name === "\u0646\u0627\u0645\u0634\u062E\u0635") && existing.name && existing.name !== "\u0646\u0627\u0645\u0634\u062E\u0635") {
           merged.name = existing.name;
@@ -935,7 +935,7 @@ function mergeDedicatedAndDocumentRows(collection, dedicatedRows, appDocItems) {
           if (typeof val === "string" && (val === "\u0646\u0627\u0645\u0634\u062E\u0635" || val === "\u06A9\u0644\u0627\u0633 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646" || val === "\u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646") && doc[key] && doc[key] !== val) {
             continue;
           }
-          if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
+          if (doc[key] !== void 0) {
             continue;
           }
           merged[key] = val;
@@ -1723,8 +1723,14 @@ async function ensurePerformanceIndexes(p) {
   }
   try {
     const progAlters = [
+      "ALTER TABLE programs MODIFY COLUMN day_of_week VARCHAR(255) NULL",
+      "ALTER TABLE programs MODIFY COLUMN start_time VARCHAR(50) NULL",
+      "ALTER TABLE programs MODIFY COLUMN end_time VARCHAR(50) NULL",
       'ALTER TABLE programs ADD COLUMN IF NOT EXISTS type VARCHAR(50) NULL DEFAULT "\u0627\u0635\u0644\u06CC"',
       "ALTER TABLE programs ADD COLUMN IF NOT EXISTS parent_program_id VARCHAR(100) NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS representative_student_ids TEXT NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS representative_names TEXT NULL",
+      "ALTER TABLE programs ADD COLUMN IF NOT EXISTS term VARCHAR(100) NULL",
       "ALTER TABLE programs ADD COLUMN IF NOT EXISTS data JSON NULL",
       "ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_category VARCHAR(150) NULL",
       "ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_book VARCHAR(150) NULL",
@@ -2608,9 +2614,9 @@ var init_databaseAbstraction = __esm({
                 \`teacher_id\` VARCHAR(100) NULL,
                 \`teacher_name\` VARCHAR(255) NULL,
                 \`classroom_id\` VARCHAR(100) NULL,
-                \`day_of_week\` VARCHAR(50) NULL,
-                \`start_time\` VARCHAR(20) NULL,
-                \`end_time\` VARCHAR(20) NULL,
+                \`day_of_week\` VARCHAR(255) NULL,
+                \`start_time\` VARCHAR(50) NULL,
+                \`end_time\` VARCHAR(50) NULL,
                 \`type\` VARCHAR(50) NULL DEFAULT '\u0627\u0635\u0644\u06CC',
                 \`parent_program_id\` VARCHAR(100) NULL,
                 \`representative_student_ids\` TEXT NULL,
@@ -2625,7 +2631,19 @@ var init_databaseAbstraction = __esm({
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
                 await pool2.query(sql, params);
-              } else if (pErr?.code === "ER_BAD_FIELD_ERROR" || pErr?.message?.includes("Unknown column")) {
+              } else if (pErr?.code === "ER_BAD_FIELD_ERROR" || pErr?.code === "ER_DATA_TOO_LONG" || pErr?.message?.includes("Unknown column") || pErr?.message?.includes("Data too long")) {
+                try {
+                  await pool2.query("ALTER TABLE programs MODIFY COLUMN day_of_week VARCHAR(255) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs MODIFY COLUMN start_time VARCHAR(50) NULL");
+                } catch (e) {
+                }
+                try {
+                  await pool2.query("ALTER TABLE programs MODIFY COLUMN end_time VARCHAR(50) NULL");
+                } catch (e) {
+                }
                 try {
                   await pool2.query('ALTER TABLE programs ADD COLUMN type VARCHAR(50) NULL DEFAULT "\u0627\u0635\u0644\u06CC"');
                 } catch (e) {
@@ -2999,13 +3017,14 @@ var init_databaseAbstraction = __esm({
         let appDoc = null;
         try {
           const [rows] = await pool2.query(
-            `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
+            `SELECT data, updated_at FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
             [collectionName, id]
           );
           if (rows && rows.length > 0) {
             const r = rows[0];
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-            appDoc = { ...parsed, id };
+            const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
+            appDoc = { ...parsed, id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
           }
         } catch (e) {
           console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
@@ -3059,12 +3078,13 @@ var init_databaseAbstraction = __esm({
         try {
           const placeholders = ids.map(() => "?").join(", ");
           const [rows] = await pool2.query(
-            `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
             [collectionName, ...ids]
           );
           appDocItems = (rows || []).map((r) => {
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-            return { ...parsed, id: r.id };
+            const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
+            return { ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
           });
         } catch (e) {
         }
@@ -3107,12 +3127,13 @@ var init_databaseAbstraction = __esm({
         let appDocItems = [];
         try {
           const [rows] = await pool2.execute(
-            `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
+            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
             [collectionName]
           );
           appDocItems = (rows || []).map((r) => {
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-            return { ...parsed, id: r.id };
+            const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
+            return { ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
           });
         } catch (e) {
           console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
@@ -3529,6 +3550,7 @@ __export(serverDataApi_exports, {
   authorizeCollectionAccess: () => authorizeCollectionAccess,
   canUserReadDoc: () => canUserReadDoc,
   deleteDataFromServer: () => deleteDataFromServer,
+  executeOneTimeStudentPurgeV1: () => executeOneTimeStudentPurgeV1,
   fetchBootstrapData: () => fetchBootstrapData,
   fetchDataFromServer: () => fetchDataFromServer,
   getRecentChangesSince: () => getRecentChangesSince,
@@ -3662,6 +3684,13 @@ function authorizeCollectionAccess(user, collection, action, recordOwnerId) {
   if (user.level === 1 || user.role === "super_admin" || user.role === "school_manager") {
     return { allowed: true };
   }
+  if (collection === "student_portal_access_config") {
+    if (action === "read") return { allowed: true };
+    const uName = String(user.username || "").toUpperCase();
+    const canManageAccess = user.level === 1 || user.role === "super_admin" || user.role === "school_manager" || user.role === "education_manager" || user.role === "education_officer" || uName === "SHAH" || uName === "SHAHPOORI" || uName === "SADEGH";
+    if (canManageAccess) return { allowed: true };
+    return { allowed: false, reason: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062F\u0633\u062A\u0631\u0633\u06CC \u0628\u062E\u0634\u200C\u0647\u0627\u06CC \u0637\u0644\u0627\u0628 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0648 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 \u0627\u0633\u062A." };
+  }
   if (collection === "students" && (action === "write" || action === "delete")) {
     const uName = String(user.username || "").toUpperCase();
     const isAuthorizedStaff = user.level === 1 || user.role === "super_admin" || user.role === "school_manager" || user.role === "education_manager" || user.role === "education_officer" || user.role === "grade_mentor" || user.role === "class_representative" || Boolean(user.isClassRep) || user.role === "mentor" || Boolean(user.mentorId) || uName === "SHAH" || uName === "SHAHPOORI" || uName === "SADEGH" || uName === "RAHNAMA" || user.level <= 2 && user.canEdit !== false && !user.isReadOnly;
@@ -3694,13 +3723,17 @@ function authorizeCollectionAccess(user, collection, action, recordOwnerId) {
     }
   }
   if (collection === "system_users") {
-    if (user.level > 1 && user.role !== "education_manager") {
-      return { allowed: false, reason: "\u0645\u0634\u0627\u0647\u062F\u0647 \u0648 \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0633\u06CC\u0633\u062A\u0645 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0627\u0633\u062A." };
+    if (user.level > 1 && user.role !== "education_manager" && user.role !== "education_officer" && String(user.username || "").toUpperCase() !== "SHAH") {
+      return { allowed: false, reason: "\u0645\u0634\u0627\u0647\u062F\u0647 \u0648 \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0627\u0631\u0628\u0631\u0627\u0646 \u0633\u06CC\u0633\u062A\u0645 \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0648 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0627\u0633\u062A." };
     }
   }
   if (collection === "audit_logs") {
-    if (action === "delete" || action === "write") return { allowed: false, reason: "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u06CC\u0627 \u062D\u0630\u0641 \u0644\u0627\u06AF\u200C\u0647\u0627\u06CC \u0627\u0645\u0646\u06CC\u062A\u06CC \u0627\u0645\u06A9\u0627\u0646\u200C\u067E\u0630\u06CC\u0631 \u0646\u06CC\u0633\u062A." };
-    if (action === "read" && user.level > 1) return { allowed: false, reason: "\u0645\u0634\u0627\u0647\u062F\u0647 \u0644\u0627\u06AF\u200C\u0647\u0627\u06CC \u0627\u0645\u0646\u06CC\u062A\u06CC \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0627\u0633\u062A." };
+    const uName = String(user.username || "").toUpperCase();
+    const isAuditAuthorized = user.level === 1 || user.role === "super_admin" || user.role === "school_manager" || user.role === "education_manager" || user.role === "education_officer" || uName === "SADEGH" || uName === "SHAH" || uName === "SHAHPOORI" || uName === "RAHNAMA";
+    if (!isAuditAuthorized) {
+      return { allowed: false, reason: "\u0645\u0634\u0627\u0647\u062F\u0647 \u0648 \u0645\u062F\u06CC\u0631\u06CC\u062A \u0644\u0627\u06AF\u200C\u0647\u0627\u06CC \u0641\u0639\u0627\u0644\u06CC\u062A \u0633\u0627\u06CC\u062A \u0645\u0646\u062D\u0635\u0631\u0627\u064B \u062F\u0631 \u0627\u062E\u062A\u06CC\u0627\u0631 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0648 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0627\u0633\u062A." };
+    }
+    return { allowed: true };
   }
   if (user.role === "grade_mentor" && user.gradeLabel) {
     return { allowed: true };
@@ -3891,15 +3924,6 @@ function prepareRecordForDedicatedTable(collection, data) {
       row.notes = data.notes || null;
       row.history = Array.isArray(data.history) ? data.history : [];
       break;
-    case "student_requests":
-      row.student_id = data.studentId || data.student_id || "unknown";
-      row.student_name = data.studentName || data.student_name || null;
-      row.title = data.title || "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646";
-      row.category = data.category || "educational";
-      row.status = data.status || "pending";
-      row.description = data.description || null;
-      row.data = data;
-      break;
     default:
       break;
   }
@@ -3970,6 +3994,13 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
   invalidateCollectionCache(collection);
   if (isMysqlConfigured) {
     try {
+      let existingDocForAudit = null;
+      if (collection !== "audit_logs") {
+        try {
+          existingDocForAudit = await MysqlRepository.getDocument(collection, id);
+        } catch {
+        }
+      }
       let finalRecord = { ...record };
       if (collection === "attendance") {
         try {
@@ -4020,7 +4051,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       }
       if (collection === "students") {
         try {
-          const existingDoc = await MysqlRepository.getDocument(collection, id);
+          const existingDoc = existingDocForAudit || await MysqlRepository.getDocument(collection, id);
           if (existingDoc) {
             finalRecord = {
               ...existingDoc,
@@ -4036,9 +4067,15 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
         } catch (stMrgErr) {
         }
       }
+      const authoritativeNowIso = (/* @__PURE__ */ new Date()).toISOString();
+      finalRecord = {
+        ...finalRecord,
+        id,
+        updatedAt: authoritativeNowIso
+      };
       const { row, dedicatedTable } = prepareRecordForDedicatedTable(collection, finalRecord);
       const saveRes = await MysqlRepository.saveDocument(collection, id, finalRecord);
-      if (dedicatedTable) {
+      if (dedicatedTable && collection !== "audit_logs") {
         try {
           await MysqlRepository.saveToDedicatedTable(dedicatedTable, row);
         } catch (dErr) {
@@ -4047,7 +4084,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       }
       if (collection === "all_users" || collection === "system_users" || collection === "users") {
         try {
-          await MysqlRepository.saveUser(record);
+          await MysqlRepository.saveUser(finalRecord);
         } catch (uErr) {
           console.warn("[MySQL SaveUser Non-fatal Notice]:", uErr?.message || uErr);
         }
@@ -4056,19 +4093,41 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       const affectedRows = saveRes?.affectedRows ?? 1;
       const changedRows = saveRes?.changedRows ?? affectedRows;
       console.log(`[MySQL Fast Save Success] Collection: "${collection}", ID: "${id}", AffectedRows: ${affectedRows}`);
-      logAudit({
-        action: affectedRows > 1 ? "update" : "insert",
-        collectionName: collection,
-        recordId: id,
-        userId: callerUser?.id || callerUser?.userId,
-        userName: callerUser?.username || callerUser?.name,
-        userRole: callerUser?.role,
-        details: record,
-        status: "success"
-      }).catch(() => {
-      });
+      if (collection !== "audit_logs") {
+        const isUpdate = Boolean(existingDocForAudit);
+        const entityLabel = finalRecord.title || finalRecord.name || finalRecord.fullName || finalRecord.studentName || finalRecord.programTitle || finalRecord.username || id;
+        const actorName = callerUser?.fullName || callerUser?.name || callerUser?.username || "\u0633\u06CC\u0633\u062A\u0645 \u0647\u0648\u0634\u0645\u0646\u062F";
+        logAudit({
+          action: isUpdate ? "update" : "insert",
+          collectionName: collection,
+          recordId: id,
+          userId: callerUser?.id || callerUser?.userId,
+          userName: callerUser?.username || callerUser?.name,
+          userRole: callerUser?.role,
+          details: finalRecord,
+          status: "success"
+        }).catch(() => {
+        });
+        logServerAudit({
+          userId: callerUser?.id || callerUser?.userId || "system",
+          username: callerUser?.username || "system",
+          userName: actorName,
+          userRole: callerUser?.role || "system",
+          userRoleTitle: callerUser?.roleTitle,
+          userLevel: callerUser?.level,
+          action: isUpdate ? "DATA_UPDATE" : "DATA_CREATE",
+          actionType: isUpdate ? "update" : "create",
+          entityType: collection,
+          entityId: id,
+          entityName: String(entityLabel),
+          description: `${isUpdate ? "\u0648\u06CC\u0631\u0627\u06CC\u0634" : "\u0627\u06CC\u062C\u0627\u062F"} \xAB${entityLabel}\xBB \u062F\u0631 \u0628\u062E\u0634 ${collection} \u062A\u0648\u0633\u0637 ${actorName}`,
+          previousState: existingDocForAudit || null,
+          newState: finalRecord
+        }).catch(() => {
+        });
+      }
       notifyRealtimeChange(collection, id, "upsert");
-      return { success: true, id, item: record, affectedRows, changedRows };
+      return { success: true, id, item: finalRecord, affectedRows, changedRows };
     } catch (mErr) {
       console.error(`[MySQL Save Fatal Error] Collection: "${collection}", ID: "${id}":`, mErr?.message || mErr);
       await logAudit({
@@ -4107,18 +4166,58 @@ async function serverDeleteDoc(collection, id, callerUser) {
       }
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
+      if (collection === "all_users" || collection === "system_users" || collection === "users") {
+        await deleteUserFromStorage(id).catch(() => {
+        });
+        if (existingRecord?.username) {
+          await deleteUserFromStorage(String(existingRecord.username)).catch(() => {
+          });
+        }
+      } else if (collection === "students") {
+        await deleteUserFromStorage(id).catch(() => {
+        });
+        if (existingRecord?.nationalId) {
+          await deleteUserFromStorage(String(existingRecord.nationalId)).catch(() => {
+          });
+        }
+        if (existingRecord?.studentCode) {
+          await deleteUserFromStorage(String(existingRecord.studentCode)).catch(() => {
+          });
+        }
+      }
       invalidateCollectionCache(collection);
-      logAudit({
-        action: "delete",
-        collectionName: collection,
-        recordId: id,
-        userId: callerUser?.id || callerUser?.userId,
-        userName: callerUser?.username || callerUser?.name,
-        userRole: callerUser?.role,
-        details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
-        status: "success"
-      }).catch(() => {
-      });
+      if (collection !== "audit_logs") {
+        const entityLabel = existingRecord?.title || existingRecord?.name || existingRecord?.fullName || existingRecord?.studentName || existingRecord?.programTitle || existingRecord?.username || id;
+        const actorName = callerUser?.fullName || callerUser?.name || callerUser?.username || "\u0633\u06CC\u0633\u062A\u0645 \u0647\u0648\u0634\u0645\u0646\u062F";
+        logAudit({
+          action: "delete",
+          collectionName: collection,
+          recordId: id,
+          userId: callerUser?.id || callerUser?.userId,
+          userName: callerUser?.username || callerUser?.name,
+          userRole: callerUser?.role,
+          details: { deletedId: id, affectedRows, deletedRecord: existingRecord },
+          status: "success"
+        }).catch(() => {
+        });
+        logServerAudit({
+          userId: callerUser?.id || callerUser?.userId || "system",
+          username: callerUser?.username || "system",
+          userName: actorName,
+          userRole: callerUser?.role || "system",
+          userRoleTitle: callerUser?.roleTitle,
+          userLevel: callerUser?.level,
+          action: "DATA_DELETE",
+          actionType: "delete",
+          entityType: collection,
+          entityId: id,
+          entityName: String(entityLabel),
+          description: `\u062D\u0630\u0641 \xAB${entityLabel}\xBB \u0627\u0632 \u0628\u062E\u0634 ${collection} \u062A\u0648\u0633\u0637 ${actorName}`,
+          previousState: existingRecord || { id },
+          newState: null
+        }).catch(() => {
+        });
+      }
       notifyRealtimeChange(collection, id, "delete");
       return { success: true };
     } catch (mErr) {
@@ -4158,6 +4257,21 @@ async function fetchRawCollectionData(collection) {
     try {
       const mysqlItems = await MysqlRepository.queryCollection(collection);
       items = mysqlItems || [];
+      if (collection === "programs" && items.length > 0) {
+        const toPurge = items.filter((p) => p && (p.isDeleted === true || p.status === "inactive" || p.status === "deleted"));
+        if (toPurge.length > 0) {
+          for (const deadProg of toPurge) {
+            if (deadProg.id) {
+              try {
+                await MysqlRepository.deleteDocument("programs", String(deadProg.id));
+                notifyRealtimeChange("programs", String(deadProg.id), "delete");
+              } catch (purgeErr) {
+              }
+            }
+          }
+          items = items.filter((p) => !p || p.isDeleted !== true && p.status !== "inactive" && p.status !== "deleted");
+        }
+      }
     } catch (mErr) {
       console.error(`[MySQL Raw Query Error for ${collection}]:`, mErr?.message || mErr);
       if (mErr?.stack) console.error(`[MySQL Stack Trace]:`, mErr.stack);
@@ -4544,7 +4658,13 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
     "study_daily_entries",
     "discussion_groups",
     "academic_sub_periods",
-    "counseling_session_grades"
+    "counseling_session_grades",
+    "curriculum_subjects",
+    "curriculum_books",
+    "curriculum_chapters",
+    "student_course_progress",
+    "student_portal_access_config",
+    "audit_logs"
   ];
   const BATCH_SIZE = 6;
   const results = [];
@@ -4568,7 +4688,146 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
   }
   return result;
 }
-var realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS;
+async function executeOneTimeStudentPurgeV1() {
+  if (hasStartedStudentPurgeV1) return;
+  hasStartedStudentPurgeV1 = true;
+  try {
+    const MIGRATION_KEY = "purge_all_students_v1_1405";
+    if (isMysqlConfigured) {
+      const existingMigration = await MysqlRepository.getDocument("system_migrations", MIGRATION_KEY);
+      if (existingMigration && existingMigration.completed) {
+        return;
+      }
+    }
+    console.log("[Student Purge V1] \u{1F9F9} \u0622\u063A\u0627\u0632 \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC \u06A9\u0627\u0645\u0644 \u0648 \u062F\u0627\u0626\u0645\u06CC \u062A\u0645\u0627\u0645\u06CC \u0637\u0644\u0627\u0628 \u0648 \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC \u0637\u0644\u0627\u0628 \u0642\u062F\u06CC\u0645\u06CC...");
+    const removedUsers = await purgeAllStudentUsersFromStorage();
+    if (isMysqlConfigured) {
+      const pool2 = (await Promise.resolve().then(() => (init_databaseAbstraction(), databaseAbstraction_exports))).getMysqlPool();
+      if (pool2) {
+        const tablesToClear = [
+          "students",
+          "enrollments",
+          "attendance",
+          "periodic_study_logs",
+          "study_daily_entries",
+          "study_stats",
+          "student_requests",
+          "received_articles",
+          "article_evaluations",
+          "evaluation_requests",
+          "tuition_records"
+        ];
+        for (const tbl of tablesToClear) {
+          try {
+            await pool2.execute(`DELETE FROM \`${tbl}\``);
+          } catch (e) {
+          }
+        }
+        const collectionsToClear = [
+          "students",
+          "enrollments",
+          "course_enrollments",
+          "student_course_progress",
+          "attendance",
+          "periodic_study_logs",
+          "study_daily_entries",
+          "study_stats",
+          "student_requests",
+          "received_articles",
+          "article_evaluations",
+          "evaluation_requests",
+          "tuition_records",
+          "student_comments",
+          "oral_exams",
+          "counseling_session_grades",
+          "discussion_groups",
+          "course_selection_requests"
+        ];
+        for (const col of collectionsToClear) {
+          try {
+            await pool2.execute(`DELETE FROM app_collections WHERE collection_name = ?`, [col]);
+          } catch (e) {
+          }
+        }
+        try {
+          await pool2.execute(
+            `DELETE FROM all_users WHERE (level = 3 AND role != 'teacher') OR role IN ('student', 'class_representative')`
+          );
+        } catch (e) {
+        }
+        try {
+          await pool2.execute(
+            `DELETE FROM system_users WHERE (level = 3 AND role != 'teacher') OR role IN ('student', 'class_representative')`
+          );
+        } catch (e) {
+        }
+        for (const userCol of ["system_users", "all_users", "users"]) {
+          try {
+            const docs = await MysqlRepository.queryCollection(userCol);
+            for (const doc of docs || []) {
+              const uname = String(doc.username || "").trim().toUpperCase();
+              if (uname === "SADEGH" || uname === "RAHNAMA" || uname === "SHAH" || uname === "SHAHPOORI" || uname === "MALI") continue;
+              if (doc.role === "teacher" || doc.level === 1 || doc.level === 2) continue;
+              if (doc.level === 3 || doc.role === "student" || doc.role === "class_representative" || doc.studentId || doc.linkedStudentId) {
+                await MysqlRepository.deleteDocument(userCol, doc.id || doc.username);
+              }
+            }
+          } catch (e) {
+          }
+        }
+        try {
+          const allPrograms = await MysqlRepository.queryCollection("programs");
+          for (const prog of allPrograms || []) {
+            if (prog && prog.id) {
+              const cleanedProg = {
+                ...prog,
+                studentIds: [],
+                representativeStudentIds: [],
+                representativeNames: [],
+                customRepresentative: ""
+              };
+              const { row, dedicatedTable } = prepareRecordForDedicatedTable("programs", cleanedProg);
+              await MysqlRepository.saveDocument("programs", String(prog.id), cleanedProg);
+              if (dedicatedTable) {
+                await MysqlRepository.saveToDedicatedTable(dedicatedTable, row).catch(() => {
+                });
+              }
+            }
+          }
+        } catch (e) {
+        }
+        try {
+          const allLockers = await MysqlRepository.queryCollection("student_lockers");
+          for (const locker of allLockers || []) {
+            if (locker && locker.id && (locker.studentId || locker.status === "occupied")) {
+              const cleanedLocker = {
+                ...locker,
+                status: "empty",
+                studentId: void 0,
+                studentName: void 0,
+                studentGrade: void 0,
+                assignedAt: void 0
+              };
+              await MysqlRepository.saveDocument("student_lockers", String(locker.id), cleanedLocker);
+            }
+          }
+        } catch (e) {
+        }
+      }
+      await MysqlRepository.saveDocument("system_migrations", MIGRATION_KEY, {
+        id: MIGRATION_KEY,
+        completed: true,
+        completedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        removedUsersCount: removedUsers
+      });
+    }
+    invalidateCollectionCache();
+    console.log(`[Student Purge V1] \u2705 \u067E\u0627\u06A9\u0633\u0627\u0632\u06CC \u06A9\u0627\u0645\u0644 \u0637\u0644\u0627\u0628 \u0648 \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC \u0622\u0646\u0627\u0646 \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0627\u0646\u062C\u0627\u0645 \u0634\u062F.`);
+  } catch (err) {
+    console.warn("[Student Purge V1 Notice]:", err);
+  }
+}
+var realtimeListeners, recentChangesBuffer, MAX_RECENT_CHANGES, rawCollectionCache, RAW_CACHE_TTL_MS, COLLECTION_TABLE_MAP, FINANCIAL_COLLECTIONS, USER_SPECIFIC_COLLECTIONS, PUBLIC_READ_COLLECTIONS, hasStartedStudentPurgeV1;
 var init_serverDataApi = __esm({
   "src/lib/serverDataApi.ts"() {
     init_serverAuth();
@@ -4634,8 +4893,17 @@ var init_serverDataApi = __esm({
     PUBLIC_READ_COLLECTIONS = /* @__PURE__ */ new Set([
       "academic_holidays",
       "academic_calendar_periods",
-      "school_events"
+      "school_events",
+      "curriculum_subjects",
+      "curriculum_books",
+      "curriculum_chapters",
+      "student_portal_access_config"
     ]);
+    hasStartedStudentPurgeV1 = false;
+    setTimeout(() => {
+      executeOneTimeStudentPurgeV1().catch(() => {
+      });
+    }, 1500);
   }
 });
 
@@ -4656,9 +4924,10 @@ __export(serverAuth_exports, {
   hashPassword: () => hashPassword,
   invalidateUserCache: () => invalidateUserCache,
   isConnectionError: () => isConnectionError,
-  logServerAudit: () => logServerAudit2,
+  logServerAudit: () => logServerAudit,
   migrateAllPlainPasswords: () => migrateAllPlainPasswords,
   normalizeDigits: () => normalizeDigits,
+  purgeAllStudentUsersFromStorage: () => purgeAllStudentUsersFromStorage,
   recordFailedAttempt: () => recordFailedAttempt,
   resetFailedAttempts: () => resetFailedAttempts,
   revokeAllUserSessions: () => revokeAllUserSessions,
@@ -4779,7 +5048,7 @@ function triggerSecurityAlert(type, details) {
     details
   };
   console.warn(`[\u{1F6A8} SECURITY ALERT] ${type}:`, JSON.stringify(alertPayload));
-  logServerAudit2({
+  logServerAudit({
     userId: details.userId || "system",
     username: details.username || "unknown",
     action: `ALERT_${type}`,
@@ -5201,21 +5470,69 @@ async function saveUserToStorage(user, options = {}) {
 }
 async function deleteUserFromStorage(userIdOrUsername) {
   const clean = userIdOrUsername.trim().toUpperCase();
+  const matchedUsernames = [clean];
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
   for (const [uname, u] of serverMemoryUsers.entries()) {
-    if (u.id === userIdOrUsername) {
+    if (u.id === userIdOrUsername || u.username?.toUpperCase() === clean || u.studentId === userIdOrUsername || u.linkedStudentId === userIdOrUsername) {
+      matchedUsernames.push(uname);
       serverMemoryUsers.delete(uname);
       invalidateUserCache(uname);
     }
   }
-  saveUsersToFile(Array.from(serverMemoryUsers.values()));
+  const fileUsers = loadUsersFromFile().filter((u) => {
+    const uname = (u.username || "").trim().toUpperCase();
+    return uname !== clean && u.id !== userIdOrUsername && u.studentId !== userIdOrUsername && u.linkedStudentId !== userIdOrUsername && !matchedUsernames.includes(uname);
+  });
+  saveUsersToFile(fileUsers);
+  if (isMysqlConfigured) {
+    for (const targetKey of Array.from(/* @__PURE__ */ new Set([userIdOrUsername, ...matchedUsernames]))) {
+      try {
+        await MysqlRepository.deleteUser(targetKey);
+      } catch (e) {
+      }
+    }
+  }
+}
+async function purgeAllStudentUsersFromStorage() {
+  let removedCount = 0;
+  const isStudentAccount = (u) => {
+    if (!u) return false;
+    const uname = String(u.username || "").trim().toUpperCase();
+    if (uname === "SADEGH" || uname === "RAHNAMA" || uname === "SHAH" || uname === "SHAHPOORI" || uname === "MALI") {
+      return false;
+    }
+    if (u.role === "teacher" || u.level === 1 || u.level === 2) {
+      return false;
+    }
+    return u.level === 3 || u.role === "student" || u.role === "class_representative" || Boolean(u.studentId) || Boolean(u.linkedStudentId);
+  };
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (isStudentAccount(u)) {
+      serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
+      removedCount++;
+    }
+  }
+  const remainingFileUsers = loadUsersFromFile().filter((u) => !isStudentAccount(u));
+  saveUsersToFile(remainingFileUsers);
   if (isMysqlConfigured) {
     try {
-      await MysqlRepository.deleteUser(clean);
+      const mysqlUsers = await MysqlRepository.getAllUsers();
+      for (const mu of mysqlUsers || []) {
+        if (isStudentAccount(mu)) {
+          try {
+            await MysqlRepository.deleteUser(mu.id || mu.username);
+            if (mu.username) await MysqlRepository.deleteUser(mu.username);
+            removedCount++;
+          } catch (e) {
+          }
+        }
+      }
     } catch (e) {
     }
   }
+  return removedCount;
 }
 async function migrateAllPlainPasswords() {
   const users = await fetchAllUsersFromStorage();
@@ -5239,18 +5556,58 @@ async function migrateAllPlainPasswords() {
   }
   return { totalUsers: users.length, migratedCount };
 }
-async function logServerAudit2(params) {
+async function logServerAudit(params) {
   try {
+    if (params.entityType === "audit_logs") return;
     const { computeRecordHash: computeRecordHash2 } = await Promise.resolve().then(() => (init_serverAuditChain(), serverAuditChain_exports));
-    const nowStr = (/* @__PURE__ */ new Date()).toISOString();
+    const now = /* @__PURE__ */ new Date();
+    const nowStr = now.toISOString();
+    const shamsiDate = new Intl.DateTimeFormat("fa-IR-u-ca-persian", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(now);
+    const shamsiTime = new Intl.DateTimeFormat("fa-IR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).format(now);
     const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const prevHash = lastKnownAuditHash;
+    const cleanUname = (params.username || "").trim().toUpperCase();
+    const knownUser = cleanUname ? serverMemoryUsers.get(cleanUname) : void 0;
+    const resolvedUsername = params.username || knownUser?.username || "system";
+    const resolvedFullName = params.userName || knownUser?.fullName || knownUser?.name || resolvedUsername || "\u06A9\u0627\u0631\u0628\u0631 \u0633\u06CC\u0633\u062A\u0645";
+    const resolvedRole = params.userRole || knownUser?.role || "system";
+    const resolvedRoleTitle = params.userRoleTitle || knownUser?.roleTitle || AUDIT_ROLE_TITLES[resolvedRole] || resolvedRole;
+    const resolvedLevel = params.userLevel || knownUser?.level || (resolvedRole === "super_admin" ? 1 : resolvedRole === "student" ? 3 : 2);
+    let resolvedActionType = params.actionType || "update";
+    if (!params.actionType) {
+      const actUpper = String(params.action || "").toUpperCase();
+      if (actUpper.includes("DELETE") || actUpper.includes("REMOVE")) {
+        resolvedActionType = "delete";
+      } else if (actUpper.includes("LOGIN")) {
+        resolvedActionType = "login";
+      } else if (actUpper.includes("LOGOUT")) {
+        resolvedActionType = "logout";
+      } else if (actUpper.includes("REVERT")) {
+        resolvedActionType = "revert";
+      } else if (actUpper.includes("CREATE") || actUpper.includes("INSERT") || !params.previousState && params.newState) {
+        resolvedActionType = "create";
+      } else {
+        resolvedActionType = "update";
+      }
+    }
+    const stateObj = params.newState || params.previousState || {};
+    const resolvedEntityName = params.entityName || stateObj?.title || stateObj?.name || stateObj?.fullName || stateObj?.studentName || stateObj?.programTitle || stateObj?.username || params.entityId || "\u0631\u06A9\u0648\u0631\u062F \u0633\u0627\u0645\u0627\u0646\u0647";
+    const resolvedModuleTitle = AUDIT_MODULE_TITLES[params.entityType] || params.entityType || "\u0628\u062E\u0634 \u0639\u0645\u0648\u0645\u06CC";
     const currentHash = computeRecordHash2({
       id: logId,
       previous_hash: prevHash,
-      user_id: params.userId || "system",
-      user_name: params.username || "system",
-      role: params.userRole || "system",
+      user_id: params.userId || knownUser?.id || "system",
+      user_name: resolvedFullName,
+      role: resolvedRole,
       action: params.action,
       module: params.entityType,
       target_id: params.entityId,
@@ -5264,31 +5621,46 @@ async function logServerAudit2(params) {
     const logEntry = {
       id: logId,
       timestamp: nowStr,
-      user_id: params.userId || "system",
-      user_name: params.username || "system",
-      role: params.userRole || "system",
+      shamsiDate,
+      shamsiTime,
+      userId: params.userId || knownUser?.id || "system",
+      userName: resolvedFullName,
+      username: resolvedUsername,
+      userRole: resolvedRole,
+      userRoleTitle: resolvedRoleTitle,
+      userLevel: resolvedLevel,
+      actionType: resolvedActionType,
       action: params.action,
       module: params.entityType,
+      moduleTitle: resolvedModuleTitle,
+      entityId: params.entityId,
+      entityName: String(resolvedEntityName),
+      description: params.description,
+      previousState: params.previousState ?? null,
+      newState: params.newState ?? null,
+      isReverted: false,
+      user_id: params.userId || knownUser?.id || "system",
+      user_name: resolvedFullName,
+      role: resolvedRole,
       target_id: params.entityId,
       target_type: params.entityType,
       entity_type: params.entityType,
       entity_id: params.entityId,
-      description: params.description,
       ip_address: params.ipAddress || "",
       previous_hash: prevHash,
       current_hash: currentHash,
-      old_values: params.previousState || null,
-      new_values: params.newState || null,
+      old_values: params.previousState ?? null,
+      new_values: params.newState ?? null,
       created_at: nowStr
     };
     if (isMysqlConfigured) {
       try {
         await MysqlRepository.recordAuditLog({
           id: logEntry.id,
-          userId: params.userId,
-          username: params.username,
-          userRole: params.userRole,
-          action: params.action,
+          userId: logEntry.userId,
+          username: logEntry.username,
+          userRole: logEntry.userRole,
+          action: logEntry.action,
           entityType: params.entityType,
           entityId: params.entityId,
           description: params.description,
@@ -5296,16 +5668,19 @@ async function logServerAudit2(params) {
         });
       } catch (mErr) {
       }
+      try {
+        await MysqlRepository.saveDocument("audit_logs", logId, logEntry);
+        const { notifyRealtimeChange: notifyRealtimeChange2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
+        notifyRealtimeChange2("audit_logs", logId, "upsert");
+      } catch (docErr) {
+        console.warn("[AuditLog app_collections notice]:", docErr);
+      }
     }
-    const { serverSaveDoc: serverSaveDoc2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
-    serverSaveDoc2("audit_logs", logId, logEntry).catch((err) => {
-      console.error("[STORAGE_FAILURE] audit log (login):", err?.message || err);
-    });
   } catch (e) {
     console.error("Server audit log error:", e instanceof Error ? e.message : e);
   }
 }
-var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs2, import_path2, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, lastKnownAuditHash;
+var import_bcryptjs2, import_jsonwebtoken, import_dotenv2, import_fs2, import_path2, USERS_FILE_PATH, rawRefreshSecret, JWT_REFRESH_SECRET, rawJwtSecret, JWT_SECRET, revokedTokens, userRevocationTimestamp, COMMON_PASSWORDS, userLastActivity, IDLE_TIMEOUT_MS, DUMMY_HASH, endpointLimits, incidentCounters, ipAttempts, usernameAttempts, INITIAL_ADMIN_PASSWORD, DEFAULT_SERVER_USERS, serverMemoryUsers, userCache, USER_CACHE_TTL_MS, AUDIT_MODULE_TITLES, AUDIT_ROLE_TITLES, lastKnownAuditHash;
 var init_serverAuth = __esm({
   "src/lib/serverAuth.ts"() {
     import_bcryptjs2 = __toESM(require("bcryptjs"), 1);
@@ -5439,6 +5814,55 @@ var init_serverAuth = __esm({
     });
     userCache = /* @__PURE__ */ new Map();
     USER_CACHE_TTL_MS = 5 * 60 * 1e3;
+    AUDIT_MODULE_TITLES = {
+      auth: "\u0627\u062D\u0631\u0627\u0632 \u0647\u0648\u06CC\u062A \u0648 \u0646\u0634\u0633\u062A\u200C\u0647\u0627",
+      students: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u067E\u0631\u0648\u0646\u062F\u0647 \u0637\u0644\u0627\u0628",
+      teachers: "\u0628\u0627\u0646\u06A9 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0627\u0633\u0627\u062A\u06CC\u062F",
+      programs: "\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0647\u0627\u06CC \u0622\u0645\u0648\u0632\u0634\u06CC \u0648 \u062F\u0631\u0648\u0633",
+      classrooms: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0644\u0627\u0633\u200C\u0647\u0627 \u0648 \u0645\u062F\u0631\u0633\u200C\u0647\u0627",
+      attendance: "\u062D\u0636\u0648\u0631 \u0648 \u063A\u06CC\u0627\u0628 \u0637\u0644\u0627\u0628",
+      enrollments: "\u062B\u0628\u062A\u200C\u0646\u0627\u0645 \u0648 \u0627\u0646\u062A\u062E\u0627\u0628 \u0648\u0627\u062D\u062F",
+      periodic_study_logs: "\u06AF\u0632\u0627\u0631\u0634 \u0633\u0627\u0639\u062A \u0645\u0637\u0627\u0644\u0639\u0647 \u0637\u0644\u0627\u0628",
+      study_daily_entries: "\u062B\u0628\u062A \u0645\u0637\u0627\u0644\u0639\u0647 \u0631\u0648\u0632\u0627\u0646\u0647",
+      study_periods: "\u062F\u0648\u0631\u0647\u200C\u0647\u0627\u06CC \u062B\u0628\u062A \u0645\u0637\u0627\u0644\u0639\u0647",
+      study_stats: "\u0622\u0645\u0627\u0631 \u0645\u0637\u0627\u0644\u0639\u0647",
+      tuition_records: "\u0634\u0647\u0631\u06CC\u0647 \u0648 \u067E\u0631\u062F\u0627\u062E\u062A\u200C\u0647\u0627\u06CC \u0637\u0644\u0627\u0628",
+      tuition_periods: "\u062F\u0648\u0631\u0647\u200C\u0647\u0627\u06CC \u0634\u0647\u0631\u06CC\u0647",
+      finance_loans: "\u0648\u0627\u0645 \u0648 \u062A\u0633\u0647\u06CC\u0644\u0627\u062A \u0645\u0627\u0644\u06CC",
+      finance_expenses: "\u0647\u0632\u06CC\u0646\u0647\u200C\u0647\u0627\u06CC \u0627\u062C\u0631\u0627\u06CC\u06CC \u0645\u062F\u0631\u0633\u0647",
+      finance_budget_rows: "\u0631\u062F\u06CC\u0641\u200C\u0647\u0627\u06CC \u0628\u0648\u062F\u062C\u0647 \u0645\u0627\u0644\u06CC",
+      student_requests: "\u062F\u0631\u062E\u0648\u0627\u0633\u062A\u200C\u0647\u0627 \u0648 \u062A\u0642\u0627\u0636\u0627\u0647\u0627\u06CC \u0637\u0644\u0627\u0628",
+      received_articles: "\u0645\u0642\u0627\u0644\u0627\u062A \u0648 \u067E\u0698\u0648\u0647\u0634\u200C\u0647\u0627\u06CC \u0637\u0644\u0627\u0628",
+      article_evaluations: "\u0627\u0631\u0632\u06CC\u0627\u0628\u06CC \u0645\u0642\u0627\u0644\u0627\u062A \u0639\u0644\u0645\u06CC",
+      system_users: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC",
+      all_users: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC",
+      users: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062D\u0633\u0627\u0628\u200C\u0647\u0627\u06CC \u06A9\u0627\u0631\u0628\u0631\u06CC",
+      academic_calendar_periods: "\u062A\u0642\u0648\u06CC\u0645 \u0622\u0645\u0648\u0632\u0634\u06CC \u0633\u0627\u0644\u0627\u0646\u0647",
+      academic_holidays: "\u062A\u0639\u0637\u06CC\u0644\u0627\u062A \u0631\u0633\u0645\u06CC \u062A\u0642\u0648\u06CC\u0645",
+      student_lockers: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0645\u062F\u0647\u0627\u06CC \u0637\u0644\u0627\u0628",
+      personal_todos: "\u0648\u0638\u0627\u06CC\u0641 \u0634\u062E\u0635\u06CC",
+      assigned_todos: "\u0627\u0631\u062C\u0627\u0639 \u06A9\u0627\u0631 \u0648 \u06A9\u0627\u0631\u062A\u0627\u0628\u0644",
+      student_course_progress: "\u062F\u0631\u0648\u0633 \u06AF\u0630\u0631\u0627\u0646\u062F\u0647 \u0648 \u06A9\u0627\u0631\u0646\u0627\u0645\u0647 \u0639\u0644\u0645\u06CC",
+      curriculum_subjects: "\u0628\u0627\u0646\u06A9 \u062F\u0631\u0648\u0633 (\u0645\u0648\u0636\u0648\u0639\u0627\u062A)",
+      curriculum_books: "\u0628\u0627\u0646\u06A9 \u062F\u0631\u0648\u0633 (\u06A9\u062A\u0628)",
+      curriculum_chapters: "\u0628\u0627\u0646\u06A9 \u062F\u0631\u0648\u0633 (\u0627\u0628\u0648\u0627\u0628 \u0648 \u0641\u0635\u0648\u0644)",
+      student_portal_access_config: "\u0645\u062F\u06CC\u0631\u06CC\u062A \u062F\u0633\u062A\u0631\u0633\u06CC \u0628\u062E\u0634\u200C\u0647\u0627\u06CC \u067E\u0646\u0644 \u0637\u0644\u0627\u0628",
+      counseling_session_grades: "\u0627\u0631\u0632\u06CC\u0627\u0628\u06CC \u062C\u0644\u0633\u0627\u062A \u0645\u0634\u0627\u0648\u0631\u0647 \u0627\u0633\u0627\u062A\u06CC\u062F"
+    };
+    AUDIT_ROLE_TITLES = {
+      super_admin: "\u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 (\u0645\u062F\u06CC\u0631 \u06A9\u0644)",
+      school_manager: "\u0645\u062F\u06CC\u0631 \u0645\u062F\u0631\u0633\u0647",
+      education_manager: "\u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634",
+      education_officer: "\u06A9\u0627\u0631\u0634\u0646\u0627\u0633 \u0622\u0645\u0648\u0632\u0634",
+      grade_mentor: "\u0645\u0633\u0626\u0648\u0644 \u067E\u0627\u06CC\u0647",
+      research_manager: "\u0645\u0633\u0626\u0648\u0644 \u067E\u0698\u0648\u0647\u0634",
+      finance_manager: "\u0645\u062F\u06CC\u0631 \u0627\u0645\u0648\u0631 \u0645\u0627\u0644\u06CC",
+      financial_officer: "\u06A9\u0627\u0631\u0634\u0646\u0627\u0633 \u0645\u0627\u0644\u06CC",
+      teacher: "\u0627\u0633\u062A\u0627\u062F \u0645\u0639\u0632\u0632",
+      class_representative: "\u0646\u0645\u0627\u06CC\u0646\u062F\u0647 \u06A9\u0644\u0627\u0633",
+      student: "\u0637\u0644\u0628\u0647",
+      system: "\u0633\u06CC\u0633\u062A\u0645 \u0647\u0648\u0634\u0645\u0646\u062F"
+    };
     lastKnownAuditHash = "0000000000000000000000000000000000000000000000000000000000000000";
   }
 });
@@ -5594,7 +6018,7 @@ async function restoreDatabaseSnapshot(payload, operatorName = "super_admin", ip
         restoredCollections++;
       }
     }
-    await logServerAudit2({
+    await logServerAudit({
       userId: "admin",
       username: operatorName,
       action: "DATABASE_FULL_RESTORE_EXECUTED",
@@ -6032,7 +6456,7 @@ var AuthService = class {
       await dummyPasswordCheck(cleanPass);
       recordFailedAttempt(clientIp, cleanUser);
       trackSecurityIncident(clientIp, void 0, "LOGIN_FAILED");
-      void logServerAudit2({
+      void logServerAudit({
         username: cleanUser,
         action: "LOGIN_FAILED",
         entityType: "auth",
@@ -6061,7 +6485,7 @@ var AuthService = class {
         user.accountLockedUntil = new Date(Date.now() + 15 * 60 * 1e3).toISOString();
       }
       await saveUserToStorage(user);
-      void logServerAudit2({
+      void logServerAudit({
         userId: user.id,
         username: user.username,
         userRole: user.role,
@@ -6105,7 +6529,7 @@ var AuthService = class {
     const { token, refreshToken } = generateTokens(safeUser);
     console.log(`[LOGIN_BENCHMARK] 3. JWT Generation: ${Date.now() - tJwtStart}ms`);
     console.log(`[LOGIN_BENCHMARK] TOTAL Auth Service Time: ${Date.now() - tStart}ms`);
-    void logServerAudit2({
+    void logServerAudit({
       userId: user.id,
       username: user.username,
       userRole: user.role,
@@ -6501,7 +6925,7 @@ var AuthController = class _AuthController {
       await saveUserToStorage(userToStore);
       notifyRealtimeChange("system_users", userToStore.id, "upsert");
       const caller = req.user || _AuthController.extractCaller(req);
-      logServerAudit2({
+      logServerAudit({
         userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "USER_CREATED",
@@ -6605,7 +7029,7 @@ var AuthController = class _AuthController {
       }
       notifyRealtimeChange("system_users", updatedUser.id, "upsert");
       const caller = req.user || _AuthController.extractCaller(req);
-      logServerAudit2({
+      logServerAudit({
         userId: caller?.userId || "system",
         username: caller?.username || "system",
         action: "USER_UPDATED",
@@ -6660,7 +7084,7 @@ var AuthController = class _AuthController {
         }
       }
       const caller = req.user || _AuthController.extractCaller(req);
-      logServerAudit2({
+      logServerAudit({
         userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "USER_DELETED",
@@ -6698,7 +7122,7 @@ var AuthController = class _AuthController {
       await saveUserToStorage(existing);
       notifyRealtimeChange("system_users", existing.id, "upsert");
       const caller = req.user || _AuthController.extractCaller(req);
-      logServerAudit2({
+      logServerAudit({
         userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "ADMIN_RESET_PASSWORD",
@@ -6735,7 +7159,7 @@ var AuthController = class _AuthController {
       await saveUserToStorage(existing);
       notifyRealtimeChange("system_users", existing.id, "upsert");
       const caller = req.user || _AuthController.extractCaller(req);
-      logServerAudit2({
+      logServerAudit({
         userId: caller?.userId || caller?.id || "system",
         username: caller?.username || "system",
         action: "UNLOCK_USER_ACCOUNT",
@@ -6987,7 +7411,7 @@ var StudentService = class {
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     await serverSaveDoc("students", fullRecord, callerUser);
-    logServerAudit2({
+    logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7010,7 +7434,7 @@ var StudentService = class {
       throw new AppError(authCheck.reason || "\u062A\u0646\u0647\u0627 \u0645\u062F\u06CC\u0631\u0627\u0646 \u0627\u0631\u0634\u062F \u0645\u062C\u0627\u0632 \u0628\u0647 \u062D\u0630\u0641 \u067E\u0631\u0648\u0646\u062F\u0647 \u0637\u0644\u0627\u0628 \u0647\u0633\u062A\u0646\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("students", id, callerUser);
-    logServerAudit2({
+    logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7189,7 +7613,7 @@ var TeacherService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("teachers", teacherRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7211,7 +7635,7 @@ var TeacherService = class {
       throw new AppError(authCheck.reason || "\u062A\u0646\u0647\u0627 \u0645\u062F\u06CC\u0631\u0627\u0646 \u0627\u0631\u0634\u062F \u0645\u062C\u0627\u0632 \u0628\u0647 \u062D\u0630\u0641 \u067E\u0631\u0648\u0646\u062F\u0647 \u0627\u0633\u0627\u062A\u06CC\u062F \u0647\u0633\u062A\u0646\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("teachers", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7406,8 +7830,13 @@ var ProgramInputSchema = import_zod4.z.object({
   representativeStudentIds: import_zod4.z.array(import_zod4.z.string()).optional(),
   representativeNames: import_zod4.z.array(import_zod4.z.string()).optional(),
   customRepresentative: import_zod4.z.string().optional(),
-  subjectCategory: import_zod4.z.enum(["\u0627\u0635\u0648\u0644", "\u0641\u0642\u0647", "\u0641\u0644\u0633\u0641\u0647", "\u0633\u0627\u06CC\u0631"]).optional(),
+  subjectCategory: import_zod4.z.string().optional(),
   subjectBook: import_zod4.z.string().optional(),
+  subjectChapter: import_zod4.z.string().optional(),
+  chapterId: import_zod4.z.string().optional(),
+  studentIds: import_zod4.z.array(import_zod4.z.string()).optional(),
+  hasExplicitEnrollment: import_zod4.z.boolean().optional(),
+  attendanceType: import_zod4.z.string().optional(),
   isDeleted: import_zod4.z.boolean().optional(),
   status: import_zod4.z.string().optional(),
   deletedAt: import_zod4.z.string().optional(),
@@ -7567,6 +7996,11 @@ var ProgramService = class {
       customRepresentative: validData.customRepresentative,
       subjectCategory: validData.subjectCategory,
       subjectBook: validData.subjectBook?.trim(),
+      subjectChapter: validData.subjectChapter?.trim(),
+      chapterId: validData.chapterId,
+      studentIds: validData.studentIds,
+      hasExplicitEnrollment: validData.hasExplicitEnrollment,
+      attendanceType: validData.attendanceType,
       isDeleted: validData.isDeleted,
       status: validData.status,
       deletedAt: validData.deletedAt,
@@ -7574,7 +8008,7 @@ var ProgramService = class {
       updated_at: validData.updated_at
     };
     await serverSaveDoc("programs", programRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7596,7 +8030,7 @@ var ProgramService = class {
       throw new AppError(authCheck.reason || "\u0634\u0645\u0627 \u0645\u062C\u0648\u0632 \u062D\u0630\u0641 \u0628\u0631\u0646\u0627\u0645\u0647 \u062F\u0631\u0633\u06CC \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("programs", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7822,7 +8256,7 @@ var ClassroomService = class {
       createdAt: rawData?.createdAt || nowIso
     };
     await serverSaveDoc("classrooms", roomRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -7844,7 +8278,7 @@ var ClassroomService = class {
       throw new AppError(authCheck.reason || "\u0634\u0645\u0627 \u0645\u062C\u0648\u0632 \u062D\u0630\u0641 \u06A9\u0644\u0627\u0633 \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("classrooms", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8129,7 +8563,7 @@ var TuitionService = class {
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     await serverSaveDoc("tuition_records", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8150,7 +8584,7 @@ var TuitionService = class {
       throw new AppError(authCheck.reason || "\u062A\u0646\u0647\u0627 \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC \u06CC\u0627 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0645\u062C\u0627\u0632 \u0628\u0647 \u062D\u0630\u0641 \u0633\u0646\u062F \u0634\u0647\u0631\u06CC\u0647 \u0627\u0633\u062A.", { statusCode: 403 });
     }
     await serverDeleteDoc("tuition_records", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8177,7 +8611,7 @@ var TuitionService = class {
       paidBy: callerUser?.username || "system"
     };
     await serverSaveDoc("tuition_records", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8388,7 +8822,7 @@ var LoanService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("loans", loanRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8428,7 +8862,7 @@ var LoanService = class {
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
     await serverSaveDoc("loans", updatedLoan, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8628,7 +9062,7 @@ var ExpenseService = class {
       createdByName: callerUser?.username || "system"
     };
     await serverSaveDoc("expenses", expenseRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8650,7 +9084,7 @@ var ExpenseService = class {
       throw new AppError(authCheck.reason || "\u062A\u0646\u0647\u0627 \u0645\u0633\u0626\u0648\u0644 \u0645\u0627\u0644\u06CC \u06CC\u0627 \u0645\u062F\u06CC\u0631 \u0627\u0631\u0634\u062F \u0645\u062C\u0627\u0632 \u0628\u0647 \u062D\u0630\u0641 \u0633\u0646\u062F \u0647\u0632\u06CC\u0646\u0647 \u0647\u0633\u062A\u0646\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("expenses", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8817,7 +9251,7 @@ var AttendanceService = class {
       students: validData.students
     };
     await serverSaveDoc("attendance", sessionRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -8909,7 +9343,7 @@ var AttendanceService = class {
     studentRecord.isExcused = true;
     studentRecord.excuseReason = reason;
     await serverSaveDoc("attendance", session, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9133,7 +9567,7 @@ var StudyService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("study_periods", periodRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9175,7 +9609,7 @@ var StudyService = class {
       lastModifiedAt: nowIso
     };
     await serverSaveDoc("periodic_study_logs", logRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9436,7 +9870,7 @@ var ResearchService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("received_articles", articleRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9458,7 +9892,7 @@ var ResearchService = class {
       throw new AppError(authCheck.reason || "\u0634\u0645\u0627 \u0645\u062C\u0648\u0632 \u062D\u0630\u0641 \u0645\u0642\u0627\u0644\u0647 \u067E\u0698\u0648\u0647\u0634\u06CC \u0631\u0627 \u0646\u062F\u0627\u0631\u06CC\u062F.", { statusCode: 403 });
     }
     await serverDeleteDoc("received_articles", id, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9512,7 +9946,7 @@ var ResearchService = class {
       createdAt: rawData?.createdAt || nowIso
     };
     await serverSaveDoc("article_evaluation_sessions", sessionRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9543,7 +9977,7 @@ var ResearchService = class {
       session.approvedRefereeStudentIds = list;
     }
     await serverSaveDoc("article_evaluation_sessions", session, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9763,7 +10197,7 @@ var OralExamService = class {
       createdAt: rawData?.createdAt || nowIso
     };
     await serverSaveDoc("oral_exam_periods", periodRecord, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -9827,7 +10261,7 @@ var OralExamService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("oral_exam_student_records", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10031,7 +10465,7 @@ var LockerService = class {
       updatedBy: callerUser?.username || "system"
     };
     await serverSaveDoc("lockers", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10065,7 +10499,7 @@ var LockerService = class {
       updatedBy: callerUser?.username || "system"
     };
     await serverSaveDoc("lockers", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10091,7 +10525,7 @@ var LockerService = class {
       updatedBy: callerUser?.username || "system"
     };
     await serverSaveDoc("lockers", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10121,7 +10555,7 @@ var LockerService = class {
       updatedBy: callerUser?.username || "system"
     };
     await serverSaveDoc("lockers", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10303,7 +10737,7 @@ var CalendarService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("academic_calendar_periods", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10346,7 +10780,7 @@ var CalendarService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("academic_calendar_holidays", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10598,7 +11032,7 @@ var MealService = class {
       createdAt: rawData?.createdAt || nowIso
     };
     await serverSaveDoc("meal_periods", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10654,7 +11088,7 @@ var MealService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("student_meal_reservations", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10904,7 +11338,7 @@ var StudentRequestService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("student_requests", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -10933,7 +11367,7 @@ var StudentRequestService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("student_requests", updated, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -11151,7 +11585,7 @@ var TransportService = class {
       createdAt: rawData?.createdAt || nowIso
     };
     await serverSaveDoc("drivers", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -11470,7 +11904,7 @@ var CourseSelectionService = class {
       submittedAt: nowIso
     };
     await serverSaveDoc("course_selection_requests", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -11656,7 +12090,7 @@ var CounselingService = class {
       updatedAt: nowIso
     };
     await serverSaveDoc("counseling_grades", record, callerUser);
-    await logServerAudit2({
+    await logServerAudit({
       userId: callerUser?.userId || callerUser?.id,
       username: callerUser?.username || "system",
       userRole: callerUser?.role,
@@ -12078,19 +12512,6 @@ router20.post("/data/:collection", async (req, res) => {
     if (idempotencyKey) {
       processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }
-    if (callerUser) {
-      logServerAudit2({
-        userId: callerUser.userId,
-        username: callerUser.username,
-        userRole: callerUser.role,
-        action: "DATA_WRITE",
-        entityType: collection,
-        entityId: saveRes.id,
-        description: `\u062B\u0628\u062A \u06CC\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0631\u06A9\u0648\u0631\u062F \u062F\u0631 \u06A9\u0627\u0644\u06A9\u0634\u0646 ${collection} \u062A\u0648\u0633\u0637 ${callerUser.username}`,
-        ipAddress: getClientIp(req)
-      }).catch(() => {
-      });
-    }
     return res.json(resPayload);
   } catch (err) {
     logger.error(`Error writing to collection ${collection}:`, err);
@@ -12148,7 +12569,7 @@ router20.delete("/data/:collection/:id", async (req, res) => {
   if (token) {
     const verification = verifyAccessToken2(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
   const authCheck = authorizeCollectionAccess(callerUser, collection, "delete");
@@ -12159,19 +12580,6 @@ router20.delete("/data/:collection/:id", async (req, res) => {
     const delRes = await serverDeleteDoc(collection, id, callerUser);
     if (!delRes.success) {
       return res.status(500).json({ success: false, message: delRes.error || "\u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641 \u062F\u0627\u062F\u0647" });
-    }
-    if (callerUser) {
-      logServerAudit2({
-        userId: callerUser.userId,
-        username: callerUser.username,
-        userRole: callerUser.role,
-        action: "DATA_DELETE",
-        entityType: collection,
-        entityId: id,
-        description: `\u062D\u0630\u0641 \u0631\u06A9\u0648\u0631\u062F ${id} \u0627\u0632 \u06A9\u0627\u0644\u06A9\u0634\u0646 ${collection} \u062A\u0648\u0633\u0637 ${callerUser.username}`,
-        ipAddress: getClientIp(req)
-      }).catch(() => {
-      });
     }
     return res.json({ success: true, message: "\u0631\u06A9\u0648\u0631\u062F \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u062D\u0630\u0641 \u0634\u062F." });
   } catch (err) {
@@ -12186,7 +12594,7 @@ router20.post("/data/:collection/batch", async (req, res) => {
   if (token) {
     const verification = verifyAccessToken2(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
   const authCheck = authorizeCollectionAccess(callerUser, collection, "write");
@@ -12810,7 +13218,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-11T20:17:26.489Z",
+  "buildTime": "2026-11-13T14:02:23.968Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"

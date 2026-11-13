@@ -41,7 +41,9 @@ import {
   ShieldAlert,
   Database,
   Sliders,
-  HeartPulse
+  HeartPulse,
+  CalendarCheck,
+  Lock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -89,6 +91,8 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
       'passed-courses',
       'oral-exams',
       'academic-calendar',
+      'held-sessions',
+      'student-access-management',
       'teachers-bank'
     ]
   },
@@ -207,6 +211,8 @@ const ALL_MENU_DEFINITIONS: MenuItemDef[] = [
   { id: 'finance-loans-fund', label: 'صندوق قرض‌الحسنه و وام‌ها', icon: Building2 },
   { id: 'system-health', label: 'سلامت سیستم', icon: HeartPulse },
   { id: 'system-audit-logs', label: 'لاگ‌های سیستم', icon: FileText },
+  { id: 'held-sessions', label: 'تعداد جلسات برگزار شده', icon: CalendarCheck },
+  { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', icon: Lock },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onOpenSettings }: SidebarProps) {

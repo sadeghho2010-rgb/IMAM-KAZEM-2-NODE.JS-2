@@ -4,6 +4,11 @@ import { realtimeSync } from '../lib/realtimeSync';
 import { localDb } from '../lib/localDb';
 import { verifySecurityPin } from '../components/auth/AccountSecurityPinModal';
 import { normalizeDigits } from '../lib/utils';
+import {
+  isStudentPortalTargetAllowed,
+  StudentPortalAccessConfig,
+  STUDENT_PORTAL_CONFIG_DOC_ID
+} from '../components/education/StudentAccessManagement';
 
 export interface SystemTabDef {
   id: string;
@@ -27,6 +32,8 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   { id: 'consultation-advisor', label: 'دستیار کلاس‌های مشاوره', group: 'آموزش و تدریس', description: 'هوشمندسازی چینش و زمان‌بندی مشاوره‌ها' },
   { id: 'counseling-classes', label: 'کلاس‌های مشاوره (ارزیابی و نمرات)', group: 'آموزش و تدریس', description: 'ثبت نمرات، کیفیت و مشارکت جلسات مشاوره' },
   { id: 'attendance', label: 'حضور و غیاب طلاب', group: 'آموزش و تدریس', description: 'ثبت غیبت، تاخیر، اخطارها و آمار حضور' },
+  { id: 'held-sessions', label: 'تعداد جلسات برگزار شده', group: 'آموزش و تدریس', description: 'محاسبه جلسات تشکیل‌شده کلاس‌ها با تفکیک استاد اصلی، جایگزین و تعطیلات تقویم آموزشی' },
+  { id: 'student-access-management', label: 'مدیریت دسترسی بخش‌های طلاب', group: 'آموزش و تدریس', description: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب به صورت سراسری یا اختصاصی برای هر طلبه' },
 
   // مدیریت طلاب و کاربران
   { id: 'student-requests', label: 'سامانه درخواست‌های طلاب', group: 'مدیریت طلاب و کاربران', description: 'ثبت، پیگیری و گردش آنلاین درخواست‌های آموزشی، مالی و رفاهی طلاب' },
@@ -191,7 +198,7 @@ function getDefaultRoleTabAllowed(tabId: string, user: AppUser): boolean {
     const allowed = [
       'student-requests', 'todos', 'workflow', 'academic-calendar', 'presence-hours', 'students', 'active-students',
       'passed-courses', 'programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'consultation-advisor',
-      'counseling-classes', 'discussion', 'stats', 'attendance', 'oral-exams', 'comments',
+      'counseling-classes', 'discussion', 'stats', 'attendance', 'held-sessions', 'oral-exams', 'comments',
       'summary', 'teachers-bank', 'user-credentials'
     ];
     return allowed.includes(tabId);
@@ -248,8 +255,8 @@ function getDefaultRoleTabEditable(tabId: string, user: AppUser): boolean {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH';
   }
 
-  // Lockers: ONLY education manager and super admin can edit
-  if (tabId === 'lockers') {
+  // Lockers, Student Access Management, and Held Sessions: education manager and super admin can edit
+  if (tabId === 'lockers' || tabId === 'student-access-management' || tabId === 'held-sessions') {
     return role === 'education_manager' || role === 'education_officer' || username === 'SHAH' || role === 'super_admin';
   }
 
@@ -393,6 +400,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
+
+  const [studentPortalAccessConfig, setStudentPortalAccessConfig] = useState<StudentPortalAccessConfig | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPortalConfig = async () => {
+      try {
+        const doc = await localDb.getDoc<StudentPortalAccessConfig>('student_portal_access_config', STUDENT_PORTAL_CONFIG_DOC_ID);
+        if (isMounted) {
+          setStudentPortalAccessConfig(doc || null);
+        }
+      } catch (e) {}
+    };
+    loadPortalConfig();
+    const unsub = localDb.subscribe(() => {
+      loadPortalConfig();
+    });
+    const handlePortalEvent = () => loadPortalConfig();
+    window.addEventListener('student_portal_access_updated', handlePortalEvent);
+    return () => {
+      isMounted = false;
+      unsub();
+      window.removeEventListener('student_portal_access_updated', handlePortalEvent);
+    };
+  }, []);
 
   // Fetch and real-time synchronize users from Firestore & Server API across all hosts and devices
   useEffect(() => {
@@ -1262,13 +1294,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return target.level === 1 && target.role === 'super_admin';
     }
 
-    // Lockers module: Always available to Education Manager and Super Admin unless explicitly set to 'none'
+    // Lockers, Student Access Management, and Held Sessions: Always available to Education Manager and Super Admin unless explicitly set to 'none'
     const isEduOrAdmin = target.role === 'education_manager' || target.role === 'education_officer' || (target.username || '').toUpperCase() === 'SHAH' || target.level === 1;
-    if (tabId === 'lockers' && isEduOrAdmin) {
-      if (target.modulePermissions && target.modulePermissions['lockers'] === 'none') {
+    if ((tabId === 'lockers' || tabId === 'student-access-management' || tabId === 'held-sessions') && isEduOrAdmin) {
+      if (target.modulePermissions && target.modulePermissions[tabId] === 'none') {
         return false;
       }
       return true;
+    }
+
+    // Student Portal Access Control (Global & Per-Student Overrides managed by Education Manager / Super Admin)
+    if ((target.level === 3 || target.role === 'student' || target.role === 'class_representative') && target.role !== 'teacher') {
+      const candidateIds = [
+        target.studentId,
+        target.linkedStudentId,
+        target.id,
+        target.username,
+        (target as any).nationalCode,
+        (target as any).nationalId
+      ];
+      if (!isStudentPortalTargetAllowed(studentPortalAccessConfig, candidateIds, tabId)) {
+        return false;
+      }
     }
 
     // 3. PRIORITY 1: Explicit modulePermissions map

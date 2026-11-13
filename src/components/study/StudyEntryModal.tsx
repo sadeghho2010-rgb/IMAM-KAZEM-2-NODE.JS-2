@@ -16,7 +16,7 @@ interface StudyEntryModalProps {
   students: Student[];
   allLogs: PeriodicStudyLog[];
   currentMentorId?: string;
-  onSaveSuccess: () => void;
+  onSaveSuccess: (toastMessage?: string) => void;
 }
 
 export default function StudyEntryModal({
@@ -35,6 +35,8 @@ export default function StudyEntryModal({
   const [isClosed, setIsClosed] = useState(false);
   const [mandatoryHours, setMandatoryHours] = useState<number>(1200); // کل موظفی به دقیقه
   const [mandatoryCoreMinutes, setMandatoryCoreMinutes] = useState<number>(900); // حداقل موظفی دروس اصلی به دقیقه
+  const [isSavingPeriod, setIsSavingPeriod] = useState(false);
+  const savingLockRef = useRef(false);
 
   // Target grades for the period (default: all 4 grades)
   const [targetGrades, setTargetGrades] = useState<string[]>(ALL_SYSTEM_GRADES);
@@ -619,7 +621,18 @@ export default function StudyEntryModal({
     }
   };
 
+  useEffect(() => {
+    if (isOpen) {
+      savingLockRef.current = false;
+      setIsSavingPeriod(false);
+    }
+  }, [isOpen]);
+
   const handleSavePeriod = async () => {
+    if (savingLockRef.current || isSavingPeriod) return;
+    savingLockRef.current = true;
+    setIsSavingPeriod(true);
+
     const finalTitle = periodTitle.trim() || `دوره مطالعاتی ${new Date().toLocaleDateString('fa-IR')}`;
     const finalStartDate = startDate || new Date().toISOString();
     const finalEndDate = endDate || new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -628,188 +641,213 @@ export default function StudyEntryModal({
 
     try {
       const mandatoryInHours = finalMandatoryHours / 60;
+      const finalCoreMinutes = mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75);
       let effectivePeriodId = editingPeriod?.id || '';
+      let isDuplicatePrevented = false;
 
-      if (editingPeriod) {
-        // Update existing period
-        await localDb.updateDoc('study_periods', editingPeriod.id, {
+      // Deduplication check when creating a new period: prevent identical periods from being created on double click
+      let existingMatchedPeriod: StudyPeriod | null = editingPeriod;
+      if (!existingMatchedPeriod) {
+        try {
+          const currentPeriods = await localDb.getDocs<StudyPeriod>('study_periods');
+          const duplicate = (currentPeriods || []).find(p => {
+            if (!p || (p as any).isDeleted || (p as any).status === 'deleted') return false;
+            const sameTitle = (p.title || '').trim() === finalTitle;
+            const sameStart = String(p.startDate || '').trim() === String(finalStartDate).trim();
+            const sameEnd = String(p.endDate || '').trim() === String(finalEndDate).trim();
+            const pMins = p.mandatoryMinutes !== undefined ? Number(p.mandatoryMinutes) : Math.round((Number(p.mandatoryHours) || 0) * 60);
+            const sameMandatory = pMins === finalMandatoryHours;
+            return sameTitle && sameStart && sameEnd && sameMandatory;
+          });
+          if (duplicate) {
+            existingMatchedPeriod = duplicate;
+            isDuplicatePrevented = true;
+          }
+        } catch {}
+      }
+
+      if (existingMatchedPeriod) {
+        effectivePeriodId = existingMatchedPeriod.id;
+        await localDb.updateDoc('study_periods', existingMatchedPeriod.id, {
           title: finalTitle,
           startDate: finalStartDate,
           endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
           isClosed: Boolean(isClosed),
-          status: isClosed ? 'closed' : 'active',
+          status: isClosed ? 'closed' : 'open',
           isActive: !isClosed,
+          manuallyOpened: !isClosed,
           mandatoryHours: mandatoryInHours,
           mandatoryMinutes: finalMandatoryHours,
-          mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
+          mandatoryCoreMinutes: finalCoreMinutes,
           targetGrades: finalTargetGrades,
           warningRule: warningRule,
           updatedAt: new Date().toISOString()
-        });
-        effectivePeriodId = editingPeriod.id;
-
-        const existingPeriodLogs = allLogs.filter(l => l.periodId === editingPeriod.id);
-
-        for (const student of students) {
-          const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
-          const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
-          const totMin = sMin + dMin;
-          const sHours = sMin / 60;
-          const dHours = dMin / 60;
-          const totHours = totMin / 60;
-
-          const existingLog = existingPeriodLogs.find(l => l.studentId === student.id);
-
-          if (existingLog) {
-            if (totMin > 0) {
-              await localDb.updateDoc('periodic_study_logs', existingLog.id, {
-                hours: totHours,
-                studyHours: sHours,
-                discussionHours: dHours
-              });
-            } else {
-              await localDb.deleteDoc('periodic_study_logs', existingLog.id);
-            }
-          } else if (totMin > 0) {
-            await localDb.addDoc('periodic_study_logs', {
-              periodId: editingPeriod.id,
-              studentId: student.id,
-              hours: totHours,
-              studyHours: sHours,
-              discussionHours: dHours
-            });
-          }
-        }
+        } as any);
       } else {
-        // Create new period
         const periodId = await localDb.addDoc('study_periods', {
           title: finalTitle,
           startDate: finalStartDate,
           endDate: finalEndDate,
           deadlineDate: deadlineDate || '',
           isClosed: Boolean(isClosed),
-          status: isClosed ? 'closed' : 'active',
+          status: isClosed ? 'closed' : 'open',
           isActive: !isClosed,
+          manuallyOpened: !isClosed,
           mandatoryHours: mandatoryInHours,
           mandatoryMinutes: finalMandatoryHours,
-          mandatoryCoreMinutes: mandatoryCoreMinutes > 0 ? mandatoryCoreMinutes : Math.round(finalMandatoryHours * 0.75),
+          mandatoryCoreMinutes: finalCoreMinutes,
           targetGrades: finalTargetGrades,
           warningRule: warningRule,
           mentorId: currentMentorId,
-          createdAt: new Date().toISOString()
-        });
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as any);
         effectivePeriodId = periodId;
-
-        for (const student of students) {
-          const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
-          const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
-          const totMin = sMin + dMin;
-          const sHours = sMin / 60;
-          const dHours = dMin / 60;
-          const totHours = totMin / 60;
-
-          if (totMin > 0) {
-            await localDb.addDoc('periodic_study_logs', {
-              periodId,
-              studentId: student.id,
-              hours: totHours,
-              studyHours: sHours,
-              discussionHours: dHours
-            });
-          }
-        }
       }
 
-      // Handle Automatic Warning Registration if a rule is selected
-      if (warningRule !== 'none' && effectivePeriodId) {
-        // Target students based on selected targetGrades
-        const targetStudents = allActiveStudents.filter(s => {
-          if (!s.grade) return true;
-          return targetGrades.some(tg => s.grade?.includes(tg.replace('پایه', '').trim()) || tg === s.grade);
-        });
+      // Close modal immediately and show confirmation toast so the user never double-clicks or waits
+      const toastMsg = editingPeriod
+        ? `✅ تغییرات دوره «${finalTitle}» با موفقیت ذخیره شد.`
+        : isDuplicatePrevented
+          ? `✅ دوره «${finalTitle}» قبلاً ثبت شده بود و اطلاعات آن به‌روزرسانی شد.`
+          : `✅ دوره مطالعاتی «${finalTitle}» با موفقیت ایجاد شد.`;
 
-        // Compute total hours per target student
-        const studentHoursMap: { student: Student; totHours: number }[] = targetStudents.map(student => {
-          const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
-          const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
-          return {
-            student,
-            totHours: (sMin + dMin) / 60
-          };
-        });
+      onClose();
+      onSaveSuccess(toastMsg);
 
-        const sumHours = studentHoursMap.reduce((acc, curr) => acc + curr.totHours, 0);
-        const avgHours = studentHoursMap.length > 0 ? (sumHours / studentHoursMap.length) : 0;
+      // Process student study logs and workflow warnings asynchronously in background
+      (async () => {
+        try {
+          const existingPeriodLogs = allLogs.filter(l => l.periodId === effectivePeriodId);
+          const logPromises: Promise<any>[] = [];
 
-        // Existing workflow items to avoid duplicates for the same period and student
-        const existingWfItems = await localDb.getDocs<WorkflowItem>('workflow_items');
+          for (const student of students) {
+            const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
+            const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
+            const totMin = sMin + dMin;
+            const sHours = sMin / 60;
+            const dHours = dMin / 60;
+            const totHours = totMin / 60;
 
-        for (const item of studentHoursMap) {
-          let shouldWarn = false;
-          if (warningRule === 'below_mandatory') {
-            shouldWarn = item.totHours < mandatoryInHours;
-          } else if (warningRule === 'below_mandatory_and_avg') {
-            shouldWarn = item.totHours < mandatoryInHours && item.totHours < avgHours;
-          }
+            const existingLog = existingPeriodLogs.find(l => l.studentId === student.id);
 
-          if (shouldWarn) {
-            const alreadyExists = existingWfItems.some(wf => 
-              wf.category === 'study_deficit_warning' && 
-              wf.periodId === effectivePeriodId && 
-              wf.studentId === item.student.id
-            );
-
-            if (!alreadyExists) {
-              const ruleTitle = warningRule === 'below_mandatory' ? 'زیر سقف موظفی' : 'زیر موظفی و زیر میانگین';
-              const newWf: Partial<WorkflowItem> = {
-                id: `wf_study_${effectivePeriodId}_${item.student.id}_${Date.now()}`,
-                type: 'approval',
-                category: 'study_deficit_warning',
-                title: `اخطار کسری ساعت مطالعه (${ruleTitle}) - ${item.student.name}`,
-                description: `ثبت اولیه اخطار خودکار کسری ساعت مطالعه برای ${item.student.name} در دوره "${periodTitle.trim()}" (کارکرد: ${item.totHours.toFixed(1)} ساعت از ${mandatoryInHours} ساعت موظفی${warningRule === 'below_mandatory_and_avg' ? ` - میانگین دوره: ${avgHours.toFixed(1)} ساعت` : ''}) - منوط به بررسی و تأیید نهایی مسئول`,
-                status: 'pending',
-                studentId: item.student.id,
-                studentName: item.student.name,
-                grade: item.student.grade || '',
-                periodId: effectivePeriodId,
-                periodTitle: periodTitle.trim(),
-                requiresEducationApproval: true,
-                details: {
+            if (existingLog) {
+              if (totMin > 0) {
+                logPromises.push(
+                  localDb.updateDoc('periodic_study_logs', existingLog.id, {
+                    hours: totHours,
+                    studyHours: sHours,
+                    discussionHours: dHours
+                  })
+                );
+              } else if (editingPeriod) {
+                logPromises.push(localDb.deleteDoc('periodic_study_logs', existingLog.id));
+              }
+            } else if (totMin > 0) {
+              logPromises.push(
+                localDb.addDoc('periodic_study_logs', {
                   periodId: effectivePeriodId,
-                  periodTitle: periodTitle.trim(),
-                  totalHours: item.totHours,
-                  mandatoryHours: mandatoryInHours,
-                  avgHours: Math.round(avgHours * 10) / 10,
-                  deficitHours: Math.max(0, Math.round((mandatoryInHours - item.totHours) * 10) / 10),
-                  rule: warningRule
-                },
-                targetRoles: ['education_officer', 'super_admin', 'grade_supervisor'],
-                createdAt: new Date().toISOString()
-              };
-              await localDb.addDoc('workflow_items', newWf);
+                  studentId: student.id,
+                  hours: totHours,
+                  studyHours: sHours,
+                  discussionHours: dHours
+                })
+              );
             }
           }
+
+          if (logPromises.length > 0) {
+            await Promise.allSettled(logPromises);
+          }
+
+          if (warningRule !== 'none' && effectivePeriodId) {
+            const targetStudents = allActiveStudents.filter(s => {
+              if (!s.grade) return true;
+              return finalTargetGrades.some(tg => s.grade?.includes(tg.replace('پایه', '').trim()) || tg === s.grade);
+            });
+
+            const studentHoursMap: { student: Student; totHours: number }[] = targetStudents.map(student => {
+              const sMin = parseFloat(entryStudyValues[student.id] || '0') || 0;
+              const dMin = parseFloat(entryDiscussionValues[student.id] || '0') || 0;
+              return {
+                student,
+                totHours: (sMin + dMin) / 60
+              };
+            });
+
+            const sumHours = studentHoursMap.reduce((acc, curr) => acc + curr.totHours, 0);
+            const avgHours = studentHoursMap.length > 0 ? (sumHours / studentHoursMap.length) : 0;
+            const existingWfItems = await localDb.getDocs<WorkflowItem>('workflow_items');
+
+            for (const item of studentHoursMap) {
+              let shouldWarn = false;
+              if (warningRule === 'below_mandatory') {
+                shouldWarn = item.totHours < mandatoryInHours;
+              } else if (warningRule === 'below_mandatory_and_avg') {
+                shouldWarn = item.totHours < mandatoryInHours && item.totHours < avgHours;
+              }
+
+              if (shouldWarn) {
+                const alreadyExists = existingWfItems.some(wf =>
+                  wf.category === 'study_deficit_warning' &&
+                  wf.periodId === effectivePeriodId &&
+                  wf.studentId === item.student.id
+                );
+
+                if (!alreadyExists) {
+                  const ruleTitle = warningRule === 'below_mandatory' ? 'زیر سقف موظفی' : 'زیر موظفی و زیر میانگین';
+                  const newWf: Partial<WorkflowItem> = {
+                    id: `wf_study_${effectivePeriodId}_${item.student.id}_${Date.now()}`,
+                    type: 'approval',
+                    category: 'study_deficit_warning',
+                    title: `اخطار کسری ساعت مطالعه (${ruleTitle}) - ${item.student.name}`,
+                    description: `ثبت اولیه اخطار خودکار کسری ساعت مطالعه برای ${item.student.name} در دوره "${finalTitle}" (کارکرد: ${item.totHours.toFixed(1)} ساعت از ${mandatoryInHours} ساعت موظفی${warningRule === 'below_mandatory_and_avg' ? ` - میانگین دوره: ${avgHours.toFixed(1)} ساعت` : ''}) - منوط به بررسی و تأیید نهایی مسئول`,
+                    status: 'pending',
+                    studentId: item.student.id,
+                    studentName: item.student.name,
+                    grade: item.student.grade || '',
+                    periodId: effectivePeriodId,
+                    periodTitle: finalTitle,
+                    requiresEducationApproval: true,
+                    details: {
+                      periodId: effectivePeriodId,
+                      periodTitle: finalTitle,
+                      totalHours: item.totHours,
+                      mandatoryHours: mandatoryInHours,
+                      avgHours: Math.round(avgHours * 10) / 10,
+                      deficitHours: Math.max(0, Math.round((mandatoryInHours - item.totHours) * 10) / 10),
+                      rule: warningRule
+                    },
+                    targetRoles: ['education_officer', 'super_admin', 'grade_supervisor'],
+                    createdAt: new Date().toISOString()
+                  };
+                  await localDb.addDoc('workflow_items', newWf);
+                }
+              }
+            }
+          }
+
+          await localDb.flushSyncQueue();
+
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('workflow_items_updated'));
+            window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
+            window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
+            window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
+            try {
+              localStorage.setItem('study_periods_updated_at', String(Date.now()));
+              localStorage.setItem('study_logs_updated_at', String(Date.now()));
+            } catch (e) {}
+          }
+        } catch (bgErr) {
+          console.warn('Background study logs sync warning:', bgErr);
         }
-      }
-
-      await localDb.flushSyncQueue();
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('workflow_items_updated'));
-        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'study_periods' } }));
-        window.dispatchEvent(new CustomEvent('collection_change_study_periods'));
-        window.dispatchEvent(new CustomEvent('collection_change_periodic_study_logs'));
-        try {
-          localStorage.setItem('study_periods_updated_at', String(Date.now()));
-          localStorage.setItem('study_logs_updated_at', String(Date.now()));
-        } catch (e) {}
-      }
-
-      onSaveSuccess();
-      onClose();
+      })();
     } catch (error) {
       console.error("Error saving period:", error);
+      savingLockRef.current = false;
+      setIsSavingPeriod(false);
       alert("خطا در ذخیره‌سازی اطلاعات دوره");
     }
   };
@@ -1324,18 +1362,29 @@ export default function StudyEntryModal({
           <div className="p-6 md:p-8 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
             <button 
               type="button"
+              disabled={isSavingPeriod}
               onClick={onClose}
-              className="px-6 py-3 bg-white text-slate-700 rounded-2xl font-bold text-xs border border-slate-200 hover:bg-slate-100 transition-all"
+              className="px-6 py-3 bg-white text-slate-700 rounded-2xl font-bold text-xs border border-slate-200 hover:bg-slate-100 transition-all disabled:opacity-50"
             >
               انصراف
             </button>
             <button 
               type="button"
+              disabled={isSavingPeriod}
               onClick={handleSavePeriod}
-              className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center gap-2"
+              className={cn(
+                "px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 flex items-center gap-2",
+                isSavingPeriod && "opacity-70 cursor-not-allowed"
+              )}
             >
               <CheckCircle2 size={18} />
-              <span>{editingPeriod ? 'ذخیره تغییرات دوره' : 'ثبت نهایی دوره'}</span>
+              <span>
+                {isSavingPeriod
+                  ? 'در حال ثبت دوره...'
+                  : editingPeriod
+                    ? 'ذخیره تغییرات دوره'
+                    : 'ثبت نهایی دوره'}
+              </span>
             </button>
           </div>
         </motion.div>

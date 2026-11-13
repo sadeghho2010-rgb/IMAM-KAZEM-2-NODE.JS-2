@@ -21,7 +21,15 @@ import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Student, StudyPeriod, StudyDailyEntry, Program, Enrollment, PeriodicStudyLog, CourseStudyDetail } from '../../../types';
 import { getTodayShamsi } from '../../../lib/jalali';
-import { formatMinutesToHoursAndMinutes, getStudyWarningStatus, syncAggregatePeriodicStudyLog, isPeriodClosed } from '../../study/studyUtils';
+import {
+  formatMinutesToHoursAndMinutes,
+  getStudyWarningStatus,
+  syncAggregatePeriodicStudyLog,
+  isPeriodClosed,
+  isCoreCurriculumProgram,
+  isStudentEnrolledInProgram,
+  buildStudentCandidateIds
+} from '../../study/studyUtils';
 import FreeStudyRulesModal from '../../study/FreeStudyRulesModal';
 
 interface StudentMobileStudyProps {
@@ -187,33 +195,25 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
 
   const studentId = studentObj?.id || currentUser?.studentId || currentUser?.id || '';
 
-  // Student's core seminary courses
+  // Student's core seminary courses (strictly excluding deleted classes and classes where student is not enrolled)
   const studentCourses = useMemo(() => {
     if (!studentObj) return [];
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-    const myEnrolls = enrollments.filter(e => e.studentId === studentObj.id && e.status !== 'deleted' && e.status !== 'inactive');
-    const enrolledProgIds = new Set(myEnrolls.map(e => e.programId));
+    const candidateIds = buildStudentCandidateIds(studentObj, [
+      currentUser?.id,
+      currentUser?.studentId,
+      currentUser?.linkedStudentId,
+      currentUser?.username
+    ].filter(Boolean) as string[]);
 
-    const matchedProgs = activeProgs.filter(p => 
-      enrolledProgIds.has(p.id) || 
-      (Array.isArray((p as any).studentIds) && (p as any).studentIds.includes(studentObj.id)) ||
-      (enrolledProgIds.size === 0 && (!p.grade || p.grade === studentObj.grade || p.grade === 'همه پایه‌ها'))
+    const mainOnly = programs.filter(
+      p => isCoreCurriculumProgram(p) && isStudentEnrolledInProgram(p, studentObj, enrollments, candidateIds)
     );
-
-    const mainOnly = matchedProgs.filter(p => {
-      if (p.type && p.type !== 'اصلی') return false;
-      const typeStr = (p.type || '').trim();
-      const titleStr = (p.title || '').trim();
-      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
-      if (isExcluded) return false;
-      return p.type === 'اصلی' || !p.type;
-    });
     if (mainOnly.length > 0) {
       const seen = new Set<string>();
       const list: { id: string; title: string }[] = [];
       for (const p of mainOnly) {
-        const title = p.title.trim();
-        if (!seen.has(title)) {
+        const title = (p.title || '').trim();
+        if (title && !seen.has(title)) {
           seen.add(title);
           list.push({ id: p.id, title });
         }
@@ -222,7 +222,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = ({
     }
 
     return [];
-  }, [programs, enrollments, studentObj]);
+  }, [programs, enrollments, studentObj, currentUser]);
 
   const activePeriod = useMemo(() => {
     return periods.find(p => p.id === activePeriodId) || periods[0] || null;

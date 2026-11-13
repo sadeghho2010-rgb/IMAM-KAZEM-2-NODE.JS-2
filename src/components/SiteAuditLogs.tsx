@@ -60,6 +60,242 @@ export const RADIANT_BACK_THEMES = [
   }
 ];
 
+const MODULE_TO_COLLECTION_MAP: Record<string, string> = {
+  'students': 'students',
+  'active-students': 'students',
+  'programs': 'programs',
+  'attendance': 'attendance',
+  'stats': 'periodic_study_logs',
+  'research': 'received_articles',
+  'discussion': 'discussion_groups',
+  'comments': 'student_comments',
+  'todos': 'personal_todos',
+  'academic-calendar': 'academic_calendar_periods',
+  'teachers-bank': 'teachers',
+  'presence-hours': 'presence_hours',
+  'classrooms': 'classrooms',
+  'workflow': 'workflow_items',
+  'student-schedule': 'custom_student_schedules',
+  'user-management': 'system_users',
+  'counseling-classes': 'counseling_session_grades',
+  'passed-courses': 'student_course_progress',
+  'student-access-management': 'student_portal_access_config'
+};
+
+const COLLECTION_TO_PERSIAN_TITLE: Record<string, string> = {
+  auth: 'احراز هویت و نشست‌ها',
+  students: 'مدیریت کل طلاب',
+  teachers: 'بانک اساتید و مدرسین',
+  'teachers-bank': 'بانک اساتید و مدرسین',
+  programs: 'برنامه‌های آموزشی و دروس',
+  classrooms: 'مدرس‌ها و فضاهای درسی',
+  attendance: 'حضور و غیاب طلاب',
+  enrollments: 'ثبت‌نام و انتخاب واحد طلاب',
+  periodic_study_logs: 'آمار و گزارشات مطالعه',
+  study_daily_entries: 'ثبت مطالعه روزانه طلاب',
+  study_periods: 'دوره‌های ثبت مطالعه',
+  study_stats: 'آمار مطالعه طلاب',
+  stats: 'آمار و گزارشات مطالعه',
+  tuition_records: 'شهریه و پرداخت‌های طلاب',
+  tuition_periods: 'دوره‌های شهریه',
+  finance_loans: 'وام و تسهیلات مالی',
+  finance_expenses: 'هزینه‌های اجرایی مدرسه',
+  finance_operational_expenses: 'هزینه‌های اجرایی مدرسه',
+  finance_budget_rows: 'ردیف‌های بودجه مالی',
+  student_requests: 'درخواست‌ها و تقاضاهای طلاب',
+  received_articles: 'مقالات و پژوهش‌های طلاب',
+  article_evaluations: 'ارزیابی مقالات علمی',
+  research: 'بخش پژوهش و مقالات',
+  system_users: 'مدیریت کاربران و دسترسی‌ها',
+  all_users: 'مدیریت کاربران و دسترسی‌ها',
+  users: 'مدیریت کاربران و دسترسی‌ها',
+  'user-management': 'مدیریت کاربران و دسترسی‌ها',
+  academic_calendar_periods: 'تقویم آموزشی سالانه',
+  academic_holidays: 'تعطیلات رسمی تقویم آموزشی',
+  'academic-calendar': 'تقویم آموزشی',
+  student_lockers: 'مدیریت کمدهای طلاب',
+  personal_todos: 'پیگیری‌ها و وظایف شخصی',
+  assigned_todos: 'ارجاع کار و کارتابل',
+  todos: 'پیگیری‌ها و تسک‌ها',
+  student_course_progress: 'دروس گذرانده و کارنامه علمی',
+  curriculum_subjects: 'بانک دروس (موضوعات)',
+  curriculum_books: 'بانک دروس (کتب)',
+  curriculum_chapters: 'بانک دروس (ابواب و فصول)',
+  student_portal_access_config: 'مدیریت دسترسی بخش‌های طلاب',
+  counseling_session_grades: 'ارزیابی جلسات مشاوره اساتید',
+  'counseling-classes': 'ارزیابی جلسات مشاوره اساتید',
+  discussion_groups: 'گروه‌های مباحثه طلاب',
+  discussion: 'گروه‌های مباحثه طلاب',
+  database: 'پشتیبان‌گیری و دیتابیس',
+  backup: 'پشتیبان‌گیری دیتابیس'
+};
+
+const ROLE_TO_PERSIAN_TITLE: Record<string, string> = {
+  super_admin: 'سوپر ادمین (مدیر کل)',
+  school_manager: 'مدیر مدرسه',
+  education_manager: 'مسئول آموزش',
+  education_officer: 'کارشناس آموزش',
+  grade_mentor: 'مسئول پایه',
+  research_manager: 'مسئول پژوهش',
+  finance_manager: 'مدیر امور مالی',
+  financial_officer: 'کارشناس مالی',
+  teacher: 'استاد معزز',
+  class_representative: 'نماینده کلاس',
+  student: 'طلبه',
+  system: 'سیستم هوشمند'
+};
+
+export function normalizeAuditLogRecord(raw: any): AuditLog {
+  if (!raw || typeof raw !== 'object') {
+    const nowIso = new Date().toISOString();
+    return {
+      id: `audit_${Date.now()}`,
+      timestamp: nowIso,
+      shamsiDate: '۱۴۰۵/۰۱/۰۱',
+      shamsiTime: '۰۰:۰۰:۰۰',
+      userName: 'کاربر سیستم',
+      username: 'system',
+      userRole: 'super_admin' as any,
+      userRoleTitle: 'مدیریت سامانه',
+      userLevel: 1 as UserLevel,
+      actionType: 'update',
+      module: 'system',
+      moduleTitle: 'سامانه',
+      entityType: 'system',
+      entityId: '',
+      entityName: 'رکورد سامانه',
+      description: 'ثبت فعالیت در سامانه'
+    };
+  }
+
+  const tsRaw = raw.timestamp || raw.created_at || raw.createdAt || new Date().toISOString();
+  const parsedDate = new Date(tsRaw);
+  const validDate = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+
+  let shamsiDate = raw.shamsiDate && raw.shamsiDate !== 'نامشخص' ? String(raw.shamsiDate) : '';
+  let shamsiTime = raw.shamsiTime && raw.shamsiTime !== 'نامشخص' ? String(raw.shamsiTime) : '';
+
+  if (!shamsiDate) {
+    try {
+      shamsiDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(validDate);
+    } catch {
+      shamsiDate = validDate.toLocaleDateString('fa-IR');
+    }
+  }
+
+  if (!shamsiTime) {
+    try {
+      shamsiTime = new Intl.DateTimeFormat('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(validDate);
+    } catch {
+      shamsiTime = validDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+  }
+
+  const rawUsername = String(raw.username || raw.user_name || raw.userId || raw.user_id || 'system').trim();
+  const unameUpper = rawUsername.toUpperCase();
+
+  let fallbackFullName = raw.userName || raw.user_name || rawUsername;
+  if (!fallbackFullName || fallbackFullName === 'نامشخص' || fallbackFullName === 'system' || fallbackFullName === 'unknown') {
+    if (unameUpper === 'SADEGH') fallbackFullName = 'صادق (سوپر ادمین)';
+    else if (unameUpper === 'SHAH' || unameUpper === 'SHAHPOORI') fallbackFullName = 'مسئول آموزش (شاهپوری)';
+    else if (unameUpper === 'RAHNAMA') fallbackFullName = 'استاد رهنما (مدیر مدرسه)';
+    else if (unameUpper === 'MALI') fallbackFullName = 'مسئول امور مالی';
+    else fallbackFullName = rawUsername && rawUsername !== 'system' ? rawUsername : 'مدیریت سامانه';
+  }
+
+  const rawRole = String(raw.userRole || raw.role || (unameUpper === 'SADEGH' ? 'super_admin' : unameUpper === 'SHAH' ? 'education_manager' : 'super_admin'));
+  const resolvedRoleTitle =
+    raw.userRoleTitle ||
+    ROLE_TO_PERSIAN_TITLE[rawRole] ||
+    (unameUpper === 'SADEGH' ? 'سوپر ادمین (مدیر کل)' : unameUpper === 'SHAH' ? 'مسئول آموزش' : 'مسئول سامانه');
+
+  const resolvedLevel: UserLevel = (
+    raw.userLevel ||
+    (rawRole === 'super_admin' || rawRole === 'school_manager' || unameUpper === 'SADEGH' ? 1 : rawRole === 'student' ? 3 : 2)
+  ) as UserLevel;
+
+  let prevState = raw.previousState ?? raw.old_values ?? raw.details?.deletedRecord ?? undefined;
+  let nextState = raw.newState ?? raw.new_values ?? (raw.details && !raw.details.deletedRecord ? raw.details : undefined);
+  if (typeof prevState === 'string') {
+    try { prevState = JSON.parse(prevState); } catch {}
+  }
+  if (typeof nextState === 'string') {
+    try { nextState = JSON.parse(nextState); } catch {}
+  }
+
+  let resolvedActionType: AuditActionType = raw.actionType as AuditActionType;
+  if (!resolvedActionType || !['create', 'update', 'delete', 'status_change', 'revert'].includes(resolvedActionType)) {
+    const actStr = String(raw.action || raw.actionType || '').toUpperCase();
+    const descStr = String(raw.description || '');
+    if (actStr.includes('DELETE') || actStr.includes('REMOVE') || descStr.includes('حذف')) {
+      resolvedActionType = 'delete';
+    } else if (actStr.includes('REVERT') || descStr.includes('بازگردانی') || descStr.includes('استرداد')) {
+      resolvedActionType = 'revert';
+    } else if (actStr.includes('CREATE') || actStr.includes('INSERT') || descStr.includes('ایجاد') || (!prevState && nextState && actStr === 'DATA_WRITE')) {
+      resolvedActionType = 'create';
+    } else if (actStr.includes('STATUS') || descStr.includes('تغییر وضعیت')) {
+      resolvedActionType = 'status_change';
+    } else {
+      resolvedActionType = 'update';
+    }
+  }
+
+  const rawModule = String(raw.module || raw.entityType || raw.entity_type || raw.collection_name || raw.collectionName || 'students').trim();
+  const rawEntityType = String(raw.entityType || raw.entity_type || raw.collection_name || raw.collectionName || MODULE_TO_COLLECTION_MAP[rawModule] || rawModule).trim();
+  const resolvedModuleTitle =
+    (raw.moduleTitle && !String(raw.moduleTitle).startsWith('بخش '))
+      ? String(raw.moduleTitle)
+      : (COLLECTION_TO_PERSIAN_TITLE[rawEntityType] || COLLECTION_TO_PERSIAN_TITLE[rawModule] || raw.moduleTitle || `بخش ${rawModule}`);
+
+  const resolvedEntityId = String(raw.entityId || raw.entity_id || raw.target_id || raw.record_id || raw.recordId || nextState?.id || prevState?.id || '');
+  const stateForLabel: any = nextState || prevState || {};
+  let resolvedEntityName = String(
+    raw.entityName ||
+    stateForLabel?.title ||
+    stateForLabel?.name ||
+    stateForLabel?.fullName ||
+    stateForLabel?.studentName ||
+    stateForLabel?.programTitle ||
+    stateForLabel?.username ||
+    resolvedEntityId ||
+    'رکورد اطلاعاتی'
+  ).trim();
+  if (!resolvedEntityName || resolvedEntityName === 'undefined' || resolvedEntityName === 'null') {
+    resolvedEntityName = resolvedEntityId || 'رکورد اطلاعاتی';
+  }
+
+  return {
+    ...raw,
+    id: String(raw.id || `audit_${validDate.getTime()}`),
+    timestamp: validDate.toISOString(),
+    shamsiDate,
+    shamsiTime,
+    userName: String(fallbackFullName),
+    username: rawUsername || 'system',
+    userRole: rawRole as any,
+    userRoleTitle: String(resolvedRoleTitle),
+    userLevel: resolvedLevel,
+    actionType: resolvedActionType,
+    module: rawModule,
+    moduleTitle: resolvedModuleTitle,
+    entityType: rawEntityType,
+    entityId: resolvedEntityId,
+    entityName: resolvedEntityName,
+    previousState: prevState,
+    newState: nextState,
+    isReverted: Boolean(raw.isReverted)
+  };
+}
+
 // Helper to format human-readable Persian description matching user request:
 // «مسئول [نام] در ساعت [ساعت] اقدام به [حذف کاربری طلبه فلانی / حذف آمار ...] کرد»
 export function formatHumanLogDescription(log: AuditLog): {
@@ -68,18 +304,18 @@ export function formatHumanLogDescription(log: AuditLog): {
   actionTag: string;
 } {
   const actor = log.userName || log.username || 'مسئول سیستم';
-  const time = log.shamsiTime || 'نامشخص';
-  const date = log.shamsiDate || '';
+  const time = log.shamsiTime && log.shamsiTime !== 'نامشخص' ? log.shamsiTime : '۰۰:۰۰';
+  const date = log.shamsiDate && log.shamsiDate !== 'نامشخص' ? log.shamsiDate : '';
 
-  let actionLabel = 'اقدام';
+  let actionLabel = 'ویرایش و اصلاح اطلاعات';
   if (log.actionType === 'delete') actionLabel = 'حذف کاربری/اطلاعات';
   else if (log.actionType === 'update') actionLabel = 'ویرایش و اصلاح اطلاعات';
   else if (log.actionType === 'create') actionLabel = 'ایجاد و ثبت رکورد جدید';
   else if (log.actionType === 'status_change') actionLabel = 'تغییر وضعیت';
   else if (log.actionType === 'revert') actionLabel = 'استرداد و بازگردانی';
 
-  const entity = log.entityName || 'رکورد داده';
-  const moduleName = log.moduleTitle || log.module;
+  const entity = log.entityName || log.entityId || 'رکورد داده';
+  const moduleName = log.moduleTitle || COLLECTION_TO_PERSIAN_TITLE[log.module] || log.module;
 
   const headline = `مسئول «${actor}» در ساعت ${time} اقدام به «${actionLabel} ${entity}» در بخش ${moduleName} کرد`;
   const actorDetail = `${log.userRoleTitle ? log.userRoleTitle + ' • ' : ''}تاریخ: ${date}`;
@@ -104,68 +340,58 @@ async function revertAuditActivity(logId: string, revertedBy: string): Promise<{
 // 100% Genuine Revert Execution: Restores deleted documents or rolls back updates in localDb and on server
 async function executeSingleRevert(log: AuditLog, currentName: string): Promise<{ success: boolean; message: string }> {
   try {
-    const col = log.entityType || log.module;
-    const id = log.entityId;
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const rawCol = log.entityType || log.module || '';
+    const col = MODULE_TO_COLLECTION_MAP[rawCol] || rawCol;
+    const id = log.entityId || log.previousState?.id || log.newState?.id;
+
+    if (!col || col === 'auth' || col === 'database' || col === 'backup') {
+      return { success: false, message: 'این نوع لاگ سیستمی (مانند ورود/خروج یا دانلود بکاپ) قابل بازگردانی داده‌ای نیست.' };
+    }
 
     if (log.actionType === 'delete') {
-      if (log.previousState) {
-        await localDb.bulkPut(col as any, [log.previousState], true);
-        try {
-          await fetch(`/api/data/${col}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-            body: JSON.stringify(log.previousState)
-          });
-        } catch {}
+      const stateToRestore = log.previousState || (log as any).old_values || (log as any).details?.deletedRecord;
+      if (stateToRestore && typeof stateToRestore === 'object') {
+        const docToSave = { ...stateToRestore, id: stateToRestore.id || id };
+        await localDb.setDoc(col as any, docToSave);
       } else {
-        return { success: false, message: 'داده‌های پیش از حذف در لاگ ثبت نشده است.' };
+        return { success: false, message: 'داده‌های پیش از حذف برای این رکورد قدیمی در لاگ ذخیره نشده است.' };
       }
     } else if (log.actionType === 'update' || log.actionType === 'status_change') {
-      if (log.previousState) {
-        await localDb.bulkPut(col as any, [log.previousState], true);
-        try {
-          await fetch(`/api/data/${col}`, {
-            method: 'POST',
-            headers,
-            credentials: 'include',
-            body: JSON.stringify(log.previousState)
-          });
-        } catch {}
+      const stateToRestore = log.previousState || (log as any).old_values;
+      if (stateToRestore && typeof stateToRestore === 'object') {
+        const docToSave = { ...stateToRestore, id: stateToRestore.id || id };
+        await localDb.setDoc(col as any, docToSave);
+      } else if (id && log.newState) {
+        // Fallback if an update log was actually an initial creation without prior state: remove the created record
+        await localDb.deleteDoc(col as any, id);
       } else {
-        return { success: false, message: 'داده‌های وضعیت قبل از ویرایش در لاگ ثبت نشده است.' };
+        return { success: false, message: 'نسخه قبلی این رکورد قبل از ویرایش در لاگ ثبت نشده است.' };
       }
     } else if (log.actionType === 'create') {
       if (id) {
         await localDb.deleteDoc(col as any, id);
-        try {
-          await fetch(`/api/data/${col}/${id}`, {
-            method: 'DELETE',
-            headers,
-            credentials: 'include'
-          });
-        } catch {}
+      } else {
+        return { success: false, message: 'شناسه رکورد ایجاد شده جهت حذف و بازگردانی یافت نشد.' };
       }
+    } else {
+      return { success: false, message: 'این نوع عملیات قابل بازگردانی نیست.' };
     }
 
-    // Mark the audit log itself as reverted
+    // Mark the audit log itself as reverted in both localDb and server
     const updatedLog: AuditLog = {
       ...log,
       isReverted: true,
       revertedAt: new Date().toISOString(),
       revertedByUserName: currentName
     };
-    await localDb.updateDoc('audit_logs', log.id, updatedLog);
+    await localDb.setDoc('audit_logs', updatedLog);
 
-    // Record server-side revert log
-    await revertAuditActivity(log.id, currentName);
+    // Record server-side revert log (non-blocking)
+    revertAuditActivity(log.id, currentName).catch(() => {});
 
     return {
       success: true,
-      message: `اقدام «${log.description || log.entityName}» با موفقیت بازگردانده شد و تغییرات اعمال گردید.`
+      message: `اقدام «${log.entityName || log.description}» در بخش «${log.moduleTitle}» با موفقیت بازگردانده شد و اطلاعات به وضعیت قبل برگشت.`
     };
   } catch (err: any) {
     return {
@@ -237,13 +463,25 @@ export default function SiteAuditLogs() {
     return () => clearInterval(timer);
   }, []);
 
-  const loadLogs = async () => {
+  const loadLogs = async (forceCloud = false) => {
     setIsLoading(true);
     try {
-      const records = await localDb.getDocs<AuditLog>('audit_logs');
-      // Sort by timestamp descending (newest first)
-      records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setLogs(records);
+      if (forceCloud) {
+        await localDb.syncCollectionFromCloud('audit_logs', true).catch(() => {});
+      }
+      const records = await localDb.getDocs<any>('audit_logs');
+      const mergedMap = new Map<string, AuditLog>();
+
+      (records || []).forEach(r => {
+        if (r && r.id) {
+          const norm = normalizeAuditLogRecord(r);
+          mergedMap.set(norm.id, norm);
+        }
+      });
+
+      const normalizedList = Array.from(mergedMap.values());
+      normalizedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setLogs(normalizedList);
     } catch (e) {
       console.error('Error fetching audit logs:', e);
     } finally {
@@ -252,11 +490,16 @@ export default function SiteAuditLogs() {
   };
 
   useEffect(() => {
-    loadLogs();
+    loadLogs(true);
     const unsubscribe = localDb.subscribe(() => {
-      loadLogs();
+      loadLogs(false);
     });
-    return () => unsubscribe();
+    const handleAuditChange = () => loadLogs(false);
+    window.addEventListener('collection_change_audit_logs', handleAuditChange);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('collection_change_audit_logs', handleAuditChange);
+    };
   }, []);
 
   if (!isAuthorized) {
@@ -647,7 +890,7 @@ export default function SiteAuditLogs() {
               <span>خروجی JSON</span>
             </button>
             <button
-              onClick={loadLogs}
+              onClick={() => loadLogs(true)}
               className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />

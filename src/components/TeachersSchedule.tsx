@@ -97,23 +97,33 @@ export interface TeacherScheduleGroup {
 // Utility to match teacher name in programs with registered teachers in the bank
 function matchTeacherWithBank(teacherName: string, bankTeachers: Teacher[]): Teacher | undefined {
   if (!teacherName) return undefined;
-  const clean = (s: string) => 
-    s.replace(/^استاد\s+/, '')
-     .replace(/^حجت\s*الاسلام(\s+و\s*المسلمین)?\s+/, '')
-     .replace(/^شیخ\s+/, '')
-     .replace(/^دکتر\s+/, '')
-     .replace(/^آیت\s*الله\s+/, '')
-     .replace(/[\u064B-\u065F\u0670]/g, '') // remove Arabic diacritics
-     .replace(/[ي]/g, 'ی')
-     .replace(/[ك]/g, 'ک')
-     .replace(/\u200c/g, '')
-     .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
-     .replace(/\s+/g, ' ')
-     .trim()
-     .toLowerCase();
+  const clean = (s: string) =>
+    String(s || '')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|ایت\s*الله|آیت\s*الله|شیخ|دکتر|جناب\s*اقای|جناب\s*آقای|اقای|آقای|سید|میر)\s+/g, '')
+      .replace(/^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|ایت\s*الله|آیت\s*الله|شیخ|دکتر|جناب\s*اقای|جناب\s*آقای|اقای|آقای|سید|میر)\s+/g, '')
+      .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+      .replace(/[ي]/g, 'ی')
+      .replace(/[ك]/g, 'ک')
+      .replace(/[آأإ]/g, 'ا')
+      .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, ' ')
+      .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
 
   const target = clean(teacherName);
-  if (!target) return undefined;
+  if (
+    !target ||
+    target === 'تعیین نشده' ||
+    target === 'مشخص نشده' ||
+    target === 'نامشخص' ||
+    target === 'ندارد' ||
+    target === '-' ||
+    target === '---'
+  ) {
+    return undefined;
+  }
 
   // 1. Exact match on fullName or cleaned fullName
   const direct = bankTeachers.find(t => {
@@ -122,12 +132,13 @@ function matchTeacherWithBank(teacherName: string, bankTeachers: Teacher[]): Tea
   });
   if (direct) return direct;
 
-  // 2. Substring matching for compound names
-  return bankTeachers.find(t => {
-    const tClean = clean(t.fullName || t.name || '');
-    if (tClean.length < 3) return false;
-    return target.includes(tClean) || tClean.includes(target);
-  });
+  // 2. Substring matching for compound names (prefer longest matching teacher name to avoid partial collisions)
+  const candidates = bankTeachers
+    .map(t => ({ teacher: t, cleanName: clean(t.fullName || t.name || '') }))
+    .filter(c => c.cleanName.length >= 3 && (target.includes(c.cleanName) || c.cleanName.includes(target)))
+    .sort((a, b) => b.cleanName.length - a.cleanName.length);
+
+  return candidates[0]?.teacher;
 }
 
 export default function TeachersSchedule() {
@@ -333,19 +344,30 @@ export default function TeachersSchedule() {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (forceCloud = false) => {
     setLoading(true);
     try {
-      const [rawPrograms, rawTeachers, rawManual, rawRooms] = await Promise.all([
+      if (forceCloud) {
+        await Promise.all([
+          localDb.syncCollectionFromCloud('programs', true),
+          localDb.syncCollectionFromCloud('teachers', true),
+          localDb.syncCollectionFromCloud('classrooms', true)
+        ]).catch(() => {});
+      }
+
+      const [rawPrograms, rawTeachers, rawRooms] = await Promise.all([
         localDb.getDocs<Program>('programs'),
         localDb.getDocs<Teacher>('teachers'),
-        localDb.getDocs<TeacherManualSchedule>('teacher_schedules'),
         localDb.getDocs<MadrasRoom>('classrooms')
       ]);
 
-      setPrograms(rawPrograms || []);
+      const activePrograms = (rawPrograms || []).filter(
+        p => p && !p.isDeleted && p.status !== 'deleted' && p.status !== 'inactive'
+      );
+
+      setPrograms(activePrograms);
       setTeachers(rawTeachers || []);
-      setManualSchedules(rawManual || []);
+      setManualSchedules([]);
       setRooms(rawRooms || []);
     } catch (err) {
       console.error('Error fetching teachers schedule data:', err);
@@ -355,69 +377,76 @@ export default function TeachersSchedule() {
   };
 
   useEffect(() => {
-    fetchData();
-    const unsub = localDb.subscribe(() => fetchData());
-    return () => unsub();
+    fetchData(true);
+    const unsub = localDb.subscribe(() => fetchData(false));
+    const handleProgramOrTeacherChange = () => fetchData(false);
+    window.addEventListener('collection_change_programs', handleProgramOrTeacherChange);
+    window.addEventListener('collection_change_teachers', handleProgramOrTeacherChange);
+    window.addEventListener('app_data_change', handleProgramOrTeacherChange);
+    return () => {
+      unsub();
+      window.removeEventListener('collection_change_programs', handleProgramOrTeacherChange);
+      window.removeEventListener('collection_change_teachers', handleProgramOrTeacherChange);
+      window.removeEventListener('app_data_change', handleProgramOrTeacherChange);
+    };
   }, []);
 
-  // Consolidate all scheduled items from regular programs + manual schedules
+  // Consolidate all scheduled items STRICTLY from active school programs (برنامه‌های مدرسه مرجع و اساس است)
   const allScheduledItems = useMemo(() => {
     const items: ScheduledCourseItem[] = [];
 
-    // 1. From regular programs
     programs.forEach(p => {
+      if (!p || p.isDeleted || p.status === 'deleted' || p.status === 'inactive') return;
       const teacherName = (p.teacher || '').trim();
-      if (teacherName) {
-        items.push({
-          id: p.id,
-          title: p.title,
-          teacherName,
-          grade: p.grade || 'نامشخص',
-          days: getProgramDays(p),
-          time: p.time || 'نامشخص',
-          madrasRoom: p.madrasRoom || p.classroom || 'نامشخص',
-          type: p.type || 'اصلی',
-          isManual: false
-        });
+      if (
+        !teacherName ||
+        teacherName === 'تعیین نشده' ||
+        teacherName === 'مشخص نشده' ||
+        teacherName === 'نامشخص' ||
+        teacherName === 'ندارد' ||
+        teacherName === '-' ||
+        teacherName === '---'
+      ) {
+        return;
       }
-    });
 
-    // 2. From manual teacher schedules
-    manualSchedules.forEach(m => {
-      const teacherName = (m.teacherName || '').trim();
-      if (teacherName) {
-        items.push({
-          id: m.id,
-          title: m.title,
-          teacherName,
-          grade: m.grade || 'عمومی',
-          days: m.days && m.days.length > 0 ? m.days : (m.day ? [m.day] : []),
-          time: m.time || 'نامشخص',
-          madrasRoom: m.madrasRoom || 'نامشخص',
-          type: 'برنامه اختصاصی استاد',
-          isManual: true,
-          notes: m.notes
-        });
-      }
+      items.push({
+        id: p.id,
+        title: p.title,
+        teacherName,
+        grade: p.grade || 'نامشخص',
+        days: getProgramDays(p),
+        time: p.time || 'نامشخص',
+        madrasRoom: p.madrasRoom || p.classroom || 'نامشخص',
+        type: p.type || 'اصلی',
+        isManual: false
+      });
     });
 
     return items;
-  }, [programs, manualSchedules]);
+  }, [programs]);
 
   // Strictly filter and group ONLY teachers who:
   // 1) Are registered in the Teachers Bank (`teachers`)
-  // 2) Have at least one scheduled class/program
+  // 2) Have at least one active scheduled class in `programs` assigned to them
   const registeredTeachersWithClasses = useMemo(() => {
     const result: TeacherScheduleGroup[] = [];
 
-    teachers.forEach(teacherObj => {
-      if (!teacherObj.fullName) return;
+    // Map each scheduled item to its single best matching teacher in the bank
+    const teacherItemsMap = new Map<string, ScheduledCourseItem[]>();
+    allScheduledItems.forEach(item => {
+      const matchedTeacher = matchTeacherWithBank(item.teacherName, teachers);
+      if (matchedTeacher && matchedTeacher.id) {
+        const list = teacherItemsMap.get(matchedTeacher.id) || [];
+        list.push(item);
+        teacherItemsMap.set(matchedTeacher.id, list);
+      }
+    });
 
-      // Find all items belonging to this registered teacher
-      const matchedItems = allScheduledItems.filter(item => {
-        const matched = matchTeacherWithBank(item.teacherName, [teacherObj]);
-        return !!matched;
-      });
+    teachers.forEach(teacherObj => {
+      if (!teacherObj.fullName && !teacherObj.name) return;
+
+      const matchedItems = teacherItemsMap.get(teacherObj.id) || [];
 
       if (matchedItems.length > 0) {
         // Collect active days

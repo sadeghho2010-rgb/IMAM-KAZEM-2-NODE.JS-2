@@ -292,15 +292,15 @@ export default function TeacherPortal() {
   }, [currentUser, teachers]);
 
   /**
-   * All teaching programs assigned to this teacher (combining regular programs & manual schedules)
+   * All teaching programs assigned to this teacher (strictly derived from active school programs)
    */
   const teacherPrograms = useMemo(() => {
     if (!currentTeacherObj && !currentUser) return [];
 
     const list: Program[] = [];
 
-    // 1. From regular school programs
     programs.forEach(p => {
+      if (!p || p.isDeleted || p.status === 'deleted' || p.status === 'inactive') return;
       const isMatch = isProgramAssignedToTeacher(p, currentTeacherObj, currentUser);
       if (isMatch) {
         list.push({
@@ -310,26 +310,8 @@ export default function TeacherPortal() {
       }
     });
 
-    // 2. From manual teacher schedules
-    manualSchedules.forEach(m => {
-      const isMatch = isManualScheduleAssignedToTeacher(m, currentTeacherObj, currentUser);
-      if (isMatch) {
-        list.push({
-          id: m.id,
-          title: m.title,
-          type: 'counseling' as any,
-          teacher: m.teacherName,
-          grade: m.grade || 'عمومی',
-          days: m.days && m.days.length > 0 ? m.days : (m.day ? [m.day] : []),
-          time: m.time || 'نامشخص',
-          madrasRoom: m.madrasRoom || 'نامشخص',
-          notes: m.notes
-        });
-      }
-    });
-
     return list;
-  }, [programs, manualSchedules, currentTeacherObj, currentUser]);
+  }, [programs, currentTeacherObj, currentUser]);
 
   /**
    * Is this teacher a Counseling Teacher?
@@ -337,15 +319,6 @@ export default function TeacherPortal() {
   const isCounselingTeacher = useMemo(() => {
     if (!currentTeacherObj && !currentUser) return false;
 
-    // Check categories in teacher profile
-    if (currentTeacherObj?.categories) {
-      const hasCategory = currentTeacherObj.categories.some(cat => 
-        cat.includes('مشاوره') || cat === 'مشاوره اصول' || cat === 'مشاوره فقه' || cat === 'مشاوره فلسفه'
-      );
-      if (hasCategory) return true;
-    }
-
-    // Check programs
     const hasCounselingProgram = teacherPrograms.some(p => 
       p.title?.includes('مشاوره') || 
       (p.type as string) === 'مشاوره' || 
@@ -354,16 +327,7 @@ export default function TeacherPortal() {
     );
     if (hasCounselingProgram) return true;
 
-    // Check specialties
-    const spec = currentTeacherObj?.detailedSpecialties;
-    if (spec && (spec.usul?.length || spec.fiqh?.length || spec.falsafa?.length)) return true;
-
-    // Check currentUser flags and role titles
-    if ((currentUser as any)?.canEditCounseling || (currentUser as any)?.canViewCounseling) return true;
-    if (currentUser?.roleTitle?.includes('مشاوره')) return true;
-    if (currentUser?.fullName?.includes('مشاور') || currentUser?.name?.includes('مشاور')) return true;
-
-    return true; // Default to allowing counseling access for all teachers
+    return false;
   }, [currentTeacherObj, teacherPrograms, currentUser]);
 
   // Auto-switch directly into counseling registration for counseling teachers upon login
@@ -371,75 +335,24 @@ export default function TeacherPortal() {
     if (loadingState === 'success' && !hasAutoDirected) {
       if (isCounselingTeacher) {
         setActiveTab('counseling');
+      } else {
+        setActiveTab('schedule');
       }
       setHasAutoDirected(true);
     }
   }, [loadingState, isCounselingTeacher, hasAutoDirected]);
 
   /**
-   * All counseling courses taught by this teacher (Strict: ONLY counseling classes, never main classes)
+   * All counseling courses taught by this teacher (Strict: ONLY active counseling classes in school programs)
    */
   const counselingPrograms = useMemo(() => {
-    // 1. All explicit counseling programs taught by this teacher
-    const explicitCounseling = teacherPrograms.filter(p => 
+    return teacherPrograms.filter(p => 
       p.title?.includes('مشاوره') || 
       (p.type as string) === 'مشاوره' || 
       (p.type as string) === 'counseling' || 
       (p as any).category?.includes('مشاوره')
     );
-
-    if (explicitCounseling.length > 0) return explicitCounseling;
-
-    // 2. Dynamic grade slots based on teacher's managedGrades or default grades if teacher is marked as counselor
-    const teacherManagedGrades = currentTeacherObj?.managedGrades || (currentUser as any)?.managedGrades || [];
-    const teacherDisplayName = currentTeacherObj?.fullName || currentTeacherObj?.name || currentUser?.name || 'استاد مشاور';
-
-    if (teacherManagedGrades.length > 0) {
-      return teacherManagedGrades.map((g, idx) => ({
-        id: `counseling-${g}-${currentTeacherObj?.id || idx}`,
-        title: `کلاس مشاوره (${g})`,
-        type: 'مشاوره' as any,
-        teacher: teacherDisplayName,
-        grade: g,
-        days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
-        time: 'ساعت مشاوره',
-        madrasRoom: 'مدرس مشاوره'
-      }));
-    }
-
-    return [
-      {
-        id: `counseling-p7-${currentTeacherObj?.id || 'main'}`,
-        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۷)',
-        type: 'مشاوره' as any,
-        teacher: teacherDisplayName,
-        grade: 'پایه ۷',
-        days: ['شنبه', 'دوشنبه', 'چهارشنبه'],
-        time: 'ساعت مشاوره',
-        madrasRoom: 'مدرس مشاوره'
-      },
-      {
-        id: `counseling-p8-${currentTeacherObj?.id || 'main'}`,
-        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۸)',
-        type: 'مشاوره' as any,
-        teacher: teacherDisplayName,
-        grade: 'پایه ۸',
-        days: ['یکشنبه', 'سه‌شنبه'],
-        time: 'ساعت مشاوره',
-        madrasRoom: 'مدرس مشاوره'
-      },
-      {
-        id: `counseling-p9-${currentTeacherObj?.id || 'main'}`,
-        title: 'کلاس مشاوره و ارزیابی تحصیلی (پایه ۹ و ۱۰)',
-        type: 'مشاوره' as any,
-        teacher: teacherDisplayName,
-        grade: 'پایه ۹',
-        days: ['شنبه', 'چهارشنبه'],
-        time: 'ساعت مشاوره',
-        madrasRoom: 'مدرس مشاوره'
-      }
-    ];
-  }, [teacherPrograms, currentTeacherObj, currentUser]);
+  }, [teacherPrograms]);
 
   // Set default selected counseling course
   useEffect(() => {

@@ -79,13 +79,10 @@ export default function PassedCoursesManagement() {
   const [editingChapter, setEditingChapter] = useState<Partial<CurriculumChapter> | null>(null);
 
   // Load All Data
-  const loadAllData = async (syncPrograms = false) => {
+  const loadAllData = async (syncPrograms = false, forceCloud = false) => {
     try {
       if (syncPrograms) {
-        // Ensure seed data and purge non-allowed subjects / duplicates
-        await StudentCourseProgressService.ensureDefaultCurriculumData();
-        
-        // Synchronize active main school programs with course progress so programs are the single source of truth
+        await StudentCourseProgressService.ensureDefaultCurriculumData(forceCloud);
         await StudentCourseProgressService.syncAllProgramsWithCourseProgress();
       }
 
@@ -100,12 +97,12 @@ export default function PassedCoursesManagement() {
       ]);
 
       setStudents(stList.filter(s => s.isActive !== false));
-      setSubjects(subList);
-      setBooks(bkList);
-      setChapters(chList);
+      setSubjects(subList.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)));
+      setBooks(bkList.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)));
+      setChapters(chList.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)));
       setProgressRecords(prgList);
       setEnrollments(enrList);
-      setPrograms(progList);
+      setPrograms(progList.filter(p => !p.isDeleted && p.status !== 'deleted' && p.status !== 'inactive'));
     } catch (err) {
       console.error('Error loading curriculum data:', err);
     } finally {
@@ -114,24 +111,37 @@ export default function PassedCoursesManagement() {
   };
 
   useEffect(() => {
-    // Only perform the full sync on initial mount
     setIsLoading(true);
-    loadAllData(true);
+    loadAllData(true, true);
 
-    const handleDataChange = () => {
-      // For external events, reload data without re-triggering sync cascade
-      loadAllData(false);
+    const handleProgramOrEnrollmentChange = () => {
+      loadAllData(true, false);
     };
 
-    window.addEventListener('collection_change_programs', handleDataChange);
-    window.addEventListener('collection_change_enrollments', handleDataChange);
+    const handleDataChange = () => {
+      loadAllData(false, false);
+    };
+
+    const unsubscribe = localDb.subscribe(() => {
+      loadAllData(false, false);
+    });
+
+    window.addEventListener('collection_change_programs', handleProgramOrEnrollmentChange);
+    window.addEventListener('collection_change_enrollments', handleProgramOrEnrollmentChange);
     window.addEventListener('collection_change_student_course_progress', handleDataChange);
+    window.addEventListener('collection_change_curriculum_subjects', handleDataChange);
+    window.addEventListener('collection_change_curriculum_books', handleDataChange);
+    window.addEventListener('collection_change_curriculum_chapters', handleDataChange);
     window.addEventListener('app_data_change', handleDataChange);
 
     return () => {
-      window.removeEventListener('collection_change_programs', handleDataChange);
-      window.removeEventListener('collection_change_enrollments', handleDataChange);
+      unsubscribe();
+      window.removeEventListener('collection_change_programs', handleProgramOrEnrollmentChange);
+      window.removeEventListener('collection_change_enrollments', handleProgramOrEnrollmentChange);
       window.removeEventListener('collection_change_student_course_progress', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_subjects', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_books', handleDataChange);
+      window.removeEventListener('collection_change_curriculum_chapters', handleDataChange);
       window.removeEventListener('app_data_change', handleDataChange);
     };
   }, []);
@@ -162,6 +172,55 @@ export default function PassedCoursesManagement() {
     });
   }, [students, selectedGradeFilter, searchQuery]);
 
+  // Authoritative live map of which chapters each student is currently studying in active school programs (`programs`)
+  const activeEnrolledChaptersByStudent = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    const activeMainProgs = (programs || []).filter(
+      p => p && p.type === 'اصلی' && !p.isDeleted && p.status !== 'deleted' && p.status !== 'inactive'
+    );
+
+    activeMainProgs.forEach(prog => {
+      const resolved = StudentCourseProgressService.resolveProgramCurriculumTarget(prog, subjects, books, chapters);
+      const enrolledIds = new Set<string>();
+      if (Array.isArray(prog.studentIds)) {
+        prog.studentIds.forEach(sid => {
+          if (sid) enrolledIds.add(String(sid).trim());
+        });
+      } else {
+        (enrollments || [])
+          .filter(e => String(e.programId) === String(prog.id) && (e as any).status !== 'cancelled' && (e as any).status !== 'deleted')
+          .forEach(e => {
+            if (e.studentId) enrolledIds.add(String(e.studentId).trim());
+          });
+      }
+
+      enrolledIds.forEach(sid => {
+        const set = map.get(sid) || new Set<string>();
+        if (resolved.resolvedChapterId) set.add(resolved.resolvedChapterId);
+        if (resolved.resolvedChapterTitle) set.add(`title:${resolved.resolvedChapterTitle.trim()}`);
+        if (prog.id) set.add(`prog:${prog.id}`);
+        map.set(sid, set);
+      });
+    });
+
+    return map;
+  }, [programs, enrollments, subjects, books, chapters]);
+
+  // Helper: 100% authoritative chapter status for a student
+  // 'passed' if marked passed; 'in_progress' ONLY if currently enrolled in an active school program for this chapter; otherwise 'remaining'
+  const getEffectiveChapterStatus = (studentId: string, ch: CurriculumChapter): CourseProgressStatus => {
+    const studentProgs = progressRecords.filter(p => p.studentId === studentId);
+    const progRec = studentProgs.find(p => p.chapterId === ch.id || p.chapterTitle === ch.title);
+    if (progRec?.status === 'passed') {
+      return 'passed';
+    }
+    const activeSet = activeEnrolledChaptersByStudent.get(String(studentId).trim());
+    if (activeSet && (activeSet.has(ch.id) || activeSet.has(`title:${ch.title.trim()}`))) {
+      return 'in_progress';
+    }
+    return 'remaining';
+  };
+
   // Compute student summary progress stats map (Count of COURSES, NO CREDITS / NO UNITHA)
   const studentStatsMap = useMemo(() => {
     const map: Record<string, {
@@ -176,25 +235,36 @@ export default function PassedCoursesManagement() {
 
     students.forEach(s => {
       const studentProgs = progressRecords.filter(p => p.studentId === s.id);
+      const activeSet = activeEnrolledChaptersByStudent.get(String(s.id).trim());
 
       let passedCount = 0;
       let inProgressCount = 0;
 
       chapters.forEach(ch => {
-        const progRec = studentProgs.find(p => p.chapterId === ch.id || p.chapterTitle === ch.title);
-        if (progRec?.status === 'passed') {
+        const status = getEffectiveChapterStatus(s.id, ch);
+        if (status === 'passed') {
           passedCount++;
-        } else if (progRec?.status === 'in_progress') {
+        } else if (status === 'in_progress') {
           inProgressCount++;
         }
       });
 
       // Count custom passed courses that might not be in standard chapter list
-      const customPassed = studentProgs.filter(p => p.status === 'passed' && !chapters.some(ch => ch.id === p.chapterId));
+      const customPassed = studentProgs.filter(p => p.status === 'passed' && !chapters.some(ch => ch.id === p.chapterId || ch.title === p.chapterTitle));
       passedCount += customPassed.length;
 
-      // Count custom in-progress courses that might not be in standard chapter list
-      const customInProgress = studentProgs.filter(p => p.status === 'in_progress' && !chapters.some(ch => ch.id === p.chapterId));
+      // Count custom in-progress courses ONLY if backed by an active school program where the student is enrolled
+      const customInProgress = studentProgs.filter(
+        p =>
+          p.status === 'in_progress' &&
+          !chapters.some(ch => ch.id === p.chapterId || ch.title === p.chapterTitle) &&
+          activeSet &&
+          (
+            (p.programId && activeSet.has(`prog:${p.programId}`)) ||
+            (p.chapterId && activeSet.has(p.chapterId)) ||
+            (p.chapterTitle && activeSet.has(`title:${p.chapterTitle.trim()}`))
+          )
+      );
       inProgressCount += customInProgress.length;
 
       const remainingCount = Math.max(0, totalChaptersCount - passedCount);
@@ -211,7 +281,7 @@ export default function PassedCoursesManagement() {
     });
 
     return map;
-  }, [students, chapters, progressRecords]);
+  }, [students, chapters, progressRecords, activeEnrolledChaptersByStudent]);
 
   // Total System Stats (NO CREDITS)
   const systemTotalStats = useMemo(() => {
@@ -581,13 +651,28 @@ export default function PassedCoursesManagement() {
           await localDb.deleteDoc('curriculum_books', b.id);
         }
         const childChaps = chapters.filter(c => c.subjectId === id || c.subjectTitle === title || childBookIds.has(c.bookId));
+        const childChapIds = new Set(childChaps.map(c => c.id));
         for (const ch of childChaps) {
           await localDb.deleteDoc('curriculum_chapters', ch.id);
         }
+        const orphanProg = progressRecords.filter(p => p.subjectId === id || p.subjectTitle === title || childBookIds.has(p.bookId) || childChapIds.has(p.chapterId));
+        for (const op of orphanProg) {
+          await localDb.deleteDoc('student_course_progress', op.id);
+        }
       } else if (collection === 'curriculum_books') {
         const childChaps = chapters.filter(c => c.bookId === id || c.bookTitle === title);
+        const childChapIds = new Set(childChaps.map(c => c.id));
         for (const ch of childChaps) {
           await localDb.deleteDoc('curriculum_chapters', ch.id);
+        }
+        const orphanProg = progressRecords.filter(p => p.bookId === id || p.bookTitle === title || childChapIds.has(p.chapterId));
+        for (const op of orphanProg) {
+          await localDb.deleteDoc('student_course_progress', op.id);
+        }
+      } else if (collection === 'curriculum_chapters') {
+        const orphanProg = progressRecords.filter(p => p.chapterId === id || p.chapterTitle === title);
+        for (const op of orphanProg) {
+          await localDb.deleteDoc('student_course_progress', op.id);
         }
       }
 
@@ -1306,8 +1391,7 @@ export default function PassedCoursesManagement() {
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {bookChapters.map(chap => {
-                                  const progRec = progressRecords.find(p => p.studentId === selectedStudentForModal.id && (p.chapterId === chap.id || p.chapterTitle === chap.title));
-                                  const currentStatus: CourseProgressStatus = progRec?.status || 'remaining';
+                                  const currentStatus: CourseProgressStatus = getEffectiveChapterStatus(selectedStudentForModal.id, chap);
 
                                   return (
                                     <div key={chap.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">

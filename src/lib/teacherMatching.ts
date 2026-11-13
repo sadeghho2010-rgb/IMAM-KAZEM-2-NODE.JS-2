@@ -151,7 +151,8 @@ export function findMatchingTeacher(
 }
 
 /**
- * Checks whether a given Program is assigned to a teacher using ID, teacherCode, or normalized names.
+ * Checks whether a given Program is assigned to a teacher using authoritative program.teacher name (and teacherId only when consistent).
+ * Strictly ignores deleted, inactive, or unassigned ('تعیین نشده') programs.
  */
 export function isProgramAssignedToTeacher(
   program: Program,
@@ -159,42 +160,52 @@ export function isProgramAssignedToTeacher(
   currentUser?: AppUser | any
 ): boolean {
   if (!program) return false;
-
-  const progTeacherId = (program as any).teacherId;
-  const progTeacherName = program.teacher || (program as any).teacherName || '';
-  const progCleanTeacher = normalizeTeacherName(progTeacherName);
-
-  // 1. Direct ID match if available on program
-  if (teacher && progTeacherId) {
-    if (progTeacherId === teacher.id || (teacher.teacherCode && progTeacherId === teacher.teacherCode)) {
-      return true;
-    }
+  if (program.isDeleted || program.status === 'deleted' || program.status === 'inactive') {
+    return false;
   }
 
-  // 2. Match with Teacher object names
+  const progTeacherName = String(program.teacher || (program as any).teacherName || '').trim();
+  const progCleanTeacher = normalizeTeacherName(progTeacherName);
+
+  // If teacher is explicitly unassigned in Programs, never assign to any teacher
+  if (
+    !progCleanTeacher ||
+    progCleanTeacher === 'تعیین نشده' ||
+    progCleanTeacher === 'مشخص نشده' ||
+    progCleanTeacher === 'نامشخص' ||
+    progCleanTeacher === 'ندارد' ||
+    progCleanTeacher === '-' ||
+    progCleanTeacher === '---'
+  ) {
+    return false;
+  }
+
+  // 1. Match with Teacher object name (authoritative field edited in Programs.tsx)
   if (teacher) {
     const tCleanName = normalizeTeacherName(teacher.fullName || teacher.name || '');
     if (tCleanName && progCleanTeacher) {
-      if (
-        tCleanName === progCleanTeacher ||
-        tCleanName.includes(progCleanTeacher) ||
-        progCleanTeacher.includes(tCleanName)
-      ) {
+      if (tCleanName === progCleanTeacher) {
         return true;
+      }
+      if (tCleanName.length >= 3 && progCleanTeacher.length >= 3) {
+        if (tCleanName.includes(progCleanTeacher) || progCleanTeacher.includes(tCleanName)) {
+          return true;
+        }
       }
     }
   }
 
-  // 3. Match with Logged-in User name as fallback
+  // 2. Match with Logged-in User name if teacher profile not linked yet
   if (currentUser) {
     const uCleanName = normalizeTeacherName(currentUser.fullName || currentUser.name || '');
     if (uCleanName && progCleanTeacher) {
-      if (
-        uCleanName === progCleanTeacher ||
-        uCleanName.includes(progCleanTeacher) ||
-        progCleanTeacher.includes(uCleanName)
-      ) {
+      if (uCleanName === progCleanTeacher) {
         return true;
+      }
+      if (uCleanName.length >= 3 && progCleanTeacher.length >= 3) {
+        if (uCleanName.includes(progCleanTeacher) || progCleanTeacher.includes(uCleanName)) {
+          return true;
+        }
       }
     }
   }

@@ -27,7 +27,18 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, StudyPeriod, PeriodicStudyLog, Todo, WorkflowItem, Program, Enrollment } from '../../types';
-import { getLogMetrics, calculatePeriodAverages, isStudentExempt, getStudyWarningStatus, StudyWarningStatus } from './studyUtils';
+import {
+  getLogMetrics,
+  calculatePeriodAverages,
+  isStudentExempt,
+  getStudyWarningStatus,
+  StudyWarningStatus,
+  getAllSystemGrades,
+  normalizeGradeLabel,
+  isCoreCurriculumProgram,
+  isStudentEnrolledInProgram,
+  buildStudentCandidateIds
+} from './studyUtils';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
@@ -71,6 +82,7 @@ interface PeriodViewTableProps {
   selectedStudentId: string | null;
   onSelectStudent: (studentId: string) => void;
   onUpdateFollowUp?: (studentId: string, currentStatus?: string) => void;
+  onOpenStudentCourseModal?: (student: Student, periodId?: string) => void;
 }
 
 export default function PeriodViewTable({
@@ -78,7 +90,8 @@ export default function PeriodViewTable({
   students,
   allLogs,
   selectedStudentId,
-  onSelectStudent
+  onSelectStudent,
+  onOpenStudentCourseModal
 }: PeriodViewTableProps) {
   const { currentUser } = useAuth();
   const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
@@ -91,7 +104,7 @@ export default function PeriodViewTable({
     setTimeout(() => setCopiedPhoneId(null), 2000);
   };
 
-  const [displayMode, setDisplayMode] = useState<TableDisplayMode>('ALL_SPLIT');
+  const [displayMode, setDisplayMode] = useState<TableDisplayMode>('AGGREGATED_TOTALS');
   const [warningFilter, setWarningFilter] = useState<WarningFilterType>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>('ALL');
@@ -104,17 +117,20 @@ export default function PeriodViewTable({
   useEffect(() => {
     const loadAcademicData = async () => {
       try {
-        const [progs, enr] = await Promise.all([
+        const [progs, enr, courseEnr] = await Promise.all([
           localDb.getDocs<Program>('programs'),
-          localDb.getDocs<Enrollment>('enrollments')
+          localDb.getDocs<Enrollment>('enrollments'),
+          localDb.getDocs<Enrollment>('course_enrollments')
         ]);
         setPrograms(progs || []);
-        setEnrollments(enr || []);
+        setEnrollments([...(enr || []), ...(courseEnr || [])]);
       } catch (e) {
         console.error('Error loading programs/enrollments in PeriodViewTable:', e);
       }
     };
     loadAcademicData();
+    const unsub = localDb.subscribe(loadAcademicData);
+    return () => unsub();
   }, []);
 
   const [cols, setCols] = useState<PeriodColumnsVisibility>({
@@ -310,27 +326,15 @@ export default function PeriodViewTable({
   // Overall Period Averages
   const overallAvg = calculatePeriodAverages(period.id, allLogs);
 
-  // Unique grades for filter
-  const uniqueGrades = Array.from(new Set(students.map(s => s.grade).filter(Boolean))) as string[];
+  // All system grades (always includes پایه ۷، ۸، ۹، ۱۰)
+  const uniqueGrades = useMemo(() => getAllSystemGrades(students), [students]);
 
-  // Helper to map student to their main enrolled courses
-  const getStudentCourses = (studentId: string, studentGrade?: string) => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-    const enrolledProgIds = new Set(
-      enrollments.filter(e => e.studentId === studentId && e.status !== 'deleted' && e.status !== 'inactive').map(e => e.programId)
+  // Helper to map student to their main enrolled courses (excluding deleted or unenrolled courses)
+  const getStudentCourses = (student: Student) => {
+    const candidateIds = buildStudentCandidateIds(student);
+    return programs.filter(
+      p => isCoreCurriculumProgram(p) && isStudentEnrolledInProgram(p, student, enrollments, candidateIds)
     );
-    let myCourses = activeProgs.filter(p => enrolledProgIds.has(p.id));
-    if (myCourses.length === 0 && studentGrade) {
-      myCourses = activeProgs.filter(p => !p.grade || p.grade === studentGrade || p.grade === 'همه پایه‌ها');
-    }
-    return myCourses.filter(p => {
-      if (p.type && p.type !== 'اصلی') return false;
-      const typeStr = (p.type || '').trim();
-      const titleStr = (p.title || '').trim();
-      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
-      if (isExcluded) return false;
-      return p.type === 'اصلی' || !p.type;
-    });
   };
 
   // Precompute row data with warning statuses for filtering and rendering
@@ -350,7 +354,7 @@ export default function PeriodViewTable({
       });
       const metrics = getLogMetrics(log);
       const warningStatus = getStudyWarningStatus(period, log, student);
-      const studentCourses = getStudentCourses(student.id, student.grade);
+      const studentCourses = getStudentCourses(student);
 
       const isStudentIndividuallyExempt = (period.exemptStudentIds || []).includes(student.id);
       const isGradeExempt = (period.exemptGrades || []).includes(student.grade || '');
@@ -426,7 +430,7 @@ export default function PeriodViewTable({
     return studentRows.filter(r => {
       const matchSearch = r.student.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         (r.student.nationalId && r.student.nationalId.includes(searchTerm));
-      const matchGrade = gradeFilter === 'ALL' || r.student.grade === gradeFilter;
+      const matchGrade = gradeFilter === 'ALL' || normalizeGradeLabel(r.student.grade) === gradeFilter;
 
       let matchWarning = true;
       if (warningFilter === 'COMMENDED_ONLY') {
@@ -560,29 +564,17 @@ export default function PeriodViewTable({
       {/* Controls: Display Mode Tabs, Warning Filters & Search & Export */}
       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* View Mode Selector */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setDisplayMode('ALL_SPLIT')}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                displayMode === 'ALL_SPLIT' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Layers size={13} />
-              <span>تفکیک دروس اصلی + آزاد (تفصیلی)</span>
-            </button>
-
+          {/* View Mode Selector: Default is AGGREGATED_TOTALS, and ALL_SPLIT is placed at the end */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
             <button
               type="button"
               onClick={() => setDisplayMode('AGGREGATED_TOTALS')}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                displayMode === 'AGGREGATED_TOTALS' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'AGGREGATED_TOTALS' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               )}
             >
-              <Calculator size={13} />
+              <Calculator size={14} />
               <span>مجموع دروس اصلی + آزاد + کل (تجمیعی)</span>
             </button>
 
@@ -590,8 +582,8 @@ export default function PeriodViewTable({
               type="button"
               onClick={() => setDisplayMode('TOTAL_ONLY')}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                displayMode === 'TOTAL_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'TOTAL_ONLY' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               )}
             >
               <span>فقط مجموع کل</span>
@@ -601,11 +593,11 @@ export default function PeriodViewTable({
               type="button"
               onClick={() => setDisplayMode('STUDY_ONLY')}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                displayMode === 'STUDY_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'STUDY_ONLY' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               )}
             >
-              <BookOpen size={13} />
+              <BookOpen size={14} />
               <span>فقط مطالعه</span>
             </button>
 
@@ -613,12 +605,24 @@ export default function PeriodViewTable({
               type="button"
               onClick={() => setDisplayMode('DISCUSSION_ONLY')}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                displayMode === 'DISCUSSION_ONLY' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'DISCUSSION_ONLY' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               )}
             >
-              <MessageSquare size={13} />
+              <MessageSquare size={14} />
               <span>فقط مباحثه</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDisplayMode('ALL_SPLIT')}
+              className={cn(
+                "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                displayMode === 'ALL_SPLIT' ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              )}
+            >
+              <Layers size={14} />
+              <span>تفکیک دروس اصلی + آزاد (تفصیلی)</span>
             </button>
           </div>
 
@@ -848,18 +852,16 @@ export default function PeriodViewTable({
 
           {/* Search Box & Grade Select */}
           <div className="flex items-center gap-2">
-            {uniqueGrades.length > 0 && (
-              <select
-                value={gradeFilter}
-                onChange={(e) => setGradeFilter(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
-              >
-                <option value="ALL">همه پایه‌ها</option>
-                {uniqueGrades.map(g => (
-                  <option key={g} value={g}>پایه {g}</option>
-                ))}
-              </select>
-            )}
+            <select
+              value={gradeFilter}
+              onChange={(e) => setGradeFilter(e.target.value)}
+              className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer"
+            >
+              <option value="ALL">همه پایه‌ها ({uniqueGrades.join('، ')})</option>
+              {uniqueGrades.map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
 
             <div className="relative min-w-[180px]">
               <input
@@ -1055,11 +1057,30 @@ export default function PeriodViewTable({
                       />
                     </td>
                     <td className="px-3 py-3.5 text-slate-400 text-[11px] font-bold text-center">{index + 1}</td>
-                    <td className="px-4 py-3.5 font-bold text-slate-800 flex items-center gap-2">
-                      {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
-                      <span>{student.name}</span>
+                    <td
+                      className="px-4 py-3.5 font-black text-slate-900 hover:text-indigo-600 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectStudent(student.id);
+                        onOpenStudentCourseModal?.(student, period.id);
+                      }}
+                      title="کلیک جهت مشاهده کارنامه تفصیلی دروس و مطالعه آزاد این طلبه"
+                    >
+                      <div className="flex items-center gap-2 group">
+                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0" />}
+                        <span className="underline decoration-dotted decoration-indigo-300 underline-offset-4 group-hover:decoration-indigo-600">
+                          {student.name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-black opacity-80 group-hover:opacity-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                          ریز دروس
+                        </span>
+                      </div>
                     </td>
-                    {cols.grade && <td className="px-3 py-3.5 text-center text-slate-500">{student.grade || '---'}</td>}
+                    {cols.grade && (
+                      <td className="px-3 py-3.5 text-center font-bold text-slate-600">
+                        {normalizeGradeLabel(student.grade) || '---'}
+                      </td>
+                    )}
 
                     {/* Needs Follow-Up Column */}
                     {cols.needsFollowUp && (

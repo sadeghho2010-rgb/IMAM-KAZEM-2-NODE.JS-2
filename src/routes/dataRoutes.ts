@@ -369,19 +369,6 @@ router.post('/data/:collection', async (req: Request, res: Response) => {
       processedIdempotencyKeys.set(idempotencyKey, { timestamp: Date.now(), result: resPayload });
     }
 
-    if (callerUser) {
-      logServerAudit({
-        userId: callerUser.userId,
-        username: callerUser.username,
-        userRole: callerUser.role,
-        action: 'DATA_WRITE',
-        entityType: collection,
-        entityId: saveRes.id,
-        description: `ثبت یا ویرایش رکورد در کالکشن ${collection} توسط ${callerUser.username}`,
-        ipAddress: getClientIp(req)
-      }).catch(() => {});
-    }
-
     return res.json(resPayload);
   } catch (err) {
     logger.error(`Error writing to collection ${collection}:`, err);
@@ -453,7 +440,7 @@ router.delete('/data/:collection/:id', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 
@@ -466,19 +453,6 @@ router.delete('/data/:collection/:id', async (req: Request, res: Response) => {
     const delRes = await serverDeleteDoc(collection, id, callerUser);
     if (!delRes.success) {
       return res.status(500).json({ success: false, message: delRes.error || 'خطا در حذف داده' });
-    }
-
-    if (callerUser) {
-      logServerAudit({
-        userId: callerUser.userId,
-        username: callerUser.username,
-        userRole: callerUser.role,
-        action: 'DATA_DELETE',
-        entityType: collection,
-        entityId: id,
-        description: `حذف رکورد ${id} از کالکشن ${collection} توسط ${callerUser.username}`,
-        ipAddress: getClientIp(req)
-      }).catch(() => {});
     }
 
     return res.json({ success: true, message: 'رکورد با موفقیت حذف شد.' });
@@ -497,7 +471,7 @@ router.post('/data/:collection/batch', async (req: Request, res: Response) => {
   if (token) {
     const verification = verifyAccessToken(token);
     if (verification.valid && verification.decoded) {
-      callerUser = verification.decoded;
+      callerUser = await getEnrichedCallerUser(verification.decoded);
     }
   }
 

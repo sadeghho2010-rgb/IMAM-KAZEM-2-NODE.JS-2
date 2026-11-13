@@ -19,6 +19,7 @@ import { Program, AttendanceSessionLog, StudentAttendanceDetail, AttendanceStatu
 import { localDb } from '../../lib/localDb';
 import { getTodayShamsi, getShamsiDayOfWeek, toEnglishDigits, getConsolidatedSessionLog } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
+import { isProgramActiveAndValid, isStudentEnrolledInProgram, buildStudentCandidateIds } from '../study/studyUtils';
 
 interface StudentSelfReportingModalProps {
   isOpen: boolean;
@@ -53,30 +54,23 @@ export const StudentSelfReportingModal: React.FC<StudentSelfReportingModalProps>
   const studentName = String(studentObj?.name || currentUser?.studentName || currentUser?.fullName || currentUser?.name || 'طلبه گرامی').trim();
   const studentGrade = String(studentObj?.grade || currentUser?.gradeLabel || '').trim();
 
-  // Strict Course Filter: ONLY active self-reporting courses this student is explicitly enrolled in
+  // Strict Course Filter: ONLY active self-reporting courses this student is currently enrolled in
   const selfReportingCourses = useMemo(() => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+    const idSet = buildStudentCandidateIds(studentObj, [
+      studentId,
+      studentUsername,
+      studentNationalId,
+      currentUser?.id,
+      currentUser?.studentId,
+      currentUser?.linkedStudentId
+    ].filter(Boolean));
 
-    return activeProgs.filter(p => {
+    return programs.filter(p => {
+      if (!isProgramActiveAndValid(p)) return false;
       if (p.attendanceType !== 'self_reporting') return false;
-
-      const inEnroll = enrollments.some(e => 
-        String(e.programId) === String(p.id) && (
-          String(e.studentId) === String(studentId) ||
-          String(e.studentId) === String(studentUsername)
-        ) && e.status !== 'deleted' && e.status !== 'inactive'
-      );
-      if (inEnroll) return true;
-
-      const inArray = Array.isArray((p as any).studentIds) && (
-        (p as any).studentIds.includes(String(studentId)) ||
-        (p as any).studentIds.includes(String(studentUsername))
-      );
-      if (inArray) return true;
-
-      return false;
+      return isStudentEnrolledInProgram(p, studentObj, enrollments, idSet);
     });
-  }, [programs, enrollments, studentId, studentUsername]);
+  }, [programs, enrollments, studentObj, studentId, studentUsername, studentNationalId, currentUser]);
 
   // Set default selected program
   useEffect(() => {

@@ -37,7 +37,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   onNavigateTab,
   onSwitchToDesktopView
 }) => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, isTabAllowed } = useAuth();
   const [todayPrograms, setTodayPrograms] = useState<Program[]>([]);
   const [allProgramsList, setAllProgramsList] = useState<Program[]>([]);
   const [enrollmentsList, setEnrollmentsList] = useState<any[]>([]);
@@ -221,47 +221,49 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
       <div className="p-2.5 sm:p-3.5 space-y-2.5">
         {/* 2. Sleek Attendance Banner (۱۵٪ تا ۲۰٪ کوچک‌تر و فشرده‌تر شده جهت دسترسی فوری به ۴ کارت اصلی بدون نیاز به اسکرول) */}
-        {isRepresentative ? (
-          <div 
-            onClick={() => onNavigateTab('attendance')}
-            className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-sm border border-emerald-400/40 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden"
-          >
-            <div className="space-y-0.5 relative z-10 min-w-0 pr-0.5">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[8.5px] font-black border border-white/20">
-                  <Sparkles size={8} className="text-amber-300 animate-spin" />
-                  <span>نماینده کلاس</span>
-                </span>
-                <h3 className="text-xs sm:text-sm font-black text-white truncate">
-                  ثبت سریع حضور و غیاب: «{myRepProgramTitle || 'کلاس درس'}»
-                </h3>
+        {isTabAllowed('attendance') && (
+          isRepresentative ? (
+            <div 
+              onClick={() => onNavigateTab('attendance')}
+              className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-sm border border-emerald-400/40 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden"
+            >
+              <div className="space-y-0.5 relative z-10 min-w-0 pr-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[8.5px] font-black border border-white/20">
+                    <Sparkles size={8} className="text-amber-300 animate-spin" />
+                    <span>نماینده کلاس</span>
+                  </span>
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                    ثبت سریع حضور و غیاب: «{myRepProgramTitle || 'کلاس درس'}»
+                  </h3>
+                </div>
+                <p className="text-[9.5px] text-emerald-100 font-medium truncate">
+                  ثبت حاضر/غایب کلیه اعضای کلاس با ۱ لمس مستقیم
+                </p>
               </div>
-              <p className="text-[9.5px] text-emerald-100 font-medium truncate">
-                ثبت حاضر/غایب کلیه اعضای کلاس با ۱ لمس مستقیم
-              </p>
+              <div className="w-7 h-7 rounded-lg bg-white text-emerald-800 flex items-center justify-center font-black shadow-xs shrink-0 group-hover:scale-105 transition-transform border border-emerald-100 relative z-10">
+                <CheckSquare size={15} />
+              </div>
             </div>
-            <div className="w-7 h-7 rounded-lg bg-white text-emerald-800 flex items-center justify-center font-black shadow-xs shrink-0 group-hover:scale-105 transition-transform border border-emerald-100 relative z-10">
-              <CheckSquare size={15} />
+          ) : (
+            <div 
+              onClick={() => onNavigateTab('attendance')}
+              className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white shadow-xs border border-indigo-500/25 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden -mt-0.5"
+            >
+              <div className="space-y-0.5 relative z-10 min-w-0 pr-0.5">
+                <h3 className="text-xs sm:text-sm font-black text-white truncate flex items-center gap-1.5">
+                  <CheckSquare size={14} className="text-emerald-400" />
+                  <span>کارنامه حضور و غیاب من</span>
+                </h3>
+                <p className="text-[9.5px] text-indigo-200/80 font-medium truncate">
+                  مشاهده وضعیت دقیق حضور، تاخیرها، غیبت‌ها و جلسات دروس
+                </p>
+              </div>
+              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/10 text-amber-300 flex items-center justify-center font-black shadow-xs shrink-0 group-hover:scale-105 transition-transform border border-white/20 relative z-10">
+                <CheckSquare size={14} />
+              </div>
             </div>
-          </div>
-        ) : (
-          <div 
-            onClick={() => onNavigateTab('attendance')}
-            className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white shadow-xs border border-indigo-500/25 flex items-center justify-between cursor-pointer active:scale-[0.98] transition-all group relative overflow-hidden -mt-0.5"
-          >
-            <div className="space-y-0.5 relative z-10 min-w-0 pr-0.5">
-              <h3 className="text-xs sm:text-sm font-black text-white truncate flex items-center gap-1.5">
-                <CheckSquare size={14} className="text-emerald-400" />
-                <span>کارنامه حضور و غیاب من</span>
-              </h3>
-              <p className="text-[9.5px] text-indigo-200/80 font-medium truncate">
-                مشاهده وضعیت دقیق حضور، تاخیرها، غیبت‌ها و جلسات دروس
-              </p>
-            </div>
-            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-white/10 text-amber-300 flex items-center justify-center font-black shadow-xs shrink-0 group-hover:scale-105 transition-transform border border-white/20 relative z-10">
-              <CheckSquare size={14} />
-            </div>
-          </div>
+          )
         )}
 
         {/* 3. FOUR CORE VIBRANT COLORFUL CARDS (۴ کارت اصلی: ساعت مطالعه، ثبت درخواست، ثبت حضور نماینده، ثبت خوداظهاری) */}
@@ -278,110 +280,118 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
           <div className="grid grid-cols-2 gap-2.5">
             {/* Card 1: ساعت مطالعه من */}
-            <div
-              onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-cyan-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-study"
-            >
-              <div className="absolute -top-6 -right-6 w-16 h-16 bg-cyan-400/20 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <BookOpen size={16} />
+            {isTabAllowed('stats') && (
+              <div
+                onClick={() => onNavigateTab('stats')}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-cyan-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-study"
+              >
+                <div className="absolute -top-6 -right-6 w-16 h-16 bg-cyan-400/20 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-cyan-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                    <BookOpen size={16} />
+                  </div>
+                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
+                    مطالعه
+                  </span>
                 </div>
-                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-100 border border-cyan-400/40 backdrop-blur-xs">
-                  مطالعه
-                </span>
+                <div className="relative z-10 space-y-0.5 pt-1">
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ساعت مطالعه من</h3>
+                  <p className="text-[8.5px] text-cyan-100/90 font-medium truncate">ثبت کارکرد و گزارش ساعات</p>
+                </div>
               </div>
-              <div className="relative z-10 space-y-0.5 pt-1">
-                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ساعت مطالعه من</h3>
-                <p className="text-[8.5px] text-cyan-100/90 font-medium truncate">ثبت کارکرد و گزارش ساعات</p>
-              </div>
-            </div>
+            )}
 
             {/* Card 2: ثبت تقاضا و درخواست */}
-            <div
-              onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-emerald-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-requests"
-            >
-              <div className="absolute -top-6 -right-6 w-16 h-16 bg-emerald-400/20 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <Send size={15} />
+            {isTabAllowed('student-requests') && (
+              <div
+                onClick={() => onNavigateTab('student-requests')}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-emerald-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] student-card-wave-requests"
+              >
+                <div className="absolute -top-6 -right-6 w-16 h-16 bg-emerald-400/20 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-emerald-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                    <Send size={15} />
+                  </div>
+                  {myRequestsCount > 0 ? (
+                    <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-2xs">
+                      {myRequestsCount} جاری
+                    </span>
+                  ) : (
+                    <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
+                      کارتابل
+                    </span>
+                  )}
                 </div>
-                {myRequestsCount > 0 ? (
-                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-2xs">
-                    {myRequestsCount} جاری
-                  </span>
-                ) : (
-                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-100 border border-emerald-400/40 backdrop-blur-xs">
-                    کارتابل
-                  </span>
-                )}
+                <div className="relative z-10 space-y-0.5 pt-1">
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت تقاضا و درخواست</h3>
+                  <p className="text-[8.5px] text-emerald-100/90 font-medium truncate">مرخصی، گواهی و امور رفاهی</p>
+                </div>
               </div>
-              <div className="relative z-10 space-y-0.5 pt-1">
-                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت تقاضا و درخواست</h3>
-                <p className="text-[8.5px] text-emerald-100/90 font-medium truncate">مرخصی، گواهی و امور رفاهی</p>
-              </div>
-            </div>
+            )}
 
             {/* Card 3: ثبت حضور و غیاب (مخصوص نمایندگان کلاس) */}
-            <div
-              onClick={() => {
-                if (!isRepresentative) {
-                  alert("شما در حال حاضر نماینده هیچ کلاسی نیستید. ثبت حضور و غیاب کلاس‌ها فقط توسط نماینده منتخب هر درس یا مسئولین آموزش انجام می‌شود.");
-                  return;
-                }
-                onNavigateTab('rep-attendance');
-              }}
-              className={cn(
-                "relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px]",
-                isRepresentative
-                  ? "bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900 border-purple-400/30"
-                  : "bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-slate-700/40 opacity-70"
-              )}
-            >
-              <div className="absolute -top-6 -right-6 w-16 h-16 bg-purple-400/20 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-purple-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <CheckSquare size={16} />
-                </div>
-                <span className={cn(
-                  "text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full border backdrop-blur-xs",
+            {isTabAllowed('rep-attendance') && (
+              <div
+                onClick={() => {
+                  if (!isRepresentative) {
+                    alert("شما در حال حاضر نماینده هیچ کلاسی نیستید. ثبت حضور و غیاب کلاس‌ها فقط توسط نماینده منتخب هر درس یا مسئولین آموزش انجام می‌شود.");
+                    return;
+                  }
+                  onNavigateTab('rep-attendance');
+                }}
+                className={cn(
+                  "relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px]",
                   isRepresentative
-                    ? "bg-purple-500/30 text-purple-100 border-purple-400/40"
-                    : "bg-slate-700/50 text-slate-300 border-slate-600/40"
-                )}>
-                  {isRepresentative ? 'نمایندگان' : 'غیرفعال'}
-                </span>
+                    ? "bg-gradient-to-br from-purple-800 via-indigo-900 to-slate-900 border-purple-400/30"
+                    : "bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-slate-700/40 opacity-70"
+                )}
+              >
+                <div className="absolute -top-6 -right-6 w-16 h-16 bg-purple-400/20 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-purple-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                    <CheckSquare size={16} />
+                  </div>
+                  <span className={cn(
+                    "text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full border backdrop-blur-xs",
+                    isRepresentative
+                      ? "bg-purple-500/30 text-purple-100 border-purple-400/40"
+                      : "bg-slate-700/50 text-slate-300 border-slate-600/40"
+                  )}>
+                    {isRepresentative ? 'نمایندگان' : 'غیرفعال'}
+                  </span>
+                </div>
+                <div className="relative z-10 space-y-0.5 pt-1">
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت حضور و غیاب</h3>
+                  <p className="text-[8.5px] text-purple-200/90 font-bold truncate">
+                    {isRepresentative ? (myRepProgramTitle ? `کلاس: ${myRepProgramTitle}` : 'مخصوص نمایندگان کلاس') : 'فقط مخصوص نماینده کلاس'}
+                  </p>
+                </div>
               </div>
-              <div className="relative z-10 space-y-0.5 pt-1">
-                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت حضور و غیاب</h3>
-                <p className="text-[8.5px] text-purple-200/90 font-bold truncate">
-                  {isRepresentative ? (myRepProgramTitle ? `کلاس: ${myRepProgramTitle}` : 'مخصوص نمایندگان کلاس') : 'فقط مخصوص نماینده کلاس'}
-                </p>
-              </div>
-            </div>
+            )}
 
             {/* Card 4: ثبت خوداظهاری (مخصوص دروس دارای خوداظهاری) */}
-            <div
-              onClick={() => {
-                onNavigateTab('self-reporting');
-              }}
-              className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-teal-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
-            >
-              <div className="absolute -top-6 -right-6 w-16 h-16 bg-teal-400/20 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between relative z-10">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-teal-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
-                  <Sparkles size={16} />
+            {isTabAllowed('self-reporting') && (
+              <div
+                onClick={() => {
+                  onNavigateTab('self-reporting');
+                }}
+                className="relative overflow-hidden rounded-xl sm:rounded-2xl p-3 sm:p-3.5 text-white shadow-md shadow-slate-950/25 border border-teal-400/30 cursor-pointer active:scale-95 transition-all duration-300 group flex flex-col justify-between min-h-[105px] sm:min-h-[115px] bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900"
+              >
+                <div className="absolute -top-6 -right-6 w-16 h-16 bg-teal-400/20 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between relative z-10">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/20 text-teal-200 backdrop-blur-md flex items-center justify-center font-black shadow-2xs border border-white/30 group-hover:scale-105 transition-transform">
+                    <Sparkles size={16} />
+                  </div>
+                  <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-teal-500/30 text-teal-100 border border-teal-400/40 backdrop-blur-xs">
+                    خوداظهاری
+                  </span>
                 </div>
-                <span className="text-[7.5px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full bg-teal-500/30 text-teal-100 border border-teal-400/40 backdrop-blur-xs">
-                  خوداظهاری
-                </span>
+                <div className="relative z-10 space-y-0.5 pt-1">
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت خوداظهاری</h3>
+                  <p className="text-[8.5px] text-teal-100/90 font-medium truncate">اعلام آنلاین حضور جلسه</p>
+                </div>
               </div>
-              <div className="relative z-10 space-y-0.5 pt-1">
-                <h3 className="text-xs sm:text-sm font-black text-white truncate drop-shadow-xs">ثبت خوداظهاری</h3>
-                <p className="text-[8.5px] text-teal-100/90 font-medium truncate">اعلام آنلاین حضور جلسه</p>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -458,103 +468,117 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-2.5">
-            {/* کارنامه علمی (پروژه منتقل‌شده به کارت‌های پایین) */}
-            <div 
-              onClick={() => onNavigateTab('student-portal')}
-              className="p-3 bg-white hover:bg-amber-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <BrainCircuit size={16} />
+            {/* کارنامه علمی */}
+            {isTabAllowed('student-portal') && (
+              <div 
+                onClick={() => onNavigateTab('student-portal')}
+                className="p-3 bg-white hover:bg-amber-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <BrainCircuit size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">کارنامه علمی</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">پرونده و نمرات تحصیلی</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">کارنامه علمی</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">پرونده و نمرات تحصیلی</div>
-              </div>
-            </div>
+            )}
 
-            {/* رزرو نهار و شام (پروژه منتقل‌شده به کارت‌های پایین) */}
-            <div 
-              onClick={() => onNavigateTab('student-meals')}
-              className="p-3 bg-white hover:bg-rose-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <UtensilsCrossed size={16} />
+            {/* رزرو نهار و شام */}
+            {isTabAllowed('student-meals') && (
+              <div 
+                onClick={() => onNavigateTab('student-meals')}
+                className="p-3 bg-white hover:bg-rose-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <UtensilsCrossed size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">رزرو نهار و شام</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">سفارش و وعده‌های سلف</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">رزرو نهار و شام</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">سفارش و وعده‌های سلف</div>
-              </div>
-            </div>
+            )}
 
             {/* امور مالی و پرداختی‌ها */}
-            <div 
-              onClick={() => onNavigateTab('student-payments')}
-              className="p-3 bg-white hover:bg-teal-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <Wallet size={16} />
+            {isTabAllowed('student-payments') && (
+              <div 
+                onClick={() => onNavigateTab('student-payments')}
+                className="p-3 bg-white hover:bg-teal-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <Wallet size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">پرداختی‌ها و مالی</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">شهریه و وضعیت حساب</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">پرداختی‌ها و مالی</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">شهریه و وضعیت حساب</div>
-              </div>
-            </div>
+            )}
 
             {/* برنامه کلاسی هفتگی */}
-            <div 
-              onClick={() => onNavigateTab('student-schedule')}
-              className="p-3 bg-white hover:bg-sky-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <Calendar size={16} />
+            {isTabAllowed('student-schedule') && (
+              <div 
+                onClick={() => onNavigateTab('student-schedule')}
+                className="p-3 bg-white hover:bg-sky-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <Calendar size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">برنامه کلاسی هفتگی</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">ساعات دروس و اساتید</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">برنامه کلاسی هفتگی</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">ساعات دروس و اساتید</div>
-              </div>
-            </div>
+            )}
 
             {/* گروه‌های مباحثه */}
-            <div 
-              onClick={() => onNavigateTab('discussion')}
-              className="p-3 bg-white hover:bg-purple-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-700 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <Users size={16} />
+            {isTabAllowed('discussion') && (
+              <div 
+                onClick={() => onNavigateTab('discussion')}
+                className="p-3 bg-white hover:bg-purple-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-700 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <Users size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">گروه مباحثه من</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">هم‌بحثی‌ها و پایش درس</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">گروه مباحثه من</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">هم‌بحثی‌ها و پایش درس</div>
-              </div>
-            </div>
+            )}
 
             {/* انتخاب واحد */}
-            <div 
-              onClick={() => onNavigateTab('course-selection')}
-              className="p-3 bg-white hover:bg-teal-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <BookCheck size={16} />
+            {isTabAllowed('course-selection') && (
+              <div 
+                onClick={() => onNavigateTab('course-selection')}
+                className="p-3 bg-white hover:bg-teal-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-emerald-600 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <BookCheck size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">انتخاب واحد</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">واحدهای آموزشی دوره</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">انتخاب واحد</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">واحدهای آموزشی دوره</div>
-              </div>
-            </div>
+            )}
 
             {/* دروس گذرانده شده */}
-            <div 
-              onClick={() => onNavigateTab('passed-courses')}
-              className="p-3 bg-white hover:bg-emerald-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
-            >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
-                <BookOpen size={16} />
+            {isTabAllowed('passed-courses') && (
+              <div 
+                onClick={() => onNavigateTab('passed-courses')}
+                className="p-3 bg-white hover:bg-emerald-50/40 rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all cursor-pointer active:scale-95 space-y-1.5 group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-700 text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+                  <BookOpen size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900">دروس گذرانده شده</div>
+                  <div className="text-[9px] text-slate-400 font-medium truncate">سوابق دروس گذرانده</div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-black text-slate-900">دروس گذرانده شده</div>
-                <div className="text-[9px] text-slate-400 font-medium truncate">سوابق دروس گذرانده</div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -572,54 +596,62 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           <span className="text-[9px] font-black">پیشخوان</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => onNavigateTab('student-schedule')}
-          className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer"
-        >
-          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-            <Calendar size={15} />
-          </div>
-          <span className="text-[9px] font-bold">کلاس‌ها</span>
-        </button>
+        {isTabAllowed('student-schedule') && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('student-schedule')}
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+              <Calendar size={15} />
+            </div>
+            <span className="text-[9px] font-bold">کلاس‌ها</span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => onNavigateTab('attendance')}
-          className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer"
-        >
-          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-            <CheckSquare size={15} />
-          </div>
-          <span className="text-[9px] font-bold">{isRepresentative ? 'ثبت حضور' : 'حضور و غیاب'}</span>
-        </button>
+        {isTabAllowed('attendance') && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('attendance')}
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+              <CheckSquare size={15} />
+            </div>
+            <span className="text-[9px] font-bold">{isRepresentative ? 'ثبت حضور' : 'حضور و غیاب'}</span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => onNavigateTab('student-requests')}
-          className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer relative"
-        >
-          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-            <Send size={15} />
-          </div>
-          <span className="text-[9px] font-bold">درخواست</span>
-          {myRequestsCount > 0 && (
-            <span className="absolute -top-1 right-2 w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
-              {myRequestsCount}
-            </span>
-          )}
-        </button>
+        {isTabAllowed('student-requests') && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('student-requests')}
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-indigo-600 cursor-pointer relative"
+          >
+            <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+              <Send size={15} />
+            </div>
+            <span className="text-[9px] font-bold">درخواست</span>
+            {myRequestsCount > 0 && (
+              <span className="absolute -top-1 right-2 w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
+                {myRequestsCount}
+              </span>
+            )}
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => onNavigateTab('stats')}
-          className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-purple-600 cursor-pointer"
-        >
-          <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-            <BookOpen size={15} />
-          </div>
-          <span className="text-[9px] font-bold">مطالعه</span>
-        </button>
+        {isTabAllowed('stats') && (
+          <button
+            type="button"
+            onClick={() => onNavigateTab('stats')}
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-purple-600 cursor-pointer"
+          >
+            <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+              <BookOpen size={15} />
+            </div>
+            <span className="text-[9px] font-bold">مطالعه</span>
+          </button>
+        )}
       </div>
 
       {/* Notice Modal for Non-Rep / Non-SelfReporting Messages */}

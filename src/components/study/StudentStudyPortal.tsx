@@ -56,7 +56,10 @@ import {
   addStudyDailyEntry,
   updateStudyDailyEntry,
   deleteStudyDailyEntry,
-  getStudyWarningStatus
+  getStudyWarningStatus,
+  isCoreCurriculumProgram,
+  isStudentEnrolledInProgram,
+  buildStudentCandidateIds
 } from './studyUtils';
 
 interface StudentStudyPortalProps {
@@ -175,50 +178,52 @@ export default function StudentStudyPortal({
 
   const [chartViewMode, setChartViewMode] = useState<'TOTAL' | 'SPLIT'>('TOTAL');
 
-  // Fetch programs and enrollments
+  // Fetch programs and enrollments & keep them reactive on real-time updates
   useEffect(() => {
     const fetchProgramsAndEnrollments = async () => {
       try {
-        const [progList, enrList] = await Promise.all([
+        const [progList, enrList, courseEnrList] = await Promise.all([
           localDb.getDocs<Program>('programs'),
-          localDb.getDocs<Enrollment>('enrollments')
+          localDb.getDocs<Enrollment>('enrollments'),
+          localDb.getDocs<Enrollment>('course_enrollments')
         ]);
         setPrograms(progList || []);
-        setEnrollments(enrList || []);
+        setEnrollments([...(enrList || []), ...(courseEnrList || [])]);
       } catch (err) {
         console.warn('Error loading programs or enrollments:', err);
       }
     };
     fetchProgramsAndEnrollments();
+    const unsub = localDb.subscribe(() => {
+      fetchProgramsAndEnrollments();
+    });
+    const handleDataChange = () => fetchProgramsAndEnrollments();
+    window.addEventListener('app_data_change', handleDataChange);
+    return () => {
+      unsub();
+      window.removeEventListener('app_data_change', handleDataChange);
+    };
   }, []);
 
-  // Compute student's main classes
+  // Compute student's main classes (strictly excluding deleted classes and classes where student is not enrolled)
   const studentMainCourses = useMemo(() => {
-    const studentEnrollments = enrollments.filter(e => e.studentId === student.id);
-    const enrolledProgramIds = new Set(studentEnrollments.map(e => e.programId));
+    const candidateIds = buildStudentCandidateIds(student, [
+      currentUser?.id,
+      currentUser?.studentId,
+      currentUser?.linkedStudentId,
+      currentUser?.username
+    ].filter(Boolean) as string[]);
 
-    let userProgs = programs.filter(p => 
-      enrolledProgramIds.has(p.id) || 
-      p.grade === student.grade || 
-      (p as any).studentIds?.includes(student.id) ||
-      (p as any).studentId === student.id
+    const mainOnly = programs.filter(
+      p => isCoreCurriculumProgram(p) && isStudentEnrolledInProgram(p, student, enrollments, candidateIds)
     );
 
-    // Filter main courses strictly (ONLY core courses 'اصلی')
-    const mainOnly = userProgs.filter(p => {
-      if (p.type && p.type !== 'اصلی') return false;
-      const typeStr = (p.type || '').trim();
-      const titleStr = (p.title || '').trim();
-      const isExcluded = ['مشاوره', 'پژوهش', 'دروس 5 شنبه', 'دروس ۵ شنبه', 'دروس پنج شنبه', 'دروس پنج‌شنبه', 'پنج شنبه', 'پنج‌شنبه', 'سایر'].some(k => typeStr.includes(k) || titleStr.includes(k));
-      if (isExcluded) return false;
-      return p.type === 'اصلی' || !p.type;
-    });
     if (mainOnly.length > 0) {
       const seen = new Set<string>();
       const list: { id: string; title: string }[] = [];
       for (const p of mainOnly) {
-        const cleanTitle = p.title.trim();
-        if (!seen.has(cleanTitle)) {
+        const cleanTitle = (p.title || '').trim();
+        if (cleanTitle && !seen.has(cleanTitle)) {
           seen.add(cleanTitle);
           list.push({ id: p.id, title: cleanTitle });
         }
@@ -227,7 +232,7 @@ export default function StudentStudyPortal({
     }
 
     return [];
-  }, [programs, enrollments, student]);
+  }, [programs, enrollments, student, currentUser]);
 
   // Active period object
   const currentPeriod = useMemo(() => {

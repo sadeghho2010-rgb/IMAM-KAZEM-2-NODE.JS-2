@@ -526,58 +526,76 @@ export default function Programs() {
   const [curriculumBooks, setCurriculumBooks] = useState<CurriculumBook[]>([]);
   const [curriculumChapters, setCurriculumChapters] = useState<CurriculumChapter[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSavingEnrollments, setIsSavingEnrollments] = useState(false);
 
-  const loadCurriculumBank = async () => {
+  const loadCurriculumBank = async (forceCloud = false) => {
     try {
-      const seed = await StudentCourseProgressService.ensureDefaultCurriculumData();
-      const [subs, bks, chs] = await Promise.all([
-        localDb.getDocs<CurriculumSubject>('curriculum_subjects'),
-        localDb.getDocs<CurriculumBook>('curriculum_books'),
-        localDb.getDocs<CurriculumChapter>('curriculum_chapters')
-      ]);
-      setCurriculumSubjects(subs.length > 0 ? subs : seed.subjects);
-      setCurriculumBooks(bks.length > 0 ? bks : seed.books);
-      setCurriculumChapters(chs.length > 0 ? chs : seed.chapters);
+      const synced = await StudentCourseProgressService.ensureDefaultCurriculumData(forceCloud);
+      setCurriculumSubjects(synced.subjects);
+      setCurriculumBooks(synced.books);
+      setCurriculumChapters(synced.chapters);
     } catch (err) {
       console.warn('Error loading curriculum bank in Programs:', err);
     }
   };
 
-  // Dynamically compute subject categories directly from Curriculum Bank
+  // Dynamically compute subject categories strictly from Curriculum Bank (بانک دروس مصوب)
   const dynamicSubjectCategories = useMemo(() => {
-    const loadedTitles = curriculumSubjects.map(s => s.title?.trim()).filter(Boolean);
-    const defaults = ['اصول', 'فقه', 'فلسفه'];
-    return Array.from(new Set([...loadedTitles, ...defaults, 'سایر']));
+    const loadedTitles = curriculumSubjects
+      .map(s => (s.title || '').trim() === 'اصول فقه' ? 'اصول' : (s.title || '').trim())
+      .filter(Boolean);
+    if (loadedTitles.length > 0) {
+      return Array.from(new Set([...loadedTitles, 'سایر']));
+    }
+    return ['اصول', 'فقه', 'فلسفه', 'سایر'];
   }, [curriculumSubjects]);
 
-  // Dynamically compute books for a selected category directly from Curriculum Bank
+  // Dynamically compute books for a selected category strictly from Curriculum Bank without fuzzy substring collision
   const getBooksForCategory = (catName?: string): string[] => {
     if (!catName || catName === 'سایر') return ['سایر (دستی)'];
+    const cleanCat = catName.trim() === 'اصول فقه' ? 'اصول' : catName.trim();
 
-    const parentSubj = curriculumSubjects.find(s => 
-      s.title?.trim() === catName.trim() || 
-      (catName.trim().length > 2 && s.title?.trim().includes(catName.trim()))
-    );
+    const parentSubj = curriculumSubjects.find(s => {
+      const sTitle = (s.title || '').trim() === 'اصول فقه' ? 'اصول' : (s.title || '').trim();
+      return sTitle === cleanCat;
+    });
 
-    const matchedBooks = curriculumBooks.filter(b => 
-      (parentSubj && b.subjectId === parentSubj.id) || 
-      b.subjectTitle?.trim() === catName.trim() ||
-      (catName.trim().length > 2 && b.subjectTitle?.trim().includes(catName.trim()))
-    );
+    const matchedBooks = curriculumBooks.filter(b => {
+      const bSubjTitle = (b.subjectTitle || '').trim() === 'اصول فقه' ? 'اصول' : (b.subjectTitle || '').trim();
+      if (parentSubj && b.subjectId === parentSubj.id) return true;
+      return bSubjTitle === cleanCat;
+    });
 
-    const bookTitles = Array.from(new Set(matchedBooks.map(b => b.title.trim()).filter(Boolean)));
+    const bookTitles = Array.from(new Set(matchedBooks.map(b => (b.title || '').trim()).filter(Boolean)));
     return [...bookTitles, 'سایر (دستی)'];
   };
 
+  // Dynamically compute chapters for a selected book strictly from Curriculum Bank
+  const getChaptersForBook = (bookName?: string, catName?: string): CurriculumChapter[] => {
+    if (!bookName || bookName === 'سایر (دستی)') return [];
+    const cleanBook = bookName.trim();
+    const cleanCat = (catName || '').trim() === 'اصول فقه' ? 'اصول' : (catName || '').trim();
+
+    const matchedBook = curriculumBooks.find(b => {
+      const bSubj = (b.subjectTitle || '').trim() === 'اصول فقه' ? 'اصول' : (b.subjectTitle || '').trim();
+      return (b.title || '').trim() === cleanBook && (!cleanCat || bSubj === cleanCat);
+    }) || curriculumBooks.find(b => (b.title || '').trim() === cleanBook);
+
+    return curriculumChapters.filter(c => {
+      if (matchedBook && c.bookId === matchedBook.id) return true;
+      return (c.bookTitle || '').trim() === cleanBook;
+    });
+  };
+
   useEffect(() => {
-    loadCurriculumBank();
+    loadCurriculumBank(true);
 
     const unsub = localDb.subscribe(() => {
-      loadCurriculumBank();
+      loadCurriculumBank(false);
     });
 
     const handleDataChange = () => {
-      loadCurriculumBank();
+      loadCurriculumBank(false);
     };
 
     window.addEventListener('app_data_change', handleDataChange);
@@ -720,7 +738,8 @@ export default function Programs() {
 
   // Representative Selection Modal State
   const [showRepModal, setShowRepModal] = useState(false);
-  const [repModalTarget, setRepModalTarget] = useState<'add' | 'edit'>('add');
+  const [repModalTarget, setRepModalTarget] = useState<'add' | 'edit' | 'card'>('add');
+  const [repTargetProgram, setRepTargetProgram] = useState<Program | null>(null);
   const [repModalStudentIds, setRepModalStudentIds] = useState<string[]>([]);
   const [repModalNames, setRepModalNames] = useState<string[]>([]);
   const [repModalCustomInput, setRepModalCustomInput] = useState('');
@@ -955,33 +974,51 @@ export default function Programs() {
   const classPdfPrintRef = useRef<HTMLDivElement>(null);
   const hierarchyPdfPrintRef = useRef<HTMLDivElement>(null);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isInitial = false) => {
+    if (isInitial) {
+      setLoading(true);
+    }
     try {
-      const rawPrograms = await localDb.getDocs<Program>('programs');
-      const rawStudents = await localDb.getDocs<Student>('students');
-      const rawEnrollments = await localDb.getDocs<Enrollment>('enrollments');
-      const rawRooms = await localDb.getDocs<MadrasRoom>('classrooms');
-      const rawTeachers = await localDb.getDocs<Teacher>('teachers');
-      const rawDiscussionGroups = await localDb.getDocs<DiscussionGroup>('discussion_groups');
+      const [rawPrograms, rawStudents, rawEnrollments, rawRooms, rawTeachers, rawDiscussionGroups] = await Promise.all([
+        localDb.getDocs<Program>('programs'),
+        localDb.getDocs<Student>('students'),
+        localDb.getDocs<Enrollment>('enrollments'),
+        localDb.getDocs<MadrasRoom>('classrooms'),
+        localDb.getDocs<Teacher>('teachers'),
+        localDb.getDocs<DiscussionGroup>('discussion_groups')
+      ]);
+
+      // Automatically purge any inactive or soft-deleted programs from the entire system
+      const deadPrograms = (rawPrograms || []).filter(p => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted'));
+      const activePrograms = (rawPrograms || []).filter(p => p && p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted');
+
+      if (deadPrograms.length > 0) {
+        for (const dp of deadPrograms) {
+          try {
+            await localDb.deleteDoc('programs', dp.id);
+          } catch (e) {}
+        }
+      }
 
       setStudents(rawStudents);
       setEnrollments(rawEnrollments);
       setRooms(rawRooms || []);
       setTeachers(rawTeachers || []);
-      setPrograms(rawPrograms || []);
+      setPrograms(activePrograms);
       setDiscussionGroups(rawDiscussionGroups || []);
     } catch (error) {
       console.error("Error fetching programs:", error);
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
     const unsub = localDb.subscribe(() => {
-      fetchData();
+      fetchData(false);
     });
     return () => unsub();
   }, []);
@@ -998,15 +1035,32 @@ export default function Programs() {
   };
 
   const handleSaveEnrollments = async () => {
-    if (!selectedProgramId) return;
-    setLoading(true);
+    if (!selectedProgramId || isSavingEnrollments) return;
+    setIsSavingEnrollments(true);
     try {
       const targetProgram = programs.find(p => p.id === selectedProgramId);
       const currentEnrollments = enrollments.filter(e => String(e.programId) === String(selectedProgramId));
       const fromEnrollmentIds = currentEnrollments.map(e => e.studentId);
       const currentStudentIds = Array.from(new Set([...(targetProgram?.studentIds || []), ...fromEnrollmentIds]));
 
-      // Add new ones
+      // 1. Update program document first with authoritative timestamp
+      if (targetProgram) {
+        const updatedProg: Program = {
+          ...targetProgram,
+          studentIds: selectedEnrollments,
+          hasExplicitEnrollment: true,
+          updated_at: new Date().toISOString()
+        };
+        await localDb.setDoc('programs', updatedProg);
+      } else {
+        await localDb.updateDoc('programs', selectedProgramId, {
+          studentIds: selectedEnrollments,
+          hasExplicitEnrollment: true,
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      // 2. Add new enrollments
       const toAdd = selectedEnrollments.filter(id => !fromEnrollmentIds.includes(id));
       for (const studentId of toAdd) {
         await localDb.addDoc('enrollments', {
@@ -1015,13 +1069,13 @@ export default function Programs() {
         });
       }
 
-      // Remove deselected
+      // 3. Remove deselected enrollments
       const toRemove = currentEnrollments.filter(e => !selectedEnrollments.includes(e.studentId));
       for (const enrollment of toRemove) {
         await localDb.deleteDoc('enrollments', enrollment.id);
       }
 
-      // Also sync course_enrollments collection identically
+      // 4. Sync course_enrollments collection identically
       try {
         const allCourseEnrolls = await localDb.getDocs<any>('course_enrollments');
         const courseToRemove = (allCourseEnrolls || []).filter(e => 
@@ -1038,13 +1092,7 @@ export default function Programs() {
         }
       } catch (ceErr) {}
 
-      // Sync program document explicitly
-      await localDb.updateDoc('programs', selectedProgramId, {
-        studentIds: selectedEnrollments,
-        hasExplicitEnrollment: true
-      });
-
-      // Synchronize in-progress courses progress for students in this class
+      // 5. Synchronize in-progress & remaining courses progress for students in this class
       if (targetProgram) {
         const updatedProg: Program = {
           ...targetProgram,
@@ -1063,14 +1111,14 @@ export default function Programs() {
       window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
-      await fetchData();
+      await fetchData(false);
       setShowEnrollModal(false);
-      alert('لیست طلاب با موفقیت بروزرسانی شد');
+      dispatchDatabaseToast('لیست طلاب کلاس و وضعیت دروس در حال جریان با موفقیت بروزرسانی شد.', 'success');
     } catch (error) {
       console.error("Error saving enrollments:", error);
-      alert('خطا در بروزرسانی لیست');
+      dispatchDatabaseToast('خطا در بروزرسانی لیست طلاب کلاس.', 'error');
     } finally {
-      setLoading(false);
+      setIsSavingEnrollments(false);
     }
   };
 
@@ -1096,16 +1144,21 @@ export default function Programs() {
     }
   };
 
-  const openRepModal = (target: 'add' | 'edit') => {
+  const openRepModal = (target: 'add' | 'edit' | 'card', programOverride?: Program) => {
     setRepModalTarget(target);
     setRepSearchTerm('');
     setRepModalCustomInput('');
     if (target === 'add') {
+      setRepTargetProgram(null);
       setRepModalStudentIds(newProgram.representativeStudentIds || []);
       setRepModalNames(newProgram.representativeNames || []);
-    } else if (editingProgram) {
-      setRepModalStudentIds(editingProgram.representativeStudentIds || []);
-      setRepModalNames(editingProgram.representativeNames || []);
+    } else {
+      const targetProg = programOverride || editingProgram || repTargetProgram;
+      if (targetProg) {
+        setRepTargetProgram(targetProg);
+        setRepModalStudentIds(Array.isArray(targetProg.representativeStudentIds) ? [...targetProg.representativeStudentIds] : []);
+        setRepModalNames(Array.isArray(targetProg.representativeNames) ? [...targetProg.representativeNames] : []);
+      }
     }
     setShowRepModal(true);
   };
@@ -1175,24 +1228,19 @@ export default function Programs() {
           return true;
         });
 
-        const customRep = editingProgram.customRepresentative;
-        const shouldClearCustom = customRep && (
-          customRep.trim().toLowerCase() === nameToRemove.trim().toLowerCase() ||
-          (matchNameClean && customRep.trim().toLowerCase().includes(matchNameClean))
-        );
-
-        const updated = {
+        const updated: Program = {
           ...editingProgram,
           representativeNames: nextNames,
           representativeStudentIds: nextIds,
-          customRepresentative: shouldClearCustom ? undefined : customRep
+          customRepresentative: nextNames.length === 0 ? '' : (editingProgram.customRepresentative || ''),
+          updated_at: new Date().toISOString()
         };
         setEditingProgram(updated);
+        setPrograms(prev => prev.map(p => p.id === updated.id ? updated : p));
 
-        // Immediate DB persistence to prevent revert
         try {
-          await localDb.setDoc('programs', editingProgram.id, updated);
-          await syncRepresentativeUsers();
+          await localDb.setDoc('programs', updated);
+          await syncRepresentativeUsers([updated]);
         } catch (e) {
           console.warn('Error persisting representative removal:', e);
         }
@@ -1208,17 +1256,11 @@ export default function Programs() {
           return true;
         });
 
-        const customRep = newProgram.customRepresentative;
-        const shouldClearCustom = customRep && (
-          customRep.trim().toLowerCase() === nameToRemove.trim().toLowerCase() ||
-          (matchNameClean && customRep.trim().toLowerCase().includes(matchNameClean))
-        );
-
         setNewProgram({
           ...newProgram,
           representativeNames: nextNames,
           representativeStudentIds: nextIds,
-          customRepresentative: shouldClearCustom ? undefined : customRep
+          customRepresentative: nextNames.length === 0 ? '' : newProgram.customRepresentative
         });
       }
     }
@@ -1231,31 +1273,40 @@ export default function Programs() {
         ...newProgram,
         representativeStudentIds: repModalStudentIds,
         representativeNames: repModalNames,
-        customRepresentative: repModalStudentIds.length > 0 ? '' : newProgram.customRepresentative
+        customRepresentative: repModalStudentIds.length > 0 || repModalNames.length === 0 ? '' : newProgram.customRepresentative
       });
       dispatchDatabaseToast('نمایندگان جدید برای کلاس تنظیم شدند.', 'success');
-    } else if (editingProgram) {
-      const updated = {
-        ...editingProgram,
-        representativeStudentIds: repModalStudentIds,
-        representativeNames: repModalNames,
-        customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
-      };
-      setEditingProgram(updated);
-      setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updated : p));
-      dispatchDatabaseToast('نمایندگان کلاس با موفقیت بروزرسانی شدند.', 'success');
+      return;
+    }
 
-      // Persist to database and sync user roles in background
-      localDb.updateDoc('programs', editingProgram.id, {
-        representativeStudentIds: repModalStudentIds,
-        representativeNames: repModalNames,
-        customRepresentative: repModalStudentIds.length > 0 ? '' : (editingProgram.customRepresentative || '')
-      }).then(() => {
-        syncRepresentativeUsers([updated]).catch(console.error);
-        fetchData();
-      }).catch(err => {
+    const targetProg = repModalTarget === 'card' ? repTargetProgram : (editingProgram || repTargetProgram);
+    if (targetProg) {
+      const updated: Program = {
+        ...targetProg,
+        representativeStudentIds: [...repModalStudentIds],
+        representativeNames: [...repModalNames],
+        customRepresentative: repModalStudentIds.length > 0 || repModalNames.length === 0 ? '' : (targetProg.customRepresentative || ''),
+        updated_at: new Date().toISOString()
+      };
+      if (editingProgram && editingProgram.id === updated.id) {
+        setEditingProgram(updated);
+      }
+      setRepTargetProgram(null);
+      setPrograms(prev => prev.map(p => p.id === updated.id ? updated : p));
+      dispatchDatabaseToast(
+        repModalNames.length === 0
+          ? 'نماینده کلاس با موفقیت عزل شد و کلاس به وضعیت بدون نماینده تغییر یافت.'
+          : 'نماینده کلاس با موفقیت بروزرسانی و ثبت شد.',
+        'success'
+      );
+
+      try {
+        await localDb.setDoc('programs', updated);
+        await syncRepresentativeUsers([updated]);
+        await fetchData(false);
+      } catch (err) {
         console.warn('Error saving representative immediately:', err);
-      });
+      }
     }
   };
 
@@ -1418,7 +1469,10 @@ export default function Programs() {
     e.preventDefault();
     if (isSavingProgram) return;
 
-    const title = (newProgram.title || '').trim();
+    const fallbackMainTitle = newProgram.type === 'اصلی'
+      ? `${newProgram.subjectCategory || 'درس اصلی'}${newProgram.subjectBook && newProgram.subjectBook !== 'سایر (دستی)' ? ` (${newProgram.subjectBook}${newProgram.subjectChapter ? ` - ${newProgram.subjectChapter}` : ''})` : ''}`
+      : '';
+    const title = (newProgram.title || '').trim() || fallbackMainTitle.trim();
     if (!title) {
       dispatchDatabaseToast('لطفاً عنوان کلاس / برنامه را وارد نمایید.', 'warning');
       return;
@@ -1450,41 +1504,49 @@ export default function Programs() {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
       const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
+      const cleanTeacher = (newProgram.teacher || '').trim();
+      const cleanRoom = (newProgram.madrasRoom || '').trim();
 
       const tempId = `prog_${Date.now()}`;
+      const nowIso = new Date().toISOString();
       const programPayload: Program = {
         id: tempId,
         title,
         type: newProgram.type || 'اصلی',
-        days: addModalDays,
+        days: [...addModalDays],
         day: dayStr,
         grade: programGrade,
         time: programTime,
-        teacher: newProgram.teacher || '',
-        madrasRoom: newProgram.madrasRoom || '',
-        classroom: newProgram.madrasRoom || '',
+        teacher: cleanTeacher,
+        madrasRoom: cleanRoom,
+        classroom: cleanRoom,
         parentProgramId: newProgram.type === 'مشاوره' ? (newProgram.parentProgramId || '') : '',
         representativeStudentIds: newProgram.representativeStudentIds || [],
         representativeNames: newProgram.representativeNames || [],
+        customRepresentative: newProgram.customRepresentative || '',
+        attendanceType: newProgram.attendanceType || 'representative',
         subjectCategory: newProgram.type === 'اصلی' ? newProgram.subjectCategory : undefined,
         subjectBook: newProgram.type === 'اصلی' ? newProgram.subjectBook : undefined,
         subjectChapter: newProgram.type === 'اصلی' ? newProgram.subjectChapter : undefined,
         chapterId: newProgram.type === 'اصلی' ? newProgram.chapterId : undefined,
-        mentorId: currentMentorId || 'admin'
+        studentIds: newProgram.studentIds || [],
+        hasExplicitEnrollment: true,
+        status: 'active',
+        isDeleted: false,
+        mentorId: currentMentorId || 'admin',
+        updated_at: nowIso
       };
 
-      // Auto sync course progress status for students in this class
-      const enrolledStudentIds = programPayload.studentIds && programPayload.studentIds.length > 0
-        ? programPayload.studentIds
-        : students.filter(s => s.grade === programGrade || programGrade === 'همه پایه‌ها').map(s => s.id);
-      StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, enrolledStudentIds).catch(console.error);
-
-      // Optimistic UI Update: update state immediately
-      setPrograms(prev => [programPayload, ...prev]);
-
+      // 1. Optimistic UI Update & Save Program to localDb FIRST before any secondary sync
+      setPrograms(prev => [programPayload, ...prev.filter(p => p.id !== tempId)]);
       setShowAddModal(false);
+
+      await localDb.setDoc('programs', programPayload);
+
       dispatchDatabaseToast(`برنامه آموزشی «${title}» با موفقیت ثبت گردید.`, 'success');
 
+      const defaultCat = dynamicSubjectCategories.find(c => c !== 'سایر') || 'اصول';
+      const defaultBk = getBooksForCategory(defaultCat).find(b => b !== 'سایر (دستی)') || '';
       setNewProgram({ 
         title: '', 
         type: 'اصلی', 
@@ -1496,8 +1558,11 @@ export default function Programs() {
         parentProgramId: '',
         representativeStudentIds: [],
         representativeNames: [],
-        subjectCategory: 'اصول',
-        subjectBook: 'رسائل'
+        customRepresentative: '',
+        subjectCategory: defaultCat as any,
+        subjectBook: defaultBk,
+        subjectChapter: '',
+        chapterId: undefined
       });
       setAddModalDays(DEFAULT_MAIN_DAYS);
       setCustomStartAdd('08:00');
@@ -1507,24 +1572,24 @@ export default function Programs() {
         setSelectedGradeFilter(programGrade);
       }
 
-      if (targetTeacher) {
-        await syncTeacherWithBank(targetTeacher, title);
+      // 2. Secondary syncs AFTER program is safely saved
+      if (cleanTeacher) {
+        await syncTeacherWithBank(cleanTeacher, title);
       }
 
-      await localDb.addDoc('programs', {
-        ...programPayload,
-        id: tempId
-      });
-
-      if (newProgram.representativeStudentIds && newProgram.representativeStudentIds.length > 0) {
-        await syncRepresentativeUsers();
+      if (programPayload.representativeStudentIds && programPayload.representativeStudentIds.length > 0) {
+        await syncRepresentativeUsers([programPayload]);
       }
 
-      fetchData();
+      if (Array.isArray(programPayload.studentIds) && programPayload.studentIds.length > 0) {
+        await StudentCourseProgressService.syncProgramEnrollmentProgress(programPayload, programPayload.studentIds).catch(console.error);
+      }
+
+      await fetchData(false);
     } catch (error: any) {
       console.error("Error adding program:", error);
       dispatchDatabaseToast(error?.message || 'خطا در افزودن برنامه. در حال بازهمگام‌سازی...', 'error');
-      fetchData();
+      fetchData(false);
     } finally {
       setIsSavingProgram(false);
     }
@@ -1558,107 +1623,61 @@ export default function Programs() {
 
     try {
       const dayStr = editModalDays.join(' ، ');
+      const nowIso = new Date().toISOString();
 
       const updatedProgram: Program = {
         ...editingProgram,
-        title: editingProgram.title,
+        title: (editingProgram.title || '').trim() || 'برنامه آموزشی',
         type: editingProgram.type,
         grade: editingProgram.grade || 'پایه 7',
-        days: editModalDays,
+        days: [...editModalDays],
         day: dayStr,
-        time: editingProgram.time,
-        teacher: editingProgram.teacher,
-        madrasRoom: editingProgram.madrasRoom || editingProgram.classroom || '',
-        classroom: editingProgram.madrasRoom || editingProgram.classroom || '',
+        time: editingProgram.time || '۰۸:۰۰ الی ۰۹:۰۰',
+        teacher: targetTeacher,
+        madrasRoom: targetRoom,
+        classroom: targetRoom,
         representativeStudentIds: editingProgram.representativeStudentIds || [],
         representativeNames: editingProgram.representativeNames || [],
-        customRepresentative: editingProgram.customRepresentative || '',
+        customRepresentative: (editingProgram.representativeNames && editingProgram.representativeNames.length > 0) ? (editingProgram.customRepresentative || '') : '',
         parentProgramId: editingProgram.type === 'مشاوره' ? (editingProgram.parentProgramId || '') : '',
         subjectCategory: editingProgram.type === 'اصلی' ? editingProgram.subjectCategory : undefined,
         subjectBook: editingProgram.type === 'اصلی' ? editingProgram.subjectBook : undefined,
         subjectChapter: editingProgram.type === 'اصلی' ? editingProgram.subjectChapter : undefined,
-        chapterId: editingProgram.type === 'اصلی' ? editingProgram.chapterId : undefined
+        chapterId: editingProgram.type === 'اصلی' ? editingProgram.chapterId : undefined,
+        updated_at: nowIso
       };
 
-      // Auto sync course progress status for students in this class
-      const enrolledStudentIds = updatedProgram.studentIds && updatedProgram.studentIds.length > 0
-        ? updatedProgram.studentIds
-        : students.filter(s => s.grade === updatedProgram.grade || updatedProgram.grade === 'همه پایه‌ها').map(s => s.id);
-      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, enrolledStudentIds).catch(console.error);
-
-      // Optimistic UI update
+      // 1. Optimistic UI update & Persist program FIRST before secondary syncs
       setPrograms(prev => prev.map(p => p.id === editingProgram.id ? updatedProgram : p));
-
       setEditingProgram(null);
-      dispatchDatabaseToast(`برنامه آموزشی «${editingProgram.title}» با موفقیت بروزرسانی گردید.`, 'success');
 
-      if (editingProgram.teacher) {
-        await syncTeacherWithBank(editingProgram.teacher, editingProgram.title);
+      await localDb.setDoc('programs', updatedProgram);
+
+      dispatchDatabaseToast(`برنامه آموزشی «${updatedProgram.title}» با موفقیت بروزرسانی گردید.`, 'success');
+
+      // 2. Secondary syncs AFTER program is safely saved
+      if (targetTeacher) {
+        await syncTeacherWithBank(targetTeacher, updatedProgram.title);
       }
 
-      await localDb.updateDoc('programs', editingProgram.id, updatedProgram);
+      const enrolledStudentIds = getProgramStudents(updatedProgram.id).map(s => s.id);
+      await StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, enrolledStudentIds).catch(console.error);
 
-      syncRepresentativeUsers().catch(console.error);
+      await syncRepresentativeUsers([updatedProgram]).catch(console.error);
 
-      fetchData();
+      await fetchData(false);
     } catch (error: any) {
       console.error("Error editing program:", error);
       dispatchDatabaseToast(error?.message || 'خطا در بروزرسانی برنامه درسی.', 'error');
-      fetchData();
+      fetchData(false);
     } finally {
       setIsSavingProgram(false);
     }
   };
 
   const handleSoftDeleteProgram = async (program: Program) => {
-    const id = program.id;
-    const title = program.title;
-
-    if (deletingProgramIds.has(id)) return;
-    setDeletingProgramIds(prev => new Set(prev).add(id));
-
-    const originalPrograms = [...programs];
-    const updatedProgram: Program = {
-      ...program,
-      isDeleted: true,
-      status: 'inactive',
-      deletedAt: new Date().toISOString(),
-      version: ((program as any).version || 0) + 1,
-      updated_at: new Date().toISOString()
-    };
-
-    setPrograms(prev => prev.map(item => item.id === id ? updatedProgram : item));
-    setProgramToDelete(null);
-    dispatchDatabaseToast(`کلاس «${title}» غیرفعال شد و به بخش کلاس‌های غیرفعال در انتهای صفحه منتقل گردید.`, 'info', 3000);
-
-    try {
-      await localDb.setDoc('programs', updatedProgram);
-
-      // Revert in-progress courses for students of this deactivated program
-      const previousEnrolledIds = program.studentIds && program.studentIds.length > 0
-        ? program.studentIds
-        : students.filter(s => s.grade === program.grade || program.grade === 'همه پایه‌ها').map(s => s.id);
-      StudentCourseProgressService.syncProgramEnrollmentProgress(updatedProgram, [], previousEnrolledIds).catch(console.error);
-
-      await syncRepresentativeUsers();
-
-      window.dispatchEvent(new CustomEvent('collection_change_programs'));
-      window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
-      window.dispatchEvent(new CustomEvent('app_data_change'));
-
-      dispatchDatabaseToast(`کلاس «${title}» با موفقیت غیرفعال شد. آمار این کلاس از محاسبات حضور و غیاب کلی و فردی طلاب خارج گردید.`, 'success');
-      fetchData();
-    } catch (error: any) {
-      console.error("[STORAGE_FAILURE] Error soft deleting program:", error);
-      setPrograms(originalPrograms);
-      dispatchDatabaseToast(`خطا در غیرفعال‌سازی کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
-    } finally {
-      setDeletingProgramIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
+    // Directly perform permanent deletion so deleted classes are removed across all devices without lingering
+    await handlePermanentDeleteProgram(program);
   };
 
   const handleReactivateProgram = async (program: Program) => {
@@ -1719,15 +1738,21 @@ export default function Programs() {
     setDeletingProgramIds(prev => new Set(prev).add(id));
 
     const originalPrograms = [...programs];
+    const previousEnrolledIds = getProgramStudents(id).map(s => s.id);
+
     setPrograms(prev => prev.filter(item => item.id !== id));
+    setProgramToDelete(null);
     setProgramToPermanentlyDelete(null);
-    dispatchDatabaseToast(`در حال حذف کامل و نابودی تمام آمار کلاس «${title}»...`, 'info', 2500);
+    dispatchDatabaseToast(`در حال حذف کامل کلاس «${title}» از تمام دستگاه‌ها...`, 'info', 2500);
 
     try {
       // 1. Delete program doc from localDb & server
       await localDb.deleteDoc('programs', id);
 
-      // 2. Clean up enrollments
+      // 2. Revert in-progress courses for students enrolled in this deleted class
+      await StudentCourseProgressService.syncProgramEnrollmentProgress(program, [], previousEnrolledIds).catch(console.error);
+
+      // 3. Clean up enrollments
       const allEnrolls = await localDb.getDocs<any>('course_enrollments');
       for (const e of allEnrolls) {
         if (String(e.programId) === String(id)) {
@@ -1741,7 +1766,7 @@ export default function Programs() {
         }
       }
 
-      // 3. Clean up all attendance sessions and logs for this program (تمام آمارش نابود می‌شود)
+      // 4. Clean up all attendance sessions and logs for this program
       const allAttendance = await localDb.getDocs<any>('attendance');
       for (const att of allAttendance) {
         if (String(att.programId) === String(id)) {
@@ -1754,14 +1779,15 @@ export default function Programs() {
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
       window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
       window.dispatchEvent(new CustomEvent('collection_change_attendance'));
+      window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
       window.dispatchEvent(new CustomEvent('app_data_change'));
 
-      dispatchDatabaseToast(`کلاس «${title}» و تمام سوابق و آمار حضور و غیاب آن برای همیشه نابود شدند.`, 'success');
-      fetchData();
+      dispatchDatabaseToast(`کلاس «${title}» و تمام سوابق مرتبط با آن به طور کامل از سیستم حذف شدند.`, 'success');
+      fetchData(false);
     } catch (error: any) {
       console.error("[STORAGE_FAILURE] Error permanently deleting program:", error);
       setPrograms(originalPrograms);
-      dispatchDatabaseToast(`خطا در حذف دائمی کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
+      dispatchDatabaseToast(`خطا در حذف کلاس «${title}». اطلاعات بازگردانده شد.`, 'error');
     } finally {
       setDeletingProgramIds(prev => {
         const next = new Set(prev);
@@ -2123,10 +2149,16 @@ export default function Programs() {
       category === 'فلسفه' ? "bg-gradient-to-br from-amber-50/70 via-yellow-50/25 to-white hover:from-amber-50/90" :
       "bg-gradient-to-br from-slate-50/80 via-indigo-50/20 to-white hover:from-slate-100/90";
 
+    const isCardElevated = openMenuCardId === program.id || expandedDaysCardId === program.id || hoveredDaysCardId === program.id;
+
     return (
       <div 
         key={program.id}
-        className="relative group rounded-2xl p-[2px] transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.012]"
+        className={cn(
+          "relative group rounded-2xl p-[2px] transition-all duration-300",
+          isCardElevated ? "z-50" : "z-10",
+          !openMenuCardId && "transform hover:-translate-y-1 hover:scale-[1.012]"
+        )}
       >
         {/* Animated Electric Border Glow Effect on Mouse Hover */}
         <div className="absolute inset-0 rounded-2xl overflow-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-0">
@@ -2145,22 +2177,25 @@ export default function Programs() {
           {/* Card Header Row */}
           <div className="flex items-start justify-between gap-3">
             <div 
-              className="flex-1 cursor-pointer select-none"
+              className="flex-1 cursor-pointer select-none min-w-0"
               onClick={() => setSelectedProgramId(selectedProgramId === program.id ? null : program.id)}
             >
-              {/* Title & Badges */}
-              <div className="flex items-center gap-2 flex-wrap mb-2">
-                <h4 className="font-black text-slate-900 text-base tracking-tight hover:text-indigo-700 transition-colors">
+              {/* Prominent Dedicated Program Title Banner at Very Top of Card */}
+              <div className="pb-2.5 mb-2.5 border-b border-slate-200/80 flex items-center justify-between gap-2 flex-wrap">
+                <h4 className="font-black text-slate-950 text-base sm:text-lg tracking-tight hover:text-indigo-700 transition-colors leading-snug">
                   {program.title}
                 </h4>
 
                 {program.grade && (
-                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-indigo-100/80 text-indigo-900 rounded-lg border border-indigo-200/80 flex items-center gap-1 shadow-2xs">
+                  <span className="text-[11px] font-black px-2.5 py-0.5 bg-indigo-100/90 text-indigo-900 rounded-lg border border-indigo-200/90 flex items-center gap-1 shadow-2xs shrink-0">
                     <GraduationCap size={12} className="text-indigo-600" />
                     <span>{program.grade}</span>
                   </span>
                 )}
+              </div>
 
+              {/* Curriculum & Meta Badges Row Underneath Title */}
+              <div className="flex items-center gap-2 flex-wrap mb-2.5">
                 {/* Self-Reporting Badge */}
                 {isSelfReport && (
                   <span className="text-[11px] font-black px-2.5 py-0.5 bg-emerald-600 text-white rounded-full flex items-center gap-1 shadow-xs ring-2 ring-emerald-300">
@@ -2169,23 +2204,32 @@ export default function Programs() {
                   </span>
                 )}
 
-                {/* Subject Category Badge */}
+                {/* Subject Category, Book & Chapter Badges */}
                 {(program.subjectCategory || program.type === 'اصلی') && (
                   (() => {
-                    const cat = program.subjectCategory || getCourseSubjectCategory(program);
+                    const cat = (program.subjectCategory || getCourseSubjectCategory(program) || '').trim() === 'اصول فقه'
+                      ? 'اصول'
+                      : (program.subjectCategory || getCourseSubjectCategory(program));
                     if (cat === 'سایر' && !program.subjectBook) return null;
                     return (
-                      <span className={cn(
-                        "text-[11px] font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1 shadow-2xs",
-                        cat === 'اصول' ? "bg-blue-100/90 text-blue-900 border-blue-200" :
-                        cat === 'فقه' ? "bg-emerald-100/90 text-emerald-900 border-emerald-200" :
-                        cat === 'فلسفه' ? "bg-amber-100/90 text-amber-900 border-amber-200" :
-                        "bg-purple-100/90 text-purple-900 border-purple-200"
-                      )}>
-                        <BookOpen size={11} />
-                        <span>{cat}</span>
-                        {program.subjectBook && <span className="font-bold text-slate-700">({program.subjectBook})</span>}
-                      </span>
+                      <>
+                        <span className={cn(
+                          "text-[11px] font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1 shadow-2xs",
+                          cat === 'اصول' ? "bg-blue-100/90 text-blue-900 border-blue-200" :
+                          cat === 'فقه' ? "bg-emerald-100/90 text-emerald-900 border-emerald-200" :
+                          cat === 'فلسفه' ? "bg-amber-100/90 text-amber-900 border-amber-200" :
+                          "bg-purple-100/90 text-purple-900 border-purple-200"
+                        )}>
+                          <BookOpen size={11} />
+                          <span>{cat}</span>
+                          {program.subjectBook && <span className="font-bold text-slate-800">({program.subjectBook})</span>}
+                        </span>
+                        {program.subjectChapter && (
+                          <span className="text-[11px] font-black px-2.5 py-0.5 bg-amber-100/90 text-amber-950 rounded-lg border border-amber-200/90 flex items-center gap-1 shadow-2xs">
+                            <span>بخش: {program.subjectChapter}</span>
+                          </span>
+                        )}
+                      </>
                     );
                   })()
                 )}
@@ -2252,10 +2296,10 @@ export default function Programs() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 6, scale: 0.95 }}
                         transition={{ duration: 0.15 }}
-                        className="absolute bottom-full right-0 mb-1.5 z-30 bg-slate-900 text-white p-2.5 rounded-xl shadow-2xl text-xs font-bold whitespace-nowrap flex items-center gap-2 border border-slate-700 pointer-events-none"
+                        className="absolute bottom-full right-0 mb-1.5 z-50 bg-slate-900 text-white p-2.5 rounded-xl shadow-2xl text-xs font-bold whitespace-nowrap flex items-center gap-2 border border-slate-700 pointer-events-none"
                       >
                         <span className="text-amber-400 font-bold">روزها:</span>
-                        <span className="text-slate-100 font-black">{program.day || 'تعیین نشده'}</span>
+                        <span className="text-slate-100 font-black">{program.day || (Array.isArray(program.days) && program.days.length > 0 ? program.days.join(' ، ') : 'تعیین نشده')}</span>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -2294,7 +2338,7 @@ export default function Programs() {
             </div>
 
             {/* 3-Dots Action Dropdown Menu Button */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 z-50">
               <button
                 type="button"
                 onClick={(e) => {
@@ -2310,13 +2354,14 @@ export default function Programs() {
               <AnimatePresence>
                 {openMenuCardId === program.id && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setOpenMenuCardId(null)} />
+                    <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setOpenMenuCardId(null); }} />
                     <motion.div
                       initial={{ opacity: 0, scale: 0.92, y: 4 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.92, y: 4 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute left-0 top-full mt-1.5 w-52 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 overflow-hidden text-xs font-bold divide-y divide-slate-100"
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute left-0 top-full mt-1.5 w-56 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 overflow-hidden text-xs font-bold divide-y divide-slate-100"
                     >
                       <div className="py-1">
                         <button
@@ -2325,7 +2370,7 @@ export default function Programs() {
                             setOpenMenuCardId(null);
                             exportProgramToExcel(program);
                           }}
-                          className="w-full px-3.5 py-2 text-right text-emerald-800 hover:bg-emerald-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          className="w-full px-3.5 py-2.5 text-right text-emerald-800 hover:bg-emerald-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                         >
                           <FileSpreadsheet size={16} className="text-emerald-600" />
                           <span>خروجی اکسل (Excel)</span>
@@ -2338,7 +2383,7 @@ export default function Programs() {
                             handleExportProgramPdf(program);
                           }}
                           disabled={isExportingClassPdf}
-                          className="w-full px-3.5 py-2 text-right text-indigo-800 hover:bg-indigo-50 flex items-center gap-2.5 transition-colors cursor-pointer disabled:opacity-50"
+                          className="w-full px-3.5 py-2.5 text-right text-indigo-800 hover:bg-indigo-50 flex items-center gap-2.5 transition-colors cursor-pointer disabled:opacity-50"
                         >
                           <FileText size={16} className="text-indigo-600" />
                           <span>خروجی فایل PDF</span>
@@ -2351,10 +2396,9 @@ export default function Programs() {
                             type="button"
                             onClick={() => {
                               setOpenMenuCardId(null);
-                              setEditingProgram(program);
-                              openRepModal('edit');
+                              openRepModal('card', program);
                             }}
-                            className="w-full px-3.5 py-2 text-right text-teal-800 hover:bg-teal-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                            className="w-full px-3.5 py-2.5 text-right text-teal-800 hover:bg-teal-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                           >
                             <UserCheck size={16} className="text-teal-600" />
                             <span>تعیین / ویرایش نماینده</span>
@@ -2364,6 +2408,8 @@ export default function Programs() {
                             type="button"
                             onClick={() => {
                               setOpenMenuCardId(null);
+                              setIsCustomTeacherEdit(false);
+                              setIsCustomRoomEdit(false);
                               setEditingProgram(program);
                               setEditModalDays(getProgramDays(program));
                               if (program.time) {
@@ -2374,7 +2420,7 @@ export default function Programs() {
                                 }
                               }
                             }}
-                            className="w-full px-3.5 py-2 text-right text-blue-800 hover:bg-blue-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                            className="w-full px-3.5 py-2.5 text-right text-blue-800 hover:bg-blue-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                           >
                             <Edit3 size={16} className="text-blue-600" />
                             <span>ویرایش مشخصات کلاس</span>
@@ -2384,12 +2430,12 @@ export default function Programs() {
                             type="button"
                             onClick={() => {
                               setOpenMenuCardId(null);
-                              setProgramToDelete(program);
+                              setProgramToPermanentlyDelete(program);
                             }}
-                            className="w-full px-3.5 py-2 text-right text-rose-700 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                            className="w-full px-3.5 py-2.5 text-right text-rose-700 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                           >
                             <Trash2 size={16} className="text-rose-600" />
-                            <span>حذف / غیرفعال‌سازی</span>
+                            <span>حذف کامل کلاس</span>
                           </button>
                         </div>
                       )}
@@ -3693,13 +3739,14 @@ export default function Programs() {
               <h3 className="text-xl font-black text-slate-900 text-right border-b border-slate-100 pb-3">افزودن برنامه جدید</h3>
               <form onSubmit={handleAddProgram} className="space-y-4 text-right">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">عنوان کلاس / برنامه</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    عنوان اختصاصی کلاس / برنامه (در بالای کارت نمایش داده می‌شود)
+                  </label>
                   <input 
                     type="text" 
-                    required
-                    placeholder="مثلاً: فقه (مکاسب) یا مشاوره فقه"
-                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                    value={newProgram.title}
+                    placeholder="عنوان دلخواه کلاس را تایپ کنید (مثلاً: درس خارج اصول یا مکاسب محرمه)..."
+                    className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900"
+                    value={newProgram.title || ''}
                     onChange={(e) => setNewProgram({...newProgram, title: e.target.value})}
                   />
                 </div>
@@ -3760,7 +3807,7 @@ export default function Programs() {
                     <div>
                       <label className="block text-xs font-black text-indigo-950 mb-1.5 flex items-center gap-1">
                         <BookOpen size={13} className="text-indigo-600" />
-                        <span>رشته / شاخه درس اصلی:</span>
+                        <span>رشته / شاخه درس اصلی (از بانک دروس مصوب):</span>
                       </label>
                       <div className="grid grid-cols-4 gap-1.5">
                         {dynamicSubjectCategories.map(cat => {
@@ -3772,13 +3819,14 @@ export default function Programs() {
                               onClick={() => {
                                 const catBooks = getBooksForCategory(cat);
                                 const defaultBook = catBooks.find(b => b !== 'سایر (دستی)') || '';
+                                const bookChaps = getChaptersForBook(defaultBook, cat);
+                                const defaultChap = bookChaps[0];
                                 setNewProgram({
                                   ...newProgram,
-                                  subjectCategory: cat,
+                                  subjectCategory: cat as any,
                                   subjectBook: defaultBook,
-                                  title: (!newProgram.title || newProgram.title.includes('اصول') || newProgram.title.includes('فقه') || newProgram.title.includes('فلسفه'))
-                                    ? (defaultBook ? `${cat} (${defaultBook})` : cat)
-                                    : newProgram.title
+                                  subjectChapter: defaultChap ? defaultChap.title : '',
+                                  chapterId: defaultChap ? defaultChap.id : undefined
                                 });
                               }}
                               className={cn(
@@ -3799,7 +3847,7 @@ export default function Programs() {
                     {newProgram.subjectCategory && newProgram.subjectCategory !== 'سایر' && (
                       <div>
                         <label className="block text-[11px] font-bold text-indigo-900 mb-1">
-                          کتاب / سرفصل درسی «{newProgram.subjectCategory}»:
+                          کتاب / سرفصل درسی «{newProgram.subjectCategory}» (از بانک دروس مصوب):
                         </label>
                         <div className="flex flex-wrap gap-1.5">
                           {getBooksForCategory(newProgram.subjectCategory).map(book => {
@@ -3809,12 +3857,13 @@ export default function Programs() {
                                 key={book}
                                 type="button"
                                 onClick={() => {
+                                  const bookChaps = getChaptersForBook(book, newProgram.subjectCategory);
+                                  const defaultChap = bookChaps[0];
                                   setNewProgram({
                                     ...newProgram,
                                     subjectBook: book,
-                                    title: (!newProgram.title || newProgram.title.includes('اصول') || newProgram.title.includes('فقه') || newProgram.title.includes('فلسفه'))
-                                      ? (book !== 'سایر (دستی)' ? `${newProgram.subjectCategory} (${book})` : newProgram.title)
-                                      : newProgram.title
+                                    subjectChapter: defaultChap ? defaultChap.title : '',
+                                    chapterId: defaultChap ? defaultChap.id : undefined
                                   });
                                 }}
                                 className={cn(
@@ -3840,16 +3889,13 @@ export default function Programs() {
                         )}
 
                         {/* STEP 3: Chapter / Section selection dynamically fetched from Curriculum Bank */}
-                        {newProgram.subjectBook && (
+                        {newProgram.subjectBook && newProgram.subjectBook !== 'سایر (دستی)' && (
                           <div className="mt-2.5 pt-2.5 border-t border-indigo-100 space-y-1.5">
                             <label className="block text-[11px] font-bold text-indigo-900">
                               کدام بخش / مجلد از «{newProgram.subjectBook}»؟ (بانک سرفصل‌ها):
                             </label>
                             {(() => {
-                              const matchedChapters = curriculumChapters.filter(c => 
-                                c.bookTitle.trim().includes(newProgram.subjectBook!.trim()) ||
-                                newProgram.subjectBook!.trim().includes(c.bookTitle.trim())
-                              );
+                              const matchedChapters = getChaptersForBook(newProgram.subjectBook, newProgram.subjectCategory);
 
                               if (matchedChapters.length === 0) {
                                 return (
@@ -3866,7 +3912,7 @@ export default function Programs() {
                               return (
                                 <div className="flex flex-wrap gap-1.5">
                                   {matchedChapters.map(chap => {
-                                    const isSel = newProgram.subjectChapter === chap.title;
+                                    const isSel = newProgram.subjectChapter === chap.title || newProgram.chapterId === chap.id;
                                     return (
                                       <button
                                         key={chap.id}
@@ -3875,8 +3921,7 @@ export default function Programs() {
                                           setNewProgram({
                                             ...newProgram,
                                             subjectChapter: chap.title,
-                                            chapterId: chap.id,
-                                            title: `${newProgram.subjectCategory} (${newProgram.subjectBook} - ${chap.title})`
+                                            chapterId: chap.id
                                           });
                                         }}
                                         className={cn(
@@ -4398,11 +4443,12 @@ export default function Programs() {
                     <div>
                       <label className="block text-xs font-black text-indigo-950 mb-1.5 flex items-center gap-1">
                         <BookOpen size={13} className="text-indigo-600" />
-                        <span>رشته / شاخه درس اصلی:</span>
+                        <span>رشته / شاخه درس اصلی (از بانک دروس مصوب):</span>
                       </label>
                       <div className="grid grid-cols-4 gap-1.5">
                         {dynamicSubjectCategories.map(cat => {
-                          const currentCat = editingProgram.subjectCategory || getCourseSubjectCategory(editingProgram);
+                          const rawCat = (editingProgram.subjectCategory || getCourseSubjectCategory(editingProgram) || '').trim();
+                          const currentCat = rawCat === 'اصول فقه' ? 'اصول' : rawCat;
                           const isSel = currentCat === cat;
                           return (
                             <button
@@ -4411,10 +4457,14 @@ export default function Programs() {
                               onClick={() => {
                                 const catBooks = getBooksForCategory(cat);
                                 const defaultBook = catBooks.find(b => b !== 'سایر (دستی)') || '';
+                                const bookChaps = getChaptersForBook(defaultBook, cat);
+                                const defaultChap = bookChaps[0];
                                 setEditingProgram({
                                   ...editingProgram,
-                                  subjectCategory: cat,
-                                  subjectBook: defaultBook
+                                  subjectCategory: cat as any,
+                                  subjectBook: defaultBook,
+                                  subjectChapter: defaultChap ? defaultChap.title : '',
+                                  chapterId: defaultChap ? defaultChap.id : undefined
                                 });
                               }}
                               className={cn(
@@ -4435,7 +4485,7 @@ export default function Programs() {
                     {editingProgram.subjectCategory && editingProgram.subjectCategory !== 'سایر' && (
                       <div>
                         <label className="block text-[11px] font-bold text-indigo-900 mb-1">
-                          کتاب / سرفصل درسی «{editingProgram.subjectCategory}»:
+                          کتاب / سرفصل درسی «{editingProgram.subjectCategory}» (از بانک دروس مصوب):
                         </label>
                         <div className="flex flex-wrap gap-1.5">
                           {getBooksForCategory(editingProgram.subjectCategory).map(book => {
@@ -4445,9 +4495,13 @@ export default function Programs() {
                                 key={book}
                                 type="button"
                                 onClick={() => {
+                                  const bookChaps = getChaptersForBook(book, editingProgram.subjectCategory);
+                                  const defaultChap = bookChaps[0];
                                   setEditingProgram({
                                     ...editingProgram,
-                                    subjectBook: book
+                                    subjectBook: book,
+                                    subjectChapter: defaultChap ? defaultChap.title : '',
+                                    chapterId: defaultChap ? defaultChap.id : undefined
                                   });
                                 }}
                                 className={cn(
@@ -4473,16 +4527,13 @@ export default function Programs() {
                         )}
 
                         {/* STEP 3: Chapter / Section selection dynamically fetched from Curriculum Bank for Edit */}
-                        {editingProgram.subjectBook && (
+                        {editingProgram.subjectBook && editingProgram.subjectBook !== 'سایر (دستی)' && (
                           <div className="mt-2.5 pt-2.5 border-t border-indigo-100 space-y-1.5">
                             <label className="block text-[11px] font-bold text-indigo-900">
                               کدام بخش / مجلد از «{editingProgram.subjectBook}»؟ (بانک سرفصل‌ها):
                             </label>
                             {(() => {
-                              const matchedChapters = curriculumChapters.filter(c => 
-                                c.bookTitle.trim().includes(editingProgram.subjectBook!.trim()) ||
-                                editingProgram.subjectBook!.trim().includes(c.bookTitle.trim())
-                              );
+                              const matchedChapters = getChaptersForBook(editingProgram.subjectBook, editingProgram.subjectCategory);
 
                               if (matchedChapters.length === 0) {
                                 return (
@@ -4499,7 +4550,7 @@ export default function Programs() {
                               return (
                                 <div className="flex flex-wrap gap-1.5">
                                   {matchedChapters.map(chap => {
-                                    const isSel = editingProgram.subjectChapter === chap.title;
+                                    const isSel = editingProgram.subjectChapter === chap.title || editingProgram.chapterId === chap.id;
                                     return (
                                       <button
                                         key={chap.id}
@@ -4625,6 +4676,9 @@ export default function Programs() {
                     onChange={(e) => setEditingProgram({...editingProgram, time: e.target.value})}
                   >
                     <option value="">-- انتخاب از ساعات پیش‌فرض کلاس‌ها --</option>
+                    {editingProgram.time && !CLASS_TIME_PRESETS.includes(editingProgram.time) && (
+                      <option value={editingProgram.time}>{editingProgram.time} (ساعت فعلی کلاس)</option>
+                    )}
                     {CLASS_TIME_PRESETS.map(slot => (
                       <option key={slot} value={slot}>{slot}</option>
                     ))}
@@ -4697,6 +4751,12 @@ export default function Programs() {
                         }}
                       >
                         <option value="">-- انتخاب شماره و نام مَدرَس از لیست (بدون تداخل زمانی) --</option>
+                        {(editingProgram.madrasRoom || editingProgram.classroom) &&
+                          !availableRoomsEdit.some(r => r.name === (editingProgram.madrasRoom || editingProgram.classroom)) && (
+                            <option value={editingProgram.madrasRoom || editingProgram.classroom}>
+                              {editingProgram.madrasRoom || editingProgram.classroom} (مَدرَس فعلی کلاس)
+                            </option>
+                          )}
                         <optgroup label="مدرس‌های داخل مجموعه (در دسترس)">
                           {availableRoomsEdit.filter(r => !r.isExternal).map(r => (
                             <option key={r.id} value={r.name}>
@@ -4801,6 +4861,11 @@ export default function Programs() {
                         }}
                       >
                         <option value="">-- انتخاب استاد از اساتید در دسترس (بدون تداخل زمانی) --</option>
+                        {editingProgram.teacher && !availableTeachersEdit.some(t => t.fullName === editingProgram.teacher) && (
+                          <option value={editingProgram.teacher}>
+                            {editingProgram.teacher} (استاد فعلی کلاس)
+                          </option>
+                        )}
                         <optgroup label="اساتید داخلی مؤسسه (در دسترس)">
                           {availableTeachersEdit.filter(t => !t.isExternal).map(t => (
                             <option key={t.id} value={t.fullName}>
@@ -5036,8 +5101,9 @@ export default function Programs() {
               {/* Active Students List (Class Enrolled Only) */}
               <div className="flex-1 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50/50 max-h-60">
                 {(() => {
-                  const targetClassStudents = repModalTarget === 'edit' && editingProgram
-                    ? getProgramStudents(editingProgram.id).filter(s => s.isActive !== false)
+                  const activeRepProg = repModalTarget === 'card' ? repTargetProgram : (editingProgram || repTargetProgram);
+                  const targetClassStudents = (repModalTarget === 'edit' || repModalTarget === 'card') && activeRepProg
+                    ? getProgramStudents(activeRepProg.id).filter(s => s.isActive !== false)
                     : (newProgram.grade && newProgram.grade !== 'عمومی / سایر'
                         ? students.filter(s => s.isActive !== false && s.grade === newProgram.grade)
                         : students.filter(s => s.isActive !== false)
@@ -5057,7 +5123,7 @@ export default function Programs() {
                     <>
                       <div className="text-[11px] font-bold text-slate-700 px-2 py-1 flex items-center justify-between border-b border-slate-200/80 mb-1">
                         <span>
-                          {repModalTarget === 'edit' 
+                          {(repModalTarget === 'edit' || repModalTarget === 'card')
                             ? `طلاب ثبت‌نام شده در همین کلاس (${targetClassStudents.length} نفر):`
                             : `طلاب پایه مرتبط با کلاس (${targetClassStudents.length} نفر):`
                           }
@@ -5100,7 +5166,7 @@ export default function Programs() {
 
                       {filteredRepStudents.length === 0 && (
                         <div className="text-center py-6 px-4 text-xs text-slate-400 font-medium">
-                          {repModalTarget === 'edit'
+                          {(repModalTarget === 'edit' || repModalTarget === 'card')
                             ? 'هنوز طلبه‌ای در این کلاس ثبت‌نام نشده است. می‌توانید از گزینه «سایر» در پایین نام نماینده را دستی بنویسید یا ابتدا طلاب را به کلاس اضافه فرمایید.'
                             : 'طلبه‌ای با این مشخصات یافت نشد. می‌توانید از کادر زیر نام نماینده را دستی وارد کنید.'}
                         </div>
@@ -5181,14 +5247,17 @@ export default function Programs() {
                 <button
                   type="button"
                   onClick={handleSaveRepModal}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-100 transition-colors"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-100 transition-colors cursor-pointer"
                 >
                   ذخیره و تأیید نمایندگان
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowRepModal(false)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors"
+                  onClick={() => {
+                    setShowRepModal(false);
+                    setRepTargetProgram(null);
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   انصراف
                 </button>
@@ -5266,11 +5335,19 @@ export default function Programs() {
 
               <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
                 <button 
+                  type="button"
                   onClick={handleSaveEnrollments}
-                  disabled={loading}
-                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100 disabled:opacity-50"
+                  disabled={isSavingEnrollments}
+                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {loading ? 'در حال ثبت...' : 'ثبت و بروزرسانی لیست طلاب'}
+                  {isSavingEnrollments ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>در حال ثبت...</span>
+                    </>
+                  ) : (
+                    <span>ثبت و بروزرسانی لیست طلاب</span>
+                  )}
                 </button>
                 <button 
                   type="button"

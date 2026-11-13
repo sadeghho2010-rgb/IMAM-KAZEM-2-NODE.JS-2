@@ -19,7 +19,7 @@ import {
   Check
 } from 'lucide-react';
 import { Student, StudyPeriod, PeriodicStudyLog, WorkflowItem } from '../../types';
-import { getLogMetrics, calculatePeriodAverages } from './studyUtils';
+import { getLogMetrics, calculatePeriodAverages, getAllSystemGrades, normalizeGradeLabel } from './studyUtils';
 import { exportAllPeriodsToExcel, prepareAggregatedData } from './allPeriodsExport';
 import AllPeriodsPDFModal from './AllPeriodsPDFModal';
 import { useMentor } from '../../context/MentorContext';
@@ -34,6 +34,7 @@ interface AllPeriodsTableProps {
   allLogs: PeriodicStudyLog[];
   selectedStudentId: string | null;
   onSelectStudent: (studentId: string) => void;
+  onOpenStudentCourseModal?: (student: Student, periodId?: string) => void;
 }
 
 export default function AllPeriodsTable({
@@ -41,7 +42,8 @@ export default function AllPeriodsTable({
   periods,
   allLogs,
   selectedStudentId,
-  onSelectStudent
+  onSelectStudent,
+  onOpenStudentCourseModal
 }: AllPeriodsTableProps) {
   const { currentUser } = useAuth();
   const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
@@ -108,12 +110,12 @@ export default function AllPeriodsTable({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const uniqueGrades = Array.from(new Set(students.map(s => s.grade).filter(Boolean))) as string[];
+  const uniqueGrades = getAllSystemGrades(students);
 
   const filteredStudents = students.filter(s => {
     const matchSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (s.nationalId && s.nationalId.includes(searchTerm));
-    const matchGrade = gradeFilter === 'ALL' || s.grade === gradeFilter;
+    const matchGrade = gradeFilter === 'ALL' || normalizeGradeLabel(s.grade) === gradeFilter;
     return matchSearch && matchGrade;
   });
 
@@ -164,18 +166,16 @@ export default function AllPeriodsTable({
             <span>گزارش PDF / چاپ</span>
           </button>
 
-          {uniqueGrades.length > 0 && (
-            <select
-              value={gradeFilter}
-              onChange={(e) => setGradeFilter(e.target.value)}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs"
-            >
-              <option value="ALL">همه پایه‌ها</option>
-              {uniqueGrades.map(g => (
-                <option key={g} value={g}>پایه {g}</option>
-              ))}
-            </select>
-          )}
+          <select
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value)}
+            className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer"
+          >
+            <option value="ALL">همه پایه‌ها ({uniqueGrades.join('، ')})</option>
+            {uniqueGrades.map(g => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
 
           <div className="relative min-w-[180px]">
             <input
@@ -344,11 +344,30 @@ export default function AllPeriodsTable({
                   )}
                 >
                   <td className="px-4 py-3.5 text-slate-400 text-[11px] font-bold">{idx + 1}</td>
-                  <td className="px-4 py-3.5 font-bold text-slate-800 flex items-center gap-2">
-                    {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
-                    <span>{item.student.name}</span>
+                  <td
+                    className="px-4 py-3.5 font-black text-slate-900 hover:text-indigo-600 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectStudent(item.student.id);
+                      onOpenStudentCourseModal?.(item.student);
+                    }}
+                    title="کلیک جهت مشاهده کارنامه تفصیلی دروس و مطالعه آزاد این طلبه در تمام دوره‌ها"
+                  >
+                    <div className="flex items-center gap-2 group">
+                      {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0" />}
+                      <span className="underline decoration-dotted decoration-indigo-300 underline-offset-4 group-hover:decoration-indigo-600">
+                        {item.student.name}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-black opacity-80 group-hover:opacity-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                        ریز دروس
+                      </span>
+                    </div>
                   </td>
-                  {cols.grade && <td className="px-3 py-3.5 text-center text-slate-500">{item.student.grade || '---'}</td>}
+                  {cols.grade && (
+                    <td className="px-3 py-3.5 text-center font-bold text-slate-600">
+                      {normalizeGradeLabel(item.student.grade) || '---'}
+                    </td>
+                  )}
                   
                   {/* Total Study */}
                   {cols.sumStudy && (

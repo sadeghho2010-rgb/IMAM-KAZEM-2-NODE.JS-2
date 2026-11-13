@@ -25,6 +25,7 @@ import {
   AttendanceSettings 
 } from '../../types';
 import { getTodayShamsi, getShamsiDayOfWeekName, subtractDaysShamsi, toEnglishDigits, getConsolidatedSessionLog } from '../../lib/jalali';
+import { isProgramActiveAndValid, isStudentEnrolledInProgram, buildStudentCandidateIds } from '../study/studyUtils';
 
 interface StudentQuickSelfReportingViewProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -127,43 +128,21 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     return Array.from(new Set(list)).map(x => x.trim().toLowerCase());
   }, [currentUser, matchedStudent]);
 
-  // Strict Filter: ONLY active programs that have attendanceType === 'self_reporting' AND this student is enrolled in or matched by grade
+  // Strict Filter: ONLY active programs that have attendanceType === 'self_reporting' AND this student is enrolled in
   const selfReportingPrograms = useMemo(() => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+    const idSet = buildStudentCandidateIds(matchedStudent, [
+      currentUser?.id,
+      currentUser?.studentId,
+      currentUser?.linkedStudentId,
+      currentUser?.username
+    ].filter(Boolean) as string[]);
 
-    return activeProgs.filter(p => {
+    return programs.filter(p => {
+      if (!isProgramActiveAndValid(p)) return false;
       if (p.attendanceType !== 'self_reporting') return false;
-
-      // 1. Check course_enrollments
-      const inEnroll = enrollments.some(e => 
-        String(e.programId) === String(p.id) && 
-        candidateIds.includes(String(e.studentId).trim().toLowerCase()) &&
-        e.status !== 'deleted' && 
-        e.status !== 'inactive'
-      );
-      if (inEnroll) return true;
-
-      // 2. Check program studentIds array
-      if (Array.isArray((p as any).studentIds)) {
-        const pStudentIds = (p as any).studentIds.map((x: any) => String(x).trim().toLowerCase());
-        if (candidateIds.some(cid => pStudentIds.includes(cid))) {
-          return true;
-        }
-      }
-
-      // 3. Grade-based fallback when explicit enrollments or studentIds are not specified for the program
-      const hasExplicitEnrollment = enrollments.some(e => String(e.programId) === String(p.id) && e.status !== 'deleted') ||
-        (Array.isArray((p as any).studentIds) && (p as any).studentIds.length > 0);
-
-      if (!hasExplicitEnrollment && matchedStudent?.grade) {
-        if (!p.grade || p.grade === matchedStudent.grade || p.grade === 'همه' || p.grade === 'همه پایه‌ها') {
-          return true;
-        }
-      }
-
-      return false;
+      return isStudentEnrolledInProgram(p, matchedStudent, enrollments, idSet);
     });
-  }, [programs, enrollments, candidateIds, matchedStudent]);
+  }, [programs, enrollments, currentUser, matchedStudent]);
 
   // Helper: check if a course is scheduled to meet on a specific date (matching day of week)
   const isCourseHeldOnDate = (prog: Program, dateStr: string): boolean => {

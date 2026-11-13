@@ -438,7 +438,8 @@ export async function saveToCloudWithTimeout(
   collectionName: string,
   id: string,
   data?: any,
-  timeoutMs = 12000
+  timeoutMs = 12000,
+  _isRetry = false
 ): Promise<CloudWriteResult> {
   const token = typeof window !== 'undefined'
     ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') ||
@@ -481,6 +482,13 @@ export async function saveToCloudWithTimeout(
       });
     }
     clearTimeout(timeoutId);
+
+    if ((apiRes.status === 401 || apiRes.status === 403) && !_isRetry) {
+      const refreshedToken = await tryRefreshToken();
+      if (refreshedToken) {
+        return saveToCloudWithTimeout(action, collectionName, id, data, timeoutMs, true);
+      }
+    }
 
     if (apiRes.ok) {
       const resJson = await apiRes.json().catch(() => ({}));
@@ -747,6 +755,7 @@ export const COLLECTIONS = [
   'curriculum_books',
   'curriculum_chapters',
   'student_course_progress',
+  'student_portal_access_config',
   'app_logs'
 ] as const;
 
@@ -915,6 +924,7 @@ class LocalDatabase {
       request.onsuccess = async (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         resolve(db);
+        await this.executeOneTimeClientStudentPurge(db);
         // Check if database is empty, if so populate initial sample seed data
         await this.checkAndSeedDefaultData(db);
         // Auto-migrate and normalize any students with non-boolean isActive
@@ -1114,6 +1124,12 @@ class LocalDatabase {
         const mergedDocsMap = new Map<string, any>();
         for (const doc of filteredCloudDocs) {
           const docId = String(doc.id);
+          // Prevent an older duplicate cloud row from overwriting a newer cloud row already in mergedDocsMap
+          const alreadyMerged = mergedDocsMap.get(docId);
+          if (alreadyMerged && getDocTimestamp(alreadyMerged) >= getDocTimestamp(doc)) {
+            continue;
+          }
+
           const localDoc = localDocMap.get(docId);
           const localTs = getDocTimestamp(localDoc);
           const cloudTs = getDocTimestamp(doc);
@@ -1231,13 +1247,23 @@ class LocalDatabase {
       if (evt.action === 'delete') {
         const db = await this.getDb();
         if (db.objectStoreNames.contains(resolvedCol)) {
-          try {
-            const tx = db.transaction(resolvedCol, 'readwrite');
-            tx.objectStore(resolvedCol).delete(id);
-          } catch (e) {}
+          await new Promise<void>((resolve) => {
+            try {
+              const tx = db.transaction(resolvedCol, 'readwrite');
+              tx.objectStore(resolvedCol).delete(id);
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => resolve();
+            } catch (e) {
+              resolve();
+            }
+          });
         }
         this.deleteLocalStorageDoc(resolvedCol, id);
         this.notify();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: resolvedCol, id, action: 'delete' } }));
+          window.dispatchEvent(new CustomEvent(`collection_change_${resolvedCol}`, { detail: { id, action: 'delete' } }));
+        }
       } else if (evt.action === 'upsert') {
         try {
           const token = this.getAuthToken();
@@ -1430,6 +1456,12 @@ class LocalDatabase {
     const id = record.id || `rec_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     record.id = id;
 
+    let existingBeforeWrite: any = undefined;
+    try {
+      const currentDocs = this.getLocalStorageDocs(resolvedCol);
+      existingBeforeWrite = currentDocs.find((x: any) => x && x.id === id);
+    } catch (e) {}
+
     // Track as locally modified to protect from stale cloud overwrite
     markPendingLocalDoc(resolvedCol, id, 'upsert', record);
 
@@ -1458,7 +1490,14 @@ class LocalDatabase {
         }
         markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
         setTimeout(() => removePendingLocalDoc(resolvedCol, id), 10000);
-        this.autoLogAudit(db, 'create', resolvedCol, id, undefined, finalDoc);
+        this.autoLogAudit(
+          db,
+          existingBeforeWrite ? 'update' : 'create',
+          resolvedCol,
+          id,
+          existingBeforeWrite,
+          finalDoc
+        );
       } else {
         console.error(`[STORAGE_FAILURE] Client addDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: record });
@@ -1527,7 +1566,7 @@ class LocalDatabase {
     try {
       const res = await saveToCloudWithTimeout('upsert', resolvedCol, id, updated, 12000);
       if (res.success) {
-        const finalDoc = res.item && typeof res.item === 'object' ? res.item : updated;
+        const finalDoc = res.item && typeof res.item === 'object' ? { ...updated, ...res.item } : updated;
         this.setLocalStorageDoc(resolvedCol, finalDoc);
         if (db.objectStoreNames.contains(resolvedCol)) {
           try {
@@ -1535,18 +1574,17 @@ class LocalDatabase {
             transaction.objectStore(resolvedCol).put(finalDoc);
           } catch (e) {}
         }
-        // Protect local write briefly, then release lock so real-time updates propagate freely
+        // Protect local write for 15s against stale background syncs
         markPendingLocalDoc(resolvedCol, id, 'upsert', finalDoc);
-        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 1000);
+        setTimeout(() => removePendingLocalDoc(resolvedCol, id), 15000);
         this.autoLogAudit(db, 'update', resolvedCol, id, existingDoc, finalDoc);
+        this.notify();
       } else {
         console.error(`[STORAGE_FAILURE] Client updateDoc rejected by server for collection "${resolvedCol}" id "${id}":`, res.message || res);
-        removePendingLocalDoc(resolvedCol, id);
         enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
       }
     } catch (err: any) {
       console.error(`[STORAGE_FAILURE] Client updateDoc network/timeout exception for collection "${resolvedCol}" id "${id}":`, err?.message || err);
-      setTimeout(() => removePendingLocalDoc(resolvedCol, id), 2000);
       enqueueSync({ action: 'upsert', collectionName: resolvedCol, id, data: updated });
     }
   }
@@ -1610,10 +1648,55 @@ class LocalDatabase {
       if (res.ok) {
         const payload = await res.json();
         if (payload.success && payload.data && typeof payload.data === 'object') {
+          const pendingMap = getPendingLocalDocsMap();
+          const idb = await this.getDb();
           for (const [col, docs] of Object.entries(payload.data)) {
-            if (Array.isArray(docs) && docs.length > 0) {
-              await this.bulkPut(col as CollectionName, docs, true, true);
-              totalRecords += docs.length;
+            if (Array.isArray(docs)) {
+              const resolvedCol = this.resolveCollection(col);
+              const serverDocIds = new Set(docs.map((d: any) => String(d?.id || '')).filter(Boolean));
+              const localDocs = this.getLocalStorageDocs(resolvedCol);
+              const pendingLocalDocs = localDocs.filter((ld: any) => {
+                if (!ld || !ld.id) return false;
+                const lid = String(ld.id);
+                const normKey = `${normalizeCollectionName(resolvedCol)}::${lid}`;
+                return !serverDocIds.has(lid) && (pendingMap.has(normKey) || pendingMap.has(`${resolvedCol}::${lid}`));
+              });
+
+              const authoritativeDocs = [...docs, ...pendingLocalDocs];
+              const authoritativeIds = new Set(authoritativeDocs.map((d: any) => String(d?.id || '')).filter(Boolean));
+
+              if (idb.objectStoreNames.contains(resolvedCol)) {
+                await new Promise<void>((resolve) => {
+                  try {
+                    const tx = idb.transaction(resolvedCol, 'readwrite');
+                    const store = tx.objectStore(resolvedCol);
+                    const allKeysReq = store.getAllKeys();
+                    allKeysReq.onsuccess = () => {
+                      const existingKeys = allKeysReq.result || [];
+                      for (const key of existingKeys) {
+                        const keyStr = String(key);
+                        if (!authoritativeIds.has(keyStr)) {
+                          store.delete(key);
+                        }
+                      }
+                      for (const doc of authoritativeDocs) {
+                        if (doc && doc.id) store.put(doc);
+                      }
+                    };
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => resolve();
+                  } catch (e) {
+                    resolve();
+                  }
+                });
+              }
+
+              try {
+                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(authoritativeDocs));
+              } catch (e) {}
+
+              this.syncedCollections.add(resolvedCol);
+              totalRecords += authoritativeDocs.length;
             }
           }
           this.notify();
@@ -1630,7 +1713,8 @@ class LocalDatabase {
       'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'research', 'received_articles',
       'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
       'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
-      'student_lockers', 'academic_calendar_periods', 'academic_holidays'
+      'student_lockers', 'academic_calendar_periods', 'academic_holidays',
+      'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress'
     ];
 
     try {
@@ -1803,11 +1887,14 @@ class LocalDatabase {
       let userLevel: any = 1;
 
       try {
-        const raw = localStorage.getItem('system_auth_current_user_v2');
+        const raw =
+          localStorage.getItem('hawzah_app_current_user_v3') ||
+          localStorage.getItem('system_auth_current_user_v2') ||
+          localStorage.getItem('current_user');
         if (raw) {
           const p = JSON.parse(raw);
           if (p) {
-            userName = p.name || p.fullName || p.username || userName;
+            userName = p.fullName || p.name || p.username || userName;
             username = p.username || username;
             userRole = p.role || userRole;
             userRoleTitle = p.roleTitle || userRoleTitle;
@@ -1860,9 +1947,8 @@ class LocalDatabase {
         const tx = db.transaction('audit_logs', 'readwrite');
         const store = tx.objectStore('audit_logs');
         store.put(auditEntry);
-      } else {
-        this.setLocalStorageDoc('audit_logs', auditEntry);
       }
+      this.setLocalStorageDoc('audit_logs', auditEntry);
     } catch (e) {
       console.warn('Auto audit log failed (non-fatal):', e);
     }
@@ -1892,6 +1978,70 @@ class LocalDatabase {
         resolve();
       }
     });
+  }
+
+  private async executeOneTimeClientStudentPurge(db: IDBDatabase): Promise<void> {
+    try {
+      if (typeof window === 'undefined') return;
+      const CLIENT_PURGE_KEY = 'purge_all_students_client_v1_1405';
+      if (localStorage.getItem(CLIENT_PURGE_KEY) === 'done') return;
+
+      const collectionsToClear = [
+        'students',
+        'enrollments',
+        'course_enrollments',
+        'student_course_progress',
+        'attendance',
+        'periodic_study_logs',
+        'study_daily_entries',
+        'study_stats',
+        'student_requests',
+        'received_articles',
+        'article_evaluations',
+        'evaluation_requests',
+        'tuition_records',
+        'student_comments',
+        'oral_exams',
+        'counseling_session_grades',
+        'discussion_groups',
+        'course_selection_requests'
+      ];
+
+      for (const col of collectionsToClear) {
+        localStorage.removeItem(`fallback_idb_${col}`);
+        if (db.objectStoreNames.contains(col)) {
+          try {
+            const tx = db.transaction(col, 'readwrite');
+            tx.objectStore(col).clear();
+          } catch (e) {}
+        }
+      }
+
+      // Clean student user accounts from local system_users cache
+      for (const storageKey of ['hawzah_app_system_users_v3', 'fallback_idb_system_users']) {
+        try {
+          const rawUsers = localStorage.getItem(storageKey);
+          if (rawUsers) {
+            const parsed = JSON.parse(rawUsers);
+            if (Array.isArray(parsed)) {
+              const filtered = parsed.filter((u: any) => {
+                if (!u) return false;
+                const uname = String(u.username || '').trim().toUpperCase();
+                if (uname === 'SADEGH' || uname === 'RAHNAMA' || uname === 'SHAH' || uname === 'SHAHPOORI' || uname === 'MALI') return true;
+                if (u.role === 'teacher' || u.level === 1 || u.level === 2) return true;
+                return false;
+              });
+              localStorage.setItem(storageKey, JSON.stringify(filtered));
+            }
+          }
+        } catch (e) {}
+      }
+
+      localStorage.setItem(CLIENT_PURGE_KEY, 'done');
+      this.notify();
+    } catch (e) {
+      console.warn('executeOneTimeClientStudentPurge notice:', e);
+    }
   }
 
   private async autoMigrateStudents(db: IDBDatabase): Promise<void> {

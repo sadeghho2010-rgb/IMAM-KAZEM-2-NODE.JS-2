@@ -17,6 +17,7 @@ class RealtimeSyncManager {
   private eventSource: EventSource | null = null;
   private listeners = new Set<ChangeCallback>();
   private lastTimestamp = Date.now();
+  private processedEventKeys = new Set<string>();
   private isConnecting = false;
   private reconnectTimer: any = null;
   private pollingTimer: any = null;
@@ -178,7 +179,7 @@ class RealtimeSyncManager {
 
     try {
       const antiCacheTime = Date.now();
-      const querySince = Math.max(0, this.lastTimestamp - 10000);
+      const querySince = Math.max(0, this.lastTimestamp - 2000);
       const res = await fetch(`/api/sync/changes?since=${querySince}&_t=${antiCacheTime}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -189,18 +190,23 @@ class RealtimeSyncManager {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.success && Array.isArray(data.changes) && data.changes.length > 0) {
-          data.changes.forEach((change: RealtimeChangeEvent) => {
-            this.lastTimestamp = Math.max(this.lastTimestamp, change.timestamp);
-            this.dispatchChange(change);
-          });
+        if (data.success) {
+          if (Array.isArray(data.changes) && data.changes.length > 0) {
+            data.changes.forEach((change: RealtimeChangeEvent) => {
+              this.lastTimestamp = Math.max(this.lastTimestamp, change.timestamp);
+              this.dispatchChange(change);
+            });
+          }
+          if (typeof data.serverTime === 'number' && data.serverTime > this.lastTimestamp) {
+            this.lastTimestamp = data.serverTime;
+          }
         }
       }
     } catch (e) {}
   }
 
   /**
-   * Active polling fallback every 3 seconds (ensures guaranteed <= 3-5s latency on other devices)
+   * Active polling fallback every 8 seconds (prevents race conditions during multi-step writes while keeping devices synced)
    */
   private startFallbackPolling() {
     if (this.pollingTimer) clearInterval(this.pollingTimer);
@@ -213,10 +219,22 @@ class RealtimeSyncManager {
       }
 
       await this.pollChangesNow();
-    }, 3000);
+    }, 8000);
   }
 
   public dispatchChange(change: RealtimeChangeEvent, fromBroadcast = false) {
+    if (change.timestamp && change.id && change.collection) {
+      const eventKey = `${change.collection}:${change.id}:${change.action}:${change.timestamp}`;
+      if (this.processedEventKeys.has(eventKey)) {
+        return;
+      }
+      this.processedEventKeys.add(eventKey);
+      if (this.processedEventKeys.size > 1000) {
+        const oldestKey = this.processedEventKeys.values().next().value;
+        if (oldestKey) this.processedEventKeys.delete(oldestKey);
+      }
+    }
+
     // Notify all registered in-memory listeners
     this.listeners.forEach(cb => {
       try { cb(change); } catch (e) {}

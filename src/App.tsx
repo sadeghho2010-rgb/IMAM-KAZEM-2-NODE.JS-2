@@ -33,6 +33,8 @@ const SystemLogs = lazy(() => import('./components/SystemLogs'));
 const DbSaveErrorsView = lazy(() => import('./components/DbSaveErrorsView'));
 const EducationFinancialReportSettings = lazy(() => import('./components/education/EducationFinancialReportSettings'));
 const TeacherTransportManagement = lazy(() => import('./components/education/TeacherTransportManagement'));
+const HeldSessionsReport = lazy(() => import('./components/education/HeldSessionsReport'));
+const StudentAccessManagement = lazy(() => import('./components/education/StudentAccessManagement'));
 const TodoList = lazy(() => import('./components/TodoList'));
 const StudentComments = lazy(() => import('./components/StudentComments'));
 const StudyDiscussion = lazy(() => import('./components/StudyDiscussion'));
@@ -110,6 +112,8 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'passed-courses': 'education_group',
   'oral-exams': 'education_group',
   'academic-calendar': 'education_group',
+  'held-sessions': 'education_group',
+  'student-access-management': 'education_group',
   'teachers-bank': 'education_group',
 
   'student-requests': 'requests_group',
@@ -292,6 +296,8 @@ function AppContent() {
       case 'staff-bank': return 'بانک کارکنان و پرسنل';
       case 'teacher-transport': return 'سرویس و ایاب و ذهاب اساتید';
       case 'education-financial-report': return 'تنظیم گزارش مالی طلاب';
+      case 'held-sessions': return 'تعداد جلسات برگزار شده کلاس‌های درس';
+      case 'student-access-management': return 'مدیریت دسترسی بخش‌های پنل طلاب';
       case 'db-connection-test': return 'تست اتصال دیتابیس';
       case 'db-save-errors': return 'بازرسی خطاهای ثبت دیتابیس';
       case 'user-credentials': return 'مدیریت ورود و مشخصات کاربری';
@@ -477,6 +483,10 @@ function AppContent() {
         return <DbSaveErrorsView />;
       case 'education-financial-report':
         return <EducationFinancialReportSettings onNavigateTab={handleNavigate} />;
+      case 'held-sessions':
+        return <HeldSessionsReport />;
+      case 'student-access-management':
+        return <StudentAccessManagement />;
       case 'user-management':
         return isSuperAdmin ? (
           <UserManagementSettings />

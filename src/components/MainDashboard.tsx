@@ -683,6 +683,28 @@ export default function MainDashboard({
       borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/20',
       accentText: 'text-indigo-600'
     },
+    {
+      id: 'held-sessions',
+      title: 'تعداد جلسات برگزار شده',
+      subtitle: 'محاسبه دقیق جلسات برگزار شده هر کلاس با تفکیک استاد اصلی، استاد جایگزین، تعطیلات تقویم و جلسات لغو شده',
+      category: 'education',
+      icon: CalendarCheck,
+      iconBg: 'bg-gradient-to-br from-emerald-500 via-teal-600 to-indigo-700 text-white shadow-lg shadow-emerald-500/30',
+      cardGradient: 'from-emerald-500/10 via-teal-500/5 to-transparent',
+      borderGlow: 'hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/20',
+      accentText: 'text-emerald-600'
+    },
+    {
+      id: 'student-access-management',
+      title: 'مدیریت دسترسی بخش‌های طلاب',
+      subtitle: 'فعال یا غیرفعال‌سازی بخش‌های پنل طلاب (رزرو غذا، مطالعه، تقاضا و...) به صورت سراسری یا اختصاصی هر طلبه',
+      category: 'education',
+      icon: ShieldCheck,
+      iconBg: 'bg-gradient-to-br from-indigo-600 via-purple-600 to-rose-600 text-white shadow-lg shadow-indigo-600/30',
+      cardGradient: 'from-indigo-600/10 via-purple-500/5 to-transparent',
+      borderGlow: 'hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-600/20',
+      accentText: 'text-indigo-600'
+    },
 
     // 3. CARDS FOR STUDENTS AFFAIRS
     {
@@ -1138,7 +1160,7 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'student-access-management', 'teachers-bank']
     },
     {
       id: 'students_group',

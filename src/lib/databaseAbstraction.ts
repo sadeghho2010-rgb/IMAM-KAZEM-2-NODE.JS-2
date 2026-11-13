@@ -78,54 +78,54 @@ export function mapDedicatedRowToRecord(collection: string, row: any): any {
     if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
     if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'programs') {
-    if (row.title && row.title !== 'برنامه بدون عنوان') record.title = row.title;
-    if (row.grade && row.grade !== 'نامشخص') record.grade = row.grade;
-    if (row.type) record.type = row.type;
-    if (row.parent_program_id !== undefined && row.parent_program_id !== null) {
+    if (row.title && row.title !== 'برنامه بدون عنوان' && !record.title) record.title = row.title;
+    if (row.grade && row.grade !== 'نامشخص' && !record.grade) record.grade = row.grade;
+    if (row.type && !record.type) record.type = row.type;
+    if (row.parent_program_id !== undefined && row.parent_program_id !== null && !record.parentProgramId) {
       record.parentProgramId = row.parent_program_id || record.parentProgramId || '';
     }
-    if (row.teacher_id) record.teacherId = row.teacher_id;
-    if (row.teacher_name) {
-      record.teacherName = row.teacher_name;
-      record.teacher = row.teacher_name;
+    if (row.teacher_id && !record.teacherId) record.teacherId = row.teacher_id;
+    if (row.teacher_name && row.teacher_name !== 'نامشخص') {
+      if (!record.teacherName || record.teacherName === 'تعیین نشده') record.teacherName = row.teacher_name;
+      if (!record.teacher || record.teacher === 'تعیین نشده') record.teacher = row.teacher_name;
     }
     if (row.classroom_id) {
-      record.classroomId = row.classroom_id;
-      record.classroom = row.classroom_id;
-      record.madrasRoom = row.classroom_id;
+      if (!record.classroomId) record.classroomId = row.classroom_id;
+      if (!record.classroom) record.classroom = row.classroom_id;
+      if (!record.madrasRoom) record.madrasRoom = row.classroom_id;
     }
     if (row.day_of_week) {
-      record.day = row.day_of_week;
+      if (!record.day) record.day = row.day_of_week;
       if (!record.days || !Array.isArray(record.days) || record.days.length === 0) {
         record.days = row.day_of_week.split(' ، ').map((d: string) => d.trim()).filter(Boolean);
       }
     }
     if (row.start_time || row.end_time) {
-      record.startTime = row.start_time || record.startTime || '';
-      record.endTime = row.end_time || record.endTime || '';
-      if (row.start_time && row.end_time) {
+      if (!record.startTime) record.startTime = row.start_time || '';
+      if (!record.endTime) record.endTime = row.end_time || '';
+      if (!record.time && row.start_time && row.end_time && row.start_time !== '00:00:00') {
         record.time = `${row.start_time} الی ${row.end_time}`;
       }
     }
-    if (row.representative_student_ids) {
+    if (row.representative_student_ids !== undefined && row.representative_student_ids !== null && !Array.isArray(record.representativeStudentIds)) {
       try {
         const parsed = typeof row.representative_student_ids === 'string'
           ? JSON.parse(row.representative_student_ids)
           : row.representative_student_ids;
-        if (Array.isArray(parsed) && parsed.length > 0) record.representativeStudentIds = parsed;
+        if (Array.isArray(parsed)) record.representativeStudentIds = parsed;
       } catch (e) {}
     }
-    if (row.representative_names) {
+    if (row.representative_names !== undefined && row.representative_names !== null && !Array.isArray(record.representativeNames)) {
       try {
         const parsed = typeof row.representative_names === 'string'
           ? JSON.parse(row.representative_names)
           : row.representative_names;
-        if (Array.isArray(parsed) && parsed.length > 0) record.representativeNames = parsed;
+        if (Array.isArray(parsed)) record.representativeNames = parsed;
       } catch (e) {}
     }
-    if (row.term) record.term = row.term;
-    if (row.created_at) record.createdAt = new Date(row.created_at).toISOString();
-    if (row.updated_at) record.updatedAt = new Date(row.updated_at).toISOString();
+    if (row.term && !record.term) record.term = row.term;
+    if (row.created_at && !record.createdAt) record.createdAt = new Date(row.created_at).toISOString();
+    if (row.updated_at && !record.updatedAt) record.updatedAt = new Date(row.updated_at).toISOString();
   } else if (collection === 'attendance') {
     if (row.student_id) record.studentId = row.student_id;
     if (row.date) record.date = row.date;
@@ -222,8 +222,9 @@ export function mergeDedicatedAndDocumentRows(
       const docTs = extractRecordTs(doc);
       const existingTs = extractRecordTs(existing);
 
-      if (docTs >= existingTs) {
-        // Updated JSON document is newer or equal: JSON document takes priority!
+      // app_collections stores the complete authoritative JSON document written by serverSaveDoc.
+      // Always prioritize `doc` unless `doc` has no timestamp at all and `existing` does.
+      if (docTs > 0 || docTs >= existingTs) {
         const merged: any = { ...existing, ...doc };
         if ((!merged.name || merged.name === 'نامشخص') && existing.name && existing.name !== 'نامشخص') {
           merged.name = existing.name;
@@ -234,7 +235,6 @@ export function mergeDedicatedAndDocumentRows(
         delete merged._appUpdatedAt;
         mergedMap.set(docId, merged);
       } else {
-        // Dedicated row is newer: overlay non-empty existing fields onto doc
         const merged: any = { ...doc };
         for (const key of Object.keys(existing)) {
           const val = existing[key];
@@ -242,7 +242,7 @@ export function mergeDedicatedAndDocumentRows(
           if (typeof val === 'string' && (val === 'نامشخص' || val === 'کلاس بدون عنوان' || val === 'برنامه بدون عنوان') && doc[key] && doc[key] !== val) {
             continue;
           }
-          if (Array.isArray(val) && val.length === 0 && Array.isArray(doc[key]) && doc[key].length > 0) {
+          if (doc[key] !== undefined) {
             continue;
           }
           merged[key] = val;
@@ -1110,11 +1110,17 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
       console.warn('[MySQL Schema Notice - audit_logs]:', e?.message || e);
     }
 
-    // Column migrations for programs table (counseling link, program types, json data)
+    // Column migrations for programs table (counseling link, program types, json data, wider day_of_week/times)
     try {
       const progAlters = [
+        'ALTER TABLE programs MODIFY COLUMN day_of_week VARCHAR(255) NULL',
+        'ALTER TABLE programs MODIFY COLUMN start_time VARCHAR(50) NULL',
+        'ALTER TABLE programs MODIFY COLUMN end_time VARCHAR(50) NULL',
         'ALTER TABLE programs ADD COLUMN IF NOT EXISTS type VARCHAR(50) NULL DEFAULT "اصلی"',
         'ALTER TABLE programs ADD COLUMN IF NOT EXISTS parent_program_id VARCHAR(100) NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS representative_student_ids TEXT NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS representative_names TEXT NULL',
+        'ALTER TABLE programs ADD COLUMN IF NOT EXISTS term VARCHAR(100) NULL',
         'ALTER TABLE programs ADD COLUMN IF NOT EXISTS data JSON NULL',
         'ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_category VARCHAR(150) NULL',
         'ALTER TABLE programs ADD COLUMN IF NOT EXISTS subject_book VARCHAR(150) NULL',
@@ -1654,18 +1660,40 @@ export const MysqlRepository = {
     const cleanData = sanitizeRecordForDb(data);
     const jsonStr = JSON.stringify(cleanData);
 
-    const sql = `
-      INSERT INTO app_collections (collection_name, id, data, updated_at)
-      VALUES (?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE
-        data = ?,
-        updated_at = NOW();
-    `;
+    const runUpsert = async (): Promise<{ affectedRows: number }> => {
+      // First attempt direct UPDATE so even if app_collections lacks a unique key on (collection_name, id),
+      // existing rows are updated in-place rather than inserting duplicate rows.
+      const [updateRes]: any = await pool.query(
+        `UPDATE app_collections SET data = ?, updated_at = NOW() WHERE collection_name = ? AND id = ?`,
+        [jsonStr, collectionName, id]
+      );
+      const updatedCount = Number(updateRes?.affectedRows) || 0;
+
+      if (updatedCount === 0) {
+        const [insertRes]: any = await pool.query(
+          `INSERT INTO app_collections (collection_name, id, data, updated_at) VALUES (?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE data = ?, updated_at = NOW()`,
+          [collectionName, id, jsonStr, jsonStr]
+        );
+        return { affectedRows: Number(insertRes?.affectedRows) || 1 };
+      } else if (updatedCount > 1) {
+        // Self-heal historical duplicate rows for the same (collection_name, id)
+        try {
+          await pool.query(
+            `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
+            [collectionName, id]
+          );
+          await pool.query(
+            `INSERT INTO app_collections (collection_name, id, data, updated_at) VALUES (?, ?, ?, NOW())`,
+            [collectionName, id, jsonStr]
+          );
+        } catch (cleanupErr) {}
+      }
+      return { affectedRows: updatedCount };
+    };
 
     try {
-      const [result]: any = await pool.query(sql, [collectionName, id, jsonStr, jsonStr]);
-      const affectedRows = Number(result?.affectedRows) || 0;
-      return { affectedRows };
+      return await runUpsert();
     } catch (err: any) {
       if (err?.code === 'ER_NO_SUCH_TABLE' || err?.message?.includes("doesn't exist")) {
         try {
@@ -1680,8 +1708,7 @@ export const MysqlRepository = {
               INDEX \`idx_col_updated\` (\`updated_at\`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
-          const [retryRes]: any = await pool.query(sql, [collectionName, id, jsonStr, jsonStr]);
-          return { affectedRows: Number(retryRes?.affectedRows) || 0 };
+          return await runUpsert();
         } catch (createErr) {
           throw err;
         }
@@ -1866,9 +1893,9 @@ export const MysqlRepository = {
                 \`teacher_id\` VARCHAR(100) NULL,
                 \`teacher_name\` VARCHAR(255) NULL,
                 \`classroom_id\` VARCHAR(100) NULL,
-                \`day_of_week\` VARCHAR(50) NULL,
-                \`start_time\` VARCHAR(20) NULL,
-                \`end_time\` VARCHAR(20) NULL,
+                \`day_of_week\` VARCHAR(255) NULL,
+                \`start_time\` VARCHAR(50) NULL,
+                \`end_time\` VARCHAR(50) NULL,
                 \`type\` VARCHAR(50) NULL DEFAULT 'اصلی',
                 \`parent_program_id\` VARCHAR(100) NULL,
                 \`representative_student_ids\` TEXT NULL,
@@ -1883,8 +1910,16 @@ export const MysqlRepository = {
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             `);
             await pool.query(sql, params);
-          } else if (pErr?.code === 'ER_BAD_FIELD_ERROR' || pErr?.message?.includes('Unknown column')) {
-            // Auto-heal missing columns on live MySQL
+          } else if (
+            pErr?.code === 'ER_BAD_FIELD_ERROR' ||
+            pErr?.code === 'ER_DATA_TOO_LONG' ||
+            pErr?.message?.includes('Unknown column') ||
+            pErr?.message?.includes('Data too long')
+          ) {
+            // Auto-heal missing or narrow columns on live MySQL
+            try { await pool.query('ALTER TABLE programs MODIFY COLUMN day_of_week VARCHAR(255) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs MODIFY COLUMN start_time VARCHAR(50) NULL'); } catch (e) {}
+            try { await pool.query('ALTER TABLE programs MODIFY COLUMN end_time VARCHAR(50) NULL'); } catch (e) {}
             try { await pool.query('ALTER TABLE programs ADD COLUMN type VARCHAR(50) NULL DEFAULT "اصلی"'); } catch (e) {}
             try { await pool.query('ALTER TABLE programs ADD COLUMN parent_program_id VARCHAR(100) NULL'); } catch (e) {}
             try { await pool.query('ALTER TABLE programs ADD COLUMN representative_student_ids TEXT NULL'); } catch (e) {}
@@ -2199,14 +2234,15 @@ export const MysqlRepository = {
     let appDoc: any = null;
     try {
       const [rows]: any = await pool.query(
-        `SELECT data FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
+        `SELECT data, updated_at FROM app_collections WHERE collection_name = ? AND id = ? ORDER BY updated_at DESC LIMIT 1`,
         [collectionName, id]
       );
 
       if (rows && rows.length > 0) {
         const r = rows[0];
         const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-        appDoc = { ...parsed, id };
+        const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : undefined;
+        appDoc = { ...parsed, id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
       }
     } catch (e: any) {
       console.warn(`[STORAGE_FAILURE] MySQL getDocument notice for collection "${collectionName}" id "${id}":`, e?.message || e);
@@ -2263,13 +2299,18 @@ export const MysqlRepository = {
     try {
       const placeholders = ids.map(() => '?').join(', ');
       const [rows]: any = await pool.query(
-        `SELECT id, data FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+        `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? AND id IN (${placeholders}) ORDER BY updated_at DESC`,
         [collectionName, ...ids]
       );
-      appDocItems = (rows || []).map((r: any) => {
+      const seenIds = new Set<string>();
+      for (const r of (rows || [])) {
+        const rowId = String(r.id);
+        if (seenIds.has(rowId)) continue;
+        seenIds.add(rowId);
         const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-        return { ...parsed, id: r.id };
-      });
+        const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : undefined;
+        appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+      }
     } catch (e) {}
 
     const queryDedicatedByIds = async (table: string, colName: string) => {
@@ -2315,13 +2356,18 @@ export const MysqlRepository = {
     let appDocItems: any[] = [];
     try {
       const [rows]: any = await pool.execute(
-        `SELECT id, data FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
+        `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
         [collectionName]
       );
-      appDocItems = (rows || []).map((r: any) => {
+      const seenIds = new Set<string>();
+      for (const r of (rows || [])) {
+        const rowId = String(r.id);
+        if (seenIds.has(rowId)) continue;
+        seenIds.add(rowId);
         const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-        return { ...parsed, id: r.id };
-      });
+        const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : undefined;
+        appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+      }
     } catch (e: any) {
       console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
     }

@@ -18,6 +18,7 @@ import { localDb } from '../../../lib/localDb';
 import { useAuth } from '../../../context/AuthContext';
 import { Program, AttendanceSessionLog, Student } from '../../../types';
 import { StudentSelfReportingModal } from '../../attendance/StudentSelfReportingModal';
+import { isProgramActiveAndValid, isStudentEnrolledInProgram, buildStudentCandidateIds } from '../../study/studyUtils';
 
 interface StudentMobileAttendanceProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -104,25 +105,15 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 
   const studentGrade = studentObj?.grade || currentUser?.gradeLabel || 'پایه ۷';
 
-  // Enrolled programs
+  // Enrolled programs (strictly excluding deleted classes and classes where student was removed)
   const enrolledPrograms = useMemo(() => {
-    const activeProgs = programs.filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
+    const idSet = buildStudentCandidateIds(studentObj, studentIdentifiers.map(String));
+    return programs.filter(p => isProgramActiveAndValid(p) && isStudentEnrolledInProgram(p, studentObj, enrollments, idSet));
+  }, [programs, studentIdentifiers, enrollments, studentObj]);
 
-    return activeProgs.filter(p => {
-      const inEnroll = enrollments.some(e => 
-        String(e.programId) === String(p.id) && 
-        studentIdentifiers.some(id => String(e.studentId) === String(id)) &&
-        e.status !== 'deleted' && e.status !== 'inactive'
-      );
-      if (inEnroll) return true;
-
-      const inStudentIds = Array.isArray((p as any).studentIds) && 
-        studentIdentifiers.some(id => (p as any).studentIds.includes(id));
-      if (inStudentIds) return true;
-
-      return false;
-    });
-  }, [programs, studentIdentifiers, enrollments]);
+  const enrolledProgramIdSet = useMemo(() => {
+    return new Set(enrolledPrograms.map(p => String(p.id)));
+  }, [enrolledPrograms]);
 
   // Programs with self-reporting enabled for this student
   const selfReportingCourses = useMemo(() => {
@@ -131,7 +122,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 
   const selfReportingPrograms = selfReportingCourses;
 
-  // Extract individual attendance events for this student
+  // Extract individual attendance events for this student (only for active enrolled programs)
   const studentEvents = useMemo(() => {
     const events: Array<{
       id: string;
@@ -146,6 +137,9 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
     }> = [];
 
     attendanceRecords.forEach(rec => {
+      if (rec.programId && !enrolledProgramIdSet.has(String(rec.programId))) {
+        return;
+      }
       // Find this student in session detail
       const detail = rec.students?.find(st => 
         studentIdentifiers.includes(String(st.studentId)) ||
@@ -180,7 +174,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 
     // Sort newest date first
     return events.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  }, [attendanceRecords, studentIdentifiers, studentObj]);
+  }, [attendanceRecords, studentIdentifiers, studentObj, enrolledProgramIdSet]);
 
   // Aggregate stats
   const metrics = useMemo(() => {

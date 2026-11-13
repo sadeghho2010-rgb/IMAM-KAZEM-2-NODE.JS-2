@@ -777,23 +777,84 @@ export async function saveUserToStorage(user: StoredUser, options: { isLogin?: b
 
 export async function deleteUserFromStorage(userIdOrUsername: string): Promise<void> {
   const clean = userIdOrUsername.trim().toUpperCase();
+  const matchedUsernames: string[] = [clean];
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
   for (const [uname, u] of serverMemoryUsers.entries()) {
-    if (u.id === userIdOrUsername) {
+    if (u.id === userIdOrUsername || u.username?.toUpperCase() === clean || u.studentId === userIdOrUsername || u.linkedStudentId === userIdOrUsername) {
+      matchedUsernames.push(uname);
       serverMemoryUsers.delete(uname);
       invalidateUserCache(uname);
     }
   }
-  saveUsersToFile(Array.from(serverMemoryUsers.values()));
+  const fileUsers = loadUsersFromFile().filter(u => {
+    const uname = (u.username || '').trim().toUpperCase();
+    return (
+      uname !== clean &&
+      u.id !== userIdOrUsername &&
+      u.studentId !== userIdOrUsername &&
+      u.linkedStudentId !== userIdOrUsername &&
+      !matchedUsernames.includes(uname)
+    );
+  });
+  saveUsersToFile(fileUsers);
+
+  if (isMysqlConfigured) {
+    for (const targetKey of Array.from(new Set([userIdOrUsername, ...matchedUsernames]))) {
+      try {
+        await MysqlRepository.deleteUser(targetKey);
+      } catch (e) {}
+    }
+  }
+}
+
+export async function purgeAllStudentUsersFromStorage(): Promise<number> {
+  let removedCount = 0;
+  const isStudentAccount = (u: Partial<StoredUser> | null | undefined): boolean => {
+    if (!u) return false;
+    const uname = String(u.username || '').trim().toUpperCase();
+    if (uname === 'SADEGH' || uname === 'RAHNAMA' || uname === 'SHAH' || uname === 'SHAHPOORI' || uname === 'MALI') {
+      return false;
+    }
+    if (u.role === 'teacher' || u.level === 1 || u.level === 2) {
+      return false;
+    }
+    return (
+      u.level === 3 ||
+      u.role === 'student' ||
+      u.role === 'class_representative' ||
+      Boolean(u.studentId) ||
+      Boolean(u.linkedStudentId)
+    );
+  };
+
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (isStudentAccount(u)) {
+      serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
+      removedCount++;
+    }
+  }
+
+  const remainingFileUsers = loadUsersFromFile().filter(u => !isStudentAccount(u));
+  saveUsersToFile(remainingFileUsers);
 
   if (isMysqlConfigured) {
     try {
-      await MysqlRepository.deleteUser(clean);
+      const mysqlUsers = await MysqlRepository.getAllUsers();
+      for (const mu of mysqlUsers || []) {
+        if (isStudentAccount(mu as any)) {
+          try {
+            await MysqlRepository.deleteUser(mu.id || mu.username);
+            if (mu.username) await MysqlRepository.deleteUser(mu.username);
+            removedCount++;
+          } catch (e) {}
+        }
+      }
     } catch (e) {}
   }
 
-
+  return removedCount;
 }
 
 export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; migratedCount: number }> {
@@ -825,33 +886,146 @@ export async function migrateAllPlainPasswords(): Promise<{ totalUsers: number; 
   return { totalUsers: users.length, migratedCount };
 }
 
+const AUDIT_MODULE_TITLES: Record<string, string> = {
+  auth: 'احراز هویت و نشست‌ها',
+  students: 'مدیریت پرونده طلاب',
+  teachers: 'بانک اطلاعات اساتید',
+  programs: 'برنامه‌های آموزشی و دروس',
+  classrooms: 'مدیریت کلاس‌ها و مدرس‌ها',
+  attendance: 'حضور و غیاب طلاب',
+  enrollments: 'ثبت‌نام و انتخاب واحد',
+  periodic_study_logs: 'گزارش ساعت مطالعه طلاب',
+  study_daily_entries: 'ثبت مطالعه روزانه',
+  study_periods: 'دوره‌های ثبت مطالعه',
+  study_stats: 'آمار مطالعه',
+  tuition_records: 'شهریه و پرداخت‌های طلاب',
+  tuition_periods: 'دوره‌های شهریه',
+  finance_loans: 'وام و تسهیلات مالی',
+  finance_expenses: 'هزینه‌های اجرایی مدرسه',
+  finance_budget_rows: 'ردیف‌های بودجه مالی',
+  student_requests: 'درخواست‌ها و تقاضاهای طلاب',
+  received_articles: 'مقالات و پژوهش‌های طلاب',
+  article_evaluations: 'ارزیابی مقالات علمی',
+  system_users: 'مدیریت حساب‌های کاربری',
+  all_users: 'مدیریت حساب‌های کاربری',
+  users: 'مدیریت حساب‌های کاربری',
+  academic_calendar_periods: 'تقویم آموزشی سالانه',
+  academic_holidays: 'تعطیلات رسمی تقویم',
+  student_lockers: 'مدیریت کمدهای طلاب',
+  personal_todos: 'وظایف شخصی',
+  assigned_todos: 'ارجاع کار و کارتابل',
+  student_course_progress: 'دروس گذرانده و کارنامه علمی',
+  curriculum_subjects: 'بانک دروس (موضوعات)',
+  curriculum_books: 'بانک دروس (کتب)',
+  curriculum_chapters: 'بانک دروس (ابواب و فصول)',
+  student_portal_access_config: 'مدیریت دسترسی بخش‌های پنل طلاب',
+  counseling_session_grades: 'ارزیابی جلسات مشاوره اساتید'
+};
+
+const AUDIT_ROLE_TITLES: Record<string, string> = {
+  super_admin: 'سوپر ادمین (مدیر کل)',
+  school_manager: 'مدیر مدرسه',
+  education_manager: 'مسئول آموزش',
+  education_officer: 'کارشناس آموزش',
+  grade_mentor: 'مسئول پایه',
+  research_manager: 'مسئول پژوهش',
+  finance_manager: 'مدیر امور مالی',
+  financial_officer: 'کارشناس مالی',
+  teacher: 'استاد معزز',
+  class_representative: 'نماینده کلاس',
+  student: 'طلبه',
+  system: 'سیستم هوشمند'
+};
+
 // Server-side audit logging with cryptographic hash chaining
 let lastKnownAuditHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
 export async function logServerAudit(params: {
   userId?: string;
   username?: string;
+  userName?: string;
   userRole?: string;
+  userRoleTitle?: string;
+  userLevel?: number;
   action: string;
+  actionType?: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'revert';
   entityType: string;
   entityId: string;
+  entityName?: string;
   description: string;
   ipAddress?: string;
   previousState?: unknown;
   newState?: unknown;
 }) {
   try {
+    if (params.entityType === 'audit_logs') return;
+
     const { computeRecordHash } = await import('./serverAuditChain');
-    const nowStr = new Date().toISOString();
+    const now = new Date();
+    const nowStr = now.toISOString();
+    const shamsiDate = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(now);
+    const shamsiTime = new Intl.DateTimeFormat('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(now);
+
     const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const prevHash = lastKnownAuditHash;
+
+    // Resolve user details from memory if only username/userId provided
+    const cleanUname = (params.username || '').trim().toUpperCase();
+    const knownUser = cleanUname ? serverMemoryUsers.get(cleanUname) : undefined;
+
+    const resolvedUsername = params.username || knownUser?.username || 'system';
+    const resolvedFullName = params.userName || knownUser?.fullName || knownUser?.name || resolvedUsername || 'کاربر سیستم';
+    const resolvedRole = params.userRole || knownUser?.role || 'system';
+    const resolvedRoleTitle = params.userRoleTitle || knownUser?.roleTitle || AUDIT_ROLE_TITLES[resolvedRole] || resolvedRole;
+    const resolvedLevel = params.userLevel || knownUser?.level || (resolvedRole === 'super_admin' ? 1 : resolvedRole === 'student' ? 3 : 2);
+
+    let resolvedActionType: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'revert' = params.actionType || 'update';
+    if (!params.actionType) {
+      const actUpper = String(params.action || '').toUpperCase();
+      if (actUpper.includes('DELETE') || actUpper.includes('REMOVE')) {
+        resolvedActionType = 'delete';
+      } else if (actUpper.includes('LOGIN')) {
+        resolvedActionType = 'login';
+      } else if (actUpper.includes('LOGOUT')) {
+        resolvedActionType = 'logout';
+      } else if (actUpper.includes('REVERT')) {
+        resolvedActionType = 'revert';
+      } else if (actUpper.includes('CREATE') || actUpper.includes('INSERT') || (!params.previousState && params.newState)) {
+        resolvedActionType = 'create';
+      } else {
+        resolvedActionType = 'update';
+      }
+    }
+
+    const stateObj: any = params.newState || params.previousState || {};
+    const resolvedEntityName =
+      params.entityName ||
+      stateObj?.title ||
+      stateObj?.name ||
+      stateObj?.fullName ||
+      stateObj?.studentName ||
+      stateObj?.programTitle ||
+      stateObj?.username ||
+      params.entityId ||
+      'رکورد سامانه';
+
+    const resolvedModuleTitle = AUDIT_MODULE_TITLES[params.entityType] || params.entityType || 'بخش عمومی';
 
     const currentHash = computeRecordHash({
       id: logId,
       previous_hash: prevHash,
-      user_id: params.userId || 'system',
-      user_name: params.username || 'system',
-      role: params.userRole || 'system',
+      user_id: params.userId || knownUser?.id || 'system',
+      user_name: resolvedFullName,
+      role: resolvedRole,
       action: params.action,
       module: params.entityType,
       target_id: params.entityId,
@@ -867,49 +1041,65 @@ export async function logServerAudit(params: {
     const logEntry = {
       id: logId,
       timestamp: nowStr,
-      user_id: params.userId || 'system',
-      user_name: params.username || 'system',
-      role: params.userRole || 'system',
+      shamsiDate,
+      shamsiTime,
+      userId: params.userId || knownUser?.id || 'system',
+      userName: resolvedFullName,
+      username: resolvedUsername,
+      userRole: resolvedRole,
+      userRoleTitle: resolvedRoleTitle,
+      userLevel: resolvedLevel,
+      actionType: resolvedActionType,
       action: params.action,
       module: params.entityType,
+      moduleTitle: resolvedModuleTitle,
+      entityId: params.entityId,
+      entityName: String(resolvedEntityName),
+      description: params.description,
+      previousState: params.previousState ?? null,
+      newState: params.newState ?? null,
+      isReverted: false,
+      user_id: params.userId || knownUser?.id || 'system',
+      user_name: resolvedFullName,
+      role: resolvedRole,
       target_id: params.entityId,
       target_type: params.entityType,
       entity_type: params.entityType,
       entity_id: params.entityId,
-      description: params.description,
       ip_address: params.ipAddress || '',
       previous_hash: prevHash,
       current_hash: currentHash,
-      old_values: params.previousState || null,
-      new_values: params.newState || null,
+      old_values: params.previousState ?? null,
+      new_values: params.newState ?? null,
       created_at: nowStr
     };
 
-    // 1. If MySQL is configured, write to MySQL audit_logs table
+    // 1. If MySQL is configured, write to both MySQL audit_logs table and app_collections ('audit_logs')
     if (isMysqlConfigured) {
       try {
         await MysqlRepository.recordAuditLog({
           id: logEntry.id,
-          userId: params.userId,
-          username: params.username,
-          userRole: params.userRole,
-          action: params.action,
+          userId: logEntry.userId,
+          username: logEntry.username,
+          userRole: logEntry.userRole,
+          action: logEntry.action,
           entityType: params.entityType,
           entityId: params.entityId,
           description: params.description,
           ipAddress: params.ipAddress
         });
       } catch (mErr) {}
+
+      try {
+        await MysqlRepository.saveDocument('audit_logs', logId, logEntry);
+        const { notifyRealtimeChange } = await import('./serverDataApi');
+        notifyRealtimeChange('audit_logs', logId, 'upsert');
+      } catch (docErr) {
+        console.warn('[AuditLog app_collections notice]:', docErr);
+      }
     }
-
-    // 2. Save to app_collections or internal storage
-    const { serverSaveDoc } = await import('./serverDataApi');
-    serverSaveDoc('audit_logs', logId, logEntry).catch(err => {
-      console.error('[STORAGE_FAILURE] audit log (login):', err?.message || err);
-    });
-
-
   } catch (e: unknown) {
     console.error('Server audit log error:', e instanceof Error ? e.message : e);
   }
 }
+
