@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage, purgeAllStudentUsersFromStorage } from './serverAuth';
+import { verifyAccessToken, logServerAudit, StoredUser, fetchAllUsersFromStorage, saveUserToStorage, deleteUserFromStorage, evictUserFromMemoryStores, purgeAllStudentUsersFromStorage } from './serverAuth';
 import { isMysqlConfigured, MysqlRepository } from './databaseAbstraction';
 import { logAudit } from './auditLogger';
 import { normalizeShamsiDateStr, getConsolidatedSessionLog, toEnglishDigits } from './jalali';
@@ -752,9 +752,9 @@ export async function serverSaveDoc(
 
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
         try {
-          await MysqlRepository.saveUser(finalRecord);
+          await saveUserToStorage(finalRecord as StoredUser);
         } catch (uErr: any) {
-          console.warn('[MySQL SaveUser Non-fatal Notice]:', uErr?.message || uErr);
+          console.error('[STORAGE_FAILURE] MySQL saveUserToStorage error in serverSaveDoc:', uErr?.message || uErr);
         }
       }
 
@@ -856,20 +856,40 @@ export async function serverDeleteDoc(collection: string, id: string, callerUser
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
 
-      // If deleting a user or a student, also remove corresponding user account from storage
+      // If deleting a user or a student, also remove corresponding user account from all storage & caches
       if (collection === 'all_users' || collection === 'system_users' || collection === 'users') {
-        await deleteUserFromStorage(id).catch(() => {});
+        evictUserFromMemoryStores(id);
+        try {
+          await deleteUserFromStorage(id);
+        } catch (uDelErr: any) {
+          console.error(`[STORAGE_FAILURE] serverDeleteDoc user storage cleanup failed for "${id}":`, uDelErr?.message || uDelErr);
+        }
         if (existingRecord?.username) {
-          await deleteUserFromStorage(String(existingRecord.username)).catch(() => {});
+          evictUserFromMemoryStores(String(existingRecord.username));
+          try {
+            await deleteUserFromStorage(String(existingRecord.username));
+          } catch (uDelErr2: any) {
+            console.error(`[STORAGE_FAILURE] serverDeleteDoc username cleanup failed for "${existingRecord.username}":`, uDelErr2?.message || uDelErr2);
+          }
         }
+        invalidateCollectionCache('system_users');
       } else if (collection === 'students') {
-        await deleteUserFromStorage(id).catch(() => {});
-        if (existingRecord?.nationalId) {
-          await deleteUserFromStorage(String(existingRecord.nationalId)).catch(() => {});
+        const studentCleanupKeys = [
+          id,
+          existingRecord?.nationalId ? String(existingRecord.nationalId) : '',
+          existingRecord?.studentCode ? String(existingRecord.studentCode) : '',
+          existingRecord?.userAccountUsername ? String(existingRecord.userAccountUsername) : ''
+        ].filter(Boolean);
+        for (const key of studentCleanupKeys) {
+          evictUserFromMemoryStores(key);
+          try {
+            await deleteUserFromStorage(key);
+          } catch (stDelErr: any) {
+            console.error(`[STORAGE_FAILURE] serverDeleteDoc linked student-user cleanup failed for "${key}":`, stDelErr?.message || stDelErr);
+          }
         }
-        if (existingRecord?.studentCode) {
-          await deleteUserFromStorage(String(existingRecord.studentCode)).catch(() => {});
-        }
+        invalidateCollectionCache('system_users');
+        notifyRealtimeChange('system_users', id, 'delete');
       }
 
       // Invalidate L1 collection cache immediately

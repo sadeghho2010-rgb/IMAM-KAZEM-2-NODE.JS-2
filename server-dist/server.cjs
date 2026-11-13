@@ -1463,60 +1463,64 @@ async function ensurePerformanceIndexes(p) {
     console.warn("[MySQL Startup Notice - SADEGH Seed]:", adminSeedErr?.message || adminSeedErr);
   }
   try {
-    const fs8 = await import("fs");
-    const path7 = await import("path");
-    const localUsersPath = path7.join(process.cwd(), "data", "system_users.json");
-    if (fs8.existsSync(localUsersPath)) {
-      const fileContent = fs8.readFileSync(localUsersPath, "utf8");
-      const localUsers = JSON.parse(fileContent);
-      if (Array.isArray(localUsers)) {
-        for (const u of localUsers) {
-          if (!u || !u.username) continue;
-          const uName = String(u.username).trim().toUpperCase();
-          if (uName === "SADEGH") continue;
-          const uId = u.id || `user_${uName.toLowerCase()}`;
-          const pwdHash = u.passwordHash || null;
-          const allowedTabs = JSON.stringify(u.allowedTabs || []);
-          const editableTabs = JSON.stringify(u.editableTabs || []);
-          const modulePerms = JSON.stringify(u.modulePermissions || {});
-          const upsertUserSql = (tbl) => `
-            INSERT INTO ${tbl} (
-              id, username, password_hash, name, role, role_title, level, grade_label,
-              mentor_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions,
-              is_active, must_change_password
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-              password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
-              name = VALUES(name),
-              role = VALUES(role),
-              role_title = VALUES(role_title),
-              allowed_tabs = VALUES(allowed_tabs),
-              editable_tabs = VALUES(editable_tabs);
-          `;
-          const uParams = [
-            uId,
-            uName,
-            pwdHash,
-            u.name || uName,
-            u.role || "student",
-            u.roleTitle || null,
-            u.level || 3,
-            u.gradeLabel || null,
-            u.mentorId || null,
-            u.avatarBg || null,
-            allowedTabs,
-            editableTabs,
-            modulePerms,
-            u.isActive !== false ? 1 : 0,
-            u.mustChangePassword ? 1 : 0
-          ];
-          try {
-            await mysqlPool.query(upsertUserSql("all_users"), uParams);
-          } catch (e) {
-          }
-          try {
-            await mysqlPool.query(upsertUserSql("system_users"), uParams);
-          } catch (e) {
+    const [countRows] = await mysqlPool.query(`SELECT COUNT(*) AS cnt FROM all_users`);
+    const existingCount = Number(countRows?.[0]?.cnt || 0);
+    if (existingCount <= 1) {
+      const fs8 = await import("fs");
+      const path7 = await import("path");
+      const localUsersPath = path7.join(process.cwd(), "data", "system_users.json");
+      if (fs8.existsSync(localUsersPath)) {
+        const fileContent = fs8.readFileSync(localUsersPath, "utf8");
+        const localUsers = JSON.parse(fileContent);
+        if (Array.isArray(localUsers)) {
+          for (const u of localUsers) {
+            if (!u || !u.username) continue;
+            const uName = String(u.username).trim().toUpperCase();
+            if (uName === "SADEGH") continue;
+            const uId = u.id || `user_${uName.toLowerCase()}`;
+            const pwdHash = u.passwordHash || null;
+            const allowedTabs = JSON.stringify(u.allowedTabs || []);
+            const editableTabs = JSON.stringify(u.editableTabs || []);
+            const modulePerms = JSON.stringify(u.modulePermissions || {});
+            const upsertUserSql = (tbl) => `
+              INSERT INTO ${tbl} (
+                id, username, password_hash, name, role, role_title, level, grade_label,
+                mentor_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions,
+                is_active, must_change_password
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
+                name = VALUES(name),
+                role = VALUES(role),
+                role_title = VALUES(role_title),
+                allowed_tabs = VALUES(allowed_tabs),
+                editable_tabs = VALUES(editable_tabs);
+            `;
+            const uParams = [
+              uId,
+              uName,
+              pwdHash,
+              u.name || uName,
+              u.role || "student",
+              u.roleTitle || null,
+              u.level || 3,
+              u.gradeLabel || null,
+              u.mentorId || null,
+              u.avatarBg || null,
+              allowedTabs,
+              editableTabs,
+              modulePerms,
+              u.isActive !== false ? 1 : 0,
+              u.mustChangePassword ? 1 : 0
+            ];
+            try {
+              await mysqlPool.query(upsertUserSql("all_users"), uParams);
+            } catch (e) {
+            }
+            try {
+              await mysqlPool.query(upsertUserSql("system_users"), uParams);
+            } catch (e) {
+            }
           }
         }
       }
@@ -2006,32 +2010,43 @@ var init_databaseAbstraction = __esm({
           return null;
         }
       },
-      // 2. Fetch All Users
+      // 2. Fetch All Users (Authoritative from MySQL)
       async getAllUsers() {
         const pool2 = getMysqlPool();
-        if (!pool2) return [];
+        if (!pool2) {
+          if (isMysqlConfigured) {
+            throw new DbConnectionError("\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 MySQL \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F.");
+          }
+          return [];
+        }
         try {
           let [rows] = await pool2.execute(
-            `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+            `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
                 level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                linked_student_id AS linkedStudentId, teacher_id AS teacherId, avatar_bg AS avatarBg,
                 allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                is_active AS isActive, must_change_password AS mustChangePassword,
+                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
                 failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                last_login AS lastLogin, data
+                last_login AS lastLogin, data, updated_at AS updatedAt
          FROM all_users ORDER BY level ASC, name ASC`
           );
           if (!rows || rows.length === 0) {
-            [rows] = await pool2.execute(
-              `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
-                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
-                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                  is_active AS isActive, must_change_password AS mustChangePassword,
-                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                  last_login AS lastLogin, data
-           FROM system_users ORDER BY level ASC, name ASC`
-            );
+            try {
+              [rows] = await pool2.execute(
+                `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+                    level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                    linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                    allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                    is_active AS isActive, must_change_password AS mustChangePassword,
+                    failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                    last_login AS lastLogin, data, updated_at AS updatedAt
+             FROM system_users ORDER BY level ASC, name ASC`
+              );
+            } catch (sysErr) {
+              if (sysErr?.code !== "ER_NO_SUCH_TABLE") {
+                console.warn("[MySQL getAllUsers system_users fallback notice]:", sysErr?.message || sysErr);
+              }
+            }
           }
           return (rows || []).map((u) => ({
             ...u,
@@ -2042,8 +2057,11 @@ var init_databaseAbstraction = __esm({
             mustChangePassword: Boolean(u.mustChangePassword)
           }));
         } catch (e) {
-          console.warn("[MySQL getAllUsers Error]:", e);
-          return [];
+          console.error("[STORAGE_FAILURE] MySQL getAllUsers Error:", e?.message || e);
+          if (isConnectionError(e)) {
+            throw new DbConnectionError(e?.message || "\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 MySQL \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u0634\u062F.");
+          }
+          throw e;
         }
       },
       // 2b. Fetch Single User By Username (Fast O(1) Index Lookup)
@@ -2342,17 +2360,36 @@ var init_databaseAbstraction = __esm({
         }
         const cleanData = sanitizeRecordForDb(data);
         const jsonStr = JSON.stringify(cleanData);
-        const sql = `
-      INSERT INTO app_collections (collection_name, id, data, updated_at)
-      VALUES (?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE
-        data = ?,
-        updated_at = NOW();
-    `;
+        const runUpsert = async () => {
+          const [updateRes] = await pool2.query(
+            `UPDATE app_collections SET data = ?, updated_at = NOW() WHERE collection_name = ? AND id = ?`,
+            [jsonStr, collectionName, id]
+          );
+          const updatedCount = Number(updateRes?.affectedRows) || 0;
+          if (updatedCount === 0) {
+            const [insertRes] = await pool2.query(
+              `INSERT INTO app_collections (collection_name, id, data, updated_at) VALUES (?, ?, ?, NOW())
+           ON DUPLICATE KEY UPDATE data = ?, updated_at = NOW()`,
+              [collectionName, id, jsonStr, jsonStr]
+            );
+            return { affectedRows: Number(insertRes?.affectedRows) || 1 };
+          } else if (updatedCount > 1) {
+            try {
+              await pool2.query(
+                `DELETE FROM app_collections WHERE collection_name = ? AND id = ?`,
+                [collectionName, id]
+              );
+              await pool2.query(
+                `INSERT INTO app_collections (collection_name, id, data, updated_at) VALUES (?, ?, ?, NOW())`,
+                [collectionName, id, jsonStr]
+              );
+            } catch (cleanupErr) {
+            }
+          }
+          return { affectedRows: updatedCount };
+        };
         try {
-          const [result] = await pool2.query(sql, [collectionName, id, jsonStr, jsonStr]);
-          const affectedRows = Number(result?.affectedRows) || 0;
-          return { affectedRows };
+          return await runUpsert();
         } catch (err) {
           if (err?.code === "ER_NO_SUCH_TABLE" || err?.message?.includes("doesn't exist")) {
             try {
@@ -2367,8 +2404,7 @@ var init_databaseAbstraction = __esm({
               INDEX \`idx_col_updated\` (\`updated_at\`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           `);
-              const [retryRes] = await pool2.query(sql, [collectionName, id, jsonStr, jsonStr]);
-              return { affectedRows: Number(retryRes?.affectedRows) || 0 };
+              return await runUpsert();
             } catch (createErr) {
               throw err;
             }
@@ -2975,39 +3011,100 @@ var init_databaseAbstraction = __esm({
           await delTable("enrollments");
         } else if (collectionName === "student_requests") {
           await delTable("student_requests");
-        } else if (collectionName === "system_users" || collectionName === "all_users") {
-          try {
-            await pool2.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-          } catch (e) {
-            console.error(`[STORAGE_FAILURE] MySQL deleteDocument all_users table error for id "${id}":`, e?.message || e);
-          }
-          try {
-            await pool2.query(`DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-          } catch (e) {
-            console.error(`[STORAGE_FAILURE] MySQL deleteDocument system_users table error for id "${id}":`, e?.message || e);
-          }
+        } else if (collectionName === "system_users" || collectionName === "all_users" || collectionName === "users") {
+          await this.deleteUser(id);
         }
         return { affectedRows };
       },
-      // 6b. Delete User
+      // 6b. Delete User (Comprehensive multi-table cleanup by ID, Username, and JSON metadata)
       async deleteUser(userIdOrUsername) {
         const pool2 = getMysqlPool();
-        if (!pool2) return;
+        if (!pool2) {
+          if (isMysqlConfigured) {
+            throw new DbConnectionError("MySQL connection pool is unavailable for deleteUser.");
+          }
+          return;
+        }
+        const rawKey = String(userIdOrUsername || "").trim();
+        if (!rawKey) return;
+        const upperKey = rawKey.toUpperCase();
+        const candidateKeys = /* @__PURE__ */ new Set([rawKey, upperKey]);
+        const tryCollectFromTable = async (tableName) => {
+          try {
+            const [rows] = await pool2.query(
+              `SELECT id, username FROM ${tableName}
+           WHERE id = ? OR UPPER(id) = ? OR UPPER(username) = ? OR student_id = ? OR linked_student_id = ?`,
+              [rawKey, upperKey, upperKey, rawKey, rawKey]
+            );
+            for (const r of rows || []) {
+              if (r?.id) candidateKeys.add(String(r.id));
+              if (r?.username) candidateKeys.add(String(r.username).trim().toUpperCase());
+            }
+          } catch (e) {
+            if (e?.code !== "ER_NO_SUCH_TABLE") {
+              console.warn(`[MySQL deleteUser lookup warning] ${tableName}:`, e?.message || e);
+            }
+          }
+        };
+        await tryCollectFromTable("all_users");
+        await tryCollectFromTable("system_users");
+        try {
+          const [colRows] = await pool2.query(
+            `SELECT id, data FROM app_collections
+         WHERE collection_name IN ('all_users', 'system_users', 'users')
+           AND (id = ? OR UPPER(id) = ? OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.username'))) = ?)`,
+            [rawKey, upperKey, upperKey]
+          );
+          for (const r of colRows || []) {
+            if (r?.id) candidateKeys.add(String(r.id));
+            try {
+              const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+              if (parsed?.username) candidateKeys.add(String(parsed.username).trim().toUpperCase());
+              if (parsed?.id) candidateKeys.add(String(parsed.id));
+            } catch (parseErr) {
+            }
+          }
+        } catch (colLookupErr) {
+          console.warn("[MySQL deleteUser app_collections lookup warning]:", colLookupErr?.message || colLookupErr);
+        }
+        const keysArr = Array.from(candidateKeys).filter(Boolean);
+        const upperKeysArr = Array.from(new Set(keysArr.map((k) => k.toUpperCase())));
+        const placeholders = keysArr.map(() => "?").join(", ");
+        const upperPlaceholders = upperKeysArr.map(() => "?").join(", ");
         try {
           await pool2.query(
-            `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-            [userIdOrUsername, userIdOrUsername]
+            `DELETE FROM all_users
+         WHERE id IN (${placeholders})
+            OR UPPER(id) IN (${upperPlaceholders})
+            OR UPPER(username) IN (${upperPlaceholders})`,
+            [...keysArr, ...upperKeysArr, ...upperKeysArr]
           );
+          try {
+            await pool2.query(
+              `DELETE FROM system_users
+           WHERE id IN (${placeholders})
+              OR UPPER(id) IN (${upperPlaceholders})
+              OR UPPER(username) IN (${upperPlaceholders})`,
+              [...keysArr, ...upperKeysArr, ...upperKeysArr]
+            );
+          } catch (sysDelErr) {
+            if (sysDelErr?.code !== "ER_NO_SUCH_TABLE") {
+              console.error(`[STORAGE_FAILURE] MySQL deleteUser system_users error for "${rawKey}":`, sysDelErr?.message || sysDelErr);
+            }
+          }
           await pool2.query(
-            `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-            [userIdOrUsername, userIdOrUsername]
-          );
-          await pool2.query(
-            `DELETE FROM app_collections WHERE collection_name IN ('all_users', 'system_users') AND (id = ? OR UPPER(id) = UPPER(?))`,
-            [userIdOrUsername, userIdOrUsername]
+            `DELETE FROM app_collections
+         WHERE collection_name IN ('all_users', 'system_users', 'users')
+           AND (
+             id IN (${placeholders})
+             OR UPPER(id) IN (${upperPlaceholders})
+             OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.username'))) IN (${upperPlaceholders})
+           )`,
+            [...keysArr, ...upperKeysArr, ...upperKeysArr]
           );
         } catch (e) {
           console.error(`[STORAGE_FAILURE] MySQL deleteUser Error for "${userIdOrUsername}":`, e?.message || e);
+          throw e;
         }
       },
       // 7. Get Single Document by Primary Key
@@ -3017,7 +3114,7 @@ var init_databaseAbstraction = __esm({
         let appDoc = null;
         try {
           const [rows] = await pool2.query(
-            `SELECT data, updated_at FROM app_collections WHERE collection_name = ? AND id = ? LIMIT 1`,
+            `SELECT data, updated_at FROM app_collections WHERE collection_name = ? AND id = ? ORDER BY updated_at DESC LIMIT 1`,
             [collectionName, id]
           );
           if (rows && rows.length > 0) {
@@ -3078,14 +3175,18 @@ var init_databaseAbstraction = __esm({
         try {
           const placeholders = ids.map(() => "?").join(", ");
           const [rows] = await pool2.query(
-            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? AND id IN (${placeholders})`,
+            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? AND id IN (${placeholders}) ORDER BY updated_at DESC`,
             [collectionName, ...ids]
           );
-          appDocItems = (rows || []).map((r) => {
+          const seenIds = /* @__PURE__ */ new Set();
+          for (const r of rows || []) {
+            const rowId = String(r.id);
+            if (seenIds.has(rowId)) continue;
+            seenIds.add(rowId);
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
             const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
-            return { ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
-          });
+            appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+          }
         } catch (e) {
         }
         const queryDedicatedByIds = async (table, colName) => {
@@ -3130,11 +3231,15 @@ var init_databaseAbstraction = __esm({
             `SELECT id, data, updated_at FROM app_collections WHERE collection_name = ? ORDER BY updated_at DESC`,
             [collectionName]
           );
-          appDocItems = (rows || []).map((r) => {
+          const seenIds = /* @__PURE__ */ new Set();
+          for (const r of rows || []) {
+            const rowId = String(r.id);
+            if (seenIds.has(rowId)) continue;
+            seenIds.add(rowId);
             const parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
             const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
-            return { ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt };
-          });
+            appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+          }
         } catch (e) {
           console.warn(`[queryCollection app_collections notice] ${collectionName}:`, e?.message || e);
         }
@@ -4001,7 +4106,7 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
         } catch {
         }
       }
-      let finalRecord = { ...record };
+      let finalRecord = existingDocForAudit && typeof existingDocForAudit === "object" ? { ...existingDocForAudit, ...record } : { ...record };
       if (collection === "attendance") {
         try {
           const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -4084,9 +4189,9 @@ async function serverSaveDoc(collection, idOrData, dataOrCallerUser) {
       }
       if (collection === "all_users" || collection === "system_users" || collection === "users") {
         try {
-          await MysqlRepository.saveUser(finalRecord);
+          await saveUserToStorage(finalRecord);
         } catch (uErr) {
-          console.warn("[MySQL SaveUser Non-fatal Notice]:", uErr?.message || uErr);
+          console.error("[STORAGE_FAILURE] MySQL saveUserToStorage error in serverSaveDoc:", uErr?.message || uErr);
         }
       }
       invalidateCollectionCache(collection);
@@ -4167,23 +4272,38 @@ async function serverDeleteDoc(collection, id, callerUser) {
       const delRes = await MysqlRepository.deleteDocument(collection, id);
       const affectedRows = delRes?.affectedRows || 0;
       if (collection === "all_users" || collection === "system_users" || collection === "users") {
-        await deleteUserFromStorage(id).catch(() => {
-        });
+        evictUserFromMemoryStores(id);
+        try {
+          await deleteUserFromStorage(id);
+        } catch (uDelErr) {
+          console.error(`[STORAGE_FAILURE] serverDeleteDoc user storage cleanup failed for "${id}":`, uDelErr?.message || uDelErr);
+        }
         if (existingRecord?.username) {
-          await deleteUserFromStorage(String(existingRecord.username)).catch(() => {
-          });
+          evictUserFromMemoryStores(String(existingRecord.username));
+          try {
+            await deleteUserFromStorage(String(existingRecord.username));
+          } catch (uDelErr2) {
+            console.error(`[STORAGE_FAILURE] serverDeleteDoc username cleanup failed for "${existingRecord.username}":`, uDelErr2?.message || uDelErr2);
+          }
         }
+        invalidateCollectionCache("system_users");
       } else if (collection === "students") {
-        await deleteUserFromStorage(id).catch(() => {
-        });
-        if (existingRecord?.nationalId) {
-          await deleteUserFromStorage(String(existingRecord.nationalId)).catch(() => {
-          });
+        const studentCleanupKeys = [
+          id,
+          existingRecord?.nationalId ? String(existingRecord.nationalId) : "",
+          existingRecord?.studentCode ? String(existingRecord.studentCode) : "",
+          existingRecord?.userAccountUsername ? String(existingRecord.userAccountUsername) : ""
+        ].filter(Boolean);
+        for (const key of studentCleanupKeys) {
+          evictUserFromMemoryStores(key);
+          try {
+            await deleteUserFromStorage(key);
+          } catch (stDelErr) {
+            console.error(`[STORAGE_FAILURE] serverDeleteDoc linked student-user cleanup failed for "${key}":`, stDelErr?.message || stDelErr);
+          }
         }
-        if (existingRecord?.studentCode) {
-          await deleteUserFromStorage(String(existingRecord.studentCode)).catch(() => {
-          });
-        }
+        invalidateCollectionCache("system_users");
+        notifyRealtimeChange("system_users", id, "delete");
       }
       invalidateCollectionCache(collection);
       if (collection !== "audit_logs") {
@@ -4918,6 +5038,7 @@ __export(serverAuth_exports, {
   comparePassword: () => comparePassword,
   deleteUserFromStorage: () => deleteUserFromStorage,
   dummyPasswordCheck: () => dummyPasswordCheck,
+  evictUserFromMemoryStores: () => evictUserFromMemoryStores,
   fetchAllUsersFromStorage: () => fetchAllUsersFromStorage,
   fetchUserByUsername: () => fetchUserByUsername,
   generateTokens: () => generateTokens,
@@ -5281,33 +5402,46 @@ function sanitizeUser(user) {
 }
 async function fetchAllUsersFromStorage() {
   const usersMap = /* @__PURE__ */ new Map();
-  DEFAULT_SERVER_USERS.forEach((u) => usersMap.set(u.username.toUpperCase(), { ...u }));
-  serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
-  loadUsersFromFile().forEach((u) => {
-    if (u && u.username) {
-      const uname = u.username.toUpperCase();
-      usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-      serverMemoryUsers.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-    }
-  });
   if (isMysqlConfigured) {
+    let mysqlUsers = [];
     try {
-      const mysqlUsers = await MysqlRepository.getAllUsers();
-      if (mysqlUsers && mysqlUsers.length > 0) {
-        mysqlUsers.forEach((u) => {
-          const cleanName = u.username.toUpperCase();
-          usersMap.set(cleanName, {
-            ...usersMap.get(cleanName),
-            ...u,
-            username: cleanName
-          });
-        });
-      }
+      mysqlUsers = await MysqlRepository.getAllUsers();
     } catch (mErr) {
-      console.warn("[MySQL fetchAllUsers notice]:", mErr);
+      console.error("[STORAGE_FAILURE] MySQL fetchAllUsersFromStorage error:", mErr?.message || mErr);
+      throw mErr;
     }
+    if (mysqlUsers && mysqlUsers.length > 0) {
+      mysqlUsers.forEach((u) => {
+        if (!u || !u.username) return;
+        const cleanName = String(u.username).trim().toUpperCase();
+        usersMap.set(cleanName, {
+          ...u,
+          username: cleanName
+        });
+      });
+    } else {
+      DEFAULT_SERVER_USERS.forEach((u) => usersMap.set(u.username.toUpperCase(), { ...u }));
+      loadUsersFromFile().forEach((u) => {
+        if (u && u.username) {
+          const uname = u.username.toUpperCase();
+          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+        }
+      });
+    }
+  } else {
+    DEFAULT_SERVER_USERS.forEach((u) => usersMap.set(u.username.toUpperCase(), { ...u }));
+    serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
+    loadUsersFromFile().forEach((u) => {
+      if (u && u.username) {
+        const uname = u.username.toUpperCase();
+        if (serverMemoryUsers.has(uname) || serverMemoryUsers.size === 0) {
+          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+        }
+      }
+    });
   }
-  if (!usersMap.has("SADEGH")) {
+  const wasSadeghMissing = !usersMap.has("SADEGH");
+  if (wasSadeghMissing) {
     const defaultSadegh = DEFAULT_SERVER_USERS.find((u) => u.username === "SADEGH");
     if (defaultSadegh) {
       usersMap.set("SADEGH", { ...defaultSadegh });
@@ -5386,6 +5520,17 @@ async function fetchAllUsersFromStorage() {
       console.error("[Security Sync Error] SADEGH password sync failed:", e);
     }
   }
+  if (isMysqlConfigured) {
+    serverMemoryUsers.clear();
+    usersMap.forEach((u, uname) => {
+      serverMemoryUsers.set(uname, { ...u });
+    });
+    for (const cachedKey of Array.from(userCache.keys())) {
+      if (!usersMap.has(cachedKey)) {
+        userCache.delete(cachedKey);
+      }
+    }
+  }
   return Array.from(usersMap.values());
 }
 async function fetchUserByUsername(usernameInput) {
@@ -5396,8 +5541,8 @@ async function fetchUserByUsername(usernameInput) {
   if (cached && now - cached.cachedAt < USER_CACHE_TTL_MS) {
     return { ...cached.user };
   }
-  let user = serverMemoryUsers.get(cleanUser);
-  if (!user && isMysqlConfigured) {
+  let user = null;
+  if (isMysqlConfigured) {
     try {
       const mysqlUser = await MysqlRepository.getUserByUsername(cleanUser);
       if (mysqlUser) {
@@ -5406,6 +5551,9 @@ async function fetchUserByUsername(usernameInput) {
           username: cleanUser
         };
         serverMemoryUsers.set(cleanUser, user);
+      } else {
+        serverMemoryUsers.delete(cleanUser);
+        userCache.delete(cleanUser);
       }
     } catch (e) {
       if (isConnectionError(e) || e?.isDbConnectionError) {
@@ -5414,10 +5562,12 @@ async function fetchUserByUsername(usernameInput) {
       }
       console.warn("[MySQL fetchUserByUsername notice]:", e);
     }
-  }
-  if (!user && !isMysqlConfigured) {
-    const fileUsers = loadUsersFromFile();
-    user = fileUsers.find((u) => u.username?.toUpperCase() === cleanUser) || null;
+  } else {
+    user = serverMemoryUsers.get(cleanUser);
+    if (!user) {
+      const fileUsers = loadUsersFromFile();
+      user = fileUsers.find((u) => u.username?.toUpperCase() === cleanUser) || null;
+    }
   }
   if (user) {
     userCache.set(cleanUser, { user: { ...user }, cachedAt: now });
@@ -5425,9 +5575,25 @@ async function fetchUserByUsername(usernameInput) {
   return user || null;
 }
 function invalidateUserCache(usernameInput) {
+  if (!usernameInput) {
+    userCache.clear();
+    return;
+  }
   const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
   if (cleanUser) {
     userCache.delete(cleanUser);
+  }
+}
+function evictUserFromMemoryStores(userIdOrUsername) {
+  const clean = String(userIdOrUsername || "").trim().toUpperCase();
+  if (!clean) return;
+  serverMemoryUsers.delete(clean);
+  invalidateUserCache(clean);
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (u.id === userIdOrUsername || String(u.id || "").toUpperCase() === clean || u.username?.toUpperCase() === clean || u.studentId === userIdOrUsername || u.linkedStudentId === userIdOrUsername) {
+      serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
+    }
   }
 }
 async function saveUserToStorage(user, options = {}) {
@@ -5453,13 +5619,15 @@ async function saveUserToStorage(user, options = {}) {
       }
       return;
     }
-    saveUsersToFile(Array.from(serverMemoryUsers.values()));
     if (isMysqlConfigured) {
       try {
         await MysqlRepository.saveUser(user);
       } catch (mErr) {
         console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
+        throw mErr;
       }
+    } else {
+      saveUsersToFile(Array.from(serverMemoryUsers.values()));
     }
   };
   if (options.isLogin) {
@@ -5469,29 +5637,34 @@ async function saveUserToStorage(user, options = {}) {
   }
 }
 async function deleteUserFromStorage(userIdOrUsername) {
-  const clean = userIdOrUsername.trim().toUpperCase();
+  const raw = String(userIdOrUsername || "").trim();
+  if (!raw) return;
+  const clean = raw.toUpperCase();
   const matchedUsernames = [clean];
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
-  for (const [uname, u] of serverMemoryUsers.entries()) {
-    if (u.id === userIdOrUsername || u.username?.toUpperCase() === clean || u.studentId === userIdOrUsername || u.linkedStudentId === userIdOrUsername) {
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (u.id === raw || String(u.id || "").toUpperCase() === clean || u.username?.toUpperCase() === clean || u.studentId === raw || u.linkedStudentId === raw) {
       matchedUsernames.push(uname);
       serverMemoryUsers.delete(uname);
       invalidateUserCache(uname);
     }
   }
-  const fileUsers = loadUsersFromFile().filter((u) => {
-    const uname = (u.username || "").trim().toUpperCase();
-    return uname !== clean && u.id !== userIdOrUsername && u.studentId !== userIdOrUsername && u.linkedStudentId !== userIdOrUsername && !matchedUsernames.includes(uname);
-  });
-  saveUsersToFile(fileUsers);
   if (isMysqlConfigured) {
-    for (const targetKey of Array.from(/* @__PURE__ */ new Set([userIdOrUsername, ...matchedUsernames]))) {
+    for (const targetKey of Array.from(/* @__PURE__ */ new Set([raw, ...matchedUsernames]))) {
       try {
         await MysqlRepository.deleteUser(targetKey);
       } catch (e) {
+        console.error(`[STORAGE_FAILURE] deleteUserFromStorage MySQL error for "${targetKey}":`, e?.message || e);
+        throw e;
       }
     }
+  } else {
+    const fileUsers = loadUsersFromFile().filter((u) => {
+      const uname = (u.username || "").trim().toUpperCase();
+      return uname !== clean && u.id !== raw && u.studentId !== raw && u.linkedStudentId !== raw && !matchedUsernames.includes(uname);
+    });
+    saveUsersToFile(fileUsers);
   }
 }
 async function purgeAllStudentUsersFromStorage() {
@@ -5514,9 +5687,10 @@ async function purgeAllStudentUsersFromStorage() {
       removedCount++;
     }
   }
-  const remainingFileUsers = loadUsersFromFile().filter((u) => !isStudentAccount(u));
-  saveUsersToFile(remainingFileUsers);
-  if (isMysqlConfigured) {
+  if (!isMysqlConfigured) {
+    const remainingFileUsers = loadUsersFromFile().filter((u) => !isStudentAccount(u));
+    saveUsersToFile(remainingFileUsers);
+  } else {
     try {
       const mysqlUsers = await MysqlRepository.getAllUsers();
       for (const mu of mysqlUsers || []) {
@@ -5526,10 +5700,12 @@ async function purgeAllStudentUsersFromStorage() {
             if (mu.username) await MysqlRepository.deleteUser(mu.username);
             removedCount++;
           } catch (e) {
+            console.error("[STORAGE_FAILURE] purgeAllStudentUsersFromStorage delete error:", e?.message || e);
           }
         }
       }
     } catch (e) {
+      console.error("[STORAGE_FAILURE] purgeAllStudentUsersFromStorage query error:", e?.message || e);
     }
   }
   return removedCount;
@@ -5806,12 +5982,14 @@ var init_serverAuth = __esm({
       }
     ] : [];
     serverMemoryUsers = /* @__PURE__ */ new Map();
-    DEFAULT_SERVER_USERS.forEach((u) => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
-    loadUsersFromFile().forEach((u) => {
-      if (u && u.username) {
-        serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
-      }
-    });
+    if (!isMysqlConfigured) {
+      DEFAULT_SERVER_USERS.forEach((u) => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
+      loadUsersFromFile().forEach((u) => {
+        if (u && u.username) {
+          serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
+        }
+      });
+    }
     userCache = /* @__PURE__ */ new Map();
     USER_CACHE_TTL_MS = 5 * 60 * 1e3;
     AUDIT_MODULE_TITLES = {
@@ -6835,19 +7013,29 @@ var AuthController = class _AuthController {
   }
   static async getUsers(req, res, next) {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
       const users = await fetchAllUsersFromStorage();
       const sanitized = users.map((u) => sanitizeUser(u));
       return res.status(200).json({
         success: true,
         count: sanitized.length,
+        serverTime: Date.now(),
         users: sanitized
       });
     } catch (error) {
+      if (isConnectionError(error) || error?.isDbConnectionError) {
+        return res.status(503).json({ success: false, message: "\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u06CC\u0633\u062A." });
+      }
       next(error);
     }
   }
   static async publicUsers(req, res, next) {
     try {
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.set("Pragma", "no-cache");
+      res.set("Expires", "0");
       const isQuickLoginEnabled = process.env.ENABLE_QUICK_LOGIN === "true";
       const caller = _AuthController.extractCaller(req);
       if (!isQuickLoginEnabled && !caller) {
@@ -6864,9 +7052,13 @@ var AuthController = class _AuthController {
         success: true,
         enabled: isQuickLoginEnabled || Boolean(caller),
         count: sanitized.length,
+        serverTime: Date.now(),
         users: sanitized
       });
     } catch (error) {
+      if (isConnectionError(error) || error?.isDbConnectionError) {
+        return res.status(503).json({ success: false, message: "\u0627\u0631\u062A\u0628\u0627\u0637 \u0628\u0627 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u0628\u0631\u0642\u0631\u0627\u0631 \u0646\u06CC\u0633\u062A." });
+      }
       next(error);
     }
   }
@@ -7050,19 +7242,37 @@ var AuthController = class _AuthController {
   }
   static async deleteUser(req, res, next) {
     try {
-      const { userId, username, skipStudentSync } = req.body;
-      const target = userId || username || req.params.id;
+      const { userId, targetUserId, username, skipStudentSync } = req.body;
+      const target = userId || targetUserId || username || req.params.id;
       if (!target) {
         return res.status(400).json({ success: false, message: "\u0634\u0646\u0627\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631 \u0627\u0644\u0632\u0627\u0645\u06CC \u0627\u0633\u062A." });
       }
       const users = await fetchAllUsersFromStorage();
+      const targetUpper = String(target).trim().toUpperCase();
+      const usernameUpper = username ? String(username).trim().toUpperCase() : "";
       const targetUser = users.find(
-        (u) => u.id === target || u.username.toUpperCase() === String(target).toUpperCase()
+        (u) => u.id === target || String(u.id || "").toUpperCase() === targetUpper || u.username.toUpperCase() === targetUpper || usernameUpper && u.username.toUpperCase() === usernameUpper
       );
-      await deleteUserFromStorage(target);
-      notifyRealtimeChange("system_users", String(target), "delete");
+      if (targetUser && targetUser.username?.toUpperCase() === "SADEGH") {
+        return res.status(403).json({ success: false, message: "\u062D\u0630\u0641 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646 \u0627\u0635\u0644\u06CC \u0633\u0627\u0645\u0627\u0646\u0647 \u0645\u062C\u0627\u0632 \u0646\u06CC\u0633\u062A." });
+      }
+      const deleteKeys = Array.from(new Set([
+        String(target),
+        targetUser?.id,
+        targetUser?.username,
+        username
+      ].filter(Boolean).map((v) => String(v))));
+      for (const delKey of deleteKeys) {
+        await deleteUserFromStorage(delKey);
+      }
+      const deletedId = targetUser?.id || String(target);
+      const deletedUsername = targetUser?.username || (username ? String(username).trim().toUpperCase() : String(target).trim().toUpperCase());
+      notifyRealtimeChange("system_users", deletedId, "delete");
+      if (deletedUsername && deletedUsername !== deletedId) {
+        notifyRealtimeChange("system_users", deletedUsername, "delete");
+      }
       if (!skipStudentSync) {
-        const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+        const targetUsername = deletedUsername.toUpperCase();
         const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
         try {
           const students = await serverQueryCollection("students");
@@ -7089,13 +7299,17 @@ var AuthController = class _AuthController {
         username: caller?.username || "system",
         action: "USER_DELETED",
         entityType: "system_users",
-        entityId: target,
-        description: `\u062D\u0630\u0641 \u06A9\u0627\u0631\u0628\u0631 ${target} \u0627\u0632 \u0633\u06CC\u0633\u062A\u0645`,
+        entityId: deletedId,
+        description: `\u062D\u0630\u0641 \u06A9\u0627\u0631\u0628\u0631 ${deletedUsername || deletedId} \u0627\u0632 \u0633\u06CC\u0633\u062A\u0645`,
         ipAddress: _AuthController.getClientIp(req)
-      }).catch(() => {
+      }).catch((auditErr) => {
+        console.warn("[AUDIT_LOG_WARNING] Failed to log USER_DELETED:", auditErr);
       });
       return res.status(200).json({
         success: true,
+        deletedId,
+        deletedUsername,
+        timestamp: Date.now(),
         message: "\u06A9\u0627\u0631\u0628\u0631 \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u0627\u0632 \u067E\u0627\u06CC\u06AF\u0627\u0647 \u062F\u0627\u062F\u0647 \u062D\u0630\u0641 \u06AF\u0631\u062F\u06CC\u062F."
       });
     } catch (error) {
@@ -13218,7 +13432,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-13T14:02:23.968Z",
+  "buildTime": "2026-11-13T16:42:28.489Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"

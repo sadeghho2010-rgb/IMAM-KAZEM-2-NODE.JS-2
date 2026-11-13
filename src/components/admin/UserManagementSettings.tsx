@@ -621,10 +621,14 @@ export default function UserManagementSettings() {
                         
                         {user.role !== 'super_admin' && (
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               if (window.confirm(`آیا از حذف کاربر «${user.name}» اطمینان دارید؟`)) {
-                                deleteUser(user.id);
-                                showToast(`کاربر «${user.name}» حذف گردید.`);
+                                const res = await deleteUser(user.id);
+                                if (res && res.success === false) {
+                                  alert(res.error || 'خطا در حذف کاربر از سرور.');
+                                } else {
+                                  showToast(`کاربر «${user.name}» با موفقیت حذف گردید.`);
+                                }
                               }
                             }}
                             className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"

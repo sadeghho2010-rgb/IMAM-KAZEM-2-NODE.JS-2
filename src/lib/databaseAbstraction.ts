@@ -851,49 +851,53 @@ export async function ensurePerformanceIndexes(p?: mysql.Pool): Promise<void> {
     console.warn('[MySQL Startup Notice - SADEGH Seed]:', adminSeedErr?.message || adminSeedErr);
   }
 
-  // 2.4 Auto-sync initial users (e.g. RAHNAMA) from local storage into all_users & system_users
+  // 2.4 Auto-sync initial users ONLY during fresh database bootstrap (<= 1 row in all_users)
   try {
-    const fs = await import('fs');
-    const path = await import('path');
-    const localUsersPath = path.join(process.cwd(), 'data', 'system_users.json');
-    if (fs.existsSync(localUsersPath)) {
-      const fileContent = fs.readFileSync(localUsersPath, 'utf8');
-      const localUsers = JSON.parse(fileContent);
-      if (Array.isArray(localUsers)) {
-        for (const u of localUsers) {
-          if (!u || !u.username) continue;
-          const uName = String(u.username).trim().toUpperCase();
-          if (uName === 'SADEGH') continue;
+    const [countRows]: any = await mysqlPool.query(`SELECT COUNT(*) AS cnt FROM all_users`);
+    const existingCount = Number(countRows?.[0]?.cnt || 0);
+    if (existingCount <= 1) {
+      const fs = await import('fs');
+      const path = await import('path');
+      const localUsersPath = path.join(process.cwd(), 'data', 'system_users.json');
+      if (fs.existsSync(localUsersPath)) {
+        const fileContent = fs.readFileSync(localUsersPath, 'utf8');
+        const localUsers = JSON.parse(fileContent);
+        if (Array.isArray(localUsers)) {
+          for (const u of localUsers) {
+            if (!u || !u.username) continue;
+            const uName = String(u.username).trim().toUpperCase();
+            if (uName === 'SADEGH') continue;
 
-          const uId = u.id || `user_${uName.toLowerCase()}`;
-          const pwdHash = u.passwordHash || null;
-          const allowedTabs = JSON.stringify(u.allowedTabs || []);
-          const editableTabs = JSON.stringify(u.editableTabs || []);
-          const modulePerms = JSON.stringify(u.modulePermissions || {});
+            const uId = u.id || `user_${uName.toLowerCase()}`;
+            const pwdHash = u.passwordHash || null;
+            const allowedTabs = JSON.stringify(u.allowedTabs || []);
+            const editableTabs = JSON.stringify(u.editableTabs || []);
+            const modulePerms = JSON.stringify(u.modulePermissions || {});
 
-          const upsertUserSql = (tbl: string) => `
-            INSERT INTO ${tbl} (
-              id, username, password_hash, name, role, role_title, level, grade_label,
-              mentor_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions,
-              is_active, must_change_password
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-              password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
-              name = VALUES(name),
-              role = VALUES(role),
-              role_title = VALUES(role_title),
-              allowed_tabs = VALUES(allowed_tabs),
-              editable_tabs = VALUES(editable_tabs);
-          `;
+            const upsertUserSql = (tbl: string) => `
+              INSERT INTO ${tbl} (
+                id, username, password_hash, name, role, role_title, level, grade_label,
+                mentor_id, avatar_bg, allowed_tabs, editable_tabs, module_permissions,
+                is_active, must_change_password
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                password_hash = IF(VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != '', VALUES(password_hash), password_hash),
+                name = VALUES(name),
+                role = VALUES(role),
+                role_title = VALUES(role_title),
+                allowed_tabs = VALUES(allowed_tabs),
+                editable_tabs = VALUES(editable_tabs);
+            `;
 
-          const uParams = [
-            uId, uName, pwdHash, u.name || uName, u.role || 'student', u.roleTitle || null,
-            u.level || 3, u.gradeLabel || null, u.mentorId || null, u.avatarBg || null,
-            allowedTabs, editableTabs, modulePerms, u.isActive !== false ? 1 : 0, u.mustChangePassword ? 1 : 0
-          ];
+            const uParams = [
+              uId, uName, pwdHash, u.name || uName, u.role || 'student', u.roleTitle || null,
+              u.level || 3, u.gradeLabel || null, u.mentorId || null, u.avatarBg || null,
+              allowedTabs, editableTabs, modulePerms, u.isActive !== false ? 1 : 0, u.mustChangePassword ? 1 : 0
+            ];
 
-          try { await mysqlPool.query(upsertUserSql('all_users'), uParams); } catch (e) {}
-          try { await mysqlPool.query(upsertUserSql('system_users'), uParams); } catch (e) {}
+            try { await mysqlPool.query(upsertUserSql('all_users'), uParams); } catch (e) {}
+            try { await mysqlPool.query(upsertUserSql('system_users'), uParams); } catch (e) {}
+          }
         }
       }
     }
@@ -1357,34 +1361,45 @@ export const MysqlRepository = {
     }
   },
 
-  // 2. Fetch All Users
+  // 2. Fetch All Users (Authoritative from MySQL)
   async getAllUsers(): Promise<SystemUserEntity[]> {
     const pool = getMysqlPool();
-    if (!pool) return [];
+    if (!pool) {
+      if (isMysqlConfigured) {
+        throw new DbConnectionError('ارتباط با پایگاه داده MySQL برقرار نشد.');
+      }
+      return [];
+    }
 
     try {
       let [rows]: any = await pool.execute(
-        `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+        `SELECT id, username, password_hash AS passwordHash, password, name, role, role_title AS roleTitle,
                 level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                linked_student_id AS linkedStudentId, teacher_id AS teacherId, avatar_bg AS avatarBg,
                 allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                is_active AS isActive, must_change_password AS mustChangePassword,
+                is_active AS isActive, is_read_only AS isReadOnly, can_edit AS canEdit, must_change_password AS mustChangePassword,
                 failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                last_login AS lastLogin, data
+                last_login AS lastLogin, data, updated_at AS updatedAt
          FROM all_users ORDER BY level ASC, name ASC`
       );
 
       if (!rows || rows.length === 0) {
-        [rows] = await pool.execute(
-          `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
-                  level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
-                  linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
-                  allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
-                  is_active AS isActive, must_change_password AS mustChangePassword,
-                  failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
-                  last_login AS lastLogin, data
-           FROM system_users ORDER BY level ASC, name ASC`
-        );
+        try {
+          [rows] = await pool.execute(
+            `SELECT id, username, password_hash AS passwordHash, name, role, role_title AS roleTitle,
+                    level, grade_label AS gradeLabel, mentor_id AS mentorId, student_id AS studentId,
+                    linked_student_id AS linkedStudentId, avatar_bg AS avatarBg,
+                    allowed_tabs AS allowedTabs, editable_tabs AS editableTabs, module_permissions AS modulePermissions,
+                    is_active AS isActive, must_change_password AS mustChangePassword,
+                    failed_login_attempts AS failedLoginAttempts, account_locked_until AS accountLockedUntil,
+                    last_login AS lastLogin, data, updated_at AS updatedAt
+             FROM system_users ORDER BY level ASC, name ASC`
+          );
+        } catch (sysErr: any) {
+          if (sysErr?.code !== 'ER_NO_SUCH_TABLE') {
+            console.warn('[MySQL getAllUsers system_users fallback notice]:', sysErr?.message || sysErr);
+          }
+        }
       }
 
       return (rows || []).map((u: any) => ({
@@ -1395,9 +1410,12 @@ export const MysqlRepository = {
         isActive: Boolean(u.isActive),
         mustChangePassword: Boolean(u.mustChangePassword)
       }));
-    } catch (e) {
-      console.warn('[MySQL getAllUsers Error]:', e);
-      return [];
+    } catch (e: any) {
+      console.error('[STORAGE_FAILURE] MySQL getAllUsers Error:', e?.message || e);
+      if (isConnectionError(e)) {
+        throw new DbConnectionError(e?.message || 'ارتباط با پایگاه داده MySQL برقرار نشد.');
+      }
+      throw e;
     }
   },
 
@@ -2187,42 +2205,110 @@ export const MysqlRepository = {
       await delTable('enrollments');
     } else if (collectionName === 'student_requests') {
       await delTable('student_requests');
-    } else if (collectionName === 'system_users' || collectionName === 'all_users') {
-      try {
-        await pool.query(`DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-      } catch (e: any) {
-        console.error(`[STORAGE_FAILURE] MySQL deleteDocument all_users table error for id "${id}":`, e?.message || e);
-      }
-      try {
-        await pool.query(`DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`, [id, id]);
-      } catch (e: any) {
-        console.error(`[STORAGE_FAILURE] MySQL deleteDocument system_users table error for id "${id}":`, e?.message || e);
-      }
+    } else if (collectionName === 'system_users' || collectionName === 'all_users' || collectionName === 'users') {
+      await this.deleteUser(id);
     }
 
     return { affectedRows };
   },
 
-  // 6b. Delete User
+  // 6b. Delete User (Comprehensive multi-table cleanup by ID, Username, and JSON metadata)
   async deleteUser(userIdOrUsername: string): Promise<void> {
     const pool = getMysqlPool();
-    if (!pool) return;
+    if (!pool) {
+      if (isMysqlConfigured) {
+        throw new DbConnectionError('MySQL connection pool is unavailable for deleteUser.');
+      }
+      return;
+    }
+
+    const rawKey = String(userIdOrUsername || '').trim();
+    if (!rawKey) return;
+    const upperKey = rawKey.toUpperCase();
+
+    // Collect every known id and username alias across user tables first so cross-table mismatches never leave orphan rows
+    const candidateKeys = new Set<string>([rawKey, upperKey]);
+    const tryCollectFromTable = async (tableName: string) => {
+      try {
+        const [rows]: any = await pool.query(
+          `SELECT id, username FROM ${tableName}
+           WHERE id = ? OR UPPER(id) = ? OR UPPER(username) = ? OR student_id = ? OR linked_student_id = ?`,
+          [rawKey, upperKey, upperKey, rawKey, rawKey]
+        );
+        for (const r of (rows || [])) {
+          if (r?.id) candidateKeys.add(String(r.id));
+          if (r?.username) candidateKeys.add(String(r.username).trim().toUpperCase());
+        }
+      } catch (e: any) {
+        if (e?.code !== 'ER_NO_SUCH_TABLE') {
+          console.warn(`[MySQL deleteUser lookup warning] ${tableName}:`, e?.message || e);
+        }
+      }
+    };
+
+    await tryCollectFromTable('all_users');
+    await tryCollectFromTable('system_users');
+
+    try {
+      const [colRows]: any = await pool.query(
+        `SELECT id, data FROM app_collections
+         WHERE collection_name IN ('all_users', 'system_users', 'users')
+           AND (id = ? OR UPPER(id) = ? OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.username'))) = ?)`,
+        [rawKey, upperKey, upperKey]
+      );
+      for (const r of (colRows || [])) {
+        if (r?.id) candidateKeys.add(String(r.id));
+        try {
+          const parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+          if (parsed?.username) candidateKeys.add(String(parsed.username).trim().toUpperCase());
+          if (parsed?.id) candidateKeys.add(String(parsed.id));
+        } catch (parseErr) {}
+      }
+    } catch (colLookupErr: any) {
+      console.warn('[MySQL deleteUser app_collections lookup warning]:', colLookupErr?.message || colLookupErr);
+    }
+
+    const keysArr = Array.from(candidateKeys).filter(Boolean);
+    const upperKeysArr = Array.from(new Set(keysArr.map(k => k.toUpperCase())));
+    const placeholders = keysArr.map(() => '?').join(', ');
+    const upperPlaceholders = upperKeysArr.map(() => '?').join(', ');
 
     try {
       await pool.query(
-        `DELETE FROM all_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-        [userIdOrUsername, userIdOrUsername]
+        `DELETE FROM all_users
+         WHERE id IN (${placeholders})
+            OR UPPER(id) IN (${upperPlaceholders})
+            OR UPPER(username) IN (${upperPlaceholders})`,
+        [...keysArr, ...upperKeysArr, ...upperKeysArr]
       );
+
+      try {
+        await pool.query(
+          `DELETE FROM system_users
+           WHERE id IN (${placeholders})
+              OR UPPER(id) IN (${upperPlaceholders})
+              OR UPPER(username) IN (${upperPlaceholders})`,
+          [...keysArr, ...upperKeysArr, ...upperKeysArr]
+        );
+      } catch (sysDelErr: any) {
+        if (sysDelErr?.code !== 'ER_NO_SUCH_TABLE') {
+          console.error(`[STORAGE_FAILURE] MySQL deleteUser system_users error for "${rawKey}":`, sysDelErr?.message || sysDelErr);
+        }
+      }
+
       await pool.query(
-        `DELETE FROM system_users WHERE id = ? OR UPPER(username) = UPPER(?)`,
-        [userIdOrUsername, userIdOrUsername]
-      );
-      await pool.query(
-        `DELETE FROM app_collections WHERE collection_name IN ('all_users', 'system_users') AND (id = ? OR UPPER(id) = UPPER(?))`,
-        [userIdOrUsername, userIdOrUsername]
+        `DELETE FROM app_collections
+         WHERE collection_name IN ('all_users', 'system_users', 'users')
+           AND (
+             id IN (${placeholders})
+             OR UPPER(id) IN (${upperPlaceholders})
+             OR UPPER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.username'))) IN (${upperPlaceholders})
+           )`,
+        [...keysArr, ...upperKeysArr, ...upperKeysArr]
       );
     } catch (e: any) {
       console.error(`[STORAGE_FAILURE] MySQL deleteUser Error for "${userIdOrUsername}":`, e?.message || e);
+      throw e;
     }
   },
 

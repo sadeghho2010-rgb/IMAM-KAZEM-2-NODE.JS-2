@@ -885,7 +885,7 @@ class LocalDatabase {
     if (name === 'attendances') return 'attendance';
     if (name === 'study_logs') return 'periodic_study_logs';
     if (name === 'classes') return 'classrooms';
-    if (name === 'users') return 'system_users';
+    if (name === 'users' || name === 'all_users' || name === 'user') return 'system_users';
     if (name === 'research_records') return 'research';
     if (name === 'student_claims') return 'finance_student_claims';
     if (name === 'destination_accounts') return 'finance_destination_accounts';
@@ -1408,6 +1408,101 @@ class LocalDatabase {
     return this.addDoc(collectionName, idOrData);
   }
 
+  // Authoritatively replace system_users cache in IndexedDB & localStorage fallback (evicts users deleted on other devices)
+  async replaceAuthoritativeUsersCache(usersList: any[]): Promise<void> {
+    if (typeof window === 'undefined' || !Array.isArray(usersList)) return;
+    try {
+      const validDocs = usersList.filter(u => u && (u.id || u.username)).map(u => ({
+        ...u,
+        id: String(u.id || `user_${String(u.username).toLowerCase()}`)
+      }));
+      const validIds = new Set(validDocs.map(d => String(d.id)));
+      const db = await this.getDb();
+
+      if (db.objectStoreNames.contains('system_users')) {
+        await new Promise<void>((resolve) => {
+          try {
+            const tx = db.transaction('system_users', 'readwrite');
+            const store = tx.objectStore('system_users');
+            const req = store.getAllKeys();
+            req.onsuccess = () => {
+              for (const k of (req.result || [])) {
+                if (!validIds.has(String(k))) {
+                  store.delete(k);
+                }
+              }
+              for (const doc of validDocs) {
+                store.put(doc);
+              }
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch (e) {
+            resolve();
+          }
+        });
+      }
+
+      try {
+        localStorage.setItem('fallback_idb_system_users', JSON.stringify(validDocs));
+        localStorage.removeItem('fallback_idb_all_users');
+        localStorage.removeItem('fallback_idb_users');
+      } catch (e) {}
+    } catch (e) {
+      console.warn('[STORAGE_FAILURE] replaceAuthoritativeUsersCache error:', e);
+    }
+  }
+
+  // Immediately evict deleted user record(s) from IndexedDB and fallback localStorage
+  async removeLocalUserCacheByKeys(keys: string[]): Promise<void> {
+    if (typeof window === 'undefined' || !keys || keys.length === 0) return;
+    const cleanKeys = keys.map(k => String(k || '').trim()).filter(Boolean);
+    const upperKeys = new Set(cleanKeys.map(k => k.toUpperCase()));
+    try {
+      const db = await this.getDb();
+      if (db.objectStoreNames.contains('system_users')) {
+        await new Promise<void>((resolve) => {
+          try {
+            const tx = db.transaction('system_users', 'readwrite');
+            const store = tx.objectStore('system_users');
+            const req = store.getAll();
+            req.onsuccess = () => {
+              for (const row of (req.result || [])) {
+                const rowIdUpper = String(row?.id || '').toUpperCase();
+                const rowUserUpper = String(row?.username || '').toUpperCase();
+                if (upperKeys.has(rowIdUpper) || upperKeys.has(rowUserUpper)) {
+                  store.delete(row.id);
+                }
+              }
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch (e) {
+            resolve();
+          }
+        });
+      }
+
+      for (const lsKey of ['fallback_idb_system_users', 'fallback_idb_all_users', 'fallback_idb_users']) {
+        try {
+          const raw = localStorage.getItem(lsKey);
+          if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+              const filtered = arr.filter((u: any) =>
+                !upperKeys.has(String(u?.id || '').toUpperCase()) &&
+                !upperKeys.has(String(u?.username || '').toUpperCase())
+              );
+              localStorage.setItem(lsKey, JSON.stringify(filtered));
+            }
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.warn('[STORAGE_FAILURE] removeLocalUserCacheByKeys error:', e);
+    }
+  }
+
   // Clear IndexedDB caches and seeding flag on user logout / user switch
   async clearAllLocalDataAndCaches(): Promise<void> {
     if (typeof window === 'undefined') return;
@@ -1419,6 +1514,9 @@ class LocalDatabase {
       sessionStorage.removeItem('access_token');
       localStorage.removeItem('system_auth_current_user_v2');
       localStorage.removeItem('current_user');
+      localStorage.removeItem('fallback_idb_system_users');
+      localStorage.removeItem('fallback_idb_all_users');
+      localStorage.removeItem('fallback_idb_users');
 
       const db = await this.getDb();
       const storeNames = Array.from(db.objectStoreNames);

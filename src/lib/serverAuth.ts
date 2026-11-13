@@ -556,52 +556,68 @@ export const DEFAULT_SERVER_USERS: StoredUser[] = INITIAL_ADMIN_PASSWORD && INIT
   },
 ] : [];
 
-// In-memory user store on server for fast fallback & dev environment
+// In-memory user store on server (Authoritative ONLY when MySQL is not configured; otherwise synced from MySQL)
 const serverMemoryUsers = new Map<string, StoredUser>();
-DEFAULT_SERVER_USERS.forEach(u => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
-loadUsersFromFile().forEach(u => {
-  if (u && u.username) {
-    serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
-  }
-});
+if (!isMysqlConfigured) {
+  DEFAULT_SERVER_USERS.forEach(u => serverMemoryUsers.set(u.username.toUpperCase(), { ...u }));
+  loadUsersFromFile().forEach(u => {
+    if (u && u.username) {
+      serverMemoryUsers.set(u.username.toUpperCase(), { ...u });
+    }
+  });
+}
 
 // =================== Server-Side User Storage and Migration ===================
 
 export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
   const usersMap = new Map<string, StoredUser>();
-  DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
-  serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
 
-  // Load latest users from persistent file
-  loadUsersFromFile().forEach(u => {
-    if (u && u.username) {
-      const uname = u.username.toUpperCase();
-      usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-      serverMemoryUsers.set(uname, { ...usersMap.get(uname), ...u, username: uname });
-    }
-  });
-
-  // 1. If MySQL is configured, fetch authoritative users from MySQL database
   if (isMysqlConfigured) {
+    // MySQL is the SINGLE authoritative source of truth.
+    // Never merge stale serverMemoryUsers or data/system_users.json back on top of MySQL rows.
+    let mysqlUsers: any[] = [];
     try {
-      const mysqlUsers = await MysqlRepository.getAllUsers();
-      if (mysqlUsers && mysqlUsers.length > 0) {
-        mysqlUsers.forEach(u => {
-          const cleanName = u.username.toUpperCase();
-          usersMap.set(cleanName, {
-            ...usersMap.get(cleanName),
-            ...u,
-            username: cleanName
-          } as StoredUser);
-        });
-      }
-    } catch (mErr) {
-      console.warn('[MySQL fetchAllUsers notice]:', mErr);
+      mysqlUsers = await MysqlRepository.getAllUsers();
+    } catch (mErr: any) {
+      console.error('[STORAGE_FAILURE] MySQL fetchAllUsersFromStorage error:', mErr?.message || mErr);
+      throw mErr;
     }
+
+    if (mysqlUsers && mysqlUsers.length > 0) {
+      mysqlUsers.forEach(u => {
+        if (!u || !u.username) return;
+        const cleanName = String(u.username).trim().toUpperCase();
+        usersMap.set(cleanName, {
+          ...u,
+          username: cleanName
+        } as StoredUser);
+      });
+    } else {
+      // Fresh empty DB bootstrap fallback
+      DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
+      loadUsersFromFile().forEach(u => {
+        if (u && u.username) {
+          const uname = u.username.toUpperCase();
+          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+        }
+      });
+    }
+  } else {
+    DEFAULT_SERVER_USERS.forEach(u => usersMap.set(u.username.toUpperCase(), { ...u }));
+    serverMemoryUsers.forEach((u, uname) => usersMap.set(uname, { ...u }));
+    loadUsersFromFile().forEach(u => {
+      if (u && u.username) {
+        const uname = u.username.toUpperCase();
+        if (serverMemoryUsers.has(uname) || serverMemoryUsers.size === 0) {
+          usersMap.set(uname, { ...usersMap.get(uname), ...u, username: uname });
+        }
+      }
+    });
   }
 
   // Ensure default super admin SADEGH is ALWAYS valid, present, and unlocked
-  if (!usersMap.has('SADEGH')) {
+  const wasSadeghMissing = !usersMap.has('SADEGH');
+  if (wasSadeghMissing) {
     const defaultSadegh = DEFAULT_SERVER_USERS.find(u => u.username === 'SADEGH');
     if (defaultSadegh) {
       usersMap.set('SADEGH', { ...defaultSadegh });
@@ -664,6 +680,19 @@ export async function fetchAllUsersFromStorage(): Promise<StoredUser[]> {
     }
   }
 
+  // Strictly synchronize & prune in-memory caches to match the authoritative set (prevents deleted user resurrection)
+  if (isMysqlConfigured) {
+    serverMemoryUsers.clear();
+    usersMap.forEach((u, uname) => {
+      serverMemoryUsers.set(uname, { ...u });
+    });
+    for (const cachedKey of Array.from(userCache.keys())) {
+      if (!usersMap.has(cachedKey)) {
+        userCache.delete(cachedKey);
+      }
+    }
+  }
+
   return Array.from(usersMap.values());
 }
 
@@ -685,11 +714,10 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
     return { ...cached.user };
   }
 
-  // 1. Check in-memory store
-  let user = serverMemoryUsers.get(cleanUser);
+  let user: StoredUser | undefined | null = null;
 
-  // 2. Query MySQL directly for single-record index lookup if available
-  if (!user && isMysqlConfigured) {
+  // 1. When MySQL is configured, check MySQL directly so deletions on other instances are honored immediately
+  if (isMysqlConfigured) {
     try {
       const mysqlUser = await MysqlRepository.getUserByUsername(cleanUser);
       if (mysqlUser) {
@@ -698,6 +726,10 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
           username: cleanUser
         } as StoredUser;
         serverMemoryUsers.set(cleanUser, user);
+      } else {
+        // User no longer exists in MySQL -> evict any stale local memory copy
+        serverMemoryUsers.delete(cleanUser);
+        userCache.delete(cleanUser);
       }
     } catch (e: any) {
       if (isConnectionError(e) || e?.isDbConnectionError) {
@@ -706,13 +738,12 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
       }
       console.warn('[MySQL fetchUserByUsername notice]:', e);
     }
-  }
-
-  // 3. Fallback to file storage if not found
-  // Login: Single query per auth cycle - performance critical
-  if (!user && !isMysqlConfigured) {
-    const fileUsers = loadUsersFromFile();
-    user = fileUsers.find(u => u.username?.toUpperCase() === cleanUser) || null;
+  } else {
+    user = serverMemoryUsers.get(cleanUser);
+    if (!user) {
+      const fileUsers = loadUsersFromFile();
+      user = fileUsers.find(u => u.username?.toUpperCase() === cleanUser) || null;
+    }
   }
 
   if (user) {
@@ -722,10 +753,33 @@ export async function fetchUserByUsername(usernameInput: string): Promise<Stored
   return user || null;
 }
 
-export function invalidateUserCache(usernameInput: string) {
+export function invalidateUserCache(usernameInput?: string) {
+  if (!usernameInput) {
+    userCache.clear();
+    return;
+  }
   const cleanUser = normalizeDigits(usernameInput).trim().toUpperCase();
   if (cleanUser) {
     userCache.delete(cleanUser);
+  }
+}
+
+export function evictUserFromMemoryStores(userIdOrUsername: string) {
+  const clean = String(userIdOrUsername || '').trim().toUpperCase();
+  if (!clean) return;
+  serverMemoryUsers.delete(clean);
+  invalidateUserCache(clean);
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (
+      u.id === userIdOrUsername ||
+      String(u.id || '').toUpperCase() === clean ||
+      u.username?.toUpperCase() === clean ||
+      u.studentId === userIdOrUsername ||
+      u.linkedStudentId === userIdOrUsername
+    ) {
+      serverMemoryUsers.delete(uname);
+      invalidateUserCache(uname);
+    }
   }
 }
 
@@ -755,15 +809,16 @@ export async function saveUserToStorage(user: StoredUser, options: { isLogin?: b
       return;
     }
 
-    // First-time signup / full admin user save
-    saveUsersToFile(Array.from(serverMemoryUsers.values()));
-
     if (isMysqlConfigured) {
       try {
         await MysqlRepository.saveUser(user as unknown as Parameters<typeof MysqlRepository.saveUser>[0]);
       } catch (mErr: any) {
         console.error(`[STORAGE_FAILURE] MySQL saveUser failed for username "${cleanId}":`, mErr?.message || mErr);
+        throw mErr;
       }
+    } else {
+      // File fallback ONLY when MySQL is not configured
+      saveUsersToFile(Array.from(serverMemoryUsers.values()));
     }
   };
 
@@ -776,35 +831,48 @@ export async function saveUserToStorage(user: StoredUser, options: { isLogin?: b
 }
 
 export async function deleteUserFromStorage(userIdOrUsername: string): Promise<void> {
-  const clean = userIdOrUsername.trim().toUpperCase();
+  const raw = String(userIdOrUsername || '').trim();
+  if (!raw) return;
+  const clean = raw.toUpperCase();
   const matchedUsernames: string[] = [clean];
+
   serverMemoryUsers.delete(clean);
   invalidateUserCache(clean);
-  for (const [uname, u] of serverMemoryUsers.entries()) {
-    if (u.id === userIdOrUsername || u.username?.toUpperCase() === clean || u.studentId === userIdOrUsername || u.linkedStudentId === userIdOrUsername) {
+  for (const [uname, u] of Array.from(serverMemoryUsers.entries())) {
+    if (
+      u.id === raw ||
+      String(u.id || '').toUpperCase() === clean ||
+      u.username?.toUpperCase() === clean ||
+      u.studentId === raw ||
+      u.linkedStudentId === raw
+    ) {
       matchedUsernames.push(uname);
       serverMemoryUsers.delete(uname);
       invalidateUserCache(uname);
     }
   }
-  const fileUsers = loadUsersFromFile().filter(u => {
-    const uname = (u.username || '').trim().toUpperCase();
-    return (
-      uname !== clean &&
-      u.id !== userIdOrUsername &&
-      u.studentId !== userIdOrUsername &&
-      u.linkedStudentId !== userIdOrUsername &&
-      !matchedUsernames.includes(uname)
-    );
-  });
-  saveUsersToFile(fileUsers);
 
   if (isMysqlConfigured) {
-    for (const targetKey of Array.from(new Set([userIdOrUsername, ...matchedUsernames]))) {
+    for (const targetKey of Array.from(new Set([raw, ...matchedUsernames]))) {
       try {
         await MysqlRepository.deleteUser(targetKey);
-      } catch (e) {}
+      } catch (e: any) {
+        console.error(`[STORAGE_FAILURE] deleteUserFromStorage MySQL error for "${targetKey}":`, e?.message || e);
+        throw e;
+      }
     }
+  } else {
+    const fileUsers = loadUsersFromFile().filter(u => {
+      const uname = (u.username || '').trim().toUpperCase();
+      return (
+        uname !== clean &&
+        u.id !== raw &&
+        u.studentId !== raw &&
+        u.linkedStudentId !== raw &&
+        !matchedUsernames.includes(uname)
+      );
+    });
+    saveUsersToFile(fileUsers);
   }
 }
 
@@ -836,10 +904,10 @@ export async function purgeAllStudentUsersFromStorage(): Promise<number> {
     }
   }
 
-  const remainingFileUsers = loadUsersFromFile().filter(u => !isStudentAccount(u));
-  saveUsersToFile(remainingFileUsers);
-
-  if (isMysqlConfigured) {
+  if (!isMysqlConfigured) {
+    const remainingFileUsers = loadUsersFromFile().filter(u => !isStudentAccount(u));
+    saveUsersToFile(remainingFileUsers);
+  } else {
     try {
       const mysqlUsers = await MysqlRepository.getAllUsers();
       for (const mu of mysqlUsers || []) {
@@ -848,10 +916,14 @@ export async function purgeAllStudentUsersFromStorage(): Promise<number> {
             await MysqlRepository.deleteUser(mu.id || mu.username);
             if (mu.username) await MysqlRepository.deleteUser(mu.username);
             removedCount++;
-          } catch (e) {}
+          } catch (e: any) {
+            console.error('[STORAGE_FAILURE] purgeAllStudentUsersFromStorage delete error:', e?.message || e);
+          }
         }
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.error('[STORAGE_FAILURE] purgeAllStudentUsersFromStorage query error:', e?.message || e);
+    }
   }
 
   return removedCount;

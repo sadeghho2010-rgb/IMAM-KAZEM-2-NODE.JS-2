@@ -218,20 +218,32 @@ export class AuthController {
 
   public static async getUsers(req: Request, res: Response, next: NextFunction) {
     try {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+
       const users = await fetchAllUsersFromStorage();
       const sanitized = users.map(u => sanitizeUser(u));
       return res.status(200).json({
         success: true,
         count: sanitized.length,
+        serverTime: Date.now(),
         users: sanitized
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (isConnectionError(error) || error?.isDbConnectionError) {
+        return res.status(503).json({ success: false, message: 'ارتباط با پایگاه داده برقرار نیست.' });
+      }
       next(error);
     }
   }
 
   public static async publicUsers(req: Request, res: Response, next: NextFunction) {
     try {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+
       const isQuickLoginEnabled = process.env.ENABLE_QUICK_LOGIN === 'true';
       const caller = AuthController.extractCaller(req);
       if (!isQuickLoginEnabled && !caller) {
@@ -248,9 +260,13 @@ export class AuthController {
         success: true,
         enabled: isQuickLoginEnabled || Boolean(caller),
         count: sanitized.length,
+        serverTime: Date.now(),
         users: sanitized
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (isConnectionError(error) || error?.isDbConnectionError) {
+        return res.status(503).json({ success: false, message: 'ارتباط با پایگاه داده برقرار نیست.' });
+      }
       next(error);
     }
   }
@@ -471,24 +487,48 @@ export class AuthController {
 
   public static async deleteUser(req: Request, res: Response, next: NextFunction) {
     try {
-      const { userId, username, skipStudentSync } = req.body;
-      const target = userId || username || req.params.id;
+      const { userId, targetUserId, username, skipStudentSync } = req.body;
+      const target = userId || targetUserId || username || req.params.id;
       if (!target) {
         return res.status(400).json({ success: false, message: 'شناسه کاربر الزامی است.' });
       }
 
       const users = await fetchAllUsersFromStorage();
-      const targetUser = users.find(u => 
-        u.id === target || 
-        u.username.toUpperCase() === String(target).toUpperCase()
+      const targetUpper = String(target).trim().toUpperCase();
+      const usernameUpper = username ? String(username).trim().toUpperCase() : '';
+      const targetUser = users.find(u =>
+        u.id === target ||
+        String(u.id || '').toUpperCase() === targetUpper ||
+        u.username.toUpperCase() === targetUpper ||
+        (usernameUpper && u.username.toUpperCase() === usernameUpper)
       );
 
-      await deleteUserFromStorage(target);
-      notifyRealtimeChange('system_users', String(target), 'delete');
+      if (targetUser && targetUser.username?.toUpperCase() === 'SADEGH') {
+        return res.status(403).json({ success: false, message: 'حذف سوپر ادمین اصلی سامانه مجاز نیست.' });
+      }
+
+      const deleteKeys = Array.from(new Set([
+        String(target),
+        targetUser?.id,
+        targetUser?.username,
+        username
+      ].filter(Boolean).map(v => String(v))));
+
+      for (const delKey of deleteKeys) {
+        await deleteUserFromStorage(delKey);
+      }
+
+      const deletedId = targetUser?.id || String(target);
+      const deletedUsername = targetUser?.username || (username ? String(username).trim().toUpperCase() : String(target).trim().toUpperCase());
+
+      notifyRealtimeChange('system_users', deletedId, 'delete');
+      if (deletedUsername && deletedUsername !== deletedId) {
+        notifyRealtimeChange('system_users', deletedUsername, 'delete');
+      }
 
       // Unlink student in 'students' collection if not explicitly skipped (e.g. during student deletion)
       if (!skipStudentSync) {
-        const targetUsername = targetUser ? targetUser.username.toUpperCase() : String(username || target).toUpperCase();
+        const targetUsername = deletedUsername.toUpperCase();
         const studentId = targetUser?.linkedStudentId || targetUser?.studentId;
 
         try {
@@ -521,13 +561,18 @@ export class AuthController {
         username: caller?.username || 'system',
         action: 'USER_DELETED',
         entityType: 'system_users',
-        entityId: target,
-        description: `حذف کاربر ${target} از سیستم`,
+        entityId: deletedId,
+        description: `حذف کاربر ${deletedUsername || deletedId} از سیستم`,
         ipAddress: AuthController.getClientIp(req)
-      }).catch(() => {});
+      }).catch((auditErr) => {
+        console.warn('[AUDIT_LOG_WARNING] Failed to log USER_DELETED:', auditErr);
+      });
 
       return res.status(200).json({
         success: true,
+        deletedId,
+        deletedUsername,
+        timestamp: Date.now(),
         message: 'کاربر با موفقیت از پایگاه داده حذف گردید.'
       });
     } catch (error) {

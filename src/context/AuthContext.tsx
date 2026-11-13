@@ -140,7 +140,7 @@ interface AuthContextType {
   adminResetPassword: (targetUserId: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   addUser: (newUser: Partial<AppUser>) => Promise<{ success: boolean; error?: string; user?: AppUser }>;
   updateUser: (id: string, updates: Partial<AppUser> & { skipStudentDocUpsert?: boolean }) => void;
-  deleteUser: (id: string, options?: { skipStudentSync?: boolean }) => Promise<void> | void;
+  deleteUser: (id: string, options?: { skipStudentSync?: boolean }) => Promise<{ success: boolean; error?: string }>;
   resetDefaultUsers: () => void;
   resetToDefaultUsers: () => void;
   toggleUserActive: (id: string) => void;
@@ -291,11 +291,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const userMap = new Map<string, AppUser>();
-          DEFAULT_USERS.forEach(u => userMap.set(u.username.toUpperCase(), u));
+          // Only ensure mandatory SADEGH super admin exists; NEVER resurrect deleted default users like RAHNAMA
+          const defaultSadegh = DEFAULT_USERS.find(u => u.username.toUpperCase() === 'SADEGH');
+          if (defaultSadegh) {
+            userMap.set('SADEGH', defaultSadegh);
+          }
+
           parsed.forEach((u: AppUser) => {
             if (u && u.username) {
               const uname = u.username.toUpperCase();
-              const existingDef = userMap.get(uname);
+              const existingDef = DEFAULT_USERS.find(du => du.username.toUpperCase() === uname);
               const isEduOrAdmin = u.role === 'education_manager' || u.role === 'education_officer' || uname === 'SHAH' || u.role === 'super_admin' || u.level === 1;
               const isFin = u.role === 'finance_manager' || (u.role as string) === 'finance_officer' || u.role === 'financial_officer' || uname === 'MALI' || (u.name && u.name.includes('مالی'));
               const isHealthAuthorized = isEduOrAdmin || isFin;
@@ -401,6 +406,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
+  const usersRef = useRef<AppUser[]>(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
+  // Short-lived local mutation guards (prevent concurrent background polls from temporarily flickering in-flight deletes/edits)
+  const pendingDeletedUsersRef = useRef<Map<string, number>>(new Map());
+  const pendingUpsertedUsersRef = useRef<Map<string, { user: AppUser; expiresAt: number }>>(new Map());
+  const syncWithServerRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
+  const syncInFlightRef = useRef<boolean>(false);
+
   const [studentPortalAccessConfig, setStudentPortalAccessConfig] = useState<StudentPortalAccessConfig | null>(null);
 
   useEffect(() => {
@@ -411,7 +427,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           setStudentPortalAccessConfig(doc || null);
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[STORAGE_FAILURE] loadPortalConfig error:', e);
+      }
     };
     loadPortalConfig();
     const unsub = localDb.subscribe(() => {
@@ -426,60 +444,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // Fetch and real-time synchronize users from Firestore & Server API across all hosts and devices
+  // Authoritatively synchronize users from Server API across all hosts, devices, and browser tabs
   useEffect(() => {
     let isMounted = true;
 
+    const pruneExpiredGuards = () => {
+      const now = Date.now();
+      for (const [k, exp] of Array.from(pendingDeletedUsersRef.current.entries())) {
+        if (exp <= now) pendingDeletedUsersRef.current.delete(k);
+      }
+      for (const [k, entry] of Array.from(pendingUpsertedUsersRef.current.entries())) {
+        if (entry.expiresAt <= now) pendingUpsertedUsersRef.current.delete(k);
+      }
+    };
+
     const processIncomingUsers = (incomingList: Partial<AppUser>[]) => {
       if (!isMounted || !Array.isArray(incomingList) || incomingList.length === 0) return;
+      pruneExpiredGuards();
+
+      let mergedResult: AppUser[] = [];
+
       setUsers(prev => {
+        const prevById = new Map<string, AppUser>();
+        const prevByUsername = new Map<string, AppUser>();
+        prev.forEach(u => {
+          if (u.id) prevById.set(String(u.id), u);
+          if (u.username) prevByUsername.set(u.username.toUpperCase(), u);
+        });
+
         const userById = new Map<string, AppUser>();
         const userByUsername = new Map<string, AppUser>();
 
-        DEFAULT_USERS.forEach(u => {
-          userById.set(u.id, u);
-          userByUsername.set(u.username.toUpperCase(), u);
-        });
-
-        prev.forEach(u => {
-          if (u.id) userById.set(u.id, u);
-          if (u.username) userByUsername.set(u.username.toUpperCase(), u);
-        });
-
+        // AUTHORITATIVE REPLACEMENT: Build strictly from server incomingList (NEVER pre-seed with prev or non-SADEGH defaults)
         incomingList.forEach((u: Partial<AppUser>) => {
-          if (u && (u.username || u.id)) {
-            const rawUname = (u.username || u.id || '').toUpperCase();
-            const existing = (u.id && userById.get(u.id)) || userByUsername.get(rawUname);
+          if (!u || (!u.username && !u.id)) return;
+          const rawUname = String(u.username || u.id || '').trim().toUpperCase();
+          const rawId = u.id ? String(u.id) : '';
 
-            // If username changed, purge old username entry from map
-            if (existing && existing.username && existing.username.toUpperCase() !== rawUname) {
-              userByUsername.delete(existing.username.toUpperCase());
-            }
-
-            const mergedUser: AppUser = {
-              ...(existing || {} as AppUser),
-              ...u,
-              id: u.id || existing?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              username: rawUname,
-              password: (u.password && u.password.trim() !== '') ? u.password.trim() : (existing?.password || ''),
-              name: u.name || u.fullName || existing?.name || rawUname,
-              level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (existing?.level || 2))) as UserLevel),
-              role: u.role || existing?.role || 'custom',
-              roleTitle: u.roleTitle || existing?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
-              gradeLabel: u.gradeLabel || (u as any).grade || existing?.gradeLabel || '',
-              allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : existing?.allowedTabs || ['todos', 'students'],
-              editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : existing?.editableTabs || [],
-              modulePermissions: u.modulePermissions || existing?.modulePermissions || {},
-              isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (existing?.isReadOnly || false),
-              canEdit: u.canEdit !== undefined ? u.canEdit : (existing?.canEdit !== undefined ? existing.canEdit : true),
-            };
-
-            userById.set(mergedUser.id, mergedUser);
-            userByUsername.set(rawUname, mergedUser);
+          // Skip users currently undergoing local deletion confirmation
+          if (
+            (rawId && pendingDeletedUsersRef.current.has(rawId)) ||
+            (rawId && pendingDeletedUsersRef.current.has(rawId.toUpperCase())) ||
+            pendingDeletedUsersRef.current.has(rawUname)
+          ) {
+            return;
           }
+
+          // Preserve local client-side fallback fields only for users that ACTUALLY exist on the server
+          const prevUser = (rawId && prevById.get(rawId)) || prevByUsername.get(rawUname);
+
+          const resolvedId = rawId || prevUser?.id || `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const normalizedUser: AppUser = {
+            ...(prevUser || {} as AppUser),
+            ...u,
+            id: resolvedId,
+            username: rawUname,
+            password: (u.password && u.password.trim() !== '') ? u.password.trim() : (prevUser?.password || ''),
+            name: u.name || u.fullName || prevUser?.name || rawUname,
+            level: ((Number(u.level) || (u.role === 'teacher' ? 3 : (prevUser?.level || 2))) as UserLevel),
+            role: u.role || prevUser?.role || 'custom',
+            roleTitle: u.roleTitle || prevUser?.roleTitle || (u.role === 'teacher' ? 'استاد مدرسه' : 'کاربر سیستم'),
+            gradeLabel: u.gradeLabel || (u as any).grade || prevUser?.gradeLabel || '',
+            allowedTabs: Array.isArray(u.allowedTabs) ? u.allowedTabs : prevUser?.allowedTabs || ['todos', 'students'],
+            editableTabs: Array.isArray(u.editableTabs) ? u.editableTabs : prevUser?.editableTabs || [],
+            modulePermissions: u.modulePermissions || prevUser?.modulePermissions || {},
+            isReadOnly: u.isReadOnly !== undefined ? u.isReadOnly : (prevUser?.isReadOnly || false),
+            canEdit: u.canEdit !== undefined ? u.canEdit : (prevUser?.canEdit !== undefined ? prevUser.canEdit : true),
+          };
+
+          userById.set(normalizedUser.id, normalizedUser);
+          userByUsername.set(rawUname, normalizedUser);
         });
+
+        // Apply any unexpired local pending upserts (if not yet reflected or fresher)
+        for (const [uname, entry] of pendingUpsertedUsersRef.current.entries()) {
+          if (pendingDeletedUsersRef.current.has(uname) || pendingDeletedUsersRef.current.has(entry.user.id)) continue;
+          const serverCopy = userByUsername.get(uname) || userById.get(entry.user.id);
+          const localTs = entry.user.updatedAt ? new Date(entry.user.updatedAt).getTime() : 0;
+          const serverTs = serverCopy?.updatedAt ? new Date(serverCopy.updatedAt).getTime() : 0;
+          if (!serverCopy || localTs > serverTs) {
+            userById.set(entry.user.id, entry.user);
+            userByUsername.set(uname, entry.user);
+          }
+        }
+
+        // Guarantee mandatory SADEGH super admin stays present
+        if (!userByUsername.has('SADEGH')) {
+          const defaultSadegh = DEFAULT_USERS.find(du => du.username.toUpperCase() === 'SADEGH');
+          if (defaultSadegh) {
+            userById.set(defaultSadegh.id, defaultSadegh);
+            userByUsername.set('SADEGH', defaultSadegh);
+          }
+        }
 
         const merged = Array.from(userById.values());
+        mergedResult = merged;
+
         let hasUsersChanged = false;
         try {
           const oldStr = localStorage.getItem(USERS_STORAGE_KEY);
@@ -492,6 +552,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           hasUsersChanged = true;
         }
 
+        // Always keep IndexedDB & fallback_idb_* caches pruned to the authoritative list
+        localDb.replaceAuthoritativeUsersCache(merged).catch((err) => {
+          console.warn('[STORAGE_FAILURE] replaceAuthoritativeUsersCache warning:', err);
+        });
+
         if (!hasUsersChanged) {
           return prev;
         }
@@ -502,12 +567,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return merged;
       });
 
-      // Safely update metadata for active user ONLY if active user username matches. Never switch to another user!
+      // Verify & refresh active user state: if active user was deleted or deactivated on another device, kick out immediately!
       const activeUser = currentUserRef.current;
       if (activeUser && activeUser.username) {
         const activeUname = activeUser.username.toUpperCase();
-        const updatedMatch = incomingList.find(u => (u.username || u.id || '').toUpperCase() === activeUname);
+        const updatedMatch = (mergedResult.length > 0 ? mergedResult : incomingList).find(
+          u => (u.username || u.id || '').toUpperCase() === activeUname
+        );
+
+        if (!updatedMatch && activeUname !== 'SADEGH' && !pendingUpsertedUsersRef.current.has(activeUname)) {
+          console.warn(`[Security Sync] Active user "${activeUname}" was deleted on server. Logging out.`);
+          logout();
+          return;
+        }
+
         if (updatedMatch) {
+          if (updatedMatch.isActive === false && activeUname !== 'SADEGH') {
+            console.warn(`[Security Sync] Active user "${activeUname}" was deactivated on server. Logging out.`);
+            logout();
+            return;
+          }
+
           setCurrentUser(prev => {
             if (!prev || prev.username.toUpperCase() !== activeUname) return prev;
             const updated: AppUser = {
@@ -530,27 +610,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // 1. Direct Server API fetch (only when token exists)
-    const syncWithServer = async () => {
+    const refreshAccessToken = async (): Promise<string | null> => {
       try {
-        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-        if (!token) return;
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+          credentials: 'include'
+        });
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        if (data?.success && data?.token) {
+          try {
+            localStorage.setItem('auth_token', data.token);
+            sessionStorage.setItem('auth_token', data.token);
+          } catch (e) {}
+          return data.token;
+        }
+      } catch (e) {
+        console.warn('[AUTH_REFRESH_WARNING]', e);
+      }
+      return null;
+    };
 
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        headers['Authorization'] = `Bearer ${token}`;
+    // 1. Direct Server API fetch with strict cache-busting & 401 refresh support
+    const syncWithServer = async (force = false) => {
+      if (syncInFlightRef.current && !force) return;
+      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+      if (!token) return;
 
-        // Try primary /api/auth/users endpoint
-        let res = await fetch('/api/auth/users', {
+      syncInFlightRef.current = true;
+      try {
+        const makeHeaders = (t: string): Record<string, string> => ({
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${t}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        });
+
+        let res = await fetch(`/api/auth/users?_t=${Date.now()}`, {
           method: 'GET',
-          headers,
+          headers: makeHeaders(token),
+          cache: 'no-store',
           credentials: 'include'
         });
 
-        if (!res.ok) {
-          // Fallback to /api/auth/public-users
-          res = await fetch('/api/auth/public-users', {
+        if (res.status === 401) {
+          const freshToken = await refreshAccessToken();
+          if (freshToken) {
+            res = await fetch(`/api/auth/users?_t=${Date.now()}`, {
+              method: 'GET',
+              headers: makeHeaders(freshToken),
+              cache: 'no-store',
+              credentials: 'include'
+            });
+          }
+        }
+
+        if (!res.ok && res.status !== 503 && res.status !== 401 && res.status !== 403) {
+          // Fallback to /api/auth/public-users only when primary endpoint is unavailable (not on DB error or auth failure)
+          const activeToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || token;
+          res = await fetch(`/api/auth/public-users?_t=${Date.now()}`, {
             method: 'GET',
-            headers,
+            headers: makeHeaders(activeToken),
+            cache: 'no-store',
             credentials: 'include'
           });
         }
@@ -561,39 +683,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             processIncomingUsers(result.users);
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[USER_SYNC_WARNING] syncWithServer failed:', e);
+      } finally {
+        syncInFlightRef.current = false;
+      }
     };
+
+    syncWithServerRef.current = syncWithServer;
 
     const token = typeof window !== 'undefined'
       ? (localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'))
       : null;
 
     if (token) {
-      syncWithServer();
+      syncWithServer(true);
       realtimeSync.start();
     } else {
       realtimeSync.stop();
     }
 
-    // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus)
+    // 2. Real-time Synchronization Listener (SSE & MySQL Event Bus + BroadcastChannel)
     const unsubscribeRealtime = realtimeSync.subscribe((evt) => {
-      if (evt.collection === 'system_users' || evt.collection === 'users' || evt.collection === 'students') {
-        syncWithServer();
+      if (
+        evt.collection === 'system_users' ||
+        evt.collection === 'all_users' ||
+        evt.collection === 'users' ||
+        evt.collection === 'students'
+      ) {
+        syncWithServer(true);
       }
     });
 
     const handleFocus = () => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (currentToken) {
-        syncWithServer();
+        syncWithServer(true);
       }
     };
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') handleFocus();
-    });
 
-    // 3. Periodic background sync every 8 seconds (only when authenticated)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocus();
+      }
+    };
+
+    // 3. Cross-tab instant synchronization via storage event
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === USERS_STORAGE_KEY && e.newValue && isMounted) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setUsers(parsed);
+            window.dispatchEvent(new CustomEvent('app_users_updated', { detail: parsed }));
+          }
+        } catch (err) {}
+      } else if (e.key === CURRENT_USER_KEY && !e.newValue && currentUserRef.current) {
+        setCurrentUser(null);
+        currentUserRef.current = null;
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageEvent);
+
+    // 4. Periodic background sync every 8 seconds (only when authenticated)
     const syncInterval = setInterval(() => {
       const currentToken = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
       if (currentToken) {
@@ -601,13 +756,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }, 8000);
 
-    return () => { 
-      isMounted = false; 
+    return () => {
+      isMounted = false;
+      syncWithServerRef.current = null;
       clearInterval(syncInterval);
       window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageEvent);
       unsubscribeRealtime();
     };
   }, []);
+
+  // Ensure realtimeSync starts and authoritative users sync runs immediately after login
+  useEffect(() => {
+    if (currentUser) {
+      realtimeSync.start();
+      syncWithServerRef.current?.(true);
+    }
+  }, [currentUser?.username]);
 
   // Save to local storage
   useEffect(() => {
@@ -944,8 +1110,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: result.message || 'خطا در ثبت کاربر در سرور.' };
       }
 
+      const serverUser: AppUser = { ...user, ...(result.user || {}), username };
+      pendingUpsertedUsersRef.current.set(username, {
+        user: serverUser,
+        expiresAt: Date.now() + 15000
+      });
+      pendingDeletedUsersRef.current.delete(username);
+      pendingDeletedUsersRef.current.delete(serverUser.id);
+
+      let nextUsersSnapshot: AppUser[] = [];
       setUsers(prev => {
-        const updated = [...prev.filter(u => u.username.toUpperCase() !== username), user];
+        const updated = [...prev.filter(u => u.username.toUpperCase() !== username && u.id !== serverUser.id), serverUser];
+        nextUsersSnapshot = updated;
         try {
           localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
         } catch (e) {}
@@ -953,34 +1129,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       // Synchronize student document locally in localDb if linked
-      const studentId = user.linkedStudentId || user.studentId;
+      const studentId = serverUser.linkedStudentId || serverUser.studentId;
       if (studentId) {
         localDb.updateDoc('students', studentId, {
           hasUserAccount: true,
           userAccountUsername: username
-        }).catch(() => {});
+        }).catch((err) => {
+          console.warn('[STORAGE_FAILURE] addUser student sync warning:', err);
+        });
       } else {
         localDb.getDocs<any>('students').then(students => {
-          const st = students.find(s => 
+          const st = students.find(s =>
             (s.nationalId && String(s.nationalId).trim().toUpperCase() === username) ||
-            (s.name && String(s.name).trim() === String(user.name || user.fullName).trim())
+            (s.name && String(s.name).trim() === String(serverUser.name || serverUser.fullName).trim())
           );
           if (st) {
             localDb.updateDoc('students', st.id, {
               hasUserAccount: true,
               userAccountUsername: username
-            }).catch(() => {});
+            }).catch((err) => {
+              console.warn('[STORAGE_FAILURE] addUser student fallback sync warning:', err);
+            });
           }
-        }).catch(() => {});
+        }).catch((err) => {
+          console.warn('[STORAGE_FAILURE] addUser getDocs students warning:', err);
+        });
       }
 
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('app_users_updated', { detail: users }));
+        const detailUsers = nextUsersSnapshot.length > 0
+          ? nextUsersSnapshot
+          : [...usersRef.current.filter(u => u.username.toUpperCase() !== username), serverUser];
+        window.dispatchEvent(new CustomEvent('app_users_updated', { detail: detailUsers }));
         window.dispatchEvent(new CustomEvent('collection_change_students', { detail: { collection: 'students' } }));
       }
 
-      return { success: true, user };
+      // Read-After-Write verification sync
+      void syncWithServerRef.current?.(true);
+
+      return { success: true, user: serverUser };
     } catch (e: any) {
+      console.error('[STORAGE_FAILURE] addUser error:', e);
       return { success: false, error: 'خطا در ارتباط با سرور هنگام ثبت کاربر.' };
     }
   };
@@ -1135,21 +1324,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (targetUser) {
+        pendingUpsertedUsersRef.current.set(targetUser.username.toUpperCase(), {
+          user: targetUser,
+          expiresAt: Date.now() + 15000
+        });
         fetch('/api/auth/update-user', {
           method: 'POST',
           headers,
           credentials: 'include',
-          body: JSON.stringify({ 
-            targetUserId: id, 
+          body: JSON.stringify({
+            targetUserId: id,
             updates: {
               ...targetUser,
               ...(targetUser.password ? { password: targetUser.password } : (updates.password ? { password: updates.password } : {}))
-            } 
+            }
           })
-        }).then(res => {
-          if (res.status === 401 || res.status === 403) logout();
+        }).then(async res => {
+          if (res.status === 401 || res.status === 403) {
+            logout();
+            return;
+          }
+          if (res.ok) {
+            void syncWithServerRef.current?.(true);
+          } else {
+            console.error('[STORAGE_FAILURE] update-user rejected by server:', res.status);
+          }
         }).catch(err => {
-          console.warn('Backend update-user warning:', err);
+          console.error('[STORAGE_FAILURE] Backend update-user error:', err);
         });
       }
 
@@ -1162,72 +1363,169 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const deleteUser = async (id: string, options?: { skipStudentSync?: boolean }) => {
+  const deleteUser = async (id: string, options?: { skipStudentSync?: boolean }): Promise<{ success: boolean; error?: string }> => {
     const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const target = users.find(u => u.id === id || u.username.toUpperCase() === id.toUpperCase());
-    const usernameToDelete = target ? target.username.toUpperCase() : id.toUpperCase();
+    const prevUsers = usersRef.current;
+    const cleanInputUpper = String(id || '').trim().toUpperCase();
+    const target = prevUsers.find(
+      u => u.id === id || String(u.id || '').toUpperCase() === cleanInputUpper || u.username.toUpperCase() === cleanInputUpper
+    );
+    const deletedId = target ? target.id : id;
+    const usernameToDelete = target ? target.username.toUpperCase() : cleanInputUpper;
     const linkedStudentId = target?.linkedStudentId || target?.studentId;
 
-    setUsers(prev => {
-      const filtered = prev.filter(u => u.id !== id && u.username.toUpperCase() !== id.toUpperCase());
-      try {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(filtered));
-      } catch (e) {}
-      return filtered;
+    if (usernameToDelete === 'SADEGH') {
+      return { success: false, error: 'حذف سوپر ادمین اصلی سامانه مجاز نیست.' };
+    }
+
+    // 1. Register short-lived delete guard so concurrent polls don't flicker user back during in-flight API call
+    const lockUntil = Date.now() + 15000;
+    const guardKeys = Array.from(new Set([id, deletedId, usernameToDelete, cleanInputUpper].filter(Boolean)));
+    guardKeys.forEach(k => {
+      pendingDeletedUsersRef.current.set(k, lockUntil);
+      pendingUpsertedUsersRef.current.delete(k.toUpperCase());
     });
 
-    if (currentUser && (currentUser.id === id || currentUser.username.toUpperCase() === id.toUpperCase())) {
-      logout();
-    }
+    // 2. Optimistically remove from React state, localStorage, and localDb IndexedDB
+    const filtered = prevUsers.filter(
+      u => u.id !== id && u.id !== deletedId && u.username.toUpperCase() !== usernameToDelete && u.username.toUpperCase() !== cleanInputUpper
+    );
+    setUsers(filtered);
+    try {
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(filtered));
+    } catch (e) {}
 
-    // Immediately unlink student in localDb ONLY IF not skipped and student actually exists
-    if (!options?.skipStudentSync) {
-      if (linkedStudentId) {
-        localDb.getDoc('students', linkedStudentId).then(existingStudent => {
-          if (existingStudent && (existingStudent.hasUserAccount || existingStudent.userAccountUsername)) {
-            localDb.updateDoc('students', linkedStudentId, {
-              hasUserAccount: false,
-              userAccountUsername: null
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      } else {
-        localDb.getDocs<any>('students').then(students => {
-          const targetStudent = students.find(s => 
-            (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === usernameToDelete) ||
-            (s.nationalId && String(s.nationalId).trim().toUpperCase() === usernameToDelete)
-          );
-          if (targetStudent && (targetStudent.hasUserAccount || targetStudent.userAccountUsername)) {
-            localDb.updateDoc('students', targetStudent.id, {
-              hasUserAccount: false,
-              userAccountUsername: null
-            }).catch(() => {});
-          }
-        }).catch(() => {});
-      }
-    }
+    await localDb.removeLocalUserCacheByKeys(guardKeys);
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('app_users_updated', { detail: users.filter(u => u.id !== id && u.username.toUpperCase() !== id.toUpperCase()) }));
+      window.dispatchEvent(new CustomEvent('app_users_updated', { detail: filtered }));
       window.dispatchEvent(new CustomEvent('collection_change_students', { detail: { collection: 'students' } }));
     }
 
-    fetch('/api/auth/delete-user', {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: JSON.stringify({ 
-        targetUserId: id, 
-        userId: id, 
-        username: usernameToDelete,
-        skipStudentSync: options?.skipStudentSync 
-      })
-    }).then(res => {
-      if (res.status === 401 || res.status === 403) logout();
-    }).catch(() => {});
+    const rollbackLocalDelete = () => {
+      guardKeys.forEach(k => pendingDeletedUsersRef.current.delete(k));
+      setUsers(prevUsers);
+      try {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(prevUsers));
+      } catch (e) {}
+      localDb.replaceAuthoritativeUsersCache(prevUsers).catch((e) => {
+        console.warn('[STORAGE_FAILURE] rollback replaceAuthoritativeUsersCache warning:', e);
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('app_users_updated', { detail: prevUsers }));
+      }
+    };
+
+    try {
+      let res = await fetch('/api/auth/delete-user', {
+        method: 'POST',
+        headers,
+        cache: 'no-store',
+        credentials: 'include',
+        body: JSON.stringify({
+          targetUserId: deletedId,
+          userId: deletedId,
+          username: usernameToDelete,
+          skipStudentSync: options?.skipStudentSync
+        })
+      });
+
+      if (res.status === 401) {
+        try {
+          const refreshRes = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json().catch(() => null);
+            if (refreshData?.token) {
+              localStorage.setItem('auth_token', refreshData.token);
+              sessionStorage.setItem('auth_token', refreshData.token);
+              headers['Authorization'] = `Bearer ${refreshData.token}`;
+              res = await fetch('/api/auth/delete-user', {
+                method: 'POST',
+                headers,
+                cache: 'no-store',
+                credentials: 'include',
+                body: JSON.stringify({
+                  targetUserId: deletedId,
+                  userId: deletedId,
+                  username: usernameToDelete,
+                  skipStudentSync: options?.skipStudentSync
+                })
+              });
+            }
+          }
+        } catch (refreshErr) {
+          console.warn('[AUTH_REFRESH_WARNING] Token refresh during deleteUser failed:', refreshErr);
+        }
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        const errData = await res.json().catch(() => ({}));
+        rollbackLocalDelete();
+        if (res.status === 401) logout();
+        return { success: false, error: errData.message || 'نشست کاربری شما منقضی شده یا مجوز حذف ندارید.' };
+      }
+
+      const result = await res.json().catch(() => ({ success: false }));
+
+      if (!res.ok && res.status !== 404) {
+        console.error('[STORAGE_FAILURE] Server delete-user failed:', res.status, result);
+        rollbackLocalDelete();
+        return { success: false, error: result.message || 'خطا در حذف کاربر از سرور.' };
+      }
+
+      if (res.ok && result.success === false) {
+        console.error('[STORAGE_FAILURE] Server delete-user rejected:', result);
+        rollbackLocalDelete();
+        return { success: false, error: result.message || 'حذف کاربر در سرور تایید نشد.' };
+      }
+
+      // 3. Server confirmed deletion -> unlink student locally if applicable
+      if (!options?.skipStudentSync) {
+        if (linkedStudentId) {
+          localDb.getDoc('students', linkedStudentId).then(existingStudent => {
+            if (existingStudent && (existingStudent.hasUserAccount || existingStudent.userAccountUsername)) {
+              localDb.updateDoc('students', linkedStudentId, {
+                hasUserAccount: false,
+                userAccountUsername: null
+              }).catch((err) => console.warn('[STORAGE_FAILURE] deleteUser student unlink error:', err));
+            }
+          }).catch((err) => console.warn('[STORAGE_FAILURE] deleteUser student lookup error:', err));
+        } else {
+          localDb.getDocs<any>('students').then(students => {
+            const targetStudent = students.find(s =>
+              (s.userAccountUsername && String(s.userAccountUsername).trim().toUpperCase() === usernameToDelete) ||
+              (s.nationalId && String(s.nationalId).trim().toUpperCase() === usernameToDelete)
+            );
+            if (targetStudent && (targetStudent.hasUserAccount || targetStudent.userAccountUsername)) {
+              localDb.updateDoc('students', targetStudent.id, {
+                hasUserAccount: false,
+                userAccountUsername: null
+              }).catch((err) => console.warn('[STORAGE_FAILURE] deleteUser student unlink fallback error:', err));
+            }
+          }).catch((err) => console.warn('[STORAGE_FAILURE] deleteUser students lookup error:', err));
+        }
+      }
+
+      if (currentUser && (currentUser.id === deletedId || currentUser.username.toUpperCase() === usernameToDelete)) {
+        logout();
+      } else {
+        // 4. Read-After-Write authoritative confirmation from server
+        await syncWithServerRef.current?.(true);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('[STORAGE_FAILURE] Network/request failure in deleteUser:', err);
+      rollbackLocalDelete();
+      return { success: false, error: 'خطا در ارتباط با سرور هنگام حذف کاربر. لطفاً مجدداً تلاش کنید.' };
+    }
   };
 
   const resetDefaultUsers = () => {

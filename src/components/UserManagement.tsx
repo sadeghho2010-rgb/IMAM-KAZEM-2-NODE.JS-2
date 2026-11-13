@@ -617,9 +617,12 @@ export default function UserManagement() {
 
                             {!isSuper && !isSelf && (
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   if (window.confirm(`آیا از حذف حساب کاربری "${u.fullName}" اطمینان دارید؟`)) {
-                                    deleteUser(u.id);
+                                    const res = await deleteUser(u.id);
+                                    if (res && res.success === false) {
+                                      alert(res.error || 'خطا در حذف حساب کاربری از سرور.');
+                                    }
                                   }
                                 }}
                                 className="p-1.5 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 rounded-xl transition-all"

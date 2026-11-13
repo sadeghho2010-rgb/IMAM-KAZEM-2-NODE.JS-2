@@ -871,7 +871,10 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         const studentUser = getStudentAccount(targetStudent);
         if (studentUser) {
           try {
-            await deleteUser(studentUser.id, { skipStudentSync: true });
+            const delUserRes = await deleteUser(studentUser.id, { skipStudentSync: true });
+            if (delUserRes && delUserRes.success === false) {
+              await localDb.deleteDoc('system_users', studentUser.id);
+            }
           } catch (e) {
             await localDb.deleteDoc('system_users', studentUser.id);
           }
@@ -3128,12 +3131,16 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                         if (window.confirm(`آیا از حذف حساب کاربری این طلبه ("${editingCredUser.username}") اطمینان دارید؟`)) {
                           setIsSavingCreds(true);
                           try {
-                            deleteUser(editingCredUser.id);
+                            const delRes = await deleteUser(editingCredUser.id);
+                            if (delRes && delRes.success === false) {
+                              alert(delRes.error || 'خطا در حذف حساب کاربری از سرور.');
+                              return;
+                            }
                             await localDb.updateDoc('students', selectedStudentForCredentials.id, {
                               hasUserAccount: false,
                               userAccountUsername: null
                             });
-                            alert('حساب کاربری این طلبه با موفقیت حذف گردید.');
+                            alert('حساب کاربری این طلبه با موفقیت از سرور حذف گردید.');
                             setSelectedStudentForCredentials(null);
                             fetchStudents(true);
                           } finally {

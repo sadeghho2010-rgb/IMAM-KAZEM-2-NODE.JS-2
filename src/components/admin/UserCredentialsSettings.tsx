@@ -285,7 +285,7 @@ export default function UserCredentialsSettings() {
     setIsModalOpen(false);
   };
 
-  const handleDeleteUser = (user: AppUser) => {
+  const handleDeleteUser = async (user: AppUser) => {
     if (user.level === 1 && !isSuperAdmin) {
       alert('حذف مشخصات ورود کاربران سطح ۱ فقط توسط سوپر ادمین امکان‌پذیر است.');
       return;
@@ -296,8 +296,12 @@ export default function UserCredentialsSettings() {
     }
 
     if (window.confirm(`آیا از حذف دسترسی ورود کاربر «${user.name}» اطمینان دارید؟`)) {
-      deleteUser(user.id);
-      alert('حساب کاربری حذف گردید. این شخص دیگر نمی‌تواند وارد سامانه شود.');
+      const res = await deleteUser(user.id);
+      if (res && res.success === false) {
+        alert(res.error || 'خطا در حذف حساب کاربری از سرور.');
+        return;
+      }
+      alert('حساب کاربری با موفقیت از سرور حذف گردید. این شخص دیگر نمی‌تواند وارد سامانه شود.');
     }
   };
 
