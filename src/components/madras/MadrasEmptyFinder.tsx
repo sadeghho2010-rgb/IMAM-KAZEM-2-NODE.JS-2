@@ -17,6 +17,7 @@ import { MadrasRoom, Program } from '../../types';
 import { 
   MADRAS_HOURLY_SLOTS_7_TO_17, 
   WEEK_DAYS_SEMINARY, 
+  isActiveMadrasProgram,
   isProgramInRoom, 
   isDayMatch, 
   isProgramInTimeRange, 
@@ -162,8 +163,9 @@ export default function MadrasEmptyFinder({
         return;
       }
 
-      // 3. Check for conflicting programs during the day(s) and time range
+      // 3. Check for conflicting active programs during the day(s) and time range
       const conflicts = programs.filter(prog => {
+        if (!isActiveMadrasProgram(prog)) return false;
         if (!isProgramInRoom(prog, room)) return false;
 
         // Day match

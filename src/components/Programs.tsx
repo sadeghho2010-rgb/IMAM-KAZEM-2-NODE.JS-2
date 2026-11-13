@@ -989,8 +989,8 @@ export default function Programs() {
       ]);
 
       // Automatically purge any inactive or soft-deleted programs from the entire system
-      const deadPrograms = (rawPrograms || []).filter(p => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted'));
-      const activePrograms = (rawPrograms || []).filter(p => p && p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted');
+      const deadPrograms = (rawPrograms || []).filter(p => p && (p.isDeleted === true || p.status === 'inactive' || p.status === 'deleted' || Boolean((p as any).deletedAt)));
+      const activePrograms = (rawPrograms || []).filter(p => p && p.isDeleted !== true && p.status !== 'inactive' && p.status !== 'deleted' && !(p as any).deletedAt);
 
       if (deadPrograms.length > 0) {
         for (const dp of deadPrograms) {
@@ -1020,7 +1020,27 @@ export default function Programs() {
     const unsub = localDb.subscribe(() => {
       fetchData(false);
     });
-    return () => unsub();
+    const handleSync = () => fetchData(false);
+    const handleAppSync = (e: Event) => {
+      const col = (e as CustomEvent)?.detail?.collection;
+      if (!col || col === 'all' || col === 'programs' || col === 'enrollments' || col === 'classrooms' || col === 'teachers') {
+        fetchData(false);
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'programs_updated_at') {
+        fetchData(false);
+      }
+    };
+    window.addEventListener('collection_change_programs', handleSync);
+    window.addEventListener('app_data_change', handleAppSync);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      unsub();
+      window.removeEventListener('collection_change_programs', handleSync);
+      window.removeEventListener('app_data_change', handleAppSync);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const handleEnrollClick = (programId: string) => {
@@ -1543,6 +1563,12 @@ export default function Programs() {
 
       await localDb.setDoc('programs', programPayload);
 
+      try {
+        localStorage.setItem('programs_updated_at', String(Date.now()));
+      } catch {}
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
+
       dispatchDatabaseToast(`برنامه آموزشی «${title}» با موفقیت ثبت گردید.`, 'success');
 
       const defaultCat = dynamicSubjectCategories.find(c => c !== 'سایر') || 'اصول';
@@ -1653,6 +1679,12 @@ export default function Programs() {
 
       await localDb.setDoc('programs', updatedProgram);
 
+      try {
+        localStorage.setItem('programs_updated_at', String(Date.now()));
+      } catch {}
+      window.dispatchEvent(new CustomEvent('collection_change_programs'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
+
       dispatchDatabaseToast(`برنامه آموزشی «${updatedProgram.title}» با موفقیت بروزرسانی گردید.`, 'success');
 
       // 2. Secondary syncs AFTER program is safely saved
@@ -1711,9 +1743,12 @@ export default function Programs() {
 
       await syncRepresentativeUsers();
 
+      try {
+        localStorage.setItem('programs_updated_at', String(Date.now()));
+      } catch {}
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
       window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
-      window.dispatchEvent(new CustomEvent('app_data_change'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
 
       dispatchDatabaseToast(`کلاس «${title}» با موفقیت فعال شد و به لیست برنامه‌های درسی بازگشت. تمام آمار گذشته آن اکنون معتبر است.`, 'success');
       fetchData();
@@ -1776,11 +1811,14 @@ export default function Programs() {
 
       await syncRepresentativeUsers();
 
+      try {
+        localStorage.setItem('programs_updated_at', String(Date.now()));
+      } catch {}
       window.dispatchEvent(new CustomEvent('collection_change_programs'));
       window.dispatchEvent(new CustomEvent('collection_change_enrollments'));
       window.dispatchEvent(new CustomEvent('collection_change_attendance'));
       window.dispatchEvent(new CustomEvent('collection_change_student_course_progress'));
-      window.dispatchEvent(new CustomEvent('app_data_change'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
 
       dispatchDatabaseToast(`کلاس «${title}» و تمام سوابق مرتبط با آن به طور کامل از سیستم حذف شدند.`, 'success');
       fetchData(false);

@@ -39,6 +39,7 @@ import { toEnglishDigits } from '../../lib/jalali';
 import DashboardAnalytics from './DashboardAnalytics';
 import PeriodAnalytics from './PeriodAnalytics';
 import StudentBreakoutSection from './StudentBreakoutSection';
+import { RankingModalData } from './RankingModal';
 import {
   getLogMetrics,
   getAllSystemGrades,
@@ -55,6 +56,9 @@ interface StudyChartsAndAnalyticsSectionProps {
   selectedPeriodId: string;
   onSelectPeriodId: (id: string) => void;
   onOpenStudentCourseModal: (student: Student, periodId?: string) => void;
+  onOpenRankingModal: (data: RankingModalData) => void;
+  selectedStudentId: string | null;
+  onSelectStudent: (studentId: string | null) => void;
 }
 
 type ChartMode = 'COMPARE_GRADES' | 'GRADE_OVER_TIME' | 'COMPARE_STUDENTS_IN_GRADE';
@@ -121,7 +125,10 @@ export default function StudyChartsAndAnalyticsSection({
   allLogs,
   selectedPeriodId,
   onSelectPeriodId,
-  onOpenStudentCourseModal
+  onOpenStudentCourseModal,
+  onOpenRankingModal,
+  selectedStudentId,
+  onSelectStudent
 }: StudyChartsAndAnalyticsSectionProps) {
   const allGrades = useMemo(() => getAllSystemGrades(students), [students]);
 
@@ -1023,7 +1030,7 @@ export default function StudyChartsAndAnalyticsSection({
       </div>
 
       {/* 3. Overall & Period KPIs and Top Performers (Moved from Section 2 to Section 3) */}
-      <DashboardAnalytics periods={periods} students={students} allLogs={allLogs} />
+      <DashboardAnalytics periods={periods} students={students} allLogs={allLogs} onOpenRankingModal={onOpenRankingModal} />
 
       {currentSelectedPeriod && (
         <div className="space-y-4">
@@ -1050,15 +1057,22 @@ export default function StudyChartsAndAnalyticsSection({
             </div>
           </div>
           <PeriodAnalytics
-            selectedPeriod={currentSelectedPeriod}
+            period={currentSelectedPeriod}
             students={students}
-            currentPeriodLogs={currentPeriodLogs}
+            allLogs={allLogs}
+            onOpenRankingModal={onOpenRankingModal}
           />
         </div>
       )}
 
       {/* 4. Individual Student Breakout Section */}
-      <StudentBreakoutSection periods={periods} students={students} allLogs={allLogs} />
+      <StudentBreakoutSection 
+        periods={periods} 
+        students={students} 
+        allLogs={allLogs}
+        selectedStudentId={selectedStudentId}
+        onSelectStudent={onSelectStudent}
+      />
     </div>
   );
 }

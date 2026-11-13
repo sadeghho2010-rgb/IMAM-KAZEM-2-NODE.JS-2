@@ -813,6 +813,7 @@ export interface PeriodicStudyLog {
   coreDiscussionMinutes?: number; // مجموع مباحثه دروس اصلی
   coreTotalMinutes?: number; // مجموع مطالعه + مباحثه دروس اصلی
   freeStudyMinutes?: number; // مجموع مطالعه آزاد
+  freeStudyBookTitle?: string;
   coursesBreakdown?: CourseStudyDetail[];
   isExempt?: boolean;
   exemptionReason?: string;
@@ -834,6 +835,9 @@ export interface StudyDailyEntry {
   totalMinutes?: number;
   coreTotalMinutes?: number;
   freeStudyMinutes?: number;
+  studyMinutes?: number;
+  discussionMinutes?: number;
+  freeStudyBookTitle?: string;
   coursesBreakdown?: CourseStudyDetail[];
   createdAt: string;
   updatedAt?: string;

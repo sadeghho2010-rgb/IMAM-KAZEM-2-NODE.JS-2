@@ -187,7 +187,16 @@ export function timeToMinutes(timeStr: string): number | null {
   return h * 60 + m;
 }
 
+export function isActiveMadrasProgram(prog: Program | null | undefined): boolean {
+  if (!prog || !prog.id) return false;
+  if (prog.isDeleted === true) return false;
+  if (prog.status === 'deleted' || prog.status === 'inactive') return false;
+  if ((prog as any).deletedAt) return false;
+  return true;
+}
+
 export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
+  if (!isActiveMadrasProgram(prog)) return false;
   const pRoom = (prog.madrasRoom || prog.classroom || '').trim();
   if (!pRoom) return false;
 
@@ -282,6 +291,7 @@ export function getRoomCurrentStatus(
   }
 
   const match = programs.find(prog => {
+    if (!isActiveMadrasProgram(prog)) return false;
     if (!isProgramInRoom(prog, room)) return false;
     if (!isDayMatch(prog, currentDay)) return false;
     return isProgramInTimeRange(prog, currentMinutes, currentMinutes + 1);

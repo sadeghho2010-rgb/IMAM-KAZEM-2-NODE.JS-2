@@ -55,6 +55,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
 
   const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
   const [successMessages, setSuccessMessages] = useState<Record<string, string>>({});
+  const [errorMessages, setErrorMessages] = useState<Record<string, string>>({});
   const initialLoadDoneRef = React.useRef(false);
 
   useEffect(() => {
@@ -283,9 +284,19 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
     const studentName = matchedStudent?.name || currentUser?.name || currentUser?.fullName || 'طلبه گرامی';
     const studentNationalId = matchedStudent?.nationalId || currentUser?.username;
 
+    setErrorMessages(prev => {
+      if (!prev[prog.id]) return prev;
+      const next = { ...prev };
+      delete next[prog.id];
+      return next;
+    });
+
     const currentDraft = draftCourseStatus[prog.id];
     if (!currentDraft || !currentDraft.status || currentDraft.status === 'unspecified') {
-      alert('لطفاً ابتدا وضعیت حضور خود را در این درس مشخص فرمایید (حاضر، غایب یا با تاخیر).');
+      setErrorMessages(prev => ({
+        ...prev,
+        [prog.id]: 'لطفاً ابتدا وضعیت حضور خود را در این درس مشخص فرمایید (حاضر، غایب یا با تاخیر).'
+      }));
       return;
     }
 
@@ -397,7 +408,10 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: prog.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving self-reporting:', e);
-      alert('خطا در ثبت خوداظهاری: ' + (e?.message || 'لطفاً مجدداً امتحان کنید'));
+      setErrorMessages(prev => ({
+        ...prev,
+        [prog.id]: 'خطا در ثبت خوداظهاری: ' + (e?.message || 'لطفاً مجدداً امتحان کنید')
+      }));
     } finally {
       setSavingProgramId(null);
     }
@@ -467,7 +481,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
         <button
           type="button"
           onClick={() => onNavigateTab ? onNavigateTab('dashboard') : window.history.back()}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          className="hidden sm:flex px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all items-center gap-1.5 cursor-pointer"
         >
           <ArrowRight size={15} />
           <span>بازگشت به پیشخوان</span>
@@ -570,6 +584,13 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
                   خوداظهاری
                 </span>
               </div>
+
+              {errorMessages[prog.id] && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                  <span>{errorMessages[prog.id]}</span>
+                </div>
+              )}
 
               {successMsg && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-bold flex items-center gap-2">
@@ -678,7 +699,7 @@ export const StudentQuickSelfReportingView: React.FC<StudentQuickSelfReportingVi
                     type="button"
                     disabled={isSavingThis}
                     onClick={() => handleSaveCourseAttendance(prog)}
-                    className="w-full sm:w-auto px-6 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-black text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40"
+                    className="w-full sm:w-auto min-h-[48px] px-6 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-black text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40"
                   >
                     <Save size={15} />
                     <span>{isSavingThis ? 'در حال ثبت...' : 'ثبت خوداظهاری این درس'}</span>

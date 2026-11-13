@@ -74,6 +74,8 @@ import { StudentMobileStudy } from './components/student/mobile/StudentMobileStu
 import { StudentMobileSchedule } from './components/student/mobile/StudentMobileSchedule';
 import { StudentMobileSummary } from './components/student/mobile/StudentMobileSummary';
 import { StudentMobileDiscussion } from './components/student/mobile/StudentMobileDiscussion';
+import { StudentMobileShell } from './components/student/mobile/StudentMobileShell';
+import { StudentMobilePanel } from './components/student/StudentMobilePanel';
 import { RepresentativeQuickAttendanceView } from './components/attendance/RepresentativeQuickAttendanceView';
 import { StudentQuickSelfReportingView } from './components/attendance/StudentQuickSelfReportingView';
 import { motion, AnimatePresence } from 'motion/react';
@@ -298,6 +300,8 @@ function AppContent() {
       case 'education-financial-report': return 'تنظیم گزارش مالی طلاب';
       case 'held-sessions': return 'تعداد جلسات برگزار شده کلاس‌های درس';
       case 'student-access-management': return 'مدیریت دسترسی بخش‌های پنل طلاب';
+      case 'passed-courses': return 'دروس گذرانده شده و کارنامه';
+      case 'security-pin-settings': return 'پین امنیتی حساب کاربری';
       case 'db-connection-test': return 'تست اتصال دیتابیس';
       case 'db-save-errors': return 'بازرسی خطاهای ثبت دیتابیس';
       case 'user-credentials': return 'مدیریت ورود و مشخصات کاربری';
@@ -358,6 +362,15 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
+        if (isStudentMobile) {
+          return (
+            <StudentMobilePanel
+              onNavigateTab={handleNavigate}
+              onSwitchToDesktopView={() => setForceDesktopMode(true)}
+              isInsideShell
+            />
+          );
+        }
         return (
           <MainDashboard 
             onNavigateTab={handleNavigate} 
@@ -517,7 +530,7 @@ function AppContent() {
                 onClose={() => setActiveTab('dashboard')}
                 targetUser={currentUser}
                 onUpdated={() => {
-                  alert('تنظیمات امنیتی پین حساب کاربری با موفقیت بروزرسانی گردید.');
+                  setActiveTab('dashboard');
                 }}
               />
             </div>
@@ -535,6 +548,48 @@ function AppContent() {
         );
     }
   };
+
+  if (isStudentMobile) {
+    return (
+      <>
+        <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} />
+        <BugReportModal
+          isOpen={isBugModalOpen}
+          onClose={() => {
+            setIsBugModalOpen(false);
+            setBugModalInitialValues(undefined);
+          }}
+          initialValues={bugModalInitialValues}
+        />
+        <SecurityPinModal />
+        <StudentMobileShell
+          activeTab={activeTab}
+          tabTitle={getActiveTabTitle(activeTab)}
+          onNavigateTab={handleNavigate}
+          onBack={handleBack}
+          onSwitchToDesktopView={() => setForceDesktopMode(true)}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onOpenBugReport={() => {
+            setBugModalInitialValues(undefined);
+            setIsBugModalOpen(true);
+          }}
+        >
+          <TabErrorBoundary tabName={getActiveTabTitle(activeTab)} onNavigateHome={() => navigateToTab('dashboard')}>
+            <Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center p-10 space-y-3 text-slate-600 font-bold bg-white rounded-3xl border border-slate-200/80 shadow-2xs" dir="rtl">
+                  <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">در حال بارگذاری بخش...</span>
+                </div>
+              }
+            >
+              {renderContent()}
+            </Suspense>
+          </TabErrorBoundary>
+        </StudentMobileShell>
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-vazir relative overflow-x-hidden" dir="rtl">

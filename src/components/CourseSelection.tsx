@@ -98,6 +98,7 @@ export default function CourseSelection() {
 
   // Active View Mode for Admins
   const [activeTab, setActiveTab] = useState<'requests' | 'periods'>('requests');
+  const [studentFeedback, setStudentFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Period Modal State
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
@@ -353,8 +354,9 @@ export default function CourseSelection() {
   // Student submit selection request
   const handleSubmitStudentSelection = async () => {
     if (!activePeriod || !currentStudentObj) return;
+    setStudentFeedback(null);
     if (selectedCourseIds.length === 0) {
-      alert('لطفاً حداقل یک درس را انتخاب نمایید.');
+      setStudentFeedback({ type: 'error', text: 'لطفاً حداقل یک درس را انتخاب نمایید.' });
       return;
     }
 
@@ -390,11 +392,14 @@ export default function CourseSelection() {
         await localDb.addDoc('course_selection_requests', payload);
       }
 
-      alert('درخواست انتخاب واحد شما با موفقیت ثبت شد و در انتظار بررسی مسئول آموزش قرار گرفت.');
+      setStudentFeedback({
+        type: 'success',
+        text: 'درخواست انتخاب واحد شما با موفقیت ثبت شد و در انتظار بررسی مسئول آموزش قرار گرفت.'
+      });
       fetchData();
     } catch (err) {
       console.error('Error submitting selection:', err);
-      alert('خطا در ثبت درخواست انتخاب واحد.');
+      setStudentFeedback({ type: 'error', text: 'خطا در ثبت درخواست انتخاب واحد.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -721,13 +726,31 @@ export default function CourseSelection() {
                   )}
                 </div>
 
+                {studentFeedback && (
+                  <div
+                    className={cn(
+                      "p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2",
+                      studentFeedback.type === 'success'
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                        : "bg-rose-50 border-rose-200 text-rose-900"
+                    )}
+                  >
+                    {studentFeedback.type === 'success' ? (
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                    )}
+                    <span>{studentFeedback.text}</span>
+                  </div>
+                )}
+
                 {/* Submit Button */}
                 {(!existingStudentRequest || existingStudentRequest.status !== 'approved') && (
                   <div className="pt-4 flex justify-end">
                     <button
                       onClick={handleSubmitStudentSelection}
                       disabled={isSubmitting || selectedCourseIds.length === 0}
-                      className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                      className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:bg-slate-300 disabled:cursor-not-allowed"
                     >
                       <Send size={16} />
                       <span>{existingStudentRequest ? 'ویرایش و بازارسال درخواست' : 'ثبت نهایی درخواست انتخاب واحد'}</span>

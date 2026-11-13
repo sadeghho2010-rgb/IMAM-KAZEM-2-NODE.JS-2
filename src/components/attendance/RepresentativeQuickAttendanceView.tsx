@@ -67,6 +67,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [saveErrorMsg, setSaveErrorMsg] = useState('');
   const [academicHolidays, setAcademicHolidays] = useState<AcademicHolidayItem[]>([]);
   const loadedLogKeyRef = React.useRef<string>('');
 
@@ -422,17 +423,18 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
 
   // Submit and save attendance
   const handleSaveAttendance = async () => {
+    setSaveErrorMsg('');
     if (!currentProgram) return;
 
     if (currentHoliday) {
-      alert(`تاریخ ${selectedDate} در تقویم آموزشی به عنوان روز تعطیل («${currentHoliday.title}») ثبت شده است و امکان ایجاد یا ثبت حضور و غیاب برای این روز وجود ندارد.`);
+      setSaveErrorMsg(`تاریخ ${selectedDate} در تقویم آموزشی به عنوان روز تعطیل («${currentHoliday.title}») ثبت شده است و امکان ثبت حضور و غیاب وجود ندارد.`);
       return;
     }
 
     const isClassDay = isCourseHeldOnDate(currentProgram, selectedDate);
     if (!isClassDay) {
       const dayName = getShamsiDayOfWeekName(selectedDate);
-      alert(`تاریخ ${selectedDate} (${dayName}) روز درسی برای کلاس «${currentProgram.title}» نیست و امکان ثبت حضور و غیاب برای آن وجود ندارد.`);
+      setSaveErrorMsg(`تاریخ ${selectedDate} (${dayName}) روز درسی برای کلاس «${currentProgram.title}» نیست و امکان ثبت حضور و غیاب برای آن وجود ندارد.`);
       return;
     }
 
@@ -440,7 +442,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
     const isLevelManager = currentUser?.level && currentUser.level < 3;
     const isAuthorizedForThisClass = isLevelManager || representedPrograms.some(p => String(p.id) === String(currentProgram.id));
     if (!isAuthorizedForThisClass) {
-      alert(`شما دیگر نماینده کلاس «${currentProgram.title}» نیستید و امکان ثبت یا ویرایش حضور و غیاب برای این درس را ندارید.`);
+      setSaveErrorMsg(`شما دیگر نماینده کلاس «${currentProgram.title}» نیستید و امکان ثبت یا ویرایش حضور و غیاب برای این درس را ندارید.`);
       return;
     }
 
@@ -545,7 +547,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
       window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { logId, programId: currentProgram.id, date: selectedDate } }));
     } catch (e: any) {
       console.error('Error saving representative attendance:', e);
-      alert('خطا در ذخیره حضور و غیاب: ' + (e?.message || 'مجدداً تلاش فرمایید'));
+      setSaveErrorMsg('خطا در ذخیره حضور و غیاب: ' + (e?.message || 'مجدداً تلاش فرمایید'));
     } finally {
       setIsSaving(false);
     }
@@ -615,12 +617,19 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
         <button
           type="button"
           onClick={() => onNavigateTab ? onNavigateTab('dashboard') : window.history.back()}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          className="hidden sm:flex px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs font-bold transition-all items-center gap-1.5 cursor-pointer"
         >
           <ArrowRight size={15} />
           <span>بازگشت به پیشخوان</span>
         </button>
       </div>
+
+      {saveErrorMsg && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 text-xs font-bold flex items-center gap-2 shadow-xs">
+          <AlertCircle size={18} className="text-rose-600 shrink-0" />
+          <span>{saveErrorMsg}</span>
+        </div>
+      )}
 
       {saveSuccessMsg && (
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-bold flex items-center gap-2 shadow-xs">
@@ -911,7 +920,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             disabled={isCancelled}
                             onClick={() => handleSetStudentStatus(String(st.id), 'present')}
                             className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              "min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
                               status === 'present' && !isCancelled
                                 ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-black"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 hover:text-emerald-800"
@@ -926,7 +935,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             disabled={isCancelled}
                             onClick={() => handleSetStudentStatus(String(st.id), 'absent')}
                             className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              "min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
                               status === 'absent' && !isCancelled
                                 ? "bg-rose-600 text-white border-rose-600 shadow-xs font-black"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-rose-50 hover:text-rose-800"
@@ -941,7 +950,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             disabled={isCancelled}
                             onClick={() => handleSetStudentStatus(String(st.id), 'late')}
                             className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              "min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
                               status === 'late' && !isCancelled
                                 ? "bg-amber-500 text-white border-amber-500 shadow-xs font-black"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-800"
@@ -956,7 +965,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                             disabled={isCancelled}
                             onClick={() => handleSetStudentStatus(String(st.id), 'unspecified')}
                             className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
+                              "min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1",
                               status === 'unspecified' || !status
                                 ? "bg-slate-700 text-white border-slate-700 shadow-xs font-black"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-800"
@@ -1016,7 +1025,7 @@ export const RepresentativeQuickAttendanceView: React.FC<RepresentativeQuickAtte
                   type="button"
                   onClick={handleSaveAttendance}
                   disabled={isSaving || classStudents.length === 0 || !isCourseHeldOnDate(currentProgram, selectedDate) || !!currentHoliday}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-40"
+                  className="w-full sm:w-auto min-h-[48px] px-6 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-2xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-40"
                 >
                   <Save size={16} />
                   <span>{isSaving ? 'در حال ذخیره‌سازی...' : 'ثبت و ذخیره نهایی حضور و غیاب این جلسه'}</span>

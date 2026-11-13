@@ -31,7 +31,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
   const displayName = currentUser?.name || currentUser?.fullName || currentUser?.username || 'دانش‌پژوه محترم';
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 font-vazir text-right text-slate-800" dir="rtl">
+    <div className="p-1 sm:p-4 lg:p-6 max-w-7xl mx-auto space-y-5 font-vazir text-right text-slate-800" dir="rtl">
       {/* 1. Header Banner with Jewel Gradient */}
       <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-800 text-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-teal-900/20 border border-emerald-400/30">
         <div className="absolute top-0 left-0 w-80 h-80 bg-white/5 rounded-full blur-3xl pointer-events-none" />
@@ -75,7 +75,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
               <button
                 type="button"
                 onClick={() => onNavigateTab('student-requests')}
-                className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-black text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer"
+                className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-black text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer"
               >
                 <Send size={15} />
                 <span>ثبت تقاضای مالی / وام</span>
@@ -96,9 +96,8 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-lg font-black text-emerald-700 flex items-center gap-1.5">
+            <div className="text-lg font-black text-emerald-700">
               <span>تسویه و فعال</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             </div>
             <p className="text-[11px] text-slate-400 mt-1">بدون معوقه و مسدودی</p>
           </div>
@@ -216,7 +215,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
                   <button
                     type="button"
                     onClick={() => onNavigateTab('student-requests')}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                    className="min-h-[44px] px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
                   >
                     <Send size={13} />
                     <span>ثبت درخواست پیگیری مالی</span>
@@ -226,7 +225,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
                   <button
                     type="button"
                     onClick={() => onNavigateTab('student-meals')}
-                    className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                    className="min-h-[44px] px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-xl transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
                   >
                     <Coins size={13} className="text-amber-600" />
                     <span>مشاهده هزینه‌های سلف غذا</span>

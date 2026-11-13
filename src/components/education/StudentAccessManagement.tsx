@@ -71,7 +71,7 @@ export const ALL_STUDENT_PORTAL_SECTIONS: StudentSectionDefinition[] = [
     category: 'آموزشی و انضباطی',
     icon: CalendarCheck,
     color: 'from-emerald-500 to-teal-600',
-    relatedTabIds: ['attendance', 'presence-hours'],
+    relatedTabIds: ['attendance', 'presence-hours', 'self-reporting'],
     mobileTabIds: ['self_attendance']
   },
   {
@@ -151,7 +151,7 @@ export const ALL_STUDENT_PORTAL_SECTIONS: StudentSectionDefinition[] = [
     category: 'رفاهی و مالی',
     icon: Wallet,
     color: 'from-rose-500 to-red-600',
-    relatedTabIds: ['finance', 'student-tuition'],
+    relatedTabIds: ['finance', 'student-tuition', 'student-payments'],
     mobileTabIds: ['tuition']
   },
   {

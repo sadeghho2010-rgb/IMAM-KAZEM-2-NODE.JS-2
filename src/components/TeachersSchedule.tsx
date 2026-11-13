@@ -362,7 +362,7 @@ export default function TeachersSchedule() {
       ]);
 
       const activePrograms = (rawPrograms || []).filter(
-        p => p && !p.isDeleted && p.status !== 'deleted' && p.status !== 'inactive'
+        p => p && !p.isDeleted && p.status !== 'deleted' && p.status !== 'inactive' && !(p as any).deletedAt
       );
 
       setPrograms(activePrograms);
@@ -380,14 +380,21 @@ export default function TeachersSchedule() {
     fetchData(true);
     const unsub = localDb.subscribe(() => fetchData(false));
     const handleProgramOrTeacherChange = () => fetchData(false);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'programs_updated_at') {
+        fetchData(true);
+      }
+    };
     window.addEventListener('collection_change_programs', handleProgramOrTeacherChange);
     window.addEventListener('collection_change_teachers', handleProgramOrTeacherChange);
     window.addEventListener('app_data_change', handleProgramOrTeacherChange);
+    window.addEventListener('storage', handleStorage);
     return () => {
       unsub();
       window.removeEventListener('collection_change_programs', handleProgramOrTeacherChange);
       window.removeEventListener('collection_change_teachers', handleProgramOrTeacherChange);
       window.removeEventListener('app_data_change', handleProgramOrTeacherChange);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -396,7 +403,7 @@ export default function TeachersSchedule() {
     const items: ScheduledCourseItem[] = [];
 
     programs.forEach(p => {
-      if (!p || p.isDeleted || p.status === 'deleted' || p.status === 'inactive') return;
+      if (!p || p.isDeleted || p.status === 'deleted' || p.status === 'inactive' || (p as any).deletedAt) return;
       const teacherName = (p.teacher || '').trim();
       if (
         !teacherName ||
@@ -643,12 +650,16 @@ export default function TeachersSchedule() {
         await localDb.deleteDoc('teacher_schedules', scheduleToDelete.id);
       } else {
         await localDb.deleteDoc('programs', scheduleToDelete.id);
+        try {
+          localStorage.setItem('programs_updated_at', String(Date.now()));
+        } catch {}
+        window.dispatchEvent(new CustomEvent('collection_change_programs'));
+        window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
       }
       setScheduleToDelete(null);
-      fetchData();
+      fetchData(false);
     } catch (err) {
       console.error('Error deleting schedule item:', err);
-      alert('خطا در حذف برنامه');
     }
   };
 

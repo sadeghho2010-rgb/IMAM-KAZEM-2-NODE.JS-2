@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { DoorOpen, Users, Layers, Calendar, Edit3, Trash2, ArrowLeft, Building2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { MadrasRoom, Program } from '../../types';
-import { getRoomCurrentStatus } from './madrasUtils';
+import { getRoomCurrentStatus, isActiveMadrasProgram } from './madrasUtils';
 import { cn } from '../../lib/utils';
 
 interface MadrasRoomCardProps {
@@ -22,7 +22,8 @@ export default function MadrasRoomCard({
   onEdit,
   onDelete,
 }: MadrasRoomCardProps) {
-  const { isOccupied, activeProgram } = getRoomCurrentStatus(room, programs);
+  const activePrograms = useMemo(() => programs.filter(isActiveMadrasProgram), [programs]);
+  const { isOccupied, activeProgram } = getRoomCurrentStatus(room, activePrograms);
 
   return (
     <motion.div

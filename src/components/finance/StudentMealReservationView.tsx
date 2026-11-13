@@ -403,9 +403,8 @@ export default function StudentMealReservationView() {
                   <Unlock size={16} />
                 </div>
                 <div>
-                  <h3 className="font-black text-emerald-950 flex items-center gap-1.5">
+                  <h3 className="font-black text-emerald-950">
                     <span>امکان ثبت و ویرایش رزرو برای این دوره فعال است</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                   </h3>
                   <p className="text-[11px] text-emerald-800 mt-0.5">
                     بازه زمانی دوره: <strong>{currentPeriod.startDate}</strong> الی <strong>{currentPeriod.endDate}</strong>
@@ -539,7 +538,7 @@ export default function StudentMealReservationView() {
                     disabled={!isPeriodOpen || isDisabledByManager}
                     onClick={() => handleToggleLunchDay(day)}
                     className={cn(
-                      "p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border cursor-pointer",
+                      "min-h-[44px] p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border cursor-pointer",
                       isDisabledByManager
                         ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
                         : isSelected
@@ -588,7 +587,7 @@ export default function StudentMealReservationView() {
                     disabled={!isPeriodOpen || isDisabledByManager}
                     onClick={() => handleToggleDinnerDay(day)}
                     className={cn(
-                      "p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border cursor-pointer",
+                      "min-h-[44px] p-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between border cursor-pointer",
                       isDisabledByManager
                         ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
                         : isSelected
@@ -673,7 +672,7 @@ export default function StudentMealReservationView() {
               type="button"
               disabled={isSaving}
               onClick={handleSaveReservation}
-              className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full sm:w-auto min-h-[48px] px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Save size={16} />
               <span>{isSaving ? 'در حال ذخیره‌سازی...' : 'ثبت نهایی و تایید رزرو غذا'}</span>

@@ -20,6 +20,7 @@ import {
   MADRAS_TIME_SLOTS_7_TO_17, 
   MADRAS_HOURLY_SLOTS_7_TO_17, 
   WEEK_DAYS_SEMINARY, 
+  isActiveMadrasProgram,
   isProgramInRoom, 
   isDayMatch, 
   isProgramInTimeRange, 
@@ -53,11 +54,6 @@ export default function MadrasWeeklyScheduleModal({
   onAddClass,
   onEditClass,
 }: MadrasWeeklyScheduleModalProps) {
-  if (!room) return null;
-
-  // Filter programs only belonging to this room and within 07:00 - 17:00
-  const roomPrograms = programs.filter(p => isProgramInRoom(p, room));
-
   // Compute 1-hour slots
   const timetableSlots: TimetableRowSlot[] = useMemo(() => {
     return MADRAS_HOURLY_SLOTS_7_TO_17.map(h => ({
@@ -69,6 +65,14 @@ export default function MadrasWeeklyScheduleModal({
       displayTime: `${h.startTime} الی ${h.endTime}`,
     }));
   }, []);
+
+  // Filter active programs belonging strictly to this room
+  const roomPrograms = useMemo(() => {
+    if (!room) return [];
+    return programs.filter(p => isActiveMadrasProgram(p) && isProgramInRoom(p, room));
+  }, [programs, room]);
+
+  if (!room) return null;
 
   // Find program for a specific day and time range
   const getProgramForCell = (day: string, startTime: string, endTime: string): Program | undefined => {

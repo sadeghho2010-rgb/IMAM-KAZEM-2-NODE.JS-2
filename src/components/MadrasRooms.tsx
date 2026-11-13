@@ -15,7 +15,8 @@ import {
   Clock,
   User,
   GraduationCap,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -32,6 +33,7 @@ import {
   MADRAS_TIME_SLOTS_7_TO_17, 
   MADRAS_HOURLY_SLOTS_7_TO_17,
   canManageAndSearchMadras,
+  isActiveMadrasProgram,
   timeToMinutes, 
   isProgramInRoom,
   getRoomCurrentStatus 
@@ -73,6 +75,7 @@ export default function MadrasRooms() {
   // Modals state: Class & Room
   const [showClassModal, setShowClassModal] = useState(false);
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
+  const [confirmDeleteClass, setConfirmDeleteClass] = useState(false);
 
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState<MadrasRoom | null>(null);
@@ -99,10 +102,27 @@ export default function MadrasRooms() {
 
   const isReadOnly = !canEditAndSearch;
 
-  // Fetch initial data
-  const fetchData = async () => {
-    setLoading(true);
+  const broadcastProgramSync = () => {
     try {
+      localStorage.setItem('programs_updated_at', String(Date.now()));
+    } catch {}
+    window.dispatchEvent(new CustomEvent('collection_change_programs'));
+    window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'programs' } }));
+  };
+
+  // Fetch initial and synced data (strictly synchronized with Programs)
+  const fetchData = async (forceCloud = false, silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
+    try {
+      if (forceCloud) {
+        await Promise.all([
+          localDb.syncCollectionFromCloud('programs', true),
+          localDb.syncCollectionFromCloud('classrooms', true),
+        ]).catch(() => {});
+      }
+
       const [rawRooms, rawPrograms, rawTeachers, rawEnrollments, rawStudents] = await Promise.all([
         localDb.getDocs<MadrasRoom>('classrooms'),
         localDb.getDocs<Program>('programs'),
@@ -120,23 +140,56 @@ export default function MadrasRooms() {
         setRooms(rawRooms);
       }
 
-      setPrograms(rawPrograms || []);
+      const activePrograms = (rawPrograms || []).filter(isActiveMadrasProgram);
+      setPrograms(activePrograms);
       setTeachers(rawTeachers || []);
       setEnrollments(rawEnrollments || []);
       setStudents(rawStudents || []);
     } catch (err) {
       console.error('Error fetching madras rooms data:', err);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true, false);
+
     const unsub = localDb.subscribe(() => {
-      fetchData();
+      fetchData(false, true);
     });
-    return () => unsub();
+
+    const handleProgramCollectionChange = () => {
+      fetchData(true, true);
+    };
+
+    const handleAppDataChange = (e: Event) => {
+      const col = (e as CustomEvent)?.detail?.collection;
+      if (!col || col === 'all' || col === 'programs' || col === 'classrooms' || col === 'teachers') {
+        fetchData(col === 'programs', true);
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'programs_updated_at') {
+        fetchData(true, true);
+      }
+    };
+
+    window.addEventListener('collection_change_programs', handleProgramCollectionChange);
+    window.addEventListener('collection_change_classrooms', handleProgramCollectionChange);
+    window.addEventListener('app_data_change', handleAppDataChange);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      unsub();
+      window.removeEventListener('collection_change_programs', handleProgramCollectionChange);
+      window.removeEventListener('collection_change_classrooms', handleProgramCollectionChange);
+      window.removeEventListener('app_data_change', handleAppDataChange);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   // Extract unique floors for filter dropdown
@@ -187,6 +240,7 @@ export default function MadrasRooms() {
   // Open modal for new class with prefilled room and time
   const handleOpenAddClass = (prefillRoomName?: string, prefillDay?: string, prefillTime?: string) => {
     setEditingProgram(null);
+    setConfirmDeleteClass(false);
     setClassFormTitle('');
     setClassFormMadras(prefillRoomName || (rooms[0]?.name || ''));
     setClassFormTeacher('');
@@ -219,6 +273,7 @@ export default function MadrasRooms() {
   // Open modal for editing existing class
   const handleOpenEditClass = (prog: Program) => {
     setEditingProgram(prog);
+    setConfirmDeleteClass(false);
     setClassFormTitle(prog.title || '');
     setClassFormMadras(prog.madrasRoom || prog.classroom || rooms[0]?.name || '');
     setClassFormTeacher(prog.teacher || '');
@@ -260,6 +315,9 @@ export default function MadrasRooms() {
         type: classFormType,
         notes: classFormNotes.trim(),
         mentorId: currentMentorId,
+        status: 'active',
+        isDeleted: false,
+        updated_at: new Date().toISOString(),
       };
 
       if (editingProgram) {
@@ -268,11 +326,29 @@ export default function MadrasRooms() {
         await localDb.addDoc('programs', payload);
       }
 
+      broadcastProgramSync();
       setShowClassModal(false);
-      fetchData();
+      fetchData(false, true);
     } catch (err) {
       console.error('Error saving class:', err);
-      alert('خطا در ذخیره‌سازی اطلاعات کلاس');
+    }
+  };
+
+  // Delete class from Madras timetable modal & propagate immediately to Programs
+  const handleDeleteClassFromMadras = async () => {
+    if (!editingProgram) return;
+    try {
+      const deletedId = editingProgram.id;
+      setPrograms(prev => prev.filter(p => p.id !== deletedId));
+      setShowClassModal(false);
+      setEditingProgram(null);
+      setConfirmDeleteClass(false);
+      await localDb.deleteDoc('programs', deletedId);
+      broadcastProgramSync();
+      fetchData(false, true);
+    } catch (err) {
+      console.error('Error deleting class from madras:', err);
+      fetchData(true, true);
     }
   };
 
@@ -297,20 +373,22 @@ export default function MadrasRooms() {
         await localDb.addDoc('classrooms', payload);
       }
 
+      window.dispatchEvent(new CustomEvent('collection_change_classrooms'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'classrooms' } }));
       setShowRoomModal(false);
-      fetchData();
+      fetchData(false, true);
     } catch (err) {
       console.error('Error saving madras room:', err);
-      alert('خطا در ثبت مشخصات مَدرَس');
     }
   };
 
   // Delete Room
   const handleDeleteRoom = async (roomId: string) => {
-    if (!confirm('آیا از حذف این مَدرَس اطمینان دارید؟')) return;
     try {
       await localDb.deleteDoc('classrooms', roomId);
-      fetchData();
+      window.dispatchEvent(new CustomEvent('collection_change_classrooms'));
+      window.dispatchEvent(new CustomEvent('app_data_change', { detail: { collection: 'classrooms' } }));
+      fetchData(false, true);
     } catch (err) {
       console.error('Error deleting room:', err);
     }
@@ -918,20 +996,54 @@ export default function MadrasRooms() {
                 </div>
 
                 {/* Buttons */}
-                <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shadow-md shadow-indigo-100 cursor-pointer"
-                  >
-                    {editingProgram ? 'ذخیره تغییرات' : 'ثبت و اختصاص کلاس'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowClassModal(false)}
-                    className="py-2.5 px-5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs transition-colors cursor-pointer"
-                  >
-                    انصراف
-                  </button>
+                <div className="space-y-2 pt-3 border-t border-slate-100">
+                  {editingProgram && confirmDeleteClass && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-rose-800">حذف کامل این کلاس از برنامه مدرسه و مدرس؟</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleDeleteClassFromMadras}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] cursor-pointer"
+                        >
+                          تایید حذف
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteClass(false)}
+                          className="px-2.5 py-1.5 bg-white text-slate-600 border border-slate-200 rounded-lg font-bold text-[11px] cursor-pointer"
+                        >
+                          لغو
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="submit"
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shadow-md shadow-indigo-100 cursor-pointer"
+                    >
+                      {editingProgram ? 'ذخیره تغییرات' : 'ثبت و اختصاص کلاس'}
+                    </button>
+                    {editingProgram && !confirmDeleteClass && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteClass(true)}
+                        className="py-2.5 px-3.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                        title="حذف این کلاس"
+                      >
+                        <Trash2 size={14} />
+                        <span>حذف</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowClassModal(false)}
+                      className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      انصراف
+                    </button>
+                  </div>
                 </div>
               </form>
             </motion.div>
