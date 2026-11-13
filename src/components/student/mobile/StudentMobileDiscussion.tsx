@@ -19,6 +19,7 @@ import { emitSaveConfirmation } from '../../../lib/saveFeedback';
 import { useAuth } from '../../../context/AuthContext';
 import { DiscussionGroup, Student, Program, WorkflowItem } from '../../../types';
 import { isProgramActiveAndValid } from '../../study/studyUtils';
+import { GlyphDiscussionGroup } from './StudentMobileIcons';
 
 interface StudentMobileDiscussionProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -284,12 +285,17 @@ export const StudentMobileDiscussion: React.FC<StudentMobileDiscussionProps> = (
 
   return (
     <div className="space-y-3.5 font-vazir text-right" dir="rtl">
-      {/* 1. Header Banner */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-md border border-indigo-500/20">
-        <div className="flex items-center justify-between gap-2">
+      {/* 1. Luminous Header Banner */}
+      <div className="relative overflow-hidden p-4 rounded-[26px] bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-[0_14px_34px_-12px_rgba(30,27,75,0.55)] border border-indigo-400/25">
+        <div
+          className="pointer-events-none absolute -top-14 -left-10 w-40 h-40 rounded-full opacity-35 student-microwave-ripple"
+          style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.45) 0%, transparent 70%)' }}
+          aria-hidden="true"
+        />
+        <div className="relative z-10 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/10 text-purple-300 backdrop-blur-md flex items-center justify-center border border-white/20 shrink-0">
-              <Users size={19} />
+            <div className="w-10 h-10 rounded-2xl bg-white/10 text-purple-300 flex items-center justify-center border border-white/20 shrink-0">
+              <GlyphDiscussionGroup size={20} active />
             </div>
             <div className="min-w-0">
               <h2 className="text-sm font-black text-white truncate">گروه‌های مباحثه من</h2>

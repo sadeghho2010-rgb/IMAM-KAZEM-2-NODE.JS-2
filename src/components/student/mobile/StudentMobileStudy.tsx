@@ -37,6 +37,7 @@ import {
 } from '../../study/studyUtils';
 import FreeStudyRulesModal from '../../study/FreeStudyRulesModal';
 import { AnimatedRingGauge } from './AnimatedRingGauge';
+import { GlyphStudyOrbit } from './StudentMobileIcons';
 
 interface StudentMobileStudyProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -467,18 +468,28 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
 
   return (
     <div className="space-y-3.5 font-vazir text-right" dir="rtl">
-      {/* 1. Hero Card with Circular Progress Gauge & Period Selector */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-md border border-indigo-500/20 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <AnimatedRingGauge
-            percentage={totals.pct}
-            size={60}
-            strokeWidth={6}
-            progressClassName={totals.pct >= 100 ? 'text-emerald-400' : 'text-cyan-400'}
-            label={activePeriod?.title || 'دوره جاری'}
-            valueText={`${totals.overallTotal} دقیقه کل`}
-            subText={`موظفی: ${totals.mandatoryTotal} د`}
-          />
+      {/* 1. Luminous Hero Card with Circular Progress Gauge & Period Selector */}
+      <div className="relative overflow-hidden p-4 rounded-[26px] bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-[0_14px_34px_-12px_rgba(30,27,75,0.55)] border border-indigo-400/25 space-y-3">
+        <div
+          className="pointer-events-none absolute -top-14 -left-10 w-40 h-40 rounded-full opacity-35 student-microwave-ripple"
+          style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.45) 0%, transparent 70%)' }}
+          aria-hidden="true"
+        />
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 text-cyan-300 flex items-center justify-center border border-white/20 shrink-0">
+              <GlyphStudyOrbit size={20} active />
+            </div>
+            <AnimatedRingGauge
+              percentage={totals.pct}
+              size={58}
+              strokeWidth={5.5}
+              progressClassName={totals.pct >= 100 ? 'text-emerald-400' : 'text-cyan-400'}
+              label={activePeriod?.title || 'دوره جاری'}
+              valueText={`${totals.overallTotal} دقیقه کل`}
+              subText={`موظفی: ${totals.mandatoryTotal} د`}
+            />
+          </div>
 
           {periods.length > 0 && (
             <select
@@ -487,7 +498,7 @@ export const StudentMobileStudy: React.FC<StudentMobileStudyProps> = () => {
                 setActivePeriodId(e.target.value);
                 setUserSelectedPeriodId(e.target.value);
               }}
-              className="min-h-[40px] max-w-[140px] bg-white/15 text-white border border-white/20 rounded-xl px-2.5 py-1.5 text-[11px] font-bold focus:outline-hidden cursor-pointer"
+              className="min-h-[40px] max-w-[132px] bg-white/15 text-white border border-white/20 rounded-xl px-2.5 py-1.5 text-[11px] font-bold focus:outline-hidden cursor-pointer shrink-0"
             >
               {periods.map((p) => {
                 const closed = isPeriodClosed(p);

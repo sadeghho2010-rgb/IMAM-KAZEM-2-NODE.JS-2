@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
-  CheckSquare,
   Clock,
   CheckCircle2,
   XCircle,
-  Sparkles,
   BookOpen,
   Info,
 } from 'lucide-react';
@@ -15,6 +13,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { Program, AttendanceSessionLog, Student } from '../../../types';
 import { StudentSelfReportingModal } from '../../attendance/StudentSelfReportingModal';
 import { AnimatedRingGauge } from './AnimatedRingGauge';
+import { GlyphAttendanceCheck, GlyphSelfReportSpark } from './StudentMobileIcons';
 import {
   isProgramActiveAndValid,
   isStudentEnrolledInProgram,
@@ -252,18 +251,28 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
 
   return (
     <div className="space-y-3.5 font-vazir text-right" dir="rtl">
-      {/* 1. Attendance Overview Hero Card */}
-      <div className="p-4 rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-md border border-indigo-500/20 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <AnimatedRingGauge
-            percentage={metrics.attendanceRate}
-            size={60}
-            strokeWidth={6}
-            progressClassName={metrics.attendanceRate >= 85 ? 'text-emerald-400' : 'text-amber-400'}
-            label={studentGrade}
-            valueText="نرخ حضور در کلاس‌ها"
-            subText={`${metrics.total} جلسه ثبت‌شده`}
-          />
+      {/* 1. Luminous Attendance Overview Hero Card */}
+      <div className="relative overflow-hidden p-4 rounded-[26px] bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white shadow-[0_14px_34px_-12px_rgba(30,27,75,0.55)] border border-indigo-400/25 space-y-3">
+        <div
+          className="pointer-events-none absolute -top-14 -left-10 w-40 h-40 rounded-full opacity-35 student-microwave-ripple"
+          style={{ background: 'radial-gradient(circle, rgba(52,211,153,0.45) 0%, transparent 70%)' }}
+          aria-hidden="true"
+        />
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 text-emerald-300 flex items-center justify-center border border-white/20 shrink-0">
+              <GlyphAttendanceCheck size={20} active />
+            </div>
+            <AnimatedRingGauge
+              percentage={metrics.attendanceRate}
+              size={58}
+              strokeWidth={5.5}
+              progressClassName={metrics.attendanceRate >= 85 ? 'text-emerald-400' : 'text-amber-400'}
+              label={studentGrade}
+              valueText="نرخ حضور در کلاس‌ها"
+              subText={`${metrics.total} جلسه ثبت‌شده`}
+            />
+          </div>
           <div className="text-left shrink-0">
             <div className="text-xs font-black text-white">{studentObj?.name || currentUser?.name || 'طلبه گرامی'}</div>
             <div className="text-[10px] text-emerald-300 font-bold mt-0.5 tabular-nums">
@@ -272,7 +281,7 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-2 pt-3 border-t border-white/10 text-center">
+        <div className="relative z-10 grid grid-cols-4 gap-2 pt-3 border-t border-white/10 text-center">
           <div className="p-2 rounded-2xl bg-white/5 border border-white/10">
             <div className="text-sm font-black text-white font-mono tabular-nums">{metrics.total}</div>
             <div className="text-[9.5px] text-slate-300 font-medium">جلسات</div>
@@ -296,11 +305,14 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
       {selfReportingCourses.length > 0 && (
         <motion.div
           whileTap={prefersReducedMotion ? undefined : { scale: 0.985 }}
-          className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 border border-emerald-400/30"
+          className="relative overflow-hidden student-card-wave-selfreport rounded-[22px] p-3.5 text-white shadow-md flex items-center justify-between gap-3 border border-teal-300/35"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/20">
-              <CheckSquare size={19} className="text-white" />
+          {!prefersReducedMotion && (
+            <div className="student-electric-beam student-electric-beam-delay-1" aria-hidden="true" />
+          )}
+          <div className="relative z-10 flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center shrink-0 border border-white/25">
+              <GlyphSelfReportSpark size={20} className="text-teal-100" />
             </div>
             <div className="min-w-0">
               <span className="text-xs font-black block truncate">ثبت خوداظهاری حضور و غیاب</span>
@@ -312,9 +324,8 @@ export const StudentMobileAttendance: React.FC<StudentMobileAttendanceProps> = (
           <button
             type="button"
             onClick={() => setIsSelfReportingModalOpen(true)}
-            className="min-h-[44px] px-3.5 py-2 bg-white text-emerald-800 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+            className="relative z-10 min-h-[44px] px-3.5 py-2 bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
           >
-            <Sparkles size={14} className="text-amber-500" />
             <span>ثبت فوری</span>
           </button>
         </motion.div>

@@ -86,24 +86,112 @@
 
 @keyframes electricSweep {
   0% {
-    transform: translateX(-200%) skewX(-20deg);
+    transform: translate3d(-220%, 0, 0) skewX(-24deg);
     opacity: 0;
   }
-  20% {
-    opacity: 1;
+  12% {
+    opacity: 0.95;
   }
-  60% {
-    transform: translateX(350%) skewX(-20deg);
-    opacity: 0.8;
+  42% {
+    transform: translate3d(380%, 0, 0) skewX(-24deg);
+    opacity: 0.9;
   }
-  100% {
-    transform: translateX(350%) skewX(-20deg);
+  48%, 100% {
+    transform: translate3d(380%, 0, 0) skewX(-24deg);
     opacity: 0;
   }
 }
 
 .animate-electric-sweep {
-  animation: electricSweep 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: electricSweep 4.8s cubic-bezier(0.35, 0, 0.15, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.student-electric-beam {
+  position: absolute;
+  inset-block: -20%;
+  width: 44%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 22%,
+    rgba(255, 255, 255, 0.28) 48%,
+    rgba(186, 230, 253, 0.48) 52%,
+    rgba(255, 255, 255, 0.12) 66%,
+    transparent 100%
+  );
+  animation: electricSweep 5.2s cubic-bezier(0.32, 0, 0.16, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.student-electric-beam-delay-1 { animation-delay: 0s; }
+.student-electric-beam-delay-2 { animation-delay: 1.3s; }
+.student-electric-beam-delay-3 { animation-delay: 2.6s; }
+.student-electric-beam-delay-4 { animation-delay: 3.9s; }
+
+@keyframes microWaveDrift {
+  0% {
+    transform: translate3d(-6%, 4%, 0) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate3d(6%, -5%, 0) scale(1.08);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(-6%, 4%, 0) scale(1);
+    opacity: 0.45;
+  }
+}
+
+.student-microwave-ripple {
+  animation: microWaveDrift 7.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.student-card-wave-selfreport {
+  background: linear-gradient(
+    130deg,
+    #042f2e,
+    #0f766e,
+    #115e59,
+    #0284c7,
+    #065f46,
+    #0d9488,
+    #0f172a,
+    #042f2e
+  ) !important;
+  background-size: 420% 420% !important;
+  animation: studentWaveStudy 28s ease-in-out infinite !important;
+}
+
+.student-card-wave-rep {
+  background: linear-gradient(
+    -135deg,
+    #1e1b4b,
+    #4338ca,
+    #5b21b6,
+    #1d4ed8,
+    #312e81,
+    #6d28d9,
+    #0f172a,
+    #1e1b4b
+  ) !important;
+  background-size: 420% 420% !important;
+  animation: studentWaveRequests 32s ease-in-out infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-electric-sweep,
+  .student-electric-beam,
+  .student-microwave-ripple,
+  .student-card-wave-study,
+  .student-card-wave-requests,
+  .student-card-wave-selfreport,
+  .student-card-wave-rep {
+    animation: none !important;
+  }
 }
 
 @keyframes bannerPulseGlow {
@@ -266,7 +354,6 @@
   animation: gradientGlow 60s ease-in-out infinite;
 }
 
-/* Independent smooth multi-stop gradient flow for student feature cards (styled like welcome card) */
 @keyframes cardGradientGlow1 {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -361,7 +448,6 @@
   animation: cardGradientGlow1 30s ease-in-out infinite !important;
 }
 
-/* Independent wave animation for student "ساعت مطالعه من" (Rich ocean/sapphire/teal/cyan/cobalt/emerald - NO brown, NO pink) */
 @keyframes studentWaveStudy {
   0% {
     background-position: 0% 50%;
@@ -398,10 +484,9 @@
     #023e8a
   ) !important;
   background-size: 400% 400% !important;
-  animation: studentWaveStudy 32s ease-in-out infinite !important;
+  animation: studentWaveStudy 30s ease-in-out infinite !important;
 }
 
-/* Independent wave animation for student "ثبت تقاضا و درخواست" (Rich jade/forest/teal/indigo/cyan/violet - NO brown, NO pink) */
 @keyframes studentWaveRequests {
   0% {
     background-position: 100% 50%;
@@ -438,7 +523,7 @@
     #064e3b
   ) !important;
   background-size: 450% 450% !important;
-  animation: studentWaveRequests 44s ease-in-out infinite !important;
+  animation: studentWaveRequests 36s ease-in-out infinite !important;
 }
 
 html, body {

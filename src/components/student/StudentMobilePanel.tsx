@@ -2,28 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
 import {
-  BookOpen,
-  Calendar,
-  CheckSquare,
   Clock,
   LogOut,
-  Send,
-  Sparkles,
-  Users,
-  UtensilsCrossed,
-  BookCheck,
   ChevronLeft,
-  LayoutDashboard,
-  Wallet,
-  BrainCircuit,
-  CalendarDays,
-  FileText,
-  ListTodo,
-  GraduationCap,
-  KeyRound,
   Info,
-  DoorOpen,
-  ShieldCheck,
 } from 'lucide-react';
 import { cn, getProgramDays } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
@@ -38,6 +20,27 @@ import {
 import { getTodayShamsi, getShamsiDayOfWeekName, toEnglishDigits } from '../../lib/jalali';
 import { StudentSelfReportingModal } from '../attendance/StudentSelfReportingModal';
 import { AnimatedRingGauge } from './mobile/AnimatedRingGauge';
+import {
+  GlyphHome,
+  GlyphStudyBook,
+  GlyphAttendanceCheck,
+  GlyphScheduleGrid,
+  GlyphStudyOrbit,
+  GlyphRequestPaperPlane,
+  GlyphSelfReportSpark,
+  GlyphRepShieldCrown,
+  GlyphReportCard,
+  GlyphDiningBowl,
+  GlyphWalletVault,
+  GlyphDiscussionGroup,
+  GlyphCourseSelect,
+  GlyphGraduationScroll,
+  GlyphResearchQuill,
+  GlyphCalendarTimeline,
+  GlyphPersonalTasks,
+  GlyphSecurityKey,
+  MobileGlyphProps,
+} from './mobile/StudentMobileIcons';
 import {
   isProgramActiveAndValid,
   isStudentEnrolledInProgram,
@@ -187,13 +190,11 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       const candidateIdsLower = Array.from(candidateIdSet).map((x) => x.toLowerCase().trim());
       const candidateNames = [cName, matchedSt?.name?.toLowerCase()].filter(Boolean) as string[];
 
-      // Active & enrolled courses for this student
       const myActiveCourses = activeProgs.filter((p) =>
         isStudentEnrolledInProgram(p, matchedSt || null, combinedEnrollments, candidateIdSet)
       );
       const myCourseIdSet = new Set(myActiveCourses.map((p) => String(p.id)));
 
-      // Today's classes filtered strictly from active enrolled programs
       const normDay = (d: string) => d.replace(/[\u200c\s]/g, '').trim();
       const todayNorm = normDay(todayDayName);
       const filteredToday = myActiveCourses
@@ -205,7 +206,6 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         });
       setTodayPrograms(filteredToday);
 
-      // Representative status check across active programs
       const repProg = activeProgs.find((p) => {
         const repIds = Array.isArray((p as any).representativeStudentIds)
           ? (p as any).representativeStudentIds.map((x: any) => String(x).toLowerCase().trim())
@@ -228,11 +228,9 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       setHasRepProgram(Boolean(repProg));
       setMyRepProgramTitle(repProg ? repProg.title || 'کلاس درس' : '');
 
-      // Self-reporting courses count
       const selfProgs = myActiveCourses.filter((p) => p.attendanceType === 'self_reporting');
       setSelfReportingCount(selfProgs.length);
 
-      // Pending requests count
       if (Array.isArray(allReqs)) {
         const myReqs = allReqs.filter(
           (r) =>
@@ -244,7 +242,6 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         setMyRequestsCount(myReqs.filter((r) => r.status === 'pending').length);
       }
 
-      // Live Study Period KPI
       const validPeriods = (allPeriods || [])
         .filter((p) => p && p.id && p.status !== 'deleted' && !(p as any).isDeleted && !(p as any).deletedAt)
         .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
@@ -285,7 +282,6 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         setStudyMinutes(0);
       }
 
-      // Live Attendance Rate KPI (for active enrolled courses)
       let presentOrLate = 0;
       let totalAtt = 0;
       (allAttendance || []).forEach((rec) => {
@@ -319,76 +315,82 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   const studyPct = studyMandatoryMinutes > 0 ? Math.min(100, Math.round((studyMinutes / studyMandatoryMinutes) * 100)) : 0;
 
   const secondaryServices = useMemo(() => {
-    const items = [
+    const items: Array<{
+      tab: string;
+      title: string;
+      subtitle: string;
+      icon: React.FC<MobileGlyphProps>;
+      iconBg: string;
+    }> = [
       {
         tab: 'student-portal',
         title: 'کارنامه علمی',
         subtitle: 'نمرات و پرونده تحصیلی',
-        icon: BrainCircuit,
-        iconBg: 'bg-amber-50 text-amber-700 border-amber-200',
+        icon: GlyphReportCard,
+        iconBg: 'bg-gradient-to-br from-amber-50 to-orange-50 text-amber-700 border-amber-200/90',
       },
       {
         tab: 'student-schedule',
         title: 'برنامه هفتگی',
         subtitle: 'ساعات دروس و اساتید',
-        icon: Calendar,
-        iconBg: 'bg-sky-50 text-sky-700 border-sky-200',
+        icon: GlyphScheduleGrid,
+        iconBg: 'bg-gradient-to-br from-sky-50 to-indigo-50 text-sky-700 border-sky-200/90',
       },
       {
         tab: 'student-meals',
         title: 'رزرو ناهار و شام',
         subtitle: 'سلف و وعده‌های غذایی',
-        icon: UtensilsCrossed,
-        iconBg: 'bg-orange-50 text-orange-700 border-orange-200',
+        icon: GlyphDiningBowl,
+        iconBg: 'bg-gradient-to-br from-orange-50 to-amber-50 text-orange-700 border-orange-200/90',
       },
       {
         tab: 'student-payments',
         title: 'پرداختی‌ها و مالی',
         subtitle: 'شهریه و کمک‌هزینه',
-        icon: Wallet,
-        iconBg: 'bg-teal-50 text-teal-700 border-teal-200',
+        icon: GlyphWalletVault,
+        iconBg: 'bg-gradient-to-br from-teal-50 to-emerald-50 text-teal-700 border-teal-200/90',
       },
       {
         tab: 'discussion',
         title: 'گروه مباحثه',
         subtitle: 'هم‌مباحثه‌ای‌ها و پایش',
-        icon: Users,
-        iconBg: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        icon: GlyphDiscussionGroup,
+        iconBg: 'bg-gradient-to-br from-indigo-50 to-violet-50 text-indigo-700 border-indigo-200/90',
       },
       {
         tab: 'course-selection',
         title: 'انتخاب واحد',
         subtitle: 'ثبت دروس دوره جدید',
-        icon: BookCheck,
-        iconBg: 'bg-lime-50 text-lime-700 border-lime-200',
+        icon: GlyphCourseSelect,
+        iconBg: 'bg-gradient-to-br from-lime-50 to-emerald-50 text-lime-700 border-lime-200/90',
       },
       {
         tab: 'passed-courses',
         title: 'دروس گذرانده',
         subtitle: 'کارنامه دروس گذرانده',
-        icon: GraduationCap,
-        iconBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        icon: GlyphGraduationScroll,
+        iconBg: 'bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-700 border-emerald-200/90',
       },
       {
         tab: 'research',
         title: 'پژوهش و مقالات',
         subtitle: 'مقالات و ارزیابی علمی',
-        icon: FileText,
-        iconBg: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+        icon: GlyphResearchQuill,
+        iconBg: 'bg-gradient-to-br from-fuchsia-50 to-purple-50 text-fuchsia-700 border-fuchsia-200/90',
       },
       {
         tab: 'academic-calendar',
         title: 'تقویم آموزشی',
         subtitle: 'تعطیلات و مناسبت‌ها',
-        icon: CalendarDays,
-        iconBg: 'bg-blue-50 text-blue-700 border-blue-200',
+        icon: GlyphCalendarTimeline,
+        iconBg: 'bg-gradient-to-br from-blue-50 to-cyan-50 text-blue-700 border-blue-200/90',
       },
       {
         tab: 'todos',
         title: 'کارهای شخصی',
         subtitle: 'فهرست پیگیری و یادداشت',
-        icon: ListTodo,
-        iconBg: 'bg-slate-100 text-slate-700 border-slate-200',
+        icon: GlyphPersonalTasks,
+        iconBg: 'bg-gradient-to-br from-slate-100 to-slate-50 text-slate-700 border-slate-200/90',
       },
     ];
     return items.filter((it) => isTabAllowed(it.tab));
@@ -402,7 +404,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
   return (
     <div
       className={cn(
-        'font-vazir text-right text-slate-800 space-y-3.5',
+        'font-vazir text-right text-slate-800 space-y-4',
         !isInsideShell && 'min-h-screen bg-slate-50 pb-24 p-3'
       )}
       dir="rtl"
@@ -443,39 +445,48 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
         </div>
       )}
 
-      {/* 1. Live Academic Overview Hero Card */}
+      {/* 1. Luminous Live Academic Overview Hero Card */}
       <motion.section
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.25 }}
-        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white p-4 shadow-lg border border-indigo-500/20"
+        transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+        className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white p-4 shadow-[0_14px_34px_-12px_rgba(30,27,75,0.55)] border border-indigo-400/25"
       >
-        <div className="flex items-center justify-between gap-2 mb-3">
+        {/* Ambient radial highlight inside hero */}
+        <div
+          className="pointer-events-none absolute -top-16 -left-12 w-44 h-44 rounded-full opacity-35 student-microwave-ripple"
+          style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.45) 0%, transparent 70%)' }}
+          aria-hidden="true"
+        />
+
+        <div className="relative z-10 flex items-center justify-between gap-2 mb-3.5">
           <div className="min-w-0">
-            <div className="text-[10px] text-indigo-300 font-bold">
+            <div className="text-[10px] text-cyan-200/90 font-bold tracking-tight">
               {hasRepProgram ? `نماینده کلاس · ${myRepProgramTitle}` : `${currentUser?.gradeLabel || 'طلبه'} · ${todayDayName}`}
             </div>
-            <h2 className="text-sm font-black text-white truncate mt-0.5">
-              وضعیت آموزشی {activePeriodTitle ? `(${activePeriodTitle})` : 'دوره جاری'}
+            <h2 className="text-[15px] font-black text-white truncate mt-0.5">
+              وضعیت آموزشی {activePeriodTitle ? `· ${activePeriodTitle}` : 'دوره جاری'}
             </h2>
           </div>
 
-          <button
+          <motion.button
             type="button"
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.94 }}
             onClick={() => onNavigateTab('security-pin-settings')}
-            className="min-h-[36px] px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-[10px] font-bold text-slate-200 flex items-center gap-1 shrink-0 cursor-pointer"
+            className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-[10.5px] font-bold text-slate-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
           >
-            <KeyRound size={12} className="text-amber-300" />
+            <GlyphSecurityKey size={15} className="text-amber-300" />
             <span>پین امنیتی</span>
-          </button>
+          </motion.button>
         </div>
 
         {/* Two Live SVG Circular Rings */}
-        <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-white/10">
-          <button
+        <div className="relative z-10 grid grid-cols-2 gap-2.5 pt-3 border-t border-white/10">
+          <motion.button
             type="button"
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
             onClick={() => isTabAllowed('stats') && onNavigateTab('stats')}
-            className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-right transition-colors cursor-pointer"
+            className="p-2.5 rounded-2xl bg-white/[0.06] hover:bg-white/10 border border-white/10 text-right transition-colors cursor-pointer"
           >
             <AnimatedRingGauge
               percentage={studyPct}
@@ -486,12 +497,13 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               valueText={`${studyMinutes} دقیقه`}
               subText={`از ${studyMandatoryMinutes} د موظفی`}
             />
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             type="button"
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
             onClick={() => isTabAllowed('attendance') && onNavigateTab('attendance')}
-            className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-right transition-colors cursor-pointer"
+            className="p-2.5 rounded-2xl bg-white/[0.06] hover:bg-white/10 border border-white/10 text-right transition-colors cursor-pointer"
           >
             <AnimatedRingGauge
               percentage={attendanceRate}
@@ -502,7 +514,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               valueText={`${attendanceRate}٪`}
               subText={`${attendanceSessionsCount} جلسه ثبت‌شده`}
             />
-          </button>
+          </motion.button>
         </div>
 
         {/* Direct Attendance / Representative Quick Strip */}
@@ -512,7 +524,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
             onClick={() => onNavigateTab(hasRepProgram && isTabAllowed('rep-attendance') ? 'rep-attendance' : 'attendance')}
             className={cn(
-              'mt-3 w-full min-h-[44px] px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-right transition-all cursor-pointer border',
+              'relative z-10 mt-3 w-full min-h-[46px] px-3.5 py-2.5 rounded-2xl flex items-center justify-between gap-2 text-right transition-all cursor-pointer border',
               hasRepProgram
                 ? 'bg-emerald-500/20 hover:bg-emerald-500/25 border-emerald-400/35 text-emerald-100'
                 : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-100'
@@ -522,41 +534,54 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               <div className="text-xs font-black truncate">
                 {hasRepProgram
                   ? `ثبت سریع حضور کلاس «${myRepProgramTitle}»`
-                  : 'مشاهده جزئیات حضور و غیاب من'}
+                  : 'مشاهده کارنامه حضور و غیاب من'}
               </div>
               <div className="text-[10px] opacity-80 truncate">
-                {hasRepProgram ? 'ثبت حاضر و غایب اعضا با یک لمس' : 'گزارش حضور، تاخیرها و دروس خوداظهاری'}
+                {hasRepProgram ? 'ثبت حاضر و غایب اعضا با یک لمس' : 'جزئیات جلسات، تاخیرها و خوداظهاری'}
               </div>
             </div>
-            <ChevronLeft size={16} className="shrink-0 opacity-80" />
+            <ChevronLeft size={16} className="shrink-0 opacity-85" />
           </motion.button>
         )}
       </motion.section>
 
-      {/* 2. Four Core Action Bento Tiles */}
-      <section aria-label="سامانه‌های اصلی و پرکاربرد" className="space-y-2">
+      {/* 2. Four Core Micro-Wave Cards with Electric Sweep Light Beams */}
+      <section aria-label="سامانه‌های اصلی و پرکاربرد" className="space-y-2.5">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-black text-slate-900">سامانه‌های اصلی</h2>
-          <span className="text-[10px] text-slate-400 font-bold">دسترسی سریع</span>
+          <span className="text-[10px] text-slate-400 font-bold">دسترسی فوری</span>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
           {isTabAllowed('stats') && (
             <motion.button
               type="button"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.24, delay: prefersReducedMotion ? 0 : 0.04 }}
               whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
               onClick={() => onNavigateTab('stats')}
-              className="relative overflow-hidden rounded-2xl p-3.5 text-white text-right shadow-md border border-cyan-400/25 student-card-wave-study flex flex-col justify-between min-h-[108px] cursor-pointer"
+              className="relative overflow-hidden rounded-[22px] p-3.5 text-white text-right shadow-[0_10px_24px_-8px_rgba(2,62,138,0.45)] border border-cyan-300/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] student-card-wave-study flex flex-col justify-between min-h-[118px] cursor-pointer"
             >
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25">
-                  <BookOpen size={18} />
+              {/* Micro-wave fluid highlight & Diagonal Electric Sweep */}
+              <div
+                className="pointer-events-none absolute -bottom-8 -left-8 w-28 h-28 rounded-full student-microwave-ripple"
+                style={{ background: 'radial-gradient(circle, rgba(103,232,249,0.38) 0%, transparent 70%)' }}
+                aria-hidden="true"
+              />
+              {!prefersReducedMotion && (
+                <div className="student-electric-beam student-electric-beam-delay-1" aria-hidden="true" />
+              )}
+
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                  <GlyphStudyOrbit size={21} className="text-cyan-100" />
                 </div>
-                <span className="text-[10px] font-black text-cyan-100 tabular-nums">
+                <span className="text-[10.5px] font-black text-cyan-100 tabular-nums">
                   {studyMinutes > 0 ? formatMinutesToHoursAndMinutes(studyMinutes) : 'ثبت روزانه'}
                 </span>
               </div>
-              <div className="pt-2 space-y-0.5">
+              <div className="relative z-10 pt-2.5 space-y-0.5">
                 <h3 className="text-xs font-black text-white truncate">ساعت مطالعه من</h3>
                 <p className="text-[10px] text-cyan-100/85 font-medium truncate">ثبت مطالعه و مباحثه دروس</p>
               </div>
@@ -566,24 +591,36 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           {isTabAllowed('student-requests') && (
             <motion.button
               type="button"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.24, delay: prefersReducedMotion ? 0 : 0.08 }}
               whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
               onClick={() => onNavigateTab('student-requests')}
-              className="relative overflow-hidden rounded-2xl p-3.5 text-white text-right shadow-md border border-emerald-400/25 student-card-wave-requests flex flex-col justify-between min-h-[108px] cursor-pointer"
+              className="relative overflow-hidden rounded-[22px] p-3.5 text-white text-right shadow-[0_10px_24px_-8px_rgba(4,120,87,0.45)] border border-emerald-300/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] student-card-wave-requests flex flex-col justify-between min-h-[118px] cursor-pointer"
             >
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25">
-                  <Send size={17} />
+              <div
+                className="pointer-events-none absolute -bottom-8 -left-8 w-28 h-28 rounded-full student-microwave-ripple"
+                style={{ background: 'radial-gradient(circle, rgba(110,231,183,0.35) 0%, transparent 70%)', animationDelay: '1.5s' }}
+                aria-hidden="true"
+              />
+              {!prefersReducedMotion && (
+                <div className="student-electric-beam student-electric-beam-delay-2" aria-hidden="true" />
+              )}
+
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                  <GlyphRequestPaperPlane size={20} className="text-emerald-100" />
                 </div>
                 <span
                   className={cn(
-                    'text-[10px] font-black px-2 py-0.5 rounded-lg tabular-nums',
-                    myRequestsCount > 0 ? 'bg-amber-400 text-slate-950' : 'text-emerald-100'
+                    'text-[10px] font-black tabular-nums',
+                    myRequestsCount > 0 ? 'px-2 py-0.5 rounded-lg bg-amber-400 text-slate-950' : 'text-emerald-100'
                   )}
                 >
                   {myRequestsCount > 0 ? `${myRequestsCount} جاری` : 'کارتابل'}
                 </span>
               </div>
-              <div className="pt-2 space-y-0.5">
+              <div className="relative z-10 pt-2.5 space-y-0.5">
                 <h3 className="text-xs font-black text-white truncate">ثبت تقاضا و درخواست</h3>
                 <p className="text-[10px] text-emerald-100/85 font-medium truncate">مرخصی، گواهی و رفاهی</p>
               </div>
@@ -593,19 +630,31 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           {isTabAllowed('self-reporting') && (
             <motion.button
               type="button"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.24, delay: prefersReducedMotion ? 0 : 0.12 }}
               whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
               onClick={() => onNavigateTab('self-reporting')}
-              className="relative overflow-hidden rounded-2xl p-3.5 text-white text-right shadow-md border border-teal-400/25 bg-gradient-to-br from-teal-700 via-emerald-800 to-slate-900 flex flex-col justify-between min-h-[108px] cursor-pointer"
+              className="relative overflow-hidden rounded-[22px] p-3.5 text-white text-right shadow-[0_10px_24px_-8px_rgba(13,148,136,0.45)] border border-teal-300/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] student-card-wave-selfreport flex flex-col justify-between min-h-[118px] cursor-pointer"
             >
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25">
-                  <Sparkles size={18} />
+              <div
+                className="pointer-events-none absolute -bottom-8 -left-8 w-28 h-28 rounded-full student-microwave-ripple"
+                style={{ background: 'radial-gradient(circle, rgba(45,212,191,0.38) 0%, transparent 70%)', animationDelay: '3s' }}
+                aria-hidden="true"
+              />
+              {!prefersReducedMotion && (
+                <div className="student-electric-beam student-electric-beam-delay-3" aria-hidden="true" />
+              )}
+
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                  <GlyphSelfReportSpark size={21} className="text-teal-100" />
                 </div>
-                <span className="text-[10px] font-black text-teal-100 tabular-nums">
+                <span className="text-[10.5px] font-black text-teal-100 tabular-nums">
                   {selfReportingCount > 0 ? `${selfReportingCount} درس` : 'خوداظهاری'}
                 </span>
               </div>
-              <div className="pt-2 space-y-0.5">
+              <div className="relative z-10 pt-2.5 space-y-0.5">
                 <h3 className="text-xs font-black text-white truncate">ثبت خوداظهاری</h3>
                 <p className="text-[10px] text-teal-100/85 font-medium truncate">اعلام آنلاین حضور جلسه</p>
               </div>
@@ -615,6 +664,9 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
           {isTabAllowed('rep-attendance') && (
             <motion.button
               type="button"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.24, delay: prefersReducedMotion ? 0 : 0.16 }}
               whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
               onClick={() => {
                 if (!hasRepProgram) {
@@ -628,23 +680,30 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
                 onNavigateTab('rep-attendance');
               }}
               className={cn(
-                'relative overflow-hidden rounded-2xl p-3.5 text-white text-right shadow-md border flex flex-col justify-between min-h-[108px] cursor-pointer',
-                hasRepProgram
-                  ? 'bg-gradient-to-br from-indigo-700 via-purple-800 to-slate-900 border-purple-400/30'
-                  : 'bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-slate-700/50 opacity-80'
+                'relative overflow-hidden rounded-[22px] p-3.5 text-white text-right shadow-[0_10px_24px_-8px_rgba(67,56,202,0.45)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] student-card-wave-rep flex flex-col justify-between min-h-[118px] cursor-pointer',
+                hasRepProgram ? 'border-indigo-300/35' : 'border-slate-500/30 opacity-85'
               )}
             >
-              <div className="flex items-center justify-between">
-                <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25">
-                  <ShieldCheck size={18} />
+              <div
+                className="pointer-events-none absolute -bottom-8 -left-8 w-28 h-28 rounded-full student-microwave-ripple"
+                style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.38) 0%, transparent 70%)', animationDelay: '4.5s' }}
+                aria-hidden="true"
+              />
+              {!prefersReducedMotion && (
+                <div className="student-electric-beam student-electric-beam-delay-4" aria-hidden="true" />
+              )}
+
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center border border-white/25 shadow-xs">
+                  <GlyphRepShieldCrown size={21} className="text-indigo-100" />
                 </div>
-                <span className="text-[10px] font-black text-purple-200">
-                  {hasRepProgram ? 'نماینده' : 'غیرفعال'}
+                <span className="text-[10.5px] font-black text-indigo-100">
+                  {hasRepProgram ? 'نماینده' : 'محدود'}
                 </span>
               </div>
-              <div className="pt-2 space-y-0.5">
+              <div className="relative z-10 pt-2.5 space-y-0.5">
                 <h3 className="text-xs font-black text-white truncate">ثبت حضور نماینده</h3>
-                <p className="text-[10px] text-purple-200/85 font-medium truncate">
+                <p className="text-[10px] text-indigo-100/85 font-medium truncate">
                   {hasRepProgram ? myRepProgramTitle : 'مخصوص نماینده منتخب'}
                 </p>
               </div>
@@ -654,14 +713,14 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
       </section>
 
       {/* 3. Today's Classes Live Timeline */}
-      <section className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-2xs space-y-3">
+      <section className="bg-white rounded-[26px] p-4 border border-slate-200/90 shadow-2xs space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <Clock size={16} />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center justify-center shrink-0">
+              <Clock size={17} />
             </div>
             <div>
-              <h3 className="text-xs font-black text-slate-900">کلاس‌های امروز ({todayDayName})</h3>
+              <h3 className="text-xs font-black text-slate-900">کلاس‌های امروز · {todayDayName}</h3>
               <p className="text-[10px] text-slate-400 font-medium tabular-nums">
                 {todayPrograms.length} کلاس فعال در برنامه شما
               </p>
@@ -672,9 +731,9 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('student-schedule')}
-              className="min-h-[36px] px-2.5 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-black flex items-center gap-1 cursor-pointer"
+              className="min-h-[38px] px-3 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-black flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <span>جدول هفتگی</span>
+              <span>برنامه هفتگی</span>
               <ChevronLeft size={13} />
             </button>
           )}
@@ -693,18 +752,19 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               const isLive = range ? nowMinutes >= range.start && nowMinutes <= range.end : false;
               const isUpcoming = range ? nowMinutes < range.start : false;
               return (
-                <div
+                <button
                   key={p.id}
+                  type="button"
                   onClick={() => isTabAllowed('student-schedule') && onNavigateTab('student-schedule')}
                   className={cn(
-                    'p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer',
+                    'w-full text-right p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer active:scale-[0.985]',
                     isLive
-                      ? 'bg-indigo-50/70 border-indigo-300 shadow-2xs'
-                      : 'bg-slate-50/70 border-slate-200/80 hover:border-indigo-200'
+                      ? 'bg-indigo-50/75 border-indigo-300 shadow-2xs'
+                      : 'bg-slate-50/80 border-slate-200/80 hover:border-indigo-200'
                   )}
                 >
                   <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       <span className="text-xs font-black text-slate-900 truncate">{p.title}</span>
                       {isLive && (
                         <span className="text-[9.5px] font-black text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-md shrink-0">
@@ -712,13 +772,11 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
                         </span>
                       )}
                       {!isLive && isUpcoming && (
-                        <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md shrink-0">
-                          در پیش
-                        </span>
+                        <span className="text-[9.5px] font-bold text-emerald-700 shrink-0">در پیش</span>
                       )}
                     </div>
                     <div className="text-[10.5px] text-slate-500 font-medium truncate">
-                      <span>استاد: {p.teacher || 'تعیین‌نشده'}</span>
+                      <span>استاد {p.teacher || 'تعیین‌نشده'}</span>
                       {p.madrasRoom && (
                         <>
                           <span className="mx-1.5 text-slate-300">·</span>
@@ -728,10 +786,10 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
                     </div>
                   </div>
 
-                  <span className="text-[11px] font-mono font-black text-indigo-700 bg-white px-2.5 py-1 rounded-xl border border-indigo-200/90 tabular-nums shrink-0">
+                  <span className="text-[11px] font-mono font-black text-indigo-700 bg-white px-2.5 py-1.5 rounded-xl border border-indigo-200/90 tabular-nums shrink-0">
                     {p.time || 'نامشخص'}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -740,7 +798,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
 
       {/* 4. All Enabled Student Services Grid */}
       {secondaryServices.length > 0 && (
-        <section className="space-y-2 pb-2">
+        <section className="space-y-2.5 pb-2">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-xs font-black text-slate-900">امور آموزشی، کارنامه و رفاهی</h2>
             <span className="text-[10px] text-slate-400 font-bold tabular-nums">{secondaryServices.length} بخش فعال</span>
@@ -753,15 +811,15 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
                 <motion.button
                   key={srv.tab}
                   type="button"
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: prefersReducedMotion ? 0 : 0.2, delay: prefersReducedMotion ? 0 : idx * 0.025 }}
                   whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
                   onClick={() => onNavigateTab(srv.tab)}
-                  className="min-h-[68px] p-3 bg-white hover:bg-slate-50/90 rounded-2xl border border-slate-200/90 shadow-2xs text-right flex items-center gap-2.5 transition-colors cursor-pointer"
+                  className="min-h-[70px] p-3 bg-white hover:bg-slate-50/90 rounded-[22px] border border-slate-200/90 shadow-2xs text-right flex items-center gap-2.5 transition-colors cursor-pointer"
                 >
-                  <div className={cn('w-9 h-9 rounded-xl border flex items-center justify-center shrink-0', srv.iconBg)}>
-                    <Icon size={17} />
+                  <div className={cn('w-10 h-10 rounded-2xl border flex items-center justify-center shrink-0', srv.iconBg)}>
+                    <Icon size={19} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-black text-slate-900 truncate">{srv.title}</div>
@@ -782,7 +840,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
             onClick={() => onNavigateTab('dashboard')}
             className="min-h-[44px] flex flex-col items-center justify-center text-indigo-600 text-[10px] font-black cursor-pointer"
           >
-            <LayoutDashboard size={17} />
+            <GlyphHome size={18} active />
             <span>پیشخوان</span>
           </button>
           {isTabAllowed('stats') && (
@@ -791,7 +849,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               onClick={() => onNavigateTab('stats')}
               className="min-h-[44px] flex flex-col items-center justify-center text-slate-600 text-[10px] font-bold cursor-pointer"
             >
-              <BookOpen size={17} />
+              <GlyphStudyBook size={18} />
               <span>مطالعه</span>
             </button>
           )}
@@ -801,7 +859,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               onClick={() => onNavigateTab('attendance')}
               className="min-h-[44px] flex flex-col items-center justify-center text-slate-600 text-[10px] font-bold cursor-pointer"
             >
-              <CheckSquare size={17} />
+              <GlyphAttendanceCheck size={18} />
               <span>حضور</span>
             </button>
           )}
@@ -811,7 +869,7 @@ export const StudentMobilePanel: React.FC<StudentMobilePanelProps> = ({
               onClick={() => onNavigateTab('student-schedule')}
               className="min-h-[44px] flex flex-col items-center justify-center text-slate-600 text-[10px] font-bold cursor-pointer"
             >
-              <Calendar size={17} />
+              <GlyphScheduleGrid size={18} />
               <span>کلاس‌ها</span>
             </button>
           )}

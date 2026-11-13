@@ -66,6 +66,7 @@ import {
 import { cn } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
+import { StudentMobileCalendar, MobileCalendarDayDetail } from './student/mobile/StudentMobileCalendar';
 
 // System Default Holiday Types with color presets
 const DEFAULT_HOLIDAY_TYPES: AcademicHolidayType[] = [
@@ -291,6 +292,7 @@ export default function AcademicCalendar() {
 
   // PDF Preview & Export State
   const pdfTemplateRef = useRef<HTMLDivElement>(null);
+  const initialLoadDoneRef = useRef(false);
   const [showPdfPreviewModal, setShowPdfPreviewModal] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -307,7 +309,7 @@ export default function AcademicCalendar() {
       showToast("فایل PDF جدول تعطیلات با موفقیت تولید و دانلود شد.");
     } catch (err) {
       console.error("PDF Export Error:", err);
-      alert("خطا در تولید فایل PDF. لطفا مجددا تلاش کنید.");
+      showToast("خطا در تولید فایل PDF. لطفا مجددا تلاش کنید.");
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -366,17 +368,19 @@ export default function AcademicCalendar() {
     grade: 'عمومی'
   });
 
-  // Load Initial Data
+  // Load Initial Data (only show full-page spinner on initial mount so background sync never jumps scroll on mobile)
   useEffect(() => {
-    loadAllData();
+    loadAllData(true);
     const unsub = localDb.subscribe(() => {
-      loadAllData();
+      loadAllData(false);
     });
     return () => unsub();
   }, []);
 
-  const loadAllData = async () => {
-    setLoading(true);
+  const loadAllData = async (isInitial = false) => {
+    if (isInitial || !initialLoadDoneRef.current) {
+      setLoading(true);
+    }
     try {
       const storedPeriods = await localDb.getDocs<AcademicCalendarPeriod>('academic_calendar_periods');
       const storedHolidays = await localDb.getDocs<AcademicHolidayItem>('academic_holidays');
@@ -480,6 +484,7 @@ export default function AcademicCalendar() {
     } catch (err) {
       console.error("Error loading academic calendar data:", err);
     } finally {
+      initialLoadDoneRef.current = true;
       setLoading(false);
     }
   };
@@ -1952,6 +1957,49 @@ export default function AcademicCalendar() {
         )}
       </AnimatePresence>
 
+      {/* --- MOBILE-ONLY ACADEMIC CALENDAR VIEW (below md) --- */}
+      <div className="md:hidden">
+        <StudentMobileCalendar
+          periods={periods}
+          selectedPeriodId={selectedPeriodId}
+          onSelectPeriod={setSelectedPeriodId}
+          selectedPeriod={selectedPeriod}
+          periodDateList={periodDateList}
+          periodMonthsGrouped={periodMonthsGrouped}
+          selectedMonthIndex={selectedMonthIndex}
+          onSelectMonthIndex={setSelectedMonthIndex}
+          dateAnalysis={dateAnalysis}
+          periodHolidays={periodHolidays}
+          holidayTypes={holidayTypes}
+          periodSubPeriods={periodSubPeriods}
+          periodWeeklyPrograms={periodWeeklyPrograms}
+          getWeeklyProgramStats={getWeeklyProgramStats}
+          dateWeeklyProgramMap={dateWeeklyProgramMap}
+          userAssignedGrade={userAssignedGrade}
+          isStudentUser={currentUser?.level === 3}
+          isCalendarEditor={isCalendarEditor}
+          onSelectDay={(dayItem: MobileCalendarDayDetail) => {
+            if (isCalendarEditor) {
+              if (dayItem.holidayInfo) {
+                handleOpenEditHoliday(dayItem.holidayInfo.holiday);
+              } else if (dayItem.subPeriodInfo) {
+                handleOpenEditSubPeriod(dayItem.subPeriodInfo);
+              } else if (dayItem.isThu) {
+                handleOpenThursdayModal(dayItem.dateStr);
+              } else {
+                handleOpenAddHoliday(dayItem.dateStr);
+              }
+            } else {
+              setReadOnlyDayModal(dayItem);
+            }
+          }}
+          onOpenPdfPreview={() => setShowPdfPreviewModal(true)}
+          onExportBackup={currentUser?.level !== 3 ? handleExportData : undefined}
+        />
+      </div>
+
+      {/* --- DESKTOP / LAPTOP ACADEMIC CALENDAR VIEW (md and up - preserved untouched) --- */}
+      <div className="hidden md:block space-y-6">
       {/* Main Top Header Banner */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
         <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
@@ -2009,14 +2057,16 @@ export default function AcademicCalendar() {
               </button>
             )}
 
-            <button
-              onClick={handleExportData}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all shrink-0 border border-emerald-400/30 active:scale-95"
-              title="خروجی گرفتن از فایل پشتیبان اختصاصی تقویم آموزشی جهت ارائه به سایر کاربران"
-            >
-              <Download size={15} />
-              <span>پشتیبان‌گیری تقویم (خروجی JSON)</span>
-            </button>
+            {currentUser?.level !== 3 && (
+              <button
+                onClick={handleExportData}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all shrink-0 border border-emerald-400/30 active:scale-95"
+                title="خروجی گرفتن از فایل پشتیبان اختصاصی تقویم آموزشی جهت ارائه به سایر کاربران"
+              >
+                <Download size={15} />
+                <span>پشتیبان‌گیری تقویم (خروجی JSON)</span>
+              </button>
+            )}
 
             {isCalendarEditor && (
               <button
@@ -3843,6 +3893,7 @@ export default function AcademicCalendar() {
           )}
         </div>
       )}
+      </div>
 
       {/* --- MODAL 1: ADD / EDIT PERIOD MODAL --- */}
       <AnimatePresence>
@@ -4570,25 +4621,25 @@ export default function AcademicCalendar() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-100 rounded-3xl p-6 max-w-5xl w-full border border-slate-300 shadow-2xl space-y-5 max-h-[92vh] flex flex-col my-auto"
+              className="bg-slate-100 rounded-3xl p-4 sm:p-6 max-w-5xl w-full border border-slate-300 shadow-2xl space-y-4 sm:space-y-5 max-h-[92vh] flex flex-col my-auto"
               dir="rtl"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3 bg-white -mx-6 -mt-6 p-6 rounded-t-3xl">
-                <div>
-                  <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
-                    <FileText className="text-rose-600" size={20} />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 bg-white -mx-4 sm:-mx-6 -mt-4 sm:-mt-6 p-4 sm:p-6 rounded-t-3xl">
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-slate-800 flex items-center gap-2">
+                    <FileText className="text-rose-600 shrink-0" size={20} />
                     <span>پیش‌نمایش سند PDF رسمی جدول تعطیلات</span>
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[11px] sm:text-xs text-slate-500">
                     فرمت مرتب، رسمی و شکیل جهت چاپ یا خروجی فایل PDF
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2">
                   <button
                     onClick={() => window.print()}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                    className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
                   >
                     <Printer size={15} />
                     <span>چاپ مرورگر</span>
@@ -4597,7 +4648,7 @@ export default function AcademicCalendar() {
                   <button
                     onClick={handleExportHolidaysPdf}
                     disabled={isGeneratingPdf}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-md transition-all"
+                    className="flex items-center gap-1.5 px-4 py-2.5 sm:py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-bold rounded-xl shadow-md transition-all"
                   >
                     {isGeneratingPdf ? (
                       <>
@@ -4614,7 +4665,8 @@ export default function AcademicCalendar() {
 
                   <button
                     onClick={() => setShowPdfPreviewModal(false)}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl transition-colors"
+                    className="p-2 text-slate-400 hover:text-slate-600 rounded-xl transition-colors"
+                    aria-label="بستن پیش‌نمایش PDF"
                   >
                     <XCircle size={22} />
                   </button>
@@ -5347,6 +5399,142 @@ export default function AcademicCalendar() {
                   بله، حذف شود
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- MODAL 9: READ-ONLY DAY DETAIL SHEET (Mobile & Students) --- */}
+      <AnimatePresence>
+        {readOnlyDayModal && (
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => setReadOnlyDayModal(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 28 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 28 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 max-w-md w-full border border-slate-200 shadow-2xl space-y-4"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <span className="text-[11px] font-bold text-indigo-600 block">
+                    {readOnlyDayModal.dayName}
+                  </span>
+                  <h3 className="text-base font-black text-slate-900 tabular-nums">
+                    {toPersianDigits(readOnlyDayModal.dateStr)}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReadOnlyDayModal(null)}
+                  className="w-10 h-10 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center"
+                  aria-label="بستن جزئیات روز"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                {readOnlyDayModal.isHoliday && readOnlyDayModal.holidayInfo ? (
+                  <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 space-y-1.5">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-rose-600 text-white text-[10px] font-black inline-block">
+                      {readOnlyDayModal.holidayInfo.holiday.typeName || 'تعطیلی'}
+                    </span>
+                    <h4 className="text-sm font-black text-rose-950">
+                      {readOnlyDayModal.holidayInfo.holiday.title}
+                    </h4>
+                    {readOnlyDayModal.holidayInfo.holiday.description && (
+                      <p className="text-rose-800/80 leading-relaxed">
+                        {readOnlyDayModal.holidayInfo.holiday.description}
+                      </p>
+                    )}
+                  </div>
+                ) : readOnlyDayModal.isSubPeriod && readOnlyDayModal.subPeriodInfo ? (
+                  <div className="p-4 rounded-2xl bg-violet-50 border border-violet-200 space-y-1.5">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-violet-600 text-white text-[10px] font-black inline-block">
+                      دوره ویژه تحصیلی
+                    </span>
+                    <h4 className="text-sm font-black text-violet-950">
+                      {readOnlyDayModal.subPeriodInfo.title}
+                    </h4>
+                    <p className="text-violet-800 font-bold">
+                      {readOnlyDayModal.subPeriodInfo.isStandardClassDay
+                        ? 'کلاس‌های عادی کتاب به همراه برنامه ویژه برگزار می‌شوند.'
+                        : 'حضور تحصیلی محسوب می‌شود (تدریس کتاب اصلی انجام نمی‌شود).'}
+                    </p>
+                    {readOnlyDayModal.subPeriodInfo.description && (
+                      <p className="text-violet-800/80 leading-relaxed">
+                        {readOnlyDayModal.subPeriodInfo.description}
+                      </p>
+                    )}
+                  </div>
+                ) : readOnlyDayModal.isWeekend ? (
+                  <div className="p-4 rounded-2xl bg-slate-100 border border-slate-200 space-y-1">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-slate-600 text-white text-[10px] font-black inline-block">
+                      تعطیل آخر هفته
+                    </span>
+                    <p className="text-slate-700 font-bold pt-1">
+                      در این روز کلاس درسی یا برنامه عمومی در تقویم تعریف نشده است.
+                    </p>
+                  </div>
+                ) : readOnlyDayModal.thursdayMode === 'special_program' ? (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-1">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-amber-600 text-white text-[10px] font-black inline-block">
+                      برنامه ویژه پنج‌شنبه
+                    </span>
+                    <p className="text-amber-950 font-black pt-1">
+                      {readOnlyDayModal.thursdayTitle || 'جلسات اخلاق، تجوید یا کارگاه مهارتی'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-1">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black inline-block">
+                      روز درسی اصلی (کتاب)
+                    </span>
+                    <p className="text-emerald-950 font-bold pt-1">
+                      برگزاری کلاس‌های رسمی و تدریس کتب درسی طبق برنامه هفتگی کلاس.
+                    </p>
+                  </div>
+                )}
+
+                {(() => {
+                  const progs = dateWeeklyProgramMap.get(readOnlyDayModal.dateStr) || [];
+                  if (progs.length === 0 || readOnlyDayModal.isHoliday) return null;
+                  return (
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[11px] font-black text-slate-600 block">
+                        برنامه‌ها و کارگاه‌های فعال این روز:
+                      </span>
+                      {progs.map((wp) => (
+                        <div
+                          key={wp.id}
+                          className="p-3 rounded-2xl bg-purple-50 border border-purple-200 space-y-1"
+                        >
+                          <div className="font-black text-purple-950">{wp.title}</div>
+                          {(wp.time || wp.locationOrTeacher) && (
+                            <div className="text-[11px] text-purple-800 font-bold">
+                              {wp.time ? `ساعت ${wp.time}` : ''} {wp.locationOrTeacher ? `• ${wp.locationOrTeacher}` : ''}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReadOnlyDayModal(null)}
+                className="w-full min-h-[44px] py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black transition-colors"
+              >
+                بستن
+              </button>
             </motion.div>
           </div>
         )}
