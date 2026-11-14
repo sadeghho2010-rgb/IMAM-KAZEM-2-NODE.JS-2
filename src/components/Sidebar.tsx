@@ -551,9 +551,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, onToggle, onO
       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <img 
-            src="/pwa-192x192.png" 
+            src="/pwa-192x192.png?v=custom2" 
             alt="سامانه جامع طلاب" 
-            className="w-8 h-8 rounded-xl object-contain shadow-xs border border-indigo-100 shrink-0" 
+            className="w-8 h-8 rounded-xl object-contain shadow-xs border border-emerald-200/70 shrink-0" 
           />
           <div>
             <h1 className="text-sm font-black text-slate-900 tracking-tight">سامانه جامع طلاب</h1>

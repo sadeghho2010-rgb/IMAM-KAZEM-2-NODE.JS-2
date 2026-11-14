@@ -12,14 +12,14 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.ico', 'favicon.svg', 'favicon-32x32.png', 'favicon-16x16.png', 'apple-touch-icon.png', 'icon.svg', 'icon-maskable.svg'],
         manifest: {
           id: '/',
-          name: 'سامانه جامع طلاب',
-          short_name: 'سامانه طلاب',
+          name: 'سامانه جامع طلاب حصون',
+          short_name: 'حصون',
           description: 'سیستم جامع مدیریت آموزشی، پژوهشی و انضباطی طلاب با تحلیل هوشمند',
-          theme_color: '#4f46e5',
-          background_color: '#ffffff',
+          theme_color: '#064037',
+          background_color: '#021f1c',
           display: 'standalone',
           orientation: 'portrait-primary',
           start_url: '/',
@@ -28,19 +28,19 @@ export default defineConfig(({ mode }) => {
           dir: 'rtl',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: '/pwa-192x192.png?v=custom2',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: '/pwa-512x512.png?v=custom2',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: '/pwa-maskable-512x512.png?v=custom2',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
