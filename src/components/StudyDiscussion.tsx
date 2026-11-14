@@ -48,6 +48,8 @@ import { useAuth } from '../context/AuthContext';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from './admin/mobile/MobileModulePrimitives';
 interface StudyDiscussionProps {
   initialStudentId?: string;
 }
@@ -55,6 +57,7 @@ interface StudyDiscussionProps {
 export default function StudyDiscussion({ initialStudentId }: StudyDiscussionProps) {
   const { currentMentor, currentMentorId, filterStudents } = useMentor();
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const isSuperAdmin = (currentUser?.role as string) === 'super_admin' || currentUser?.level === 1 || currentUser?.role === 'manager_principal' || currentUser?.role === 'school_manager';
   const isEducationManager = currentUser?.role === 'education_manager' || 
@@ -1031,6 +1034,60 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
       )}
 
       {/* HEADER SECTION */}
+      {isAdminMobile && !isStudentUser ? (
+        <MobileSectionHeader
+          title="گروه‌های بحثی طلاب"
+          subtitle="مدیریت هم‌مباحثه‌ای‌ها و گروه‌های درسی بر اساس پایه"
+          icon={<Users size={20} />}
+          variant="indigo"
+          primaryAction={{
+            id: 'new-group',
+            label: 'تعریف گروه مباحثه جدید',
+            icon: <Plus size={16} />,
+            tone: 'primary',
+            onClick: handleOpenCreateModal,
+          }}
+          secondaryActions={[
+            {
+              id: 'pdf-comp',
+              label: isExportingCompositionPdf ? 'در حال خروجی...' : 'PDF ترکیب گروه‌ها',
+              icon: <FileText size={14} />,
+              tone: 'amber',
+              disabled: isExportingCompositionPdf || groups.length === 0,
+              onClick: handleExportCompositionPdf,
+            },
+            {
+              id: 'pdf-stats',
+              label: isExportingPdf ? 'در حال خروجی...' : 'PDF آمار عملکرد',
+              icon: <Printer size={14} />,
+              tone: 'default',
+              disabled: isExportingPdf || groups.length === 0,
+              onClick: handleExportGroupsPdf,
+            },
+          ]}
+          secondaryLabel="خروجی PDF"
+          extraContent={
+            <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-white/10 text-center">
+              <div className="bg-white/10 rounded-xl p-2">
+                <div className="text-[10px] text-indigo-200">گروه‌ها</div>
+                <div className="text-xs font-black text-white mt-0.5">{filteredGroups.length}</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2">
+                <div className="text-[10px] text-indigo-200">اعضای فعال</div>
+                <div className="text-xs font-black text-emerald-300 mt-0.5">
+                  {new Set(filteredGroups.flatMap((g) => g.memberStudentIds)).size}
+                </div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2">
+                <div className="text-[10px] text-indigo-200">خارج پایه</div>
+                <div className="text-xs font-black text-amber-300 mt-0.5">
+                  {filteredGroups.reduce((acc, g) => acc + (g.externalMembers?.length || 0), 0)}
+                </div>
+              </div>
+            </div>
+          }
+        />
+      ) : (
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         
@@ -1157,6 +1214,7 @@ export default function StudyDiscussion({ initialStudentId }: StudyDiscussionPro
           </div>
         </div>
       </div>
+      )}
 
       {/* STUDENT PENDING WORKFLOW NOTIFICATION BANNER */}
       {isStudentUser && studentWorkflowItems.some(w => w.status === 'pending') && (

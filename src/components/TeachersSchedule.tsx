@@ -38,6 +38,8 @@ import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 const TIME_SLOTS_HOURLY = [
   '07:00 الی 08:00',
@@ -182,6 +184,10 @@ export default function TeachersSchedule() {
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('all');
   const [selectedPriorityFilter, setSelectedPriorityFilter] = useState<string>('all');
   const [directoryViewMode, setDirectoryViewMode] = useState<'list' | 'cards'>('list');
+
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileScheduleDay, setMobileScheduleDay] = useState<string>(WEEK_DAYS[0]);
 
   // Single Teacher View sub-mode
   const [singleViewMode, setSingleViewMode] = useState<'all' | 'timetable' | 'courses'>('all');
@@ -793,108 +799,199 @@ export default function TeachersSchedule() {
   }
 
   return (
-    <div className="space-y-6 font-vazir" dir="rtl">
+    <div className={cn(isAdminMobile ? "space-y-4 font-vazir" : "space-y-6 font-vazir")} dir="rtl">
       
       {/* ========================================================================= */}
       {/* 1. TOP BANNER / NAVIGATION HEADER */}
       {/* ========================================================================= */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs mb-1">
-            <GraduationCap size={16} />
-            <span>سامانه مدیریت آموزشی مدرسه علمیه</span>
-            {selectedTeacherId && currentSelectedTeacher && (
-              <>
-                <ChevronLeft size={14} className="text-slate-400" />
-                <span className="text-slate-600">برنامه اختصاصی استاد</span>
-              </>
-            )}
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title={currentSelectedTeacher ? `برنامه استاد ${currentSelectedTeacher.name}` : 'لیست و برنامه درسی اساتید'}
+          subtitle={
+            currentSelectedTeacher
+              ? 'مشاهده دروس، ساعات حضور و خروجی برنامه استاد'
+              : `${registeredTeachersWithClasses.length} استاد ثبت‌شده دارای برنامه`
+          }
+          icon={<GraduationCap size={20} />}
+          variant="indigo"
+          primaryAction={
+            currentSelectedTeacher
+              ? {
+                  id: 'back-teachers',
+                  label: 'بازگشت به لیست اساتید',
+                  icon: <ArrowRight size={16} />,
+                  tone: 'primary',
+                  onClick: () => setSelectedTeacherId(null),
+                }
+              : isAuthorizedToEdit
+              ? {
+                  id: 'add-teacher-sched',
+                  label: 'افزودن برنامه برای استاد',
+                  icon: <Plus size={16} />,
+                  tone: 'primary',
+                  onClick: () => openAddScheduleModal(),
+                }
+              : undefined
+          }
+          secondaryActions={
+            currentSelectedTeacher
+              ? [
+                  ...(isAuthorizedToEdit
+                    ? [
+                        {
+                          id: 'add-single-teacher-sched',
+                          label: 'افزودن درس جدید',
+                          icon: <Plus size={15} />,
+                          tone: 'indigo' as const,
+                          onClick: () => openAddScheduleModal(currentSelectedTeacher.id),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'export-single-excel',
+                    label: 'خروجی اکسل استاد',
+                    icon: <FileSpreadsheet size={15} />,
+                    tone: 'emerald' as const,
+                    onClick: () => handleExportSingleTeacherExcel(currentSelectedTeacher),
+                  },
+                  {
+                    id: 'export-single-pdf',
+                    label: isExportingPdf ? 'در حال صدور...' : 'خروجی PDF استاد',
+                    icon: <FileText size={15} />,
+                    tone: 'amber' as const,
+                    disabled: isExportingPdf,
+                    onClick: () => handleExportSingleTeacherPdf(currentSelectedTeacher),
+                  },
+                ]
+              : [
+                  ...(isLevel2User
+                    ? [
+                        {
+                          id: 'multi-copy-phones',
+                          label: isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی چندگانه تلفن',
+                          icon: <Copy size={15} />,
+                          tone: 'amber' as const,
+                          onClick: () => setIsMultiCopyMode((prev) => !prev),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'export-all-excel',
+                    label: 'اکسل کل اساتید',
+                    icon: <FileSpreadsheet size={15} />,
+                    tone: 'emerald' as const,
+                    onClick: handleExportAllExcel,
+                  },
+                  {
+                    id: 'export-all-pdf',
+                    label: isExportingPdf ? 'در حال تهیه...' : 'PDF کل اساتید',
+                    icon: <FileText size={15} />,
+                    tone: 'indigo' as const,
+                    disabled: isExportingPdf,
+                    onClick: handleExportAllPdf,
+                  },
+                ]
+          }
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-indigo-700 font-bold text-xs mb-1">
+              <GraduationCap size={16} />
+              <span>سامانه مدیریت آموزشی مدرسه علمیه</span>
+              {selectedTeacherId && currentSelectedTeacher && (
+                <>
+                  <ChevronLeft size={14} className="text-slate-400" />
+                  <span className="text-slate-600">برنامه اختصاصی استاد</span>
+                </>
+              )}
+            </div>
+
+            <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <span>{currentSelectedTeacher ? `برنامه درسی و ساعات حضور: استاد ${currentSelectedTeacher.name}` : 'لیست و برنامه درسی اساتید'}</span>
+              {!currentSelectedTeacher && (
+                <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                  {registeredTeachersWithClasses.length} استاد ثبت‌شده دارای برنامه
+                </span>
+              )}
+            </h2>
+
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              {currentSelectedTeacher 
+                ? 'مشاهده دروس، زمان‌بندی هفتگی، مَدرَس‌ها و دریافت خروجی‌های اختصاصی این استاد'
+                : 'صرفاً اساتید ثبت‌شده در بانک اساتید مدرسه که کلاس درسی فعال دارند در این بخش نمایش داده می‌شوند.'}
+            </p>
           </div>
 
-          <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <span>{currentSelectedTeacher ? `برنامه درسی و ساعات حضور: استاد ${currentSelectedTeacher.name}` : 'لیست و برنامه درسی اساتید'}</span>
-            {!currentSelectedTeacher && (
-              <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
-                {registeredTeachersWithClasses.length} استاد ثبت‌شده دارای برنامه
-              </span>
-            )}
-          </h2>
+          {/* Global Action Buttons */}
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Back button when inside single teacher view */}
+            {currentSelectedTeacher ? (
+              <button
+                type="button"
+                onClick={() => setSelectedTeacherId(null)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <ArrowRight size={15} />
+                <span>بازگشت به لیست اساتید</span>
+              </button>
+            ) : (
+              <>
+                {/* Reports for ALL teachers */}
+                {isLevel2User && (
+                  <button
+                    type="button"
+                    onClick={() => setIsMultiCopyMode(prev => !prev)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-2xs",
+                      isMultiCopyMode 
+                        ? "bg-amber-500 text-white border-amber-600" 
+                        : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                    )}
+                    title="انتخاب و کپی چندگانه شماره تلفن اساتید جهت خروج و Paste خارج از سامانه"
+                  >
+                    <Copy size={15} />
+                    <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی کردن چندگانه شماره تلفن'}</span>
+                  </button>
+                )}
 
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            {currentSelectedTeacher 
-              ? 'مشاهده دروس، زمان‌بندی هفتگی، مَدرَس‌ها و دریافت خروجی‌های اختصاصی این استاد'
-              : 'صرفاً اساتید ثبت‌شده در بانک اساتید مدرسه که کلاس درسی فعال دارند در این بخش نمایش داده می‌شوند.'}
-          </p>
-        </div>
-
-        {/* Global Action Buttons */}
-        <div className="flex items-center flex-wrap gap-2">
-          {/* Back button when inside single teacher view */}
-          {currentSelectedTeacher ? (
-            <button
-              type="button"
-              onClick={() => setSelectedTeacherId(null)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <ArrowRight size={15} />
-              <span>بازگشت به لیست اساتید</span>
-            </button>
-          ) : (
-            <>
-              {/* Reports for ALL teachers */}
-              {isLevel2User && (
                 <button
                   type="button"
-                  onClick={() => setIsMultiCopyMode(prev => !prev)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border shadow-2xs",
-                    isMultiCopyMode 
-                      ? "bg-amber-500 text-white border-amber-600" 
-                      : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-                  )}
-                  title="انتخاب و کپی چندگانه شماره تلفن اساتید جهت خروج و Paste خارج از سامانه"
+                  onClick={handleExportAllExcel}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  title="خروجی اکسل برنامه کلی همه اساتید"
                 >
-                  <Copy size={15} />
-                  <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی کردن چندگانه شماره تلفن'}</span>
+                  <FileSpreadsheet size={15} className="text-emerald-600" />
+                  <span>خروجی Excel کل اساتید</span>
                 </button>
-              )}
 
+                <button
+                  type="button"
+                  onClick={handleExportAllPdf}
+                  disabled={isExportingPdf}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  title="خروجی PDF برنامه کلی همه اساتید"
+                >
+                  <FileText size={15} className="text-indigo-600" />
+                  <span>{isExportingPdf ? 'در حال تهیه...' : 'خروجی PDF کل اساتید'}</span>
+                </button>
+              </>
+            )}
+
+            {/* Add schedule button for Education Officer */}
+            {isAuthorizedToEdit && (
               <button
                 type="button"
-                onClick={handleExportAllExcel}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                title="خروجی اکسل برنامه کلی همه اساتید"
+                onClick={() => openAddScheduleModal(currentSelectedTeacher?.id)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shadow-indigo-100 cursor-pointer"
               >
-                <FileSpreadsheet size={15} className="text-emerald-600" />
-                <span>خروجی Excel کل اساتید</span>
+                <Plus size={15} />
+                <span>{currentSelectedTeacher ? 'افزودن درس برای این استاد' : 'افزودن برنامه برای استاد'}</span>
               </button>
-
-              <button
-                type="button"
-                onClick={handleExportAllPdf}
-                disabled={isExportingPdf}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                title="خروجی PDF برنامه کلی همه اساتید"
-              >
-                <FileText size={15} className="text-indigo-600" />
-                <span>{isExportingPdf ? 'در حال تهیه...' : 'خروجی PDF کل اساتید'}</span>
-              </button>
-            </>
-          )}
-
-          {/* Add schedule button for Education Officer */}
-          {isAuthorizedToEdit && (
-            <button
-              type="button"
-              onClick={() => openAddScheduleModal(currentSelectedTeacher?.id)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shadow-indigo-100 cursor-pointer"
-            >
-              <Plus size={15} />
-              <span>{currentSelectedTeacher ? 'افزودن درس برای این استاد' : 'افزودن برنامه برای استاد'}</span>
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 2. MAIN VIEW SWITCH: EITHER LIST OF TEACHERS OR SINGLE TEACHER VIEW */}
@@ -908,149 +1005,238 @@ export default function TeachersSchedule() {
         /* ===================================================================== */
         /* VIEW A: LIST OF REGISTERED TEACHERS ONLY                              */
         /* ===================================================================== */
-        <div className="space-y-5">
-          {/* Tab Switcher: Internal Teachers vs External Institutes */}
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 max-w-md">
-            <button
-              type="button"
-              onClick={() => setTeacherTab('internal')}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
-                teacherTab === 'internal'
-                  ? "bg-indigo-600 text-white shadow-md font-black"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
-              )}
-            >
-              <GraduationCap size={15} />
-              <span>اساتید و مدرسین کلاسی</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTeacherTab('external')}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
-                teacherTab === 'external'
-                  ? "bg-amber-500 text-slate-950 shadow-md font-black"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
-              )}
-            >
-              <DoorOpen size={15} />
-              <span>مدرس‌های خارج از مجموعه</span>
-            </button>
-          </div>
+        <div className="space-y-4">
+          {isAdminMobile ? (
+            <div className="space-y-3">
+              <MobileHorizontalTabs
+                activeId={teacherTab}
+                onChange={(id) => setTeacherTab(id as 'internal' | 'external')}
+                tabs={[
+                  { id: 'internal', label: 'اساتید و مدرسین کلاسی', icon: <GraduationCap size={14} />, tone: 'indigo' },
+                  { id: 'external', label: 'مدرس‌های خارج از مجموعه', icon: <DoorOpen size={14} />, tone: 'amber' },
+                ]}
+              />
 
-          {/* Filter Bar */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="flex items-center flex-wrap gap-2.5 flex-1">
-              {/* Search */}
-              <div className="relative flex-1 min-w-[220px]">
-                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="جستجوی نام استاد، تخصص، عنوان درس..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                />
-              </div>
+              <MobileSearchFilterBar
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="جستجوی نام استاد، تخصص، درس..."
+                onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={
+                  (selectedDayFilter !== 'all' ? 1 : 0) +
+                  (selectedGradeFilter !== 'all' ? 1 : 0) +
+                  (selectedPriorityFilter !== 'all' ? 1 : 0)
+                }
+              />
 
-              {/* Day filter */}
-              <div className="min-w-[140px]">
-                <select
-                  value={selectedDayFilter}
-                  onChange={(e) => setSelectedDayFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                >
-                  <option value="all">همه روزهای حضور</option>
-                  {WEEK_DAYS.map(day => (
-                    <option key={day} value={day}>{day}</option>
-                  ))}
-                </select>
-              </div>
+              {mobileFiltersOpen && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-xs">
+                  <div className="grid grid-cols-1 gap-2">
+                    <select
+                      value={selectedDayFilter}
+                      onChange={(e) => setSelectedDayFilter(e.target.value)}
+                      className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="all">همه روزهای حضور</option>
+                      {WEEK_DAYS.map(day => (
+                        <option key={day} value={day}>{day}</option>
+                      ))}
+                    </select>
 
-              {/* Grade filter */}
-              {allAvailableGrades.length > 0 && (
-                <div className="min-w-[120px]">
-                  <select
-                    value={selectedGradeFilter}
-                    onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value="all">همه پایه‌ها</option>
-                    {allAvailableGrades.map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
+                    {allAvailableGrades.length > 0 && (
+                      <select
+                        value={selectedGradeFilter}
+                        onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                        className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        {allAvailableGrades.map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <select
+                      value={selectedPriorityFilter}
+                      onChange={(e) => setSelectedPriorityFilter(e.target.value)}
+                      className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="all">همه اولویت‌ها</option>
+                      <option value="1">اولویت ۱</option>
+                      <option value="2">اولویت ۲</option>
+                      <option value="3">اولویت ۳</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-bold text-slate-500">
+                      نمایش {displayedTeachers.length} از {registeredTeachersWithClasses.length} استاد
+                    </span>
+                    {(searchTerm || selectedDayFilter !== 'all' || selectedGradeFilter !== 'all' || selectedPriorityFilter !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchTerm('');
+                          setSelectedDayFilter('all');
+                          setSelectedGradeFilter('all');
+                          setSelectedPriorityFilter('all');
+                        }}
+                        className="text-xs text-rose-600 font-black cursor-pointer"
+                      >
+                        پاکسازی فیلترها
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
-
-              {/* Priority filter */}
-              <div className="min-w-[120px]">
-                <select
-                  value={selectedPriorityFilter}
-                  onChange={(e) => setSelectedPriorityFilter(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                >
-                  <option value="all">همه اولویت‌ها</option>
-                  <option value="1">اولویت ۱</option>
-                  <option value="2">اولویت ۲</option>
-                  <option value="3">اولویت ۳</option>
-                </select>
-              </div>
-
-              {(searchTerm || selectedDayFilter !== 'all' || selectedGradeFilter !== 'all' || selectedPriorityFilter !== 'all') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm('');
-                    setSelectedDayFilter('all');
-                    setSelectedGradeFilter('all');
-                    setSelectedPriorityFilter('all');
-                  }}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 cursor-pointer"
-                >
-                  پاکسازی فیلترها
-                </button>
-              )}
             </div>
-
-            <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+          ) : (
+            <>
+              {/* Tab Switcher: Internal Teachers vs External Institutes */}
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 max-w-md">
                 <button
                   type="button"
-                  onClick={() => setDirectoryViewMode('list')}
+                  onClick={() => setTeacherTab('internal')}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                    directoryViewMode === 'list'
-                      ? "bg-white text-indigo-700 shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                    "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+                    teacherTab === 'internal'
+                      ? "bg-indigo-600 text-white shadow-md font-black"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
                   )}
-                  title="نمایش لیستی پیش‌فرض اساتید"
                 >
-                  <Table size={14} />
-                  <span>لیستی (پیش‌فرض)</span>
+                  <GraduationCap size={15} />
+                  <span>اساتید و مدرسین کلاسی</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDirectoryViewMode('cards')}
+                  onClick={() => setTeacherTab('external')}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                    directoryViewMode === 'cards'
-                      ? "bg-white text-indigo-700 shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                    "flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer",
+                    teacherTab === 'external'
+                      ? "bg-amber-500 text-slate-950 shadow-md font-black"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-bold"
                   )}
-                  title="نمایش کارتی اساتید"
                 >
-                  <LayoutGrid size={14} />
-                  <span>کارت‌ها</span>
+                  <DoorOpen size={15} />
+                  <span>مدرس‌های خارج از مجموعه</span>
                 </button>
               </div>
 
-              <div className="text-xs font-bold text-slate-500">
-                نمایش {displayedTeachers.length} از {registeredTeachersWithClasses.length} استاد
+              {/* Filter Bar */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                <div className="flex items-center flex-wrap gap-2.5 flex-1">
+                  {/* Search */}
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="جستجوی نام استاد، تخصص، عنوان درس..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pr-9 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Day filter */}
+                  <div className="min-w-[140px]">
+                    <select
+                      value={selectedDayFilter}
+                      onChange={(e) => setSelectedDayFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="all">همه روزهای حضور</option>
+                      {WEEK_DAYS.map(day => (
+                        <option key={day} value={day}>{day}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Grade filter */}
+                  {allAvailableGrades.length > 0 && (
+                    <div className="min-w-[120px]">
+                      <select
+                        value={selectedGradeFilter}
+                        onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        {allAvailableGrades.map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Priority filter */}
+                  <div className="min-w-[120px]">
+                    <select
+                      value={selectedPriorityFilter}
+                      onChange={(e) => setSelectedPriorityFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="all">همه اولویت‌ها</option>
+                      <option value="1">اولویت ۱</option>
+                      <option value="2">اولویت ۲</option>
+                      <option value="3">اولویت ۳</option>
+                    </select>
+                  </div>
+
+                  {(searchTerm || selectedDayFilter !== 'all' || selectedGradeFilter !== 'all' || selectedPriorityFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setSelectedDayFilter('all');
+                        setSelectedGradeFilter('all');
+                        setSelectedPriorityFilter('all');
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 cursor-pointer"
+                    >
+                      پاکسازی فیلترها
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setDirectoryViewMode('list')}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        directoryViewMode === 'list'
+                          ? "bg-white text-indigo-700 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                      title="نمایش لیستی پیش‌فرض اساتید"
+                    >
+                      <Table size={14} />
+                      <span>لیستی (پیش‌فرض)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirectoryViewMode('cards')}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        directoryViewMode === 'cards'
+                          ? "bg-white text-indigo-700 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                      title="نمایش کارتی اساتید"
+                    >
+                      <LayoutGrid size={14} />
+                      <span>کارت‌ها</span>
+                    </button>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-500">
+                    نمایش {displayedTeachers.length} از {registeredTeachersWithClasses.length} استاد
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* Multi-copy Phone Action Banner */}
           {isLevel2User && isMultiCopyMode && (
@@ -1096,7 +1282,7 @@ export default function TeachersSchedule() {
                 تنها اساتید ثبت‌شده در بانک اساتید که دارای برنامه درسی فعال هستند در این بخش نمایش داده می‌شوند.
               </p>
             </div>
-          ) : directoryViewMode === 'list' ? (
+          ) : !isAdminMobile && directoryViewMode === 'list' ? (
             /* ==================== DEFAULT TABLE / LIST VIEW ==================== */
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
@@ -1592,50 +1778,21 @@ export default function TeachersSchedule() {
             </div>
 
             {/* Sub-view switcher within single teacher view */}
-            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500">حالت نمایش برنامه:</span>
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setSingleViewMode('all')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                      singleViewMode === 'all' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                    )}
-                  >
-                    نمایش کامل (جدول + کارت‌ها)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSingleViewMode('timetable')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                      singleViewMode === 'timetable' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                    )}
-                  >
-                    فقط جدول هفتگی
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSingleViewMode('courses')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                      singleViewMode === 'courses' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-                    )}
-                  >
-                    فقط لیست دروس
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick switch between teachers dropdown */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 hidden sm:inline">تغییر استاد:</span>
+            {isAdminMobile ? (
+              <div className="space-y-3 border-t border-slate-100 pt-3">
+                <MobileHorizontalTabs
+                  activeId={singleViewMode}
+                  onChange={(id) => setSingleViewMode(id as 'all' | 'timetable' | 'courses')}
+                  tabs={[
+                    { id: 'all', label: 'نمایش کامل' },
+                    { id: 'timetable', label: 'جدول هفتگی' },
+                    { id: 'courses', label: 'لیست دروس' },
+                  ]}
+                />
                 <select
                   value={selectedTeacherId}
                   onChange={(e) => setSelectedTeacherId(e.target.value)}
-                  className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
                 >
                   {registeredTeachersWithClasses.map(t => (
                     <option key={t.id} value={t.id}>
@@ -1644,7 +1801,61 @@ export default function TeachersSchedule() {
                   ))}
                 </select>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500">حالت نمایش برنامه:</span>
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setSingleViewMode('all')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        singleViewMode === 'all' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      نمایش کامل (جدول + کارت‌ها)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSingleViewMode('timetable')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        singleViewMode === 'timetable' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      فقط جدول هفتگی
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSingleViewMode('courses')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        singleViewMode === 'courses' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      فقط لیست دروس
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick switch between teachers dropdown */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 hidden sm:inline">تغییر استاد:</span>
+                  <select
+                    value={selectedTeacherId}
+                    onChange={(e) => setSelectedTeacherId(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {registeredTeachersWithClasses.map(t => (
+                      <option key={t.id} value={t.id}>
+                        استاد {t.name} ({t.classesCount} درس)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Printable Container for THIS specific teacher */}
@@ -1661,92 +1872,161 @@ export default function TeachersSchedule() {
 
             {/* 1. Weekly Timetable Matrix for this Teacher */}
             {(singleViewMode === 'all' || singleViewMode === 'timetable') && (
-              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4 overflow-x-auto">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                    <Calendar className="text-indigo-600" size={16} />
-                    <span>جدول زمانی برنامه هفتگی استاد {currentSelectedTeacher.name}</span>
-                  </h4>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    حضور در روزهای: {currentSelectedTeacher.activeDays.join(' ، ')}
-                  </span>
-                </div>
+              isAdminMobile ? (
+                <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs space-y-3.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-2">
+                      <Calendar className="text-indigo-600" size={16} />
+                      <span>برنامه هفتگی به تفکیک روز</span>
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {currentSelectedTeacher.activeDays.length} روز حضور
+                    </span>
+                  </div>
 
-                <table className="w-full border-collapse min-w-[700px] text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="p-3 text-right font-black text-slate-700 w-32">روز هفته</th>
-                      <th className="p-3 text-right font-black text-slate-700">کلاس‌ها، ساعات برگزاری و مَدرَس</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {WEEK_DAYS.map(day => {
-                      const dayClasses = currentSelectedTeacher.items.filter(item => item.days.includes(day));
-                      const isPresent = dayClasses.length > 0;
-
-                      return (
-                        <tr 
-                          key={day} 
-                          className={cn(
-                            "transition-colors",
-                            isPresent ? "bg-white hover:bg-slate-50/60" : "bg-slate-50/40 text-slate-400"
-                          )}
-                        >
-                          <td className="p-3.5 font-black text-slate-900 align-top">
-                            <div className="flex items-center gap-2">
-                              <span className={cn(
-                                "w-2.5 h-2.5 rounded-full",
-                                isPresent ? "bg-indigo-600" : "bg-slate-300"
-                              )} />
-                              <span>{day}</span>
-                            </div>
-                          </td>
-
-                          <td className="p-3 align-top">
-                            {dayClasses.length === 0 ? (
-                              <span className="text-xs text-slate-400 font-medium">بدون برنامه درسی در این روز</span>
-                            ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                                {dayClasses.map(c => (
-                                  <div
-                                    key={c.id}
-                                    className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-1.5"
-                                  >
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-black text-xs text-indigo-950 truncate">{c.title}</span>
-                                      <span className="text-[10px] px-1.5 py-0.5 bg-white text-slate-700 border border-slate-200 rounded font-bold">
-                                        {c.grade}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 text-[11px] text-slate-600 font-mono">
-                                      <Clock size={12} className="text-slate-400" />
-                                      <span>{c.time}</span>
-                                    </div>
-
-                                    {c.madrasRoom && c.madrasRoom !== 'نامشخص' && (
-                                      <div className="flex items-center gap-1 text-[11px] text-emerald-800 font-bold">
-                                        <DoorOpen size={12} />
-                                        <span>مَدرَس: {c.madrasRoom}</span>
-                                      </div>
-                                    )}
-
-                                    {c.notes && (
-                                      <p className="text-[10px] text-slate-500 font-medium pt-1 border-t border-indigo-100">
-                                        {c.notes}
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
+                  <MobileHorizontalTabs
+                    activeId={mobileScheduleDay}
+                    onChange={setMobileScheduleDay}
+                    tabs={WEEK_DAYS.map((day) => {
+                      const count = currentSelectedTeacher.items.filter((item) => item.days.includes(day)).length;
+                      return {
+                        id: day,
+                        label: day,
+                        badge: count > 0 ? count : undefined,
+                      };
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  />
+
+                  {(() => {
+                    const dayClasses = currentSelectedTeacher.items.filter((item) => item.days.includes(mobileScheduleDay));
+                    if (dayClasses.length === 0) {
+                      return (
+                        <div className="py-8 text-center text-xs text-slate-400 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          بدون برنامه درسی در روز {mobileScheduleDay}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2.5">
+                        {dayClasses.map((c) => (
+                          <div key={c.id} className="p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-black text-xs text-indigo-950 truncate">{c.title}</span>
+                              <span className="text-[10px] px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded-lg font-bold shrink-0">
+                                {c.grade}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-700 font-bold">
+                              <span className="flex items-center gap-1 font-mono">
+                                <Clock size={12} className="text-indigo-500" />
+                                <span>{c.time}</span>
+                              </span>
+                              {c.madrasRoom && c.madrasRoom !== 'نامشخص' && (
+                                <span className="flex items-center gap-1 text-emerald-800">
+                                  <DoorOpen size={12} />
+                                  <span>مَدرَس: {c.madrasRoom}</span>
+                                </span>
+                              )}
+                            </div>
+                            {c.notes && (
+                              <p className="text-[10px] text-slate-500 font-medium pt-1 border-t border-indigo-100">
+                                {c.notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4 overflow-x-auto">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                      <Calendar className="text-indigo-600" size={16} />
+                      <span>جدول زمانی برنامه هفتگی استاد {currentSelectedTeacher.name}</span>
+                    </h4>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      حضور در روزهای: {currentSelectedTeacher.activeDays.join(' ، ')}
+                    </span>
+                  </div>
+
+                  <table className="w-full border-collapse min-w-[700px] text-xs no-mobile-card">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="p-3 text-right font-black text-slate-700 w-32">روز هفته</th>
+                        <th className="p-3 text-right font-black text-slate-700">کلاس‌ها، ساعات برگزاری و مَدرَس</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {WEEK_DAYS.map(day => {
+                        const dayClasses = currentSelectedTeacher.items.filter(item => item.days.includes(day));
+                        const isPresent = dayClasses.length > 0;
+
+                        return (
+                          <tr 
+                            key={day} 
+                            className={cn(
+                              "transition-colors",
+                              isPresent ? "bg-white hover:bg-slate-50/60" : "bg-slate-50/40 text-slate-400"
+                            )}
+                          >
+                            <td className="p-3.5 font-black text-slate-900 align-top">
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  "w-2.5 h-2.5 rounded-full",
+                                  isPresent ? "bg-indigo-600" : "bg-slate-300"
+                                )} />
+                                <span>{day}</span>
+                              </div>
+                            </td>
+
+                            <td className="p-3 align-top">
+                              {dayClasses.length === 0 ? (
+                                <span className="text-xs text-slate-400 font-medium">بدون برنامه درسی در این روز</span>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                  {dayClasses.map(c => (
+                                    <div
+                                      key={c.id}
+                                      className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl space-y-1.5"
+                                    >
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-black text-xs text-indigo-950 truncate">{c.title}</span>
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-white text-slate-700 border border-slate-200 rounded font-bold">
+                                          {c.grade}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 text-[11px] text-slate-600 font-mono">
+                                        <Clock size={12} className="text-slate-400" />
+                                        <span>{c.time}</span>
+                                      </div>
+
+                                      {c.madrasRoom && c.madrasRoom !== 'نامشخص' && (
+                                        <div className="flex items-center gap-1 text-[11px] text-emerald-800 font-bold">
+                                          <DoorOpen size={12} />
+                                          <span>مَدرَس: {c.madrasRoom}</span>
+                                        </div>
+                                      )}
+
+                                      {c.notes && (
+                                        <p className="text-[10px] text-slate-500 font-medium pt-1 border-t border-indigo-100">
+                                          {c.notes}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
 
             {/* 2. Detailed Course Cards for this Teacher */}

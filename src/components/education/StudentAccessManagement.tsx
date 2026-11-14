@@ -29,6 +29,11 @@ import { useAuth } from '../../context/AuthContext';
 import { localDb } from '../../lib/localDb';
 import { Student } from '../../types';
 import { cn } from '../../lib/utils';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+} from '../admin/mobile/MobileModulePrimitives';
 
 export type StudentSectionOverrideState = 'default' | 'enabled' | 'disabled';
 
@@ -249,6 +254,7 @@ export function isStudentPortalTargetAllowed(
 
 export default function StudentAccessManagement() {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const isAuthorized = Boolean(
     currentUser &&
@@ -560,6 +566,125 @@ export default function StudentAccessManagement() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12 font-vazir text-right" dir="rtl">
       {/* Header Banner */}
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileSectionHeader
+            title="مدیریت دسترسی پنل طلاب"
+            subtitle={`عمومی و تک‌به‌تک · ${enabledGlobalCount} فعال / ${disabledGlobalCount} غیرفعال`}
+            icon={<ShieldCheck size={20} />}
+            variant="indigo"
+            primaryAction={
+              activeMode === 'global'
+                ? {
+                    id: 'enable-all',
+                    label: 'فعال‌سازی همه بخش‌ها',
+                    icon: <Unlock size={15} />,
+                    tone: 'emerald',
+                    disabled: isSaving,
+                    onClick: () => handleToggleAllGlobal(true),
+                  }
+                : undefined
+            }
+            secondaryActions={[
+              ...(activeMode === 'global'
+                ? [
+                    {
+                      id: 'disable-all',
+                      label: 'غیرفعال‌سازی همه',
+                      icon: <Lock size={14} />,
+                      tone: 'rose' as const,
+                      disabled: isSaving,
+                      onClick: () => handleToggleAllGlobal(false),
+                    },
+                  ]
+                : []),
+              {
+                id: 'refresh-access',
+                label: 'بروزرسانی از سرور',
+                icon: <RefreshCw size={14} />,
+                tone: 'indigo',
+                onClick: () => loadData(true),
+              },
+            ]}
+          />
+
+          {/* Compact Mobile Force-Reload Card */}
+          <div className="bg-rose-50/80 rounded-2xl p-3.5 border border-rose-200 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-black text-rose-950 text-xs">
+                <RefreshCw size={15} className="text-rose-600 shrink-0" />
+                <span>هارد رفرش سراسری کاربران</span>
+              </div>
+              {!confirmForceReload && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForceReloadMessage(null);
+                    setConfirmForceReload(true);
+                  }}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[11px] font-black cursor-pointer shrink-0"
+                >
+                  اعمال نسخه جدید
+                </button>
+              )}
+            </div>
+            {confirmForceReload && (
+              <div className="p-2.5 bg-white border border-rose-200 rounded-xl space-y-2">
+                <p className="text-[11px] font-bold text-slate-800">
+                  آیا از ارسال دستور هارد رفرش تک‌باره برای همه کاربران اطمینان دارید؟
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSendingForceReload}
+                    onClick={() => setConfirmForceReload(false)}
+                    className="flex-1 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSendingForceReload}
+                    onClick={handleTriggerForceReload}
+                    className="flex-1 py-2 bg-rose-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1"
+                  >
+                    {isSendingForceReload && <RefreshCw size={13} className="animate-spin" />}
+                    <span>تایید و ارسال</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            {forceReloadMessage && (
+              <div className={cn(
+                'p-2.5 rounded-xl border text-[11px] font-bold',
+                forceReloadMessage.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-100 border-rose-300 text-rose-800'
+              )}>
+                {forceReloadMessage.text}
+              </div>
+            )}
+          </div>
+
+          {toast && (
+            <div className={cn(
+              'p-3 rounded-2xl border text-xs font-black flex items-center gap-2',
+              toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
+            )}>
+              {toast.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <XCircle size={16} className="text-rose-600 shrink-0" />}
+              <span>{toast.text}</span>
+            </div>
+          )}
+
+          <MobileHorizontalTabs
+            activeId={activeMode}
+            onChange={(id) => setActiveMode(id as any)}
+            tabs={[
+              { id: 'global', label: 'تنظیمات سراسری (کل طلاب)', icon: <Sliders size={14} />, tone: 'indigo' },
+              { id: 'individual', label: 'تنظیمات تک‌تک طلاب', icon: <UserCheck size={14} />, tone: 'slate' },
+            ]}
+          />
+        </div>
+      ) : (
+        <>
       <div className="bg-gradient-to-l from-indigo-950 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
         <div className="absolute -left-10 -top-10 w-52 h-52 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -746,6 +871,8 @@ export default function StudentAccessManagement() {
           </button>
         </div>
       </div>
+        </>
+      )}
 
       {/* TAB 1: GLOBAL ACCESS CONTROL FOR ALL STUDENTS */}
       {activeMode === 'global' && (

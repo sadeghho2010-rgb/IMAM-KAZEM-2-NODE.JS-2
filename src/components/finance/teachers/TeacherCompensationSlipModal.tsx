@@ -15,6 +15,8 @@ import {
   BookOpen 
 } from 'lucide-react';
 import { TeacherCompensationCalculationItem, TeacherCompensationSettings } from '../../../types';
+import { cn } from '../../../lib/utils';
+import { useIsAdminMobile } from '../../admin/mobile/AdminMobileContext';
 
 interface TeacherCompensationSlipModalProps {
   item: TeacherCompensationCalculationItem | null;
@@ -33,6 +35,7 @@ export const TeacherCompensationSlipModal: React.FC<TeacherCompensationSlipModal
   settings,
   onClose
 }) => {
+  const isAdminMobile = useIsAdminMobile();
   const printRef = useRef<HTMLDivElement>(null);
 
   if (!item) return null;
@@ -48,8 +51,8 @@ export const TeacherCompensationSlipModal: React.FC<TeacherCompensationSlipModal
   const totalDeductions = debtDed + fundDed + transportDed + mealDed + (item.type1Deductions || 0);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 space-y-6 my-8">
+    <div className={cn('fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center overflow-y-auto', isAdminMobile ? 'p-3' : 'p-4')}>
+      <div className={cn('bg-white max-w-2xl w-full shadow-2xl border border-slate-100 space-y-6 my-8 max-h-[90vh] overflow-y-auto', isAdminMobile ? 'rounded-2xl p-4' : 'rounded-3xl p-6')}>
         {/* Header Actions */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
@@ -71,14 +74,14 @@ export const TeacherCompensationSlipModal: React.FC<TeacherCompensationSlipModal
         </div>
 
         {/* Printable Slip Sheet */}
-        <div ref={printRef} className="bg-slate-50/70 p-6 rounded-2xl border border-slate-200/80 space-y-5 text-right font-vazir" dir="rtl">
+        <div ref={printRef} className={cn('bg-slate-50/70 rounded-2xl border border-slate-200/80 space-y-5 text-right font-vazir', isAdminMobile ? 'p-3.5' : 'p-6')} dir="rtl">
           {/* Slip Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+          <div className={cn('flex justify-between pb-4 border-b border-slate-200 gap-2', isAdminMobile ? 'flex-col items-start' : 'items-center')}>
             <div className="space-y-1">
               <h2 className="text-base font-black text-slate-900">حوزه علمیه و مرکز تخصصی آموزش عالی</h2>
               <p className="text-xs text-slate-500 font-bold">معاونت امور مالی و اداری - فیش تسویه حق‌الزحمه اساتید</p>
             </div>
-            <div className="text-left text-xs space-y-1 font-mono text-slate-600">
+            <div className={cn('text-xs space-y-1 font-mono text-slate-600', isAdminMobile ? 'text-right' : 'text-left')}>
               <div>دوره: <strong className="text-slate-800 font-sans">{periodTitle}</strong></div>
               <div>بازه: <strong>{startDate}</strong> الی <strong>{endDate}</strong></div>
             </div>
@@ -194,15 +197,15 @@ export const TeacherCompensationSlipModal: React.FC<TeacherCompensationSlipModal
           </div>
 
           {/* Net Payable Ribbon */}
-          <div className="bg-gradient-to-r from-teal-700 to-emerald-700 p-4 rounded-xl text-white flex items-center justify-between shadow-md">
+          <div className={cn('bg-gradient-to-r from-teal-700 to-emerald-700 p-4 rounded-xl text-white flex justify-between shadow-md gap-3', isAdminMobile ? 'flex-col items-start' : 'items-center')}>
             <div>
               <span className="text-xs text-teal-100 block font-medium">مبلغ خالص قابل پرداخت (واریز پایا به حساب استاد):</span>
-              <span className="text-lg font-mono font-black">{item.netPayable?.toLocaleString('fa-IR')} تومان</span>
+              <span className="text-lg font-mono font-black tabular-nums">{item.netPayable?.toLocaleString('fa-IR')} تومان</span>
             </div>
-            <div className="text-left text-xs font-mono space-y-0.5">
+            <div className={cn('text-xs font-mono space-y-0.5', isAdminMobile ? 'text-right' : 'text-left')}>
               <div>بانک: {item.bankName || 'تجارت'}</div>
               <div>ش حساب: {item.bankAccount || '-'}</div>
-              {item.bankSheba && <div>شبا: {item.bankSheba}</div>}
+              {item.bankSheba && <div className="break-all">شبا: {item.bankSheba}</div>}
             </div>
           </div>
 

@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getTodayShamsi } from '../../lib/jalali';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from '../admin/mobile/MobileModulePrimitives';
 
 interface StudentPaymentsSectionProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -27,76 +29,100 @@ interface StudentPaymentsSectionProps {
 
 export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ onNavigateTab }) => {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
   const todayShamsi = getTodayShamsi();
   const displayName = currentUser?.name || currentUser?.fullName || currentUser?.username || 'دانش‌پژوه محترم';
 
   return (
-    <div className="p-1 sm:p-4 lg:p-6 max-w-7xl mx-auto space-y-5 font-vazir text-right text-slate-800" dir="rtl">
+    <div className={cn("mx-auto font-vazir text-right text-slate-800", isAdminMobile ? "p-0 space-y-4 pb-6" : "p-1 sm:p-4 lg:p-6 max-w-7xl space-y-5")} dir="rtl">
       {/* 1. Header Banner with Jewel Gradient */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-800 text-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-teal-900/20 border border-emerald-400/30">
-        <div className="absolute top-0 left-0 w-80 h-80 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-10 w-60 h-60 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          variant="emerald"
+          title="سامانه پرداختی‌ها و امور مالی"
+          subtitle={`${displayName} (${currentUser?.gradeLabel || 'سطح ۳'})`}
+          badgeText={todayShamsi}
+          icon={<Wallet size={20} />}
+          primaryAction={onNavigateTab ? {
+            id: 'request',
+            label: 'ثبت تقاضای مالی / وام',
+            icon: <Send size={15} />,
+            tone: 'amber',
+            onClick: () => onNavigateTab('student-requests'),
+          } : undefined}
+          secondaryActions={onNavigateTab ? [{
+            id: 'dashboard',
+            label: 'بازگشت به پیشخوان',
+            icon: <ArrowRight size={14} />,
+            onClick: () => onNavigateTab('dashboard'),
+          }] : []}
+        />
+      ) : (
+        <div className="relative overflow-hidden bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-800 text-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-teal-900/20 border border-emerald-400/30">
+          <div className="absolute top-0 left-0 w-80 h-80 bg-white/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 right-10 w-60 h-60 bg-emerald-400/10 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 shadow-md">
-              <Wallet size={30} className="text-emerald-200" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-3 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 text-xs font-black border border-emerald-300/30">
-                  امور مالی و رفاهی
-                </span>
-                <span className="text-xs text-emerald-100/80 font-medium">
-                  {todayShamsi}
-                </span>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30 shadow-md">
+                <Wallet size={30} className="text-emerald-200" />
               </div>
-              <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-                سامانه پرداختی‌ها و امور مالی طلاب
-              </h1>
-              <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1">
-                مشاهده وضعیت حساب، شهریه، واریزی‌ها و تسهیلات — {displayName} ({currentUser?.gradeLabel || 'سطح ۳'})
-              </p>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-3 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 text-xs font-black border border-emerald-300/30">
+                    امور مالی و رفاهی
+                  </span>
+                  <span className="text-xs text-emerald-100/80 font-medium">
+                    {todayShamsi}
+                  </span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
+                  سامانه پرداختی‌ها و امور مالی طلاب
+                </h1>
+                <p className="text-xs sm:text-sm text-emerald-100/90 font-medium mt-1">
+                  مشاهده وضعیت حساب، شهریه، واریزی‌ها و تسهیلات — {displayName} ({currentUser?.gradeLabel || 'سطح ۳'})
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2.5 self-start md:self-center">
-            {onNavigateTab && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('dashboard')}
-                className="hidden sm:flex px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-all items-center gap-2 border border-white/20 active:scale-95 cursor-pointer shadow-xs"
-              >
-                <ArrowRight size={16} />
-                <span>بازگشت به پیشخوان</span>
-              </button>
-            )}
-            {onNavigateTab && (
-              <button
-                type="button"
-                onClick={() => onNavigateTab('student-requests')}
-                className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-black text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer"
-              >
-                <Send size={15} />
-                <span>ثبت تقاضای مالی / وام</span>
-              </button>
-            )}
+            <div className="flex items-center gap-2.5 self-start md:self-center">
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('dashboard')}
+                  className="hidden sm:flex px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs transition-all items-center gap-2 border border-white/20 active:scale-95 cursor-pointer shadow-xs"
+                >
+                  <ArrowRight size={16} />
+                  <span>بازگشت به پیشخوان</span>
+                </button>
+              )}
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('student-requests')}
+                  className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-black text-xs transition-all flex items-center gap-2 shadow-md active:scale-95 cursor-pointer"
+                >
+                  <Send size={15} />
+                  <span>ثبت تقاضای مالی / وام</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Top Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={cn("grid", isAdminMobile ? "grid-cols-2 gap-2.5" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4")}>
         {/* Card 1: وضعیت تسویه */}
-        <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group">
+        <div className={cn("bg-white border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5")}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">وضعیت تسویه مالی</span>
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <ShieldCheck size={20} />
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <ShieldCheck size={18} />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-lg font-black text-emerald-700">
+          <div className="mt-2.5">
+            <div className={cn("font-black text-emerald-700", isAdminMobile ? "text-sm" : "text-lg")}>
               <span>تسویه و فعال</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">بدون معوقه و مسدودی</p>
@@ -104,15 +130,15 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
         </div>
 
         {/* Card 2: سهم شهریه و کمک هزینه */}
-        <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group">
+        <div className={cn("bg-white border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">کمک‌هزینه و شهریه دوره</span>
-            <div className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
-              <Coins size={20} />
+            <span className="text-xs font-bold text-slate-500">کمک‌هزینه و شهریه</span>
+            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+              <Coins size={18} />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-lg font-black text-slate-900">
+          <div className="mt-2.5">
+            <div className={cn("font-black text-slate-900", isAdminMobile ? "text-sm" : "text-lg")}>
               طبق مصوبه آموزشی
             </div>
             <p className="text-[11px] text-teal-600 font-bold mt-1">بر اساس حضور و مباحثه</p>
@@ -120,15 +146,15 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
         </div>
 
         {/* Card 3: رزرو سلف و نهار */}
-        <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group">
+        <div className={cn("bg-white border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5")}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">وضعیت سلف و تغذیه</span>
-            <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              <Receipt size={20} />
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+              <Receipt size={18} />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-lg font-black text-slate-900">
+          <div className="mt-2.5">
+            <div className={cn("font-black text-slate-900", isAdminMobile ? "text-sm" : "text-lg")}>
               رزرو برخط فعال
             </div>
             {onNavigateTab ? (
@@ -147,15 +173,15 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
         </div>
 
         {/* Card 4: صندوق قرض‌الحسنه */}
-        <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group">
+        <div className={cn("bg-white border border-slate-200/90 shadow-2xs hover:shadow-md transition-all relative overflow-hidden group", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5")}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500">صندوق وام و تسهیلات</span>
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              <CreditCard size={20} />
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+              <CreditCard size={18} />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-lg font-black text-indigo-700">
+          <div className="mt-2.5">
+            <div className={cn("font-black text-indigo-700", isAdminMobile ? "text-sm" : "text-lg")}>
               امکان درخواست وام
             </div>
             <p className="text-[11px] text-slate-400 mt-1">از طریق کارتابل تقاضا</p>
@@ -164,7 +190,7 @@ export const StudentPaymentsSection: React.FC<StudentPaymentsSectionProps> = ({ 
       </div>
 
       {/* 3. Main Dedicated Content Container */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-xs space-y-6">
+      <div className={cn("bg-white border border-slate-200/90 shadow-xs", isAdminMobile ? "rounded-[22px] p-4 space-y-4" : "rounded-3xl p-6 sm:p-8 space-y-6")}>
         {/* Notice of Ready Section for upcoming custom fields */}
         <div className="p-5 bg-gradient-to-br from-indigo-50 via-teal-50/50 to-emerald-50 rounded-2xl border border-indigo-200/70 flex items-start gap-3.5">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">

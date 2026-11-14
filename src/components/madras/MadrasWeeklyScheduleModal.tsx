@@ -212,7 +212,7 @@ export default function MadrasWeeklyScheduleModal({
           {/* Timetable Body */}
           <div className="flex-1 overflow-auto p-4 sm:p-6 custom-scrollbar">
             <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs min-w-[650px]">
-              <table className="w-full text-right border-collapse">
+              <table className="w-full text-right border-collapse no-mobile-card">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 text-xs font-black border-b border-slate-200">
                     <th className="p-3 w-36 text-center border-l border-slate-200 bg-slate-100/90 sticky right-0 z-10">

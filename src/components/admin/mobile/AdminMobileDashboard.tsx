@@ -61,10 +61,9 @@ interface AdminMobileDashboardProps {
   hadith?: { arabic: string; source: string };
 }
 
-type CategoryFilterKey = 'all' | 'requests' | 'education' | 'students' | 'research' | 'finance' | 'system';
+type CategoryFilterKey = 'requests' | 'education' | 'students' | 'research' | 'finance' | 'system';
 
 const CATEGORY_TABS: Array<{ key: CategoryFilterKey; label: string }> = [
-  { key: 'all', label: 'همه بخش‌ها' },
   { key: 'students', label: 'امور طلاب' },
   { key: 'education', label: 'آموزش و کلاس' },
   { key: 'requests', label: 'کارتابل' },
@@ -130,9 +129,22 @@ export const AdminMobileDashboard: React.FC<AdminMobileDashboardProps> = ({
   hadith,
 }) => {
   const prefersReducedMotion = useReducedMotion();
-  const [selectedCategory, setSelectedCategory] = useState<CategoryFilterKey>('all');
+  const visibleCategoryTabs = useMemo(() => {
+    return CATEGORY_TABS.filter((cat) => sortedCards.some((c) => c.category === cat.key));
+  }, [sortedCards]);
+
+  const [selectedCategory, setSelectedCategory] = useState<CategoryFilterKey>(
+    () => visibleCategoryTabs[0]?.key || 'students'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [isReorderOpen, setIsReorderOpen] = useState(false);
+
+  const effectiveCategory = useMemo<CategoryFilterKey>(() => {
+    if (visibleCategoryTabs.some((t) => t.key === selectedCategory)) {
+      return selectedCategory;
+    }
+    return visibleCategoryTabs[0]?.key || 'students';
+  }, [visibleCategoryTabs, selectedCategory]);
 
   const displayName = (currentUser?.name || currentUser?.fullName || currentUser?.username || 'مدیریت محترم')
     .split('(')[0]
@@ -141,11 +153,10 @@ export const AdminMobileDashboard: React.FC<AdminMobileDashboardProps> = ({
   // Top 5 priority cards (respects اصلاح ۲۸ default RTL order or user's custom saved order)
   const priorityCards = useMemo(() => sortedCards.slice(0, 5), [sortedCards]);
 
-  // Filtered directory cards based on category chip + Persian quick search
+  // Filtered directory cards: when searching, search across all allowed sections; otherwise show the active category tab
   const directoryCards = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return sortedCards.filter((card) => {
-      if (selectedCategory !== 'all' && card.category !== selectedCategory) return false;
       if (q) {
         return (
           card.title.toLowerCase().includes(q) ||
@@ -153,9 +164,9 @@ export const AdminMobileDashboard: React.FC<AdminMobileDashboardProps> = ({
           card.id.toLowerCase().includes(q)
         );
       }
-      return true;
+      return card.category === effectiveCategory;
     });
-  }, [sortedCards, selectedCategory, searchQuery]);
+  }, [sortedCards, effectiveCategory, searchQuery]);
 
   const totalPendingInbox = unreadRequestsCount + pendingWorkflowCount;
 
@@ -409,26 +420,42 @@ export const AdminMobileDashboard: React.FC<AdminMobileDashboardProps> = ({
         </div>
 
         {/* Horizontal Scrollable Category Filter Rail */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-          {CATEGORY_TABS.map((cat) => {
-            const isActive = selectedCategory === cat.key;
-            return (
-              <button
-                key={cat.key}
-                type="button"
-                onClick={() => setSelectedCategory(cat.key)}
-                className={cn(
-                  'min-h-[38px] px-3 py-1.5 rounded-xl text-[11px] font-black shrink-0 transition-all cursor-pointer border',
-                  isActive
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-                )}
-              >
-                {cat.label}
-              </button>
-            );
-          })}
-        </div>
+        {searchQuery.trim() ? (
+          <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-indigo-50 border border-indigo-200/80 text-[11px] font-black text-indigo-800">
+            <span>نتایج جستجو در تمامی بخش‌های مجاز</span>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="px-2 py-0.5 rounded-lg bg-white text-indigo-700 border border-indigo-200 text-[10px] cursor-pointer"
+            >
+              نمایش دسته‌ها
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+            {visibleCategoryTabs.map((cat) => {
+              const isActive = effectiveCategory === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(cat.key);
+                    setSearchQuery('');
+                  }}
+                  className={cn(
+                    'min-h-[38px] px-3.5 py-1.5 rounded-xl text-[11px] font-black shrink-0 transition-all cursor-pointer border',
+                    isActive
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                  )}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* 2-Column Touch Cards Grid */}
         {directoryCards.length === 0 ? (

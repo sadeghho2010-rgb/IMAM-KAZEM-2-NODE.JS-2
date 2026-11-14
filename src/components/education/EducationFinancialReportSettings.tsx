@@ -25,6 +25,8 @@ import { getTodayShamsi } from '../../lib/jalali';
 import { cn } from '../../lib/utils';
 import { Student, EducationFinancialReport, EducationFinancialItem } from '../../types';
 import { ShamsiDatePicker } from '../ShamsiDatePicker';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
 interface EducationFinancialReportSettingsProps {
   onNavigateTab?: (tab: string, params?: any) => void;
@@ -32,6 +34,8 @@ interface EducationFinancialReportSettingsProps {
 
 export default function EducationFinancialReportSettings({ onNavigateTab }: EducationFinancialReportSettingsProps) {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const today = getTodayShamsi();
   const defaultStart = today.substring(0, 8) + '01';
 
@@ -273,66 +277,86 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
       </AnimatePresence>
 
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100 shrink-0">
-            <FileText size={24} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-slate-900">تنظیم گزارش مالی طلاب (افزایش و کاهش شهریه)</h2>
-              <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-black rounded-lg">
-                ویژه مسئول آموزش
-              </span>
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileSectionHeader
+            variant="white"
+            title="تنظیم گزارش مالی طلاب"
+            subtitle="پاداش تشویقی و جریمه‌های آموزشی با ذکر علت برای محاسبه شهریه"
+            badgeText="ویژه آموزش"
+            icon={<FileText size={20} />}
+          />
+          <MobileHorizontalTabs
+            activeId={activeTab}
+            onChange={(id) => setActiveTab(id as 'create' | 'history')}
+            tabs={[
+              { id: 'create', label: 'تنظیم و ارسال گزارش', icon: <Edit3 size={14} />, tone: 'indigo' },
+              { id: 'history', label: 'سوابق ارسالی', icon: <Clock size={14} />, badge: reports.length > 0 ? reports.length : undefined, tone: 'slate' },
+            ]}
+          />
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100 shrink-0">
+              <FileText size={24} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              تنظیم مبالغ پاداش تشویقی یا جریمه‌های انضباطی/آموزشی هر طلبه در یک بازه زمانی مشخص به همراه ذکر علت جهت تایید و اعمال خودکار در محاسبه شهریه
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black text-slate-900">تنظیم گزارش مالی طلاب (افزایش و کاهش شهریه)</h2>
+                <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-black rounded-lg">
+                  ویژه مسئول آموزش
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                تنظیم مبالغ پاداش تشویقی یا جریمه‌های انضباطی/آموزشی هر طلبه در یک بازه زمانی مشخص به همراه ذکر علت جهت تایید و اعمال خودکار در محاسبه شهریه
+              </p>
+            </div>
+          </div>
+
+          {/* Tab Toggle */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('create')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                activeTab === 'create'
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Edit3 size={14} />
+              <span>تنظیم و ارسال گزارش بازه‌ای</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('history')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                activeTab === 'history'
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Clock size={14} />
+              <span>سوابق گزارش‌های ارسالی</span>
+              {reports.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-mono font-bold">
+                  {reports.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
-
-        {/* Tab Toggle */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('create')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-              activeTab === 'create'
-                ? "bg-white text-indigo-700 shadow-xs font-black"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Edit3 size={14} />
-            <span>تنظیم و ارسال گزارش بازه‌ای</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-              activeTab === 'history'
-                ? "bg-white text-indigo-700 shadow-xs font-black"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Clock size={14} />
-            <span>سوابق گزارش‌های ارسالی</span>
-            {reports.length > 0 && (
-              <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-mono font-bold">
-                {reports.length}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* CREATE TAB */}
       {activeTab === 'create' && (
-        <div className="space-y-6">
+        <div className={cn(isAdminMobile ? "space-y-4" : "space-y-6")}>
           {/* Form Header Info Box */}
-          <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-md">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={cn("bg-slate-900 text-white border border-slate-800 shadow-md", isAdminMobile ? "rounded-[22px] p-4" : "rounded-3xl p-6")}>
+            <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4")}>
               <div>
                 <label className="block text-xs text-slate-300 font-bold mb-1.5">عنوان گزارش ارسالی:</label>
                 <input
@@ -355,22 +379,24 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
                 />
               </div>
 
-              <div>
-                <label className="block text-xs text-slate-300 font-bold mb-1.5">از تاریخ (شروع بازه):</label>
-                <ShamsiDatePicker
-                  value={startDate}
-                  onChange={setStartDate}
-                  placeholder="تاریخ شروع"
-                />
-              </div>
+              <div className={cn(isAdminMobile ? "grid grid-cols-2 gap-2.5" : "contents")}>
+                <div>
+                  <label className="block text-xs text-slate-300 font-bold mb-1.5">از تاریخ (شروع بازه):</label>
+                  <ShamsiDatePicker
+                    value={startDate}
+                    onChange={setStartDate}
+                    placeholder="تاریخ شروع"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs text-slate-300 font-bold mb-1.5">تا تاریخ (پایان بازه):</label>
-                <ShamsiDatePicker
-                  value={endDate}
-                  onChange={setEndDate}
-                  placeholder="تاریخ پایان"
-                />
+                <div>
+                  <label className="block text-xs text-slate-300 font-bold mb-1.5">تا تاریخ (پایان بازه):</label>
+                  <ShamsiDatePicker
+                    value={endDate}
+                    onChange={setEndDate}
+                    placeholder="تاریخ پایان"
+                  />
+                </div>
               </div>
             </div>
 
@@ -386,10 +412,10 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
             </div>
 
             {/* Quick Metrics of Current Report */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-4 border-t border-slate-800 text-xs">
+            <div className={cn("grid gap-2.5 mt-4 pt-3.5 border-t border-slate-800 text-xs", isAdminMobile ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-4")}>
               <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/60 flex items-center justify-between">
                 <span className="text-slate-400 font-bold">تعداد طلاب دارای تغییر:</span>
-                <span className="font-mono font-black text-indigo-400 text-sm">
+                <span className="font-mono font-black text-indigo-400 text-sm tabular-nums">
                   {adjustedItems.length} نفر
                 </span>
               </div>
@@ -398,7 +424,7 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
                   <TrendingUp size={14} />
                   <span>مجموع مبالغ افزایش (+):</span>
                 </span>
-                <span className="font-mono font-black text-emerald-400 text-sm">
+                <span className="font-mono font-black text-emerald-400 text-sm tabular-nums">
                   +{totalIncreaseSum.toLocaleString('fa-IR')} تومان
                 </span>
               </div>
@@ -407,7 +433,7 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
                   <TrendingDown size={14} />
                   <span>مجموع مبالغ کاهش (-):</span>
                 </span>
-                <span className="font-mono font-black text-rose-400 text-sm">
+                <span className="font-mono font-black text-rose-400 text-sm tabular-nums">
                   -{totalDecreaseSum.toLocaleString('fa-IR')} تومان
                 </span>
               </div>
@@ -415,50 +441,226 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
           </div>
 
           {/* Student Filter & Actions Bar */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-72">
-                <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="جستجوی طلبه با نام یا کد ملی..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pr-10 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
-                />
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجوی طلبه با نام یا کد ملی..."
+                filtersOpen={mobileFiltersOpen}
+                onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                activeFilterCount={gradeFilter !== 'all' ? 1 : 0}
+              />
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 block">فیلتر پایه تحصیلی</label>
+                  <select
+                    value={gradeFilter}
+                    onChange={e => setGradeFilter(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={isSending || adjustedItems.length === 0}
+                onClick={handleSendReport}
+                className={cn(
+                  "w-full min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer",
+                  adjustedItems.length > 0 && !isSending
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                )}
+              >
+                <Send size={15} />
+                <span>ارسال نهایی گزارش به مسئول مالی ({adjustedItems.length} مورد)</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-72">
+                  <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="جستجوی طلبه با نام یا کد ملی..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pr-10 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <select
+                  value={gradeFilter}
+                  onChange={e => setGradeFilter(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                </select>
               </div>
 
-              <select
-                value={gradeFilter}
-                onChange={e => setGradeFilter(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              <button
+                type="button"
+                disabled={isSending || adjustedItems.length === 0}
+                onClick={handleSendReport}
+                className={cn(
+                  "w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer",
+                  adjustedItems.length > 0 && !isSending
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                )}
               >
-                <option value="all">همه پایه‌ها</option>
-                <option value="پایه ۷">پایه ۷</option>
-                <option value="پایه ۸">پایه ۸</option>
-                <option value="پایه ۹">پایه ۹</option>
-                <option value="پایه ۱۰">پایه ۱۰</option>
-              </select>
+                <Send size={15} />
+                <span>ارسال نهایی گزارش به مسئول مالی ({adjustedItems.length} مورد)</span>
+              </button>
             </div>
+          )}
 
-            <button
-              type="button"
-              disabled={isSending || adjustedItems.length === 0}
-              onClick={handleSendReport}
-              className={cn(
-                "w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer",
-                adjustedItems.length > 0 && !isSending
-                  ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100"
-                  : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+          {/* Students List Table / Mobile Cards */}
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              {filteredStudents.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs font-bold text-slate-400">
+                  طلبه‌ای با این مشخصات یافت نشد.
+                </div>
+              ) : (
+                filteredStudents.map((st, idx) => {
+                  const item = itemsMap[st.id] || {
+                    studentId: st.id,
+                    studentName: st.name,
+                    nationalId: st.nationalId,
+                    grade: st.grade,
+                    type: 'none',
+                    amount: 0,
+                    reason: ''
+                  };
+                  const hasChange = item.type !== 'none' && (item.amount || 0) > 0;
+
+                  return (
+                    <div
+                      key={st.id}
+                      className={cn(
+                        "rounded-2xl p-3.5 border shadow-2xs space-y-3 transition-colors",
+                        item.type === 'increase'
+                          ? "bg-emerald-50/40 border-emerald-200"
+                          : item.type === 'decrease'
+                          ? "bg-rose-50/40 border-rose-200"
+                          : "bg-white border-slate-200/90"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-mono text-slate-400 font-bold">{idx + 1}.</span>
+                            <span className="text-xs font-black text-slate-900 truncate">{st.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                            <span>{st.grade || '---'}</span>
+                            <span>·</span>
+                            <span className="font-mono">کد ملی: {st.nationalId || '---'}</span>
+                          </div>
+                        </div>
+
+                        {hasChange ? (
+                          <span className={cn(
+                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black shrink-0 tabular-nums",
+                            item.type === 'increase' ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                          )}>
+                            {item.type === 'increase' ? <Plus size={10} /> : <Minus size={10} />}
+                            {(item.amount || 0).toLocaleString('fa-IR')} ت
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-medium shrink-0">عادی</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleItemChange(st.id, 'type', item.type === 'increase' ? 'none' : 'increase')}
+                          className={cn(
+                            "flex-1 min-h-[40px] px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border",
+                            item.type === 'increase'
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700"
+                          )}
+                        >
+                          <Plus size={13} />
+                          <span>افزایش</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleItemChange(st.id, 'type', item.type === 'decrease' ? 'none' : 'decrease')}
+                          className={cn(
+                            "flex-1 min-h-[40px] px-3 py-1.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border",
+                            item.type === 'decrease'
+                              ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-rose-50 hover:text-rose-700"
+                          )}
+                        >
+                          <Minus size={13} />
+                          <span>کاهش</span>
+                        </button>
+                        {item.type !== 'none' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleItemChange(st.id, 'type', 'none');
+                              handleItemChange(st.id, 'amount', 0);
+                              handleItemChange(st.id, 'reason', '');
+                            }}
+                            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-xl text-sm font-bold cursor-pointer"
+                            title="حذف تغییر"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+
+                      {item.type !== 'none' && (
+                        <div className="space-y-2 pt-2 border-t border-slate-200/70">
+                          <input
+                            type="number"
+                            value={item.amount || ''}
+                            onChange={e => handleItemChange(st.id, 'amount', Number(e.target.value))}
+                            placeholder="مبلغ تغییر (تومان)"
+                            className={cn(
+                              "w-full min-h-[40px] px-3 py-2 border rounded-xl font-mono text-xs outline-none transition-all bg-white font-bold",
+                              item.type === 'increase'
+                                ? "border-emerald-300 text-emerald-800 focus:ring-1 focus:ring-emerald-500"
+                                : "border-rose-300 text-rose-800 focus:ring-1 focus:ring-rose-500"
+                            )}
+                          />
+                          <input
+                            type="text"
+                            value={item.reason || ''}
+                            onChange={e => handleItemChange(st.id, 'reason', e.target.value)}
+                            placeholder={
+                              item.type === 'increase'
+                                ? "علت: مثلاً پاداش پژوهش برتر یا فعالیت شاخص"
+                                : "علت: مثلاً جریمه تاخیر مکرر یا بی‌نظمی آموزشی"
+                            }
+                            className="w-full min-h-[40px] px-3 py-2 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
-            >
-              <Send size={15} />
-              <span>ارسال نهایی گزارش به مسئول مالی ({adjustedItems.length} مورد)</span>
-            </button>
-          </div>
-
-          {/* Students List Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs">
                 <thead>
@@ -613,6 +815,7 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -756,40 +959,67 @@ export default function EducationFinancialReportSettings({ onNavigateTab }: Educ
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto text-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                        <th className="py-2.5 px-3">نام طلبه</th>
-                        <th className="py-2.5 px-3">پایه</th>
-                        <th className="py-2.5 px-3">نوع</th>
-                        <th className="py-2.5 px-3">مبلغ (تومان)</th>
-                        <th className="py-2.5 px-3">علت افزایش/کاهش</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedReportDetail.items?.map((it, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70">
-                          <td className="py-2.5 px-3 font-bold text-slate-800">{it.studentName}</td>
-                          <td className="py-2.5 px-3 text-slate-600">{it.grade}</td>
-                          <td className="py-2.5 px-3">
-                            <span className={cn(
-                              "px-2 py-0.5 rounded-md font-bold text-[10px]",
-                              it.type === 'increase' ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-                            )}>
-                              {it.type === 'increase' ? 'افزایش (+)' : 'کاهش (-)'}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 font-mono font-bold">
-                            {(it.amount || 0).toLocaleString('fa-IR')}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-700">{it.reason || '---'}</td>
+              <div className={cn("space-y-4 max-h-[70vh] overflow-y-auto text-xs", isAdminMobile ? "p-4" : "p-6")}>
+                {isAdminMobile ? (
+                  <div className="space-y-2.5">
+                    {selectedReportDetail.items?.map((it, idx) => (
+                      <div key={idx} className="p-3 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <span className="font-black text-slate-900">{it.studentName}</span>
+                            <span className="text-[11px] text-slate-500 mr-2">({it.grade})</span>
+                          </div>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md font-bold text-[10px]",
+                            it.type === 'increase' ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                          )}>
+                            {it.type === 'increase' ? 'افزایش (+)' : 'کاهش (-)'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/70">
+                          <span className="text-slate-600">{it.reason || '---'}</span>
+                          <span className="font-mono font-black text-slate-900 shrink-0 tabular-nums">
+                            {(it.amount || 0).toLocaleString('fa-IR')} ت
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                          <th className="py-2.5 px-3">نام طلبه</th>
+                          <th className="py-2.5 px-3">پایه</th>
+                          <th className="py-2.5 px-3">نوع</th>
+                          <th className="py-2.5 px-3">مبلغ (تومان)</th>
+                          <th className="py-2.5 px-3">علت افزایش/کاهش</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {selectedReportDetail.items?.map((it, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70">
+                            <td className="py-2.5 px-3 font-bold text-slate-800">{it.studentName}</td>
+                            <td className="py-2.5 px-3 text-slate-600">{it.grade}</td>
+                            <td className="py-2.5 px-3">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-md font-bold text-[10px]",
+                                it.type === 'increase' ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                              )}>
+                                {it.type === 'increase' ? 'افزایش (+)' : 'کاهش (-)'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-bold">
+                              {(it.amount || 0).toLocaleString('fa-IR')}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-700">{it.reason || '---'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <div className="flex justify-end pt-3 border-t border-slate-200">
                   <button

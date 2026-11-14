@@ -140,22 +140,189 @@
 .student-electric-beam-delay-3 { animation-delay: 2.4s; }
 .student-electric-beam-delay-4 { animation-delay: 3.6s; }
 
-/* Scoped mobile responsiveness rules for Staff Mobile Portal sub-pages ONLY (desktop unaffected) */
+/* Scoped mobile responsiveness & modern touch card system for Staff Mobile Portal sub-pages ONLY (desktop unaffected) */
 .admin-mobile-viewport {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  --mobile-surface-radius: 22px;
 }
 
-.admin-mobile-viewport table {
+.admin-mobile-viewport > div {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Remove redundant outer desktop container padding inside the 12px mobile shell gutter */
+.admin-mobile-viewport > div > div[class*="max-w-"] {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 0.125rem !important;
+  max-width: 100% !important;
+}
+
+/* Prevent negative desktop top margins from clipping against mobile sticky bar */
+.admin-mobile-viewport .-mt-2,
+.admin-mobile-viewport .-mt-4 {
+  margin-top: 0 !important;
+}
+
+/* Soften massive desktop padding & border-radius inside mobile containers */
+.admin-mobile-viewport .rounded-\[32px\],
+.admin-mobile-viewport .rounded-3xl {
+  border-radius: 22px;
+}
+
+/* Ensure fixed-width desktop inputs / search bars span cleanly on mobile */
+.admin-mobile-viewport input[type="text"].w-64,
+.admin-mobile-viewport input[type="text"].w-72,
+.admin-mobile-viewport input[type="search"].w-64,
+.admin-mobile-viewport div[class*="min-w-[200px]"],
+.admin-mobile-viewport div[class*="min-w-[220px]"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Comfortable touch ergonomics on inputs and selects */
+.admin-mobile-viewport select,
+.admin-mobile-viewport input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: 40px;
+}
+
+/* Hide noisy scrollbars on horizontal pill/tab rails */
+.admin-mobile-viewport .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.admin-mobile-viewport .overflow-x-auto::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fallback clean horizontal scroll for explicit matrix / print tables */
+.admin-mobile-viewport table:not(.admin-mobile-card-table) {
   display: block;
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-.admin-mobile-viewport > div {
-  max-width: 100%;
+/* Modern Mobile Card-Table Transformation (automatically applied to standard data tables inside AdminMobileShell) */
+.admin-mobile-viewport table.admin-mobile-card-table {
+  display: block;
+  width: 100%;
+  min-width: 0 !important;
+  overflow-x: visible;
+  border-collapse: separate;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > thead {
+  display: none;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: 100%;
+  background: transparent;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 0.65rem 0.85rem;
+  box-shadow: 0 2px 10px -4px rgba(15, 23, 42, 0.07);
+  gap: 0.35rem;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0.32rem 0 !important;
+  border-bottom: 1px dashed #f1f5f9;
+  text-align: left;
+  white-space: normal !important;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td:last-child {
+  border-bottom: none;
+  padding-bottom: 0.1rem !important;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-label]::before {
+  content: attr(data-mobile-label);
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748b;
+  text-align: right;
+  flex-shrink: 0;
+  max-width: 44%;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-full="true"] {
+  justify-content: center;
+  text-align: center;
+  border-bottom: none;
+  padding: 1rem 0.25rem !important;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-full="true"]::before {
+  display: none;
+}
+
+.admin-mobile-viewport div:has(> table.admin-mobile-card-table:only-child) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-actions="true"] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
+  padding-top: 0.55rem !important;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: none;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-actions="true"]::before {
+  display: none;
+}
+
+.admin-mobile-viewport table.admin-mobile-card-table > tbody > tr > td[data-mobile-actions="true"] > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+/* Mobile-safe modal sizing inside AdminMobileViewport */
+.admin-mobile-viewport div.fixed.inset-0 > div[class*="max-w-"] {
+  max-width: calc(100vw - 1rem) !important;
+  max-height: 92dvh !important;
+}
+
+@media (max-width: 768px) {
+  .admin-mobile-viewport .shadow-xl,
+  .admin-mobile-viewport .shadow-2xl {
+    box-shadow: 0 10px 25px -10px rgba(15, 23, 42, 0.16);
+  }
 }
 
 @keyframes microWaveDrift {

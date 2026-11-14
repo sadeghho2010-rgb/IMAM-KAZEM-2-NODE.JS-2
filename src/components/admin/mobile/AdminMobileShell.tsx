@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
   ChevronRight,
@@ -16,6 +16,7 @@ import { localDb } from '../../../lib/localDb';
 import { cn } from '../../../lib/utils';
 import { getTodayShamsi, getShamsiDayOfWeekName } from '../../../lib/jalali';
 import { PWAInstallButton } from '../../PWAInstallButton';
+import { AdminMobileProvider } from './AdminMobileContext';
 import {
   GlyphAdminHome,
   GlyphActiveStudents,
@@ -91,6 +92,8 @@ const ALL_ADMIN_DRAWER_MODULES: AdminDrawerModuleItem[] = [
   { tabId: 'finance-grade-mentors', title: 'حق‌الزحمه اساتید پایه', subtitle: 'کارکرد سرپرستی و پیگیری‌ها', icon: GlyphFinanceCoins, accentClass: 'bg-teal-50 text-teal-700 border-teal-200', category: 'finance' },
   { tabId: 'finance-teachers', title: 'حق‌التدریس اساتید', subtitle: 'ساعات تدریس و فیش حق‌التدریس', icon: GlyphFinanceCoins, accentClass: 'bg-green-50 text-green-700 border-green-200', category: 'finance' },
   { tabId: 'finance-lunch', title: 'اطلاعات نهار و شام', subtitle: 'آمار پخت و کسر وعده‌های سلف', icon: GlyphFinanceCoins, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'finance' },
+  { tabId: 'student-meals', title: 'رزرو غذای طلاب', subtitle: 'مدیریت وعده‌های غذایی', icon: GlyphFinanceCoins, accentClass: 'bg-orange-50 text-orange-700 border-orange-200', category: 'finance' },
+  { tabId: 'student-payments', title: 'پرداخت‌های طلاب', subtitle: 'مشاهده سوابق واریزها', icon: GlyphFinanceCoins, accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', category: 'finance' },
   { tabId: 'finance-loans-fund', title: 'صندوق قرض‌الحسنه', subtitle: 'وام‌ها، اقساط و گردش مالی', icon: GlyphFinanceCoins, accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', category: 'finance' },
   { tabId: 'finance-claims', title: 'مطالبات و بدهی‌ها', subtitle: 'مانده حساب‌ها و تسویه‌ها', icon: GlyphFinanceCoins, accentClass: 'bg-teal-50 text-teal-700 border-teal-200', category: 'finance' },
   { tabId: 'finance-expenses-reports', title: 'هزینه‌ها و بودجه', subtitle: 'ثبت اسناد هزینه و تراز مالی', icon: GlyphFinanceCoins, accentClass: 'bg-green-50 text-green-700 border-green-200', category: 'finance' },
@@ -107,6 +110,8 @@ const ALL_ADMIN_DRAWER_MODULES: AdminDrawerModuleItem[] = [
   { tabId: 'system-health', title: 'پایش سلامت سرور', subtitle: 'مصرف CPU، RAM و وضعیت سرویس‌ها', icon: GlyphStudyAnalytics, accentClass: 'bg-rose-50 text-rose-700 border-rose-200', category: 'system' },
   { tabId: 'anomaly-detection', title: 'تشخیص ناهنجاری‌ها', subtitle: 'بازرسی امنیت و هشدارها', icon: GlyphSecurityLock, accentClass: 'bg-rose-50 text-rose-700 border-rose-200', category: 'system' },
   { tabId: 'audit-logs', title: 'فعالیت‌های سایت (Audit)', subtitle: 'لاگ تغییرات و عملیات کاربران', icon: GlyphSecurityLock, accentClass: 'bg-slate-100 text-slate-700 border-slate-200', category: 'system' },
+  { tabId: 'app-logs', title: 'لاگ‌ها و خطاهای سیستم', subtitle: 'مانیتورینگ خطاهای فرانت‌اند', icon: GlyphStudyAnalytics, accentClass: 'bg-emerald-50 text-emerald-700 border-emerald-200', category: 'system' },
+  { tabId: 'system-audit-logs', title: 'پایش جامع تراکنش‌ها', subtitle: 'گزارش ورودها و تغییرات دیتابیس', icon: GlyphSecurityLock, accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', category: 'system' },
   { tabId: 'db-save-errors', title: 'خطاهای ثبت دیتابیس', subtitle: 'بررسی علل خطاهای ذخیره‌سازی', icon: GlyphSecurityLock, accentClass: 'bg-rose-50 text-rose-700 border-rose-200', category: 'system' },
   { tabId: 'db-connection-test', title: 'تست اتصال دیتابیس', subtitle: 'بررسی سلامت ارتباط و همگام‌سازی', icon: GlyphSecurityLock, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'system' },
 ];
@@ -126,6 +131,7 @@ export const AdminMobileShell: React.FC<AdminMobileShellProps> = ({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerSearch, setDrawerSearch] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
+  const viewportRef = useRef<HTMLElement | null>(null);
 
   const todayShamsi = useMemo(() => getTodayShamsi(), []);
   const todayDayName = useMemo(() => getShamsiDayOfWeekName(todayShamsi), [todayShamsi]);
@@ -139,6 +145,80 @@ export const AdminMobileShell: React.FC<AdminMobileShellProps> = ({
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
+  }, [activeTab]);
+
+  // Automatically annotate standard data tables inside .admin-mobile-viewport with header labels for card layout
+  useEffect(() => {
+    const root = viewportRef.current;
+    if (!root || activeTab === 'dashboard') return;
+
+    let rafId = 0;
+    const enhanceTables = () => {
+      const tables = root.querySelectorAll('table');
+      tables.forEach((table) => {
+        if (
+          table.dataset.mobileKeepTable === 'true' ||
+          table.classList.contains('no-mobile-card') ||
+          table.closest('.print-only') ||
+          table.closest('#warning-form-print-sheet') ||
+          table.closest('[data-mobile-keep-table="true"]')
+        ) {
+          return;
+        }
+        // Skip matrix/calendar tables that rely on rowspan or multi-row headers
+        const headerRows = table.querySelectorAll('thead tr');
+        if (headerRows.length !== 1) return;
+        const headers = Array.from(headerRows[0].querySelectorAll('th')).map((th) =>
+          (th.textContent || '').replace(/\s+/g, ' ').trim()
+        );
+        if (headers.length < 3) return;
+        if (table.querySelector('tbody td[rowspan], tbody th[rowspan]')) return;
+
+        table.classList.add('admin-mobile-card-table');
+
+        const bodyRows = table.querySelectorAll('tbody tr');
+        bodyRows.forEach((row) => {
+          const cells = Array.from(row.children) as HTMLElement[];
+          cells.forEach((cell, idx) => {
+            if (cell.tagName !== 'TD') return;
+            const colSpan = Number(cell.getAttribute('colspan') || '1');
+            if (colSpan > 1) {
+              cell.setAttribute('data-mobile-full', 'true');
+              cell.removeAttribute('data-mobile-label');
+              return;
+            }
+            const label = headers[idx] || '';
+            if (label) {
+              cell.setAttribute('data-mobile-label', label);
+            }
+            const isActionsCol =
+              idx === headers.length - 1 &&
+              (label.includes('عملیات') ||
+                label.includes('اقدام') ||
+                label.includes('مدیریت') ||
+                label.includes('دسترسی') ||
+                cell.querySelectorAll('button, a').length >= 2);
+            if (isActionsCol) {
+              cell.setAttribute('data-mobile-actions', 'true');
+            }
+          });
+        });
+      });
+    };
+
+    const scheduleEnhance = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(enhanceTables);
+    };
+
+    scheduleEnhance();
+    const observer = new MutationObserver(scheduleEnhance);
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
   }, [activeTab]);
 
   // Load light inbox badge count
@@ -290,14 +370,17 @@ export const AdminMobileShell: React.FC<AdminMobileShellProps> = ({
 
       {/* Main Scrollable Viewport — Scoped mobile sub-page table/scroll adaptation */}
       <main
+        ref={viewportRef}
         className={cn(
           'flex-1 w-full mx-auto px-3 pt-3 pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))]',
           isDashboard ? 'max-w-xl' : 'max-w-2xl admin-mobile-viewport'
         )}
       >
-        <div className="w-full min-w-0">
-          {children}
-        </div>
+        <AdminMobileProvider value={true}>
+          <div className="w-full min-w-0">
+            {children}
+          </div>
+        </AdminMobileProvider>
       </main>
 
       {/* Floating Curved Glassmorphic Bottom Thumb-Zone Dock */}

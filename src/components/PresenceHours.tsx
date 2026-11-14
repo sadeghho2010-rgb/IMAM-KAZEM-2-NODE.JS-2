@@ -33,9 +33,13 @@ import {
 } from '../lib/jalali';
 import { cn } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
-import { Send } from 'lucide-react';
+import { Send, ChevronDown } from 'lucide-react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 export default function PresenceHours() {
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileCycleOpen, setMobileCycleOpen] = useState(false);
   const { currentMentor } = useMentor();
   const { currentUser } = useAuth();
 
@@ -458,7 +462,7 @@ export default function PresenceHours() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 text-right" dir="rtl">
+    <div className={cn("max-w-7xl mx-auto text-right", isAdminMobile ? "p-0 space-y-4 pb-6" : "p-4 sm:p-6 space-y-6")} dir="rtl">
       {/* Hidden print iframe */}
       <iframe ref={printIframeRef} className="hidden" title="print-frame" />
 
@@ -471,111 +475,252 @@ export default function PresenceHours() {
       )}
 
       {/* Main Header & Title */}
-      <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute -left-10 -top-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-indigo-200 text-xs font-bold backdrop-blur-xs">
-              <Clock size={14} className="text-amber-400" />
-              <span>سامانه ثبت ساعت حضور و کارکرد</span>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="ثبت ساعت و کارکرد حضور"
+          subtitle={cycleTitle}
+          icon={<Clock size={20} />}
+          badgeText={`${totalHours} ساعت`}
+          variant="indigo"
+          primaryAction={{
+            id: 'send-finance',
+            label: submittingReport ? 'در حال ارسال...' : 'ارسال به مسئول مالی',
+            icon: <Send size={15} />,
+            onClick: handleSendReportToFinance,
+            disabled: submittingReport || filteredLogs.length === 0,
+            tone: 'emerald',
+          }}
+          secondaryActions={[
+            {
+              id: 'pdf-direct',
+              label: isExportingPdf ? 'در حال ساخت PDF...' : 'دانلود فایل PDF',
+              icon: <Download size={14} />,
+              onClick: handleDownloadPdfDirectly,
+              disabled: isExportingPdf || filteredLogs.length === 0,
+              tone: 'indigo',
+            },
+            {
+              id: 'excel-export',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={14} />,
+              onClick: handleExportExcel,
+              tone: 'emerald',
+            },
+            {
+              id: 'print-preview',
+              label: 'چاپ و پیش‌نمایش',
+              icon: <Printer size={14} />,
+              onClick: () => setShowPrintModal(true),
+            },
+          ]}
+          extraContent={
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-center">
+              <div className="bg-white/10 rounded-xl p-2">
+                <span className="text-[10px] text-indigo-200 block">مجموع کارکرد</span>
+                <span className="text-sm font-black text-amber-300 font-mono">{totalHours} <span className="text-[10px] text-white font-sans">ساعت</span></span>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2">
+                <span className="text-[10px] text-indigo-200 block">روزهای حضور</span>
+                <span className="text-sm font-black text-white font-mono">{uniqueDaysCount} <span className="text-[10px] text-indigo-200 font-sans">روز</span></span>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2">
+                <span className="text-[10px] text-indigo-200 block">میانگین روزانه</span>
+                <span className="text-sm font-black text-emerald-300 font-mono">{avgHoursPerDay} <span className="text-[10px] text-indigo-200 font-sans">ساعت</span></span>
+              </div>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              ثبت ساعت و گزارش کارکرد حضور
-            </h1>
-            <p className="text-xs sm:text-sm text-indigo-200/80 font-medium max-w-2xl">
-              ثبت سریع مقدار ساعت حضور روزانه، محاسبه خودکار مجموع کارکرد و دریافت خروجی PDF رسمی و فایل اکسل.
-            </p>
-          </div>
+          }
+        />
+      ) : (
+        <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+          <div className="absolute -left-10 -top-10 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-indigo-200 text-xs font-bold backdrop-blur-xs">
+                <Clock size={14} className="text-amber-400" />
+                <span>سامانه ثبت ساعت حضور و کارکرد</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                ثبت ساعت و گزارش کارکرد حضور
+              </h1>
+              <p className="text-xs sm:text-sm text-indigo-200/80 font-medium max-w-2xl">
+                ثبت سریع مقدار ساعت حضور روزانه، محاسبه خودکار مجموع کارکرد و دریافت خروجی PDF رسمی و فایل اکسل.
+              </p>
+            </div>
 
-          {/* Quick Stats Banner */}
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 flex items-center gap-6 w-full md:w-auto justify-around">
-            <div className="text-center space-y-0.5">
-              <span className="text-[10px] font-bold text-indigo-200 block">مجموع کارکرد</span>
-              <span className="text-2xl font-black text-amber-300">{totalHours} <span className="text-xs text-white">ساعت</span></span>
-            </div>
-            <div className="w-px h-8 bg-white/20" />
-            <div className="text-center space-y-0.5">
-              <span className="text-[10px] font-bold text-indigo-200 block">روزهای حضور</span>
-              <span className="text-2xl font-black text-white">{uniqueDaysCount} <span className="text-xs text-indigo-200">روز</span></span>
+            {/* Quick Stats Banner */}
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 flex items-center gap-6 w-full md:w-auto justify-around">
+              <div className="text-center space-y-0.5">
+                <span className="text-[10px] font-bold text-indigo-200 block">مجموع کارکرد</span>
+                <span className="text-2xl font-black text-amber-300">{totalHours} <span className="text-xs text-white">ساعت</span></span>
+              </div>
+              <div className="w-px h-8 bg-white/20" />
+              <div className="text-center space-y-0.5">
+                <span className="text-[10px] font-bold text-indigo-200 block">روزهای حضور</span>
+                <span className="text-2xl font-black text-white">{uniqueDaysCount} <span className="text-xs text-indigo-200">روز</span></span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* --- SECTION 1: SET CYCLE RANGE (شروع و پایان ماه) --- */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black">
-              <CalendarIcon size={18} />
+      {isAdminMobile ? (
+        <div className="bg-white rounded-[20px] p-3.5 border border-slate-200/90 shadow-xs space-y-3">
+          <button
+            type="button"
+            onClick={() => setMobileCycleOpen(p => !p)}
+            className="w-full flex items-center justify-between gap-2 text-right cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <CalendarIcon size={17} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-black text-slate-800 truncate">{cycleTitle}</div>
+                <div className="text-[11px] font-mono font-bold text-slate-500">
+                  بازه: {cycleStart} تا {cycleEnd}
+                </div>
+              </div>
             </div>
+            <span className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-black flex items-center gap-1 shrink-0">
+              <span>تغییر دوره</span>
+              <ChevronDown size={14} className={cn("transition-transform", mobileCycleOpen && "rotate-180")} />
+            </span>
+          </button>
+
+          {mobileCycleOpen && (
+            <div className="space-y-3 pt-2.5 border-t border-slate-100">
+              <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => set21To20Preset(0)}
+                  className="min-h-[38px] px-2.5 py-1.5 bg-indigo-100 text-indigo-900 rounded-xl font-black cursor-pointer"
+                >
+                  دوره جاری (۲۱ تا ۲۰)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set21To20Preset(-1)}
+                  className="min-h-[38px] px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-xl cursor-pointer"
+                >
+                  دوره قبل (۲۱ تا ۲۰)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set21To20Preset(1)}
+                  className="min-h-[38px] px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-xl cursor-pointer"
+                >
+                  دوره بعد
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonthPreset(0)}
+                  className="min-h-[38px] px-2.5 py-1.5 bg-amber-50 text-amber-900 rounded-xl cursor-pointer"
+                >
+                  ماه تقویمی (۱ تا آخر)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <ShamsiDatePicker
+                  label="تاریخ شروع ماه / بازه *"
+                  value={cycleStart}
+                  onChange={(d) => setCycleStart(d)}
+                />
+                <ShamsiDatePicker
+                  label="تاریخ پایان ماه / بازه *"
+                  value={cycleEnd}
+                  onChange={(d) => setCycleEnd(d)}
+                />
+                <div>
+                  <label className="block font-bold text-slate-700 text-xs mb-1">عنوان گزارش / ماه</label>
+                  <input
+                    type="text"
+                    value={cycleTitle}
+                    onChange={(e) => setCycleTitle(e.target.value)}
+                    placeholder="مثلا: گزارش حضور مهر ماه"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black">
+                <CalendarIcon size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-slate-800">تعیین دوره و بازه زمانی ماه (شروع تا پایان)</h2>
+                <p className="text-[11px] text-slate-500">تعیین بازه برای محاسبه مجموع ساعت و خروجی گزارش PDF</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 flex-wrap">
+              <span className="hidden sm:inline text-slate-400">میانبرهای دوره:</span>
+              <button
+                onClick={() => set21To20Preset(0)}
+                className="px-3 py-1.5 bg-indigo-100 text-indigo-900 hover:bg-indigo-200 rounded-xl transition-colors cursor-pointer font-black"
+              >
+                دوره جاری (۲۱ام تا ۲۰ام)
+              </button>
+              <button
+                onClick={() => set21To20Preset(-1)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
+              >
+                دوره قبل (۲۱ام تا ۲۰ام)
+              </button>
+              <button
+                onClick={() => set21To20Preset(1)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
+              >
+                دوره بعد
+              </button>
+              <button
+                onClick={() => setCalendarMonthPreset(0)}
+                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl transition-colors cursor-pointer"
+              >
+                ماه تقویمی (۱ام تا پایان)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
             <div>
-              <h2 className="text-sm font-black text-slate-800">تعیین دوره و بازه زمانی ماه (شروع تا پایان)</h2>
-              <p className="text-[11px] text-slate-500">تعیین بازه برای محاسبه مجموع ساعت و خروجی گزارش PDF</p>
+              <ShamsiDatePicker
+                label="تاریخ شروع ماه / بازه *"
+                value={cycleStart}
+                onChange={(d) => setCycleStart(d)}
+              />
+            </div>
+
+            <div>
+              <ShamsiDatePicker
+                label="تاریخ پایان ماه / بازه *"
+                value={cycleEnd}
+                onChange={(d) => setCycleEnd(d)}
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 text-xs mb-1">عنوان گزارش / ماه</label>
+              <input
+                type="text"
+                value={cycleTitle}
+                onChange={(e) => setCycleTitle(e.target.value)}
+                placeholder="مثلا: گزارش حضور مهر ماه"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
           </div>
-
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 flex-wrap">
-            <span className="hidden sm:inline text-slate-400">میانبرهای دوره:</span>
-            <button
-              onClick={() => set21To20Preset(0)}
-              className="px-3 py-1.5 bg-indigo-100 text-indigo-900 hover:bg-indigo-200 rounded-xl transition-colors cursor-pointer font-black"
-            >
-              دوره جاری (۲۱ام تا ۲۰ام)
-            </button>
-            <button
-              onClick={() => set21To20Preset(-1)}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
-            >
-              دوره قبل (۲۱ام تا ۲۰ام)
-            </button>
-            <button
-              onClick={() => set21To20Preset(1)}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl transition-colors cursor-pointer"
-            >
-              دوره بعد
-            </button>
-            <button
-              onClick={() => setCalendarMonthPreset(0)}
-              className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl transition-colors cursor-pointer"
-            >
-              ماه تقویمی (۱ام تا پایان)
-            </button>
-          </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-          <div>
-            <ShamsiDatePicker
-              label="تاریخ شروع ماه / بازه *"
-              value={cycleStart}
-              onChange={(d) => setCycleStart(d)}
-            />
-          </div>
-
-          <div>
-            <ShamsiDatePicker
-              label="تاریخ پایان ماه / بازه *"
-              value={cycleEnd}
-              onChange={(d) => setCycleEnd(d)}
-            />
-          </div>
-
-          <div>
-            <label className="block font-bold text-slate-700 text-xs mb-1">عنوان گزارش / ماه</label>
-            <input
-              type="text"
-              value={cycleTitle}
-              onChange={(e) => setCycleTitle(e.target.value)}
-              placeholder="مثلا: گزارش حضور مهر ماه"
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* --- SECTION 2: ENTRY FORM (فقط یک فیلد برای ثبت مقدار ساعت) --- */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-4">
+      <div className={cn("bg-white border border-slate-200/90 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-4" : "rounded-3xl p-5 sm:p-6")}>
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
             <Plus size={18} className="text-indigo-600" />
@@ -636,7 +781,7 @@ export default function PresenceHours() {
                     type="button"
                     onClick={() => setDurationHours(val)}
                     className={cn(
-                      "px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer",
+                      "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer",
                       Number(durationHours) === val
                         ? "bg-indigo-600 text-white shadow-xs"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -680,7 +825,10 @@ export default function PresenceHours() {
           <div className="flex justify-end pt-1">
             <button
               type="submit"
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-xs"
+              className={cn(
+                "bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-xs",
+                isAdminMobile ? "w-full min-h-[44px] py-3" : "px-6 py-3"
+              )}
             >
               <Clock size={16} />
               <span>{editingId ? 'به‌روزرسانی رکورد حضور' : 'ثبت ساعت حضور'}</span>
@@ -690,158 +838,283 @@ export default function PresenceHours() {
       </div>
 
       {/* --- SECTION 3: MONTHLY REPORT & TABLE --- */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
-              <TrendingUp size={18} className="text-indigo-600" />
-              <span>گزارش ماهانه حضور: {cycleTitle}</span>
-            </h2>
-            <p className="text-xs text-slate-500">
-              بازه زمانی: <span className="font-bold text-slate-700">{cycleStart}</span> تا <span className="font-bold text-slate-700">{cycleEnd}</span>
-            </p>
+      <div className={cn("bg-white border border-slate-200/90 shadow-sm", isAdminMobile ? "rounded-[20px] p-4 space-y-4" : "rounded-3xl p-5 sm:p-6 space-y-5")}>
+        {isAdminMobile ? (
+          <div className="space-y-3 border-b border-slate-100 pb-3.5">
+            <div>
+              <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                <TrendingUp size={17} className="text-indigo-600 shrink-0" />
+                <span className="truncate">{cycleTitle}</span>
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                بازه: <span className="font-bold text-slate-700">{cycleStart}</span> تا <span className="font-bold text-slate-700">{cycleEnd}</span>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleExportExcel}
+                className="min-h-[40px] px-3 py-2 bg-emerald-50 text-emerald-800 font-bold rounded-xl border border-emerald-200 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet size={15} />
+                <span>خروجی اکسل</span>
+              </button>
+              <button
+                onClick={handleDownloadPdfDirectly}
+                disabled={isExportingPdf || filteredLogs.length === 0}
+                className="min-h-[40px] px-3 py-2 bg-indigo-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                <span>{isExportingPdf ? 'در حال ساخت...' : 'دانلود PDF'}</span>
+              </button>
+              <button
+                onClick={() => setShowPrintModal(true)}
+                className="min-h-[40px] px-3 py-2 bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Printer size={15} />
+                <span>چاپ و پیش‌نمایش</span>
+              </button>
+              <button
+                onClick={handleSendReportToFinance}
+                disabled={submittingReport || filteredLogs.length === 0}
+                className="min-h-[40px] px-3 py-2 bg-emerald-600 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Send size={15} />
+                <span>ارسال به مالی</span>
+              </button>
+            </div>
           </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
+                <TrendingUp size={18} className="text-indigo-600" />
+                <span>گزارش ماهانه حضور: {cycleTitle}</span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                بازه زمانی: <span className="font-bold text-slate-700">{cycleStart}</span> تا <span className="font-bold text-slate-700">{cycleEnd}</span>
+              </p>
+            </div>
 
-          {/* Action Buttons: Excel & PDF / Print */}
-          <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-            <button
-              onClick={handleExportExcel}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl border border-emerald-200 transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <FileSpreadsheet size={16} />
-              <span>خروجی اکسل</span>
-            </button>
+            {/* Action Buttons: Excel & PDF / Print */}
+            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+              <button
+                onClick={handleExportExcel}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl border border-emerald-200 transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <FileSpreadsheet size={16} />
+                <span>خروجی اکسل</span>
+              </button>
 
-            {/* Direct PDF Download Button */}
-            <button
-              onClick={handleDownloadPdfDirectly}
-              disabled={isExportingPdf || filteredLogs.length === 0}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
-              title="دانلود مستقیم فایل PDF گزارش کارکرد"
-            >
-              {isExportingPdf ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>در حال ایجاد PDF...</span>
-                </>
-              ) : (
-                <>
-                  <Download size={16} />
-                  <span>دانلود فایل PDF</span>
-                </>
-              )}
-            </button>
+              {/* Direct PDF Download Button */}
+              <button
+                onClick={handleDownloadPdfDirectly}
+                disabled={isExportingPdf || filteredLogs.length === 0}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
+                title="دانلود مستقیم فایل PDF گزارش کارکرد"
+              >
+                {isExportingPdf ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>در حال ایجاد PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} />
+                    <span>دانلود فایل PDF</span>
+                  </>
+                )}
+              </button>
 
-            {/* Print & Preview Button */}
-            <button
-              onClick={() => setShowPrintModal(true)}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Printer size={16} />
-              <span>چاپ و پیش‌نمایش</span>
-            </button>
+              {/* Print & Preview Button */}
+              <button
+                onClick={() => setShowPrintModal(true)}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Printer size={16} />
+                <span>چاپ و پیش‌نمایش</span>
+              </button>
 
-            {/* Send Report to Finance Button */}
-            <button
-              onClick={handleSendReportToFinance}
-              disabled={submittingReport || filteredLogs.length === 0}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
-              title="ارسال گزارش کارکرد این بازه زمانی به مسئول مالی"
-            >
-              <Send size={16} />
-              <span>ارسال به مسئول مالی</span>
-            </button>
+              {/* Send Report to Finance Button */}
+              <button
+                onClick={handleSendReportToFinance}
+                disabled={submittingReport || filteredLogs.length === 0}
+                className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-xs transition-colors text-xs flex items-center justify-center gap-2 cursor-pointer"
+                title="ارسال گزارش کارکرد این بازه زمانی به مسئول مالی"
+              >
+                <Send size={16} />
+                <span>ارسال به مسئول مالی</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Search Bar */}
-        <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
-          <Search size={18} className="text-slate-400 mr-2" />
-          <input
-            type="text"
+        {isAdminMobile ? (
+          <MobileSearchFilterBar
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={setSearchTerm}
             placeholder="جستجو در شرح فعالیت‌ها یا تاریخ..."
-            className="w-full bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none"
           />
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+            <Search size={18} className="text-slate-400 mr-2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="جستجو در شرح فعالیت‌ها یا تاریخ..."
+              className="w-full bg-transparent border-none text-xs font-bold text-slate-800 focus:outline-none"
+            />
+          </div>
+        )}
 
-        {/* Logs Table */}
+        {/* Logs Table (Desktop) / Stacked Cards (Mobile) */}
         {filteredLogs.length > 0 ? (
-          <div className="overflow-x-auto rounded-2xl border border-slate-200">
-            <table className="w-full text-right border-collapse">
-              <thead className="bg-slate-900 text-white text-xs font-black">
-                <tr>
-                  <th className="p-3.5 text-center">ردیف</th>
-                  <th className="p-3.5">تاریخ شمسی</th>
-                  <th className="p-3.5">روز هفته</th>
-                  <th className="p-3.5 text-center">میزان حضور (ساعت)</th>
-                  <th className="p-3.5">دسته‌بندی</th>
-                  <th className="p-3.5">توضیحات و فعالیت</th>
-                  <th className="p-3.5 text-center">عملیات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-medium">
-                {filteredLogs.map((log, idx) => {
-                  const dayName = getShamsiDayOfWeekName(log.date);
-
-                  return (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3.5 text-center font-bold text-slate-400">{idx + 1}</td>
-                      <td className="p-3.5 font-bold text-slate-900">{log.date}</td>
-                      <td className="p-3.5 text-slate-600 font-bold">{dayName}</td>
-                      <td className="p-3.5 text-center">
-                        <span className="px-3.5 py-1.5 bg-indigo-50 text-indigo-900 font-black rounded-xl border border-indigo-200 inline-block text-xs shadow-2xs">
-                          {log.durationHours} ساعت
+          isAdminMobile ? (
+            <div className="space-y-2.5">
+              {filteredLogs.map((log, idx) => {
+                const dayName = getShamsiDayOfWeekName(log.date);
+                return (
+                  <div key={log.id} className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-6 h-6 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-black flex items-center justify-center shrink-0">
+                          {idx + 1}
                         </span>
-                      </td>
-                      <td className="p-3.5">
-                        <span className="px-2.5 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 text-[11px]">
+                        <div className="min-w-0">
+                          <div className="font-mono font-black text-xs text-slate-900">{log.date}</div>
+                          <div className="text-[10px] font-bold text-slate-500">{dayName}</div>
+                        </div>
+                      </div>
+                      <span className="px-3 py-1 bg-indigo-50 text-indigo-900 font-black rounded-xl border border-indigo-200 text-xs shrink-0">
+                        {log.durationHours} ساعت
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <span className="inline-block px-2 py-0.5 bg-white text-slate-700 font-bold rounded-md border border-slate-200 text-[10px]">
                           {log.category || 'عمومی'}
                         </span>
-                      </td>
-                      <td className="p-3.5 text-slate-700 max-w-xs truncate">
-                        {log.description || '—'}
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleEdit(log)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                            title="ویرایش"
-                          >
-                            <Edit3 size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(log.id)}
-                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="حذف"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="bg-slate-100 text-slate-900 text-xs font-black border-t-2 border-slate-300">
-                <tr>
-                  <td colSpan={3} className="p-3.5 text-left pl-4 font-black">
-                    مجموع کل کارکرد حضور در این بازه:
-                  </td>
-                  <td className="p-3.5 text-center">
-                    <span className="px-4 py-2 bg-indigo-600 text-white font-black text-sm rounded-xl shadow-xs">
-                      {totalHours} ساعت
-                    </span>
-                  </td>
-                  <td colSpan={3} className="p-3.5 text-slate-600">
-                    تعداد روزهای حضور: {uniqueDaysCount} روز | میانگین روزانه: {avgHoursPerDay} ساعت
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                        {log.description && (
+                          <p className="text-[11px] text-slate-700 leading-relaxed line-clamp-2">
+                            {log.description}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(log)}
+                          className="min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-600 bg-white border border-slate-200 hover:text-indigo-600 rounded-xl cursor-pointer"
+                          title="ویرایش"
+                        >
+                          <Edit3 size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(log.id)}
+                          className="min-w-[38px] min-h-[38px] flex items-center justify-center text-rose-600 bg-white border border-rose-200 rounded-xl cursor-pointer"
+                          title="حذف"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Summary Footer Card */}
+              <div className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-black block">جمع کل کارکرد حضور</span>
+                  <span className="text-[10px] text-slate-300">
+                    {uniqueDaysCount} روز | میانگین {avgHoursPerDay} ساعت
+                  </span>
+                </div>
+                <span className="px-3.5 py-1.5 bg-indigo-600 text-white font-black text-sm rounded-xl">
+                  {totalHours} ساعت
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-right border-collapse">
+                <thead className="bg-slate-900 text-white text-xs font-black">
+                  <tr>
+                    <th className="p-3.5 text-center">ردیف</th>
+                    <th className="p-3.5">تاریخ شمسی</th>
+                    <th className="p-3.5">روز هفته</th>
+                    <th className="p-3.5 text-center">میزان حضور (ساعت)</th>
+                    <th className="p-3.5">دسته‌بندی</th>
+                    <th className="p-3.5">توضیحات و فعالیت</th>
+                    <th className="p-3.5 text-center">عملیات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-medium">
+                  {filteredLogs.map((log, idx) => {
+                    const dayName = getShamsiDayOfWeekName(log.date);
+
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                        <td className="p-3.5 font-bold text-slate-900">{log.date}</td>
+                        <td className="p-3.5 text-slate-600 font-bold">{dayName}</td>
+                        <td className="p-3.5 text-center">
+                          <span className="px-3.5 py-1.5 bg-indigo-50 text-indigo-900 font-black rounded-xl border border-indigo-200 inline-block text-xs shadow-2xs">
+                            {log.durationHours} ساعت
+                          </span>
+                        </td>
+                        <td className="p-3.5">
+                          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 text-[11px]">
+                            {log.category || 'عمومی'}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-slate-700 max-w-xs truncate">
+                          {log.description || '—'}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleEdit(log)}
+                              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                              title="ویرایش"
+                            >
+                              <Edit3 size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(log.id)}
+                              className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="حذف"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-100 text-slate-900 text-xs font-black border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={3} className="p-3.5 text-left pl-4 font-black">
+                      مجموع کل کارکرد حضور در این بازه:
+                    </td>
+                    <td className="p-3.5 text-center">
+                      <span className="px-4 py-2 bg-indigo-600 text-white font-black text-sm rounded-xl shadow-xs">
+                        {totalHours} ساعت
+                      </span>
+                    </td>
+                    <td colSpan={3} className="p-3.5 text-slate-600">
+                      تعداد روزهای حضور: {uniqueDaysCount} روز | میانگین روزانه: {avgHoursPerDay} ساعت
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )
         ) : (
           <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300 space-y-2">
             <Clock size={36} className="text-slate-300 mx-auto" />
@@ -857,7 +1130,7 @@ export default function PresenceHours() {
 
       {/* --- SECTION 4: SENT REPORTS HISTORY --- */}
       {reports.length > 0 && (
-        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-sm space-y-4">
+        <div className={cn("bg-white border border-slate-200/90 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-4" : "rounded-3xl p-5 sm:p-6")}>
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
               <Send size={18} className="text-emerald-600" />

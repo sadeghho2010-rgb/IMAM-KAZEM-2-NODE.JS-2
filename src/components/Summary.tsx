@@ -64,6 +64,8 @@ import { getLogMetrics, calculatePeriodAverages } from './study/studyUtils';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from './admin/mobile/MobileModulePrimitives';
 
 interface ChatMessage {
   id: string;
@@ -80,6 +82,7 @@ interface SummaryProps {
 export default function Summary({ onNavigate, initialStudentId }: SummaryProps = {}) {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const isStudentUser = currentUser?.role === 'student' || currentUser?.level === 3;
 
@@ -982,6 +985,55 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
   return (
     <div className="space-y-6" dir="rtl">
       {/* Header Bar */}
+      {isAdminMobile && !isStudentUser ? (
+        <MobileSectionHeader
+          title="پرونده جامع علمی طلبه"
+          subtitle="چکیده آموزشی، پژوهشی، حضور و غیاب و انضباطی"
+          icon={<BrainCircuit size={20} />}
+          variant="indigo"
+          secondaryActions={[
+            ...(selectedStudentId && studentDetails
+              ? [
+                  {
+                    id: 'pdf-summary',
+                    label: isExportingPDF ? 'در حال تولید PDF...' : 'گزارش PDF طلبه',
+                    icon: <FileText size={14} />,
+                    tone: 'rose' as const,
+                    disabled: isExportingPDF,
+                    onClick: handleExportPDFReport,
+                  },
+                ]
+              : []),
+            {
+              id: 'api-key',
+              label: 'تنظیم کلید API',
+              icon: <Key size={14} />,
+              tone: 'default',
+              onClick: () => {
+                setApiKeyInput(customApiKey);
+                setShowApiKeyModal(true);
+              },
+            },
+          ]}
+          extraContent={
+            <select
+              className="w-full min-h-[42px] px-3 py-2 bg-white text-slate-900 border border-indigo-200 rounded-xl text-xs font-black outline-hidden"
+              value={selectedStudentId}
+              onChange={(e) => {
+                setSelectedStudentId(e.target.value);
+                fetchStudentFullData(e.target.value);
+              }}
+            >
+              <option value="">انتخاب طلبه جهت بررسی (فقط فعال)...</option>
+              {filteredStudents.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} {s.grade ? `(پایه ${s.grade})` : ''}
+                </option>
+              ))}
+            </select>
+          }
+        />
+      ) : (
       <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
@@ -1052,6 +1104,7 @@ export default function Summary({ onNavigate, initialStudentId }: SummaryProps =
           )}
         </div>
       </div>
+      )}
 
       {/* Main Content Area */}
       {loading ? (

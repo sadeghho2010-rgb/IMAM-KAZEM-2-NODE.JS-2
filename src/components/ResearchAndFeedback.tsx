@@ -44,6 +44,8 @@ import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 interface ResearchAndFeedbackProps {
   initialStudentId?: string;
@@ -56,6 +58,8 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
   const isStudentUser = currentUser?.level === 3 || 
                         currentUser?.role === 'student' || 
                         currentUser?.role === 'class_representative';
+  const isAdminMobile = useIsAdminMobile();
+  const isStaffMobileView = isAdminMobile && !isStudentUser;
 
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
@@ -961,199 +965,335 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
   const categoriesList: string[] = Array.from(new Set(skillDefs.map(s => (s.category || 'عمومی') as string)));
 
   return (
-    <div className="space-y-8" dir="rtl">
+    <div className={cn(isStaffMobileView ? "space-y-4" : "space-y-8")} dir="rtl">
       {/* Top Header & Actions */}
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
-        <div className="space-y-1">
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <BookOpen className="text-indigo-600" size={24} />
-            {isStudentUser ? 'پرونده و سوابق پژوهشی من' : 'مدیریت پژوهش، سوابق و مهارت‌های علمی'}
-          </h2>
-          <p className="text-[11px] text-slate-500">
-            {isStudentUser 
-              ? 'مشاهده وضعیت پژوهش سال جاری، سوابق مقالات و مهارت‌های علمی احراز شده' 
-              : 'ارزیابی پژوهشی سالانه، سوابق مقالات و پایش مهارت‌های تخصصی طلاب'}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-          {selectedStudentId && (
-            <button 
-              onClick={() => setShowStudentPdfModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white text-[11px] font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
+      {isStaffMobileView ? (
+        <MobileSectionHeader
+          title="پژوهش، سوابق و مهارت‌ها"
+          subtitle="ارزیابی پژوهشی سالانه، سوابق مقالات و پایش مهارت‌های علمی"
+          icon={<BookOpen size={20} />}
+          variant="indigo"
+          badgeText={`${students.length} طلبه`}
+          primaryAction={
+            selectedStudentId
+              ? {
+                  id: 'student-pdf',
+                  label: 'گزارش PDF طلبه',
+                  icon: <Printer size={15} />,
+                  tone: 'emerald',
+                  onClick: () => setShowStudentPdfModal(true),
+                }
+              : {
+                  id: 'manager-report',
+                  label: 'گزارش کل طلاب',
+                  icon: <Printer size={15} />,
+                  tone: 'primary',
+                  disabled: isExporting,
+                  onClick: handleOpenManagerReport,
+                }
+          }
+          secondaryActions={[
+            ...(selectedStudentId
+              ? [
+                  {
+                    id: 'manager-report-sec',
+                    label: 'گزارش کل طلاب',
+                    icon: <Printer size={14} />,
+                    disabled: isExporting,
+                    onClick: handleOpenManagerReport,
+                  },
+                ]
+              : []),
+            {
+              id: 'export-json',
+              label: 'خروجی JSON',
+              icon: <FileJson size={14} />,
+              disabled: isExporting,
+              onClick: handleBulkExportJSON,
+            },
+            ...(selectedStudentId
+              ? [
+                  {
+                    id: 'back-to-grades',
+                    label: 'بازگشت به لیست پایه‌ها',
+                    icon: <RotateCcw size={14} />,
+                    onClick: () => {
+                      setSelectedStudentId('');
+                      setResearch(null);
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          extraContent={
+            <select
+              className="w-full min-h-[42px] px-3 py-2 rounded-xl bg-white/15 border border-white/20 text-white text-xs font-bold outline-none"
+              value={selectedStudentId}
+              onChange={(e) => {
+                setSelectedStudentId(e.target.value);
+                if (e.target.value) fetchStudentDetails(e.target.value);
+              }}
             >
-              <Printer size={15} />
-              <span>{isStudentUser ? 'دانلود کارنامه پژوهشی PDF' : 'گزارش PDF طلبه'}</span>
-            </button>
-          )}
+              <option value="" className="text-slate-900">انتخاب طلبه فعال...</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id} className="text-slate-900">
+                  {s.name} ({s.grade || 'نامشخص'})
+                </option>
+              ))}
+            </select>
+          }
+        />
+      ) : (
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <BookOpen className="text-indigo-600" size={24} />
+              {isStudentUser ? 'پرونده و سوابق پژوهشی من' : 'مدیریت پژوهش، سوابق و مهارت‌های علمی'}
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              {isStudentUser 
+                ? 'مشاهده وضعیت پژوهش سال جاری، سوابق مقالات و مهارت‌های علمی احراز شده' 
+                : 'ارزیابی پژوهشی سالانه، سوابق مقالات و پایش مهارت‌های تخصصی طلاب'}
+            </p>
+          </div>
 
-          {!isStudentUser && (
-            <>
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            {selectedStudentId && (
               <button 
-                onClick={handleOpenManagerReport}
-                disabled={isExporting}
-                className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 text-indigo-700 text-[11px] font-bold rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
+                onClick={() => setShowStudentPdfModal(true)}
+                className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white text-[11px] font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
               >
                 <Printer size={15} />
-                <span>گزارش کل طلاب</span>
+                <span>{isStudentUser ? 'دانلود کارنامه پژوهشی PDF' : 'گزارش PDF طلبه'}</span>
               </button>
+            )}
 
-              <button 
-                onClick={handleBulkExportJSON}
-                disabled={isExporting}
-                className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
-              >
-                <FileJson size={15} />
-                <span>خروجی JSON</span>
-              </button>
-
-              <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block"></div>
-
-              <div className="w-full md:w-60">
-                <select 
-                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:ring-2 focus:ring-indigo-500 text-xs shadow-sm font-bold text-slate-700"
-                  value={selectedStudentId}
-                  onChange={(e) => {
-                    setSelectedStudentId(e.target.value);
-                    if (e.target.value) fetchStudentDetails(e.target.value);
-                  }}
+            {!isStudentUser && (
+              <>
+                <button 
+                  onClick={handleOpenManagerReport}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 text-indigo-700 text-[11px] font-bold rounded-xl hover:bg-indigo-100 transition-colors border border-indigo-100 disabled:opacity-50"
                 >
-                  <option value="">انتخاب طلبه فعال...</option>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade || 'نامشخص'})</option>)}
-                </select>
-              </div>
-            </>
-          )}
+                  <Printer size={15} />
+                  <span>گزارش کل طلاب</span>
+                </button>
+
+                <button 
+                  onClick={handleBulkExportJSON}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-600 text-[11px] font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  <FileJson size={15} />
+                  <span>خروجی JSON</span>
+                </button>
+
+                <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block"></div>
+
+                <div className="w-full md:w-60">
+                  <select 
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:ring-2 focus:ring-indigo-500 text-xs shadow-sm font-bold text-slate-700"
+                    value={selectedStudentId}
+                    onChange={(e) => {
+                      setSelectedStudentId(e.target.value);
+                      if (e.target.value) fetchStudentDetails(e.target.value);
+                    }}
+                  >
+                    <option value="">انتخاب طلبه فعال...</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade || 'نامشخص'})</option>)}
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {selectedStudentId ? (
-        <div className="space-y-6">
+        <div className={cn(isStaffMobileView ? "space-y-4" : "space-y-6")}>
           {/* Selected Student Banner & Internal Tab Bar */}
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-13 h-13 rounded-2xl bg-indigo-100 overflow-hidden shrink-0 border-2 border-indigo-200 flex items-center justify-center font-black text-indigo-700 text-lg shadow-sm">
-                  {selStudentObj?.photoUrl ? (
-                    <img src={selStudentObj.photoUrl} alt={selStudentObj.name} className="w-full h-full object-cover" />
-                  ) : (
-                    selStudentObj?.name.charAt(0)
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">{selStudentObj?.name}</h3>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500 font-medium">
-                    <span>پایه تحصیلی: <strong className="text-slate-800">{selStudentObj?.grade || 'نامشخص'}</strong></span>
-                    {selStudentObj?.nationalId && <span>کد ملی: <strong className="text-slate-800">{selStudentObj.nationalId}</strong></span>}
+          {isStaffMobileView ? (
+            <div className="space-y-3">
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 overflow-hidden shrink-0 border border-indigo-200 flex items-center justify-center font-black text-indigo-700 text-base">
+                      {selStudentObj?.photoUrl ? (
+                        <img src={selStudentObj.photoUrl} alt={selStudentObj.name} className="w-full h-full object-cover" />
+                      ) : (
+                        selStudentObj?.name.charAt(0)
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-black text-slate-900 truncate">{selStudentObj?.name}</h3>
+                      <p className="text-[11px] text-slate-500 font-bold truncate">
+                        {selStudentObj?.grade || 'نامشخص'} · پژوهش فعال: {research?.topic ? 'دارد' : 'ندارد'}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Status Pills & Return Button */}
-              <div className="flex flex-wrap items-center gap-2">
-                {!isStudentUser && (
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedStudentId('');
                       setResearch(null);
                     }}
-                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
+                    className="min-h-[38px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-[11px] font-black flex items-center gap-1 shrink-0 border border-slate-200"
                   >
-                    <X size={15} />
-                    <span>بازگشت به لیست پایه‌ها</span>
+                    <X size={14} />
+                    <span>لیست پایه‌ها</span>
                   </button>
-                )}
+                </div>
 
-                <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black border border-indigo-100 flex items-center gap-1">
-                  <BookOpen size={12} />
-                  <span>پژوهش فعال: {research?.topic ? 'دارد' : 'ثبت نشده'}</span>
-                </span>
-                <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-black border border-amber-100 flex items-center gap-1">
-                  <History size={12} />
-                  <span>سوابق: {historyItems.length} مورد</span>
-                </span>
-                <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black border border-emerald-100 flex items-center gap-1">
-                  <Award size={12} />
-                  <span>مهارت‌ها: {studentSkills?.skillIds?.length || 0} مورد</span>
-                </span>
+                <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-black">
+                  <div className="bg-indigo-50 text-indigo-700 py-1.5 px-2 rounded-xl border border-indigo-100">
+                    فعال: {research?.topic ? 'ثبت‌شده' : 'خالی'}
+                  </div>
+                  <div className="bg-amber-50 text-amber-700 py-1.5 px-2 rounded-xl border border-amber-100">
+                    سوابق: {historyItems.length}
+                  </div>
+                  <div className="bg-emerald-50 text-emerald-700 py-1.5 px-2 rounded-xl border border-emerald-100">
+                    مهارت‌ها: {studentSkills?.skillIds?.length || 0}
+                  </div>
+                </div>
+              </div>
+
+              <MobileHorizontalTabs
+                activeId={activeTab}
+                onChange={(id) => setActiveTab(id as typeof activeTab)}
+                tabs={[
+                  { id: 'active_research', label: 'پژوهش فعال', icon: <BookOpen size={14} />, tone: 'indigo' },
+                  { id: 'history', label: 'سوابق و آرشیو', icon: <History size={14} />, badge: historyItems.length || undefined, tone: 'amber' },
+                  { id: 'skills', label: 'مهارت‌ها', icon: <Award size={14} />, badge: studentSkills?.skillIds?.length || undefined, tone: 'emerald' },
+                  { id: 'received_articles', label: 'مقالات دریافتی', icon: <FileText size={14} />, badge: studentReceivedArticles.length || undefined, tone: 'slate' },
+                ]}
+              />
+            </div>
+          ) : (
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-13 h-13 rounded-2xl bg-indigo-100 overflow-hidden shrink-0 border-2 border-indigo-200 flex items-center justify-center font-black text-indigo-700 text-lg shadow-sm">
+                    {selStudentObj?.photoUrl ? (
+                      <img src={selStudentObj.photoUrl} alt={selStudentObj.name} className="w-full h-full object-cover" />
+                    ) : (
+                      selStudentObj?.name.charAt(0)
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">{selStudentObj?.name}</h3>
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500 font-medium">
+                      <span>پایه تحصیلی: <strong className="text-slate-800">{selStudentObj?.grade || 'نامشخص'}</strong></span>
+                      {selStudentObj?.nationalId && <span>کد ملی: <strong className="text-slate-800">{selStudentObj.nationalId}</strong></span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Pills & Return Button */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {!isStudentUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStudentId('');
+                        setResearch(null);
+                      }}
+                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 border border-slate-200"
+                    >
+                      <X size={15} />
+                      <span>بازگشت به لیست پایه‌ها</span>
+                    </button>
+                  )}
+
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-xl text-[10px] font-black border border-indigo-100 flex items-center gap-1">
+                    <BookOpen size={12} />
+                    <span>پژوهش فعال: {research?.topic ? 'دارد' : 'ثبت نشده'}</span>
+                  </span>
+                  <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-xl text-[10px] font-black border border-amber-100 flex items-center gap-1">
+                    <History size={12} />
+                    <span>سوابق: {historyItems.length} مورد</span>
+                  </span>
+                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black border border-emerald-100 flex items-center gap-1">
+                    <Award size={12} />
+                    <span>مهارت‌ها: {studentSkills?.skillIds?.length || 0} مورد</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* 4 Main Tabs Navigation */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={() => setActiveTab('active_research')}
+                  className={cn(
+                    "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                    activeTab === 'active_research'
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  <BookOpen size={16} />
+                  <span>پرونده پژوهشی فعال</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('history')}
+                  className={cn(
+                    "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                    activeTab === 'history'
+                      ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-100"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  <History size={16} />
+                  <span>سابقه پژوهش و آرشیو</span>
+                  {historyItems.length > 0 && (
+                    <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'history' ? "bg-amber-700 text-white" : "bg-amber-100 text-amber-800")}>
+                      {historyItems.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('skills')}
+                  className={cn(
+                    "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                    activeTab === 'skills'
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-100"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  <Award size={16} />
+                  <span>مهارت‌های پژوهشی</span>
+                  {(studentSkills?.skillIds?.length || 0) > 0 && (
+                    <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'skills' ? "bg-emerald-700 text-white" : "bg-emerald-100 text-emerald-800")}>
+                      {studentSkills?.skillIds?.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('received_articles')}
+                  className={cn(
+                    "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
+                    activeTab === 'received_articles'
+                      ? "bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-100"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  <FileText size={16} />
+                  <span>مقالات و کارهای پژوهشی</span>
+                  {studentReceivedArticles.length > 0 && (
+                    <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'received_articles' ? "bg-purple-700 text-white" : "bg-purple-100 text-purple-800")}>
+                      {studentReceivedArticles.length}
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
-
-            {/* 4 Main Tabs Navigation */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                onClick={() => setActiveTab('active_research')}
-                className={cn(
-                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
-                  activeTab === 'active_research'
-                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
-                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                )}
-              >
-                <BookOpen size={16} />
-                <span>پرونده پژوهشی فعال</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('history')}
-                className={cn(
-                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
-                  activeTab === 'history'
-                    ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-100"
-                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                )}
-              >
-                <History size={16} />
-                <span>سابقه پژوهش و آرشیو</span>
-                {historyItems.length > 0 && (
-                  <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'history' ? "bg-amber-700 text-white" : "bg-amber-100 text-amber-800")}>
-                    {historyItems.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('skills')}
-                className={cn(
-                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
-                  activeTab === 'skills'
-                    ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-100"
-                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                )}
-              >
-                <Award size={16} />
-                <span>مهارت‌های پژوهشی</span>
-                {(studentSkills?.skillIds?.length || 0) > 0 && (
-                  <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'skills' ? "bg-emerald-700 text-white" : "bg-emerald-100 text-emerald-800")}>
-                    {studentSkills?.skillIds?.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('received_articles')}
-                className={cn(
-                  "flex-1 min-w-[140px] py-3 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border",
-                  activeTab === 'received_articles'
-                    ? "bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-100"
-                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                )}
-              >
-                <FileText size={16} />
-                <span>مقالات و کارهای پژوهشی</span>
-                {studentReceivedArticles.length > 0 && (
-                  <span className={cn("px-2 py-0.5 rounded-full text-[10px]", activeTab === 'received_articles' ? "bg-purple-700 text-white" : "bg-purple-100 text-purple-800")}>
-                    {studentReceivedArticles.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* TAB 1: ACTIVE RESEARCH */}
           {activeTab === 'active_research' && (
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-8">
+            <div className={cn("bg-white rounded-2xl shadow-sm border border-slate-200", isStaffMobileView ? "p-3.5 space-y-5" : "p-6 space-y-8")}>
               {/* Archive Action Bar - Only for staff */}
               {!isStudentUser && (
                 <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1963,84 +2103,133 @@ export default function ResearchAndFeedback({ initialStudentId }: ResearchAndFee
         </div>
       ) : (
         /* MAIN GRADE VIEW (When no specific student is selected) */
-        <div className="space-y-6">
+        <div className={cn(isStaffMobileView ? "space-y-4" : "space-y-6")}>
           {/* Grade Navigation & Export Bar */}
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                  <Layers className="text-indigo-600" size={18} />
-                  نمایش اطلاعات پژوهش و مقالات بر اساس پایه تحصیلی
-                </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">جهت مشاهده مختصر پرونده پژوهشی طلاب، پایه مورد نظر را انتخاب نمایید.</p>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
+          {isStaffMobileView ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={handleExportGradePdf}
                   disabled={isExporting}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-colors border border-rose-100 shadow-sm"
+                  className="min-h-[42px] flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-black border border-rose-200 shadow-2xs"
                 >
                   <Printer size={14} />
                   <span>خروجی PDF لیست</span>
                 </button>
                 <button
                   onClick={handleExportGradeExcel}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-colors border border-emerald-100 shadow-sm"
+                  className="min-h-[42px] flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-black border border-emerald-200 shadow-2xs"
                 >
                   <FileSpreadsheet size={14} />
                   <span>خروجی اکسل</span>
                 </button>
               </div>
-            </div>
 
-            {/* Grade Filter Pills */}
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-              {[
-                { id: 'all', label: 'همه پایه‌ها' },
-                { id: 'پایه ۷', label: 'پایه ۷' },
-                { id: 'پایه ۸', label: 'پایه ۸' },
-                { id: 'پایه ۹', label: 'پایه ۹' },
-                { id: 'پایه ۱۰', label: 'پایه ۱۰' },
-                { id: 'سایر', label: 'سایر پایه‌ها' },
-              ].map(g => (
-                <button
-                  key={g.id}
-                  onClick={() => setSelectedGradeTab(g.id)}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-xs font-black transition-all border flex items-center gap-2",
-                    selectedGradeTab === g.id
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
-                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                  )}
-                >
-                  <span>{g.label}</span>
-                  <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px]",
-                    selectedGradeTab === g.id ? "bg-indigo-700 text-white" : "bg-slate-200 text-slate-700"
-                  )}>
-                    {students.filter(s => {
-                      if (g.id === 'all') return true;
-                      if (g.id === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
-                      return s.grade === g.id || (s.grade && s.grade.includes(g.id.replace('پایه ', '')));
-                    }).length}
-                  </span>
-                </button>
-              ))}
-            </div>
+              <MobileHorizontalTabs
+                activeId={selectedGradeTab}
+                onChange={(id) => setSelectedGradeTab(id)}
+                tabs={[
+                  { id: 'all', label: 'همه پایه‌ها' },
+                  { id: 'پایه ۷', label: 'پایه ۷' },
+                  { id: 'پایه ۸', label: 'پایه ۸' },
+                  { id: 'پایه ۹', label: 'پایه ۹' },
+                  { id: 'پایه ۱۰', label: 'پایه ۱۰' },
+                  { id: 'سایر', label: 'سایر پایه‌ها' },
+                ].map(g => ({
+                  id: g.id,
+                  label: g.label,
+                  badge: students.filter(s => {
+                    if (g.id === 'all') return true;
+                    if (g.id === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
+                    return s.grade === g.id || (s.grade && s.grade.includes(g.id.replace('پایه ', '')));
+                  }).length,
+                }))}
+              />
 
-            {/* Search Input */}
-            <div className="relative pt-2">
-              <Search className="absolute right-3.5 top-5 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="جستجوی نام طلبه یا موضوع پژوهش..."
-                className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+              <MobileSearchFilterBar
                 value={gradeSearchQuery}
-                onChange={(e) => setGradeSearchQuery(e.target.value)}
+                onChange={setGradeSearchQuery}
+                placeholder="جستجوی نام طلبه یا موضوع پژوهش..."
               />
             </div>
-          </div>
+          ) : (
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <Layers className="text-indigo-600" size={18} />
+                    نمایش اطلاعات پژوهش و مقالات بر اساس پایه تحصیلی
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">جهت مشاهده مختصر پرونده پژوهشی طلاب، پایه مورد نظر را انتخاب نمایید.</p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleExportGradePdf}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-colors border border-rose-100 shadow-sm"
+                  >
+                    <Printer size={14} />
+                    <span>خروجی PDF لیست</span>
+                  </button>
+                  <button
+                    onClick={handleExportGradeExcel}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-bold transition-colors border border-emerald-100 shadow-sm"
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>خروجی اکسل</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Grade Filter Pills */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                {[
+                  { id: 'all', label: 'همه پایه‌ها' },
+                  { id: 'پایه ۷', label: 'پایه ۷' },
+                  { id: 'پایه ۸', label: 'پایه ۸' },
+                  { id: 'پایه ۹', label: 'پایه ۹' },
+                  { id: 'پایه ۱۰', label: 'پایه ۱۰' },
+                  { id: 'سایر', label: 'سایر پایه‌ها' },
+                ].map(g => (
+                  <button
+                    key={g.id}
+                    onClick={() => setSelectedGradeTab(g.id)}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-black transition-all border flex items-center gap-2",
+                      selectedGradeTab === g.id
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                    )}
+                  >
+                    <span>{g.label}</span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px]",
+                      selectedGradeTab === g.id ? "bg-indigo-700 text-white" : "bg-slate-200 text-slate-700"
+                    )}>
+                      {students.filter(s => {
+                        if (g.id === 'all') return true;
+                        if (g.id === 'سایر') return !['پایه ۷', 'پایه ۸', 'پایه ۹', 'پایه ۱۰'].some(p => s.grade === p || s.grade?.includes(p.replace('پایه ', '')));
+                        return s.grade === g.id || (s.grade && s.grade.includes(g.id.replace('پایه ', '')));
+                      }).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Input */}
+              <div className="relative pt-2">
+                <Search className="absolute right-3.5 top-5 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="جستجوی نام طلبه یا موضوع پژوهش..."
+                  className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={gradeSearchQuery}
+                  onChange={(e) => setGradeSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Hidden Printable Container for Grade PDF */}
           <div className="hidden">

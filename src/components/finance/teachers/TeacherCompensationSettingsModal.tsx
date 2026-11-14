@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { TeacherCompensationSettings, TeacherDebtCategory } from '../../../types';
 import { cn } from '../../../lib/utils';
+import { useIsAdminMobile } from '../../admin/mobile/AdminMobileContext';
 
 interface TeacherCompensationSettingsModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export const TeacherCompensationSettingsModal: React.FC<TeacherCompensationSetti
   settings,
   onSave
 }) => {
+  const isAdminMobile = useIsAdminMobile();
   const [formData, setFormData] = useState<TeacherCompensationSettings>(settings);
 
   useEffect(() => {
@@ -78,8 +80,8 @@ export const TeacherCompensationSettingsModal: React.FC<TeacherCompensationSetti
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 space-y-6 my-8 font-vazir text-right" dir="rtl">
+    <div className={cn('fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center overflow-y-auto', isAdminMobile ? 'p-3' : 'p-4')}>
+      <div className={cn('bg-white max-w-2xl w-full shadow-2xl border border-slate-100 space-y-6 my-8 font-vazir text-right max-h-[90vh] overflow-y-auto', isAdminMobile ? 'rounded-2xl p-4' : 'rounded-3xl p-6')} dir="rtl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2.5">
@@ -452,17 +454,17 @@ export const TeacherCompensationSettingsModal: React.FC<TeacherCompensationSetti
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div className={cn('flex items-center gap-3 pt-3 border-t border-slate-100', isAdminMobile ? 'flex-col-reverse' : 'justify-end')}>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className={cn('px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer', isAdminMobile && 'w-full min-h-[42px] bg-slate-100')}
             >
               انصراف
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-black shadow-md shadow-teal-100 transition-all cursor-pointer flex items-center gap-1.5"
+              className={cn('px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-black shadow-md shadow-teal-100 transition-all cursor-pointer flex items-center justify-center gap-1.5', isAdminMobile && 'w-full min-h-[44px]')}
             >
               <Check size={16} />
               <span>ذخیره و اعمال تنظیمات</span>

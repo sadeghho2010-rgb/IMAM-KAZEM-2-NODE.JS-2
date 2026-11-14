@@ -64,6 +64,12 @@ import {
   StaffMember
 } from '../../types';
 import { AppUser } from '../../types/auth';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileSearchFilterBar
+} from '../admin/mobile/MobileModulePrimitives';
 
 interface LunchManagementProps {
   onNavigateTab?: (tab: string, params?: any) => void;
@@ -81,6 +87,8 @@ const DEFAULT_PERSON_CATEGORIES: MealPersonCategory[] = [
 
 export default function LunchManagement({ onNavigateTab }: LunchManagementProps) {
   const { currentUser, isReadOnly } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Two main primary tabs as requested:
   // 1. 'create_period' (ایجاد دوره رزرو نهار و شام)
@@ -1024,8 +1032,13 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
     );
   }
 
+  const activeLunchFiltersCount =
+    (selectedGradeFilter !== 'all' ? 1 : 0) +
+    (selectedCategoryFilter !== 'all' ? 1 : 0) +
+    (selectedDormFilter !== 'all' ? 1 : 0);
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16 font-vazir" dir="rtl">
+    <div className={cn(isAdminMobile ? "px-3 pt-2 pb-6 space-y-4 font-vazir" : "space-y-6 max-w-7xl mx-auto pb-16 font-vazir")} dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -1042,130 +1055,187 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       </AnimatePresence>
 
       {/* Primary Header & Actions */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md">
-            <UtensilsCrossed size={24} />
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileSectionHeader
+            variant="indigo"
+            title="مدیریت رزرو نهار و شام"
+            subtitle="دوره‌های رزرو، زمان‌بندی مهلت و آمار جامع نهار و شام"
+            icon={<UtensilsCrossed size={20} />}
+            primaryAction={{
+              id: 'new-period',
+              label: 'ایجاد دوره رزرو جدید',
+              icon: <Plus size={15} />,
+              onClick: () => handleOpenPeriodModal(),
+              tone: 'emerald'
+            }}
+            secondaryActions={[
+              {
+                id: 'person-categories',
+                label: `عناوین افراد (${personCategories.length})`,
+                icon: <Tag size={15} />,
+                onClick: () => setIsCategoryModalOpen(true),
+                tone: 'default'
+              },
+              {
+                id: 'kitchen-holidays',
+                label: `تعطیلات (${kitchenHolidays.length})`,
+                icon: <CalendarOff size={15} />,
+                onClick: () => setIsHolidayModalOpen(true),
+                tone: 'rose'
+              }
+            ]}
+          />
+
+          <MobileHorizontalTabs
+            activeId={mainTab}
+            onChange={(id) => setMainTab(id as 'create_period' | 'stats')}
+            tabs={[
+              {
+                id: 'create_period',
+                label: 'دوره‌های رزرو',
+                icon: <Calendar size={14} />,
+                badge: periods.length,
+                tone: 'indigo'
+              },
+              {
+                id: 'stats',
+                label: 'آمار و گزارشات',
+                icon: <BarChart3 size={14} />,
+                tone: 'emerald'
+              }
+            ]}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md">
+                <UtensilsCrossed size={24} />
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>مدیریت رزرو نهار و شام</span>
+                  <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-full">
+                    امور مالی و تغذیه
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  ایجاد دوره‌های رزرو، زمان‌بندی مهلت ثبت‌نام طلاب، و آمار تفصیلی و اجمالی نهار و شام
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Categories Button */}
+              <button
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer"
+                title="تعریف و تنظیم عناوین پرسنلی (طلبه، استاد، کارمند، مهمان...)"
+              >
+                <Tag size={15} className="text-indigo-600" />
+                <span>تنظیم عناوین افراد ({personCategories.length})</span>
+              </button>
+
+              {/* Kitchen Holidays Button */}
+              <button
+                onClick={() => setIsHolidayModalOpen(true)}
+                className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer"
+                title="ثبت تعطیلی آشپزخانه یا لغو پخت غذا"
+              >
+                <CalendarOff size={15} className="text-rose-600" />
+                <span>تعطیلات آشپزخانه ({kitchenHolidays.length})</span>
+              </button>
+
+              {/* New Period Button */}
+              <button
+                onClick={() => handleOpenPeriodModal()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>ایجاد دوره رزرو جدید</span>
+              </button>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <span>مدیریت رزرو نهار و شام</span>
-              <span className="text-xs font-bold px-2.5 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-full">
-                امور مالی و تغذیه
+
+          {/* 2 Main Primary Navigation Tabs (کلاً دو گزینه طبق دستور کاربر) */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <button
+              onClick={() => setMainTab('create_period')}
+              className={cn(
+                "px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+                mainTab === 'create_period'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
+                  : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+              )}
+            >
+              <Calendar size={16} />
+              <span>۱. ایجاد دوره رزرو نهار و شام و مدیریت دوره‌ها</span>
+              <span className="px-2 py-0.2 rounded-full text-[10px] bg-white/20">
+                {periods.length}
               </span>
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              ایجاد دوره‌های رزرو، زمان‌بندی مهلت ثبت‌نام طلاب، و آمار تفصیلی و اجمالی نهار و شام
-            </p>
+            </button>
+
+            <button
+              onClick={() => setMainTab('stats')}
+              className={cn(
+                "px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+                mainTab === 'stats'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
+                  : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+              )}
+            >
+              <BarChart3 size={16} />
+              <span>۲. بخش آمار و گزارشات جامع نهار و شام</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Categories Button */}
-          <button
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer"
-            title="تعریف و تنظیم عناوین پرسنلی (طلبه، استاد، کارمند، مهمان...)"
-          >
-            <Tag size={15} className="text-indigo-600" />
-            <span>تنظیم عناوین افراد ({personCategories.length})</span>
-          </button>
-
-          {/* Kitchen Holidays Button */}
-          <button
-            onClick={() => setIsHolidayModalOpen(true)}
-            className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1.5 cursor-pointer"
-            title="ثبت تعطیلی آشپزخانه یا لغو پخت غذا"
-          >
-            <CalendarOff size={15} className="text-rose-600" />
-            <span>تعطیلات آشپزخانه ({kitchenHolidays.length})</span>
-          </button>
-
-          {/* New Period Button */}
-          <button
-            onClick={() => handleOpenPeriodModal()}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>ایجاد دوره رزرو جدید</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2 Main Primary Navigation Tabs (کلاً دو گزینه طبق دستور کاربر) */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setMainTab('create_period')}
-          className={cn(
-            "px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            mainTab === 'create_period'
-              ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
-              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
-          )}
-        >
-          <Calendar size={16} />
-          <span>۱. ایجاد دوره رزرو نهار و شام و مدیریت دوره‌ها</span>
-          <span className="px-2 py-0.2 rounded-full text-[10px] bg-white/20">
-            {periods.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setMainTab('stats')}
-          className={cn(
-            "px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            mainTab === 'stats'
-              ? "bg-indigo-600 text-white shadow-md shadow-indigo-100"
-              : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
-          )}
-        >
-          <BarChart3 size={16} />
-          <span>۲. بخش آمار و گزارشات جامع نهار و شام</span>
-        </button>
-      </div>
+        </>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: ایجاد دوره رزرو نهار و شام و مدیریت دوره‌ها */}
       {/* ========================================================================= */}
       {mainTab === 'create_period' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Active Period Quick Status & Toggle */}
           {currentPeriod && (
-            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-6 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className={cn("bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3.5", isAdminMobile ? "rounded-2xl p-4" : "rounded-3xl p-6 gap-4")}>
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-indigo-300 font-bold">دوره فعال انتخابی:</span>
-                  <h2 className="text-base font-black text-white">{currentPeriod.title}</h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] text-indigo-300 font-bold">دوره فعال:</span>
+                  <h2 className="text-sm font-black text-white">{currentPeriod.title}</h2>
                   <span className={cn(
-                    "text-[10px] font-bold px-2.5 py-0.5 rounded-full border",
+                    "text-[10px] font-bold px-2 py-0.5 rounded-full border",
                     getPeriodStatusInfo(currentPeriod).color
                   )}>
                     {getPeriodStatusInfo(currentPeriod).label}
                   </span>
                 </div>
-                <p className="text-xs text-slate-300">
-                  بازه زمانی: <strong className="text-white">{currentPeriod.startDate}</strong> الی <strong className="text-white">{currentPeriod.endDate}</strong>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  بازه: <strong className="text-white font-mono">{currentPeriod.startDate}</strong> الی <strong className="text-white font-mono">{currentPeriod.endDate}</strong>
                   {currentPeriod.deadlineDate && (
-                    <span className="mr-3 text-amber-300">
-                      • مهلت ثبت‌نام طلاب: تا {currentPeriod.deadlineDate}
+                    <span className="mr-2 text-amber-300 font-mono">
+                      · مهلت: {currentPeriod.deadlineDate}
                     </span>
                   )}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className={cn("flex items-center gap-2", isAdminMobile ? "flex-col w-full" : "")}>
                 {/* Manual Toggle Close / Open */}
                 <button
                   onClick={() => handleTogglePeriodManualClose(currentPeriod)}
                   className={cn(
-                    "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm cursor-pointer",
+                    "rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer",
+                    isAdminMobile ? "w-full min-h-[42px] px-3" : "px-4 py-2",
                     currentPeriod.isManuallyClosed
                       ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                       : "bg-rose-600 hover:bg-rose-700 text-white"
                   )}
                 >
                   {currentPeriod.isManuallyClosed ? <Unlock size={14} /> : <Lock size={14} />}
-                  <span>{currentPeriod.isManuallyClosed ? 'باز کردن مجدد امکان ثبت‌نام' : 'بستن دستی امکان ثبت‌نام طلاب'}</span>
+                  <span>{currentPeriod.isManuallyClosed ? 'باز کردن امکان ثبت‌نام' : 'بستن دستی ثبت‌نام طلاب'}</span>
                 </button>
 
                 {/* Switch directly to stats */}
@@ -1174,7 +1244,10 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                     setActivePeriodId(currentPeriod.id);
                     setMainTab('stats');
                   }}
-                  className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 flex items-center gap-1.5 cursor-pointer"
+                  className={cn(
+                    "bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 flex items-center justify-center gap-1.5 cursor-pointer",
+                    isAdminMobile ? "w-full min-h-[42px] px-3" : "px-4 py-2"
+                  )}
                 >
                   <BarChart3 size={14} />
                   <span>مشاهده آمار کامل این دوره</span>
@@ -1184,8 +1257,8 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
           )}
 
           {/* List of All Periods with Direct Stats Click (دوره‌های قبلی و جاری) */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className={cn("bg-white border border-slate-200/90 shadow-xs space-y-4", isAdminMobile ? "rounded-2xl p-4" : "rounded-3xl p-6")}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 gap-2">
               <div>
                 <h3 className="text-sm font-black text-slate-900">لیست دوره‌های رزرو نهار و شام (قبلی و جاری)</h3>
                 <p className="text-[11px] text-slate-500">
@@ -1301,27 +1374,27 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
       {mainTab === 'stats' && (
         <div className="space-y-6">
           {/* Enhanced Date Range & Filtering Control Bar */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-xs space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className={cn("bg-white border border-slate-200/90 shadow-xs space-y-3.5", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5 space-y-4")}>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
               {/* Report Mode & Range Selection */}
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 ml-1">
                   <Filter size={15} className="text-indigo-600" />
-                  <span>فیلتر زمان گزارش:</span>
+                  <span>بازه گزارش:</span>
                 </span>
 
-                <div className="flex items-center bg-slate-100 p-1 rounded-2xl">
+                <div className="flex items-center bg-slate-100 p-1 rounded-2xl w-full sm:w-auto">
                   <button
                     onClick={() => setDateFilterMode('period')}
                     className={cn(
-                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      "flex-1 sm:flex-initial px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                       dateFilterMode === 'period'
                         ? "bg-white text-indigo-700 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     )}
                   >
                     <Layers size={14} />
-                    <span>بر اساس دوره فعال</span>
+                    <span>دوره فعال</span>
                   </button>
 
                   <button
@@ -1331,23 +1404,23 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                       if (!customEndDate && currentPeriod) setCustomEndDate(currentPeriod.endDate);
                     }}
                     className={cn(
-                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      "flex-1 sm:flex-initial px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                       dateFilterMode === 'custom'
                         ? "bg-indigo-600 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     )}
                   >
                     <Calendar size={14} />
-                    <span>بازه زمانی دلخواه</span>
+                    <span>بازه دلخواه</span>
                   </button>
                 </div>
 
                 {dateFilterMode === 'period' ? (
-                  <div className="flex items-center gap-2 mr-2">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <select
                       value={activePeriodId}
                       onChange={(e) => setActivePeriodId(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                      className="w-full sm:w-auto min-h-[40px] bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer"
                     >
                       {periods.map(p => (
                         <option key={p.id} value={p.id}>
@@ -1366,7 +1439,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                     )}
                   </div>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-2 bg-indigo-50/60 border border-indigo-100 p-2 rounded-2xl mr-1">
+                  <div className="flex flex-wrap items-center gap-2 bg-indigo-50/60 border border-indigo-100 p-2 rounded-2xl w-full sm:w-auto">
                     <div className="flex items-center gap-1 text-xs">
                       <span className="text-indigo-900 font-bold text-[11px]">از:</span>
                       <input
@@ -1374,7 +1447,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                         value={customStartDate}
                         onChange={(e) => setCustomStartDate(e.target.value)}
                         placeholder="1403/07/01"
-                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1 text-center outline-none focus:border-indigo-500"
+                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1.5 text-center outline-none focus:border-indigo-500"
                       />
                     </div>
 
@@ -1385,12 +1458,12 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                         value={customEndDate}
                         onChange={(e) => setCustomEndDate(e.target.value)}
                         placeholder="1403/07/30"
-                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1 text-center outline-none focus:border-indigo-500"
+                        className="w-24 bg-white border border-indigo-200 text-slate-900 text-xs font-mono font-bold rounded-lg px-2 py-1.5 text-center outline-none focus:border-indigo-500"
                       />
                     </div>
 
                     {/* Presets */}
-                    <div className="flex items-center gap-1 mr-2 border-r border-indigo-200 pr-2">
+                    <div className="flex items-center flex-wrap gap-1">
                       <button
                         onClick={() => {
                           setCustomStartDate(getTodayShamsi());
@@ -1435,11 +1508,11 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
               </div>
 
               {/* View Method Switcher */}
-              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl self-start lg:self-auto">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl w-full lg:w-auto">
                 <button
                   onClick={() => setStatsViewMode('student_breakdown')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                    "flex-1 lg:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                     statsViewMode === 'student_breakdown'
                       ? "bg-white text-indigo-700 shadow-xs"
                       : "text-slate-600 hover:text-slate-900"
@@ -1452,7 +1525,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                 <button
                   onClick={() => setStatsViewMode('daily_summary')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                    "flex-1 lg:flex-initial px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                     statsViewMode === 'daily_summary'
                       ? "bg-white text-indigo-700 shadow-xs"
                       : "text-slate-600 hover:text-slate-900"
@@ -1465,119 +1538,116 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
             </div>
 
             {/* Filter Bar Row 2: Meal Type Selector & Active Info Banner */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
               {/* Meal Type Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-600">انتخاب وعده:</span>
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-slate-600">وعده:</span>
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl flex-1 sm:flex-initial">
                   <button
                     onClick={() => setSelectedMealTypeFilter('all')}
                     className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      "flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer",
                       selectedMealTypeFilter === 'all'
                         ? "bg-white text-slate-900 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     )}
                   >
-                    <UtensilsCrossed size={13} />
-                    <span>همه (نهار و شام)</span>
+                    <UtensilsCrossed size={12} />
+                    <span>همه</span>
                   </button>
 
                   <button
                     onClick={() => setSelectedMealTypeFilter('lunch')}
                     className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      "flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer",
                       selectedMealTypeFilter === 'lunch'
                         ? "bg-amber-500 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     )}
                   >
-                    <Sun size={13} />
-                    <span>فقط نهار</span>
+                    <Sun size={12} />
+                    <span>نهار</span>
                   </button>
 
                   <button
                     onClick={() => setSelectedMealTypeFilter('dinner')}
                     className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      "flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer",
                       selectedMealTypeFilter === 'dinner'
                         ? "bg-indigo-600 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     )}
                   >
-                    <Moon size={13} />
-                    <span>فقط شام</span>
+                    <Moon size={12} />
+                    <span>شام</span>
                   </button>
                 </div>
               </div>
 
               {/* Active Date Range Info Tag */}
-              <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
-                <Clock size={14} className="text-indigo-600" />
-                <span>
-                  بازه فعال گزارش: <strong className="text-slate-900 font-mono">{effectiveStartDate}</strong> الی <strong className="text-slate-900 font-mono">{effectiveEndDate}</strong>
-                </span>
-                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full text-[10px] font-bold font-mono">
+              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
+                <div className="flex items-center gap-1.5">
+                  <Clock size={13} className="text-indigo-600 shrink-0" />
+                  <span>
+                    <strong className="text-slate-900 font-mono tabular-nums">{effectiveStartDate}</strong> الی <strong className="text-slate-900 font-mono tabular-nums">{effectiveEndDate}</strong>
+                  </span>
+                </div>
+                <span className="font-bold font-mono text-indigo-700 tabular-nums shrink-0">
                   {generateShamsiDateRange(effectiveStartDate, effectiveEndDate).length} روز
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Separated KPI Summary Cards (کلاً آمار نهار و شام جدا) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {/* 1. Lunch */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+          {/* Separated KPI Summary Cards */}
+          <div className={cn("grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5", isAdminMobile ? "gap-2.5" : "gap-3")}>
+            <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold">کل وعده نهار</span>
-                <Sun size={18} className="text-amber-500" />
+                <span className="text-[11px] font-bold">کل وعده نهار</span>
+                <Sun size={16} className="text-amber-500" />
               </div>
-              <div className="text-2xl font-black font-mono text-slate-900">
-                {periodKPIs.totalLunches.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">وعده</span>
+              <div className={cn("font-black font-mono text-slate-900 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
+                {periodKPIs.totalLunches.toLocaleString('fa-IR')} <span className="text-[11px] font-vazir text-slate-500 font-normal">وعده</span>
               </div>
             </div>
 
-            {/* 2. Dinner Institute */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold">شام در موسسه</span>
-                <Building2 size={18} className="text-indigo-600" />
+                <span className="text-[11px] font-bold">شام در موسسه</span>
+                <Building2 size={16} className="text-indigo-600" />
               </div>
-              <div className="text-2xl font-black font-mono text-indigo-700">
-                {periodKPIs.totalDinnersInstitute.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">وعده</span>
+              <div className={cn("font-black font-mono text-indigo-700 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
+                {periodKPIs.totalDinnersInstitute.toLocaleString('fa-IR')} <span className="text-[11px] font-vazir text-slate-500 font-normal">وعده</span>
               </div>
             </div>
 
-            {/* 3. Dinner Dormitory */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold">شام در خوابگاه</span>
-                <Bed size={18} className="text-purple-600" />
+                <span className="text-[11px] font-bold">شام در خوابگاه</span>
+                <Bed size={16} className="text-purple-600" />
               </div>
-              <div className="text-2xl font-black font-mono text-purple-700">
-                {periodKPIs.totalDinnersDormitory.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">وعده</span>
+              <div className={cn("font-black font-mono text-purple-700 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
+                {periodKPIs.totalDinnersDormitory.toLocaleString('fa-IR')} <span className="text-[11px] font-vazir text-slate-500 font-normal">وعده</span>
               </div>
             </div>
 
-            {/* 4. Total Dinner */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold">مجموع کل شام</span>
-                <Moon size={18} className="text-indigo-900" />
+                <span className="text-[11px] font-bold">مجموع کل شام</span>
+                <Moon size={16} className="text-indigo-900" />
               </div>
-              <div className="text-2xl font-black font-mono text-indigo-900">
-                {periodKPIs.totalDinners.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">وعده</span>
+              <div className={cn("font-black font-mono text-indigo-900 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
+                {periodKPIs.totalDinners.toLocaleString('fa-IR')} <span className="text-[11px] font-vazir text-slate-500 font-normal">وعده</span>
               </div>
             </div>
 
-            {/* 5. Total All Meals */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-md space-y-1 col-span-2 sm:col-span-1">
+            <div className={cn("bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-md space-y-1 col-span-2 sm:col-span-1", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center justify-between text-slate-300">
-                <span className="text-xs font-bold">جمع کل نهار و شام</span>
-                <UtensilsCrossed size={18} className="text-amber-400" />
+                <span className="text-[11px] font-bold">جمع کل نهار و شام</span>
+                <UtensilsCrossed size={16} className="text-amber-400" />
               </div>
-              <div className="text-2xl font-black font-mono text-amber-400">
-                {periodKPIs.totalAllMeals.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-300 font-normal">وعده</span>
+              <div className={cn("font-black font-mono text-amber-400 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
+                {periodKPIs.totalAllMeals.toLocaleString('fa-IR')} <span className="text-[11px] font-vazir text-slate-300 font-normal">وعده</span>
               </div>
             </div>
           </div>
@@ -1586,14 +1656,14 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
           {/* METHOD 1: نمایش به صورت آمار یک طلبه (تفصیلی) */}
           {/* ========================================================================= */}
           {statsViewMode === 'student_breakdown' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div className={cn("bg-white border border-slate-200/90 shadow-xs space-y-4", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-6")}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
                 <div>
                   <h3 className="text-sm font-black text-slate-900">
-                    روش اول: آمار تفصیلی به ازای هر طلبه (تعداد روزهای رزرو شده و مجموع دوره)
+                    آمار تفصیلی به ازای هر فرد
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    نمایش عناوین افراد، روزهای انتخابی، محل دریافت شام و مجموع کل وعده‌ها با قابلیت خروجی اکسل
+                    روزهای انتخابی، محل دریافت شام و مجموع کل وعده‌ها
                   </p>
                 </div>
 
@@ -1611,304 +1681,445 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                       setManualNotes('');
                       setIsManualReservationModalOpen(true);
                     }}
-                    className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1 cursor-pointer"
+                    className={cn(
+                      "bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-1 cursor-pointer",
+                      isAdminMobile ? "flex-1 min-h-[40px] justify-center px-3" : "px-3 py-1.5"
+                    )}
                   >
                     <Plus size={14} />
-                    <span>ثبت دستی رزرو برای فرد</span>
+                    <span>ثبت دستی رزرو</span>
                   </button>
 
                   <button
                     onClick={exportStudentBreakdownToExcel}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    className={cn(
+                      "bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer",
+                      isAdminMobile ? "flex-1 min-h-[40px] justify-center px-3" : "px-3.5 py-1.5"
+                    )}
                   >
                     <FileSpreadsheet size={14} />
-                    <span>خروجی اکسل آمار تفصیلی</span>
+                    <span>خروجی اکسل</span>
                   </button>
                 </div>
               </div>
 
               {/* Filters Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
-                <div className="relative">
-                  <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="جستجوی نام یا کدملی..."
+              {isAdminMobile ? (
+                <div className="space-y-2.5">
+                  <MobileSearchFilterBar
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pr-9 pl-3 py-2 outline-none focus:border-indigo-500"
+                    onChange={setSearchQuery}
+                    placeholder="جستجوی نام یا کدملی..."
+                    onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                    filtersOpen={mobileFiltersOpen}
+                    activeFilterCount={activeLunchFiltersCount}
                   />
-                </div>
-
-                <select
-                  value={selectedGradeFilter}
-                  onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
-                >
-                  <option value="all">همه پایه‌های تحصیلی</option>
-                  <option value="پایه ۷">پایه ۷</option>
-                  <option value="پایه ۸">پایه ۸</option>
-                  <option value="پایه ۹">پایه ۹</option>
-                  <option value="پایه ۱۰">پایه ۱۰</option>
-                </select>
-
-                <select
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
-                >
-                  <option value="all">همه عناوین (طلبه، استاد، کارمند...)</option>
-                  {personCategories.map(cat => (
-                    <option key={cat.id} value={cat.title}>{cat.title}</option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedDormFilter}
-                  onChange={(e) => setSelectedDormFilter(e.target.value as any)}
-                  className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
-                >
-                  <option value="all">همه وضعیت‌های سکونت</option>
-                  <option value="dorm">فقط ساکنین خوابگاه</option>
-                  <option value="non_dorm">غیر خوابگاهی (منزل)</option>
-                </select>
-              </div>
-
-              {/* Two Separate Tables: Table 1 for Lunch, Table 2 for Dinner */}
-              <div className="space-y-6 pt-2">
-                {/* TABLE 1: LUNCH STATISTICS */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between bg-amber-50/80 px-4 py-2.5 rounded-2xl border border-amber-200">
-                    <div className="flex items-center gap-2">
-                      <Sun size={18} className="text-amber-600" />
-                      <h4 className="text-xs font-black text-amber-950">جدول شماره ۱: آمار و اطلاعات تفصیلی نهار</h4>
+                  {mobileFiltersOpen && (
+                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                      <select
+                        value={selectedGradeFilter}
+                        onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                        className="w-full min-h-[40px] bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 outline-none"
+                      >
+                        <option value="all">همه پایه‌های تحصیلی</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                      </select>
+                      <select
+                        value={selectedCategoryFilter}
+                        onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                        className="w-full min-h-[40px] bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 outline-none"
+                      >
+                        <option value="all">همه عناوین</option>
+                        {personCategories.map(cat => (
+                          <option key={cat.id} value={cat.title}>{cat.title}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={selectedDormFilter}
+                        onChange={(e) => setSelectedDormFilter(e.target.value as any)}
+                        className="w-full min-h-[40px] bg-white border border-slate-200 text-xs font-bold rounded-xl px-3 outline-none"
+                      >
+                        <option value="all">همه وضعیت‌های سکونت</option>
+                        <option value="dorm">فقط ساکنین خوابگاه</option>
+                        <option value="non_dorm">غیر خوابگاهی (منزل)</option>
+                      </select>
                     </div>
-                    <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-lg border border-amber-300">
-                      مجموع نهار دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')} وعده
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto border border-amber-200/80 rounded-2xl bg-white shadow-xs">
-                    <table className="w-full text-right border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-amber-100/50 text-amber-950 border-b border-amber-200 font-black">
-                          <th className="py-3 px-3">ردیف</th>
-                          <th className="py-3 px-3">نام و نام خانوادگی</th>
-                          <th className="py-3 px-3">عنوان / سمت</th>
-                          <th className="py-3 px-3">پایه تحصیلی</th>
-                          <th className="py-3 px-3">روزهای رزرو نهار</th>
-                          <th className="py-3 px-3 text-center">تعداد نهار در بازه</th>
-                          <th className="py-3 px-3 text-center">مبلغ کسر نهار (تومان)</th>
-                          <th className="py-3 px-3 text-center">عملیات</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredReservations.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="py-6 text-center text-slate-400 font-bold">
-                              هیچ داده‌ای برای نمایش اطلاعات نهار وجود ندارد.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredReservations.map((r, idx) => {
-                            const rangeLunches = r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0);
-                            const lunchCost = rangeLunches * (currentPeriod?.lunchPrice || 45000);
-
-                            return (
-                              <tr key={`lunch_${r.id}`} className="hover:bg-amber-50/30 transition-colors">
-                                <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
-                                <td className="py-2.5 px-3">
-                                  <span className="font-black text-slate-900 block">{r.studentName}</span>
-                                  {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded-md text-[10px] font-bold border",
-                                    r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
-                                    r.personRoleTitle === 'کارمند / کادر' ? "bg-blue-50 text-blue-800 border-blue-200" :
-                                    "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                  )}>
-                                    {r.personRoleTitle || 'طلبه'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-slate-600 font-bold">{r.grade || '-'}</td>
-                                <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedLunchDays?.join('، ')}>
-                                  {r.selectedLunchDays?.length ? r.selectedLunchDays.join('، ') : <span className="text-slate-300">بدون نهار</span>}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-black text-amber-700 bg-amber-50/40">
-                                  {rangeLunches}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
-                                  {lunchCost.toLocaleString('fa-IR')}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={() => setSelectedStudentForCalendar(r)}
-                                      className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg"
-                                      title="مشاهده تقویم نهار"
-                                    >
-                                      <Calendar size={13} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleEditReservation(r)}
-                                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
-                                      title="ویرایش رزرو"
-                                    >
-                                      <Edit3 size={13} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-amber-900 text-white font-black text-xs">
-                          <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل نهار دوره:</td>
-                          <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
-                            {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-amber-200">
-                            {(filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0) * (currentPeriod?.lunchPrice || 45000)).toLocaleString('fa-IR')} تومان
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+                  )}
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
+                  <div className="relative">
+                    <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="جستجوی نام یا کدملی..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pr-9 pl-3 py-2 outline-none focus:border-indigo-500"
+                    />
+                  </div>
 
-                {/* TABLE 2: DINNER STATISTICS */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between bg-indigo-50/80 px-4 py-2.5 rounded-2xl border border-indigo-200">
-                    <div className="flex items-center gap-2">
-                      <Moon size={18} className="text-indigo-600" />
-                      <h4 className="text-xs font-black text-indigo-950">جدول شماره ۲: آمار و اطلاعات تفصیلی شام</h4>
+                  <select
+                    value={selectedGradeFilter}
+                    onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
+                  >
+                    <option value="all">همه پایه‌های تحصیلی</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
+                  >
+                    <option value="all">همه عناوین (طلبه، استاد، کارمند...)</option>
+                    {personCategories.map(cat => (
+                      <option key={cat.id} value={cat.title}>{cat.title}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedDormFilter}
+                    onChange={(e) => setSelectedDormFilter(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 text-xs rounded-xl px-3 py-2 outline-none"
+                  >
+                    <option value="all">همه وضعیت‌های سکونت</option>
+                    <option value="dorm">فقط ساکنین خوابگاه</option>
+                    <option value="non_dorm">غیر خوابگاهی (منزل)</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Mobile Stacked Breakdown Cards vs Desktop Two Separate Tables */}
+              {isAdminMobile ? (
+                <div className="space-y-2.5 pt-1">
+                  {filteredReservations.length === 0 ? (
+                    <div className="py-10 text-center text-xs font-bold text-slate-400">
+                      هیچ رزروی مطابق فیلتر یافت نشد.
                     </div>
-                    <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100/80 px-2.5 py-0.5 rounded-lg border border-indigo-300">
-                      مجموع شام دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')} وعده
-                    </span>
+                  ) : (
+                    filteredReservations.map((r) => {
+                      const rangeLunches = r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0);
+                      const lunchCost = rangeLunches * (currentPeriod?.lunchPrice || 45000);
+                      const rangeDinners = r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0);
+                      const dinnerCost = rangeDinners * (currentPeriod?.dinnerPrice || 35000);
+                      return (
+                        <div key={r.id} className="rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 bg-slate-50/40">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-black text-slate-900 truncate">{r.studentName}</h4>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                                <span>{r.personRoleTitle || 'طلبه'}</span>
+                                {r.grade && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>{r.grade}</span>
+                                  </>
+                                )}
+                                {r.nationalId && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="font-mono tabular-nums">{r.nationalId}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-bold text-indigo-700 shrink-0">
+                              {r.dinnerLocation === 'dormitory' ? 'شام خوابگاه' : 'شام موسسه'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/70 text-[11px]">
+                            <div className="space-y-0.5">
+                              <div className="text-amber-800 font-bold">
+                                نهار: <span className="font-mono font-black tabular-nums">{rangeLunches.toLocaleString('fa-IR')}</span> وعده
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate">
+                                {r.selectedLunchDays?.length ? r.selectedLunchDays.join('، ') : 'بدون نهار'}
+                              </div>
+                              <div className="font-mono font-bold text-slate-700 tabular-nums">
+                                {lunchCost.toLocaleString('fa-IR')} ت
+                              </div>
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="text-indigo-800 font-bold">
+                                شام: <span className="font-mono font-black tabular-nums">{rangeDinners.toLocaleString('fa-IR')}</span> وعده
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate">
+                                {r.selectedDinnerDays?.length ? r.selectedDinnerDays.join('، ') : 'بدون شام'}
+                              </div>
+                              <div className="font-mono font-bold text-slate-700 tabular-nums">
+                                {dinnerCost.toLocaleString('fa-IR')} ت
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-200/70">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStudentForCalendar(r)}
+                              className="flex-1 min-h-[38px] bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <Calendar size={13} />
+                              <span>تقویم</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleEditReservation(r)}
+                              className="flex-1 min-h-[38px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 size={13} />
+                              <span>ویرایش</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6 pt-2">
+                  {/* TABLE 1: LUNCH STATISTICS */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between bg-amber-50/80 px-4 py-2.5 rounded-2xl border border-amber-200">
+                      <div className="flex items-center gap-2">
+                        <Sun size={18} className="text-amber-600" />
+                        <h4 className="text-xs font-black text-amber-950">جدول شماره ۱: آمار و اطلاعات تفصیلی نهار</h4>
+                      </div>
+                      <span className="text-[11px] font-bold text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-lg border border-amber-300">
+                        مجموع نهار دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')} وعده
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto border border-amber-200/80 rounded-2xl bg-white shadow-xs">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-amber-100/50 text-amber-950 border-b border-amber-200 font-black">
+                            <th className="py-3 px-3">ردیف</th>
+                            <th className="py-3 px-3">نام و نام خانوادگی</th>
+                            <th className="py-3 px-3">عنوان / سمت</th>
+                            <th className="py-3 px-3">پایه تحصیلی</th>
+                            <th className="py-3 px-3">روزهای رزرو نهار</th>
+                            <th className="py-3 px-3 text-center">تعداد نهار در بازه</th>
+                            <th className="py-3 px-3 text-center">مبلغ کسر نهار (تومان)</th>
+                            <th className="py-3 px-3 text-center">عملیات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredReservations.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="py-6 text-center text-slate-400 font-bold">
+                                هیچ داده‌ای برای نمایش اطلاعات نهار وجود ندارد.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredReservations.map((r, idx) => {
+                              const rangeLunches = r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0);
+                              const lunchCost = rangeLunches * (currentPeriod?.lunchPrice || 45000);
+
+                              return (
+                                <tr key={`lunch_${r.id}`} className="hover:bg-amber-50/30 transition-colors">
+                                  <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
+                                  <td className="py-2.5 px-3">
+                                    <span className="font-black text-slate-900 block">{r.studentName}</span>
+                                    {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded-md text-[10px] font-bold border",
+                                      r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                                      r.personRoleTitle === 'کارمند / کادر' ? "bg-blue-50 text-blue-800 border-blue-200" :
+                                      "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    )}>
+                                      {r.personRoleTitle || 'طلبه'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-slate-600 font-bold">{r.grade || '-'}</td>
+                                  <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedLunchDays?.join('، ')}>
+                                    {r.selectedLunchDays?.length ? r.selectedLunchDays.join('، ') : <span className="text-slate-300">بدون نهار</span>}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-black text-amber-700 bg-amber-50/40">
+                                    {rangeLunches}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                                    {lunchCost.toLocaleString('fa-IR')}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        onClick={() => setSelectedStudentForCalendar(r)}
+                                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg"
+                                        title="مشاهده تقویم نهار"
+                                      >
+                                        <Calendar size={13} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleEditReservation(r)}
+                                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
+                                        title="ویرایش رزرو"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-amber-900 text-white font-black text-xs">
+                            <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل نهار دوره:</td>
+                            <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
+                              {filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0).toLocaleString('fa-IR')}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-amber-200">
+                              {(filteredReservations.reduce((acc, r) => acc + (r.calculatedLunchesForRange ?? (r.totalCalculatedLunches || 0)), 0) * (currentPeriod?.lunchPrice || 45000)).toLocaleString('fa-IR')} تومان
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
 
-                  <div className="overflow-x-auto border border-indigo-200/80 rounded-2xl bg-white shadow-xs">
-                    <table className="w-full text-right border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-indigo-100/50 text-indigo-950 border-b border-indigo-200 font-black">
-                          <th className="py-3 px-3">ردیف</th>
-                          <th className="py-3 px-3">نام و نام خانوادگی</th>
-                          <th className="py-3 px-3">عنوان / سمت</th>
-                          <th className="py-3 px-3">محل دریافت شام</th>
-                          <th className="py-3 px-3">روزهای رزرو شام</th>
-                          <th className="py-3 px-3 text-center">شام موسسه</th>
-                          <th className="py-3 px-3 text-center">شام خوابگاه</th>
-                          <th className="py-3 px-3 text-center">مجموع شام</th>
-                          <th className="py-3 px-3 text-center">مبلغ کسر شام (تومان)</th>
-                          <th className="py-3 px-3 text-center">عملیات</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredReservations.length === 0 ? (
-                          <tr>
-                            <td colSpan={10} className="py-6 text-center text-slate-400 font-bold">
-                              هیچ داده‌ای برای نمایش اطلاعات شام وجود ندارد.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredReservations.map((r, idx) => {
-                            const rangeDinners = r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0);
-                            const instDinners = r.dinnerLocation === 'institute' ? rangeDinners : 0;
-                            const dormDinners = r.dinnerLocation === 'dormitory' ? rangeDinners : 0;
-                            const dinnerCost = rangeDinners * (currentPeriod?.dinnerPrice || 35000);
+                  {/* TABLE 2: DINNER STATISTICS */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between bg-indigo-50/80 px-4 py-2.5 rounded-2xl border border-indigo-200">
+                      <div className="flex items-center gap-2">
+                        <Moon size={18} className="text-indigo-600" />
+                        <h4 className="text-xs font-black text-indigo-950">جدول شماره ۲: آمار و اطلاعات تفصیلی شام</h4>
+                      </div>
+                      <span className="text-[11px] font-bold text-indigo-800 bg-indigo-100/80 px-2.5 py-0.5 rounded-lg border border-indigo-300">
+                        مجموع شام دوره: {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')} وعده
+                      </span>
+                    </div>
 
-                            return (
-                              <tr key={`dinner_${r.id}`} className="hover:bg-indigo-50/30 transition-colors">
-                                <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
-                                <td className="py-2.5 px-3">
-                                  <span className="font-black text-slate-900 block">{r.studentName}</span>
-                                  {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded-md text-[10px] font-bold border",
-                                    r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
-                                    "bg-indigo-50 text-indigo-800 border-indigo-200"
-                                  )}>
-                                    {r.personRoleTitle || 'طلبه'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 w-fit",
-                                    r.dinnerLocation === 'dormitory'
-                                      ? "bg-purple-50 text-purple-800 border border-purple-200"
-                                      : "bg-indigo-50 text-indigo-800 border border-indigo-200"
-                                  )}>
-                                    {r.dinnerLocation === 'dormitory' ? <Bed size={11} /> : <Building2 size={11} />}
-                                    <span>{r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه'}</span>
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedDinnerDays?.join('، ')}>
-                                  {r.selectedDinnerDays?.length ? r.selectedDinnerDays.join('، ') : <span className="text-slate-300">بدون شام</span>}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
-                                  {instDinners}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
-                                  {dormDinners}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-black text-indigo-950 bg-indigo-50/50">
-                                  {rangeDinners}
-                                </td>
-                                <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
-                                  {dinnerCost.toLocaleString('fa-IR')}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      onClick={() => setSelectedStudentForCalendar(r)}
-                                      className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg"
-                                      title="مشاهده تقویم شام"
-                                    >
-                                      <Calendar size={13} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleEditReservation(r)}
-                                      className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
-                                      title="ویرایش رزرو"
-                                    >
-                                      <Edit3 size={13} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-indigo-950 text-white font-black text-xs">
-                          <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل شام دوره:</td>
-                          <td className="py-2.5 px-3 text-center font-mono text-indigo-300">
-                            {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'institute' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-purple-300">
-                            {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'dormitory' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
-                            {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-indigo-200">
-                            {(filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0) * (currentPeriod?.dinnerPrice || 35000)).toLocaleString('fa-IR')} تومان
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                    <div className="overflow-x-auto border border-indigo-200/80 rounded-2xl bg-white shadow-xs">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-indigo-100/50 text-indigo-950 border-b border-indigo-200 font-black">
+                            <th className="py-3 px-3">ردیف</th>
+                            <th className="py-3 px-3">نام و نام خانوادگی</th>
+                            <th className="py-3 px-3">عنوان / سمت</th>
+                            <th className="py-3 px-3">محل دریافت شام</th>
+                            <th className="py-3 px-3">روزهای رزرو شام</th>
+                            <th className="py-3 px-3 text-center">شام موسسه</th>
+                            <th className="py-3 px-3 text-center">شام خوابگاه</th>
+                            <th className="py-3 px-3 text-center">مجموع شام</th>
+                            <th className="py-3 px-3 text-center">مبلغ کسر شام (تومان)</th>
+                            <th className="py-3 px-3 text-center">عملیات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredReservations.length === 0 ? (
+                            <tr>
+                              <td colSpan={10} className="py-6 text-center text-slate-400 font-bold">
+                                هیچ داده‌ای برای نمایش اطلاعات شام وجود ندارد.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredReservations.map((r, idx) => {
+                              const rangeDinners = r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0);
+                              const instDinners = r.dinnerLocation === 'institute' ? rangeDinners : 0;
+                              const dormDinners = r.dinnerLocation === 'dormitory' ? rangeDinners : 0;
+                              const dinnerCost = rangeDinners * (currentPeriod?.dinnerPrice || 35000);
+
+                              return (
+                                <tr key={`dinner_${r.id}`} className="hover:bg-indigo-50/30 transition-colors">
+                                  <td className="py-2.5 px-3 font-mono text-slate-500">{idx + 1}</td>
+                                  <td className="py-2.5 px-3">
+                                    <span className="font-black text-slate-900 block">{r.studentName}</span>
+                                    {r.nationalId && <span className="text-[10px] font-mono text-slate-400">{r.nationalId}</span>}
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded-md text-[10px] font-bold border",
+                                      r.personRoleTitle === 'استاد' ? "bg-amber-50 text-amber-800 border-amber-200" :
+                                      "bg-indigo-50 text-indigo-800 border-indigo-200"
+                                    )}>
+                                      {r.personRoleTitle || 'طلبه'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    <span className={cn(
+                                      "px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 w-fit",
+                                      r.dinnerLocation === 'dormitory'
+                                        ? "bg-purple-50 text-purple-800 border border-purple-200"
+                                        : "bg-indigo-50 text-indigo-800 border border-indigo-200"
+                                    )}>
+                                      {r.dinnerLocation === 'dormitory' ? <Bed size={11} /> : <Building2 size={11} />}
+                                      <span>{r.dinnerLocation === 'dormitory' ? 'خوابگاه' : 'موسسه'}</span>
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate text-[11px]" title={r.selectedDinnerDays?.join('، ')}>
+                                    {r.selectedDinnerDays?.length ? r.selectedDinnerDays.join('، ') : <span className="text-slate-300">بدون شام</span>}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
+                                    {instDinners}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
+                                    {dormDinners}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-black text-indigo-950 bg-indigo-50/50">
+                                    {rangeDinners}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">
+                                    {dinnerCost.toLocaleString('fa-IR')}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        onClick={() => setSelectedStudentForCalendar(r)}
+                                        className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg"
+                                        title="مشاهده تقویم شام"
+                                      >
+                                        <Calendar size={13} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleEditReservation(r)}
+                                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
+                                        title="ویرایش رزرو"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-indigo-950 text-white font-black text-xs">
+                            <td colSpan={5} className="py-2.5 px-3 text-right">جمع کل شام دوره:</td>
+                            <td className="py-2.5 px-3 text-center font-mono text-indigo-300">
+                              {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'institute' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-purple-300">
+                              {filteredReservations.reduce((acc, r) => acc + (r.dinnerLocation === 'dormitory' ? (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)) : 0), 0).toLocaleString('fa-IR')}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-amber-300 text-sm">
+                              {filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0).toLocaleString('fa-IR')}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono text-indigo-200">
+                              {(filteredReservations.reduce((acc, r) => acc + (r.calculatedDinnersForRange ?? (r.totalCalculatedDinners || 0)), 0) * (currentPeriod?.dinnerPrice || 35000)).toLocaleString('fa-IR')} تومان
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -1916,106 +2127,153 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
           {/* METHOD 2: نمایش به صورت اجمالی / روزانه (خلاصه تاریخ‌ها بدون نام افراد) */}
           {/* ========================================================================= */}
           {statsViewMode === 'daily_summary' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div className={cn("bg-white border border-slate-200/90 shadow-xs space-y-4", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-6")}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
                 <div>
                   <h3 className="text-sm font-black text-slate-900">
-                    روش دوم: آمار اجمالی روزانه (فقط تاریخ‌ها و تعداد نهار و شام بدون نام افراد)
+                    آمار اجمالی روزانه
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    مشاهده آمار روزانه به تفکیک روز هفته، تعداد نهار، شام موسسه و خوابگاه با خروجی اکسل
+                    تفکیک روزانه تعداد نهار، شام موسسه و خوابگاه
                   </p>
                 </div>
 
                 <button
                   onClick={exportDailySummaryToExcel}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  className={cn(
+                    "bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer",
+                    isAdminMobile ? "w-full min-h-[40px] px-3" : "px-3.5 py-1.5"
+                  )}
                 >
                   <FileSpreadsheet size={14} />
                   <span>خروجی اکسل آمار اجمالی</span>
                 </button>
               </div>
 
-              {/* Daily Summary Table */}
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                <table className="w-full text-right border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold">
-                      <th className="py-3 px-3 text-center">ردیف</th>
-                      <th className="py-3 px-3">تاریخ شمسی</th>
-                      <th className="py-3 px-3">روز هفته</th>
-                      <th className="py-3 px-3">وضعیت آشپزخانه</th>
-                      <th className="py-3 px-3 text-center font-bold text-amber-900">تعداد نهار</th>
-                      <th className="py-3 px-3 text-center font-bold text-indigo-900">شام موسسه</th>
-                      <th className="py-3 px-3 text-center font-bold text-purple-900">شام خوابگاه</th>
-                      <th className="py-3 px-3 text-center font-bold text-indigo-950">مجموع شام</th>
-                      <th className="py-3 px-3 text-center font-black text-slate-900">جمع کل وعده‌های روز</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {dailySummaryList.map((d) => (
-                      <tr 
-                        key={d.date} 
-                        className={cn(
-                          "transition-colors",
-                          d.isHoliday ? "bg-rose-50/40 text-rose-900" : "hover:bg-slate-50/70"
-                        )}
-                      >
-                        <td className="py-2.5 px-3 text-center font-mono text-slate-500">{d.rowNumber}</td>
-                        <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{d.date}</td>
-                        <td className="py-2.5 px-3 font-black text-slate-900">{d.dayOfWeek}</td>
-                        <td className="py-2.5 px-3">
-                          {d.isHoliday ? (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                              تعطیل ({d.holidayReason || 'لغو پخت'})
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-emerald-700 font-bold">دایر و فعال</span>
+              {/* Daily Summary Mobile Cards vs Desktop Table */}
+              {isAdminMobile ? (
+                <div className="space-y-2.5">
+                  {dailySummaryList.map((d) => (
+                    <div
+                      key={d.date}
+                      className={cn(
+                        "rounded-2xl border p-3.5 space-y-2",
+                        d.isHoliday ? "bg-rose-50/60 border-rose-200" : "bg-slate-50/40 border-slate-200/90"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-slate-900">{d.dayOfWeek}</span>
+                          <span aria-hidden="true" className="text-slate-300">·</span>
+                          <span className="text-xs font-mono font-bold text-slate-600 tabular-nums">{d.date}</span>
+                        </div>
+                        <span className={cn("text-[11px] font-bold", d.isHoliday ? "text-rose-700" : "text-emerald-700")}>
+                          {d.isHoliday ? `تعطیل (${d.holidayReason || 'لغو'})` : 'دایر'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-slate-200/70 text-[11px] text-center">
+                        <div>
+                          <div className="text-slate-400">نهار</div>
+                          <div className="font-mono font-black text-amber-700 tabular-nums mt-0.5">{d.lunchCount.toLocaleString('fa-IR')}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">شام موسسه</div>
+                          <div className="font-mono font-bold text-indigo-700 tabular-nums mt-0.5">{d.dinnerInstituteCount.toLocaleString('fa-IR')}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">شام خوابگاه</div>
+                          <div className="font-mono font-bold text-purple-700 tabular-nums mt-0.5">{d.dinnerDormitoryCount.toLocaleString('fa-IR')}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">جمع کل</div>
+                          <div className="font-mono font-black text-slate-900 tabular-nums mt-0.5">{d.totalMealsDay.toLocaleString('fa-IR')}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-right border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold">
+                        <th className="py-3 px-3 text-center">ردیف</th>
+                        <th className="py-3 px-3">تاریخ شمسی</th>
+                        <th className="py-3 px-3">روز هفته</th>
+                        <th className="py-3 px-3">وضعیت آشپزخانه</th>
+                        <th className="py-3 px-3 text-center font-bold text-amber-900">تعداد نهار</th>
+                        <th className="py-3 px-3 text-center font-bold text-indigo-900">شام موسسه</th>
+                        <th className="py-3 px-3 text-center font-bold text-purple-900">شام خوابگاه</th>
+                        <th className="py-3 px-3 text-center font-bold text-indigo-950">مجموع شام</th>
+                        <th className="py-3 px-3 text-center font-black text-slate-900">جمع کل وعده‌های روز</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {dailySummaryList.map((d) => (
+                        <tr 
+                          key={d.date} 
+                          className={cn(
+                            "transition-colors",
+                            d.isHoliday ? "bg-rose-50/40 text-rose-900" : "hover:bg-slate-50/70"
                           )}
+                        >
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-500">{d.rowNumber}</td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-800">{d.date}</td>
+                          <td className="py-2.5 px-3 font-black text-slate-900">{d.dayOfWeek}</td>
+                          <td className="py-2.5 px-3">
+                            {d.isHoliday ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                تعطیل ({d.holidayReason || 'لغو پخت'})
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-emerald-700 font-bold">دایر و فعال</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-700">
+                            {d.lunchCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
+                            {d.dinnerInstituteCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
+                            {d.dinnerDormitoryCount}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-900 bg-indigo-50/30">
+                            {d.totalDinnerDay}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900 bg-slate-50">
+                            {d.totalMealsDay}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {/* Table Footer with Totals */}
+                    <tfoot>
+                      <tr className="bg-slate-900 text-white font-black text-xs border-t-2 border-slate-700">
+                        <td colSpan={4} className="py-3 px-3 text-right">
+                          <span>جمع کل دوره ({currentPeriod?.title}):</span>
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-700">
-                          {d.lunchCount}
+                        <td className="py-3 px-3 text-center font-mono text-amber-400">
+                          {periodKPIs.totalLunches.toLocaleString('fa-IR')}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-700">
-                          {d.dinnerInstituteCount}
+                        <td className="py-3 px-3 text-center font-mono text-indigo-300">
+                          {periodKPIs.totalDinnersInstitute.toLocaleString('fa-IR')}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-purple-700">
-                          {d.dinnerDormitoryCount}
+                        <td className="py-3 px-3 text-center font-mono text-purple-300">
+                          {periodKPIs.totalDinnersDormitory.toLocaleString('fa-IR')}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-indigo-900 bg-indigo-50/30">
-                          {d.totalDinnerDay}
+                        <td className="py-3 px-3 text-center font-mono text-indigo-200">
+                          {periodKPIs.totalDinners.toLocaleString('fa-IR')}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900 bg-slate-50">
-                          {d.totalMealsDay}
+                        <td className="py-3 px-3 text-center font-mono text-amber-300 text-sm">
+                          {periodKPIs.totalAllMeals.toLocaleString('fa-IR')}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                  {/* Table Footer with Totals */}
-                  <tfoot>
-                    <tr className="bg-slate-900 text-white font-black text-xs border-t-2 border-slate-700">
-                      <td colSpan={4} className="py-3 px-3 text-right">
-                        <span>جمع کل دوره ({currentPeriod?.title}):</span>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-amber-400">
-                        {periodKPIs.totalLunches.toLocaleString('fa-IR')}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-indigo-300">
-                        {periodKPIs.totalDinnersInstitute.toLocaleString('fa-IR')}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-purple-300">
-                        {periodKPIs.totalDinnersDormitory.toLocaleString('fa-IR')}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-indigo-200">
-                        {periodKPIs.totalDinners.toLocaleString('fa-IR')}
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono text-amber-300 text-sm">
-                        {periodKPIs.totalAllMeals.toLocaleString('fa-IR')}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2049,7 +2307,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">تاریخ شروع دوره (شمسی):</label>
                   <input
@@ -2092,7 +2350,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
                 <span className="font-bold text-slate-800 block">وعده‌های فعال در این دوره:</span>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap">
                   <label className="flex items-center gap-2 cursor-pointer text-slate-700 font-bold">
                     <input
                       type="checkbox"
@@ -2128,7 +2386,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
               </div>
 
               {/* Price Setup */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">نرخ هر وعده نهار (تومان):</label>
                   <input
@@ -2641,7 +2899,7 @@ export default function LunchManagement({ onNavigateTab }: LunchManagementProps)
                 )}
 
                 {manualRoleType === 'guest' && (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                     <div>
                       <label className="font-bold text-slate-700 block mb-1">نام و نام خانوادگی مهمان (*):</label>
                       <input

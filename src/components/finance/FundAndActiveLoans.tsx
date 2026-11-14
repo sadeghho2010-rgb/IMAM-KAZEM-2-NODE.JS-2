@@ -28,6 +28,12 @@ import { useAuth } from '../../context/AuthContext';
 import { getTodayShamsi } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student } from '../../types';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileSearchFilterBar
+} from '../admin/mobile/MobileModulePrimitives';
 
 interface LoanItem {
   id: string;
@@ -65,6 +71,8 @@ interface FundAndActiveLoansProps {
 
 export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoansProps) {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [activeSubTab, setActiveSubTab] = useState<'loans' | 'savings_fund'>('loans');
   const [loans, setLoans] = useState<LoanItem[]>([]);
@@ -420,8 +428,10 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
     );
   }
 
+  const activeFilterCount = (selectedStatusFilter !== 'active' ? 1 : 0) + (selectedGradeFilter !== 'all' ? 1 : 0);
+
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
+    <div className={cn(isAdminMobile ? "px-3 pt-2 pb-6 space-y-4 font-vazir" : "p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir")} dir="rtl">
       {/* Toast */}
       <AnimatePresence>
         {toastMessage && (
@@ -438,361 +448,602 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
       </AnimatePresence>
 
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100">
-            <Building2 size={24} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">گزارشات صندوق و وام‌های فعال</h1>
-              <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-black rounded-lg">
-                صندوق قرض‌الحسنه طلاب
-              </span>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          variant="indigo"
+          title="صندوق و وام‌های فعال"
+          subtitle="مدیریت تسهیلات قرض‌الحسنه، اقساط کسرشده و سرمایه صندوق"
+          icon={<Building2 size={20} />}
+          badgeText="صندوق قرض‌الحسنه"
+          primaryAction={{
+            id: 'add-loan',
+            label: 'اعطای وام جدید',
+            icon: <Plus size={15} />,
+            onClick: () => setIsAddLoanOpen(true),
+            tone: 'emerald'
+          }}
+          secondaryActions={[
+            {
+              id: 'export-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={15} />,
+              onClick: handleExportExcel,
+              tone: 'emerald'
+            },
+            {
+              id: 'deposit-fund',
+              label: 'افزایش سرمایه',
+              icon: <PiggyBank size={15} />,
+              onClick: () => setIsDepositToFundOpen(true),
+              tone: 'default'
+            }
+          ]}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100">
+              <Building2 size={24} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              مدیریت تسهیلات قرض‌الحسنه، رهگیری اقساط کسرشده از شهریه، مانده بدهی و سرمایه در گردش صندوق
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-slate-900">گزارشات صندوق و وام‌های فعال</h1>
+                <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-black rounded-lg">
+                  صندوق قرض‌الحسنه طلاب
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                مدیریت تسهیلات قرض‌الحسنه، رهگیری اقساط کسرشده از شهریه، مانده بدهی و سرمایه در گردش صندوق
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileSpreadsheet size={15} />
+              <span>خروجی اکسل تسهیلات</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsDepositToFundOpen(true)}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <PiggyBank size={15} />
+              <span>افزایش سرمایه / کمک خیرین</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAddLoanOpen(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={15} />
+              <span>اعطای وام جدید به طلبه</span>
+            </button>
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <FileSpreadsheet size={15} />
-            <span>خروجی اکسل تسهیلات</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsDepositToFundOpen(true)}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <PiggyBank size={15} />
-            <span>افزایش سرمایه / کمک خیرین</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsAddLoanOpen(true)}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus size={15} />
-            <span>اعطای وام جدید به طلبه</span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Top Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">موجودی نقدی آماده پرداخت</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Wallet size={16} />
+      <div className={cn(isAdminMobile ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4")}>
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs", isAdminMobile ? "p-3.5 space-y-1.5" : "p-5 space-y-2")}>
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500">موجودی نقدی</span>
+            <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+              <Wallet size={14} />
             </div>
           </div>
-          <div className="text-2xl font-black text-emerald-700 font-mono">
-            {fundCashBalance.toLocaleString('fa-IR')} <span className="text-xs font-medium text-emerald-600">تومان</span>
+          <div className={cn("font-black text-emerald-700 font-mono tabular-nums", isAdminMobile ? "text-base" : "text-2xl")}>
+            {fundCashBalance.toLocaleString('fa-IR')} <span className="text-[10px] font-medium text-emerald-600 font-vazir">تومان</span>
           </div>
-          <p className="text-[11px] text-slate-400">نقدینگی در حساب صندوق قرض‌الحسنه</p>
+          <p className="text-[10px] text-slate-400">نقدینگی در حساب صندوق</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">تسهیلات فعال در جریان</span>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-              <Users size={16} />
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs", isAdminMobile ? "p-3.5 space-y-1.5" : "p-5 space-y-2")}>
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500">تسهیلات فعال</span>
+            <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+              <Users size={14} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
-            {metrics.totalActiveCount} <span className="text-xs font-medium text-slate-500">فقره وام فعال</span>
+          <div className={cn("font-black text-slate-900 font-mono tabular-nums", isAdminMobile ? "text-base" : "text-2xl")}>
+            {metrics.totalActiveCount.toLocaleString('fa-IR')} <span className="text-[10px] font-medium text-slate-500 font-vazir">فقره وام</span>
           </div>
-          <p className="text-[11px] text-slate-400">مانده اصل وام: {metrics.totalActiveBalance.toLocaleString('fa-IR')} تومان</p>
+          <p className="text-[10px] text-slate-400 tabular-nums">مانده: {metrics.totalActiveBalance.toLocaleString('fa-IR')} ت</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">اقساط ماهانه کسر شده از شهریه</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <Receipt size={16} />
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs", isAdminMobile ? "p-3.5 space-y-1.5" : "p-5 space-y-2")}>
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500">اقساط ماهانه</span>
+            <div className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0">
+              <Receipt size={14} />
             </div>
           </div>
-          <div className="text-2xl font-black text-indigo-900 font-mono">
-            {metrics.monthlyInstallmentsSum.toLocaleString('fa-IR')} <span className="text-xs font-medium text-indigo-700">تومان</span>
+          <div className={cn("font-black text-indigo-900 font-mono tabular-nums", isAdminMobile ? "text-base" : "text-2xl")}>
+            {metrics.monthlyInstallmentsSum.toLocaleString('fa-IR')} <span className="text-[10px] font-medium text-indigo-700 font-vazir">تومان</span>
           </div>
-          <p className="text-[11px] text-slate-400">بازگشت ماهانه به موجودی صندوق</p>
+          <p className="text-[10px] text-slate-400">کسر ماهانه از شهریه</p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">مجموع پس‌انداز اعضا در صندوق</span>
-            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
-              <PiggyBank size={16} />
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs", isAdminMobile ? "p-3.5 space-y-1.5" : "p-5 space-y-2")}>
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500">پس‌انداز اعضا</span>
+            <div className="w-7 h-7 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+              <PiggyBank size={14} />
             </div>
           </div>
-          <div className="text-2xl font-black text-purple-900 font-mono">
-            {metrics.totalSavingsCapital.toLocaleString('fa-IR')} <span className="text-xs font-medium text-purple-700">تومان</span>
+          <div className={cn("font-black text-purple-900 font-mono tabular-nums", isAdminMobile ? "text-base" : "text-2xl")}>
+            {metrics.totalSavingsCapital.toLocaleString('fa-IR')} <span className="text-[10px] font-medium text-purple-700 font-vazir">تومان</span>
           </div>
-          <p className="text-[11px] text-slate-400">سرمایه در گردش کل: {metrics.totalFundCapital.toLocaleString('fa-IR')} ت</p>
+          <p className="text-[10px] text-slate-400 tabular-nums">کل سرمایه: {metrics.totalFundCapital.toLocaleString('fa-IR')} ت</p>
         </div>
       </div>
 
       {/* Sub-Tabs Switcher */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('loans')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'loans'
-              ? "bg-indigo-600 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
-        >
-          <CreditCard size={15} />
-          <span>تسهیلات و وام‌های فعال طلاب ({loans.length})</span>
-        </button>
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={activeSubTab}
+          onChange={(id) => setActiveSubTab(id as 'loans' | 'savings_fund')}
+          tabs={[
+            {
+              id: 'loans',
+              label: 'تسهیلات و وام‌ها',
+              icon: <CreditCard size={14} />,
+              badge: loans.length,
+              tone: 'indigo'
+            },
+            {
+              id: 'savings_fund',
+              label: 'پس‌انداز اعضا',
+              icon: <PiggyBank size={14} />,
+              badge: contributions.length,
+              tone: 'emerald'
+            }
+          ]}
+        />
+      ) : (
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('loans')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+              activeSubTab === 'loans'
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            <CreditCard size={15} />
+            <span>تسهیلات و وام‌های فعال طلاب ({loans.length})</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('savings_fund')}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeSubTab === 'savings_fund'
-              ? "bg-indigo-600 text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100"
-          )}
-        >
-          <PiggyBank size={15} />
-          <span>پس‌انداز و مشارکت اعضا در صندوق ({contributions.length})</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('savings_fund')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+              activeSubTab === 'savings_fund'
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            <PiggyBank size={15} />
+            <span>پس‌انداز و مشارکت اعضا در صندوق ({contributions.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* VIEW 1: Loans */}
       {activeSubTab === 'loans' && (
         <div className="space-y-4">
           {/* Controls */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 flex-1">
-              <div className="relative min-w-[240px] flex-1 max-w-sm">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="جستجوی نام وام‌گیرنده، علت وام، ضامن..."
-                  className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:border-indigo-500 transition-all"
-                />
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجوی وام‌گیرنده، علت یا ضامن..."
+                onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={activeFilterCount}
+              />
+
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2.5 shadow-2xs">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-500">وضعیت وام:</label>
+                    <select
+                      value={selectedStatusFilter}
+                      onChange={(e: any) => setSelectedStatusFilter(e.target.value)}
+                      className="w-full min-h-[42px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden"
+                    >
+                      <option value="all">همه وام‌ها</option>
+                      <option value="active">در جریان (فعال)</option>
+                      <option value="settled">تسویه شده</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-500">پایه تحصیلی:</label>
+                    <select
+                      value={selectedGradeFilter}
+                      onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                      className="w-full min-h-[42px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden"
+                    >
+                      <option value="all">همه پایه‌ها</option>
+                      <option value="پایه ۷">پایه ۷</option>
+                      <option value="پایه ۸">پایه ۸</option>
+                      <option value="پایه ۹">پایه ۹</option>
+                      <option value="پایه ۱۰">پایه ۱۰</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5 flex-1">
+                <div className="relative min-w-[240px] flex-1 max-w-sm">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="جستجوی نام وام‌گیرنده، علت وام، ضامن..."
+                    className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400">وضعیت:</span>
+                  <select
+                    value={selectedStatusFilter}
+                    onChange={(e: any) => setSelectedStatusFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="all">همه وام‌ها</option>
+                    <option value="active">وام‌های در جریان (فعال)</option>
+                    <option value="settled">تسویه شده کامل</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400">پایه:</span>
+                  <select
+                    value={selectedGradeFilter}
+                    onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400">وضعیت:</span>
-                <select
-                  value={selectedStatusFilter}
-                  onChange={(e: any) => setSelectedStatusFilter(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
-                >
-                  <option value="all">همه وام‌ها</option>
-                  <option value="active">وام‌های در جریان (فعال)</option>
-                  <option value="settled">تسویه شده کامل</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400">پایه:</span>
-                <select
-                  value={selectedGradeFilter}
-                  onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
-                >
-                  <option value="all">همه پایه‌ها</option>
-                  <option value="پایه ۷">پایه ۷</option>
-                  <option value="پایه ۸">پایه ۸</option>
-                  <option value="پایه ۹">پایه ۹</option>
-                  <option value="پایه ۱۰">پایه ۱۰</option>
-                </select>
+              <div className="text-xs font-bold text-slate-500">
+                قسط: <span className="font-mono text-indigo-700 font-black">ماهانه خودکار از شهریه کسر می‌گردد</span>
               </div>
             </div>
+          )}
 
-            <div className="text-xs font-bold text-slate-500">
-              قسط: <span className="font-mono text-indigo-700 font-black">ماهانه خودکار از شهریه کسر می‌گردد</span>
-            </div>
-          </div>
+          {/* Loans List: Mobile Cards vs Desktop Table */}
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              {filteredLoans.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs font-bold text-slate-400">
+                  تسهیلاتی مطابق با فیلترها یافت نشد.
+                </div>
+              ) : (
+                filteredLoans.map(l => {
+                  const percentPaid = Math.round((l.paidInstallments / (l.totalInstallments || 1)) * 100);
+                  return (
+                    <div key={l.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black text-slate-900 truncate">{l.studentName}</h3>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                            <span>{l.grade}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">{l.nationalId}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums">{l.startDate}</span>
+                          </div>
+                        </div>
+                        <span className={cn(
+                          "text-[11px] font-black shrink-0",
+                          l.status === 'active' ? "text-blue-700" : "text-emerald-700"
+                        )}>
+                          {l.status === 'active' ? 'در جریان' : 'تسویه شده'}
+                        </span>
+                      </div>
 
-          {/* Loans Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                    <th className="p-3.5">وام‌گیرنده</th>
-                    <th className="p-3.5 text-center">پایه</th>
-                    <th className="p-3.5 text-center">مبلغ کل وام</th>
-                    <th className="p-3.5 text-center">قسط ماهانه</th>
-                    <th className="p-3.5 text-center">اقساط پرداخت‌شده</th>
-                    <th className="p-3.5 text-center font-black text-rose-700 bg-rose-50/60">مانده بدهی</th>
-                    <th className="p-3.5 text-center">تاریخ اعطا</th>
-                    <th className="p-3.5">علت دریافت</th>
-                    <th className="p-3.5">ضامن</th>
-                    <th className="p-3.5 text-center">وضعیت</th>
-                    <th className="p-3.5 text-center">عملیات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredLoans.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="p-10 text-center text-slate-400 font-bold">
-                        تسهیلاتی مطابق با فیلترها یافت نشد.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLoans.map(l => {
-                      const percentPaid = Math.round((l.paidInstallments / (l.totalInstallments || 1)) * 100);
+                      <div className="text-[11px] text-slate-700 font-medium leading-relaxed">
+                        {l.purpose}
+                        {l.guarantorName ? ` · ضامن: ${l.guarantorName}` : ''}
+                      </div>
 
-                      return (
-                        <tr key={l.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-3.5">
-                            <div className="font-bold text-slate-900">{l.studentName}</div>
-                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">کد ملی: {l.nationalId}</div>
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
-                              {l.grade}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-bold text-slate-900">
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                        <div>
+                          <div className="text-slate-400">اصل وام</div>
+                          <div className="font-mono font-bold text-slate-800 tabular-nums mt-0.5">
                             {l.totalAmount.toLocaleString('fa-IR')} ت
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-black text-indigo-900">
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">قسط ماهانه</div>
+                          <div className="font-mono font-bold text-indigo-800 tabular-nums mt-0.5">
                             {l.monthlyInstallment.toLocaleString('fa-IR')} ت
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <div className="flex flex-col items-center">
-                              <span className="font-mono font-bold text-slate-800">
-                                {l.paidInstallments} از {l.totalInstallments}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">مانده بدهی</div>
+                          <div className="font-mono font-black text-rose-700 tabular-nums mt-0.5">
+                            {l.remainingBalance.toLocaleString('fa-IR')} ت
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                          <span>پیشرفت بازپرداخت</span>
+                          <span className="font-mono tabular-nums text-slate-700">
+                            {l.paidInstallments.toLocaleString('fa-IR')} از {l.totalInstallments.toLocaleString('fa-IR')} قسط ({percentPaid.toLocaleString('fa-IR')}٪)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-emerald-500 h-full rounded-full transition-all"
+                            style={{ width: `${Math.min(100, percentPaid)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLoanBooklet(l)}
+                          className="flex-1 min-h-[40px] px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <FileText size={14} />
+                          <span>دفترچه اقساط</span>
+                        </button>
+                        {l.remainingBalance > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handlePayInstallment(l)}
+                            className="flex-1 min-h-[40px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Check size={14} />
+                            <span>ثبت کسر قسط</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                      <th className="p-3.5">وام‌گیرنده</th>
+                      <th className="p-3.5 text-center">پایه</th>
+                      <th className="p-3.5 text-center">مبلغ کل وام</th>
+                      <th className="p-3.5 text-center">قسط ماهانه</th>
+                      <th className="p-3.5 text-center">اقساط پرداخت‌شده</th>
+                      <th className="p-3.5 text-center font-black text-rose-700 bg-rose-50/60">مانده بدهی</th>
+                      <th className="p-3.5 text-center">تاریخ اعطا</th>
+                      <th className="p-3.5">علت دریافت</th>
+                      <th className="p-3.5">ضامن</th>
+                      <th className="p-3.5 text-center">وضعیت</th>
+                      <th className="p-3.5 text-center">عملیات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredLoans.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="p-10 text-center text-slate-400 font-bold">
+                          تسهیلاتی مطابق با فیلترها یافت نشد.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLoans.map(l => {
+                        const percentPaid = Math.round((l.paidInstallments / (l.totalInstallments || 1)) * 100);
+
+                        return (
+                          <tr key={l.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-3.5">
+                              <div className="font-bold text-slate-900">{l.studentName}</div>
+                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">کد ملی: {l.nationalId}</div>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
+                                {l.grade}
                               </span>
-                              <div className="w-16 bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
-                                <div 
-                                  className="bg-emerald-500 h-full rounded-full transition-all"
-                                  style={{ width: `${Math.min(100, percentPaid)}%` }}
-                                />
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-bold text-slate-900">
+                              {l.totalAmount.toLocaleString('fa-IR')} ت
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-black text-indigo-900">
+                              {l.monthlyInstallment.toLocaleString('fa-IR')} ت
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex flex-col items-center">
+                                <span className="font-mono font-bold text-slate-800">
+                                  {l.paidInstallments} از {l.totalInstallments}
+                                </span>
+                                <div className="w-16 bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
+                                  <div 
+                                    className="bg-emerald-500 h-full rounded-full transition-all"
+                                    style={{ width: `${Math.min(100, percentPaid)}%` }}
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-black text-rose-700 text-sm bg-rose-50/40">
-                            {l.remainingBalance.toLocaleString('fa-IR')} تومان
-                          </td>
-                          <td className="p-3.5 text-center font-mono text-slate-600 text-[11px]">
-                            {l.startDate}
-                          </td>
-                          <td className="p-3.5 text-slate-700 font-medium">
-                            {l.purpose}
-                          </td>
-                          <td className="p-3.5 text-slate-600 text-[11px]">
-                            {l.guarantorName || '---'}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className={cn(
-                              "px-2.5 py-1 rounded-lg text-[10px] font-black",
-                              l.status === 'active' 
-                                ? "bg-blue-100 text-blue-800 border border-blue-200" 
-                                : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                            )}>
-                              {l.status === 'active' ? 'در جریان' : 'تسویه شده'}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedLoanBooklet(l)}
-                                title="مشاهده شناسنامه و دفترچه اقساط"
-                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
-                              >
-                                <FileText size={15} />
-                              </button>
-                              {l.remainingBalance > 0 && (
+                            </td>
+                            <td className="p-3.5 text-center font-mono font-black text-rose-700 text-sm bg-rose-50/40">
+                              {l.remainingBalance.toLocaleString('fa-IR')} تومان
+                            </td>
+                            <td className="p-3.5 text-center font-mono text-slate-600 text-[11px]">
+                              {l.startDate}
+                            </td>
+                            <td className="p-3.5 text-slate-700 font-medium">
+                              {l.purpose}
+                            </td>
+                            <td className="p-3.5 text-slate-600 text-[11px]">
+                              {l.guarantorName || '---'}
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <span className={cn(
+                                "px-2.5 py-1 rounded-lg text-[10px] font-black",
+                                l.status === 'active' 
+                                  ? "bg-blue-100 text-blue-800 border border-blue-200" 
+                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              )}>
+                                {l.status === 'active' ? 'در جریان' : 'تسویه شده'}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handlePayInstallment(l)}
-                                  title="ثبت کسر یک قسط ماهانه"
-                                  className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer font-bold text-[11px]"
+                                  onClick={() => setSelectedLoanBooklet(l)}
+                                  title="مشاهده شناسنامه و دفترچه اقساط"
+                                  className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
                                 >
-                                  <Check size={15} />
+                                  <FileText size={15} />
                                 </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                                {l.remainingBalance > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayInstallment(l)}
+                                    title="ثبت کسر یک قسط ماهانه"
+                                    className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer font-bold text-[11px]"
+                                  >
+                                    <Check size={15} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
       {/* VIEW 2: Fund Contributions & Member Savings */}
       {activeSubTab === 'savings_fund' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right text-xs">
-                <thead>
-                  <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                    <th className="p-3.5">نام و مشخصات عضو صندوق</th>
-                    <th className="p-3.5 text-center">پایه</th>
-                    <th className="p-3.5 text-center">مبلغ پس‌انداز ماهانه (کسر از شهریه)</th>
-                    <th className="p-3.5 text-center font-black text-emerald-800 bg-emerald-50/50">کل موجودی پس‌انداز در صندوق</th>
-                    <th className="p-3.5 text-center">وضعیت مشارکت</th>
-                    <th className="p-3.5 text-center">سهم از صندوق</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {contributions.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3.5">
-                        <div className="font-bold text-slate-900">{c.studentName}</div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">کد ملی: {c.nationalId}</div>
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
-                          {c.grade}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-center font-mono font-bold text-indigo-900">
-                        {c.monthlyContribution.toLocaleString('fa-IR')} تومان
-                      </td>
-                      <td className="p-3.5 text-center font-mono font-black text-emerald-800 text-sm bg-emerald-50/30">
-                        {c.totalAccumulatedSavings.toLocaleString('fa-IR')} تومان
-                      </td>
-                      <td className="p-3.5 text-center">
-                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-black">
-                          {c.status === 'active' ? 'فعال' : 'متوقف شده'}
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-center text-slate-500 font-mono text-[11px]">
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              {contributions.map(c => (
+                <div key={c.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-xs font-black text-slate-900 truncate">{c.studentName}</h3>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                        <span>{c.grade}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono tabular-nums">{c.nationalId}</span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-black text-emerald-700 shrink-0">
+                      {c.status === 'active' ? 'فعال' : 'متوقف'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                    <div>
+                      <div className="text-slate-400">کسر ماهانه</div>
+                      <div className="font-mono font-bold text-indigo-800 tabular-nums mt-0.5">
+                        {c.monthlyContribution.toLocaleString('fa-IR')} ت
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">کل پس‌انداز</div>
+                      <div className="font-mono font-black text-emerald-700 tabular-nums mt-0.5">
+                        {c.totalAccumulatedSavings.toLocaleString('fa-IR')} ت
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">سهم صندوق</div>
+                      <div className="font-mono font-bold text-slate-700 tabular-nums mt-0.5">
                         {((c.totalAccumulatedSavings / (metrics.totalSavingsCapital || 1)) * 100).toFixed(1)}٪
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                      <th className="p-3.5">نام و مشخصات عضو صندوق</th>
+                      <th className="p-3.5 text-center">پایه</th>
+                      <th className="p-3.5 text-center">مبلغ پس‌انداز ماهانه (کسر از شهریه)</th>
+                      <th className="p-3.5 text-center font-black text-emerald-800 bg-emerald-50/50">کل موجودی پس‌انداز در صندوق</th>
+                      <th className="p-3.5 text-center">وضعیت مشارکت</th>
+                      <th className="p-3.5 text-center">سهم از صندوق</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {contributions.map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5">
+                          <div className="font-bold text-slate-900">{c.studentName}</div>
+                          <div className="text-[11px] text-slate-400 font-mono mt-0.5">کد ملی: {c.nationalId}</div>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-bold text-[10px]">
+                            {c.grade}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center font-mono font-bold text-indigo-900">
+                          {c.monthlyContribution.toLocaleString('fa-IR')} تومان
+                        </td>
+                        <td className="p-3.5 text-center font-mono font-black text-emerald-800 text-sm bg-emerald-50/30">
+                          {c.totalAccumulatedSavings.toLocaleString('fa-IR')} تومان
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[10px] font-black">
+                            {c.status === 'active' ? 'فعال' : 'متوقف شده'}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center text-slate-500 font-mono text-[11px]">
+                          {((c.totalAccumulatedSavings / (metrics.totalSavingsCapital || 1)) * 100).toFixed(1)}٪
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Loan Booklet Modal */}
       {selectedLoanBooklet && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className={cn("bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto", isAdminMobile ? "p-4" : "p-6")}>
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-900">شناسنامه و دفترچه اقساط تسهیلات</h3>
@@ -807,7 +1058,7 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
               </button>
             </div>
 
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2 text-xs">
+            <div className={cn("p-4 bg-slate-50 rounded-2xl border border-slate-200 grid gap-2 text-xs", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
               <div>
                 <span className="text-slate-500 font-bold">وام‌گیرنده: </span>
                 <span className="font-black text-slate-900">{selectedLoanBooklet.studentName}</span>
@@ -832,7 +1083,7 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
                 <span className="text-slate-500 font-bold">مانده بدهی: </span>
                 <span className="font-mono font-black text-rose-700">{selectedLoanBooklet.remainingBalance.toLocaleString('fa-IR')} ت</span>
               </div>
-              <div className="col-span-2">
+              <div className={isAdminMobile ? "" : "col-span-2"}>
                 <span className="text-slate-500 font-bold">ضامن: </span>
                 <span className="font-medium text-slate-800">{selectedLoanBooklet.guarantorName || '---'}</span>
               </div>
@@ -893,8 +1144,8 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
 
       {/* Add New Loan Modal */}
       {isAddLoanOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className={cn("bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto", isAdminMobile ? "p-4" : "p-6")}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <Plus size={16} className="text-indigo-600" />
@@ -910,7 +1161,7 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-1">
                   <label className="text-slate-600 font-bold">نام و نام خانوادگی طلبه:</label>
                   <input
@@ -934,7 +1185,7 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-3")}>
                 <div className="space-y-1">
                   <label className="text-slate-600 font-bold">پایه تحصیلی:</label>
                   <select
@@ -970,7 +1221,7 @@ export default function FundAndActiveLoans({ onNavigateTab }: FundAndActiveLoans
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-1">
                   <label className="text-slate-600 font-bold">علت دریافت وام:</label>
                   <input

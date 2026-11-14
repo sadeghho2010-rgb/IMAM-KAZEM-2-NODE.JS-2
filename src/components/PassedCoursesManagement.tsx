@@ -19,6 +19,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { localDb } from '../lib/localDb';
 import { cn } from '../lib/utils';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 import { 
   Student, 
   CurriculumSubject, 
@@ -33,6 +35,7 @@ import { StudentCourseProgressService } from '../services/StudentCourseProgressS
 
 export default function PassedCoursesManagement() {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
   
   // Access authorization check
   const isSuperAdmin = currentUser?.role === 'super_admin' || currentUser?.level === 1;
@@ -713,56 +716,251 @@ export default function PassedCoursesManagement() {
 
   return (
     <div className="space-y-6 pb-12 font-vazir text-slate-800 dir-rtl">
-      {/* Top Header & Navigation Tabs */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="p-3 bg-gradient-to-br from-indigo-600 to-indigo-800 text-white rounded-2xl shadow-md shadow-indigo-200">
-            <BookOpen size={26} />
-          </div>
-          <div>
-            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-              دروس گذرانده شده و بانک سرفصل‌های آموزشی
-            </h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              مدیریت کارنامه دروس گذرانده، در جریان و مانده طلاب با ساختار «عنوان / کتاب / بخش»
-            </p>
-          </div>
-        </div>
-
-        {/* Navigation Sub-Tabs */}
-        <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200/80 shrink-0 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('students_progress')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-              activeTab === 'students_progress'
-                ? "bg-white text-indigo-900 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Users size={15} />
-            <span>وضعیت دروس گذرانده طلاب</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('curriculum_bank')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+      {isAdminMobile ? (
+        <div className="space-y-3.5">
+          <MobileSectionHeader
+            title="دروس گذرانده و بانک سرفصل‌ها"
+            subtitle="کارنامه دروس گذرانده، در جریان و مانده طلاب"
+            icon={<BookOpen size={20} />}
+            badgeText={activeTab === 'students_progress' ? `${filteredStudents.length} طلبه` : `${subjects.length} عنوان`}
+            variant="white"
+            primaryAction={
               activeTab === 'curriculum_bank'
-                ? "bg-white text-indigo-900 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Layers size={15} />
-            <span>بانک دروس مصوب (اصول، فقه، فلسفه)</span>
-          </button>
+                ? {
+                    id: 'add-subject',
+                    label: 'افزودن عنوان درسی',
+                    icon: <Plus size={15} />,
+                    onClick: () => {
+                      setEditingSubject({});
+                      setIsSubjectModalOpen(true);
+                    },
+                    tone: 'indigo',
+                  }
+                : {
+                    id: 'refresh-courses',
+                    label: 'بروزرسانی داده‌ها',
+                    icon: <RefreshCw size={15} />,
+                    onClick: () => loadAllData(false),
+                    tone: 'indigo',
+                  }
+            }
+            secondaryActions={
+              activeTab === 'curriculum_bank'
+                ? [
+                    {
+                      id: 'clear-bank',
+                      label: 'پاکسازی کامل بانک',
+                      icon: <Trash2 size={14} />,
+                      onClick: handleClearAllBankData,
+                      tone: 'rose',
+                    },
+                  ]
+                : (isSuperAdmin || isEducationManager)
+                ? [
+                    {
+                      id: 'finalize-courses',
+                      label: 'نهایی‌سازی پایان سال',
+                      icon: <CheckSquare size={14} />,
+                      onClick: () => setIsFinalizeModalOpen(true),
+                      tone: 'emerald',
+                    },
+                  ]
+                : []
+            }
+          />
+
+          <MobileHorizontalTabs
+            activeId={activeTab}
+            onChange={(id) => setActiveTab(id as 'students_progress' | 'curriculum_bank')}
+            tabs={[
+              { id: 'students_progress', label: 'وضعیت دروس طلاب', icon: <Users size={14} />, badge: filteredStudents.length },
+              { id: 'curriculum_bank', label: 'بانک دروس مصوب', icon: <Layers size={14} />, badge: subjects.length },
+            ]}
+          />
         </div>
-      </div>
+      ) : (
+        /* Top Header & Navigation Tabs */
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-gradient-to-br from-indigo-600 to-indigo-800 text-white rounded-2xl shadow-md shadow-indigo-200">
+              <BookOpen size={26} />
+            </div>
+            <div>
+              <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                دروس گذرانده شده و بانک سرفصل‌های آموزشی
+              </h1>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                مدیریت کارنامه دروس گذرانده، در جریان و مانده طلاب با ساختار «عنوان / کتاب / بخش»
+              </p>
+            </div>
+          </div>
+
+          {/* Navigation Sub-Tabs */}
+          <div className="p-1 bg-slate-100 rounded-2xl flex items-center border border-slate-200/80 shrink-0 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('students_progress')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === 'students_progress'
+                  ? "bg-white text-indigo-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Users size={15} />
+              <span>وضعیت دروس گذرانده طلاب</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('curriculum_bank')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === 'curriculum_bank'
+                  ? "bg-white text-indigo-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Layers size={15} />
+              <span>بانک دروس مصوب (اصول، فقه، فلسفه)</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* SUB-TAB 1: STUDENTS COURSE PROGRESS LIST */}
       {activeTab === 'students_progress' && (
+        isAdminMobile ? (
+          <div className="space-y-3.5">
+            {(isSuperAdmin || isEducationManager) && (
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-3.5 rounded-2xl text-white shadow-md space-y-2.5 border border-indigo-900/40">
+                <div className="flex items-center gap-1.5 text-amber-400 font-bold text-[11px]">
+                  <Sparkles size={14} />
+                  <span>عملیات پایان سال تحصیلی</span>
+                </div>
+                <p className="text-[11px] text-indigo-200/90 leading-relaxed">
+                  تبدیل خودکار تمامی دروس در جریان به وضعیت «گذرانده شده» در سابقه علمی طلاب.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsFinalizeModalOpen(true)}
+                  className="w-full min-h-[40px] px-3 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckSquare size={15} />
+                  <span>نهایی‌سازی دروس در حال جریان</span>
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-700 text-white rounded-2xl p-2.5 text-center shadow-xs">
+                <span className="text-[10px] font-bold text-emerald-100 block">گذرانده</span>
+                <span className="text-lg font-black font-mono mt-0.5 block">{systemTotalStats.totalPassed}</span>
+              </div>
+              <div className="bg-gradient-to-br from-sky-500 to-blue-700 text-white rounded-2xl p-2.5 text-center shadow-xs">
+                <span className="text-[10px] font-bold text-sky-100 block">در جریان</span>
+                <span className="text-lg font-black font-mono mt-0.5 block">{systemTotalStats.totalInProgress}</span>
+              </div>
+              <div className="bg-gradient-to-br from-rose-500 to-red-700 text-white rounded-2xl p-2.5 text-center shadow-xs">
+                <span className="text-[10px] font-bold text-rose-100 block">باقی‌مانده</span>
+                <span className="text-lg font-black font-mono mt-0.5 block">{systemTotalStats.totalRemaining}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجوی طلبه (نام، کد ملی)..."
+              />
+              <select
+                value={selectedGradeFilter}
+                onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+              >
+                <option value="all">همه پایه‌های تحصیلی</option>
+                <option value="پایه 1">پایه 1</option>
+                <option value="پایه 2">پایه 2</option>
+                <option value="پایه 3">پایه 3</option>
+                <option value="پایه 4">پایه 4</option>
+                <option value="پایه 5">پایه 5</option>
+                <option value="پایه 6">پایه 6</option>
+                <option value="پایه 7">پایه 7</option>
+                <option value="پایه 8">پایه 8</option>
+                <option value="پایه 9">پایه 9</option>
+                <option value="پایه 10">پایه 10</option>
+              </select>
+            </div>
+
+            <div className="space-y-2.5">
+              {filteredStudents.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 text-center text-xs text-slate-400 border border-slate-200">
+                  هیچ طلبه‌ای با فیلترهای انتخابی یافت نشد.
+                </div>
+              ) : (
+                filteredStudents.map(student => {
+                  const stats = studentStatsMap[student.id] || {
+                    passedCount: 0,
+                    inProgressCount: 0,
+                    remainingCount: 0,
+                    totalCount: 0,
+                    percentCompleted: 0
+                  };
+                  const fullName = getStudentFullName(student);
+                  return (
+                    <div key={student.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {student.photoUrl ? (
+                            <img src={student.photoUrl} alt={fullName} className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 font-black flex items-center justify-center text-sm shrink-0">
+                              {fullName.charAt(0)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-black text-slate-900 block text-sm truncate">{fullName}</span>
+                            <span className="text-[10.5px] text-slate-400 font-mono">
+                              {student.grade || 'عمومی'} {student.nationalId ? `• ${student.nationalId}` : ''}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-mono text-xs font-black shrink-0">
+                          {stats.percentCompleted}٪
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${stats.percentCompleted}%` }} />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 text-[10.5px] font-black text-center">
+                        <div className="px-2 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-100">
+                          گذرانده: {stats.passedCount}
+                        </div>
+                        <div className="px-2 py-1.5 rounded-xl bg-sky-50 text-sky-800 border border-sky-100">
+                          جریان: {stats.inProgressCount}
+                        </div>
+                        <div className="px-2 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-100">
+                          مانده: {stats.remainingCount}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentForModal(student)}
+                        className="w-full min-h-[40px] px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <BookOpen size={14} />
+                        <span>مشاهده و ویرایش سابقه علمی</span>
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ) : (
         <div className="space-y-5">
           {/* Action Ribbon: Finalize End-of-Year Courses Button */}
           {(isSuperAdmin || isEducationManager) && (
@@ -985,61 +1183,64 @@ export default function PassedCoursesManagement() {
             </div>
           </div>
         </div>
+        )
       )}
 
       {/* SUB-TAB 2: CURRICULUM COURSES BANK (ONLY TITLE / BOOK / CHAPTER) */}
       {activeTab === 'curriculum_bank' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm sm:text-base font-black text-slate-900">
-                مرجع اصلی بانک دروس و سرفصل‌های مصوب
-              </h2>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                قالب ثبت: <strong>عنوان</strong> (اصول، فقه، فلسفه) ← <strong>کتاب</strong> (مثلاً رسائل) ← <strong>بخش</strong> (مثلاً قطع و ظن)
-              </p>
-            </div>
+          {!isAdminMobile && (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <h2 className="text-sm sm:text-base font-black text-slate-900">
+                  مرجع اصلی بانک دروس و سرفصل‌های مصوب
+                </h2>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  قالب ثبت: <strong>عنوان</strong> (اصول، فقه، فلسفه) ← <strong>کتاب</strong> (مثلاً رسائل) ← <strong>بخش</strong> (مثلاً قطع و ظن)
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleClearAllBankData}
-                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                title="پاکسازی کامل بانک دروس و سوابق"
-              >
-                <Trash2 size={15} />
-                <span>پاکسازی کامل بانک دروس</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleClearAllBankData}
+                  className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="پاکسازی کامل بانک دروس و سوابق"
+                >
+                  <Trash2 size={15} />
+                  <span>پاکسازی کامل بانک دروس</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingSubject({});
-                  setIsSubjectModalOpen(true);
-                }}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>افزودن عنوان درسی جدید</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSubject({});
+                    setIsSubjectModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>افزودن عنوان درسی جدید</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Subjects Grid & Tree View */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             {subjects.map(subject => {
               const subjectBooks = books.filter(b => b.subjectId === subject.id || b.subjectTitle === subject.title);
 
               return (
                 <div key={subject.id} className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
                   {/* Subject Header */}
-                  <div className="bg-slate-50/90 p-4 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl font-black">
+                  <div className={cn('bg-slate-50/90 p-4 border-b border-slate-200 flex items-center justify-between gap-2', isAdminMobile && 'flex-wrap p-3.5')}>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl font-black shrink-0">
                         <BookOpen size={18} />
                       </div>
-                      <div>
-                        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2 flex-wrap">
                           <span>عنوان: {subject.title}</span>
                           <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full font-bold">
                             {subjectBooks.length} کتاب
@@ -1049,7 +1250,7 @@ export default function PassedCoursesManagement() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className={cn('flex items-center gap-1.5', isAdminMobile && 'w-full justify-between pt-2 border-t border-slate-200/70')}>
                       <button
                         type="button"
                         onClick={() => {
@@ -1062,26 +1263,28 @@ export default function PassedCoursesManagement() {
                         <span>افزودن کتاب به «{subject.title}»</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingSubject(subject);
-                          setIsSubjectModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                        title="ویرایش عنوان"
-                      >
-                        <Edit3 size={15} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSubject(subject);
+                            setIsSubjectModalOpen(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                          title="ویرایش عنوان"
+                        >
+                          <Edit3 size={15} />
+                        </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteItem('curriculum_subjects', subject.id, subject.title)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                        title="حذف"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem('curriculum_subjects', subject.id, subject.title)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="حذف"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1097,7 +1300,7 @@ export default function PassedCoursesManagement() {
 
                         return (
                           <div key={book.id} className="bg-slate-50/60 border border-slate-200 rounded-2xl p-4 space-y-3">
-                            <div className="flex items-center justify-between">
+                            <div className={cn('flex items-center justify-between gap-2', isAdminMobile && 'flex-wrap')}>
                               <div className="flex items-center gap-2">
                                 <span className="font-black text-xs sm:text-sm text-slate-900">📖 کتاب: {book.title}</span>
                               </div>

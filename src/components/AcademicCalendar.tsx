@@ -67,6 +67,8 @@ import { cn } from '../lib/utils';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { ShamsiDatePicker } from './ShamsiDatePicker';
 import { StudentMobileCalendar, MobileCalendarDayDetail } from './student/mobile/StudentMobileCalendar';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from './admin/mobile/MobileModulePrimitives';
 
 // System Default Holiday Types with color presets
 const DEFAULT_HOLIDAY_TYPES: AcademicHolidayType[] = [
@@ -96,6 +98,7 @@ const ALL_SYSTEM_GRADES = ['پایه ۷', 'پایه ۸', 'پایه ۹', 'پای�
 export default function AcademicCalendar() {
   // Auth Context & Role Detection
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   // State
   const [students, setStudents] = useState<Student[]>([]);
@@ -1958,7 +1961,61 @@ export default function AcademicCalendar() {
       </AnimatePresence>
 
       {/* --- MOBILE-ONLY ACADEMIC CALENDAR VIEW (below md) --- */}
-      <div className="md:hidden">
+      <div className="md:hidden space-y-3">
+        {isAdminMobile && isCalendarEditor && (
+          <MobileSectionHeader
+            title="تقویم آموزشی (پنل مدیریت)"
+            subtitle={selectedPeriod ? `${selectedPeriod.title} (${selectedPeriod.startDate} تا ${selectedPeriod.endDate})` : 'مدیریت دوره‌ها و تعطیلات سالنامه'}
+            variant="indigo"
+            icon={<CalendarIcon size={18} />}
+            primaryAction={{
+              id: 'add-holiday',
+              label: 'ثبت تعطیلی جدید',
+              icon: <Plus size={15} />,
+              tone: 'emerald',
+              onClick: () => handleOpenAddHoliday()
+            }}
+            secondaryActions={[
+              {
+                id: 'new-period',
+                label: 'ایجاد دوره جدید',
+                icon: <Plus size={14} />,
+                tone: 'indigo',
+                onClick: handleOpenNewPeriod
+              },
+              ...(selectedPeriod
+                ? [{
+                    id: 'edit-period',
+                    label: 'ویرایش دوره فعال',
+                    icon: <Edit2 size={14} />,
+                    onClick: () => handleOpenEditPeriod(selectedPeriod)
+                  }]
+                : []),
+              {
+                id: 'import-backup',
+                label: 'بارگذاری پشتیبان',
+                icon: <Upload size={14} />,
+                onClick: () => setShowImportExportModal(true)
+              },
+              {
+                id: 'export-excel',
+                label: 'خروجی اکسل تقویم',
+                icon: <FileSpreadsheet size={14} />,
+                tone: 'emerald',
+                onClick: handleExportToExcel
+              },
+              ...(selectedPeriod && periods.length > 1
+                ? [{
+                    id: 'delete-period',
+                    label: 'حذف دوره فعلی',
+                    icon: <Trash2 size={14} />,
+                    tone: 'rose' as const,
+                    onClick: () => handleDeletePeriod(selectedPeriod.id)
+                  }]
+                : [])
+            ]}
+          />
+        )}
         <StudentMobileCalendar
           periods={periods}
           selectedPeriodId={selectedPeriodId}

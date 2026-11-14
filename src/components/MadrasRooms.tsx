@@ -38,6 +38,8 @@ import {
   isProgramInRoom,
   getRoomCurrentStatus 
 } from './madras/madrasUtils';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 // Re-export for any external consumers if needed
 export { DEFAULT_MADRAS_ROOMS } from './madras/madrasUtils';
@@ -45,6 +47,8 @@ export { DEFAULT_MADRAS_ROOMS } from './madras/madrasUtils';
 export default function MadrasRooms() {
   const { currentUser } = useAuth();
   const { currentMentorId } = useMentor();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Role permissions: Only Super Admin and Education Officer can search and edit
   const canEditAndSearch = canManageAndSearchMadras(currentUser);
@@ -418,96 +422,165 @@ export default function MadrasRooms() {
   };
 
   return (
-    <div className="space-y-6 text-slate-800" dir="rtl" id="madras-rooms-main">
+    <div className={cn(isAdminMobile ? "space-y-4 text-slate-800" : "space-y-6 text-slate-800")} dir="rtl" id="madras-rooms-main">
       
       {/* 1. Header Bar */}
-      <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
-              <DoorOpen size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                مَدرَس‌ها (کلاس‌های درس)
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-500 font-medium">
-                مشاهده لیست مَدرَس‌ها، برنامه هفتگی از ساعت ۰۷:۰۰ الی ۱۷:۰۰ و ابزار جستجوی سریع کلاس خالی
-              </p>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="مَدرَس‌ها (کلاس‌های درس)"
+          subtitle="برنامه هفتگی مَدرَس‌ها و جستجوی سریع کلاس خالی"
+          icon={<DoorOpen size={20} />}
+          variant="indigo"
+          badgeText={`${rooms.length} مَدرَس`}
+          primaryAction={
+            canUseFinder
+              ? {
+                  id: 'toggle-empty-finder',
+                  label: showEmptyFinder ? 'بستن جستجوی کلاس خالی' : 'یافتن مَدرَس خالی',
+                  icon: <Search size={16} />,
+                  tone: 'primary',
+                  onClick: () => setShowEmptyFinder(!showEmptyFinder),
+                }
+              : canEditAndSearch
+              ? {
+                  id: 'add-class-madras',
+                  label: 'تعریف کلاس جدید',
+                  icon: <Plus size={16} />,
+                  tone: 'primary',
+                  onClick: () => handleOpenAddClass(),
+                }
+              : undefined
+          }
+          secondaryActions={[
+            ...(canEditAndSearch
+              ? [
+                  {
+                    id: 'define-class',
+                    label: 'تعریف کلاس جدید',
+                    icon: <Plus size={15} />,
+                    tone: 'indigo' as const,
+                    onClick: () => handleOpenAddClass(),
+                  },
+                  {
+                    id: 'add-madras-room',
+                    label: 'افزودن مَدرَس',
+                    icon: <Building2 size={15} />,
+                    onClick: () => {
+                      setEditingRoom(null);
+                      setRoomFormName(`مدرس ${rooms.length + 1}`);
+                      setRoomFormCode(`م-${rooms.length + 1}`);
+                      setRoomFormCapacity(30);
+                      setRoomFormFloor('طبقه اول');
+                      setRoomFormDescription('');
+                      setShowRoomModal(true);
+                    },
+                  },
+                ]
+              : []),
+            {
+              id: 'export-madras-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={15} />,
+              tone: 'emerald',
+              onClick: handleExportExcel,
+            },
+            {
+              id: 'print-madras',
+              label: 'چاپ',
+              icon: <Printer size={15} />,
+              onClick: () => window.print(),
+            },
+          ]}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
+                <DoorOpen size={24} />
+              </div>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  مَدرَس‌ها (کلاس‌های درس)
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                  مشاهده لیست مَدرَس‌ها، برنامه هفتگی از ساعت ۰۷:۰۰ الی ۱۷:۰۰ و ابزار جستجوی سریع کلاس خالی
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Quick Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {canUseFinder && (
+          {/* Quick Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {canUseFinder && (
+              <button
+                onClick={() => setShowEmptyFinder(!showEmptyFinder)}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs",
+                  showEmptyFinder 
+                    ? "bg-slate-900 text-white hover:bg-black" 
+                    : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                )}
+                title="ابزار جستجو و یافتن سریع مَدرَس خالی"
+              >
+                <Search size={15} />
+                <span>یافتن مَدرَس خالی</span>
+              </button>
+            )}
+
+            {canEditAndSearch && (
+              <>
+                <button
+                  onClick={() => handleOpenAddClass()}
+                  className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>تعریف کلاس جدید</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setEditingRoom(null);
+                    setRoomFormName(`مدرس ${rooms.length + 1}`);
+                    setRoomFormCode(`م-${rooms.length + 1}`);
+                    setRoomFormCapacity(30);
+                    setRoomFormFloor('طبقه اول');
+                    setRoomFormDescription('');
+                    setShowRoomModal(true);
+                  }}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 cursor-pointer"
+                >
+                  <Building2 size={15} />
+                  <span>افزودن مَدرَس</span>
+                </button>
+              </>
+            )}
+
+            {!canEditAndSearch && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                <DoorOpen size={15} className="text-indigo-600" />
+                <span>مشاهده برنامه مَدرَس‌ها (جهت مشاهده جدول هفتگی روی هر کارت کلیک کنید)</span>
+              </div>
+            )}
+
             <button
-              onClick={() => setShowEmptyFinder(!showEmptyFinder)}
-              className={cn(
-                "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs",
-                showEmptyFinder 
-                  ? "bg-slate-900 text-white hover:bg-black" 
-                  : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
-              )}
-              title="ابزار جستجو و یافتن سریع مَدرَس خالی"
+              onClick={handleExportExcel}
+              className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title="خروجی فایل اکسل از مَدرَس‌ها"
             >
-              <Search size={15} />
-              <span>یافتن مَدرَس خالی</span>
+              <FileSpreadsheet size={16} />
             </button>
-          )}
 
-          {canEditAndSearch && (
-            <>
-              <button
-                onClick={() => handleOpenAddClass()}
-                className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>تعریف کلاس جدید</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setEditingRoom(null);
-                  setRoomFormName(`مدرس ${rooms.length + 1}`);
-                  setRoomFormCode(`م-${rooms.length + 1}`);
-                  setRoomFormCapacity(30);
-                  setRoomFormFloor('طبقه اول');
-                  setRoomFormDescription('');
-                  setShowRoomModal(true);
-                }}
-                className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200 cursor-pointer"
-              >
-                <Building2 size={15} />
-                <span>افزودن مَدرَس</span>
-              </button>
-            </>
-          )}
-
-          {!canEditAndSearch && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-              <DoorOpen size={15} className="text-indigo-600" />
-              <span>مشاهده برنامه مَدرَس‌ها (جهت مشاهده جدول هفتگی روی هر کارت کلیک کنید)</span>
-            </div>
-          )}
-
-          <button
-            onClick={handleExportExcel}
-            className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            title="خروجی فایل اکسل از مَدرَس‌ها"
-          >
-            <FileSpreadsheet size={16} />
-          </button>
-
-          <button
-            onClick={() => window.print()}
-            className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            title="چاپ"
-          >
-            <Printer size={16} />
-          </button>
+            <button
+              onClick={() => window.print()}
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              title="چاپ"
+            >
+              <Printer size={16} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Quick Empty Room Finder Section (Collapsible / Interactive - Super Admin, Education Officer, and Grade Professors) */}
       <AnimatePresence>
@@ -532,138 +605,231 @@ export default function MadrasRooms() {
       </AnimatePresence>
 
       {/* 3. Filter Bar (Floor & Capacity & Search & Status) */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-        
-        {/* Search */}
-        <div className="relative w-full md:w-64">
-          <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-          <input
-            type="text"
-            value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-            placeholder="شماره یا نام مَدرَس..."
-            className="w-full pr-8 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 focus:bg-white"
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileHorizontalTabs
+            activeId={roomScopeFilter}
+            onChange={(id) => setRoomScopeFilter(id as 'all' | 'internal' | 'external')}
+            tabs={[
+              { id: 'all', label: 'همه مَدرَس‌ها' },
+              { id: 'internal', label: 'داخل مجموعه' },
+              {
+                id: 'external',
+                label: 'خارج از مجموعه',
+                badge: rooms.filter((r) => r.isExternal).length,
+                tone: 'amber',
+              },
+            ]}
           />
-        </div>
 
-        {/* Filters Group: Scope, Floor, Capacity, Status */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <MobileSearchFilterBar
+            value={searchFilter}
+            onChange={setSearchFilter}
+            placeholder="شماره یا نام مَدرَس..."
+            onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+            filtersOpen={mobileFiltersOpen}
+            activeFilterCount={
+              (floorFilter !== 'all' ? 1 : 0) +
+              (capacityFilter > 0 ? 1 : 0) +
+              (statusFilter !== 'all' ? 1 : 0)
+            }
+          />
 
-          {/* Room Scope Filter (اصلاح مدرس‌های خارج از مجموعه) */}
-          <div className="flex items-center bg-indigo-50/70 border border-indigo-100 p-0.5 rounded-xl text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setRoomScopeFilter('all')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                roomScopeFilter === 'all' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              همه مَدرَس‌ها
-            </button>
-            <button
-              type="button"
-              onClick={() => setRoomScopeFilter('internal')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                roomScopeFilter === 'internal' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              داخل مجموعه
-            </button>
-            <button
-              type="button"
-              onClick={() => setRoomScopeFilter('external')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1",
-                roomScopeFilter === 'external' ? "bg-amber-500 text-white shadow-2xs font-black" : "text-amber-800 hover:text-amber-950"
-              )}
-            >
-              <span>📍 خارج از مجموعه</span>
-              <span className="text-[10px] bg-amber-100 text-amber-900 px-1 rounded-full font-bold">
-                {rooms.filter(r => r.isExternal).length}
-              </span>
-            </button>
-          </div>
-          
-          {/* Floor Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
-            <Layers size={13} className="text-slate-400" />
-            <select
-              value={floorFilter}
-              onChange={(e) => setFloorFilter(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
-            >
-              <option value="all">همه طبقات</option>
-              {uniqueFloors.map(fl => (
-                <option key={fl} value={fl}>{fl}</option>
-              ))}
-            </select>
-          </div>
+          {mobileFiltersOpen && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-2.5 shadow-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={floorFilter}
+                  onChange={(e) => setFloorFilter(e.target.value)}
+                  className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه طبقات</option>
+                  {uniqueFloors.map(fl => (
+                    <option key={fl} value={fl}>{fl}</option>
+                  ))}
+                </select>
 
-          {/* Capacity Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
-            <Users size={13} className="text-slate-400" />
-            <select
-              value={capacityFilter}
-              onChange={(e) => setCapacityFilter(Number(e.target.value))}
-              className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
-            >
-              <option value={0}>تمام ظرفیت‌ها</option>
-              <option value={5}>حداقل ۵ نفر</option>
-              <option value={15}>حداقل ۱۵ نفر</option>
-              <option value={20}>حداقل ۲۰ نفر</option>
-              <option value={25}>حداقل ۲۵ نفر</option>
-              <option value={45}>حداقل ۴۵ نفر</option>
-            </select>
-          </div>
+                <select
+                  value={capacityFilter}
+                  onChange={(e) => setCapacityFilter(Number(e.target.value))}
+                  className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value={0}>تمام ظرفیت‌ها</option>
+                  <option value={5}>حداقل ۵ نفر</option>
+                  <option value={15}>حداقل ۱۵ نفر</option>
+                  <option value={20}>حداقل ۲۰ نفر</option>
+                  <option value={25}>حداقل ۲۵ نفر</option>
+                  <option value={45}>حداقل ۴۵ نفر</option>
+                </select>
+              </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                statusFilter === 'all' ? "bg-white text-slate-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
-              )}
-            >
-              همه
-            </button>
-            <button
-              onClick={() => setStatusFilter('free')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                statusFilter === 'free' ? "bg-white text-emerald-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
-              )}
-            >
-              آزاد
-            </button>
-            <button
-              onClick={() => setStatusFilter('occupied')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                statusFilter === 'occupied' ? "bg-white text-rose-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
-              )}
-            >
-              مشغول
-            </button>
-          </div>
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                {(['all', 'free', 'occupied'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatusFilter(st)}
+                    className={cn(
+                      'min-h-[36px] rounded-lg transition-all cursor-pointer',
+                      statusFilter === st ? 'bg-white text-indigo-800 shadow-2xs font-black' : 'text-slate-600'
+                    )}
+                  >
+                    {st === 'all' ? 'همه' : st === 'free' ? 'آزاد' : 'مشغول'}
+                  </button>
+                ))}
+              </div>
 
-          {(searchFilter || floorFilter !== 'all' || capacityFilter > 0 || statusFilter !== 'all') && (
-            <button
-              onClick={() => {
-                setSearchFilter('');
-                setFloorFilter('all');
-                setCapacityFilter(0);
-                setStatusFilter('all');
-              }}
-              className="text-xs text-rose-600 hover:underline px-2 py-1"
-            >
-              پاکسازی فیلترها
-            </button>
+              {(searchFilter || floorFilter !== 'all' || capacityFilter > 0 || statusFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchFilter('');
+                    setFloorFilter('all');
+                    setCapacityFilter(0);
+                    setStatusFilter('all');
+                  }}
+                  className="text-xs text-rose-600 font-black cursor-pointer"
+                >
+                  پاکسازی فیلترها
+                </button>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
+          
+          {/* Search */}
+          <div className="relative w-full md:w-64">
+            <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="شماره یا نام مَدرَس..."
+              className="w-full pr-8 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-indigo-500 focus:bg-white"
+            />
+          </div>
+
+          {/* Filters Group: Scope, Floor, Capacity, Status */}
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+
+            {/* Room Scope Filter (اصلاح مدرس‌های خارج از مجموعه) */}
+            <div className="flex items-center bg-indigo-50/70 border border-indigo-100 p-0.5 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setRoomScopeFilter('all')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  roomScopeFilter === 'all' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                همه مَدرَس‌ها
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomScopeFilter('internal')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  roomScopeFilter === 'internal' ? "bg-white text-indigo-950 shadow-2xs font-black" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                داخل مجموعه
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomScopeFilter('external')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1",
+                  roomScopeFilter === 'external' ? "bg-amber-500 text-white shadow-2xs font-black" : "text-amber-800 hover:text-amber-950"
+                )}
+              >
+                <span>📍 خارج از مجموعه</span>
+                <span className="text-[10px] bg-amber-100 text-amber-900 px-1 rounded-full font-bold">
+                  {rooms.filter(r => r.isExternal).length}
+                </span>
+              </button>
+            </div>
+            
+            {/* Floor Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+              <Layers size={13} className="text-slate-400" />
+              <select
+                value={floorFilter}
+                onChange={(e) => setFloorFilter(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">همه طبقات</option>
+                {uniqueFloors.map(fl => (
+                  <option key={fl} value={fl}>{fl}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Capacity Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 text-xs">
+              <Users size={13} className="text-slate-400" />
+              <select
+                value={capacityFilter}
+                onChange={(e) => setCapacityFilter(Number(e.target.value))}
+                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value={0}>تمام ظرفیت‌ها</option>
+                <option value={5}>حداقل ۵ نفر</option>
+                <option value={15}>حداقل ۱۵ نفر</option>
+                <option value={20}>حداقل ۲۰ نفر</option>
+                <option value={25}>حداقل ۲۵ نفر</option>
+                <option value={45}>حداقل ۴۵ نفر</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  statusFilter === 'all' ? "bg-white text-slate-900 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                همه
+              </button>
+              <button
+                onClick={() => setStatusFilter('free')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  statusFilter === 'free' ? "bg-white text-emerald-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                آزاد
+              </button>
+              <button
+                onClick={() => setStatusFilter('occupied')}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                  statusFilter === 'occupied' ? "bg-white text-rose-700 shadow-2xs font-black" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                مشغول
+              </button>
+            </div>
+
+            {(searchFilter || floorFilter !== 'all' || capacityFilter > 0 || statusFilter !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchFilter('');
+                  setFloorFilter('all');
+                  setCapacityFilter(0);
+                  setStatusFilter('all');
+                }}
+                className="text-xs text-rose-600 hover:underline px-2 py-1"
+              >
+                پاکسازی فیلترها
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 4. Compact Madras Rooms Grid (Clean, Decluttered, No Facilities) */}
       {loading ? (

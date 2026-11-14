@@ -59,6 +59,8 @@ import {
   normalizeShamsiDateStr, 
   toEnglishDigits 
 } from '../lib/jalali';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 const SCORE_BADGES: Record<CounselingScore, { label: string; badgeClass: string; bg: string }> = {
   'الف': { label: 'الف (عالی)', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-black', bg: 'bg-emerald-50' },
@@ -108,6 +110,10 @@ interface StudentBatchRow {
 
 export default function CounselingClasses() {
   const { currentUser, isReadOnly, isSuperAdmin } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileStatusFilterOpen, setMobileStatusFilterOpen] = useState(false);
+  const [mobileSessionFiltersOpen, setMobileSessionFiltersOpen] = useState(false);
+  const [mobileSummaryFiltersOpen, setMobileSummaryFiltersOpen] = useState(false);
 
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
   const isResearchManager = currentUser?.role === 'research_manager' || currentUser?.username?.toUpperCase() === 'YAZDANI' || (currentUser?.name && currentUser.name.includes('پژوهش'));
@@ -733,121 +739,198 @@ export default function CounselingClasses() {
   }, [grades, selectedGrade, selectedCourse, selectedTeacher, searchQuery]);
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
+    <div className={cn("max-w-7xl mx-auto font-vazir", isAdminMobile ? "space-y-4" : "p-4 sm:p-6 space-y-6")} dir="rtl">
       
       {/* Top Banner & Action Header */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shadow-xs">
-            <BookCheck size={28} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">ارزیابی کلاس‌های مشاوره (پنل مسئول پژوهش)</h1>
-              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200">
-                پایش جلسات و تعهد اساتید
-              </span>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="ارزیابی کلاس‌های مشاوره"
+          subtitle="ثبت کلاسی جلسات، پایش برگزاری دوره‌ها و درصد تعهد اساتید مشاور"
+          icon={<BookCheck size={20} />}
+          variant="slate"
+          badgeText="پایش و تعهد"
+          primaryAction={
+            canEditCounseling
+              ? {
+                  id: 'batch-eval',
+                  label: 'ثبت ارزیابی کلاسی جدید',
+                  icon: <Plus size={15} />,
+                  tone: 'amber',
+                  onClick: () => handleOpenClassBatchModal(),
+                }
+              : {
+                  id: 'refresh-data',
+                  label: 'بروزرسانی داده‌ها',
+                  icon: <RefreshCw size={15} className={cn(loading && 'animate-spin')} />,
+                  tone: 'primary',
+                  disabled: loading,
+                  onClick: () => fetchData(),
+                }
+          }
+          secondaryActions={
+            canEditCounseling
+              ? [
+                  {
+                    id: 'refresh-data-sec',
+                    label: 'بروزرسانی داده‌ها',
+                    icon: <RefreshCw size={14} className={cn(loading && 'animate-spin')} />,
+                    disabled: loading,
+                    onClick: () => fetchData(),
+                  },
+                ]
+              : []
+          }
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shadow-xs">
+              <BookCheck size={28} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              ثبت کلاسی جلسات مشاوره، بررسی وضعیت برگزاری دوره‌ها و رصد درصد تعهد اساتید مشاور
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-slate-900">ارزیابی کلاس‌های مشاوره (پنل مسئول پژوهش)</h1>
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200">
+                  پایش جلسات و تعهد اساتید
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                ثبت کلاسی جلسات مشاوره، بررسی وضعیت برگزاری دوره‌ها و رصد درصد تعهد اساتید مشاور
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {canEditCounseling && (
+              <button
+                onClick={() => handleOpenClassBatchModal()}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-black shadow-md shadow-amber-600/20 active:scale-95 transition-all cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>ثبت جدید ارزیابی کلاس مشاوره (کلاسی)</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => fetchData()}
+              disabled={loading}
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+              title="بروزرسانی داده‌ها"
+            >
+              <RefreshCw size={16} className={cn(loading && "animate-spin text-amber-600")} />
+            </button>
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {canEditCounseling && (
-            <button
-              onClick={() => handleOpenClassBatchModal()}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white rounded-xl text-xs font-black shadow-md shadow-amber-600/20 active:scale-95 transition-all cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>ثبت جدید ارزیابی کلاس مشاوره (کلاسی)</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => fetchData()}
-            disabled={loading}
-            className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
-            title="بروزرسانی داده‌ها"
-          >
-            <RefreshCw size={16} className={cn(loading && "animate-spin text-amber-600")} />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Main Tabs Navigation */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
-        <button
-          onClick={() => setActiveView('status_monitoring')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
-            activeView === 'status_monitoring'
-              ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <CalendarDays size={16} />
-          <span>وضعیت و پایش ارزیابی کلاس‌ها</span>
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.2 rounded-full font-black",
-            activeView === 'status_monitoring' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-          )}>
-            {statusAnalysis.evaluatedCount} از {statusAnalysis.totalClasses}
-          </span>
-        </button>
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={activeView}
+          onChange={(id) => setActiveView(id as typeof activeView)}
+          tabs={[
+            {
+              id: 'status_monitoring',
+              label: 'وضعیت و پایش',
+              icon: <CalendarDays size={14} />,
+              badge: `${statusAnalysis.evaluatedCount}/${statusAnalysis.totalClasses}`,
+              tone: 'amber',
+            },
+            {
+              id: 'professor_commitment',
+              label: 'تعهد اساتید',
+              icon: <TrendingUp size={14} />,
+              badge: professorCommitmentStats.length,
+              tone: 'amber',
+            },
+            {
+              id: 'sessions',
+              label: 'ریز جلسات',
+              icon: <FileText size={14} />,
+              badge: grades.length,
+              tone: 'amber',
+            },
+            {
+              id: 'student_summary',
+              label: 'کارنامه طلاب',
+              icon: <BarChart2 size={14} />,
+              tone: 'amber',
+            },
+          ]}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+          <button
+            onClick={() => setActiveView('status_monitoring')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
+              activeView === 'status_monitoring'
+                ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <CalendarDays size={16} />
+            <span>وضعیت و پایش ارزیابی کلاس‌ها</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-black",
+              activeView === 'status_monitoring' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+            )}>
+              {statusAnalysis.evaluatedCount} از {statusAnalysis.totalClasses}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveView('professor_commitment')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
-            activeView === 'professor_commitment'
-              ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <TrendingUp size={16} />
-          <span>سابقه ثبت و تعهد اساتید</span>
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.2 rounded-full font-black",
-            activeView === 'professor_commitment' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-          )}>
-            {professorCommitmentStats.length} استاد
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveView('professor_commitment')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
+              activeView === 'professor_commitment'
+                ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <TrendingUp size={16} />
+            <span>سابقه ثبت و تعهد اساتید</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-black",
+              activeView === 'professor_commitment' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+            )}>
+              {professorCommitmentStats.length} استاد
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveView('sessions')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
-            activeView === 'sessions'
-              ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <FileText size={16} />
-          <span>ریز جلسات و نمرات ثبت‌شده</span>
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.2 rounded-full font-black",
-            activeView === 'sessions' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-          )}>
-            {grades.length}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveView('sessions')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
+              activeView === 'sessions'
+                ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <FileText size={16} />
+            <span>ریز جلسات و نمرات ثبت‌شده</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-black",
+              activeView === 'sessions' ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+            )}>
+              {grades.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveView('student_summary')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
-            activeView === 'student_summary'
-              ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <BarChart2 size={16} />
-          <span>کارنامه و خلاصه عملکرد طلاب</span>
-        </button>
-      </div>
+          <button
+            onClick={() => setActiveView('student_summary')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer",
+              activeView === 'student_summary'
+                ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <BarChart2 size={16} />
+            <span>کارنامه و خلاصه عملکرد طلاب</span>
+          </button>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: STATUS & MONITORING (انجام شده / انجام نشده در بازه زمانی) */}
@@ -855,149 +938,279 @@ export default function CounselingClasses() {
       {activeView === 'status_monitoring' && (
         <div className="space-y-6">
           {/* Filter & Date Range Toolbar */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <Sliders size={18} className="text-amber-600 shrink-0" />
-                <span className="text-xs font-black text-slate-800">بازه زمانی پایش ارزیابی کلاس‌ها:</span>
-                
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatusDatePreset('current_month');
-                      setStatusStartDate(startOfCurrentMonthShamsi);
-                      setStatusEndDate(todayShamsi);
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
-                      statusDatePreset === 'current_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    ماه جاری
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatusDatePreset('last_month');
-                      const prevYear = todayParts.month === 1 ? todayParts.year - 1 : todayParts.year;
-                      const prevMonth = todayParts.month === 1 ? 12 : todayParts.month - 1;
-                      const daysInPrev = getDaysInShamsiMonth(prevYear, prevMonth);
-                      setStatusStartDate(formatShamsiDate(prevYear, prevMonth, 1));
-                      setStatusEndDate(formatShamsiDate(prevYear, prevMonth, daysInPrev));
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
-                      statusDatePreset === 'last_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    ماه گذشته
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatusDatePreset('all_year');
-                      const academicStartYear = todayParts.month < 7 ? todayParts.year - 1 : todayParts.year;
-                      setStatusStartDate(formatShamsiDate(academicStartYear, 7, 1));
-                      setStatusEndDate(todayShamsi);
-                    }}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
-                      statusDatePreset === 'all_year' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    )}
-                  >
-                    کل سال تحصیلی
-                  </button>
+          {isAdminMobile ? (
+            <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Sliders size={15} className="text-amber-600 shrink-0" />
+                  <span className="text-xs font-black text-slate-800 truncate">
+                    بازه: {statusStartDate} تا {statusEndDate}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileStatusFilterOpen(p => !p)}
+                  className={cn(
+                    "min-h-[38px] px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shrink-0 cursor-pointer",
+                    mobileStatusFilterOpen ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-slate-50 text-slate-700 border-slate-200"
+                  )}
+                >
+                  <Filter size={14} />
+                  <span>فیلتر بازه و وضعیت</span>
+                  <ChevronDown size={14} className={cn("transition-transform", mobileStatusFilterOpen && "rotate-180")} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterMode('all')}
+                  className={cn(
+                    "min-h-[36px] px-2 py-1 rounded-lg text-[11px] font-black transition-all",
+                    statusFilterMode === 'all' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-600"
+                  )}
+                >
+                  همه ({statusAnalysis.totalClasses})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterMode('evaluated')}
+                  className={cn(
+                    "min-h-[36px] px-2 py-1 rounded-lg text-[11px] font-black transition-all",
+                    statusFilterMode === 'evaluated' ? "bg-emerald-600 text-white shadow-2xs" : "text-emerald-700"
+                  )}
+                >
+                  شده ({statusAnalysis.evaluatedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterMode('not_evaluated')}
+                  className={cn(
+                    "min-h-[36px] px-2 py-1 rounded-lg text-[11px] font-black transition-all",
+                    statusFilterMode === 'not_evaluated' ? "bg-rose-600 text-white shadow-2xs" : "text-rose-700"
+                  )}
+                >
+                  نشده ({statusAnalysis.notEvaluatedCount})
+                </button>
+              </div>
+
+              {mobileStatusFilterOpen && (
+                <div className="pt-2 border-t border-slate-100 space-y-3">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('current_month');
+                        setStatusStartDate(startOfCurrentMonthShamsi);
+                        setStatusEndDate(todayShamsi);
+                      }}
+                      className={cn(
+                        "min-h-[36px] px-2 py-1.5 rounded-xl text-[11px] font-black",
+                        statusDatePreset === 'current_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600"
+                      )}
+                    >
+                      ماه جاری
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('last_month');
+                        const prevYear = todayParts.month === 1 ? todayParts.year - 1 : todayParts.year;
+                        const prevMonth = todayParts.month === 1 ? 12 : todayParts.month - 1;
+                        const daysInPrev = getDaysInShamsiMonth(prevYear, prevMonth);
+                        setStatusStartDate(formatShamsiDate(prevYear, prevMonth, 1));
+                        setStatusEndDate(formatShamsiDate(prevYear, prevMonth, daysInPrev));
+                      }}
+                      className={cn(
+                        "min-h-[36px] px-2 py-1.5 rounded-xl text-[11px] font-black",
+                        statusDatePreset === 'last_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600"
+                      )}
+                    >
+                      ماه گذشته
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('all_year');
+                        const academicStartYear = todayParts.month < 7 ? todayParts.year - 1 : todayParts.year;
+                        setStatusStartDate(formatShamsiDate(academicStartYear, 7, 1));
+                        setStatusEndDate(todayShamsi);
+                      }}
+                      className={cn(
+                        "min-h-[36px] px-2 py-1.5 rounded-xl text-[11px] font-black",
+                        statusDatePreset === 'all_year' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600"
+                      )}
+                    >
+                      کل سال تحصیلی
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <ShamsiDatePicker
+                      label="از تاریخ:"
+                      value={statusStartDate}
+                      onChange={(val) => {
+                        setStatusStartDate(val);
+                        setStatusDatePreset('custom');
+                      }}
+                    />
+                    <ShamsiDatePicker
+                      label="تا تاریخ:"
+                      value={statusEndDate}
+                      onChange={(val) => {
+                        setStatusEndDate(val);
+                        setStatusDatePreset('custom');
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Sliders size={18} className="text-amber-600 shrink-0" />
+                  <span className="text-xs font-black text-slate-800">بازه زمانی پایش ارزیابی کلاس‌ها:</span>
+                  
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('current_month');
+                        setStatusStartDate(startOfCurrentMonthShamsi);
+                        setStatusEndDate(todayShamsi);
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
+                        statusDatePreset === 'current_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      )}
+                    >
+                      ماه جاری
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('last_month');
+                        const prevYear = todayParts.month === 1 ? todayParts.year - 1 : todayParts.year;
+                        const prevMonth = todayParts.month === 1 ? 12 : todayParts.month - 1;
+                        const daysInPrev = getDaysInShamsiMonth(prevYear, prevMonth);
+                        setStatusStartDate(formatShamsiDate(prevYear, prevMonth, 1));
+                        setStatusEndDate(formatShamsiDate(prevYear, prevMonth, daysInPrev));
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
+                        statusDatePreset === 'last_month' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      )}
+                    >
+                      ماه گذشته
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatusDatePreset('all_year');
+                        const academicStartYear = todayParts.month < 7 ? todayParts.year - 1 : todayParts.year;
+                        setStatusStartDate(formatShamsiDate(academicStartYear, 7, 1));
+                        setStatusEndDate(todayShamsi);
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] font-black transition-all cursor-pointer",
+                        statusDatePreset === 'all_year' ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      )}
+                    >
+                      کل سال تحصیلی
+                    </button>
+                  </div>
+                </div>
+
+                {/* View layout and filter selector */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilterMode('all')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        statusFilterMode === 'all' ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      همه کلاس‌ها ({statusAnalysis.totalClasses})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilterMode('evaluated')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                        statusFilterMode === 'evaluated' ? "bg-emerald-600 text-white shadow-xs" : "text-emerald-700 hover:text-emerald-900"
+                      )}
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>انجام شده ({statusAnalysis.evaluatedCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilterMode('not_evaluated')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
+                        statusFilterMode === 'not_evaluated' ? "bg-rose-600 text-white shadow-xs" : "text-rose-700 hover:text-rose-900"
+                      )}
+                    >
+                      <AlertTriangle size={13} />
+                      <span>انجام نشده ({statusAnalysis.notEvaluatedCount})</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setStatusDisplayLayout('two_column')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer",
+                        statusDisplayLayout === 'two_column' ? "bg-white text-indigo-700 shadow-xs font-black" : "text-slate-500"
+                      )}
+                    >
+                      نمایش دو ستونه
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusDisplayLayout('single_list')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer",
+                        statusDisplayLayout === 'single_list' ? "bg-white text-indigo-700 shadow-xs font-black" : "text-slate-500"
+                      )}
+                    >
+                      نمایش کارتی یکپارچه
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* View layout and filter selector */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilterMode('all')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                      statusFilterMode === 'all' ? "bg-white text-slate-800 shadow-xs" : "text-slate-500 hover:text-slate-800"
-                    )}
-                  >
-                    همه کلاس‌ها ({statusAnalysis.totalClasses})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilterMode('evaluated')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
-                      statusFilterMode === 'evaluated' ? "bg-emerald-600 text-white shadow-xs" : "text-emerald-700 hover:text-emerald-900"
-                    )}
-                  >
-                    <CheckCircle2 size={13} />
-                    <span>انجام شده ({statusAnalysis.evaluatedCount})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilterMode('not_evaluated')}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
-                      statusFilterMode === 'not_evaluated' ? "bg-rose-600 text-white shadow-xs" : "text-rose-700 hover:text-rose-900"
-                    )}
-                  >
-                    <AlertTriangle size={13} />
-                    <span>انجام نشده ({statusAnalysis.notEvaluatedCount})</span>
-                  </button>
+              {/* Custom Dates bar using ShamsiDatePicker (اصلاح ۳ و ۴) */}
+              <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-100 text-xs">
+                <span className="text-slate-600 font-black">انتخاب دقیق بازه (شمسی - ارقام انگلیسی):</span>
+                <div className="w-44">
+                  <ShamsiDatePicker
+                    label="از تاریخ:"
+                    value={statusStartDate}
+                    onChange={(val) => {
+                      setStatusStartDate(val);
+                      setStatusDatePreset('custom');
+                    }}
+                  />
                 </div>
-
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setStatusDisplayLayout('two_column')}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer",
-                      statusDisplayLayout === 'two_column' ? "bg-white text-indigo-700 shadow-xs font-black" : "text-slate-500"
-                    )}
-                  >
-                    نمایش دو ستونه
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatusDisplayLayout('single_list')}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer",
-                      statusDisplayLayout === 'single_list' ? "bg-white text-indigo-700 shadow-xs font-black" : "text-slate-500"
-                    )}
-                  >
-                    نمایش کارتی یکپارچه
-                  </button>
+                <div className="w-44">
+                  <ShamsiDatePicker
+                    label="تا تاریخ:"
+                    value={statusEndDate}
+                    onChange={(val) => {
+                      setStatusEndDate(val);
+                      setStatusDatePreset('custom');
+                    }}
+                  />
                 </div>
               </div>
             </div>
-
-            {/* Custom Dates bar using ShamsiDatePicker (اصلاح ۳ و ۴) */}
-            <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-100 text-xs">
-              <span className="text-slate-600 font-black">انتخاب دقیق بازه (شمسی - ارقام انگلیسی):</span>
-              <div className="w-44">
-                <ShamsiDatePicker
-                  label="از تاریخ:"
-                  value={statusStartDate}
-                  onChange={(val) => {
-                    setStatusStartDate(val);
-                    setStatusDatePreset('custom');
-                  }}
-                />
-              </div>
-              <div className="w-44">
-                <ShamsiDatePicker
-                  label="تا تاریخ:"
-                  value={statusEndDate}
-                  onChange={(val) => {
-                    setStatusEndDate(val);
-                    setStatusDatePreset('custom');
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Quick Metrics Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1335,126 +1548,231 @@ export default function CounselingClasses() {
       {/* TAB 3: SESSIONS & DETAILED GRADES LIST (ریز جلسات و نمرات ثبت‌شده) */}
       {/* ========================================================================= */}
       {activeView === 'sessions' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Search and Filters */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="relative">
-                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="جستجوی طلبه، درس، استاد یا بازخورد..."
-                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجوی طلبه، درس، استاد..."
+                onToggleFilters={() => setMobileSessionFiltersOpen(p => !p)}
+                filtersOpen={mobileSessionFiltersOpen}
+                activeFilterCount={[selectedGrade !== 'all', selectedCourse !== 'all', selectedTeacher !== 'all'].filter(Boolean).length}
+              />
+              {mobileSessionFiltersOpen && (
+                <div className="bg-white rounded-2xl p-3 border border-slate-200 space-y-2 shadow-2xs">
+                  <select
+                    value={selectedGrade}
+                    onChange={(e) => setSelectedGrade(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                  <select
+                    value={selectedCourse}
+                    onChange={(e) => setSelectedCourse(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه کلاس‌های مشاوره</option>
+                    {Array.from(new Set(grades.map(g => g.courseTitle))).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedTeacher}
+                    onChange={(e) => setSelectedTeacher(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه اساتید مشاور</option>
+                    {Array.from(new Set(grades.map(g => g.counselorTeacherName))).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="relative">
+                  <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="جستجوی طلبه، درس، استاد یا بازخورد..."
+                    className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <select
+                  value={selectedGrade}
+                  onChange={(e) => setSelectedGrade(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                </select>
+
+                <select
+                  value={selectedCourse}
+                  onChange={(e) => setSelectedCourse(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه کلاس‌های مشاوره</option>
+                  {Array.from(new Set(grades.map(g => g.courseTitle))).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedTeacher}
+                  onChange={(e) => setSelectedTeacher(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه اساتید مشاور</option>
+                  {Array.from(new Set(grades.map(g => g.counselorTeacherName))).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
               </div>
-
-              <select
-                value={selectedGrade}
-                onChange={(e) => setSelectedGrade(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه پایه‌ها</option>
-                <option value="پایه ۷">پایه ۷</option>
-                <option value="پایه ۸">پایه ۸</option>
-                <option value="پایه ۹">پایه ۹</option>
-                <option value="پایه ۱۰">پایه ۱۰</option>
-              </select>
-
-              <select
-                value={selectedCourse}
-                onChange={(e) => setSelectedCourse(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه کلاس‌های مشاوره</option>
-                {Array.from(new Set(grades.map(g => g.courseTitle))).map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-
-              <select
-                value={selectedTeacher}
-                onChange={(e) => setSelectedTeacher(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه اساتید مشاور</option>
-                {Array.from(new Set(grades.map(g => g.counselorTeacherName))).map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
             </div>
-          </div>
+          )}
 
-          {/* Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-right border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 text-[11px] font-black">
-                    <th className="p-3.5">نام طلبه</th>
-                    <th className="p-3.5">پایه</th>
-                    <th className="p-3.5">کلاس مشاوره</th>
-                    <th className="p-3.5">استاد مشاور</th>
-                    <th className="p-3.5">تاریخ / جلسه</th>
-                    <th className="p-3.5 text-center">نمره مشارکت</th>
-                    <th className="p-3.5 text-center">نمره پژوهش</th>
-                    <th className="p-3.5">بازخورد و نکات استاد</th>
-                    {canEditCounseling && <th className="p-3.5 text-center">عملیات</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {filteredSessions.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-400">
-                        هیچ ارزیابی با این فیلترها یافت نشد.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredSessions.map(g => (
-                      <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="p-3.5 font-bold text-slate-900">{g.studentName}</td>
-                        <td className="p-3.5">
-                          <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold">
-                            {g.grade || 'پایه ۷'}
-                          </span>
-                        </td>
-                        <td className="p-3.5 font-bold text-amber-900">{g.courseTitle}</td>
-                        <td className="p-3.5 text-slate-600">{g.counselorTeacherName}</td>
-                        <td className="p-3.5 text-slate-500 font-mono text-[11px]">
-                          {g.sessionDate} • {g.sessionNumber || 'جلسه ۱'}
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.participationScore]?.badgeClass)}>
-                            {g.participationScore}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.researchScore]?.badgeClass)}>
-                            {g.researchScore}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-slate-500 text-[11px] max-w-xs truncate">
-                          {g.counselorFeedback || '—'}
-                        </td>
+          {/* Table / Mobile Cards */}
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              {filteredSessions.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs font-bold text-slate-400">
+                  هیچ ارزیابی با این فیلترها یافت نشد.
+                </div>
+              ) : (
+                filteredSessions.map(g => (
+                  <div key={g.id} className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-2xs space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-black text-slate-900 truncate">{g.studentName}</h4>
+                        <p className="text-[11px] font-bold text-amber-800 mt-0.5 truncate">
+                          {g.courseTitle} · استاد {g.counselorTeacherName}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold">
+                          {g.grade || 'پایه ۷'}
+                        </span>
                         {canEditCounseling && (
-                          <td className="p-3.5 text-center">
-                            <button
-                              onClick={() => handleDelete(g.id, g.studentName)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="حذف رکورد"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
+                          <button
+                            onClick={() => handleDelete(g.id, g.studentName)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg bg-slate-50 border border-slate-200"
+                            title="حذف رکورد"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 text-[11px] pt-2 border-t border-slate-100">
+                      <span className="font-mono text-slate-500">
+                        {g.sessionDate} · {g.sessionNumber || 'جلسه ۱'}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-black border", SCORE_BADGES[g.participationScore]?.badgeClass)}>
+                          مشارکت: {g.participationScore}
+                        </span>
+                        <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-black border", SCORE_BADGES[g.researchScore]?.badgeClass)}>
+                          پژوهش: {g.researchScore}
+                        </span>
+                      </div>
+                    </div>
+
+                    {g.counselorFeedback && (
+                      <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 leading-relaxed">
+                        {g.counselorFeedback}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 text-[11px] font-black">
+                      <th className="p-3.5">نام طلبه</th>
+                      <th className="p-3.5">پایه</th>
+                      <th className="p-3.5">کلاس مشاوره</th>
+                      <th className="p-3.5">استاد مشاور</th>
+                      <th className="p-3.5">تاریخ / جلسه</th>
+                      <th className="p-3.5 text-center">نمره مشارکت</th>
+                      <th className="p-3.5 text-center">نمره پژوهش</th>
+                      <th className="p-3.5">بازخورد و نکات استاد</th>
+                      {canEditCounseling && <th className="p-3.5 text-center">عملیات</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                    {filteredSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-slate-400">
+                          هیچ ارزیابی با این فیلترها یافت نشد.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredSessions.map(g => (
+                        <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="p-3.5 font-bold text-slate-900">{g.studentName}</td>
+                          <td className="p-3.5">
+                            <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold">
+                              {g.grade || 'پایه ۷'}
+                            </span>
+                          </td>
+                          <td className="p-3.5 font-bold text-amber-900">{g.courseTitle}</td>
+                          <td className="p-3.5 text-slate-600">{g.counselorTeacherName}</td>
+                          <td className="p-3.5 text-slate-500 font-mono text-[11px]">
+                            {g.sessionDate} • {g.sessionNumber || 'جلسه ۱'}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.participationScore]?.badgeClass)}>
+                              {g.participationScore}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black border", SCORE_BADGES[g.researchScore]?.badgeClass)}>
+                              {g.researchScore}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-slate-500 text-[11px] max-w-xs truncate">
+                            {g.counselorFeedback || '—'}
+                          </td>
+                          {canEditCounseling && (
+                            <td className="p-3.5 text-center">
+                              <button
+                                onClick={() => handleDelete(g.id, g.studentName)}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="حذف رکورد"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1462,60 +1780,108 @@ export default function CounselingClasses() {
       {/* TAB 4: STUDENT SUMMARY (کارنامه و خلاصه عملکرد طلاب - اصلاح ۶) */}
       {/* ========================================================================= */}
       {activeView === 'student_summary' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Filters Bar for Student Summary */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Filter size={16} className="text-amber-600" />
-              <h3 className="text-xs font-black text-slate-800">فیلترهای کارنامه و خلاصه عملکرد طلاب:</h3>
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={summarySearch}
+                onChange={setSummarySearch}
+                placeholder="جستجوی نام، کد طلبی یا کد ملی..."
+                onToggleFilters={() => setMobileSummaryFiltersOpen(p => !p)}
+                filtersOpen={mobileSummaryFiltersOpen}
+                activeFilterCount={[summaryGrade !== 'all', summaryTeacher !== 'all', summaryCourse !== 'all'].filter(Boolean).length}
+              />
+              {mobileSummaryFiltersOpen && (
+                <div className="bg-white rounded-2xl p-3 border border-slate-200 space-y-2 shadow-2xs">
+                  <select
+                    value={summaryGrade}
+                    onChange={(e) => setSummaryGrade(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                  <select
+                    value={summaryTeacher}
+                    onChange={(e) => setSummaryTeacher(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه اساتید مشاور</option>
+                    {Array.from(new Set(grades.map(g => g.counselorTeacherName).filter(Boolean))).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={summaryCourse}
+                    onChange={(e) => setSummaryCourse(e.target.value)}
+                    className="w-full min-h-[40px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  >
+                    <option value="all">همه کلاس‌های مشاوره</option>
+                    {Array.from(new Set(grades.map(g => g.courseTitle).filter(Boolean))).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="relative">
-                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={summarySearch}
-                  onChange={(e) => setSummarySearch(e.target.value)}
-                  placeholder="جستجوی نام، کد طلبی یا کد ملی..."
-                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
+          ) : (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Filter size={16} className="text-amber-600" />
+                <h3 className="text-xs font-black text-slate-800">فیلترهای کارنامه و خلاصه عملکرد طلاب:</h3>
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="relative">
+                  <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={summarySearch}
+                    onChange={(e) => setSummarySearch(e.target.value)}
+                    placeholder="جستجوی نام، کد طلبی یا کد ملی..."
+                    className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
 
-              <select
-                value={summaryGrade}
-                onChange={(e) => setSummaryGrade(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه پایه‌ها</option>
-                <option value="پایه ۷">پایه ۷</option>
-                <option value="پایه ۸">پایه ۸</option>
-                <option value="پایه ۹">پایه ۹</option>
-                <option value="پایه ۱۰">پایه ۱۰</option>
-              </select>
+                <select
+                  value={summaryGrade}
+                  onChange={(e) => setSummaryGrade(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                </select>
 
-              <select
-                value={summaryTeacher}
-                onChange={(e) => setSummaryTeacher(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه اساتید مشاور</option>
-                {Array.from(new Set(grades.map(g => g.counselorTeacherName).filter(Boolean))).map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+                <select
+                  value={summaryTeacher}
+                  onChange={(e) => setSummaryTeacher(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه اساتید مشاور</option>
+                  {Array.from(new Set(grades.map(g => g.counselorTeacherName).filter(Boolean))).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
 
-              <select
-                value={summaryCourse}
-                onChange={(e) => setSummaryCourse(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-              >
-                <option value="all">همه کلاس‌های مشاوره</option>
-                {Array.from(new Set(grades.map(g => g.courseTitle).filter(Boolean))).map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+                <select
+                  value={summaryCourse}
+                  onChange={(e) => setSummaryCourse(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه کلاس‌های مشاوره</option>
+                  {Array.from(new Set(grades.map(g => g.courseTitle).filter(Boolean))).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Students List & Detailed Scores Table */}
           <div className="space-y-4">
@@ -1570,7 +1936,7 @@ export default function CounselingClasses() {
                 const dalCount = studentGrades.filter(g => g.participationScore === 'د' || g.researchScore === 'د').length;
 
                 return (
-                  <div key={s.id} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
+                  <div key={s.id} className={cn("bg-white border border-slate-200 shadow-xs space-y-3", isAdminMobile ? "rounded-2xl p-3.5" : "rounded-3xl p-5 space-y-4")}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-800 font-black flex items-center justify-center text-base border border-amber-200">
@@ -1610,11 +1976,36 @@ export default function CounselingClasses() {
                       </div>
                     </div>
 
-                    {/* Table of all recorded grades for this student */}
+                    {/* Table / Mobile cards of all recorded grades for this student */}
                     {studentGrades.length === 0 ? (
                       <p className="text-xs text-slate-400 p-3 text-center bg-slate-50 rounded-2xl">
                         هنوز هیچ ارزیابی برای این طلبه در این فیلترها ثبت نشده است.
                       </p>
+                    ) : isAdminMobile ? (
+                      <div className="space-y-2">
+                        {studentGrades.map(g => (
+                          <div key={g.id} className="bg-slate-50/80 rounded-xl p-2.5 border border-slate-200/80 space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-black text-amber-900 truncate">{g.courseTitle}</span>
+                              <span className="text-[10px] font-mono text-slate-500 shrink-0">{g.sessionDate} ({g.sessionNumber})</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-slate-600 truncate">استاد: {g.counselorTeacherName}</span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.participationScore]?.badgeClass)}>
+                                  مشارکت: {g.participationScore}
+                                </span>
+                                <span className={cn("px-1.5 py-0.5 rounded text-[10px] border font-black", SCORE_BADGES[g.researchScore]?.badgeClass)}>
+                                  پژوهش: {g.researchScore}
+                                </span>
+                              </div>
+                            </div>
+                            {g.counselorFeedback && (
+                              <p className="text-[11px] text-slate-600 pt-1 border-t border-slate-200/60">{g.counselorFeedback}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     ) : (
                       <div className="overflow-x-auto bg-slate-50/50 rounded-2xl border border-slate-200/80">
                         <table className="w-full text-right text-xs">
@@ -1795,34 +2186,26 @@ export default function CounselingClasses() {
                     </div>
                   </div>
 
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
-                    <table className="w-full text-right border-collapse text-xs">
-                      <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
-                        <tr>
-                          <th className="p-2.5">نام طلبه</th>
-                          <th className="p-2.5">پایه</th>
-                          <th className="p-2.5 text-center">نمره مشارکت</th>
-                          <th className="p-2.5 text-center">نمره پژوهش</th>
-                          <th className="p-2.5">یادداشت / بازخورد استاد</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {batchStudentsList.map((row, idx) => (
-                          <tr key={row.studentId} className="hover:bg-amber-50/20">
-                            <td className="p-2.5 font-bold text-slate-900">{row.studentName}</td>
-                            <td className="p-2.5">
-                              <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
-                                {row.grade}
-                              </span>
-                            </td>
-                            <td className="p-2.5 text-center">
+                  {isAdminMobile ? (
+                    <div className="space-y-2.5 max-h-72 overflow-y-auto pr-0.5">
+                      {batchStudentsList.map((row, idx) => (
+                        <div key={row.studentId} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-slate-900 truncate">{row.studentName}</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded-md font-bold shrink-0">
+                              {row.grade}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500">نمره مشارکت</label>
                               <select
                                 value={row.participationScore}
                                 onChange={(e) => {
                                   const val = e.target.value as CounselingScore;
                                   setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, participationScore: val } : r));
                                 }}
-                                className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                                className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                               >
                                 <option value="الف">الف (عالی)</option>
                                 <option value="ب">ب (خوب)</option>
@@ -1830,15 +2213,16 @@ export default function CounselingClasses() {
                                 <option value="د">د (ضعیف)</option>
                                 <option value="غیبت">غیبت</option>
                               </select>
-                            </td>
-                            <td className="p-2.5 text-center">
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-500">نمره پژوهش</label>
                               <select
                                 value={row.researchScore}
                                 onChange={(e) => {
                                   const val = e.target.value as CounselingScore;
                                   setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, researchScore: val } : r));
                                 }}
-                                className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                                className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
                               >
                                 <option value="الف">الف (عالی)</option>
                                 <option value="ب">ب (خوب)</option>
@@ -1846,24 +2230,92 @@ export default function CounselingClasses() {
                                 <option value="د">د (ضعیف)</option>
                                 <option value="غیبت">غیبت</option>
                               </select>
-                            </td>
-                            <td className="p-2.5">
-                              <input
-                                type="text"
-                                value={row.counselorFeedback}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, counselorFeedback: val } : r));
-                                }}
-                                placeholder="یادداشت اختصاصی..."
-                                className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                              />
-                            </td>
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={row.counselorFeedback}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, counselorFeedback: val } : r));
+                            }}
+                            placeholder="یادداشت / بازخورد استاد..."
+                            className="w-full min-h-[38px] px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                          <tr>
+                            <th className="p-2.5">نام طلبه</th>
+                            <th className="p-2.5">پایه</th>
+                            <th className="p-2.5 text-center">نمره مشارکت</th>
+                            <th className="p-2.5 text-center">نمره پژوهش</th>
+                            <th className="p-2.5">یادداشت / بازخورد استاد</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {batchStudentsList.map((row, idx) => (
+                            <tr key={row.studentId} className="hover:bg-amber-50/20">
+                              <td className="p-2.5 font-bold text-slate-900">{row.studentName}</td>
+                              <td className="p-2.5">
+                                <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                                  {row.grade}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <select
+                                  value={row.participationScore}
+                                  onChange={(e) => {
+                                    const val = e.target.value as CounselingScore;
+                                    setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, participationScore: val } : r));
+                                  }}
+                                  className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                                >
+                                  <option value="الف">الف (عالی)</option>
+                                  <option value="ب">ب (خوب)</option>
+                                  <option value="ج">ج (متوسط)</option>
+                                  <option value="د">د (ضعیف)</option>
+                                  <option value="غیبت">غیبت</option>
+                                </select>
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <select
+                                  value={row.researchScore}
+                                  onChange={(e) => {
+                                    const val = e.target.value as CounselingScore;
+                                    setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, researchScore: val } : r));
+                                  }}
+                                  className="px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs"
+                                >
+                                  <option value="الف">الف (عالی)</option>
+                                  <option value="ب">ب (خوب)</option>
+                                  <option value="ج">ج (متوسط)</option>
+                                  <option value="د">د (ضعیف)</option>
+                                  <option value="غیبت">غیبت</option>
+                                </select>
+                              </td>
+                              <td className="p-2.5">
+                                <input
+                                  type="text"
+                                  value={row.counselorFeedback}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBatchStudentsList(prev => prev.map((r, i) => i === idx ? { ...r, counselorFeedback: val } : r));
+                                  }}
+                                  placeholder="یادداشت اختصاصی..."
+                                  className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">

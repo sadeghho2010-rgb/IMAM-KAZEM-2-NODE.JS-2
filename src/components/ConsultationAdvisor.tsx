@@ -29,6 +29,8 @@ import { useAuth } from '../context/AuthContext';
 import { useMentor } from '../context/MentorContext';
 import { localDb } from '../lib/localDb';
 import { Student, Program, Enrollment, DiscussionGroup, MadrasRoom, ConsultationAdvisorProposal, ProposedConsultationClass, CustomStudentSchedule } from '../types';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from './admin/mobile/MobileModulePrimitives';
 
 interface ConsultationAdvisorProps {
   onNavigate?: (tab: string, studentId?: string) => void;
@@ -89,6 +91,7 @@ export const gradesMatch = (gradeA?: string, gradeB?: string): boolean => {
 export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavigate }) => {
   const { currentUser } = useAuth();
   const { currentMentor } = useMentor();
+  const isAdminMobile = useIsAdminMobile();
 
   // Wizard Step (1 to 7)
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -668,42 +671,61 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
     );
   }
 
+  const currentStepLabel =
+    currentStep === 1 ? 'بررسی کلاس‌های اصلی' :
+    currentStep === 2 ? 'بررسی گروه‌های بحثی' :
+    currentStep === 3 ? 'انتخاب کلاس اصلی' :
+    currentStep === 4 ? 'تعداد کلاس مشاوره' :
+    currentStep === 5 ? 'تعیین ظرفیت' :
+    currentStep === 6 ? 'تنظیم روز و ساعات' :
+    'ترکیب پیشنهادی';
+
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6 font-vazir" dir="rtl">
+    <div className={isAdminMobile ? "max-w-6xl mx-auto space-y-4 font-vazir" : "p-4 sm:p-6 max-w-6xl mx-auto space-y-6 font-vazir"} dir="rtl">
       
       {/* Header Banner */}
-      <div className="bg-gradient-to-l from-indigo-700 via-indigo-600 to-indigo-800 text-white rounded-3xl p-6 shadow-sm border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-amber-300 shadow-inner">
-            <Sparkles size={28} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-black tracking-tight">دستیار هوشمند چینش کلاس‌های مشاوره</h1>
-              <span className="text-[10px] px-2.5 py-0.5 bg-amber-400/20 text-amber-200 border border-amber-400/30 rounded-full font-bold">
-                نسخه پیشنهادی (بدون تغییر در بانک داده)
-              </span>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="دستیار چینش کلاس مشاوره"
+          subtitle={`گام ${currentStep} از ۷ · ${currentStepLabel}`}
+          icon={<Sparkles size={20} />}
+          variant="indigo"
+          badgeText="نسخه پیشنهادی"
+        />
+      ) : (
+        <div className="bg-gradient-to-l from-indigo-700 via-indigo-600 to-indigo-800 text-white rounded-3xl p-6 shadow-sm border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-amber-300 shadow-inner">
+              <Sparkles size={28} />
             </div>
-            <p className="text-xs sm:text-sm text-indigo-100/90 mt-1">
-              پیشنهاد هوشمند ترکیب کلاس‌های مشاوره بر اساس برنامه‌های هفتگی طلاب و گروه‌های مباحثه
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight">دستیار هوشمند چینش کلاس‌های مشاوره</h1>
+                <span className="text-[10px] px-2.5 py-0.5 bg-amber-400/20 text-amber-200 border border-amber-400/30 rounded-full font-bold">
+                  نسخه پیشنهادی (بدون تغییر در بانک داده)
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm text-indigo-100/90 mt-1">
+                پیشنهاد هوشمند ترکیب کلاس‌های مشاوره بر اساس برنامه‌های هفتگی طلاب و گروه‌های مباحثه
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Stepper Status */}
+          <div className="flex items-center gap-1.5 bg-indigo-900/40 p-2 rounded-2xl border border-indigo-400/20 text-xs">
+            <span className="text-indigo-200 font-medium px-2">گام {currentStep} از ۷:</span>
+            <span className="font-black text-amber-300">
+              {currentStep === 1 && 'بررسی کلاس‌های اصلی'}
+              {currentStep === 2 && 'بررسی گروه‌های بحثی'}
+              {currentStep === 3 && 'انتخاب کلاس اصلی'}
+              {currentStep === 4 && 'تعداد کلاس مشاوره'}
+              {currentStep === 5 && 'تعیین ظرفیت'}
+              {currentStep === 6 && 'تنظیم روز و ساعات'}
+              {currentStep === 7 && 'ترکیب پیشنهادی'}
+            </span>
           </div>
         </div>
-
-        {/* Quick Stepper Status */}
-        <div className="flex items-center gap-1.5 bg-indigo-900/40 p-2 rounded-2xl border border-indigo-400/20 text-xs">
-          <span className="text-indigo-200 font-medium px-2">گام {currentStep} از ۷:</span>
-          <span className="font-black text-amber-300">
-            {currentStep === 1 && 'بررسی کلاس‌های اصلی'}
-            {currentStep === 2 && 'بررسی گروه‌های بحثی'}
-            {currentStep === 3 && 'انتخاب کلاس اصلی'}
-            {currentStep === 4 && 'تعداد کلاس مشاوره'}
-            {currentStep === 5 && 'تعیین ظرفیت'}
-            {currentStep === 6 && 'تنظیم روز و ساعات'}
-            {currentStep === 7 && 'ترکیب پیشنهادی'}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Progress Bar */}
       <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
@@ -714,7 +736,7 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
       </div>
 
       {/* Wizard Steps Container */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 sm:p-8">
+      <div className={isAdminMobile ? "bg-white rounded-2xl border border-slate-200 shadow-xs p-3.5" : "bg-white rounded-3xl border border-slate-200 shadow-xs p-6 sm:p-8"}>
 
         {/* ================= STEP 1: Main Programs Check ================= */}
         {currentStep === 1 && (
@@ -1489,40 +1511,40 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
             
             {/* Multi-Priority Switcher (if Priority 2 was configured) */}
             {alternativeProposalResult && (
-              <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2">
+              <div className={isAdminMobile ? "bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3 space-y-2" : "bg-indigo-50/80 border border-indigo-200 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2"}>
                 <div className="flex items-center gap-2">
-                  <Clock size={16} className="text-indigo-600" />
+                  <Clock size={16} className="text-indigo-600 shrink-0" />
                   <span className="text-xs font-bold text-indigo-950">نمایش نتایج چینش بر اساس اولویت‌های ساعت:</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className={isAdminMobile ? "grid grid-cols-2 gap-2" : "flex items-center gap-2"}>
                   <button
                     onClick={() => setActiveViewPriority(1)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       activeViewPriority === 1
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>اولویت ۱ ({priority1Time.start} تا {priority1Time.end})</span>
+                    <span className="truncate">اولویت ۱ ({priority1Time.start}-{priority1Time.end})</span>
                     {proposalResult.unassignedStudentIds.length === 0 ? (
-                      <span className="px-1.5 py-0.2 bg-emerald-500 text-white rounded-full text-[9px]">۱۰۰٪ کامل</span>
+                      <span className="px-1.5 py-0.2 bg-emerald-500 text-white rounded-full text-[9px] shrink-0">۱۰۰٪</span>
                     ) : (
-                      <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px]">{proposalResult.unassignedStudentIds.length} تداخل</span>
+                      <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px] shrink-0">{proposalResult.unassignedStudentIds.length}</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveViewPriority(2)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
                       activeViewPriority === 2
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    <span>اولویت ۲ ({priority2Time.start} تا {priority2Time.end})</span>
+                    <span className="truncate">اولویت ۲ ({priority2Time.start}-{priority2Time.end})</span>
                     {alternativeProposalResult.unassignedStudentIds.length === 0 ? (
-                      <span className="px-1.5 py-0.2 bg-emerald-500 text-white rounded-full text-[9px]">۱۰۰٪ کامل</span>
+                      <span className="px-1.5 py-0.2 bg-emerald-500 text-white rounded-full text-[9px] shrink-0">۱۰۰٪</span>
                     ) : (
-                      <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px]">{alternativeProposalResult.unassignedStudentIds.length} تداخل</span>
+                      <span className="px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px] shrink-0">{alternativeProposalResult.unassignedStudentIds.length}</span>
                     )}
                   </button>
                 </div>
@@ -1536,11 +1558,11 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
               return (
                 <>
                   {/* Action Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className={isAdminMobile ? "p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3" : "flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl"}>
                     <div>
                       <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                        <CheckCircle2 className="text-emerald-600" size={18} />
-                        ترکیب پیشنهادی کلاس‌های مشاوره: {currentActiveProposal.mainProgramTitle}
+                        <CheckCircle2 className="text-emerald-600 shrink-0" size={18} />
+                        <span>ترکیب پیشنهادی کلاس‌های مشاوره: {currentActiveProposal.mainProgramTitle}</span>
                       </h3>
                       <p className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
                         <span>پایه: {currentActiveProposal.grade}</span>
@@ -1555,31 +1577,31 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className={isAdminMobile ? "grid grid-cols-2 gap-2" : "flex items-center gap-2"}>
                       <button
                         onClick={handleCopyText}
-                        className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-[40px] px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
                         {copied ? 'کپی شد!' : 'کپی متن'}
                       </button>
                       <button
                         onClick={handlePrint}
-                        className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-[40px] px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Printer size={14} />
                         چاپ و PDF
                       </button>
                       <button
                         onClick={handleSaveProposal}
-                        className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-[40px] px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Save size={14} />
                         {saveSuccess ? 'ذخیره شد!' : 'ذخیره در تاریخچه'}
                       </button>
                       <button
                         onClick={() => setCurrentStep(6)}
-                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-[40px] px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <RotateCcw size={14} />
                         تنظیم مجدد
@@ -1718,11 +1740,11 @@ export const ConsultationAdvisor: React.FC<ConsultationAdvisorProps> = ({ onNavi
                         })}
                       </div>
 
-                      <div className="bg-white/80 p-3 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+                      <div className="bg-white/80 p-3 rounded-2xl border border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <span>💡 پیشنهاد: با تغییر روزها یا ساعت برگزاری در گام ۶، می‌توانید تداخلات را برطرف نمایید.</span>
                         <button
                           onClick={() => setCurrentStep(6)}
-                          className="px-3 py-1.5 bg-amber-600 text-white font-bold text-xs rounded-xl hover:bg-amber-700 transition cursor-pointer"
+                          className="min-h-[38px] px-3 py-1.5 bg-amber-600 text-white font-bold text-xs rounded-xl hover:bg-amber-700 transition cursor-pointer shrink-0"
                         >
                           اصلاح روزها و ساعت‌ها
                         </button>

@@ -47,6 +47,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 export const WORKFLOW_CATEGORIES: {
   id: WorkflowCategory | 'all';
@@ -877,199 +879,266 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
     );
   };
 
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileSegmentationOpen, setMobileSegmentationOpen] = useState(false);
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
-      {/* Top Header Card */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-              <GitBranch size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-black text-slate-900">جریان کار و کارتابل تاییدات</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  سطح ۱ و ۲
-                </span>
-                {pendingCount > 0 && (
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
-                    {pendingCount} مورد در انتظار تایید
-                  </span>
+    <div className={cn("max-w-7xl mx-auto font-vazir", isAdminMobile ? "p-2.5 space-y-3.5" : "p-4 sm:p-6 lg:p-8 space-y-6")} dir="rtl">
+      {isAdminMobile ? (
+        <>
+          <MobileSectionHeader
+            title="جریان کار و کارتابل تاییدات"
+            subtitle={`${currentUser?.roleTitle || ''} • ${currentUser?.gradeLabel || 'دسترسی سراسری'}`}
+            icon={<GitBranch size={20} />}
+            badgeText={pendingCount > 0 ? `${pendingCount} در انتظار` : 'کارتابل'}
+            variant="white"
+            primaryAction={(isSuperAdmin || isEducationManager) ? {
+              id: 'new-event',
+              label: 'ثبت رویداد جدید',
+              icon: <Plus size={15} />,
+              onClick: () => setIsNewEventModalOpen(true),
+              tone: 'primary'
+            } : {
+              id: 'refresh',
+              label: loading ? 'در حال بروزرسانی...' : 'بروزرسانی کارتابل',
+              icon: <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />,
+              onClick: fetchData,
+              tone: 'primary'
+            }}
+            secondaryActions={[
+              ...(canManageSettings ? [{
+                id: 'settings',
+                label: 'تنظیمات تاییدات',
+                icon: <SettingsIcon size={14} />,
+                onClick: () => setIsSettingsOpen(true),
+                tone: 'indigo' as const
+              }] : []),
+              {
+                id: 'refresh-sec',
+                label: 'بروزرسانی زنده',
+                icon: <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />,
+                onClick: fetchData
+              }
+            ]}
+          />
+
+          <MobileHorizontalTabs
+            activeId={tabFilter}
+            onChange={(id) => setTabFilter(id as any)}
+            tabs={[
+              { id: 'my_tasks', label: 'مرتبط با من', icon: <Layers size={14} /> },
+              { id: 'pending', label: 'در انتظار تایید', icon: <Clock size={14} />, tone: 'amber', badge: pendingCount || undefined },
+              { id: 'reports', label: 'گزارش‌گیری‌ها', icon: <BarChart3 size={14} />, badge: reportsCount },
+              { id: 'notices', label: 'اطلاعیه‌ها', icon: <Info size={14} />, badge: noticesCount },
+              { id: 'all', label: 'همه موارد', badge: allDisplayItems.length }
+            ]}
+          />
+
+          <MobileSearchFilterBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجو در عناوین، نام طلبه یا توضیحات..."
+            onToggleFilters={() => setMobileSegmentationOpen(p => !p)}
+            filtersOpen={mobileSegmentationOpen}
+            activeFilterCount={(gradeFilter !== 'all' ? 1 : 0) + (categoryFilter !== 'all' ? 1 : 0)}
+          />
+        </>
+      ) : (
+        <>
+          {/* Top Header Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <GitBranch size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-xl font-black text-slate-900">جریان کار و کارتابل تاییدات</h1>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      سطح ۱ و ۲
+                    </span>
+                    {pendingCount > 0 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                        {pendingCount} مورد در انتظار تایید
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    مدیریت فرآیندها، تایید نهایی اخطارهای غیبت و مطالعه، اطلاع‌رسانی دوره‌ها، بررسی حساب کاربری طلاب و گزینه‌های گزارش‌گیری
+                  </p>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                {canManageSettings && (
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
+                    title="تنظیمات تاییدات برای مسئول آموزش"
+                  >
+                    <SettingsIcon size={15} className="text-slate-500" />
+                    <span>تنظیمات تاییدات</span>
+                  </button>
+                )}
+
+                {(isSuperAdmin || isEducationManager) && (
+                  <button
+                    onClick={() => setIsNewEventModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus size={16} />
+                    <span>ثبت رویداد جدید</span>
+                  </button>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-1">
-                مدیریت فرآیندها، تایید نهایی اخطارهای غیبت و مطالعه، اطلاع‌رسانی دوره‌ها، بررسی حساب کاربری طلاب و گزینه‌های گزارش‌گیری
-              </p>
+            </div>
+
+            {/* User context role strip */}
+            <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-slate-600">
+                <span className="font-bold text-slate-800">نقش شما:</span>
+                <span className="px-2 py-0.5 bg-slate-100 rounded-md font-semibold text-slate-700">
+                  {currentUser?.roleTitle} ({currentUser?.gradeLabel || 'دسترسی سراسری'})
+                </span>
+                <span className="text-slate-400">•</span>
+                <span className="text-slate-500">
+                  محتوای این بخش به صورت هوشمند بر اساس مسئولیت و پایه شما فیلتر شده است.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchData}
+                  className="flex items-center gap-1 text-slate-500 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
+                  title="بروزرسانی زنده"
+                >
+                  <RefreshCw size={14} className={cn(loading && "animate-spin text-indigo-600")} />
+                  <span className="text-[11px] font-medium">بروزرسانی</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Action buttons */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            {canManageSettings && (
+          {/* Main Tabs and Search Bar */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            {/* Tabs */}
+            <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl overflow-x-auto custom-scrollbar shrink-0">
               <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-colors cursor-pointer"
-                title="تنظیمات تاییدات برای مسئول آموزش"
+                onClick={() => setTabFilter('my_tasks')}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                  tabFilter === 'my_tasks' 
+                    ? "bg-white text-slate-900 shadow-xs" 
+                    : "text-slate-600 hover:text-slate-900"
+                )}
               >
-                <SettingsIcon size={15} className="text-slate-500" />
-                <span>تنظیمات تاییدات</span>
+                <Layers size={14} />
+                <span>مرتبط با من</span>
               </button>
-            )}
 
-            {(isSuperAdmin || isEducationManager) && (
               <button
-                onClick={() => setIsNewEventModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                onClick={() => setTabFilter('pending')}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                  tabFilter === 'pending' 
+                    ? "bg-white text-slate-900 shadow-xs" 
+                    : "text-slate-600 hover:text-slate-900"
+                )}
               >
-                <Plus size={16} />
-                <span>ثبت رویداد جدید</span>
+                <Clock size={14} className="text-amber-500" />
+                <span>در انتظار تایید</span>
+                {pendingCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-white">
+                    {pendingCount}
+                  </span>
+                )}
               </button>
-            )}
-          </div>
-        </div>
 
-        {/* User context role strip */}
-        <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-slate-600">
-            <span className="font-bold text-slate-800">نقش شما:</span>
-            <span className="px-2 py-0.5 bg-slate-100 rounded-md font-semibold text-slate-700">
-              {currentUser?.roleTitle} ({currentUser?.gradeLabel || 'دسترسی سراسری'})
-            </span>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-500">
-              محتوای این بخش به صورت هوشمند بر اساس مسئولیت و پایه شما فیلتر شده است.
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={fetchData}
-              className="flex items-center gap-1 text-slate-500 hover:text-indigo-600 transition-colors p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer"
-              title="بروزرسانی زنده"
-            >
-              <RefreshCw size={14} className={cn(loading && "animate-spin text-indigo-600")} />
-              <span className="text-[11px] font-medium">بروزرسانی</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Tabs and Search Bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Tabs */}
-        <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl overflow-x-auto custom-scrollbar shrink-0">
-          <button
-            onClick={() => setTabFilter('my_tasks')}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              tabFilter === 'my_tasks' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Layers size={14} />
-            <span>مرتبط با من</span>
-          </button>
-
-          <button
-            onClick={() => setTabFilter('pending')}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              tabFilter === 'pending' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Clock size={14} className="text-amber-500" />
-            <span>در انتظار تایید</span>
-            {pendingCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-white">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setTabFilter('reports')}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              tabFilter === 'reports' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <BarChart3 size={14} className="text-sky-600" />
-            <span>گزارش‌گیری‌ها</span>
-            <span className="text-[10px] text-slate-400">({reportsCount})</span>
-          </button>
-
-          <button
-            onClick={() => setTabFilter('notices')}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              tabFilter === 'notices' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Info size={14} className="text-indigo-600" />
-            <span>صرفاً اطلاعیه‌ها</span>
-            <span className="text-[10px] text-slate-400">({noticesCount})</span>
-          </button>
-
-          <button
-            onClick={() => setTabFilter('all')}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              tabFilter === 'all' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <span>همه موارد</span>
-            <span className="text-[10px] text-slate-400">({allDisplayItems.length})</span>
-          </button>
-        </div>
-
-        {/* Search & Select Filters */}
-        <div className="flex items-center gap-2.5 flex-1 max-w-md">
-          <div className="relative flex-1">
-            <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="جستجو در عناوین، نام طلبه یا توضیحات..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              <button
+                onClick={() => setTabFilter('reports')}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                  tabFilter === 'reports' 
+                    ? "bg-white text-slate-900 shadow-xs" 
+                    : "text-slate-600 hover:text-slate-900"
+                )}
               >
-                <X size={13} />
+                <BarChart3 size={14} className="text-sky-600" />
+                <span>گزارش‌گیری‌ها</span>
+                <span className="text-[10px] text-slate-400">({reportsCount})</span>
               </button>
-            )}
-          </div>
 
-          {/* Grade filter */}
-          <select
-            value={gradeFilter}
-            onChange={(e) => setGradeFilter(e.target.value)}
-            className="py-2 px-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-indigo-500 shadow-2xs cursor-pointer"
-          >
-            <option value="all">همه پایه‌ها</option>
-            <option value="پایه ۷">پایه ۷</option>
-            <option value="پایه ۸">پایه ۸</option>
-            <option value="پایه ۹">پایه ۹</option>
-            <option value="پایه ۱۰">پایه ۱۰</option>
-          </select>
-        </div>
-      </div>
+              <button
+                onClick={() => setTabFilter('notices')}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                  tabFilter === 'notices' 
+                    ? "bg-white text-slate-900 shadow-xs" 
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <Info size={14} className="text-indigo-600" />
+                <span>صرفاً اطلاعیه‌ها</span>
+                <span className="text-[10px] text-slate-400">({noticesCount})</span>
+              </button>
+
+              <button
+                onClick={() => setTabFilter('all')}
+                className={cn(
+                  "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                  tabFilter === 'all' 
+                    ? "bg-white text-slate-900 shadow-xs" 
+                    : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <span>همه موارد</span>
+                <span className="text-[10px] text-slate-400">({allDisplayItems.length})</span>
+              </button>
+            </div>
+
+            {/* Search & Select Filters */}
+            <div className="flex items-center gap-2.5 flex-1 max-w-md">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="جستجو در عناوین، نام طلبه یا توضیحات..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
+              {/* Grade filter */}
+              <select
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+                className="py-2 px-3 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-indigo-500 shadow-2xs cursor-pointer"
+              >
+                <option value="all">همه پایه‌ها</option>
+                <option value="پایه ۷">پایه ۷</option>
+                <option value="پایه ۸">پایه ۸</option>
+                <option value="پایه ۹">پایه ۹</option>
+                <option value="پایه ۱۰">پایه ۱۰</option>
+              </select>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Dedicated Segmentation Box for Grades and Workflow Topics */}
-      <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-2xs space-y-4" id="workflow-segmentation-box">
+      {(!isAdminMobile || mobileSegmentationOpen) && (
+      <div className={cn("bg-white border border-slate-200/90 shadow-2xs", isAdminMobile ? "rounded-2xl p-3.5 space-y-3" : "rounded-3xl p-5 space-y-4")} id="workflow-segmentation-box">
         {/* Top Header of Segmentation Box */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2.5">
@@ -1188,6 +1257,7 @@ export default function WorkflowManager({ onNavigate }: WorkflowManagerProps) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Workflow Items List */}
       {loading ? (

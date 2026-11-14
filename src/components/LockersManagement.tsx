@@ -37,6 +37,8 @@ import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { getTodayShamsi } from '../lib/jalali';
 import { cn } from '../lib/utils';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 interface LockersManagementProps {
   onNavigateTab?: (tab: string, studentId?: string) => void;
@@ -45,6 +47,9 @@ interface LockersManagementProps {
 export default function LockersManagement({ onNavigateTab }: LockersManagementProps) {
   const { currentUser, isReadOnly, canEditTab } = useAuth();
   const canEdit = !isReadOnly && canEditTab('lockers');
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileSplitTab, setMobileSplitTab] = useState<'empty' | 'occupied'>('empty');
+  const [mobileOccupiedFiltersOpen, setMobileOccupiedFiltersOpen] = useState(false);
 
   // Lockers and Students state
   const [lockers, setLockers] = useState<StudentLocker[]>([]);
@@ -705,7 +710,7 @@ ON CONFLICT (locker_number) DO NOTHING;
 `;
 
   return (
-    <div className="space-y-6 pb-24 font-vazir text-slate-800" dir="rtl">
+    <div className={cn("font-vazir text-slate-800", isAdminMobile ? "space-y-4 pb-8" : "space-y-6 pb-24")} dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -729,186 +734,291 @@ ON CONFLICT (locker_number) DO NOTHING;
       </AnimatePresence>
 
       {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute left-6 top-1/2 -translate-y-1/2 opacity-5 pointer-events-none hidden sm:block text-slate-100">
-          <KeyRound size={220} />
-        </div>
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 bg-slate-800/80 px-3 py-1 rounded-full text-xs font-semibold text-emerald-400 border border-slate-700">
-              <KeyRound size={14} className="text-emerald-400" />
-              <span>امانت و مدیریت کلید کمدها به طلاب</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
-              اختصاص کمد به طلاب
-            </h1>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              سامانه هوشمند و سریع واگذاری کمدها از شماره ۱ تا ۲۰۰. با کلیک بر روی هر کمد خالی، طلبه را جستجو کرده و کلید را واگذار کنید. سوابق ۳ نفر قبلی با دکمه ریز تاریخچه قابل مشاهده است.
-            </p>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {canEdit && (
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Plus size={16} />
-                <span>افزودن شماره کمد</span>
-              </button>
-            )}
-
-            {/* Export Dropdown */}
-            <div className="relative group">
-              <button
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <FileSpreadsheet size={16} className="text-emerald-400" />
-                <span>خروجی اکسل و گزارش</span>
-                <ChevronDown size={14} />
-              </button>
-              <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 hidden group-hover:block z-30 font-medium text-xs text-slate-700">
-                <button
-                  onClick={exportOccupiedLockers}
-                  className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                    خروجی کمدهای پر (با نام صاحب)
-                  </span>
-                  <span className="text-slate-400 font-mono">({stats.occupiedCount})</span>
-                </button>
-                <button
-                  onClick={exportEmptyLockers}
-                  className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    خروجی کمدهای خالی
-                  </span>
-                  <span className="text-slate-400 font-mono">({stats.emptyCount})</span>
-                </button>
-                <button
-                  onClick={exportInactiveLockers}
-                  className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                    خروجی کمدهای غیرفعال
-                  </span>
-                  <span className="text-slate-400 font-mono">({stats.inactiveCount})</span>
-                </button>
-                <div className="border-t border-slate-100 my-1"></div>
-                <button
-                  onClick={exportAllLockersSummary}
-                  className="w-full text-right px-4 py-2.5 hover:bg-slate-50 font-bold text-slate-800 flex items-center gap-2 cursor-pointer"
-                >
-                  <FileSpreadsheet size={14} className="text-emerald-600" />
-                  <span>خروجی جامع تمام کمدها (Excel)</span>
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600 cursor-pointer"
-                >
-                  <Printer size={14} className="text-slate-500" />
-                  <span>چاپ لیست کمدها (Print)</span>
-                </button>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="اختصاص کمد به طلاب"
+          subtitle="واگذاری کلید، بررسی سوابق و کمدهای خالی/پر"
+          icon={<KeyRound size={20} />}
+          badgeText={`${stats.occupancyRate}% اشغال`}
+          variant="slate"
+          primaryAction={
+            canEdit
+              ? {
+                  id: 'add-locker',
+                  label: 'افزودن شماره کمد',
+                  icon: <Plus size={16} />,
+                  onClick: () => setIsAddModalOpen(true),
+                  tone: 'emerald',
+                }
+              : undefined
+          }
+          secondaryActions={[
+            {
+              id: 'export-occupied',
+              label: `اکسل کمدهای پر (${stats.occupiedCount})`,
+              icon: <FileSpreadsheet size={14} />,
+              onClick: exportOccupiedLockers,
+              tone: 'indigo',
+            },
+            {
+              id: 'export-empty',
+              label: `اکسل کمدهای خالی (${stats.emptyCount})`,
+              icon: <FileSpreadsheet size={14} />,
+              onClick: exportEmptyLockers,
+              tone: 'emerald',
+            },
+            {
+              id: 'export-inactive',
+              label: `اکسل غیرفعال‌ها (${stats.inactiveCount})`,
+              icon: <FileSpreadsheet size={14} />,
+              onClick: exportInactiveLockers,
+              tone: 'rose',
+            },
+            {
+              id: 'export-all',
+              label: 'خروجی جامع تمام کمدها',
+              icon: <FileSpreadsheet size={14} />,
+              onClick: exportAllLockersSummary,
+            },
+            {
+              id: 'print-list',
+              label: 'چاپ لیست کمدها',
+              icon: <Printer size={14} />,
+              onClick: () => window.print(),
+            },
+            {
+              id: 'sql-script',
+              label: 'اسکریپت دیتابیس',
+              icon: <Database size={14} />,
+              onClick: () => setIsSqlModalOpen(true),
+              tone: 'amber',
+            },
+            ...(canEdit && lockers.length < 200
+              ? [
+                  {
+                    id: 'seed-200',
+                    label: 'تکمیل ۱ تا ۲۰۰',
+                    icon: <RotateCcw size={14} />,
+                    onClick: handleResetToDefault200,
+                  },
+                ]
+              : []),
+          ]}
+          extraContent={
+            <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-white/10 text-center">
+              <div className="bg-white/10 rounded-xl py-1.5 px-1">
+                <span className="text-[9px] text-slate-300 block">کل</span>
+                <span className="text-sm font-black text-white font-mono">{stats.total}</span>
+              </div>
+              <div className="bg-white/10 rounded-xl py-1.5 px-1">
+                <span className="text-[9px] text-emerald-300 block">خالی</span>
+                <span className="text-sm font-black text-emerald-300 font-mono">{stats.emptyCount}</span>
+              </div>
+              <div className="bg-white/10 rounded-xl py-1.5 px-1">
+                <span className="text-[9px] text-sky-300 block">پر</span>
+                <span className="text-sm font-black text-sky-300 font-mono">{stats.occupiedCount}</span>
+              </div>
+              <div className="bg-white/10 rounded-xl py-1.5 px-1">
+                <span className="text-[9px] text-rose-300 block">خراب</span>
+                <span className="text-sm font-black text-rose-300 font-mono">{stats.inactiveCount}</span>
               </div>
             </div>
+          }
+        />
+      ) : (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute left-6 top-1/2 -translate-y-1/2 opacity-5 pointer-events-none hidden sm:block text-slate-100">
+            <KeyRound size={220} />
+          </div>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 bg-slate-800/80 px-3 py-1 rounded-full text-xs font-semibold text-emerald-400 border border-slate-700">
+                <KeyRound size={14} className="text-emerald-400" />
+                <span>امانت و مدیریت کلید کمدها به طلاب</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
+                اختصاص کمد به طلاب
+              </h1>
+              <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
+                سامانه هوشمند و سریع واگذاری کمدها از شماره ۱ تا ۲۰۰. با کلیک بر روی هر کمد خالی، طلبه را جستجو کرده و کلید را واگذار کنید. سوابق ۳ نفر قبلی با دکمه ریز تاریخچه قابل مشاهده است.
+              </p>
+            </div>
 
-            {/* SQL Script Viewer */}
-            <button
-              onClick={() => setIsSqlModalOpen(true)}
-              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
-              title="مشاهده اسکریپت SQL جهت ساخت دیتابیس"
-            >
-              <Database size={15} className="text-amber-400" />
-              <span>اسکریپت دیتابیس</span>
-            </button>
+            {/* Quick Actions */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {canEdit && (
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span>افزودن شماره کمد</span>
+                </button>
+              )}
+
+              {/* Export Dropdown */}
+              <div className="relative group">
+                <button
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <FileSpreadsheet size={16} className="text-emerald-400" />
+                  <span>خروجی اکسل و گزارش</span>
+                  <ChevronDown size={14} />
+                </button>
+                <div className="absolute left-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 hidden group-hover:block z-30 font-medium text-xs text-slate-700">
+                  <button
+                    onClick={exportOccupiedLockers}
+                    className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                      خروجی کمدهای پر (با نام صاحب)
+                    </span>
+                    <span className="text-slate-400 font-mono">({stats.occupiedCount})</span>
+                  </button>
+                  <button
+                    onClick={exportEmptyLockers}
+                    className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      خروجی کمدهای خالی
+                    </span>
+                    <span className="text-slate-400 font-mono">({stats.emptyCount})</span>
+                  </button>
+                  <button
+                    onClick={exportInactiveLockers}
+                    className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      خروجی کمدهای غیرفعال
+                    </span>
+                    <span className="text-slate-400 font-mono">({stats.inactiveCount})</span>
+                  </button>
+                  <div className="border-t border-slate-100 my-1"></div>
+                  <button
+                    onClick={exportAllLockersSummary}
+                    className="w-full text-right px-4 py-2.5 hover:bg-slate-50 font-bold text-slate-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    <FileSpreadsheet size={14} className="text-emerald-600" />
+                    <span>خروجی جامع تمام کمدها (Excel)</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600 cursor-pointer"
+                  >
+                    <Printer size={14} className="text-slate-500" />
+                    <span>چاپ لیست کمدها (Print)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SQL Script Viewer */}
+              <button
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                title="مشاهده اسکریپت SQL جهت ساخت دیتابیس"
+              >
+                <Database size={15} className="text-amber-400" />
+                <span>اسکریپت دیتابیس</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Statistical Summary Cards (Zero-Pill Minimalist) */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-5 border-t border-slate-800 text-xs">
+            <div>
+              <span className="text-slate-400 block mb-0.5">کل کمدهای تعریف‌شده</span>
+              <span className="text-xl font-black text-white">{stats.total}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">کمدهای خالی و آماده</span>
+              <span className="text-xl font-black text-emerald-400">{stats.emptyCount}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">کمدهای پر (دست طلاب)</span>
+              <span className="text-xl font-black text-sky-400">{stats.occupiedCount}</span>
+            </div>
+            <div>
+              <span className="text-slate-400 block mb-0.5">کمدهای غیرفعال (خراب)</span>
+              <span className="text-xl font-black text-rose-400">{stats.inactiveCount}</span>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <span className="text-slate-400 block mb-0.5">درصد اشغال کمدها</span>
+              <span className="text-xl font-black text-slate-200">{stats.occupancyRate}%</span>
+            </div>
           </div>
         </div>
-
-        {/* Statistical Summary Cards (Zero-Pill Minimalist) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6 pt-5 border-t border-slate-800 text-xs">
-          <div>
-            <span className="text-slate-400 block mb-0.5">کل کمدهای تعریف‌شده</span>
-            <span className="text-xl font-black text-white">{stats.total}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block mb-0.5">کمدهای خالی و آماده</span>
-            <span className="text-xl font-black text-emerald-400">{stats.emptyCount}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block mb-0.5">کمدهای پر (دست طلاب)</span>
-            <span className="text-xl font-black text-sky-400">{stats.occupiedCount}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block mb-0.5">کمدهای غیرفعال (خراب)</span>
-            <span className="text-xl font-black text-rose-400">{stats.inactiveCount}</span>
-          </div>
-          <div className="col-span-2 sm:col-span-1">
-            <span className="text-slate-400 block mb-0.5">درصد اشغال کمدها</span>
-            <span className="text-xl font-black text-slate-200">{stats.occupancyRate}%</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* View Switcher Tabs & Helpers */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-        {/* View Mode Toggle */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setViewMode('split')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-              viewMode === 'split' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <ArrowRightLeft size={14} className="text-emerald-600" />
-            <span>نمای دو ستونه تفکیکی (خالی و پر)</span>
-          </button>
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={viewMode}
+          onChange={(id) => setViewMode(id as 'split' | 'all-grid' | 'inactive')}
+          tabs={[
+            { id: 'split', label: 'خالی و پر', icon: <ArrowRightLeft size={14} />, tone: 'emerald' },
+            { id: 'all-grid', label: 'شبکه جامع', icon: <Layers size={14} />, badge: stats.total, tone: 'indigo' },
+            { id: 'inactive', label: 'غیرفعال‌ها', icon: <Wrench size={14} />, badge: stats.inactiveCount, tone: 'rose' },
+          ]}
+        />
+      ) : (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              onClick={() => setViewMode('split')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                viewMode === 'split' 
+                  ? "bg-white text-slate-900 shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <ArrowRightLeft size={14} className="text-emerald-600" />
+              <span>نمای دو ستونه تفکیکی (خالی و پر)</span>
+            </button>
 
-          <button
-            onClick={() => setViewMode('all-grid')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-              viewMode === 'all-grid' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Layers size={14} className="text-indigo-600" />
-            <span>نمای شبکه جامع (۱ تا ۲۰۰)</span>
-          </button>
+            <button
+              onClick={() => setViewMode('all-grid')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                viewMode === 'all-grid' 
+                  ? "bg-white text-slate-900 shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Layers size={14} className="text-indigo-600" />
+              <span>نمای شبکه جامع (۱ تا ۲۰۰)</span>
+            </button>
 
-          <button
-            onClick={() => setViewMode('inactive')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-              viewMode === 'inactive' 
-                ? "bg-white text-slate-900 shadow-xs" 
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <Wrench size={14} className="text-rose-600" />
-            <span>غیرفعال‌ها ({stats.inactiveCount})</span>
-          </button>
+            <button
+              onClick={() => setViewMode('inactive')}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                viewMode === 'inactive' 
+                  ? "bg-white text-slate-900 shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Wrench size={14} className="text-rose-600" />
+              <span>غیرفعال‌ها ({stats.inactiveCount})</span>
+            </button>
+          </div>
+
+          {/* Reset / Helper Button */}
+          {canEdit && lockers.length < 200 && (
+            <button
+              onClick={handleResetToDefault200}
+              className="text-xs text-slate-700 hover:text-slate-900 font-bold flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 transition-all cursor-pointer self-end sm:self-auto"
+            >
+              <RotateCcw size={14} />
+              <span>تکمیل شماره‌های ۱ تا ۲۰۰</span>
+            </button>
+          )}
         </div>
-
-        {/* Reset / Helper Button */}
-        {canEdit && lockers.length < 200 && (
-          <button
-            onClick={handleResetToDefault200}
-            className="text-xs text-slate-700 hover:text-slate-900 font-bold flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 transition-all cursor-pointer self-end sm:self-auto"
-          >
-            <RotateCcw size={14} />
-            <span>تکمیل شماره‌های ۱ تا ۲۰۰</span>
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Loading State */}
       {loading ? (
@@ -923,10 +1033,43 @@ ON CONFLICT (locker_number) DO NOTHING;
           {/* VIEW 1: SPLIT VIEW (دو سمت جداگانه: کمد های خالی و کمد های پر)            */}
           {/* ========================================================================= */}
           {viewMode === 'split' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            <div className="space-y-3">
+              {isAdminMobile && (
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setMobileSplitTab('empty')}
+                    className={cn(
+                      "min-h-[40px] px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                      mobileSplitTab === 'empty'
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-slate-600"
+                    )}
+                  >
+                    <Unlock size={14} />
+                    <span>خالی ({filteredEmptyLockers.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileSplitTab('occupied')}
+                    className={cn(
+                      "min-h-[40px] px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                      mobileSplitTab === 'occupied'
+                        ? "bg-sky-600 text-white shadow-xs"
+                        : "text-slate-600"
+                    )}
+                  >
+                    <Lock size={14} />
+                    <span>پر / واگذارشده ({filteredOccupiedLockers.length})</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
               
-              {/* سمت راست: کمدهای خالی (آماده واگذاری) */}
-              <div className="bg-white rounded-3xl p-5 sm:p-6 border border-emerald-100 shadow-sm space-y-4">
+                {/* سمت راست: کمدهای خالی (آماده واگذاری) */}
+                {(!isAdminMobile || mobileSplitTab === 'empty') && (
+                <div className={cn("bg-white border border-emerald-100 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-3.5" : "rounded-3xl p-5 sm:p-6")}>
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -1018,7 +1161,7 @@ ON CONFLICT (locker_number) DO NOTHING;
                           </span>
 
                           {canEdit && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className={cn("flex items-center gap-1 transition-opacity", isAdminMobile ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1048,164 +1191,197 @@ ON CONFLICT (locker_number) DO NOTHING;
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* سمت چپ: کمدهای پر (در دست طلاب) */}
-              <div className="bg-white rounded-3xl p-5 sm:p-6 border border-sky-100 shadow-sm space-y-4">
-                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
-                      <Lock size={20} />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
-                        <span>کمد‌های پر (در اختیار طلاب)</span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 text-xs font-bold">
-                          {filteredOccupiedLockers.length} کمد
-                        </span>
-                      </h2>
-                      <p className="text-xs text-slate-400">
-                        مشاهده نام صاحب کمد، تاریخ واگذاری، تغییر طلبه و تخلیه
-                      </p>
-                    </div>
-                  </div>
                 </div>
+                )}
 
-                {/* Filters & Search for Occupied Lockers */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="relative sm:col-span-2">
-                    <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={occupiedSearchTerm}
-                      onChange={(e) => setOccupiedSearchTerm(e.target.value)}
-                      placeholder="جستجوی شماره کمد یا نام طلبه..."
-                      className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
-                    />
-                    {occupiedSearchTerm && (
-                      <button
-                        onClick={() => setOccupiedSearchTerm('')}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
+                {/* سمت چپ: کمدهای پر (در دست طلاب) */}
+                {(!isAdminMobile || mobileSplitTab === 'occupied') && (
+                <div className={cn("bg-white border border-sky-100 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-3.5" : "rounded-3xl p-5 sm:p-6")}>
+                  <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
+                        <Lock size={20} />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                          <span>کمد‌های پر (در اختیار طلاب)</span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 text-xs font-bold">
+                            {filteredOccupiedLockers.length} کمد
+                          </span>
+                        </h2>
+                        <p className="text-xs text-slate-400">
+                          مشاهده نام صاحب کمد، تاریخ واگذاری، تغییر طلبه و تخلیه
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <select
-                      value={gradeFilter}
-                      onChange={(e) => setGradeFilter(e.target.value)}
-                      className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-slate-700 font-medium"
-                    >
-                      <option value="all">همه پایه‌ها</option>
-                      <option value="۷">پایه ۷</option>
-                      <option value="۸">پایه ۸</option>
-                      <option value="۹">پایه ۹</option>
-                      <option value="۱۰">پایه ۱۰</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Occupied Lockers List / Grid */}
-                {filteredOccupiedLockers.length === 0 ? (
-                  <div className="p-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
-                    {occupiedSearchTerm || gradeFilter !== 'all' ? 'کمد پری با این مشخصات یافت نشد.' : 'هیچ کمد واگذار شده‌ای وجود ندارد.'}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[700px] overflow-y-auto pr-1">
-                    {filteredOccupiedLockers.map((locker) => (
-                      <div
-                        key={locker.id}
-                        className="bg-sky-50/30 hover:bg-sky-50 border border-sky-200/80 rounded-2xl p-3.5 transition-all duration-200 flex flex-col justify-between shadow-2xs hover:shadow-md"
-                      >
-                        {/* Header: Number & History Button */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
-                            <span className="text-lg font-black text-sky-950">
-                              #{locker.lockerNumber}
-                            </span>
-                            {locker.studentGrade && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
-                                {locker.studentGrade}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Small History Icon Button (دکمه ریز مشاهده سوابق ۳ نفر قبلی) */}
-                          <button
-                            type="button"
-                            onClick={() => setHistoryModalLocker(locker)}
-                            className="p-1.5 rounded-xl text-slate-400 hover:text-amber-800 hover:bg-amber-100/60 transition-all cursor-pointer flex items-center gap-1"
-                            title="مشاهده سوابق و ۳ نفر قبلی که کلید را داشتند 🕒"
+                  {/* Filters & Search for Occupied Lockers */}
+                  {isAdminMobile ? (
+                    <div className="space-y-2">
+                      <MobileSearchFilterBar
+                        value={occupiedSearchTerm}
+                        onChange={setOccupiedSearchTerm}
+                        placeholder="جستجوی شماره کمد یا نام طلبه..."
+                        filtersOpen={mobileOccupiedFiltersOpen}
+                        onToggleFilters={() => setMobileOccupiedFiltersOpen(p => !p)}
+                        activeFilterCount={gradeFilter !== 'all' ? 1 : 0}
+                      />
+                      {mobileOccupiedFiltersOpen && (
+                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                          <label className="text-[11px] font-bold text-slate-600 block mb-1">فیلتر پایه تحصیلی:</label>
+                          <select
+                            value={gradeFilter}
+                            onChange={(e) => setGradeFilter(e.target.value)}
+                            className="w-full min-h-[40px] py-2 px-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-bold"
                           >
-                            <Clock size={14} />
-                            {locker.history && locker.history.length > 0 && (
-                              <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-1 rounded-md">
-                                {locker.history.length}
-                              </span>
-                            )}
-                          </button>
+                            <option value="all">همه پایه‌ها</option>
+                            <option value="۷">پایه ۷</option>
+                            <option value="۸">پایه ۸</option>
+                            <option value="۹">پایه ۹</option>
+                            <option value="۱۰">پایه ۱۰</option>
+                          </select>
                         </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="relative sm:col-span-2">
+                        <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={occupiedSearchTerm}
+                          onChange={(e) => setOccupiedSearchTerm(e.target.value)}
+                          placeholder="جستجوی شماره کمد یا نام طلبه..."
+                          className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                        />
+                        {occupiedSearchTerm && (
+                          <button
+                            onClick={() => setOccupiedSearchTerm('')}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
 
-                        {/* Student Info Box */}
-                        <div className="my-2.5 bg-white p-2.5 rounded-xl border border-sky-100 shadow-2xs">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-sky-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                              {(locker.studentName || 'ط').charAt(0)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <h4 className="text-xs font-extrabold text-slate-800 truncate" title={locker.studentName}>
-                                {locker.studentName}
-                              </h4>
-                              {locker.assignedAt && (
-                                <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                                  <Calendar size={10} />
-                                  <span>واگذاری: {locker.assignedAt}</span>
-                                </p>
+                      <div>
+                        <select
+                          value={gradeFilter}
+                          onChange={(e) => setGradeFilter(e.target.value)}
+                          className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-sky-500/20 text-slate-700 font-medium"
+                        >
+                          <option value="all">همه پایه‌ها</option>
+                          <option value="۷">پایه ۷</option>
+                          <option value="۸">پایه ۸</option>
+                          <option value="۹">پایه ۹</option>
+                          <option value="۱۰">پایه ۱۰</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Occupied Lockers List / Grid */}
+                  {filteredOccupiedLockers.length === 0 ? (
+                    <div className="p-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
+                      {occupiedSearchTerm || gradeFilter !== 'all' ? 'کمد پری با این مشخصات یافت نشد.' : 'هیچ کمد واگذار شده‌ای وجود ندارد.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[700px] overflow-y-auto pr-1">
+                      {filteredOccupiedLockers.map((locker) => (
+                        <div
+                          key={locker.id}
+                          className="bg-sky-50/30 hover:bg-sky-50 border border-sky-200/80 rounded-2xl p-3.5 transition-all duration-200 flex flex-col justify-between shadow-2xs hover:shadow-md"
+                        >
+                          {/* Header: Number & History Button */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
+                              <span className="text-lg font-black text-sky-950">
+                                #{locker.lockerNumber}
+                              </span>
+                              {locker.studentGrade && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
+                                  {locker.studentGrade}
+                                </span>
                               )}
                             </div>
+
+                            {/* Small History Icon Button (دکمه ریز مشاهده سوابق ۳ نفر قبلی) */}
+                            <button
+                              type="button"
+                              onClick={() => setHistoryModalLocker(locker)}
+                              className="p-1.5 rounded-xl text-slate-400 hover:text-amber-800 hover:bg-amber-100/60 transition-all cursor-pointer flex items-center gap-1"
+                              title="مشاهده سوابق و ۳ نفر قبلی که کلید را داشتند 🕒"
+                            >
+                              <Clock size={14} />
+                              {locker.history && locker.history.length > 0 && (
+                                <span className="text-[10px] font-bold bg-amber-200/80 text-amber-900 px-1 rounded-md">
+                                  {locker.history.length}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Student Info Box */}
+                          <div className="my-2.5 bg-white p-2.5 rounded-xl border border-sky-100 shadow-2xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-sky-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                                {(locker.studentName || 'ط').charAt(0)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="text-xs font-extrabold text-slate-800 truncate" title={locker.studentName}>
+                                  {locker.studentName}
+                                </h4>
+                                {locker.assignedAt && (
+                                  <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                    <Calendar size={10} />
+                                    <span>واگذاری: {locker.assignedAt}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Footer Quick Actions */}
+                          <div className="pt-2 border-t border-sky-100 flex items-center justify-between text-xs gap-1.5">
+                            {canEdit ? (
+                              <>
+                                <button
+                                  onClick={() => handleOpenAssignModal(locker)}
+                                  className="px-2 py-1 text-[11px] font-bold text-sky-700 hover:bg-sky-100/80 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="تغییر فردی که کمد به او اختصاص یافته است"
+                                >
+                                  <ArrowRightLeft size={12} />
+                                  <span>تغییر طلبه</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleReleaseLocker(locker)}
+                                  className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="تخلیه کمد و دریافت کلید"
+                                >
+                                  <UserX size={12} />
+                                  <span>تخلیه</span>
+                                </button>
+
+                                <button
+                                  onClick={() => setInactiveModalLocker(locker)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                  title="اعلام خرابی یا گم شدن کلید"
+                                >
+                                  <Wrench size={12} />
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">واگذار شده</span>
+                            )}
                           </div>
                         </div>
-
-                        {/* Footer Quick Actions */}
-                        <div className="pt-2 border-t border-sky-100 flex items-center justify-between text-xs gap-1.5">
-                          {canEdit ? (
-                            <>
-                              <button
-                                onClick={() => handleOpenAssignModal(locker)}
-                                className="px-2 py-1 text-[11px] font-bold text-sky-700 hover:bg-sky-100/80 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                title="تغییر فردی که کمد به او اختصاص یافته است"
-                              >
-                                <ArrowRightLeft size={12} />
-                                <span>تغییر طلبه</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleReleaseLocker(locker)}
-                                className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                                title="تخلیه کمد و دریافت کلید"
-                              >
-                                <UserX size={12} />
-                                <span>تخلیه</span>
-                              </button>
-
-                              <button
-                                onClick={() => setInactiveModalLocker(locker)}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
-                                title="اعلام خرابی یا گم شدن کلید"
-                              >
-                                <Wrench size={12} />
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">واگذار شده</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 )}
               </div>
             </div>
@@ -1215,7 +1391,7 @@ ON CONFLICT (locker_number) DO NOTHING;
           {/* VIEW 2: ALL LOCKERS GRID (نمای جامع شبکه ۱ تا ۲۰۰)                        */}
           {/* ========================================================================= */}
           {viewMode === 'all-grid' && (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className={cn("bg-white border border-slate-200 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-3.5" : "rounded-3xl p-6")}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <h2 className="text-base font-extrabold text-slate-800">
@@ -1248,7 +1424,10 @@ ON CONFLICT (locker_number) DO NOTHING;
               </div>
 
               {/* Grid 1 to 200 */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2.5 max-h-[750px] overflow-y-auto pr-1">
+              <div className={cn(
+                "grid gap-2.5 max-h-[750px] overflow-y-auto pr-1",
+                isAdminMobile ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10"
+              )}>
                 {filteredAllLockers.map((locker) => {
                   const isEmpty = locker.status === 'empty';
                   const isOccupied = locker.status === 'occupied';
@@ -1326,7 +1505,7 @@ ON CONFLICT (locker_number) DO NOTHING;
           {/* VIEW 3: INACTIVE LOCKERS (کمدهای غیرفعال: خرابی، مفقودی کلید و...)          */}
           {/* ========================================================================= */}
           {viewMode === 'inactive' && (
-            <div className="bg-white rounded-3xl p-6 border border-rose-100 shadow-sm space-y-4">
+            <div className={cn("bg-white border border-rose-100 shadow-sm space-y-4", isAdminMobile ? "rounded-[20px] p-3.5" : "rounded-3xl p-6")}>
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
                   <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">

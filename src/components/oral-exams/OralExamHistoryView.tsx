@@ -27,6 +27,12 @@ import { OralExamPeriod, OralExamStudentRecord, Student, Teacher, ScopeBook } fr
 import { exportPeriodResultsExcel, exportReportWordDoc, toPersianDigits } from './OralExamDocGenerator';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileSearchFilterBar
+} from '../admin/mobile/MobileModulePrimitives';
 
 interface OralExamHistoryViewProps {
   periods: OralExamPeriod[];
@@ -49,6 +55,8 @@ export default function OralExamHistoryView({
   onEditPeriod,
   onRefreshData
 }: OralExamHistoryViewProps) {
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
   // Main view mode: 'list' (لیست دوره‌ها و سوابق) vs 'reports' (بخش گزارش‌گیری پیشرفته)
   const [activeTab, setActiveTab] = useState<'list' | 'reports'>('list');
 
@@ -617,76 +625,95 @@ export default function OralExamHistoryView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-indigo-950 border border-sky-900/40 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        {/* Ambient background glows */}
-        <div className="absolute -top-20 -right-20 w-60 h-60 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSectionHeader
+            title="سوابق و گزارش‌های امتحانات شفاهی"
+            subtitle={`${historyStats.totalPeriodsCount} دوره · میانگین ${historyStats.averageScore} · قبولی ${historyStats.passRate}%`}
+            variant="slate"
+            icon={<Archive size={18} className="text-sky-300" />}
+          />
+          <MobileHorizontalTabs
+            activeId={activeTab}
+            onChange={(id) => setActiveTab(id as 'list' | 'reports')}
+            tabs={[
+              { id: 'list', label: 'فهرست سوابق و دوره‌ها', icon: <FileText size={14} />, tone: 'indigo' },
+              { id: 'reports', label: 'گزارش‌گیری و تحلیل', icon: <TrendingUp size={14} />, tone: 'emerald' }
+            ]}
+          />
+        </div>
+      ) : (
+        <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-indigo-950 border border-sky-900/40 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          {/* Ambient background glows */}
+          <div className="absolute -top-20 -right-20 w-60 h-60 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-extrabold backdrop-blur-md">
-              <Archive size={14} className="text-sky-300" />
-              <span>آرشیو جامع سوابق، نتایج و تحلیل امتحانات</span>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-300 text-xs font-extrabold backdrop-blur-md">
+                <Archive size={14} className="text-sky-300" />
+                <span>آرشیو جامع سوابق، نتایج و تحلیل امتحانات</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                سوابق و گزارش‌های امتحانات شفاهی
+              </h2>
+              <p className="text-sky-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
+                مشاهده سابقه دوره‌های امتحانی گذشته با امکان فیلتر بر اساس پایه، اصول، فقه، آزمون ورودی، نوع کتاب و گزارش‌گیری تخصصی بر اساس عملکرد اساتید، دروس یا کارنامه طلبه.
+              </p>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              سوابق و گزارش‌های امتحانات شفاهی
-            </h2>
-            <p className="text-sky-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              مشاهده سابقه دوره‌های امتحانی گذشته با امکان فیلتر بر اساس پایه، اصول، فقه، آزمون ورودی، نوع کتاب و گزارش‌گیری تخصصی بر اساس عملکرد اساتید، دروس یا کارنامه طلبه.
-            </p>
+
+            {/* Tab Switcher: List vs Reports */}
+            <div className="flex items-center gap-1.5 p-1.5 bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl shrink-0">
+              <button
+                onClick={() => setActiveTab('list')}
+                className={cn(
+                  "px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2",
+                  activeTab === 'list' 
+                    ? "bg-white text-slate-900 shadow-md scale-[1.02]" 
+                    : "text-slate-200 hover:text-white hover:bg-white/10"
+                )}
+              >
+                <FileText size={15} className={activeTab === 'list' ? "text-sky-600" : "text-sky-300"} />
+                <span>فهرست سوابق و دوره‌ها</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('reports')}
+                className={cn(
+                  "px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2",
+                  activeTab === 'reports' 
+                    ? "bg-white text-slate-900 shadow-md scale-[1.02]" 
+                    : "text-slate-200 hover:text-white hover:bg-white/10"
+                )}
+              >
+                <TrendingUp size={15} className={activeTab === 'reports' ? "text-emerald-600" : "text-emerald-300"} />
+                <span>گزارش‌گیری و تحلیل پیشرفته</span>
+              </button>
+            </div>
           </div>
 
-          {/* Tab Switcher: List vs Reports */}
-          <div className="flex items-center gap-1.5 p-1.5 bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl shrink-0">
-            <button
-              onClick={() => setActiveTab('list')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2",
-                activeTab === 'list' 
-                  ? "bg-white text-slate-900 shadow-md scale-[1.02]" 
-                  : "text-slate-200 hover:text-white hover:bg-white/10"
-              )}
-            >
-              <FileText size={15} className={activeTab === 'list' ? "text-sky-600" : "text-sky-300"} />
-              <span>فهرست سوابق و دوره‌ها</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer flex items-center gap-2",
-                activeTab === 'reports' 
-                  ? "bg-white text-slate-900 shadow-md scale-[1.02]" 
-                  : "text-slate-200 hover:text-white hover:bg-white/10"
-              )}
-            >
-              <TrendingUp size={15} className={activeTab === 'reports' ? "text-emerald-600" : "text-emerald-300"} />
-              <span>گزارش‌گیری و تحلیل پیشرفته</span>
-            </button>
+          {/* Minimal Stats Overview */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-sky-800/50 text-xs">
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-sky-200/80 block mb-1 font-medium">کل دوره‌های ثبت‌شده</span>
+              <span className="text-xl font-black text-white">{historyStats.totalPeriodsCount} <span className="text-xs font-normal opacity-80">دوره</span></span>
+            </div>
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-sky-200/80 block mb-1 font-medium">تعداد کل طلاب آزموده</span>
+              <span className="text-xl font-black text-sky-300">{historyStats.totalExaminees} <span className="text-xs font-normal opacity-80">نفر·آزمون</span></span>
+            </div>
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-sky-200/80 block mb-1 font-medium">میانگین نمرات شفاهی</span>
+              <span className="text-xl font-black text-emerald-300">{historyStats.averageScore} <span className="text-xs font-normal opacity-80">از ۲۰</span></span>
+            </div>
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-sky-200/80 block mb-1 font-medium">درصد قبولی کلی</span>
+              <span className="text-xl font-black text-amber-300">{historyStats.passRate}%</span>
+            </div>
           </div>
         </div>
-
-        {/* Minimal Stats Overview */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-5 border-t border-sky-800/50 text-xs">
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-sky-200/80 block mb-1 font-medium">کل دوره‌های ثبت‌شده</span>
-            <span className="text-xl font-black text-white">{historyStats.totalPeriodsCount} <span className="text-xs font-normal opacity-80">دوره</span></span>
-          </div>
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-sky-200/80 block mb-1 font-medium">تعداد کل طلاب آزموده</span>
-            <span className="text-xl font-black text-sky-300">{historyStats.totalExaminees} <span className="text-xs font-normal opacity-80">نفر·آزمون</span></span>
-          </div>
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-sky-200/80 block mb-1 font-medium">میانگین نمرات شفاهی</span>
-            <span className="text-xl font-black text-emerald-300">{historyStats.averageScore} <span className="text-xs font-normal opacity-80">از ۲۰</span></span>
-          </div>
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-sky-200/80 block mb-1 font-medium">درصد قبولی کلی</span>
-            <span className="text-xl font-black text-amber-300">{historyStats.passRate}%</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: LIST OF PERIODS & PAST RECORDS                                     */}
@@ -694,91 +721,166 @@ export default function OralExamHistoryView({
       {activeTab === 'list' && (
         <div className="space-y-4">
           {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="جستجو در عنوان دوره، پایه یا نام استاد ممتحن..."
-                className="w-full pl-4 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
+                onChange={setSearchTerm}
+                placeholder="جستجو در عنوان، پایه یا استاد..."
+                onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={[
+                  filterGrade !== 'all',
+                  filterSubjectType !== 'all',
+                  filterBook !== 'all',
+                  filterYear !== 'all'
+                ].filter(Boolean).length}
               />
+
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2 shadow-xs">
+                  <select
+                    value={filterGrade}
+                    onChange={(e) => setFilterGrade(e.target.value)}
+                    className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                    <option value="امتحان ورودی">آزمون ورودی</option>
+                    <option value="کل پایه‌ها">کل پایه‌ها</option>
+                  </select>
+
+                  <select
+                    value={filterSubjectType}
+                    onChange={(e) => setFilterSubjectType(e.target.value)}
+                    className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">همه موضوعات</option>
+                    <option value="usul">دارای اصول</option>
+                    <option value="fiqh">دارای فقه</option>
+                    <option value="entrance">آزمون ورودی</option>
+                  </select>
+
+                  <select
+                    value={filterBook}
+                    onChange={(e) => setFilterBook(e.target.value)}
+                    className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">همه کتب</option>
+                    <option value="کفایه">کفایه</option>
+                    <option value="رسائل">رسائل</option>
+                    <option value="مکاسب">مکاسب</option>
+                    <option value="حلقه ثالثه">حلقه ثالثه</option>
+                    <option value="حلقه ثانیه">حلقه ثانیه</option>
+                    <option value="مظفر">مظفر</option>
+                    <option value="لمعه">لمعه</option>
+                  </select>
+
+                  {availableYears.length > 0 && (
+                    <select
+                      value={filterYear}
+                      onChange={(e) => setFilterYear(e.target.value)}
+                      className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                    >
+                      <option value="all">همه سال‌ها</option>
+                      {availableYears.map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
             </div>
+          ) : (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="جستجو در عنوان دوره، پایه یا نام استاد ممتحن..."
+                  className="w-full pl-4 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800"
+                />
+              </div>
 
-            {/* Grade Filter */}
-            <select
-              value={filterGrade}
-              onChange={(e) => setFilterGrade(e.target.value)}
-              className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
-            >
-              <option value="all">همه پایه‌ها</option>
-              <option value="پایه ۷">پایه ۷</option>
-              <option value="پایه ۸">پایه ۸</option>
-              <option value="پایه ۹">پایه ۹</option>
-              <option value="پایه ۱۰">پایه ۱۰</option>
-              <option value="امتحان ورودی">آزمون ورودی</option>
-              <option value="کل پایه‌ها">ترکیبی / کل پایه‌ها</option>
-            </select>
-
-            {/* Subject Type Filter */}
-            <select
-              value={filterSubjectType}
-              onChange={(e) => setFilterSubjectType(e.target.value)}
-              className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
-            >
-              <option value="all">همه موضوعات</option>
-              <option value="usul">دارای درس اصول</option>
-              <option value="fiqh">دارای درس فقه</option>
-              <option value="entrance">آزمون ورودی</option>
-            </select>
-
-            {/* Book Filter */}
-            <select
-              value={filterBook}
-              onChange={(e) => setFilterBook(e.target.value)}
-              className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
-            >
-              <option value="all">همه کتب و دروس</option>
-              <option value="کفایه">کفایه</option>
-              <option value="رسائل">رسائل</option>
-              <option value="مکاسب">مکاسب</option>
-              <option value="حلقه ثالثه">حلقه ثالثه</option>
-              <option value="حلقه ثانیه">حلقه ثانیه</option>
-              <option value="مظفر">اصول مرحوم مظفر</option>
-              <option value="لمعه">لمعه</option>
-            </select>
-
-            {/* Academic Year Filter */}
-            {availableYears.length > 0 && (
+              {/* Grade Filter */}
               <select
-                value={filterYear}
-                onChange={(e) => setFilterYear(e.target.value)}
+                value={filterGrade}
+                onChange={(e) => setFilterGrade(e.target.value)}
                 className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
               >
-                <option value="all">همه سال‌های تحصیلی</option>
-                {availableYears.map(yr => (
-                  <option key={yr} value={yr}>{yr}</option>
-                ))}
+                <option value="all">همه پایه‌ها</option>
+                <option value="پایه ۷">پایه ۷</option>
+                <option value="پایه ۸">پایه ۸</option>
+                <option value="پایه ۹">پایه ۹</option>
+                <option value="پایه ۱۰">پایه ۱۰</option>
+                <option value="امتحان ورودی">آزمون ورودی</option>
+                <option value="کل پایه‌ها">ترکیبی / کل پایه‌ها</option>
               </select>
-            )}
 
-            {(filterGrade !== 'all' || filterSubjectType !== 'all' || filterBook !== 'all' || filterYear !== 'all' || searchTerm) && (
-              <button
-                onClick={() => {
-                  setFilterGrade('all');
-                  setFilterSubjectType('all');
-                  setFilterBook('all');
-                  setFilterYear('all');
-                  setSearchTerm('');
-                }}
-                className="text-xs text-rose-600 hover:text-rose-700 font-bold px-2 py-1"
+              {/* Subject Type Filter */}
+              <select
+                value={filterSubjectType}
+                onChange={(e) => setFilterSubjectType(e.target.value)}
+                className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
               >
-                حذف فیلترها
-              </button>
-            )}
-          </div>
+                <option value="all">همه موضوعات</option>
+                <option value="usul">دارای درس اصول</option>
+                <option value="fiqh">دارای درس فقه</option>
+                <option value="entrance">آزمون ورودی</option>
+              </select>
+
+              {/* Book Filter */}
+              <select
+                value={filterBook}
+                onChange={(e) => setFilterBook(e.target.value)}
+                className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
+              >
+                <option value="all">همه کتب و دروس</option>
+                <option value="کفایه">کفایه</option>
+                <option value="رسائل">رسائل</option>
+                <option value="مکاسب">مکاسب</option>
+                <option value="حلقه ثالثه">حلقه ثالثه</option>
+                <option value="حلقه ثانیه">حلقه ثانیه</option>
+                <option value="مظفر">اصول مرحوم مظفر</option>
+                <option value="لمعه">لمعه</option>
+              </select>
+
+              {/* Academic Year Filter */}
+              {availableYears.length > 0 && (
+                <select
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                  className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium cursor-pointer"
+                >
+                  <option value="all">همه سال‌های تحصیلی</option>
+                  {availableYears.map(yr => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              )}
+
+              {(filterGrade !== 'all' || filterSubjectType !== 'all' || filterBook !== 'all' || filterYear !== 'all' || searchTerm) && (
+                <button
+                  onClick={() => {
+                    setFilterGrade('all');
+                    setFilterSubjectType('all');
+                    setFilterBook('all');
+                    setFilterYear('all');
+                    setSearchTerm('');
+                  }}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold px-2 py-1"
+                >
+                  حذف فیلترها
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Periods Cards List */}
           {filteredPeriods.length === 0 ? (
@@ -879,11 +981,11 @@ export default function OralExamHistoryView({
         <div className="space-y-6">
           {/* Sub-Tabs for Reports */}
           <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl overflow-x-auto max-w-full scrollbar-hide">
               <button
                 onClick={() => setReportType('teachers')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                  "px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0",
                   reportType === 'teachers' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
                 )}
               >
@@ -893,7 +995,7 @@ export default function OralExamHistoryView({
               <button
                 onClick={() => setReportType('books')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                  "px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0",
                   reportType === 'books' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
                 )}
               >
@@ -903,7 +1005,7 @@ export default function OralExamHistoryView({
               <button
                 onClick={() => setReportType('students')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                  "px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0",
                   reportType === 'students' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
                 )}
               >

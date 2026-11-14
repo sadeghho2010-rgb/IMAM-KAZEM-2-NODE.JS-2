@@ -51,6 +51,7 @@ import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import ShamsiDatePicker from '../ShamsiDatePicker';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
 
 interface CreateOralExamWizardProps {
   students: Student[];
@@ -69,6 +70,7 @@ export default function CreateOralExamWizard({
   onFinishPeriod,
   onCancel
 }: CreateOralExamWizardProps) {
+  const isAdminMobile = useIsAdminMobile();
   // Wizard Step: 1 = تنظیمات اولیه و اساتید, 2 = جدول طلاب، محدوده و ساعت, 3 = فاز برگزاری و ثبت نمرات
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(existingPeriod?.status === 'conducting' ? 3 : 1);
 
@@ -1704,7 +1706,187 @@ export default function CreateOralExamWizard({
             </div>
           </div>
 
-          {/* Table Container */}
+          {/* Mobile Cards OR Desktop Table Container */}
+          {isAdminMobile ? (
+            <div className="space-y-3">
+              {participatingStudentIds.map((stId, idx) => {
+                const rec = recordsMap[stId];
+                if (!rec) return null;
+
+                return (
+                  <div key={stId} className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-3 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                      <div className="min-w-0">
+                        <div className="font-black text-sm text-slate-900 truncate">
+                          {idx + 1}. {rec.studentName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {rec.grade || targetGrade} {rec.phone ? `· ${rec.phone}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <select
+                          value={rec.examTime || '08:00'}
+                          onChange={(e) => handleUpdateRecord(stId, { examTime: e.target.value })}
+                          className="min-h-[38px] px-2 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800"
+                        >
+                          {TIME_SLOTS_15MIN.map(slot => (
+                            <option key={slot} value={slot}>{slot}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStudent(stId)}
+                          className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-xl hover:bg-rose-50"
+                          title="حذف طلبه"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {hasFiqh && (
+                      <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200 space-y-2">
+                        <div className="text-[11px] font-black text-amber-900">درس فقه</div>
+                        <select
+                          value={rec.fiqhExaminerTeacherName || ''}
+                          onChange={(e) => handleUpdateRecord(stId, { fiqhExaminerTeacherName: e.target.value })}
+                          className="w-full min-h-[38px] px-2.5 py-1.5 bg-white border border-amber-200 rounded-lg text-xs font-bold"
+                        >
+                          <option value="">انتخاب ممتحن فقه...</option>
+                          {fiqhExaminerOptions.map(ex => (
+                            <option key={ex.id} value={ex.teacherName}>{ex.teacherName}</option>
+                          ))}
+                        </select>
+                        {fiqhBooks.length > 0 && (
+                          <select
+                            value={rec.fiqhBookTitle || fiqhBooks[0] || ''}
+                            onChange={(e) => handleUpdateRecord(stId, { fiqhBookTitle: e.target.value, fiqhMainScopeTitle: '', fiqhSubScopeTitle: '', fiqhPages: '' })}
+                            className="w-full min-h-[38px] px-2.5 py-1.5 bg-amber-100/80 border border-amber-300 rounded-lg text-xs font-bold text-amber-950"
+                          >
+                            {fiqhBooks.map(bk => (
+                              <option key={bk} value={bk}>{bk}</option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="relative">
+                          <div
+                            onClick={() => {
+                              setActiveScopeSearch({ studentId: stId, course: 'fiqh' });
+                              setScopeSearchQuery('');
+                            }}
+                            className="min-h-[38px] px-2.5 py-2 bg-white border border-amber-200 rounded-lg text-xs cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <span className={cn("truncate", rec.fiqhSubScopeTitle ? "text-slate-800 font-bold" : "text-slate-400")}>
+                              {[rec.fiqhMainScopeTitle, rec.fiqhSubScopeTitle, rec.fiqhPages ? `(${rec.fiqhPages})` : ''].filter(Boolean).join(' - ') || 'انتخاب محدوده فقه...'}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                          </div>
+                          {activeScopeSearch?.studentId === stId && activeScopeSearch?.course === 'fiqh' && (
+                            <div className="mt-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 space-y-2">
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                                <span className="text-[11px] font-bold text-amber-900">محدوده فقه</span>
+                                <button type="button" onClick={() => setActiveScopeSearch(null)} className="text-slate-400 p-1"><X size={14} /></button>
+                              </div>
+                              <input
+                                type="text"
+                                autoFocus
+                                value={scopeSearchQuery}
+                                onChange={(e) => setScopeSearchQuery(e.target.value)}
+                                placeholder="جستجوی محدوده یا صفحه..."
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                              />
+                              <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                {matchingScopeItems.length === 0 ? (
+                                  <div className="p-2 text-center text-slate-400 text-[11px]">محدوده‌ای یافت نشد.</div>
+                                ) : (
+                                  matchingScopeItems.map((item, sIdx) => (
+                                    <div key={sIdx} onClick={() => handleSelectScopeForStudent(stId, 'fiqh', item)} className="p-2 hover:bg-amber-50 rounded cursor-pointer">
+                                      <div className="font-bold text-slate-800">{item.subScopeTitle} {item.pages ? `(${item.pages})` : ''}</div>
+                                      <div className="text-[10px] text-slate-400">{item.bookTitle} · {item.mainScopeTitle}</div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {hasUsul && (
+                      <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2">
+                        <div className="text-[11px] font-black text-indigo-900">درس اصول</div>
+                        <select
+                          value={rec.usulExaminerTeacherName || ''}
+                          onChange={(e) => handleUpdateRecord(stId, { usulExaminerTeacherName: e.target.value })}
+                          className="w-full min-h-[38px] px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold"
+                        >
+                          <option value="">انتخاب ممتحن اصول...</option>
+                          {usulExaminerOptions.map(ex => (
+                            <option key={ex.id} value={ex.teacherName}>{ex.teacherName}</option>
+                          ))}
+                        </select>
+                        {usulBooks.length > 0 && (
+                          <select
+                            value={rec.usulBookTitle || usulBooks[0] || ''}
+                            onChange={(e) => handleUpdateRecord(stId, { usulBookTitle: e.target.value, usulMainScopeTitle: '', usulSubScopeTitle: '', usulPages: '' })}
+                            className="w-full min-h-[38px] px-2.5 py-1.5 bg-indigo-100/80 border border-indigo-300 rounded-lg text-xs font-bold text-indigo-950"
+                          >
+                            {usulBooks.map(bk => (
+                              <option key={bk} value={bk}>{bk}</option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="relative">
+                          <div
+                            onClick={() => {
+                              setActiveScopeSearch({ studentId: stId, course: 'usul' });
+                              setScopeSearchQuery('');
+                            }}
+                            className="min-h-[38px] px-2.5 py-2 bg-white border border-indigo-200 rounded-lg text-xs cursor-pointer flex items-center justify-between gap-2"
+                          >
+                            <span className={cn("truncate", rec.usulSubScopeTitle ? "text-slate-800 font-bold" : "text-slate-400")}>
+                              {[rec.usulMainScopeTitle, rec.usulSubScopeTitle, rec.usulPages ? `(${rec.usulPages})` : ''].filter(Boolean).join(' - ') || 'انتخاب محدوده اصول...'}
+                            </span>
+                            <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                          </div>
+                          {activeScopeSearch?.studentId === stId && activeScopeSearch?.course === 'usul' && (
+                            <div className="mt-1 bg-white border border-slate-200 rounded-xl shadow-lg p-2 space-y-2">
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                                <span className="text-[11px] font-bold text-indigo-900">محدوده اصول</span>
+                                <button type="button" onClick={() => setActiveScopeSearch(null)} className="text-slate-400 p-1"><X size={14} /></button>
+                              </div>
+                              <input
+                                type="text"
+                                autoFocus
+                                value={scopeSearchQuery}
+                                onChange={(e) => setScopeSearchQuery(e.target.value)}
+                                placeholder="جستجوی محدوده یا صفحه..."
+                                className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                              />
+                              <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 text-xs">
+                                {matchingScopeItems.length === 0 ? (
+                                  <div className="p-2 text-center text-slate-400 text-[11px]">محدوده‌ای یافت نشد.</div>
+                                ) : (
+                                  matchingScopeItems.map((item, sIdx) => (
+                                    <div key={sIdx} onClick={() => handleSelectScopeForStudent(stId, 'usul', item)} className="p-2 hover:bg-indigo-50 rounded cursor-pointer">
+                                      <div className="font-bold text-slate-800">{item.subScopeTitle} {item.pages ? `(${item.pages})` : ''}</div>
+                                      <div className="text-[10px] text-slate-400">{item.bookTitle} · {item.mainScopeTitle}</div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <div className="border border-slate-200 rounded-2xl overflow-x-auto">
             <table className="w-full text-right text-xs border-collapse min-w-[900px]">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -1971,6 +2153,7 @@ export default function CreateOralExamWizard({
               </tbody>
             </table>
           </div>
+          )}
 
           {/* Navigation Controls */}
           <div className="pt-4 flex items-center justify-between">
@@ -2075,7 +2258,97 @@ export default function CreateOralExamWizard({
             </div>
           </div>
 
-          {/* Conduct & Scoring Table */}
+          {/* Conduct & Scoring List (Mobile Cards OR Desktop Table) */}
+          {isAdminMobile ? (
+            <div className="space-y-3">
+              {participatingStudentIds.map((stId, idx) => {
+                const rec = recordsMap[stId];
+                if (!rec) return null;
+
+                return (
+                  <div key={stId} className="rounded-2xl border border-slate-200 bg-white p-3.5 space-y-3 shadow-2xs">
+                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                      <div className="min-w-0">
+                        <div className="font-black text-sm text-slate-900 truncate">
+                          {idx + 1}. {rec.studentName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          ساعت {rec.examTime || '-'} · {rec.grade || targetGrade}
+                        </div>
+                      </div>
+                      <select
+                        value={rec.overallStatus || 'pending'}
+                        onChange={(e) => handleUpdateRecord(stId, { overallStatus: e.target.value as any })}
+                        className="min-h-[36px] px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                      >
+                        <option value="pending">در جریان</option>
+                        <option value="passed">قبول</option>
+                        <option value="retake">تجدید / مجدد</option>
+                        <option value="absent">غایب</option>
+                      </select>
+                    </div>
+
+                    {hasFiqh && (
+                      <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200 flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-black text-amber-950">فقه · {rec.fiqhExaminerTeacherName || 'تعیین نشده'}</div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                            {[rec.fiqhMainScopeTitle, rec.fiqhSubScopeTitle, rec.fiqhPages].filter(Boolean).join(' - ') || '-'}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="20"
+                          step="0.25"
+                          value={rec.fiqhScore !== null && rec.fiqhScore !== undefined ? rec.fiqhScore : ''}
+                          onChange={(e) => handleUpdateRecord(stId, { fiqhScore: e.target.value !== '' ? Number(e.target.value) : null })}
+                          placeholder="نمره"
+                          className="w-20 min-h-[40px] px-2 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-mono font-black text-center text-amber-950 shrink-0"
+                        />
+                      </div>
+                    )}
+
+                    {hasUsul && (
+                      <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-200 flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-black text-indigo-950">اصول · {rec.usulExaminerTeacherName || 'تعیین نشده'}</div>
+                          <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                            {[rec.usulMainScopeTitle, rec.usulSubScopeTitle, rec.usulPages].filter(Boolean).join(' - ') || '-'}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="20"
+                          step="0.25"
+                          value={rec.usulScore !== null && rec.usulScore !== undefined ? rec.usulScore : ''}
+                          onChange={(e) => handleUpdateRecord(stId, { usulScore: e.target.value !== '' ? Number(e.target.value) : null })}
+                          placeholder="نمره"
+                          className="w-20 min-h-[40px] px-2 py-1.5 bg-white border border-indigo-300 rounded-xl text-xs font-mono font-black text-center text-indigo-950 shrink-0"
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveNoteStudent(rec);
+                        setTempNoteText(rec.examinerNotes || '');
+                      }}
+                      className={cn(
+                        "w-full min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                        rec.examinerNotes ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"
+                      )}
+                    >
+                      <FileEdit size={13} />
+                      <span>{rec.examinerNotes ? 'مشاهده / ویرایش نظر ممتحن' : 'ثبت نظر ممتحن'}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <div className="border border-slate-200 rounded-2xl overflow-x-auto">
             <table className="w-full text-right text-xs border-collapse min-w-[950px]">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -2214,6 +2487,7 @@ export default function CreateOralExamWizard({
               </tbody>
             </table>
           </div>
+          )}
 
           {/* Bottom Workflow Action Buttons */}
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">

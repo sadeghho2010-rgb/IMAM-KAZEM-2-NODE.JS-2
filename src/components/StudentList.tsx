@@ -54,6 +54,13 @@ import StudentRecordHistoryModal from './StudentRecordHistoryModal';
 import StudentExcelImportModal from './student/StudentExcelImportModal';
 import { getTodayShamsi } from '../lib/jalali';
 import { StudentCourseProgressService } from '../services/StudentCourseProgressService';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileSearchFilterBar,
+  MobileHorizontalTabs,
+  MobileActionItem,
+} from './admin/mobile/MobileModulePrimitives';
 
 interface StudentListProps {
   onlyActive?: boolean;
@@ -71,6 +78,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     setShahpooriFilter 
   } = useMentor();
   const { users, currentUser, addUser, updateUser, deleteUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
   const [selectedStudentForCredentials, setSelectedStudentForCredentials] = useState<Student | null>(null);
   const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
   const [editingCredUser, setEditingCredUser] = useState<AppUser | null>(null);
@@ -1214,6 +1222,395 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
   return (
     <div className="space-y-6" dir="rtl">
+      {isAdminMobile ? (
+        <div className="space-y-3" dir="rtl">
+          <MobileSectionHeader
+            title={onlyActive ? 'طلاب و کاربران فعال' : 'مدیریت جامع طلاب'}
+            subtitle={`${currentMentor.name} (${currentMentor.gradeLabel}) · ${filteredStudents.length.toLocaleString('fa-IR')} طلبه`}
+            icon={<Users size={20} />}
+            variant="indigo"
+            primaryAction={
+              isAuthorizedToManage
+                ? {
+                    id: 'add-student',
+                    label: 'افزودن طلبه جدید',
+                    icon: <Plus size={16} />,
+                    tone: 'primary',
+                    onClick: () => {
+                      resetForm();
+                      setShowAddModal(true);
+                    },
+                  }
+                : undefined
+            }
+            secondaryActions={(() => {
+              const acts: MobileActionItem[] = [
+                {
+                  id: 'excel-export',
+                  label: 'خروجی اکسل',
+                  icon: <FileSpreadsheet size={14} />,
+                  tone: 'emerald',
+                  onClick: handleExcelExport,
+                },
+              ];
+              if (!onlyActive && isAuthorizedToManage) {
+                acts.push({
+                  id: 'excel-import',
+                  label: 'وارد کردن اکسل',
+                  icon: <Upload size={14} />,
+                  tone: 'indigo',
+                  fileInputProps: {
+                    accept: '.xlsx, .xls, .csv',
+                    onChange: handleExcelImport,
+                  },
+                });
+                acts.push({
+                  id: 'dedup',
+                  label: 'حذف تکراری‌ها',
+                  icon: <GitMerge size={14} />,
+                  tone: 'amber',
+                  onClick: handleOpenDuplicateModal,
+                });
+                if (students.length > 0) {
+                  acts.push({
+                    id: 'delete-all',
+                    label: 'حذف همه کاربران',
+                    icon: <Trash2 size={14} />,
+                    tone: 'rose',
+                    onClick: () => setShowDeleteAllModal(true),
+                  });
+                }
+              }
+              return acts;
+            })()}
+          />
+
+          {currentMentorId === 'shahpoori' && (
+            <MobileHorizontalTabs
+              activeId={shahpooriFilter}
+              onChange={(id) => setShahpooriFilter(id as any)}
+              tabs={[
+                { id: 'all', label: 'کل پایه‌ها', badge: students.length },
+                { id: 'hayati', label: 'پایه ۷ (حیاتی)', tone: 'emerald' },
+                { id: 'hosseini', label: 'پایه ۸ (حسینی)', tone: 'indigo' },
+                { id: 'soleimani', label: 'پایه ۹ (سلیمانی)', tone: 'slate' },
+                { id: 'asadi', label: 'پایه ۱۰ (اسدی)', tone: 'rose' },
+              ]}
+            />
+          )}
+
+          {!onlyActive && (
+            <div className="space-y-2">
+              <MobileHorizontalTabs
+                activeId={statusFilter}
+                onChange={(id) => {
+                  setStatusFilter(id as any);
+                  setInactiveReasonFilter('all');
+                }}
+                tabs={[
+                  { id: 'all', label: 'همه طلاب', badge: students.length, tone: 'slate' },
+                  {
+                    id: 'active',
+                    label: 'طلاب حاضر',
+                    badge: students.filter((s) => isStudentActive(s.isActive)).length,
+                    tone: 'emerald',
+                  },
+                  {
+                    id: 'inactive',
+                    label: 'طلاب سابق',
+                    badge: students.filter((s) => !isStudentActive(s.isActive)).length,
+                    tone: 'amber',
+                  },
+                ]}
+              />
+
+              {statusFilter === 'all' && (
+                <label className="flex items-center justify-between px-3.5 py-2.5 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer">
+                  <span>عدم نمایش طلاب سابق (غیرفعال)</span>
+                  <input
+                    type="checkbox"
+                    checked={hideInactive}
+                    onChange={(e) => setHideInactive(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                  />
+                </label>
+              )}
+
+              {statusFilter === 'inactive' && (
+                <MobileHorizontalTabs
+                  activeId={inactiveReasonFilter}
+                  onChange={(id) => setInactiveReasonFilter(id as any)}
+                  tabs={[
+                    { id: 'all', label: 'همه علل', tone: 'slate' },
+                    { id: 'صرفا غیر فعال', label: 'صرفا غیر فعال', tone: 'amber' },
+                    { id: 'فارغ التحصیل', label: 'فارغ التحصیل', tone: 'emerald' },
+                    { id: 'انتقال اختیاری از مجموعه', label: 'انتقال اختیاری', tone: 'indigo' },
+                    { id: 'قطع همکاری از مجموعه', label: 'قطع همکاری', tone: 'rose' },
+                  ]}
+                />
+              )}
+            </div>
+          )}
+
+          <MobileSearchFilterBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="جستجوی نام، کد ملی، شماره تماس، کد شهریه..."
+            onToggleFilters={() => setIsFilterExpanded(!isFilterExpanded)}
+            filtersOpen={isFilterExpanded}
+            activeFilterCount={activeFilterCount}
+          />
+
+          <AnimatePresence>
+            {isFilterExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-xs"
+              >
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 mb-1">پایه تحصیلی</label>
+                    <select
+                      value={gradeFilter}
+                      onChange={(e) => setGradeFilter(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="all">همه پایه‌ها</option>
+                      {availableGrades.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 mb-1">وضعیت سکونت</label>
+                    <select
+                      value={livingFilter}
+                      onChange={(e) => setLivingFilter(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="all">همه موارد</option>
+                      <option value="خوابگاه">خوابگاهی</option>
+                      <option value="غیرخوابگاه">غیر خوابگاهی</option>
+                      <option value="پدری">پدری</option>
+                      <option value="شخصی">شخصی</option>
+                      <option value="اجاره ای">اجاره‌ای</option>
+                      <option value="سایر">سایر</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 mb-1">وضعیت تأهل</label>
+                    <select
+                      value={maritalFilter}
+                      onChange={(e) => setMaritalFilter(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="all">همه وضعیت‌ها</option>
+                      <option value="مجرد">مجرد</option>
+                      <option value="متاهل">متأهل</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10.5px] font-bold text-slate-500 mb-1">مرتب‌سازی</label>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="grade">پایه تحصیلی</option>
+                      <option value="name">نام و نام خانوادگی</option>
+                      <option value="livingStatus">سکونت</option>
+                      <option value="maritalStatus">تأهل</option>
+                      <option value="nationalId">کد ملی</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                    className="flex-1 min-h-[40px] px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowUpDown size={14} />
+                    <span>{sortOrder === 'asc' ? 'صعودی (الف ← ی)' : 'نزولی (ی ← الف)'}</span>
+                  </button>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="min-h-[40px] px-3 py-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-black flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw size={13} />
+                      <span>پاک کردن</span>
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Student Cards List */}
+          {loading && students.length === 0 ? (
+            <div className="p-10 bg-white rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-400">
+              در حال بارگذاری لیست طلاب...
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="p-10 bg-white rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-400">
+              هیچ طلبه‌ای مطابق جستجو یافت نشد.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredStudents.map((student, index) => {
+                const mInfo = getMentorForStudent(student.grade);
+                const isAct = isStudentActive(student.isActive);
+                const studentUser = getStudentAccount(student);
+                return (
+                  <div
+                    key={student.id}
+                    onClick={() => setViewingStudentSummary(student)}
+                    className="bg-white rounded-[20px] border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5 active:scale-[0.99] transition-transform cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {student.photoUrl ? (
+                          <img
+                            src={student.photoUrl}
+                            alt={student.name}
+                            className="w-11 h-11 rounded-2xl object-cover border border-indigo-100 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-500">
+                            <User size={20} />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono font-bold text-slate-400">#{index + 1}</span>
+                            <h3 className="text-sm font-black text-slate-900 truncate">
+                              {getStudentDisplayName(student)}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-md border border-slate-200">
+                              {student.grade || 'نامشخص'}
+                            </span>
+                            {mInfo && (
+                              <span className={cn('px-2 py-0.5 text-[10px] font-black rounded-md border', mInfo.badgeBg, mInfo.badgeText, mInfo.badgeBorder)}>
+                                {mInfo.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleActive(student.id, student.isActive);
+                        }}
+                        className={cn(
+                          'px-2.5 py-1 rounded-xl text-[10px] font-black border shrink-0 cursor-pointer',
+                          isAct
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-300'
+                        )}
+                      >
+                        {isAct ? 'حاضر' : 'سابق'}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/80 rounded-xl p-2 border border-slate-100">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-slate-400 font-bold">کد ملی:</span>
+                        <span className="font-mono font-bold text-slate-700 truncate">{getStudentDisplayNationalId(student)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-slate-400 font-bold">تماس:</span>
+                        {student.phoneNumber ? (
+                          <a
+                            href={`tel:${student.phoneNumber}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-mono font-black text-indigo-700 underline decoration-indigo-200"
+                          >
+                            {student.phoneNumber}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400">---</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedStudentForCredentials(student);
+                          if (studentUser) {
+                            setEditingCredUser(studentUser);
+                            setCredUsername(studentUser.username);
+                            setCredPassword(studentUser.password || '');
+                            setCredName(studentUser.name);
+                          } else {
+                            setEditingCredUser(null);
+                            setCredUsername(student.nationalId || '');
+                            setCredPassword(student.phoneNumber || '');
+                            setCredName(student.name);
+                          }
+                        }}
+                        className={cn(
+                          'min-h-[36px] px-2.5 py-1 rounded-xl text-[10.5px] font-black border flex items-center gap-1 cursor-pointer truncate',
+                          !isAct
+                            ? 'bg-slate-100 text-slate-500 border-slate-200'
+                            : studentUser
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        )}
+                      >
+                        <KeyRound size={12} />
+                        <span className="truncate">{!isAct ? 'مسدود' : studentUser ? studentUser.username : 'بدون کاربری'}</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStudentForRecords(student)}
+                          className="min-h-[36px] px-2.5 py-1 text-[11px] font-black border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-xl flex items-center gap-1 cursor-pointer"
+                        >
+                          <GraduationCap size={13} />
+                          <span>سوابق</span>
+                        </button>
+                        {isAuthorizedToManage && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleEdit(student)}
+                              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer"
+                              aria-label="ویرایش"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteStudent(student)}
+                              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer"
+                              aria-label="حذف"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       {/* Quick Grade Filter Tabs for Education Manager and Supervisors */}
       {currentMentorId === 'shahpoori' && (
         <div className="flex items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/90 flex-wrap shadow-2xs">
@@ -1933,6 +2330,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
           </tbody>
         </table>
       </div>
+        </>
+      )}
 
       <AnimatePresence>
         {showAddModal && (

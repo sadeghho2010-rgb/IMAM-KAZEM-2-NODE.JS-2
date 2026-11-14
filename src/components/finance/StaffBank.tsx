@@ -23,8 +23,12 @@ import { cn } from '../../lib/utils';
 import { localDb } from '../../lib/localDb';
 import { StaffMember } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
 export default function StaffBank() {
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -354,7 +358,7 @@ export default function StaffBank() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
+    <div className={cn("max-w-7xl mx-auto font-vazir", isAdminMobile ? "p-0 space-y-4 pb-6" : "p-4 sm:p-6 space-y-6")} dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -371,252 +375,421 @@ export default function StaffBank() {
       </AnimatePresence>
 
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100">
-            <Briefcase size={24} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">بانک کارکنان مجموعه</h1>
-              <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-black rounded-lg">
-                کادر اجرایی و خادمین
-              </span>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="بانک کارکنان مجموعه"
+          subtitle="کادر اجرایی، خادمین، آشپزخانه و خدمات"
+          icon={<Briefcase size={20} />}
+          badgeText={`${metrics.total} نفر`}
+          primaryAction={{
+            id: 'add-staff',
+            label: 'ثبت کارمند جدید',
+            icon: <Plus size={16} />,
+            onClick: openAddModal,
+            tone: 'primary',
+          }}
+          secondaryActions={[
+            {
+              id: 'export-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={14} />,
+              onClick: handleExportExcel,
+              tone: 'emerald',
+            },
+            {
+              id: 'print-pdf',
+              label: 'نسخه چاپی',
+              icon: <Printer size={14} />,
+              onClick: handlePrintPDF,
+            },
+          ]}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center shadow-xs border border-indigo-100">
+              <Briefcase size={24} />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              ثبت و مدیریت کامل مشخصات پرسنل، خادمین، آشپزخانه و خدمات جهت استفاده در رزرو غذای دستی، پرداخت حقوق و امور اداری
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-slate-900">بانک کارکنان مجموعه</h1>
+                <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-black rounded-lg">
+                  کادر اجرایی و خادمین
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                ثبت و مدیریت کامل مشخصات پرسنل، خادمین، آشپزخانه و خدمات جهت استفاده در رزرو غذای دستی، پرداخت حقوق و امور اداری
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileSpreadsheet size={15} />
+              <span>خروجی اکسل</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintPDF}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer size={15} />
+              <span>نسخه چاپی</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={15} />
+              <span>ثبت کارمند جدید</span>
+            </button>
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <FileSpreadsheet size={15} />
-            <span>خروجی اکسل</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrintPDF}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Printer size={15} />
-            <span>نسخه چاپی</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={openAddModal}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus size={15} />
-            <span>ثبت کارمند جدید</span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+      <div className={cn("grid", isAdminMobile ? "grid-cols-2 gap-2.5" : "grid-cols-1 sm:grid-cols-3 gap-4")}>
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-1.5", isAdminMobile ? "p-3.5" : "p-5 space-y-2")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">کل تعداد کارکنان ثبت‌شده</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <Users size={16} />
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500">کل کارکنان</span>
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+              <Users size={15} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
+          <div className={cn("font-black text-slate-900 font-mono", isAdminMobile ? "text-xl" : "text-2xl")}>
             {metrics.total} <span className="text-xs font-medium text-slate-500">نفر</span>
           </div>
-          <p className="text-[11px] text-slate-400">کادر اجرایی، خادمین و پشتیبانی</p>
+          {!isAdminMobile && <p className="text-[11px] text-slate-400">کادر اجرایی، خادمین و پشتیبانی</p>}
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-1.5", isAdminMobile ? "p-3.5" : "p-5 space-y-2")}>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">کارکنان شاغل و فعال</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <UserCheck size={16} />
+            <span className="text-[11px] sm:text-xs font-bold text-slate-500">شاغل و فعال</span>
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+              <UserCheck size={15} />
             </div>
           </div>
-          <div className="text-2xl font-black text-emerald-700 font-mono">
-            {metrics.active} <span className="text-xs font-medium text-slate-500">نفر فعال</span>
+          <div className={cn("font-black text-emerald-700 font-mono", isAdminMobile ? "text-xl" : "text-2xl")}>
+            {metrics.active} <span className="text-xs font-medium text-slate-500">نفر</span>
           </div>
-          <p className="text-[11px] text-slate-400">آماده استفاده در رزرو غذا و امور مالی</p>
+          {!isAdminMobile && <p className="text-[11px] text-slate-400">آماده استفاده در رزرو غذا و امور مالی</p>}
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
+        <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-1.5", isAdminMobile ? "col-span-2 p-3.5 flex items-center justify-between space-y-0" : "p-5 space-y-2")}>
+          <div className="flex items-center justify-between gap-2">
+            {isAdminMobile && (
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                <DollarSign size={16} />
+              </div>
+            )}
             <span className="text-xs font-bold text-slate-500">جمع کل حقوق ماهیانه</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
-              <DollarSign size={16} />
-            </div>
+            {!isAdminMobile && (
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                <DollarSign size={16} />
+              </div>
+            )}
           </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
+          <div className={cn("font-black text-slate-900 font-mono", isAdminMobile ? "text-base" : "text-2xl")}>
             {metrics.totalSalary.toLocaleString('fa-IR')} <span className="text-xs font-medium text-slate-500">تومان</span>
           </div>
-          <p className="text-[11px] text-slate-400">بر اساس اطلاعات پایه ثبت‌شده</p>
+          {!isAdminMobile && <p className="text-[11px] text-slate-400">بر اساس اطلاعات پایه ثبت‌شده</p>}
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5 flex-1">
-          <div className="relative min-w-[260px] flex-1 max-w-sm">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="جستجوی نام، کد پرسنلی، سمت، شماره تماس..."
-              className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:border-indigo-500 transition-all"
-            />
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSearchFilterBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجوی نام، کد پرسنلی، سمت، تماس..."
+            filtersOpen={mobileFiltersOpen}
+            onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+            activeFilterCount={(roleFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0)}
+          />
+          {mobileFiltersOpen && (
+            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2.5 shadow-xs">
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 block mb-1">عنوان شغلی</label>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="w-full min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه سمت‌ها</option>
+                  {availableRoles.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 block mb-1">وضعیت</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه وضعیت‌ها</option>
+                  <option value="active">فقط فعال</option>
+                  <option value="inactive">فقط غیرفعال</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1">
+            <div className="relative min-w-[260px] flex-1 max-w-sm">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="جستجوی نام، کد پرسنلی، سمت، شماره تماس..."
+                className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-hidden focus:border-indigo-500 transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400">عنوان شغلی:</span>
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
+              >
+                <option value="all">همه سمت‌ها</option>
+                {availableRoles.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400">وضعیت:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
+              >
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="active">فقط فعال</option>
+                <option value="inactive">فقط غیرفعال</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-400">عنوان شغلی:</span>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
-            >
-              <option value="all">همه سمت‌ها</option>
-              {availableRoles.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-400">وضعیت:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden cursor-pointer"
-            >
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="active">فقط فعال</option>
-              <option value="inactive">فقط غیرفعال</option>
-            </select>
+          <div className="text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            تعداد یافته‌ها: <strong className="text-slate-900 font-mono">{filteredStaff.length}</strong> نفر
           </div>
         </div>
+      )}
 
-        <div className="text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-          تعداد یافته‌ها: <strong className="text-slate-900 font-mono">{filteredStaff.length}</strong> نفر
-        </div>
-      </div>
-
-      {/* Main Staff Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
-            <thead>
-              <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                <th className="p-3.5">نام و نام خانوادگی کارمند</th>
-                <th className="p-3.5 text-center">کد پرسنلی / شناسه</th>
-                <th className="p-3.5 text-center">سمت و مسئولیت</th>
-                <th className="p-3.5 text-center">شماره تماس</th>
-                <th className="p-3.5 text-center">اطلاعات بانکی</th>
-                <th className="p-3.5 text-center">حقوق ماهانه</th>
-                <th className="p-3.5 text-center">وضعیت</th>
-                <th className="p-3.5 text-center">عملیات</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredStaff.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
-                    هیچ کارمندی با مشخصات جستجو شده یافت نشد.
-                  </td>
-                </tr>
-              ) : (
-                filteredStaff.map((staff) => (
-                  <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3.5">
-                      <div className="font-black text-slate-900 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold shrink-0 border border-slate-200">
-                          {staff.fullName.slice(0, 1)}
-                        </div>
-                        <div>
-                          <span>{staff.fullName}</span>
-                          {staff.nationalId && (
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                              کد ملی: {staff.nationalId}
-                            </div>
-                          )}
-                        </div>
+      {/* Main Staff Table (Desktop) / Stacked Cards (Mobile) */}
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          {filteredStaff.length === 0 ? (
+            <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 text-xs text-slate-400 font-bold">
+              هیچ کارمندی با مشخصات جستجو شده یافت نشد.
+            </div>
+          ) : (
+            filteredStaff.map((staff) => (
+              <div key={staff.id} className="bg-white rounded-[20px] p-3.5 border border-slate-200/90 shadow-xs space-y-3">
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-black text-sm shrink-0 border border-indigo-100">
+                      {staff.fullName.slice(0, 1)}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-xs font-black text-slate-900 truncate">{staff.fullName}</h3>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-md font-bold text-[10px]">
+                          {staff.roleTitle}
+                        </span>
+                        {staff.staffCode && (
+                          <span className="text-[10px] font-mono font-bold text-slate-500">
+                            #{staff.staffCode}
+                          </span>
+                        )}
                       </div>
-                    </td>
+                    </div>
+                  </div>
 
-                    <td className="p-3.5 text-center font-mono font-bold text-slate-700">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md">
-                        {staff.staffCode || '-'}
-                      </span>
-                    </td>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0",
+                      staff.isActive !== false
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-rose-100 text-rose-800 border-rose-300"
+                    )}
+                  >
+                    {staff.isActive !== false ? 'فعال' : 'غیرفعال'}
+                  </span>
+                </div>
 
-                    <td className="p-3.5 text-center">
-                      <span className="px-2.5 py-1 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg font-bold text-[11px]">
-                        {staff.roleTitle}
-                      </span>
-                    </td>
-
-                    <td className="p-3.5 text-center font-mono font-bold text-slate-700">
-                      {staff.phoneNumber ? (
-                        <a href={`tel:${staff.phoneNumber}`} className="hover:text-indigo-600 transition-colors">
-                          {staff.phoneNumber}
-                        </a>
-                      ) : '-'}
-                    </td>
-
-                    <td className="p-3.5 text-center font-mono text-slate-600">
-                      <div>{staff.bankName || 'بانک تجارت'}</div>
-                      <div className="text-[10px] text-slate-400">{staff.bankAccount || '-'}</div>
-                    </td>
-
-                    <td className="p-3.5 text-center font-mono font-bold text-emerald-700">
+                <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">تماس</span>
+                    {staff.phoneNumber ? (
+                      <a href={`tel:${staff.phoneNumber}`} className="font-mono font-bold text-indigo-700 flex items-center gap-1">
+                        <Phone size={11} />
+                        <span>{staff.phoneNumber}</span>
+                      </a>
+                    ) : (
+                      <span className="text-slate-400">-</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">حقوق ماهانه</span>
+                    <span className="font-mono font-black text-emerald-700">
                       {staff.monthlySalary ? `${staff.monthlySalary.toLocaleString('fa-IR')} ت` : '-'}
-                    </td>
+                    </span>
+                  </div>
+                  <div className="col-span-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-500 truncate">{staff.bankName || 'بانک تجارت'}</span>
+                    <span className="font-mono text-[10px] font-bold text-slate-700 truncate">{staff.bankAccount || '-'}</span>
+                  </div>
+                </div>
 
-                    <td className="p-3.5 text-center">
-                      <span className={cn(
-                        "px-2.5 py-0.5 rounded-full text-[10px] font-black border",
-                        staff.isActive !== false
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-rose-100 text-rose-800 border-rose-300"
-                      )}>
-                        {staff.isActive !== false ? 'فعال' : 'غیرفعال'}
-                      </span>
-                    </td>
-
-                    <td className="p-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(staff)}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
-                          title="ویرایش مشخصات"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingStaff(staff)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                          title="حذف"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(staff)}
+                    className="flex-1 min-h-[40px] px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Edit3 size={14} />
+                    <span>ویرایش</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeletingStaff(staff)}
+                    className="min-h-[40px] px-3.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-black flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                    <span>حذف</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                  <th className="p-3.5">نام و نام خانوادگی کارمند</th>
+                  <th className="p-3.5 text-center">کد پرسنلی / شناسه</th>
+                  <th className="p-3.5 text-center">سمت و مسئولیت</th>
+                  <th className="p-3.5 text-center">شماره تماس</th>
+                  <th className="p-3.5 text-center">اطلاعات بانکی</th>
+                  <th className="p-3.5 text-center">حقوق ماهانه</th>
+                  <th className="p-3.5 text-center">وضعیت</th>
+                  <th className="p-3.5 text-center">عملیات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredStaff.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">
+                      هیچ کارمندی با مشخصات جستجو شده یافت نشد.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredStaff.map((staff) => (
+                    <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-3.5">
+                        <div className="font-black text-slate-900 flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-bold shrink-0 border border-slate-200">
+                            {staff.fullName.slice(0, 1)}
+                          </div>
+                          <div>
+                            <span>{staff.fullName}</span>
+                            {staff.nationalId && (
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                کد ملی: {staff.nationalId}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono font-bold text-slate-700">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md">
+                          {staff.staffCode || '-'}
+                        </span>
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        <span className="px-2.5 py-1 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg font-bold text-[11px]">
+                          {staff.roleTitle}
+                        </span>
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono font-bold text-slate-700">
+                        {staff.phoneNumber ? (
+                          <a href={`tel:${staff.phoneNumber}`} className="hover:text-indigo-600 transition-colors">
+                            {staff.phoneNumber}
+                          </a>
+                        ) : '-'}
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono text-slate-600">
+                        <div>{staff.bankName || 'بانک تجارت'}</div>
+                        <div className="text-[10px] text-slate-400">{staff.bankAccount || '-'}</div>
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono font-bold text-emerald-700">
+                        {staff.monthlySalary ? `${staff.monthlySalary.toLocaleString('fa-IR')} ت` : '-'}
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        <span className={cn(
+                          "px-2.5 py-0.5 rounded-full text-[10px] font-black border",
+                          staff.isActive !== false
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-rose-100 text-rose-800 border-rose-300"
+                        )}>
+                          {staff.isActive !== false ? 'فعال' : 'غیرفعال'}
+                        </span>
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(staff)}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all cursor-pointer"
+                            title="ویرایش مشخصات"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingStaff(staff)}
+                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                            title="حذف"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Add / Edit Staff Modal */}
       {isAddModalOpen && (
@@ -637,7 +810,7 @@ export default function StaffBank() {
             </div>
 
             <div className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-1">
                   <label className="text-slate-700 font-bold">نام و نام خانوادگی (*):</label>
                   <input
@@ -661,7 +834,7 @@ export default function StaffBank() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-1">
                   <label className="text-slate-700 font-bold">سمت / عنوان شغلی (*):</label>
                   <input
@@ -685,7 +858,7 @@ export default function StaffBank() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                 <div className="space-y-1">
                   <label className="text-slate-700 font-bold">کد ملی:</label>
                   <input
@@ -711,7 +884,7 @@ export default function StaffBank() {
 
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
                 <span className="font-bold text-slate-800 block">مشخصات حساب بانکی جهت حقوق/مزایا:</span>
-                <div className="grid grid-cols-3 gap-2">
+                <div className={cn("grid gap-2", isAdminMobile ? "grid-cols-1" : "grid-cols-3")}>
                   <input
                     type="text"
                     value={bankName}
@@ -724,7 +897,7 @@ export default function StaffBank() {
                     value={bankAccount}
                     onChange={(e) => setBankAccount(e.target.value)}
                     placeholder="شماره کارت/حساب"
-                    className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800 col-span-2"
+                    className={cn("p-2 bg-white border border-slate-200 rounded-xl font-mono text-slate-800", !isAdminMobile && "col-span-2")}
                   />
                 </div>
                 <input

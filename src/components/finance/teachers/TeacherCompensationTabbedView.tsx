@@ -35,6 +35,12 @@ import {
   TeacherCoursePresenceItem
 } from '../../../types';
 import { cn } from '../../../lib/utils';
+import { useIsAdminMobile } from '../../admin/mobile/AdminMobileContext';
+import {
+  MobileHorizontalTabs,
+  MobileSearchFilterBar,
+  MobileSectionHeader,
+} from '../../admin/mobile/MobileModulePrimitives';
 
 export type CompensationTabType = 
   | 'presence_hours'
@@ -88,6 +94,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
   onAddTeacherCourse,
   onRemoveTeacherCourse
 }) => {
+  const isAdminMobile = useIsAdminMobile();
   const [activeTab, setActiveTab] = useState<CompensationTabType>('presence_hours');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTeacherIds, setExpandedTeacherIds] = useState<string[]>([]);
@@ -219,150 +226,244 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
   ];
 
   return (
-    <div className="space-y-5">
+    <div className={cn(isAdminMobile ? 'space-y-4' : 'space-y-5')}>
       {/* Top Banner & Control Ribbon */}
-      <div className="bg-white rounded-3xl p-5 border border-slate-200/85 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] px-3 py-1 rounded-xl bg-teal-50 text-teal-800 font-black border border-teal-200/80">
-                جدول محاسبه چندسربرگه حق‌الزحمه
-              </span>
-              <h2 className="text-base font-black text-slate-800">{periodTitle}</h2>
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title={periodTitle}
+          subtitle={`بازه ${startDate} تا ${endDate} • تدریس ${settings.hourlyTeachingRate.toLocaleString('fa-IR')} ت • نهار ${settings.lunchCostPerDay.toLocaleString('fa-IR')} ت`}
+          badgeText={`${items.length} استاد`}
+          variant="white"
+          primaryAction={{
+            id: 'add_teacher',
+            label: 'افزودن استاد به جدول',
+            icon: <UserPlus size={15} />,
+            tone: 'emerald',
+            onClick: onOpenAddTeacherModal,
+          }}
+          secondaryLabel="ابزارها و ثبت"
+          secondaryActions={[
+            {
+              id: 'save_archive',
+              label: 'ثبت نهایی و بایگانی',
+              icon: <Save size={14} />,
+              tone: 'indigo',
+              disabled: items.length === 0,
+              onClick: () => onSaveToArchive('finalized'),
+            },
+            ...(onOpenSettingsModal
+              ? [
+                  {
+                    id: 'settings',
+                    label: 'تنظیمات محاسبه',
+                    icon: <Settings size={14} />,
+                    onClick: onOpenSettingsModal,
+                  },
+                ]
+              : []),
+            {
+              id: 'excel_detail',
+              label: 'اکسل تفصیلی',
+              icon: <FileSpreadsheet size={14} />,
+              tone: 'emerald',
+              disabled: items.length === 0,
+              onClick: () => onExportDetailedExcel(items, periodTitle),
+            },
+            {
+              id: 'excel_superiors',
+              label: 'گزارش بالادستی',
+              icon: <FileText size={14} />,
+              disabled: items.length === 0,
+              onClick: () => onExportSuperiorsExcel(items, periodTitle),
+            },
+          ]}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/85 shadow-sm space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] px-3 py-1 rounded-xl bg-teal-50 text-teal-800 font-black border border-teal-200/80">
+                  جدول محاسبه چندسربرگه حق‌الزحمه
+                </span>
+                <h2 className="text-base font-black text-slate-800">{periodTitle}</h2>
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                <span>بازه زمانی: <strong className="text-slate-800 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">{startDate}</strong> الی <strong className="text-slate-800 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">{endDate}</strong></span>
+                <span className="text-slate-300">•</span>
+                <span>نرخ ساعت تدریس: <strong className="text-teal-700 font-mono font-bold">{settings.hourlyTeachingRate.toLocaleString('fa-IR')}</strong> تومان</span>
+                <span className="text-slate-300">•</span>
+                <span>نرخ نهار: <strong className="text-rose-600 font-mono font-bold">{settings.lunchCostPerDay.toLocaleString('fa-IR')}</strong> تومان</span>
+                <span className="text-slate-300">•</span>
+                <span>نرخ سرویس: <strong className="text-sky-700 font-mono font-bold">{settings.transportCostPerTrip.toLocaleString('fa-IR')}</strong> تومان</span>
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
-              <span>بازه زمانی: <strong className="text-slate-800 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">{startDate}</strong> الی <strong className="text-slate-800 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">{endDate}</strong></span>
-              <span className="text-slate-300">•</span>
-              <span>نرخ ساعت تدریس: <strong className="text-teal-700 font-mono font-bold">{settings.hourlyTeachingRate.toLocaleString('fa-IR')}</strong> تومان</span>
-              <span className="text-slate-300">•</span>
-              <span>نرخ نهار: <strong className="text-rose-600 font-mono font-bold">{settings.lunchCostPerDay.toLocaleString('fa-IR')}</strong> تومان</span>
-              <span className="text-slate-300">•</span>
-              <span>نرخ سرویس: <strong className="text-sky-700 font-mono font-bold">{settings.transportCostPerTrip.toLocaleString('fa-IR')}</strong> تومان</span>
-            </p>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {onOpenSettingsModal && (
+                <button
+                  onClick={onOpenSettingsModal}
+                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 rounded-xl text-xs font-black transition-all border border-slate-200/90 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="تنظیم نرخ هر ساعت، تفکیک کلاس‌ها، سرویس، نهار، بدهی‌ها و صندوق"
+                >
+                  <Settings size={15} className="text-slate-600" />
+                  <span>تنظیمات محاسبه</span>
+                </button>
+              )}
+
+              <button
+                onClick={onOpenAddTeacherModal}
+                className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus size={15} />
+                <span>افزودن استاد به جدول</span>
+              </button>
+
+              <button
+                onClick={() => onExportDetailedExcel(items, periodTitle)}
+                disabled={items.length === 0}
+                className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                title="خروجی اکسل تفصیلی با تمامی سربرگ‌ها و ستون‌ها برای امور داخلی"
+              >
+                <FileSpreadsheet size={15} className="text-emerald-600" />
+                <span>اکسل تفصیلی داخلی (خودمان)</span>
+              </button>
+
+              <button
+                onClick={() => onExportSuperiorsExcel(items, periodTitle)}
+                disabled={items.length === 0}
+                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                title="خروجی ویژه بالادستی شامل واریزی پایا اساتید و تفکیک حساب‌های مقصد کسورات"
+              >
+                <FileText size={15} className="text-indigo-600" />
+                <span>گزارش بالادستی و حساب‌های مقصد</span>
+              </button>
+
+              <button
+                onClick={() => onSaveToArchive('finalized')}
+                disabled={items.length === 0}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                <Save size={15} />
+                <span>ثبت نهایی و بایگانی</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs Navigation Bar */}
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as CompensationTabType)}
+          tabs={tabsList.map((tab) => {
+            const Icon = tab.icon;
+            return {
+              id: tab.id,
+              label: tab.label,
+              icon: <Icon size={14} />,
+              badge: tab.count,
+              tone: tab.id === 'summary' ? 'emerald' : tab.id === 'debts' ? 'amber' : tab.id === 'fund_contribution' ? 'rose' : 'indigo',
+            };
+          })}
+        />
+      ) : (
+        <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 min-w-max">
+            {tabsList.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border",
+                    isActive
+                      ? "bg-teal-600 text-white border-teal-600 shadow-sm shadow-teal-100 font-black ring-2 ring-teal-600/20"
+                      : "bg-slate-50/70 hover:bg-teal-50/50 text-slate-700 border-slate-200/80 hover:text-teal-900"
+                  )}
+                >
+                  <Icon size={16} className={isActive ? "text-white" : "text-slate-500"} />
+                  <span>{tab.label}</span>
+                  <span className={cn(
+                    "text-[10px] px-2 py-0.5 rounded-md font-mono font-bold border",
+                    isActive ? "bg-white/20 text-white border-white/30" : tab.badgeColor
+                  )}>
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Filter and Search Ribbon */}
+      {isAdminMobile ? (
+        <div className="space-y-2">
+          <MobileSearchFilterBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجوی نام استاد، کد ملی، درس..."
+          />
+          <div className="flex items-center justify-between px-1 text-xs">
+            <span className="text-slate-500 font-medium">
+              اساتید جدول: <strong className="text-teal-700 font-bold font-mono">{filteredItems.length}</strong> نفر
+            </span>
+            {activeTab === 'summary' && (
+              <button
+                type="button"
+                onClick={() => setIsCompactView(!isCompactView)}
+                className="min-h-[34px] px-2.5 py-1 rounded-xl text-[11px] font-black border border-teal-200 bg-teal-50 text-teal-800 flex items-center gap-1 cursor-pointer"
+              >
+                <Layers size={13} />
+                <span>{isCompactView ? 'نمای تفصیلی' : 'نمای جمع‌وجور'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl p-3.5 border border-slate-200/85 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+          <div className="relative w-full max-w-sm">
+            <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="جستجوی نام استاد، کد ملی، درس..."
+              className="w-full pr-10 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition-all"
+            />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {onOpenSettingsModal && (
+          <div className="flex items-center gap-3">
+            {activeTab === 'summary' && (
               <button
-                onClick={onOpenSettingsModal}
-                className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 rounded-xl text-xs font-black transition-all border border-slate-200/90 flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                title="تنظیم نرخ هر ساعت، تفکیک کلاس‌ها، سرویس، نهار، بدهی‌ها و صندوق"
+                onClick={() => setIsCompactView(!isCompactView)}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer",
+                  isCompactView 
+                    ? "bg-teal-50 text-teal-800 border-teal-200" 
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                )}
               >
-                <Settings size={15} className="text-slate-600" />
-                <span>تنظیمات محاسبه</span>
+                <Layers size={14} />
+                <span>{isCompactView ? 'نمای تفصیلی' : 'نمای جمع‌وجور'}</span>
               </button>
             )}
 
-            <button
-              onClick={onOpenAddTeacherModal}
-              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-            >
-              <UserPlus size={15} />
-              <span>افزودن استاد به جدول</span>
-            </button>
-
-            <button
-              onClick={() => onExportDetailedExcel(items, periodTitle)}
-              disabled={items.length === 0}
-              className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-              title="خروجی اکسل تفصیلی با تمامی سربرگ‌ها و ستون‌ها برای امور داخلی"
-            >
-              <FileSpreadsheet size={15} className="text-emerald-600" />
-              <span>اکسل تفصیلی داخلی (خودمان)</span>
-            </button>
-
-            <button
-              onClick={() => onExportSuperiorsExcel(items, periodTitle)}
-              disabled={items.length === 0}
-              className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-              title="خروجی ویژه بالادستی شامل واریزی پایا اساتید و تفکیک حساب‌های مقصد کسورات"
-            >
-              <FileText size={15} className="text-indigo-600" />
-              <span>گزارش بالادستی و حساب‌های مقصد</span>
-            </button>
-
-            <button
-              onClick={() => onSaveToArchive('finalized')}
-              disabled={items.length === 0}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
-            >
-              <Save size={15} />
-              <span>ثبت نهایی و بایگانی</span>
-            </button>
+            <div className="text-xs text-slate-500 font-medium">
+              تعداد اساتید در جدول: <strong className="text-teal-700 font-bold font-mono">{filteredItems.length}</strong> نفر
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Tabs Navigation Bar */}
-      <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-1.5 min-w-max">
-          {tabsList.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border",
-                  isActive
-                    ? "bg-teal-600 text-white border-teal-600 shadow-sm shadow-teal-100 font-black ring-2 ring-teal-600/20"
-                    : "bg-slate-50/70 hover:bg-teal-50/50 text-slate-700 border-slate-200/80 hover:text-teal-900"
-                )}
-              >
-                <Icon size={16} className={isActive ? "text-white" : "text-slate-500"} />
-                <span>{tab.label}</span>
-                <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-md font-mono font-bold border",
-                  isActive ? "bg-white/20 text-white border-white/30" : tab.badgeColor
-                )}>
-                  {tab.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Filter and Search Ribbon */}
-      <div className="bg-white rounded-2xl p-3.5 border border-slate-200/85 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجوی نام استاد، کد ملی، درس..."
-            className="w-full pr-10 pl-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-3">
-          {activeTab === 'summary' && (
-            <button
-              onClick={() => setIsCompactView(!isCompactView)}
-              className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer",
-                isCompactView 
-                  ? "bg-teal-50 text-teal-800 border-teal-200" 
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-              )}
-            >
-              <Layers size={14} />
-              <span>{isCompactView ? 'نمای تفصیلی' : 'نمای جمع‌وجور'}</span>
-            </button>
-          )}
-
-          <div className="text-xs text-slate-500 font-medium">
-            تعداد اساتید در جدول: <strong className="text-teal-700 font-bold font-mono">{filteredItems.length}</strong> نفر
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Empty State when no teachers in table */}
       {items.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 border border-slate-200 text-center space-y-4 shadow-sm">
+        <div className={cn('bg-white border border-slate-200 text-center space-y-4 shadow-sm', isAdminMobile ? 'rounded-[22px] p-6' : 'rounded-3xl p-12')}>
           <div className="w-16 h-16 bg-teal-50 text-teal-600 rounded-3xl flex items-center justify-center mx-auto shadow-inner ring-4 ring-teal-50/50">
             <Clock size={32} />
           </div>
@@ -374,7 +475,10 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           </div>
           <button
             onClick={onOpenAddTeacherModal}
-            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl text-xs font-black shadow-md shadow-emerald-100 transition-all cursor-pointer inline-flex items-center gap-2"
+            className={cn(
+              'bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl text-xs font-black shadow-md shadow-emerald-100 transition-all cursor-pointer inline-flex items-center justify-center gap-2',
+              isAdminMobile ? 'w-full min-h-[44px] px-5 py-3' : 'px-6 py-3'
+            )}
           >
             <UserPlus size={16} />
             <span>افزودن اساتید جهت پرداخت</span>
@@ -385,25 +489,219 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           استادی با مشخصات جستجو شده یافت نشد.
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200/85 shadow-sm overflow-hidden">
+        <div className={cn('bg-white border border-slate-200/85 shadow-sm overflow-hidden', isAdminMobile ? 'rounded-[22px]' : 'rounded-3xl')}>
           {/* ========================================================================= */}
           {/* TAB 1: میزان ساعت حضور (Presence Hours Tab)                                */}
           {/* ========================================================================= */}
           {activeTab === 'presence_hours' && (
             <div>
-              <div className="p-3.5 bg-teal-50/50 border-b border-teal-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-teal-50/50 border-b border-teal-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <Clock size={16} className="text-teal-700" />
-                  <span className="font-black text-slate-800">سربرگ میزان ساعت حضور و کارکرد تقویمی</span>
-                  <span className="text-[11px] text-slate-500">
-                    (آمار جلسات مقرر تقویم، تعطیل شده، جایگزین، اضافه کاری و مجموع کل ساعات تدریس)
-                  </span>
+                  <Clock size={16} className="text-teal-700 shrink-0" />
+                  <span className="font-black text-slate-800">میزان ساعت حضور و کارکرد تقویمی</span>
+                  {!isAdminMobile && (
+                    <span className="text-[11px] text-slate-500">
+                      (آمار جلسات مقرر تقویم، تعطیل شده، جایگزین، اضافه کاری و مجموع کل ساعات تدریس)
+                    </span>
+                  )}
                 </div>
-                <div className="text-[11px] text-teal-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-teal-200/60 shadow-2xs">
-                  تمامی ستون‌ها قابل ویرایش دستی و بازنگری هستند.
-                </div>
+                {!isAdminMobile && (
+                  <div className="text-[11px] text-teal-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-teal-200/60 shadow-2xs">
+                    تمامی ستون‌ها قابل ویرایش دستی و بازنگری هستند.
+                  </div>
+                )}
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => {
+                    const isExpanded = expandedTeacherIds.includes(item.id);
+                    const courses = item.courseBreakdown && item.courseBreakdown.length > 0 ? item.courseBreakdown : [];
+                    return (
+                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-3 shadow-2xs tabular-nums">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-mono font-bold inline-flex items-center justify-center">
+                                {idx + 1}
+                              </span>
+                              <span className="font-black text-sm text-slate-900 truncate">{item.teacherName}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5">{item.coursesStr || 'دروس فقه و اصول'}</div>
+                          </div>
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5 text-left shrink-0">
+                            <span className="text-[9px] text-emerald-700 font-bold block">ناخالص کارکرد</span>
+                            <span className="text-xs font-black font-mono text-emerald-800">{item.baseGrossAmount.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">جلسات مقرر تقویم</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.calendarScheduledClassesCount ?? item.totalCalendarDays ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'calendarScheduledClassesCount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-rose-700 mb-1">جلسات تعطیل شده</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.cancelledDaysCount ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'cancelledDaysCount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-rose-50/40 border border-rose-200 text-rose-700 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-indigo-700 mb-1">جلسات جایگزین</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.substituteTeachingSessions ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'substituteTeachingSessions', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-indigo-50/40 border border-indigo-200 text-indigo-700 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-emerald-700 mb-1">ساعت اضافه تدریس</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.overtimeHours ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'overtimeHours', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-emerald-50/40 border border-emerald-200 text-emerald-800 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-teal-900 mb-1">مجموع نهایی ساعت</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.totalTeachingHours ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'totalTeachingHours', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-teal-50 border border-teal-300 text-teal-950 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">نرخ ساعت (ت)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.hourlyRate ?? settings.hourlyTeachingRate}
+                              onChange={(e) => onUpdateItemValue(item.id, 'hourlyRate', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center py-1 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandTeacher(item.id)}
+                            className={cn(
+                              'flex-1 min-h-[40px] px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 border cursor-pointer',
+                              isExpanded ? 'bg-teal-600 text-white border-teal-600' : 'bg-teal-50 text-teal-800 border-teal-200'
+                            )}
+                          >
+                            <BookOpen size={14} />
+                            <span>{courses.length > 0 ? `تفکیک ${courses.length} درس` : 'ثبت دروس'}</span>
+                            <ChevronDown size={14} className={cn('transition-transform', isExpanded && 'rotate-180')} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onRemoveItem(item.id)}
+                            className="min-h-[40px] min-w-[40px] bg-rose-50 text-rose-600 border border-rose-200 rounded-xl flex items-center justify-center cursor-pointer"
+                            title="حذف استاد"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="pt-2 border-t border-teal-100 space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-black text-teal-900">دروس استاد:</span>
+                              <button
+                                type="button"
+                                onClick={() => onAddTeacherCourse?.(item.id)}
+                                className="min-h-[36px] px-2.5 py-1 bg-teal-600 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus size={13} />
+                                <span>افزودن درس</span>
+                              </button>
+                            </div>
+                            {courses.map((course, cIdx) => (
+                              <div key={course.id || cIdx} className="bg-teal-50/40 border border-teal-200/80 rounded-xl p-2.5 space-y-2 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={course.courseTitle}
+                                    onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'courseTitle', e.target.value)}
+                                    className="flex-1 min-h-[36px] px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                                    placeholder="عنوان درس..."
+                                  />
+                                  {courses.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onRemoveTeacherCourse?.(item.id, course.id)}
+                                      className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-lg border border-rose-200 flex items-center justify-center cursor-pointer"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <select
+                                    value={course.courseType || 'main'}
+                                    onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'courseType', e.target.value as any)}
+                                    className="col-span-2 min-h-[36px] px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                                  >
+                                    <option value="main">اصلی (فقه/اصول)</option>
+                                    <option value="counseling">کلاس مشاوره</option>
+                                    <option value="thursday">درس پنج‌شنبه</option>
+                                    <option value="other">متفرقه / سایر</option>
+                                  </select>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 mb-0.5">تقویم / تعطیل / جایگزین</label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                      <input type="number" min="0" value={course.calendarScheduledCount ?? 0} onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'calendarScheduledCount', Number(e.target.value))} className="min-h-[34px] text-center bg-white border border-slate-200 rounded-lg font-mono text-[11px]" />
+                                      <input type="number" min="0" value={course.cancelledSessionsCount ?? 0} onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'cancelledSessionsCount', Number(e.target.value))} className="min-h-[34px] text-center bg-white border border-rose-200 rounded-lg font-mono text-[11px] text-rose-700" />
+                                      <input type="number" min="0" value={course.substituteSessionsCount ?? 0} onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'substituteSessionsCount', Number(e.target.value))} className="min-h-[34px] text-center bg-white border border-indigo-200 rounded-lg font-mono text-[11px] text-indigo-700" />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-teal-800 mb-0.5">ساعت درس</label>
+                                    <input type="number" min="0" value={course.teachingHours ?? 0} onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'teachingHours', Number(e.target.value))} className="w-full min-h-[34px] text-center bg-white border border-teal-300 rounded-lg font-mono font-black text-teal-950" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 mb-0.5">نرخ ساعتی</label>
+                                    <input type="number" min="0" step="1000" value={course.hourlyRate ?? item.hourlyRate} onChange={(e) => onUpdateTeacherCourse?.(item.id, course.id, 'hourlyRate', Number(e.target.value))} className="w-full min-h-[34px] text-center bg-white border border-slate-200 rounded-lg font-mono" />
+                                  </div>
+                                  <div className="bg-emerald-50 rounded-lg p-1.5 flex items-center justify-between border border-emerald-200">
+                                    <span className="text-[10px] text-emerald-700">ناخالص:</span>
+                                    <span className="font-mono font-black text-emerald-800 text-[11px]">
+                                      {(course.grossAmount ?? (course.teachingHours * (course.hourlyRate || item.hourlyRate))).toLocaleString('fa-IR')} ت
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div className="bg-teal-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>جمع ساعات کل ({filteredItems.length} استاد): <strong className="font-mono">{summaryTotals.totalHours}</strong> س</span>
+                    <span className="font-mono font-black text-emerald-300">{summaryTotals.totalGross.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -730,6 +1028,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -738,19 +1037,100 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'debts' && (
             <div>
-              <div className="p-3.5 bg-amber-50/50 border-b border-amber-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-amber-50/50 border-b border-amber-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <Receipt size={16} className="text-amber-700" />
-                  <span className="font-black text-slate-800">سربرگ بدهی‌ها و مطالبات اساتید</span>
-                  <span className="text-[11px] text-slate-500">
-                    (کل بدهی، مبلغ کسر ماهانه از حقوق، حساب مقصد جهت واریز و مانده پس از کسر)
-                  </span>
+                  <Receipt size={16} className="text-amber-700 shrink-0" />
+                  <span className="font-black text-slate-800">بدهی‌ها و مطالبات اساتید</span>
                 </div>
-                <div className="text-[11px] text-amber-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-amber-200/60 shadow-2xs">
-                  مبالغ کسر شده به حساب‌های مقصد واریز خواهند شد.
-                </div>
+                {!isAdminMobile && (
+                  <div className="text-[11px] text-amber-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-amber-200/60 shadow-2xs">
+                    مبالغ کسر شده به حساب‌های مقصد واریز خواهند شد.
+                  </div>
+                )}
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => {
+                    const totalDebt = item.debtTotalAmount ?? 0;
+                    const monthlyDed = item.debtMonthlyDeduction ?? item.type2DeductionsTotal ?? 0;
+                    const remDebt = Math.max(0, totalDebt - monthlyDed);
+                    return (
+                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                            <div className="text-[10px] text-slate-400 font-mono">{item.phone || item.nationalId || '-'}</div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveItem(item.id)}
+                            className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">بدهی کل (ت)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={totalDebt}
+                              onChange={(e) => onUpdateItemValue(item.id, 'debtTotalAmount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-rose-700 mb-1">کسر ماهانه (ت)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={monthlyDed}
+                              onChange={(e) => onUpdateItemValue(item.id, 'debtMonthlyDeduction', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-rose-50/40 border border-rose-300 text-rose-700 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[10px] font-bold text-indigo-700 mb-1">حساب مقصد واریز</label>
+                            <select
+                              value={item.debtDestinationAccountId || (destinationAccounts[0]?.id || '')}
+                              onChange={(e) => {
+                                const acc = destinationAccounts.find(a => a.id === e.target.value);
+                                onUpdateItemValue(item.id, 'debtDestinationAccountId', e.target.value);
+                                if (acc) onUpdateItemValue(item.id, 'debtDestinationTitle', acc.title);
+                              }}
+                              className="w-full min-h-[38px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-900"
+                            >
+                              {destinationAccounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.title} ({acc.bankName})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              placeholder="شرح بدهی (قسط، عتبات، مساعده...)"
+                              value={item.debtNotes || ''}
+                              onChange={(e) => onUpdateItemValue(item.id, 'debtNotes', e.target.value)}
+                              className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 px-3 py-1.5 rounded-xl text-[11px] flex items-center justify-between border border-slate-100">
+                          <span className="text-slate-500">مانده پس از کسر:</span>
+                          <span className="font-mono font-black text-slate-800">{remDebt.toLocaleString('fa-IR')} ت</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="bg-amber-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>جمع کسر بدهی:</span>
+                    <span className="font-mono font-black text-amber-300">{summaryTotals.totalDebtDeductions.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -864,6 +1244,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -872,19 +1253,93 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'fund_contribution' && (
             <div>
-              <div className="p-3.5 bg-rose-50/50 border-b border-rose-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-rose-50/50 border-b border-rose-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <HeartHandshake size={16} className="text-rose-700" />
-                  <span className="font-black text-slate-800">سربرگ کمک اختیاری به صندوق خیریه / قرض‌الحسنه</span>
-                  <span className="text-[11px] text-slate-500">
-                    (میزان درخواست استاد جهت کسر ماهانه، مبلغ کسر شده در این دوره و حساب مقصد صندوق)
-                  </span>
+                  <HeartHandshake size={16} className="text-rose-700 shrink-0" />
+                  <span className="font-black text-slate-800">کمک اختیاری به صندوق خیریه / قرض‌الحسنه</span>
                 </div>
-                <div className="text-[11px] text-rose-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-rose-200/60 shadow-2xs">
-                  بر اساس فرم‌های تکمیل‌شده یا تمایل استاد
-                </div>
+                {!isAdminMobile && (
+                  <div className="text-[11px] text-rose-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-rose-200/60 shadow-2xs">
+                    بر اساس فرم‌های تکمیل‌شده یا تمایل استاد
+                  </div>
+                )}
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => (
+                    <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                          <div className="text-[10px] text-slate-400 truncate">{item.coursesStr || '-'}</div>
+                        </div>
+                        <button
+                          onClick={() => onRemoveItem(item.id)}
+                          className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-1">مبلغ درخواستی (ت)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.fundContributionRequested ?? 0}
+                            onChange={(e) => onUpdateItemValue(item.id, 'fundContributionRequested', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-rose-700 mb-1">کسر این ماه (ت)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.fundContributionDeduction ?? 0}
+                            onChange={(e) => onUpdateItemValue(item.id, 'fundContributionDeduction', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-rose-50/40 border border-rose-300 text-rose-700 rounded-xl font-mono font-black"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-[10px] font-bold text-indigo-700 mb-1">حساب مقصد صندوق</label>
+                          <select
+                            value={item.fundDestinationAccountId || 'acc_qard'}
+                            onChange={(e) => {
+                              const acc = destinationAccounts.find(a => a.id === e.target.value);
+                              onUpdateItemValue(item.id, 'fundDestinationAccountId', e.target.value);
+                              if (acc) onUpdateItemValue(item.id, 'fundDestinationTitle', acc.title);
+                            }}
+                            className="w-full min-h-[38px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                          >
+                            {destinationAccounts
+                              .filter(a => a.category === 'qard_fund' || a.id === 'acc_qard' || a.title.includes('صندوق'))
+                              .concat(destinationAccounts.filter(a => a.category !== 'qard_fund' && a.id !== 'acc_qard' && !a.title.includes('صندوق')))
+                              .map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.title} ({acc.bankName})</option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="text"
+                            placeholder="وضعیت یا توضیحات درخواست..."
+                            value={item.fundContributionNotes || ''}
+                            onChange={(e) => onUpdateItemValue(item.id, 'fundContributionNotes', e.target.value)}
+                            className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="bg-rose-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>مجموع کسر کمک به صندوق:</span>
+                    <span className="font-mono font-black text-rose-200">{summaryTotals.totalFundDeductions.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -987,6 +1442,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -995,19 +1451,92 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'transport' && (
             <div>
-              <div className="p-3.5 bg-sky-50/50 border-b border-sky-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-sky-50/50 border-b border-sky-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <Car size={16} className="text-sky-700" />
-                  <span className="font-black text-slate-800">سربرگ هزینه سرویس ایاب و ذهاب اساتید</span>
-                  <span className="text-[11px] text-slate-500">
-                    (تعداد نوبت‌های تردد در بازه، نرخ مصوب، تخفیف/یارانه و جمع کل هزینه سرویس)
-                  </span>
+                  <Car size={16} className="text-sky-700 shrink-0" />
+                  <span className="font-black text-slate-800">هزینه سرویس ایاب و ذهاب اساتید</span>
                 </div>
                 <div className="text-[11px] text-sky-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-sky-200/60 shadow-2xs">
-                  نرخ پیش‌فرض هر نوبت: {settings.transportCostPerTrip.toLocaleString('fa-IR')} تومان
+                  نرخ پیش‌فرض: {settings.transportCostPerTrip.toLocaleString('fa-IR')} ت
                 </div>
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => (
+                    <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                          <div className="text-[10px] text-slate-400 font-mono">{item.phone || '-'}</div>
+                        </div>
+                        <button
+                          onClick={() => onRemoveItem(item.id)}
+                          className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-sky-800 mb-1">نوبت‌های تردد</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.transportTripsCount ?? 0}
+                            onChange={(e) => onUpdateItemValue(item.id, 'transportTripsCount', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-sky-50/40 border border-sky-200 text-sky-900 rounded-xl font-mono font-black"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-1">نرخ هر نوبت (ت)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.transportCostPerTrip ?? settings.transportCostPerTrip}
+                            onChange={(e) => onUpdateItemValue(item.id, 'transportCostPerTrip', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-emerald-700 mb-1">یارانه / تخفیف (ت)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.transportManualDiscount ?? 0}
+                            onChange={(e) => onUpdateItemValue(item.id, 'transportManualDiscount', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-emerald-50/40 border border-emerald-200 text-emerald-800 rounded-xl font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-rose-700 mb-1">جمع کسر سرویس (ت)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.transportDeduction ?? 0}
+                            onChange={(e) => onUpdateItemValue(item.id, 'transportDeduction', Number(e.target.value))}
+                            className="w-full min-h-[38px] text-center bg-rose-50/40 border border-rose-300 text-rose-700 rounded-xl font-mono font-black"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="text"
+                            placeholder="شرح مسیر / راننده..."
+                            value={item.transportNotes || ''}
+                            onChange={(e) => onUpdateItemValue(item.id, 'transportNotes', e.target.value)}
+                            className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="bg-sky-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>جمع تردد: <strong className="font-mono">{summaryTotals.totalTransportTrips}</strong> نوبت</span>
+                    <span className="font-mono font-black text-sky-200">{summaryTotals.totalTransportDeductions.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -1110,6 +1639,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -1118,19 +1648,104 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'meals' && (
             <div>
-              <div className="p-3.5 bg-orange-50/50 border-b border-orange-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-orange-50/50 border-b border-orange-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <UtensilsCrossed size={16} className="text-orange-700" />
-                  <span className="font-black text-slate-800">سربرگ آمار نهار و شام اساتید</span>
-                  <span className="text-[11px] text-slate-500">
-                    (تعداد وعده‌های نهار و شام در بازه زمانی، نرخ هر وعده و جمع کل کسر غذا)
-                  </span>
+                  <UtensilsCrossed size={16} className="text-orange-700 shrink-0" />
+                  <span className="font-black text-slate-800">آمار نهار و شام اساتید</span>
                 </div>
-                <div className="text-[11px] text-orange-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-orange-200/60 shadow-2xs">
-                  مبلغ کسر شده به حساب آشپزخانه واریز می‌گردد.
-                </div>
+                {!isAdminMobile && (
+                  <div className="text-[11px] text-orange-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-orange-200/60 shadow-2xs">
+                    مبلغ کسر شده به حساب آشپزخانه واریز می‌گردد.
+                  </div>
+                )}
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => {
+                    const totalMeals = (item.lunchCount || 0) + (item.dinnerCount || 0);
+                    const mealDeduction = item.mealsDeductionTotal ?? (item.lunchDeduction || 0);
+                    return (
+                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                            <div className="text-[10px] text-orange-700 font-bold">جمع وعده‌ها: {totalMeals} وعده</div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveItem(item.id)}
+                            className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-orange-800 mb-1">وعده نهار</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.lunchCount ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'lunchCount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-orange-50/40 border border-orange-200 text-orange-900 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-amber-800 mb-1">وعده شام</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.dinnerCount ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'dinnerCount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-amber-50/40 border border-amber-200 text-amber-900 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1">نرخ هر وعده (ت)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.mealPricePerUnit ?? settings.lunchCostPerDay}
+                              onChange={(e) => onUpdateItemValue(item.id, 'mealPricePerUnit', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-rose-700 mb-1">جمع کسر غذا (ت)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={mealDeduction}
+                              onChange={(e) => onUpdateItemValue(item.id, 'mealsDeductionTotal', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-rose-50/40 border border-rose-300 text-rose-700 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[10px] font-bold text-indigo-700 mb-1">حساب مقصد واریز</label>
+                            <select
+                              value={item.mealsDestinationAccountId || 'acc_kitchen'}
+                              onChange={(e) => onUpdateItemValue(item.id, 'mealsDestinationAccountId', e.target.value)}
+                              className="w-full min-h-[38px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                            >
+                              {destinationAccounts
+                                .filter(a => a.category === 'kitchen' || a.id === 'acc_kitchen')
+                                .concat(destinationAccounts.filter(a => a.category !== 'kitchen' && a.id !== 'acc_kitchen'))
+                                .map(acc => (
+                                  <option key={acc.id} value={acc.id}>{acc.title}</option>
+                                ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="bg-orange-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>جمع وعده‌ها: <strong className="font-mono">{summaryTotals.totalMeals}</strong></span>
+                    <span className="font-mono font-black text-orange-200">{summaryTotals.totalMealDeductions.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -1253,6 +1868,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -1261,19 +1877,93 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'adjustments' && (
             <div>
-              <div className="p-3.5 bg-purple-50/50 border-b border-purple-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-purple-50/50 border-b border-purple-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <TrendingUp size={16} className="text-purple-700" />
-                  <span className="font-black text-slate-800">سربرگ اضافه / کاهش حقوق (تعدیلات دستی)</span>
-                  <span className="text-[11px] text-slate-500">
-                    (ثبت دستی مبالغ افزایشی مانند پاداش و مبالغ کاهشی مانند جریمه همراه با دلایل)
-                  </span>
+                  <TrendingUp size={16} className="text-purple-700 shrink-0" />
+                  <span className="font-black text-slate-800">اضافه / کاهش حقوق (تعدیلات دستی)</span>
                 </div>
-                <div className="text-[11px] text-purple-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-purple-200/60 shadow-2xs">
-                  خالص تعدیل = مبلغ اضافه منهای مبلغ کاهش
-                </div>
+                {!isAdminMobile && (
+                  <div className="text-[11px] text-purple-800 font-bold bg-white px-2.5 py-1 rounded-lg border border-purple-200/60 shadow-2xs">
+                    خالص تعدیل = مبلغ اضافه منهای مبلغ کاهش
+                  </div>
+                )}
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => {
+                    const netAdj = item.manualAdjustmentAmount ?? 0;
+                    return (
+                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                            <div className="text-[11px] mt-0.5">
+                              خالص تعدیل:{' '}
+                              <span className={cn('font-mono font-black', netAdj > 0 ? 'text-emerald-700' : netAdj < 0 ? 'text-rose-700' : 'text-slate-600')}>
+                                {netAdj > 0 ? `+${netAdj.toLocaleString('fa-IR')}` : netAdj.toLocaleString('fa-IR')} ت
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveItem(item.id)}
+                            className="min-h-[36px] min-w-[36px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-emerald-700 mb-1">اضافه / پاداش (+)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.manualAdditionAmount ?? item.bonusAmount ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'manualAdditionAmount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-emerald-50/40 border border-emerald-200 text-emerald-800 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-rose-700 mb-1">کاهش / جریمه (-)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={item.manualReductionAmount ?? 0}
+                              onChange={(e) => onUpdateItemValue(item.id, 'manualReductionAmount', Number(e.target.value))}
+                              className="w-full min-h-[38px] text-center bg-rose-50/40 border border-rose-200 text-rose-700 rounded-xl font-mono font-black"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              placeholder="علت افزایش (کارگاهی، پژوهش...)"
+                              value={item.manualAdditionReason || ''}
+                              onChange={(e) => onUpdateItemValue(item.id, 'manualAdditionReason', e.target.value)}
+                              className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              placeholder="علت کاهش (تاخیر، جریمه...)"
+                              value={item.manualReductionReason || ''}
+                              onChange={(e) => onUpdateItemValue(item.id, 'manualReductionReason', e.target.value)}
+                              className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="bg-purple-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>خالص تعدیلات دستی:</span>
+                    <span className="font-mono font-black text-purple-200">
+                      {summaryTotals.totalNetAdjustments > 0 ? `+${summaryTotals.totalNetAdjustments.toLocaleString('fa-IR')}` : summaryTotals.totalNetAdjustments.toLocaleString('fa-IR')} ت
+                    </span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -1383,6 +2073,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
 
@@ -1391,21 +2082,99 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
           {/* ========================================================================= */}
           {activeTab === 'summary' && (
             <div>
-              <div className="p-3.5 bg-emerald-50/50 border-b border-emerald-100/70 flex items-center justify-between text-xs">
+              <div className={cn('bg-emerald-50/50 border-b border-emerald-100/70 flex items-center justify-between text-xs gap-2 flex-wrap', isAdminMobile ? 'p-3' : 'p-3.5')}>
                 <div className="flex items-center gap-2">
-                  <SlidersHorizontal size={16} className="text-emerald-700" />
-                  <span className="font-black text-slate-800">سربرگ جمع‌بندی و تراز نهایی تمامی پارامترها</span>
-                  <span className="text-[11px] text-slate-500">
-                    (تلفیق ساعات کارکرد، بدهی، صندوق، سرویس، تغذیه و خالص پرداختی نهایی)
-                  </span>
+                  <SlidersHorizontal size={16} className="text-emerald-700 shrink-0" />
+                  <span className="font-black text-slate-800">جمع‌بندی و تراز نهایی</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-900 font-black font-mono">
-                    خالص کل: {summaryTotals.totalNetPayable.toLocaleString('fa-IR')} تومان
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-900 font-black font-mono tabular-nums">
+                    خالص کل: {summaryTotals.totalNetPayable.toLocaleString('fa-IR')} ت
                   </span>
                 </div>
               </div>
 
+              {isAdminMobile ? (
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {filteredItems.map((item, idx) => {
+                    const debtDed = item.debtMonthlyDeduction ?? item.type2DeductionsTotal ?? 0;
+                    const fundDed = item.fundContributionDeduction ?? 0;
+                    const transportDed = item.transportDeduction ?? 0;
+                    const mealDed = item.mealsDeductionTotal ?? item.lunchDeduction ?? 0;
+                    const manualAdj = item.manualAdjustmentAmount ?? 0;
+                    return (
+                      <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs tabular-nums">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-black text-sm text-slate-900">{idx + 1}. {item.teacherName}</span>
+                            <div className="text-[10px] text-slate-400 truncate mt-0.5">{item.coursesStr || '-'}</div>
+                          </div>
+                          <div className="bg-teal-50 border border-teal-200 rounded-xl px-2.5 py-1.5 text-left shrink-0">
+                            <span className="text-[9px] text-teal-700 font-bold block">خالص پرداختی</span>
+                            <span className="text-xs font-black font-mono text-teal-950">{item.netPayable.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            <span className="text-[10px] text-slate-500 block">تدریس ({item.totalTeachingHours} س)</span>
+                            <span className="font-mono font-bold text-slate-900">{item.baseGrossAmount.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                          <div className="bg-amber-50/50 p-2 rounded-xl border border-amber-100">
+                            <span className="text-[10px] text-amber-700 block">کسر بدهی</span>
+                            <span className="font-mono font-bold text-amber-800">{debtDed.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                          <div className="bg-rose-50/50 p-2 rounded-xl border border-rose-100">
+                            <span className="text-[10px] text-rose-700 block">کسر صندوق</span>
+                            <span className="font-mono font-bold text-rose-700">{fundDed.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                          <div className="bg-sky-50/50 p-2 rounded-xl border border-sky-100">
+                            <span className="text-[10px] text-sky-700 block">کسر سرویس</span>
+                            <span className="font-mono font-bold text-sky-800">{transportDed.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                          <div className="bg-orange-50/50 p-2 rounded-xl border border-orange-100">
+                            <span className="text-[10px] text-orange-700 block">کسر نهار و شام</span>
+                            <span className="font-mono font-bold text-orange-800">{mealDed.toLocaleString('fa-IR')} ت</span>
+                          </div>
+                          <div className="bg-purple-50/50 p-2 rounded-xl border border-purple-100">
+                            <span className="text-[10px] text-purple-700 block">تعدیل دستی</span>
+                            <span className="font-mono font-bold text-purple-800">
+                              {manualAdj > 0 ? `+${manualAdj.toLocaleString('fa-IR')}` : manualAdj.toLocaleString('fa-IR')} ت
+                            </span>
+                          </div>
+                        </div>
+
+                        {!isCompactView && (
+                          <div className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 truncate">
+                            شبا/حساب: {item.bankSheba || item.bankAccount || item.bankName || 'تجارت'}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                          <button
+                            onClick={() => onOpenSlipDetail(item)}
+                            className="flex-1 min-h-[40px] bg-teal-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Eye size={14} />
+                            <span>مشاهده فیش حقوقی</span>
+                          </button>
+                          <button
+                            onClick={() => onRemoveItem(item.id)}
+                            className="min-h-[40px] min-w-[40px] bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                            title="حذف"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="bg-teal-950 text-white rounded-2xl p-3.5 flex items-center justify-between text-xs tabular-nums">
+                    <span>تراز کل ({filteredItems.length} استاد):</span>
+                    <span className="font-mono font-black text-emerald-300">{summaryTotals.totalNetPayable.toLocaleString('fa-IR')} ت</span>
+                  </div>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
                   <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
@@ -1585,6 +2354,7 @@ export const TeacherCompensationTabbedView: React.FC<TeacherCompensationTabbedVi
                   </tfoot>
                 </table>
               </div>
+              )}
             </div>
           )}
         </div>

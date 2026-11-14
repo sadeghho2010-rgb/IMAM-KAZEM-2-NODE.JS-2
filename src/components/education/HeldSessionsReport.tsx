@@ -44,6 +44,8 @@ import {
 } from '../../lib/jalali';
 import ShamsiDatePicker from '../ShamsiDatePicker';
 import { cn } from '../../lib/utils';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
 interface SessionDetailRow {
   date: string;
@@ -149,6 +151,8 @@ export default function HeldSessionsReport() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileControlsOpen, setMobileControlsOpen] = useState<boolean>(false);
   const [selectedClassSummary, setSelectedClassSummary] = useState<ClassHeldSummary | null>(null);
   const [sessionFilterInModal, setSessionFilterInModal] = useState<string>('all');
 
@@ -530,167 +534,269 @@ export default function HeldSessionsReport() {
   return (
     <div className="space-y-6 font-vazir text-right pb-12" dir="rtl">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-indigo-950 via-indigo-900 to-violet-950 rounded-3xl p-5 sm:p-7 text-white shadow-xl border border-indigo-500/30 relative overflow-hidden">
-        <div className="absolute -top-12 -left-12 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="تعداد جلسات برگزار شده کلاس‌ها"
+          subtitle={`بازه ${toPersianDigits(fromDate)} تا ${toPersianDigits(toDate)} (${toPersianDigits(dateRangeList.length)} روز)`}
+          variant="indigo"
+          icon={<CalendarCheck size={18} />}
+          primaryAction={{
+            id: 'refresh-held-sessions',
+            label: 'بروزرسانی آمار',
+            icon: <RefreshCw size={15} className={cn(isLoading && 'animate-spin')} />,
+            tone: 'primary',
+            onClick: loadData
+          }}
+        />
+      ) : (
+        <div className="bg-gradient-to-r from-indigo-950 via-indigo-900 to-violet-950 rounded-3xl p-5 sm:p-7 text-white shadow-xl border border-indigo-500/30 relative overflow-hidden">
+          <div className="absolute -top-12 -left-12 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-black text-amber-300">
-              <CalendarCheck size={15} />
-              <span>گزارش هوشمند آموزش و تقویم تحصیلی</span>
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-black text-amber-300">
+                <CalendarCheck size={15} />
+                <span>گزارش هوشمند آموزش و تقویم تحصیلی</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                تعداد جلسات برگزار شده کلاس‌های درس
+              </h1>
+              <p className="text-xs sm:text-sm text-indigo-100/90 font-medium max-w-3xl leading-relaxed">
+                محاسبه دقیق جلسات تشکیل‌شده هر کلاس بر اساس تقویم آموزشی (ایام دایر و تعطیلات رسمی)، برنامه هفتگی کلاس، جلسات لغوشده اختصاصی در حضور و غیاب، و تفکیک کامل جلسات استاد اصلی و استاد جایگزین.
+              </p>
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              تعداد جلسات برگزار شده کلاس‌های درس
-            </h1>
-            <p className="text-xs sm:text-sm text-indigo-100/90 font-medium max-w-3xl leading-relaxed">
-              محاسبه دقیق جلسات تشکیل‌شده هر کلاس بر اساس تقویم آموزشی (ایام دایر و تعطیلات رسمی)، برنامه هفتگی کلاس، جلسات لغوشده اختصاصی در حضور و غیاب، و تفکیک کامل جلسات استاد اصلی و استاد جایگزین.
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2 self-start lg:self-center">
-            <button
-              type="button"
-              onClick={loadData}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-black transition-all cursor-pointer active:scale-95"
-            >
-              <RefreshCw size={15} className={cn(isLoading && 'animate-spin')} />
-              <span>بروزرسانی آمار</span>
-            </button>
+            <div className="flex items-center gap-2 self-start lg:self-center">
+              <button
+                type="button"
+                onClick={loadData}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-black transition-all cursor-pointer active:scale-95"
+              >
+                <RefreshCw size={15} className={cn(isLoading && 'animate-spin')} />
+                <span>بروزرسانی آمار</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Date Range & Filter Control Panel */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-5">
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
-              <CalendarDays size={18} className="text-indigo-600" />
-              <span>انتخاب بازه زمانی محاسبه جلسات (مثلاً ۲۰ به ۲۰ هر ماه)</span>
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              بازه تاریخ شمسی مورد نظر خود را انتخاب کنید و سپس روی هر کلاس کلیک نمایید تا ریز جلسات آن را مشاهده کنید.
-            </p>
-          </div>
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSearchFilterBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="جستجوی نام درس، کتاب، استاد..."
+            onToggleFilters={() => setMobileControlsOpen((p) => !p)}
+            filtersOpen={mobileControlsOpen}
+            activeFilterCount={[selectedGrade !== 'all', selectedTeacher !== 'all', includeFutureDatesAsHeld].filter(Boolean).length}
+          />
 
-          {/* Quick Cycle Presets */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Cycle Presets scrollable strip */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
             <button
               type="button"
               onClick={() => applyPresetCycle(0)}
-              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-black transition-all cursor-pointer"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-black shrink-0 cursor-pointer"
             >
-              دوره ۲۰ تا ۲۰ جاری
+              ۲۰ تا ۲۰ جاری
             </button>
             <button
               type="button"
               onClick={() => applyPresetCycle(-1)}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-white text-slate-700 border border-slate-200 text-[11px] font-bold shrink-0 cursor-pointer"
             >
-              دوره ۲۰ تا ۲۰ ماه قبل
+              ۲۰ تا ۲۰ ماه قبل
             </button>
             <button
               type="button"
               onClick={applyUpToTodayPreset}
-              className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold shrink-0 cursor-pointer"
             >
-              ۲۰ ماه قبل تا امروز ({toPersianDigits(todayShamsi)})
+              تا امروز ({toPersianDigits(todayShamsi)})
             </button>
             <button
               type="button"
               onClick={applyCurrentMonthPreset}
-              className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition-all cursor-pointer"
+              className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shrink-0 cursor-pointer"
             >
               کل ماه جاری
             </button>
           </div>
+
+          {mobileControlsOpen && (
+            <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
+                <ShamsiDatePicker label="از تاریخ" value={fromDate} onChange={setFromDate} />
+                <ShamsiDatePicker label="تا تاریخ" value={toDate} onChange={setToDate} />
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <select
+                  value={selectedGrade}
+                  onChange={e => setSelectedGrade(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  {availableGrades.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedTeacher}
+                  onChange={e => setSelectedTeacher(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                >
+                  <option value="all">همه اساتید</option>
+                  {availableTeachers.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-start gap-2 cursor-pointer select-none font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px] leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={includeFutureDatesAsHeld}
+                  onChange={e => setIncludeFutureDatesAsHeld(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>شمارش روزهای آینده داخل بازه به عنوان جلسه برگزار شده فرضی</span>
+              </label>
+            </div>
+          )}
         </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-5">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="space-y-1">
+              <h2 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+                <CalendarDays size={18} className="text-indigo-600" />
+                <span>انتخاب بازه زمانی محاسبه جلسات (مثلاً ۲۰ به ۲۰ هر ماه)</span>
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                بازه تاریخ شمسی مورد نظر خود را انتخاب کنید و سپس روی هر کلاس کلیک نمایید تا ریز جلسات آن را مشاهده کنید.
+              </p>
+            </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-          <div>
-            <ShamsiDatePicker
-              label="از تاریخ (شروع بازه)"
-              value={fromDate}
-              onChange={setFromDate}
-            />
-          </div>
-          <div>
-            <ShamsiDatePicker
-              label="تا تاریخ (پایان بازه)"
-              value={toDate}
-              onChange={setToDate}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-black text-slate-700 mb-1.5">فیلتر پایه تحصیلی</label>
-            <select
-              value={selectedGrade}
-              onChange={e => setSelectedGrade(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="all">همه پایه‌ها ({toPersianDigits(programs.length)} کلاس)</option>
-              {availableGrades.map(g => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-black text-slate-700 mb-1.5">فیلتر استاد اصلی</label>
-            <select
-              value={selectedTeacher}
-              onChange={e => setSelectedTeacher(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="all">همه اساتید</option>
-              {availableTeachers.map(t => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-black text-slate-700 mb-1.5">جستجوی نام کلاس یا استاد</label>
-            <div className="relative">
-              <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder="جستجو در نام درس، کتاب، استاد..."
-                className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+            {/* Quick Cycle Presets */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => applyPresetCycle(0)}
+                className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-black transition-all cursor-pointer"
+              >
+                دوره ۲۰ تا ۲۰ جاری
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPresetCycle(-1)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer"
+              >
+                دوره ۲۰ تا ۲۰ ماه قبل
+              </button>
+              <button
+                type="button"
+                onClick={applyUpToTodayPreset}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all cursor-pointer"
+              >
+                ۲۰ ماه قبل تا امروز ({toPersianDigits(todayShamsi)})
+              </button>
+              <button
+                type="button"
+                onClick={applyCurrentMonthPreset}
+                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold transition-all cursor-pointer"
+              >
+                کل ماه جاری
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Option for future dates inside range */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
-          <div className="flex items-center gap-2 text-slate-600 font-bold">
-            <Info size={15} className="text-indigo-600 shrink-0" />
-            <span>
-              تعداد کل روزهای تقویمی در بازه انتخابی ({toPersianDigits(fromDate)} تا {toPersianDigits(toDate)}):{' '}
-              <strong className="text-indigo-700 font-black">{toPersianDigits(dateRangeList.length)} روز</strong>
-            </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+            <div>
+              <ShamsiDatePicker
+                label="از تاریخ (شروع بازه)"
+                value={fromDate}
+                onChange={setFromDate}
+              />
+            </div>
+            <div>
+              <ShamsiDatePicker
+                label="تا تاریخ (پایان بازه)"
+                value={toDate}
+                onChange={setToDate}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-700 mb-1.5">فیلتر پایه تحصیلی</label>
+              <select
+                value={selectedGrade}
+                onChange={e => setSelectedGrade(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">همه پایه‌ها ({toPersianDigits(programs.length)} کلاس)</option>
+                {availableGrades.map(g => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-700 mb-1.5">فیلتر استاد اصلی</label>
+              <select
+                value={selectedTeacher}
+                onChange={e => setSelectedTeacher(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">همه اساتید</option>
+                {availableTeachers.map(t => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black text-slate-700 mb-1.5">جستجوی نام کلاس یا استاد</label>
+              <div className="relative">
+                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="جستجو در نام درس، کتاب، استاد..."
+                  className="w-full pr-9 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
           </div>
 
-          <label className="inline-flex items-center gap-2 cursor-pointer select-none font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-            <input
-              type="checkbox"
-              checked={includeFutureDatesAsHeld}
-              onChange={e => setIncludeFutureDatesAsHeld(e.target.checked)}
-              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <span>شمارش روزهای آیندهِ داخل بازه (بعد از امروز {toPersianDigits(todayShamsi)}) به عنوان جلسه برگزار شده فرضی</span>
-          </label>
+          {/* Option for future dates inside range */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
+            <div className="flex items-center gap-2 text-slate-600 font-bold">
+              <Info size={15} className="text-indigo-600 shrink-0" />
+              <span>
+                تعداد کل روزهای تقویمی در بازه انتخابی ({toPersianDigits(fromDate)} تا {toPersianDigits(toDate)}):{' '}
+                <strong className="text-indigo-700 font-black">{toPersianDigits(dateRangeList.length)} روز</strong>
+              </span>
+            </div>
+
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              <input
+                type="checkbox"
+                checked={includeFutureDatesAsHeld}
+                onChange={e => setIncludeFutureDatesAsHeld(e.target.checked)}
+                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>شمارش روزهای آیندهِ داخل بازه (بعد از امروز {toPersianDigits(todayShamsi)}) به عنوان جلسه برگزار شده فرضی</span>
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Aggregate Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
@@ -972,82 +1078,155 @@ export default function HeldSessionsReport() {
               </div>
 
               {/* Filter Pills for Session Table */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className={cn(
+                "flex items-center gap-2",
+                isAdminMobile ? "overflow-x-auto pb-1 scrollbar-hide" : "flex-wrap"
+              )}>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('all')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'all'
                       ? 'bg-slate-900 text-white border-slate-900'
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   )}
                 >
-                  همه روزهای برنامه‌ریزی‌شده در بازه ({toPersianDigits(selectedClassSummary.sessions.length)})
+                  همه ({toPersianDigits(selectedClassSummary.sessions.length)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('held_all')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'held_all'
                       ? 'bg-indigo-600 text-white border-indigo-600'
                       : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
                   )}
                 >
-                  مجموع برگزار شده ({toPersianDigits(selectedClassSummary.totalHeldCount)})
+                  برگزار شده ({toPersianDigits(selectedClassSummary.totalHeldCount)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('held_main')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'held_main'
                       ? 'bg-emerald-600 text-white border-emerald-600'
                       : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                   )}
                 >
-                  با استاد اصلی ({toPersianDigits(selectedClassSummary.heldMainCount)})
+                  استاد اصلی ({toPersianDigits(selectedClassSummary.heldMainCount)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('held_substitute')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'held_substitute'
                       ? 'bg-amber-600 text-white border-amber-600'
                       : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                   )}
                 >
-                  با استاد جایگزین ({toPersianDigits(selectedClassSummary.heldSubCount)})
+                  استاد جایگزین ({toPersianDigits(selectedClassSummary.heldSubCount)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('cancelled_class')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'cancelled_class'
                       ? 'bg-rose-600 text-white border-rose-600'
                       : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                   )}
                 >
-                  لغو اختصاصی کلاس ({toPersianDigits(selectedClassSummary.cancelledClassCount)})
+                  لغو کلاس ({toPersianDigits(selectedClassSummary.cancelledClassCount)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSessionFilterInModal('official_holiday')}
                   className={cn(
-                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer',
+                    'px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shrink-0',
                     sessionFilterInModal === 'official_holiday'
                       ? 'bg-slate-700 text-white border-slate-700'
                       : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                   )}
                 >
-                  تعطیل رسمی تقویم ({toPersianDigits(selectedClassSummary.officialHolidayCount)})
+                  تعطیل رسمی ({toPersianDigits(selectedClassSummary.officialHolidayCount)})
                 </button>
               </div>
 
-              {/* Session-by-Session Table */}
+              {/* Session-by-Session List (Cards on Mobile, Table on Desktop) */}
+              {isAdminMobile ? (
+                <div className="space-y-2">
+                  {filteredModalSessions.length === 0 ? (
+                    <div className="py-8 text-center text-slate-400 font-bold text-xs border border-slate-200 rounded-2xl">
+                      موردی با این فیلتر در بازه انتخابی وجود ندارد.
+                    </div>
+                  ) : (
+                    filteredModalSessions.map((s, idx) => (
+                      <div
+                        key={s.date}
+                        className={cn(
+                          'p-3 rounded-2xl border text-xs space-y-1.5',
+                          s.status === 'held_main' && 'bg-white border-emerald-200/80',
+                          s.status === 'held_substitute' && 'bg-amber-50/50 border-amber-200',
+                          s.status === 'cancelled_class' && 'bg-rose-50/50 border-rose-200',
+                          s.status === 'official_holiday' && 'bg-slate-50 border-slate-200 text-slate-500',
+                          s.status === 'upcoming' && 'bg-sky-50/40 border-sky-200'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 font-black text-slate-900">
+                            <span className="text-[11px] text-slate-400">#{toPersianDigits(idx + 1)}</span>
+                            <span className="font-mono">{toPersianDigits(s.date)}</span>
+                            <span className="text-[11px] text-slate-600 font-bold">{s.dayOfWeekName}</span>
+                          </div>
+                          {s.status === 'held_main' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black">استاد اصلی</span>
+                          )}
+                          {s.status === 'held_substitute' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 text-[10px] font-black">جایگزین</span>
+                          )}
+                          {s.status === 'cancelled_class' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-rose-100 text-rose-800 text-[10px] font-black">لغو کلاس</span>
+                          )}
+                          {s.status === 'official_holiday' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-200 text-slate-700 text-[10px] font-bold">تعطیل رسمی</span>
+                          )}
+                          {s.status === 'upcoming' && (
+                            <span className="px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800 text-[10px] font-bold">آتی</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-700">
+                          {s.status === 'held_main' && `استاد: ${s.teacherName}`}
+                          {s.status === 'held_substitute' && `استاد جایگزین: ${s.substituteTeacherName}`}
+                          {s.status === 'cancelled_class' && `علت لغو: ${s.cancelReason}`}
+                          {s.status === 'official_holiday' && `علت: ${s.holidayReason}`}
+                          {s.status === 'upcoming' && `استاد: ${s.teacherName}`}
+                        </div>
+                        {s.hasAttendanceLog && (s.status === 'held_main' || s.status === 'held_substitute') && (
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold pt-0.5">
+                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              حاضر: {toPersianDigits(s.presentCount)}
+                            </span>
+                            {s.lateCount > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                                تاخیر: {toPersianDigits(s.lateCount)}
+                              </span>
+                            )}
+                            {s.absentCount > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                                غایب: {toPersianDigits(s.absentCount)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
               <div className="border border-slate-200 rounded-2xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-right text-xs">
@@ -1171,6 +1350,7 @@ export default function HeldSessionsReport() {
                   </table>
                 </div>
               </div>
+              )}
             </div>
 
             {/* Modal Footer */}

@@ -20,6 +20,8 @@ import { ScopeBook, ScopeMainRange, ScopeSubRange } from '../../types';
 import { localDb } from '../../lib/localDb';
 import { cn } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
 interface ScopeBankViewProps {
   books: ScopeBook[];
@@ -28,6 +30,8 @@ interface ScopeBankViewProps {
 }
 
 export default function ScopeBankView({ books, onUpdateBooks, canEdit }: ScopeBankViewProps) {
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [stageFilter, setStageFilter] = useState<'all' | 'entrance' | 'annual'>('all');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'usul' | 'fiqh' | 'entrance'>('all');
@@ -349,155 +353,223 @@ export default function ScopeBankView({ books, onUpdateBooks, canEdit }: ScopeBa
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-orange-950 border border-amber-900/40 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        {/* Ambient background glows */}
-        <div className="absolute -top-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="بانک محدوده کتب"
+          subtitle={`${totalStats.bookCount} کتاب · ${totalStats.mainCount} سرفصل · ${totalStats.subCount} زیرمحدوده`}
+          variant="slate"
+          icon={<BookOpen size={18} className="text-amber-300" />}
+          primaryAction={
+            canEdit
+              ? {
+                  id: 'add-book',
+                  label: 'تعریف کتاب / درس جدید',
+                  icon: <Plus size={15} />,
+                  tone: 'amber',
+                  onClick: handleOpenAddBook
+                }
+              : undefined
+          }
+          secondaryActions={[
+            {
+              id: 'expand-all',
+              label: 'باز کردن همه',
+              onClick: expandAll
+            },
+            {
+              id: 'collapse-all',
+              label: 'بستن همه',
+              onClick: collapseAll
+            }
+          ]}
+        />
+      ) : (
+        <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-orange-950 border border-amber-900/40 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          {/* Ambient background glows */}
+          <div className="absolute -top-20 -right-20 w-60 h-60 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-extrabold backdrop-blur-md">
-              <BookOpen size={14} className="text-amber-300" />
-              <span>بانک جامع سرفصل‌ها و محدوده‌های امتحانی حوزه</span>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-extrabold backdrop-blur-md">
+                <BookOpen size={14} className="text-amber-300" />
+                <span>بانک جامع سرفصل‌ها و محدوده‌های امتحانی حوزه</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                بانک محدوده دروس امتحانات شفاهی
+              </h2>
+              <p className="text-amber-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
+                بانک رسمی و کامل شامل کتب آزمون ورودی (اصول مظفر، حلقه ثانیه، لمعه) و امتحانات طول سال (رسائل، کفایه، حلقه ثالثه، و مکاسب). این محدوده‌ها معیار انتساب به طلاب در زمان برگزاری آزمون است.
+              </p>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              بانک محدوده دروس امتحانات شفاهی
-            </h2>
-            <p className="text-amber-100/80 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              بانک رسمی و کامل شامل کتب آزمون ورودی (اصول مظفر، حلقه ثانیه، لمعه) و امتحانات طول سال (رسائل، کفایه، حلقه ثالثه، و مکاسب). این محدوده‌ها معیار انتساب به طلاب در زمان برگزاری آزمون است.
-            </p>
-          </div>
 
-          {/* Top Actions */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {canEdit && (
+            {/* Top Actions */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {canEdit && (
+                <button
+                  onClick={handleOpenAddBook}
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-xl font-extrabold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer scale-[1.01]"
+                >
+                  <Plus size={16} />
+                  <span>تعریف کتاب / درس جدید</span>
+                </button>
+              )}
+
               <button
-                onClick={handleOpenAddBook}
-                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-xl font-extrabold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer scale-[1.01]"
+                onClick={expandAll}
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
               >
-                <Plus size={16} />
-                <span>تعریف کتاب / درس جدید</span>
+                باز کردن همه
               </button>
-            )}
+              <button
+                onClick={collapseAll}
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
+              >
+                بستن همه
+              </button>
+            </div>
+          </div>
 
-            <button
-              onClick={expandAll}
-              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
-            >
-              باز کردن همه
-            </button>
-            <button
-              onClick={collapseAll}
-              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-xl text-xs font-bold transition-all backdrop-blur-md"
-            >
-              بستن همه
-            </button>
+          {/* Minimal Stats Row */}
+          <div className="grid grid-cols-3 gap-4 mt-6 pt-5 border-t border-amber-800/50 text-xs">
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-amber-200/80 block mb-1 font-medium">تعداد کتب و دروس</span>
+              <span className="text-xl font-black text-white">{totalStats.bookCount} <span className="text-xs font-normal opacity-80">کتاب</span></span>
+            </div>
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-amber-200/80 block mb-1 font-medium">محدوده‌های اصلی</span>
+              <span className="text-xl font-black text-amber-300">{totalStats.mainCount} <span className="text-xs font-normal opacity-80">سرفصل</span></span>
+            </div>
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
+              <span className="text-amber-200/80 block mb-1 font-medium">زیرمحدوده‌ها و صفحات</span>
+              <span className="text-xl font-black text-sky-300">{totalStats.subCount} <span className="text-xs font-normal opacity-80">محدوده دقیق</span></span>
+            </div>
           </div>
         </div>
-
-        {/* Minimal Stats Row */}
-        <div className="grid grid-cols-3 gap-4 mt-6 pt-5 border-t border-amber-800/50 text-xs">
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-amber-200/80 block mb-1 font-medium">تعداد کتب و دروس</span>
-            <span className="text-xl font-black text-white">{totalStats.bookCount} <span className="text-xs font-normal opacity-80">کتاب</span></span>
-          </div>
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-amber-200/80 block mb-1 font-medium">محدوده‌های اصلی</span>
-            <span className="text-xl font-black text-amber-300">{totalStats.mainCount} <span className="text-xs font-normal opacity-80">سرفصل</span></span>
-          </div>
-          <div className="bg-white/5 backdrop-blur-md rounded-2xl p-3 border border-white/5">
-            <span className="text-amber-200/80 block mb-1 font-medium">زیرمحدوده‌ها و صفحات</span>
-            <span className="text-xl font-black text-sky-300">{totalStats.subCount} <span className="text-xs font-normal opacity-80">محدوده دقیق</span></span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Filter and Search Controls */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSearchFilterBar
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="جستجوی عنوان کتاب، محدوده اصلی، زیرمحدوده یا شماره صفحه (مثلا: قطع و ظن، ص ۱۴)..."
-            className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800 focus:bg-white transition-all"
+            onChange={setSearchTerm}
+            placeholder="جستجوی کتاب، محدوده یا صفحه..."
+            onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+            filtersOpen={mobileFiltersOpen}
+            activeFilterCount={[stageFilter !== 'all', categoryFilter !== 'all'].filter(Boolean).length}
           />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-            >
-              <X size={14} />
-            </button>
+          {mobileFiltersOpen && (
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2 shadow-xs">
+              <select
+                value={stageFilter}
+                onChange={(e) => setStageFilter(e.target.value as any)}
+                className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+              >
+                <option value="all">همه دوره‌ها</option>
+                <option value="entrance">آزمون ورودی</option>
+                <option value="annual">امتحانات طول سال</option>
+              </select>
+
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value as any)}
+                className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+              >
+                <option value="all">همه موضوعات</option>
+                <option value="usul">اصول</option>
+                <option value="fiqh">فقه (مکاسب)</option>
+              </select>
+            </div>
           )}
         </div>
+      ) : (
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="جستجوی عنوان کتاب، محدوده اصلی، زیرمحدوده یا شماره صفحه (مثلا: قطع و ظن، ص ۱۴)..."
+              className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-800 focus:bg-white transition-all"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
 
-        {/* Segmented Controls for Stages */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setStageFilter('all')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              stageFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            همه دوره‌ها
-          </button>
-          <button
-            onClick={() => setStageFilter('entrance')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              stageFilter === 'entrance' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            آزمون ورودی
-          </button>
-          <button
-            onClick={() => setStageFilter('annual')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              stageFilter === 'annual' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            امتحانات طول سال
-          </button>
-        </div>
+          {/* Segmented Controls for Stages */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              onClick={() => setStageFilter('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                stageFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              همه دوره‌ها
+            </button>
+            <button
+              onClick={() => setStageFilter('entrance')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                stageFilter === 'entrance' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              آزمون ورودی
+            </button>
+            <button
+              onClick={() => setStageFilter('annual')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                stageFilter === 'annual' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              امتحانات طول سال
+            </button>
+          </div>
 
-        {/* Category Filter */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setCategoryFilter('all')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              categoryFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            همه موضوعات
-          </button>
-          <button
-            onClick={() => setCategoryFilter('usul')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              categoryFilter === 'usul' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            اصول
-          </button>
-          <button
-            onClick={() => setCategoryFilter('fiqh')}
-            className={cn(
-              "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
-              categoryFilter === 'fiqh' ? "bg-white text-amber-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            فقه (مکاسب)
-          </button>
+          {/* Category Filter */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl">
+            <button
+              onClick={() => setCategoryFilter('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                categoryFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              همه موضوعات
+            </button>
+            <button
+              onClick={() => setCategoryFilter('usul')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                categoryFilter === 'usul' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              اصول
+            </button>
+            <button
+              onClick={() => setCategoryFilter('fiqh')}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                categoryFilter === 'fiqh' ? "bg-white text-amber-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              فقه (مکاسب)
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Books List Accordion */}
       {filteredBooks.length === 0 ? (

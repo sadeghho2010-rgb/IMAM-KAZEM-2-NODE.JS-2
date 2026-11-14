@@ -39,6 +39,8 @@ import { cn } from '../lib/utils';
 import { dispatchDatabaseToast } from '../lib/databaseToast';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 const ALL_CATEGORIES: TeacherCategory[] = [
   'فقه',
@@ -53,6 +55,8 @@ const ALL_CATEGORIES: TeacherCategory[] = [
 
 export default function TeachersBank() {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
   const isLevel2User = currentUser?.level === 1 || currentUser?.level === 2;
   const canManageTeachers = Boolean(
     currentUser && (
@@ -733,94 +737,157 @@ export default function TeachersBank() {
   const isExternalForm = Boolean(editingTeacher?.isExternal);
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6" dir="rtl">
+    <div className={cn(isAdminMobile ? "space-y-4 pb-8" : "p-4 sm:p-6 max-w-7xl mx-auto space-y-6")} dir="rtl">
       
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute -left-10 -bottom-10 opacity-10 pointer-events-none">
-          <GraduationCap size={240} />
-        </div>
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-indigo-200 text-xs font-bold backdrop-blur-md">
-              <Award size={14} className="text-amber-400" />
-              <span>بانک جامع اساتید و مدرسین مدعو</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">بانک اساتید</h1>
-            <p className="text-xs sm:text-sm text-indigo-100 opacity-90 max-w-2xl leading-relaxed">
-              بانک اطلاعات کامل اساتید حوزه علمیه به تفکیک دروس فقه، اصول، فلسفه، مشاوره‌های آموزشی و دروس ۵شنبه جهت دعوت و همکاری
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto shrink-0">
-            {isLevel2User && (
-              <button
-                type="button"
-                onClick={() => setIsMultiCopyMode(prev => !prev)}
-                className={cn(
-                  "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer border",
-                  isMultiCopyMode
-                    ? "bg-amber-400 text-slate-950 border-amber-300 font-black"
-                    : "bg-amber-500 hover:bg-amber-400 text-white border-amber-600"
-                )}
-                title="انتخاب و کپی چندگانه شماره تلفن اساتید"
-              >
-                <Copy size={15} />
-                <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی چندگانه تلفن'}</span>
-              </button>
-            )}
-
-            <button
-              onClick={handleExportExcel}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
-            >
-              <FileSpreadsheet size={15} />
-              <span>خروجی اکسل</span>
-            </button>
-
-            <button
-              onClick={handleExportPdf}
-              disabled={isExportingPdf}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 disabled:opacity-50"
-            >
-              <Download size={15} />
-              <span>{isExportingPdf ? 'در حال دریافت...' : 'خروجی PDF'}</span>
-            </button>
-
-            <button
-              onClick={handleExportJson}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
-            >
-              <FileText size={15} />
-              <span>خروجی JSON</span>
-            </button>
-
-            {canManageTeachers && (
-              <>
-                <button
-                  onClick={() => {
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="بانک جامع اساتید"
+          subtitle={`${filteredTeachers.length} استاد ثبت‌شده`}
+          variant="indigo"
+          icon={<GraduationCap size={18} />}
+          primaryAction={
+            canManageTeachers
+              ? {
+                  id: 'add-teacher',
+                  label: 'افزودن استاد جدید',
+                  icon: <UserPlus size={15} />,
+                  tone: 'emerald',
+                  onClick: openAddModal
+                }
+              : undefined
+          }
+          secondaryActions={[
+            ...(isLevel2User
+              ? [{
+                  id: 'multi-copy-phones',
+                  label: isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی چندگانه تلفن',
+                  icon: <Copy size={14} />,
+                  tone: 'amber' as const,
+                  onClick: () => setIsMultiCopyMode(prev => !prev)
+                }]
+              : []),
+            {
+              id: 'export-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={14} />,
+              tone: 'emerald',
+              onClick: handleExportExcel
+            },
+            {
+              id: 'export-pdf',
+              label: isExportingPdf ? 'در حال دریافت...' : 'خروجی PDF',
+              icon: <Download size={14} />,
+              tone: 'rose',
+              disabled: isExportingPdf,
+              onClick: handleExportPdf
+            },
+            {
+              id: 'export-json',
+              label: 'خروجی JSON',
+              icon: <FileText size={14} />,
+              onClick: handleExportJson
+            },
+            ...(canManageTeachers
+              ? [{
+                  id: 'import-teachers',
+                  label: 'افزودن از فایل',
+                  icon: <Upload size={14} />,
+                  onClick: () => {
                     setImportMessage(null);
                     setShowImportModal(true);
-                  }}
-                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
-                >
-                  <Upload size={15} />
-                  <span>افزودن از فایل (اکسل/JSON)</span>
-                </button>
+                  }
+                }]
+              : [])
+          ]}
+        />
+      ) : (
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute -left-10 -bottom-10 opacity-10 pointer-events-none">
+            <GraduationCap size={240} />
+          </div>
+          
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-indigo-200 text-xs font-bold backdrop-blur-md">
+                <Award size={14} className="text-amber-400" />
+                <span>بانک جامع اساتید و مدرسین مدعو</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">بانک اساتید</h1>
+              <p className="text-xs sm:text-sm text-indigo-100 opacity-90 max-w-2xl leading-relaxed">
+                بانک اطلاعات کامل اساتید حوزه علمیه به تفکیک دروس فقه، اصول، فلسفه، مشاوره‌های آموزشی و دروس ۵شنبه جهت دعوت و همکاری
+              </p>
+            </div>
 
+            <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto shrink-0">
+              {isLevel2User && (
                 <button
-                  onClick={openAddModal}
-                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
+                  type="button"
+                  onClick={() => setIsMultiCopyMode(prev => !prev)}
+                  className={cn(
+                    "flex-1 sm:flex-initial flex items-center justify-center gap-1.5 font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer border",
+                    isMultiCopyMode
+                      ? "bg-amber-400 text-slate-950 border-amber-300 font-black"
+                      : "bg-amber-500 hover:bg-amber-400 text-white border-amber-600"
+                  )}
+                  title="انتخاب و کپی چندگانه شماره تلفن اساتید"
                 >
-                  <UserPlus size={16} />
-                  <span>افزودن استاد جدید</span>
+                  <Copy size={15} />
+                  <span>{isMultiCopyMode ? 'بستن کپی چندگانه' : 'کپی چندگانه تلفن'}</span>
                 </button>
-              </>
-            )}
+              )}
+
+              <button
+                onClick={handleExportExcel}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+              >
+                <FileSpreadsheet size={15} />
+                <span>خروجی اکسل</span>
+              </button>
+
+              <button
+                onClick={handleExportPdf}
+                disabled={isExportingPdf}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 disabled:opacity-50"
+              >
+                <Download size={15} />
+                <span>{isExportingPdf ? 'در حال دریافت...' : 'خروجی PDF'}</span>
+              </button>
+
+              <button
+                onClick={handleExportJson}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+              >
+                <FileText size={15} />
+                <span>خروجی JSON</span>
+              </button>
+
+              {canManageTeachers && (
+                <>
+                  <button
+                    onClick={() => {
+                      setImportMessage(null);
+                      setShowImportModal(true);
+                    }}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+                  >
+                    <Upload size={15} />
+                    <span>افزودن از فایل (اکسل/JSON)</span>
+                  </button>
+
+                  <button
+                    onClick={openAddModal}
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
+                  >
+                    <UserPlus size={16} />
+                    <span>افزودن استاد جدید</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Multi-copy Phone Banner */}
       {isLevel2User && isMultiCopyMode && (
@@ -856,125 +923,205 @@ export default function TeachersBank() {
       )}
 
       {/* Filters and Controls Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-4">
-        
-        {/* Filter Inputs Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          
-          {/* Search Input */}
-          <div className="relative col-span-1 sm:col-span-2 lg:col-span-1">
-            <Search className="absolute right-3.5 top-3 text-slate-400" size={16} />
-            <input 
-              type="text"
-              placeholder="جستجو نام، شماره، درس..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
-            />
-          </div>
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSearchFilterBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="جستجو نام، شماره، درس..."
+            onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+            filtersOpen={mobileFiltersOpen}
+            activeFilterCount={[
+              selectedCategoryFilter !== 'all',
+              selectedPriorityFilter !== 'all',
+              selectedPhoneFilter !== 'all',
+              selectedStatusFilter !== 'all'
+            ].filter(Boolean).length}
+          />
 
-          {/* Category Filter */}
-          <div className="relative">
-            <select
-              value={selectedCategoryFilter}
-              onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="all">همه تخصص‌ها و دسته‌ها</option>
-              {ALL_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
+          {mobileFiltersOpen && (
+            <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه تخصص‌ها</option>
+                  {ALL_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
 
-          {/* Priority Filter */}
-          <div className="relative">
-            <select
-              value={selectedPriorityFilter}
-              onChange={(e) => setSelectedPriorityFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="all">همه اولویت‌ها</option>
-              <option value="1">اولویت ۱ (عالی)</option>
-              <option value="2">اولویت ۲ (خوب)</option>
-              <option value="3">اولویت ۳ (معمولی)</option>
-            </select>
-          </div>
+                <select
+                  value={selectedPriorityFilter}
+                  onChange={(e) => setSelectedPriorityFilter(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه اولویت‌ها</option>
+                  <option value="1">اولویت ۱ (عالی)</option>
+                  <option value="2">اولویت ۲ (خوب)</option>
+                  <option value="3">اولویت ۳ (معمولی)</option>
+                </select>
 
-          {/* Phone Presence Filter */}
-          <div className="relative">
-            <select
-              value={selectedPhoneFilter}
-              onChange={(e) => setSelectedPhoneFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="all">فیلتر شماره: همه اساتید</option>
-              <option value="has-phone">فقط اساتید دارای شماره تماس</option>
-              <option value="no-phone">فقط اساتید بدون شماره تماس</option>
-            </select>
-          </div>
+                <select
+                  value={selectedPhoneFilter}
+                  onChange={(e) => setSelectedPhoneFilter(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه شماره‌ها</option>
+                  <option value="has-phone">دارای شماره تماس</option>
+                  <option value="no-phone">بدون شماره تماس</option>
+                </select>
 
-          {/* Status Filter */}
-          <div className="relative">
-            <select
-              value={selectedStatusFilter}
-              onChange={(e) => setSelectedStatusFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="active">فقط اساتید فعال</option>
-              <option value="inactive">فقط غیرفعال‌ها</option>
-            </select>
-          </div>
+                <select
+                  value={selectedStatusFilter}
+                  onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                  className="min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                >
+                  <option value="all">همه وضعیت‌ها</option>
+                  <option value="active">فقط فعال</option>
+                  <option value="inactive">فقط غیرفعال</option>
+                </select>
+              </div>
 
+              <label className="flex items-center gap-2 cursor-pointer select-none bg-indigo-50 text-indigo-900 border border-indigo-200/80 px-3 py-2 rounded-xl text-[11px] font-bold">
+                <input
+                  type="checkbox"
+                  checked={includePhoneInExport}
+                  onChange={(e) => setIncludePhoneInExport(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 accent-indigo-600 cursor-pointer"
+                />
+                <span>درج شماره تماس در خروجی (اکسل / PDF)</span>
+              </label>
+            </div>
+          )}
+
+          <div className="text-[11px] font-bold text-slate-500 px-1">
+            تعداد اساتید یافت‌شده: <span className="text-indigo-700">{filteredTeachers.length}</span> نفر
+          </div>
         </div>
-
-        {/* Export Option Checkbox & Summary bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs font-medium">
+      ) : (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-4">
           
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="text-slate-600">
-              تعداد اساتید یافت‌شده: <span className="font-bold text-indigo-700">{filteredTeachers.length}</span> نفر
-            </span>
-
-            {/* Export Toggle: Include Phone Number */}
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none bg-indigo-50 text-indigo-900 border border-indigo-200/80 px-3 py-1.5 rounded-xl hover:bg-indigo-100/80 transition-all">
+          {/* Filter Inputs Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            
+            {/* Search Input */}
+            <div className="relative col-span-1 sm:col-span-2 lg:col-span-1">
+              <Search className="absolute right-3.5 top-3 text-slate-400" size={16} />
               <input 
-                type="checkbox"
-                checked={includePhoneInExport}
-                onChange={(e) => setIncludePhoneInExport(e.target.checked)}
-                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 accent-indigo-600 cursor-pointer"
+                type="text"
+                placeholder="جستجو نام، شماره، درس..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
               />
-              <span className="text-[11px] font-bold">درج شماره تماس اساتید در فایل خروجی (اکسل / PDF)</span>
-            </label>
+            </div>
+
+            {/* Category Filter */}
+            <div className="relative">
+              <select
+                value={selectedCategoryFilter}
+                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">همه تخصص‌ها و دسته‌ها</option>
+                {ALL_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Priority Filter */}
+            <div className="relative">
+              <select
+                value={selectedPriorityFilter}
+                onChange={(e) => setSelectedPriorityFilter(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">همه اولویت‌ها</option>
+                <option value="1">اولویت ۱ (عالی)</option>
+                <option value="2">اولویت ۲ (خوب)</option>
+                <option value="3">اولویت ۳ (معمولی)</option>
+              </select>
+            </div>
+
+            {/* Phone Presence Filter */}
+            <div className="relative">
+              <select
+                value={selectedPhoneFilter}
+                onChange={(e) => setSelectedPhoneFilter(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">فیلتر شماره: همه اساتید</option>
+                <option value="has-phone">فقط اساتید دارای شماره تماس</option>
+                <option value="no-phone">فقط اساتید بدون شماره تماس</option>
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="relative">
+              <select
+                value={selectedStatusFilter}
+                onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="active">فقط اساتید فعال</option>
+                <option value="inactive">فقط غیرفعال‌ها</option>
+              </select>
+            </div>
+
           </div>
 
-          {/* Layout View Mode Buttons */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0">
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                viewMode === 'list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
-              )}
-            >
-              <List size={15} />
-              <span>نمایش لیستی (پیش‌فرض)</span>
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={cn(
-                "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                viewMode === 'cards' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
-              )}
-            >
-              <Grid size={15} />
-              <span>نمایش کارتی</span>
-            </button>
-          </div>
+          {/* Export Option Checkbox & Summary bar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs font-medium">
+            
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="text-slate-600">
+                تعداد اساتید یافت‌شده: <span className="font-bold text-indigo-700">{filteredTeachers.length}</span> نفر
+              </span>
 
+              {/* Export Toggle: Include Phone Number */}
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none bg-indigo-50 text-indigo-900 border border-indigo-200/80 px-3 py-1.5 rounded-xl hover:bg-indigo-100/80 transition-all">
+                <input 
+                  type="checkbox"
+                  checked={includePhoneInExport}
+                  onChange={(e) => setIncludePhoneInExport(e.target.checked)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 accent-indigo-600 cursor-pointer"
+                />
+                <span className="text-[11px] font-bold">درج شماره تماس اساتید در فایل خروجی (اکسل / PDF)</span>
+              </label>
+            </div>
+
+            {/* Layout View Mode Buttons */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0">
+              <button
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  viewMode === 'list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                <List size={15} />
+                <span>نمایش لیستی (پیش‌فرض)</span>
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  viewMode === 'cards' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                <Grid size={15} />
+                <span>نمایش کارتی</span>
+              </button>
+            </div>
+
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content: Table or Grid */}
       {loading ? (
@@ -998,7 +1145,7 @@ export default function TeachersBank() {
             <span>ثبت اولین استاد</span>
           </button>
         </div>
-      ) : viewMode === 'list' ? (
+      ) : !isAdminMobile && viewMode === 'list' ? (
         /* LIST / TABLE VIEW (DEFAULT) */
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
@@ -1284,8 +1431,22 @@ export default function TeachersBank() {
               >
                 <div className="space-y-3">
                   {/* Top Bar inside Card */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {isLevel2User && isMultiCopyMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedMultiPhoneIds.includes(teacher.id)}
+                          onChange={() => {
+                            setSelectedMultiPhoneIds(prev =>
+                              prev.includes(teacher.id)
+                                ? prev.filter(i => i !== teacher.id)
+                                : [...prev, teacher.id]
+                            );
+                          }}
+                          className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer shrink-0"
+                        />
+                      )}
                       {teacher.photoUrl ? (
                         <img 
                           src={teacher.photoUrl} 
@@ -1297,8 +1458,8 @@ export default function TeachersBank() {
                           {teacher.fullName?.charAt(0) || 'ا'}
                         </div>
                       )}
-                      <div>
-                        <h3 className="font-bold text-slate-800 text-base">{teacher.fullName}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-slate-800 text-sm sm:text-base truncate">{teacher.fullName}</h3>
                         <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-500 font-mono">
                           <span className="flex items-center gap-1">
                             <Phone size={12} className="text-slate-400" />
@@ -1318,7 +1479,7 @@ export default function TeachersBank() {
                       </div>
                     </div>
 
-                    <div>
+                    <div className="shrink-0">
                       {getPriorityBadge(teacher.priority)}
                     </div>
                   </div>

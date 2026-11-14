@@ -45,6 +45,12 @@ import FreeStudyRulesModal from './study/FreeStudyRulesModal';
 import StudentCourseStudyDetailModal from './study/StudentCourseStudyDetailModal';
 import StudyChartsAndAnalyticsSection from './study/StudyChartsAndAnalyticsSection';
 import { calculatePeriodAverages, exportStudyStatsCSV, isPeriodClosed, isStudentExempt, formatMinutesToHoursAndMinutes } from './study/studyUtils';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileTabOption,
+} from './admin/mobile/MobileModulePrimitives';
 
 interface StudyStatsProps {
   initialStudentId?: string;
@@ -53,6 +59,7 @@ interface StudyStatsProps {
 export default function StudyStats({ initialStudentId }: StudyStatsProps) {
   const { currentMentor, currentMentorId, shahpooriFilter, filterStudents } = useMentor();
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const [periods, setPeriods] = useState<StudyPeriod[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -644,6 +651,38 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       </AnimatePresence>
 
       {/* THREE SECTIONS SELECTOR BAR */}
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={effectiveSection}
+          onChange={(id) => setActiveStudyStatsTab(id as any)}
+          tabs={(() => {
+            const list: MobileTabOption[] = [];
+            if (canManagePeriods) {
+              list.push({
+                id: 'manage_periods',
+                label: 'ثبت و مدیریت دوره‌ها',
+                icon: <CalendarPlus size={14} />,
+                badge: periods.length,
+                tone: 'indigo',
+              });
+            }
+            list.push({
+              id: 'view_stats',
+              label: 'مشاهده آمار ثبت‌شده',
+              icon: <BarChart2 size={14} />,
+              badge: students.length,
+              tone: 'emerald',
+            });
+            list.push({
+              id: 'analytics_charts',
+              label: 'آمارها و نمودارها',
+              icon: <TrendingUp size={14} />,
+              tone: 'slate',
+            });
+            return list;
+          })()}
+        />
+      ) : (
       <div className="bg-white p-2 sm:p-2.5 rounded-3xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
         {canManagePeriods && (
           <button
@@ -707,6 +746,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
           </span>
         </button>
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 1. MANAGEMENT VIEW: ثبت دوره مطالعاتی و مدیریت دوره‌های ثبت‌شده             */}
@@ -714,6 +754,39 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
       {effectiveSection === 'manage_periods' ? (
         <div className="space-y-6">
           {/* Header Banner for Period Management */}
+          {isAdminMobile ? (
+            <MobileSectionHeader
+              title="مدیریت دوره‌های مطالعاتی"
+              subtitle="تعریف دوره جدید، ساعت موظفی، ثبت ساعات مطالعه و مباحثه"
+              icon={<CalendarPlus size={20} />}
+              variant="indigo"
+              primaryAction={
+                !isGradeMentor
+                  ? {
+                      id: 'new-period',
+                      label: 'ثبت دوره مطالعاتی جدید',
+                      icon: <Plus size={16} />,
+                      tone: 'primary',
+                      onClick: handleOpenCreatePeriod,
+                    }
+                  : undefined
+              }
+              secondaryActions={
+                !isGradeMentor
+                  ? [
+                      {
+                        id: 'free-rules',
+                        label: 'آیین‌نامه مطالعه آزاد',
+                        icon: <BookOpen size={14} />,
+                        tone: 'emerald',
+                        onClick: () => setShowFreeRulesModal(true),
+                      },
+                    ]
+                  : []
+              }
+              secondaryLabel="آیین‌نامه"
+            />
+          ) : (
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="relative z-10 space-y-2">
@@ -752,6 +825,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
               </div>
             )}
           </div>
+          )}
 
           {/* Periods Grid */}
           <div className="space-y-4">
@@ -959,6 +1033,49 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
         /* ========================================================================= */
         <div className="space-y-6">
           {/* Executive Hero Header */}
+          {isAdminMobile ? (
+            <MobileSectionHeader
+              title="آمار ثبت‌شده مطالعه و مباحثه"
+              subtitle={isGradeMentor && mentorGradeLabel ? `محدوده: ${mentorGradeLabel}` : 'برای مشاهده ریز دروس روی نام هر طلبه بزنید'}
+              icon={<BarChart2 size={20} />}
+              variant="emerald"
+              primaryAction={{
+                id: 'csv-export',
+                label: 'خروجی جامع CSV',
+                icon: <Download size={15} />,
+                tone: 'emerald',
+                onClick: () => exportStudyStatsCSV(periods, allLogs, students),
+              }}
+              secondaryActions={[
+                {
+                  id: 'go-charts',
+                  label: 'مشاهده نمودارها و تحلیل',
+                  icon: <TrendingUp size={14} />,
+                  tone: 'amber',
+                  onClick: () => setActiveStudyStatsTab('analytics_charts'),
+                },
+              ]}
+              secondaryLabel="تحلیل"
+              extraContent={
+                activeMainTab === 'PERIOD' && selectedPeriod && selectedPeriodAvg ? (
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
+                    <div className="bg-white/10 rounded-xl p-2">
+                      <div className="text-[10px] text-slate-300">موظفی دوره</div>
+                      <div className="text-xs font-black text-white mt-0.5">
+                        {Math.round((selectedPeriod.mandatoryHours || 0) * 60).toLocaleString('fa-IR')} دق
+                      </div>
+                    </div>
+                    <div className="bg-white/10 rounded-xl p-2">
+                      <div className="text-[10px] text-slate-300">میانگین کارکرد</div>
+                      <div className="text-xs font-black text-amber-300 mt-0.5">
+                        {selectedPeriodAvg.totalAvgMinutes.toLocaleString('fa-IR')} دق
+                      </div>
+                    </div>
+                  </div>
+                ) : null
+              }
+            />
+          ) : (
           <div className="bg-gradient-to-l from-slate-900 via-emerald-950 to-slate-900 rounded-[32px] p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
             <div className="absolute -top-20 -left-20 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
@@ -1049,6 +1166,7 @@ export default function StudyStats({ initialStudentId }: StudyStatsProps) {
               </div>
             )}
           </div>
+          )}
 
           {/* Main Full-Width Content Card */}
           <div className="bg-white p-5 sm:p-7 rounded-[32px] border border-slate-200/80 shadow-sm space-y-6">

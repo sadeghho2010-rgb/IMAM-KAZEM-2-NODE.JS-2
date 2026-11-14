@@ -37,11 +37,15 @@ import {
   TeacherTransportSingleTrip 
 } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 
 const WEEKDAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه'];
 
 export default function TeacherTransportManagement() {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   
   // Data States
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -454,8 +458,7 @@ export default function TeacherTransportManagement() {
   };
 
   return (
-    <div className="space-y-6 pb-12 font-sans" dir="rtl">
-      {/* Toast Notification */}
+    <div className={cn("font-sans", isAdminMobile ? "space-y-4 pb-6" : "space-y-6 pb-12")} dir="rtl">
       <AnimatePresence>
         {toastMessage && (
           <motion.div
@@ -470,161 +473,253 @@ export default function TeacherTransportManagement() {
         )}
       </AnimatePresence>
 
-      {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/85 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-100">
-            <Car size={28} />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              سرویس ایاب و ذهاب اساتید
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
-              مدیریت برنامه هفتگی سرویس (روزها، ساعات و آدرس‌های رفت‌وآمد)، ثبت ترددهای موردی و ارتباط با محاسبه مالی
-            </p>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <FileSpreadsheet size={16} className="text-emerald-600" />
-            <span>خروجی اکسل</span>
-          </button>
-
-          {activeTab === 'routines' && (
-            <button
-              type="button"
-              onClick={() => handleOpenRoutineModal()}
-              className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-sky-100 cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>تعریف برنامه هفتگی سرویس استاد</span>
-            </button>
-          )}
-
-          {activeTab === 'single_trips' && (
-            <button
-              type="button"
-              onClick={() => handleOpenSingleTripModal()}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
-            >
-              <Plus size={16} />
-              <span>ثبت تردد موردی در تاریخ مشخص</span>
-            </button>
-          )}
-
-          {activeTab === 'drivers' && (
-            <button
-              type="button"
-              onClick={() => {
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="سرویس ایاب و ذهاب اساتید"
+          subtitle="برنامه هفتگی سرویس، ترددهای موردی و رانندگان"
+          icon={<Car size={20} />}
+          badgeText={`${routines.length} روتین`}
+          primaryAction={{
+            id: 'primary-add',
+            label:
+              activeTab === 'routines'
+                ? 'برنامه هفتگی جدید'
+                : activeTab === 'single_trips'
+                ? 'ثبت تردد موردی'
+                : 'افزودن راننده جدید',
+            icon: <Plus size={16} />,
+            onClick: () => {
+              if (activeTab === 'routines') handleOpenRoutineModal();
+              else if (activeTab === 'single_trips') handleOpenSingleTripModal();
+              else {
                 setEditingDriver(null);
                 setDriverName('');
                 setDriverPhone('');
                 setCarModel('');
                 setPlateNumber('');
                 setIsDriverModalOpen(true);
-              }}
-              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+              }
+            },
+            tone: 'primary',
+          }}
+          secondaryActions={[
+            {
+              id: 'export-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={14} />,
+              onClick: handleExportExcel,
+              tone: 'emerald',
+            },
+          ]}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/85 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-100">
+              <Car size={28} />
+            </div>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                سرویس ایاب و ذهاب اساتید
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+                مدیریت برنامه هفتگی سرویس (روزها، ساعات و آدرس‌های رفت‌وآمد)، ثبت ترددهای موردی و ارتباط با محاسبه مالی
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              <Plus size={16} />
-              <span>افزودن راننده جدید</span>
+              <FileSpreadsheet size={16} className="text-emerald-600" />
+              <span>خروجی اکسل</span>
             </button>
-          )}
+
+            {activeTab === 'routines' && (
+              <button
+                type="button"
+                onClick={() => handleOpenRoutineModal()}
+                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-sky-100 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>تعریف برنامه هفتگی سرویس استاد</span>
+              </button>
+            )}
+
+            {activeTab === 'single_trips' && (
+              <button
+                type="button"
+                onClick={() => handleOpenSingleTripModal()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>ثبت تردد موردی در تاریخ مشخص</span>
+              </button>
+            )}
+
+            {activeTab === 'drivers' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDriver(null);
+                  setDriverName('');
+                  setDriverPhone('');
+                  setCarModel('');
+                  setPlateNumber('');
+                  setIsDriverModalOpen(true);
+                }}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>افزودن راننده جدید</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Main Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
-        <button
-          type="button"
-          onClick={() => setActiveTab('routines')}
-          className={cn(
-            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeTab === 'routines'
-              ? "bg-sky-600 text-white shadow-md shadow-sky-100 ring-2 ring-sky-600/10"
-              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
-          )}
-        >
-          <Repeat size={15} />
-          <span>برنامه هفتگی و روتین سرویس اساتید ({routines.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('single_trips')}
-          className={cn(
-            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeTab === 'single_trips'
-              ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/10"
-              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
-          )}
-        >
-          <Calendar size={15} />
-          <span>ثبت و گزارش ترددهای موردی ({singleTrips.length})</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('drivers')}
-          className={cn(
-            "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
-            activeTab === 'drivers'
-              ? "bg-slate-900 text-white shadow-sm"
-              : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
-          )}
-        >
-          <Car size={15} />
-          <span>رانندگان و خودروها ({drivers.length})</span>
-        </button>
-      </div>
-
-      {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="relative w-full md:w-80">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder="جستجو در نام استاد، عنوان نشانی یا آدرس..."
-            className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 transition-all"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-          {/* Teacher Filter */}
-          <select
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
-            value={selectedTeacherFilter}
-            onChange={(e) => setSelectedTeacherFilter(e.target.value)}
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as 'routines' | 'single_trips' | 'drivers')}
+          tabs={[
+            { id: 'routines', label: 'برنامه هفتگی', icon: <Repeat size={14} />, badge: routines.length, tone: 'indigo' },
+            { id: 'single_trips', label: 'ترددهای موردی', icon: <Calendar size={14} />, badge: singleTrips.length, tone: 'emerald' },
+            { id: 'drivers', label: 'رانندگان', icon: <Car size={14} />, badge: drivers.length, tone: 'slate' },
+          ]}
+        />
+      ) : (
+        <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('routines')}
+            className={cn(
+              "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+              activeTab === 'routines'
+                ? "bg-sky-600 text-white shadow-md shadow-sky-100 ring-2 ring-sky-600/10"
+                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
+            )}
           >
-            <option value="all">همه اساتید</option>
-            {teachers.map(t => (
-              <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
-            ))}
-          </select>
+            <Repeat size={15} />
+            <span>برنامه هفتگی و روتین سرویس اساتید ({routines.length})</span>
+          </button>
 
-          {/* Weekday Filter for Routines */}
-          {activeTab === 'routines' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('single_trips')}
+            className={cn(
+              "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+              activeTab === 'single_trips'
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/10"
+                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
+            )}
+          >
+            <Calendar size={15} />
+            <span>ثبت و گزارش ترددهای موردی ({singleTrips.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('drivers')}
+            className={cn(
+              "px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer",
+              activeTab === 'drivers'
+                ? "bg-slate-900 text-white shadow-sm"
+                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/70"
+            )}
+          >
+            <Car size={15} />
+            <span>رانندگان و خودروها ({drivers.length})</span>
+          </button>
+        </div>
+      )}
+
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSearchFilterBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجو در نام استاد، نشانی یا آدرس..."
+            filtersOpen={mobileFiltersOpen}
+            onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+            activeFilterCount={(selectedTeacherFilter !== 'all' ? 1 : 0) + (activeTab === 'routines' && selectedWeekdayFilter !== 'all' ? 1 : 0)}
+          />
+          {mobileFiltersOpen && (
+            <div className={cn("bg-white p-3.5 rounded-2xl border border-slate-200 grid gap-2.5 shadow-xs", activeTab === 'routines' ? "grid-cols-2" : "grid-cols-1")}>
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 block mb-1">استاد</label>
+                <select
+                  className="w-full min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                  value={selectedTeacherFilter}
+                  onChange={(e) => setSelectedTeacherFilter(e.target.value)}
+                >
+                  <option value="all">همه اساتید</option>
+                  {teachers.map(t => (
+                    <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
+                  ))}
+                </select>
+              </div>
+              {activeTab === 'routines' && (
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 block mb-1">روز هفته</label>
+                  <select
+                    className="w-full min-h-[40px] px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                    value={selectedWeekdayFilter}
+                    onChange={(e) => setSelectedWeekdayFilter(e.target.value)}
+                  >
+                    <option value="all">همه روزهای هفته</option>
+                    {WEEKDAYS.map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
+          <div className="relative w-full md:w-80">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="جستجو در نام استاد، عنوان نشانی یا آدرس..."
+              className="w-full pl-3 pr-9 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500 transition-all"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
             <select
               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
-              value={selectedWeekdayFilter}
-              onChange={(e) => setSelectedWeekdayFilter(e.target.value)}
+              value={selectedTeacherFilter}
+              onChange={(e) => setSelectedTeacherFilter(e.target.value)}
             >
-              <option value="all">همه روزهای هفته</option>
-              {WEEKDAYS.map(day => (
-                <option key={day} value={day}>{day}</option>
+              <option value="all">همه اساتید</option>
+              {teachers.map(t => (
+                <option key={t.id} value={t.id}>{t.fullName || t.name}</option>
               ))}
             </select>
-          )}
+
+            {activeTab === 'routines' && (
+              <select
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
+                value={selectedWeekdayFilter}
+                onChange={(e) => setSelectedWeekdayFilter(e.target.value)}
+              >
+                <option value="all">همه روزهای هفته</option>
+                {WEEKDAYS.map(day => (
+                  <option key={day} value={day}>{day}</option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* TAB 1: ROUTINES (برنامه هفتگی) */}
       {activeTab === 'routines' && (
@@ -758,21 +853,100 @@ export default function TeacherTransportManagement() {
 
       {/* TAB 2: SINGLE TRIPS (ترددهای موردی) */}
       {activeTab === 'single_trips' && (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-3">
+        <div className={cn("bg-white border border-slate-200 shadow-2xs overflow-hidden", isAdminMobile ? "rounded-2xl" : "rounded-3xl")}>
+          <div className={cn("border-b border-slate-200 bg-slate-50/90 flex items-center justify-between gap-3", isAdminMobile ? "p-3.5" : "p-4 sm:p-5")}>
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
               <Calendar className="text-indigo-600" size={18} />
               <span>لیست ترددهای موردی و ثبت‌شده ({filteredSingleTrips.length} مورد)</span>
             </h3>
-            <span className="text-xs text-slate-500 font-medium">
-              استفاده موردی در تاریخ‌های خاص برای محاسبه در حق‌الزحمه
-            </span>
+            {!isAdminMobile && (
+              <span className="text-xs text-slate-500 font-medium">
+                استفاده موردی در تاریخ‌های خاص برای محاسبه در حق‌الزحمه
+              </span>
+            )}
           </div>
 
           {filteredSingleTrips.length === 0 ? (
             <div className="p-12 text-center space-y-2">
               <Calendar size={36} className="text-slate-300 mx-auto" />
               <p className="text-xs font-bold text-slate-600">هیچ تردد موردی در این بازه ثبت نشده است.</p>
+            </div>
+          ) : isAdminMobile ? (
+            <div className="p-3 space-y-3 bg-slate-50/50">
+              {filteredSingleTrips.map((trip) => (
+                <div
+                  key={trip.id}
+                  className="bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xs space-y-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-black text-slate-900 truncate">{trip.teacherName}</h4>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                        <span className="font-mono font-bold text-indigo-700 tabular-nums">{trip.date}</span>
+                        <span>·</span>
+                        <span className={cn(
+                          "font-black",
+                          trip.tripType === 'round_trip' ? "text-sky-700" :
+                          trip.tripType === 'arrival' ? "text-emerald-700" : "text-rose-700"
+                        )}>
+                          {trip.tripType === 'round_trip' ? 'رفت و برگشت' : trip.tripType === 'arrival' ? 'آمدن به موسسه' : 'رفتن از موسسه'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSingleTripModal(trip)}
+                        className="min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-500 hover:text-indigo-600 bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
+                        title="ویرایش"
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSingleTrip(trip.id)}
+                        className="min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-500 hover:text-rose-600 bg-rose-50/60 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                        title="حذف"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {(trip.arrivalTime || trip.departureTime) && (
+                    <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200/70 space-y-1.5 text-[11px] text-slate-600">
+                      {trip.arrivalTime && (
+                        <div>
+                          <span className="font-bold text-emerald-700">آمدن ({trip.arrivalTime}): </span>
+                          <span>{trip.arrivalAddressTitle} {trip.arrivalAddressDetails ? `(${trip.arrivalAddressDetails})` : ''}</span>
+                        </div>
+                      )}
+                      {trip.departureTime && (
+                        <div className={trip.arrivalTime ? "pt-1.5 border-t border-slate-200/60" : ""}>
+                          <span className="font-bold text-rose-700">رفتن ({trip.departureTime}): </span>
+                          <span>{trip.departureAddressTitle} {trip.departureAddressDetails ? `(${trip.departureAddressDetails})` : ''}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 text-[11px] pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500">تعداد: <strong className="font-mono text-slate-800">{trip.tripsCount}</strong> نوبت</span>
+                      {trip.driverName && (
+                        <>
+                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-600 truncate max-w-[120px]">{trip.driverName}</span>
+                        </>
+                      )}
+                    </div>
+                    <span className="font-mono font-black text-slate-900 tabular-nums">
+                      {trip.cost.toLocaleString('fa-IR')} ت
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -1196,12 +1370,12 @@ export default function TeacherTransportManagement() {
               {/* Trip Type */}
               <div className="space-y-1">
                 <label className="text-xs font-black text-slate-700">نوع تردد:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className={cn("grid gap-2", isAdminMobile ? "grid-cols-1" : "grid-cols-3")}>
                   <button
                     type="button"
                     onClick={() => setTripType('round_trip')}
                     className={cn(
-                      "py-2 rounded-xl text-xs font-black transition-all",
+                      "min-h-[40px] py-2 rounded-xl text-xs font-black transition-all cursor-pointer",
                       tripType === 'round_trip' ? "bg-amber-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
                     )}
                   >
@@ -1211,7 +1385,7 @@ export default function TeacherTransportManagement() {
                     type="button"
                     onClick={() => setTripType('arrival')}
                     className={cn(
-                      "py-2 rounded-xl text-xs font-black transition-all",
+                      "min-h-[40px] py-2 rounded-xl text-xs font-black transition-all cursor-pointer",
                       tripType === 'arrival' ? "bg-emerald-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
                     )}
                   >
@@ -1221,7 +1395,7 @@ export default function TeacherTransportManagement() {
                     type="button"
                     onClick={() => setTripType('departure')}
                     className={cn(
-                      "py-2 rounded-xl text-xs font-black transition-all",
+                      "min-h-[40px] py-2 rounded-xl text-xs font-black transition-all cursor-pointer",
                       tripType === 'departure' ? "bg-rose-600 text-white shadow-2xs" : "bg-slate-100 text-slate-600"
                     )}
                   >

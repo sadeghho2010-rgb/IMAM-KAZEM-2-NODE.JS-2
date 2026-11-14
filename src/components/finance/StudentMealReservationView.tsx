@@ -37,11 +37,14 @@ import {
   StudentMealReservation, 
   MealCancelledDay 
 } from '../../types';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader } from '../admin/mobile/MobileModulePrimitives';
 
 const WEEK_DAYS = ['شنبه', 'یک‌شنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'] as const;
 
 export default function StudentMealReservationView() {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const [periods, setPeriods] = useState<MealReservationPeriod[]>([]);
   const [activePeriodId, setActivePeriodId] = useState<string>('');
@@ -346,7 +349,7 @@ export default function StudentMealReservationView() {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12" dir="rtl">
+    <div className={cn("mx-auto", isAdminMobile ? "space-y-4 pb-6" : "space-y-6 max-w-7xl pb-12")} dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -363,54 +366,80 @@ export default function StudentMealReservationView() {
       </AnimatePresence>
 
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl flex items-center justify-center text-white shadow-md">
-            <UtensilsCrossed size={24} />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <span>رزرو نهار و شام</span>
-              <span className="text-xs font-bold px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full">
-                سامانه تغذیه طلاب
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              طلبه گرامی: <strong className="text-slate-800 font-black">{student?.name || currentUser?.fullName || 'کاربر'}</strong>
-              {student?.grade && <span className="mr-2">({student.grade})</span>}
-              {student?.livingStatus === 'خوابگاه' && (
-                <span className="mr-2 px-2 py-0.2 text-[10px] bg-indigo-50 text-indigo-700 rounded-md font-bold">
-                  ساکن خوابگاه
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          variant="slate"
+          title="رزرو نهار و شام"
+          subtitle={`${student?.name || currentUser?.fullName || 'کاربر'}${student?.grade ? ` · ${student.grade}` : ''}${student?.livingStatus === 'خوابگاه' ? ' · ساکن خوابگاه' : ''}`}
+          badgeText="سامانه تغذیه طلاب"
+          icon={<UtensilsCrossed size={20} />}
+          extraContent={periods.length > 0 ? (
+            <div className="pt-2 border-t border-white/10 flex items-center gap-2">
+              <span className="text-[11px] text-slate-300 font-bold shrink-0">دوره رزرو:</span>
+              <select
+                value={activePeriodId}
+                onChange={(e) => handlePeriodSelect(e.target.value)}
+                className="flex-1 min-h-[38px] bg-white/10 border border-white/20 text-white text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none cursor-pointer"
+              >
+                {periods.map(p => (
+                  <option key={p.id} value={p.id} className="text-slate-900 bg-white">
+                    {p.title} {p.status === 'open' && !p.isManuallyClosed ? '(فعال)' : '(بسته)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : undefined}
+        />
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl flex items-center justify-center text-white shadow-md">
+              <UtensilsCrossed size={24} />
+            </div>
+            <div>
+              <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <span>رزرو نهار و شام</span>
+                <span className="text-xs font-bold px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full">
+                  سامانه تغذیه طلاب
                 </span>
-              )}
-            </p>
+              </h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                طلبه گرامی: <strong className="text-slate-800 font-black">{student?.name || currentUser?.fullName || 'کاربر'}</strong>
+                {student?.grade && <span className="mr-2">({student.grade})</span>}
+                {student?.livingStatus === 'خوابگاه' && (
+                  <span className="mr-2 px-2 py-0.2 text-[10px] bg-indigo-50 text-indigo-700 rounded-md font-bold">
+                    ساکن خوابگاه
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Period Selector */}
-        {periods.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-bold shrink-0">دوره رزرو:</span>
-            <select
-              value={activePeriodId}
-              onChange={(e) => handlePeriodSelect(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-            >
-              {periods.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.title} {p.status === 'open' && !p.isManuallyClosed ? '🟢 (فعال)' : '🔴 (بسته)'}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+          {/* Period Selector */}
+          {periods.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold shrink-0">دوره رزرو:</span>
+              <select
+                value={activePeriodId}
+                onChange={(e) => handlePeriodSelect(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-indigo-500 transition-all cursor-pointer"
+              >
+                {periods.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} {p.status === 'open' && !p.isManuallyClosed ? '🟢 (فعال)' : '🔴 (بسته)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Period Status Alert Banner */}
       {currentPeriod && (
         <div>
           {isPeriodOpen ? (
-            <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-200 flex items-start sm:items-center justify-between gap-3 text-xs text-emerald-900">
+            <div className={cn("bg-emerald-50/80 rounded-2xl border border-emerald-200 flex items-start sm:items-center justify-between gap-3 text-xs text-emerald-900", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                   <Unlock size={16} />
@@ -434,7 +463,7 @@ export default function StudentMealReservationView() {
               </span>
             </div>
           ) : (
-            <div className="p-4 bg-amber-50/90 rounded-2xl border border-amber-300 flex items-start sm:items-center justify-between gap-3 text-xs text-amber-950">
+            <div className={cn("bg-amber-50/90 rounded-2xl border border-amber-300 flex items-start sm:items-center justify-between gap-3 text-xs text-amber-950", isAdminMobile ? "p-3.5" : "p-4")}>
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                   <Lock size={16} />
@@ -457,50 +486,50 @@ export default function StudentMealReservationView() {
       )}
 
       {/* Summary KPI Cards (No Prices, Pure Count/Breakdown) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+      <div className={cn("grid grid-cols-2 sm:grid-cols-4", isAdminMobile ? "gap-2.5" : "gap-3")}>
+        <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3" : "p-4")}>
           <div className="flex items-center justify-between text-slate-500">
             <span className="text-xs font-bold">تعداد وعده نهار</span>
             <Sun size={18} className="text-amber-500" />
           </div>
-          <div className="text-2xl font-black font-mono text-slate-900">
+          <div className={cn("font-black font-mono text-slate-900 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
             {stats.totalLunches.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">روز</span>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+        <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3" : "p-4")}>
           <div className="flex items-center justify-between text-slate-500">
             <span className="text-xs font-bold">شام در موسسه</span>
             <Building2 size={18} className="text-indigo-600" />
           </div>
-          <div className="text-2xl font-black font-mono text-indigo-700">
+          <div className={cn("font-black font-mono text-indigo-700 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
             {stats.totalDinnersInst.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">شب</span>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs space-y-1">
+        <div className={cn("bg-white rounded-2xl border border-slate-200/90 shadow-xs space-y-1", isAdminMobile ? "p-3" : "p-4")}>
           <div className="flex items-center justify-between text-slate-500">
             <span className="text-xs font-bold">شام در خوابگاه</span>
             <Bed size={18} className="text-purple-600" />
           </div>
-          <div className="text-2xl font-black font-mono text-purple-700">
+          <div className={cn("font-black font-mono text-purple-700 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
             {stats.totalDinnersDorm.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-500 font-normal">شب</span>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-md space-y-1">
+        <div className={cn("bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-md space-y-1", isAdminMobile ? "p-3" : "p-4")}>
           <div className="flex items-center justify-between text-slate-300">
             <span className="text-xs font-bold">مجموع کل وعده‌ها</span>
             <UtensilsCrossed size={18} className="text-amber-400" />
           </div>
-          <div className="text-2xl font-black font-mono text-amber-400">
+          <div className={cn("font-black font-mono text-amber-400 tabular-nums", isAdminMobile ? "text-lg" : "text-2xl")}>
             {stats.totalAllMeals.toLocaleString('fa-IR')} <span className="text-xs font-sans text-slate-300 font-normal">وعده</span>
           </div>
         </div>
       </div>
 
       {/* Main Reservation Selection Form (When Open) */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-6">
+      <div className={cn("bg-white border border-slate-200/90 shadow-xs", isAdminMobile ? "rounded-[22px] p-4 space-y-4" : "rounded-3xl p-6 space-y-6")}>
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2">
             <CalendarDays size={20} className="text-indigo-600" />
@@ -695,7 +724,7 @@ export default function StudentMealReservationView() {
       </div>
 
       {/* Visual Calendar Breakdown of Selected Meals */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/90 shadow-xs space-y-4">
+      <div className={cn("bg-white border border-slate-200/90 shadow-xs space-y-4", isAdminMobile ? "rounded-[22px] p-4" : "rounded-3xl p-6")}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2">
             <Calendar size={20} className="text-indigo-600" />

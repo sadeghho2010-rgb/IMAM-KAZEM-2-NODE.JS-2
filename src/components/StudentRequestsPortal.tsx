@@ -69,6 +69,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 export const DEFAULT_GLOBAL_REQUESTS_CONFIG: GlobalRequestsConfig = {
   id: 'global_requests_config',
@@ -186,6 +188,8 @@ export default function StudentRequestsPortal() {
   // Officer Grouping State (لیست طلابی که درخواست داشته‌اند به همراه تفکیک فعال و مختومه)
   const [expandedStudentKey, setExpandedStudentKey] = useState<string | null>(null);
   const [officerStudentSubTab, setOfficerStudentSubTab] = useState<Record<string, 'active' | 'closed'>>({});
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const loadData = async (silent = false) => {
     if (!silent && requests.length === 0) {
@@ -1278,271 +1282,418 @@ export default function StudentRequestsPortal() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 font-vazir" dir="rtl">
-      {/* Top Header Card */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center border border-indigo-200 shadow-xs">
-            <Inbox size={28} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900">
-                {isStudentUser ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب'}
-              </h1>
-              {isSuperAdmin && (
-                <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
-                  مدیر کل (دسترسی به تمام واحدها)
-                </span>
-              )}
+    <div className={cn("max-w-7xl mx-auto font-vazir", isAdminMobile ? "p-2.5 space-y-3.5" : "p-4 sm:p-6 space-y-6")} dir="rtl">
+      {isAdminMobile && !isStudentUser ? (
+        <>
+          <MobileSectionHeader
+            title="پنل رسیدگی به درخواست طلاب"
+            subtitle="بررسی درخواست‌ها، ثبت مرخصی با اعمال خودکار و صدور پاسخ رسمی"
+            icon={<Inbox size={20} />}
+            badgeText={isSuperAdmin ? 'مدیر کل' : undefined}
+            variant="indigo"
+            primaryAction={{
+              id: 'refresh',
+              label: isLoading ? 'در حال بروزرسانی...' : 'بروزرسانی لیست',
+              icon: <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />,
+              onClick: () => loadData(false),
+              disabled: isLoading,
+              tone: 'primary'
+            }}
+            secondaryActions={[
+              ...(isSuperAdmin ? [{
+                id: 'superadmin-ctrl',
+                label: 'کنترل سراسری',
+                icon: <Sliders size={14} />,
+                onClick: () => setShowSuperAdminSettingsModal(true),
+                tone: 'indigo' as const
+              }] : []),
+              ...((isSuperAdmin || isEduOfficer) ? [{
+                id: 'subjects',
+                label: 'موضوعات درخواست‌ها',
+                icon: <Settings size={14} />,
+                onClick: () => {
+                  setSubjectSettingUnit('education');
+                  setShowSubjectSettingsModal(true);
+                },
+                tone: 'amber' as const
+              }] : []),
+              {
+                id: 'resolve-all',
+                label: 'انجام‌شد همه فعال‌ها',
+                icon: <CheckSquare size={14} />,
+                onClick: handleResolveAllActiveRequests,
+                tone: 'emerald'
+              },
+              {
+                id: 'clear-test',
+                label: 'پاک‌سازی تستی‌ها',
+                icon: <Trash2 size={14} />,
+                onClick: handleClearAllTestRequests,
+                tone: 'rose'
+              }
+            ]}
+          />
+
+          <MobileHorizontalTabs
+            activeId={activeUnitTab}
+            onChange={(id) => setActiveUnitTab(id as any)}
+            tabs={[
+              { id: 'all', label: 'همه', icon: <Inbox size={14} /> },
+              { id: 'education', label: 'آموزشی', icon: <GraduationCap size={14} /> },
+              { id: 'finance', label: 'مالی و وام', icon: <Coins size={14} /> },
+              { id: 'cultural_welfare', label: 'فرهنگی و رفاهی', icon: <Building2 size={14} /> },
+              {
+                id: 'leave_requests',
+                label: 'مرخصی‌ها',
+                icon: <CalendarCheck size={14} />,
+                tone: 'amber',
+                badge: requests.filter(r => r.isLeaveRequest && r.status === 'pending').length || undefined
+              }
+            ]}
+          />
+
+          {!globalConfig.isGlobalEnabled && (
+            <div className="p-3 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+              <span>ثبت درخواست‌ها توسط مدیریت کل سیستم غیرفعال شده است.</span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {isStudentUser 
-                ? 'ارسال آنلاین درخواست، ثبت مرخصی برنامه‌ای و پیگیری دوطرفه گفتگوها تا ختم رسیدگی'
-                : 'بررسی درخواست‌ها، ثبت مرخصی با اعمال خودکار در حضور و غیاب و صدور پاسخ رسمی'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Actions for Level 3 Students */}
-          {isStudentUser && (
-            <>
-              {/* Submit Leave Request Button (ثبت درخواست مرخصی) */}
-              <button
-                onClick={() => {
-                  setWeekOffset(0);
-                  setSelectedClassesForLeave([]);
-                  setLeaveAbsenceReason('');
-                  setShowLeaveRequestModal(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/20 active:scale-95 cursor-pointer"
-              >
-                <CalendarCheck size={16} />
-                <span>ثبت درخواست مرخصی</span>
-              </button>
-
-              {/* Standard Request Button */}
-              <button
-                onClick={() => {
-                  setNewUnit('education');
-                  setNewCategory(unitSettings['education']?.allowedCategories[0] || '');
-                  setShowNewRequestModal(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
-              >
-                <PlusCircle size={16} />
-                <span>ثبت درخواست جدید</span>
-              </button>
-            </>
           )}
 
-          {/* Super Admin Control Button */}
-          {isSuperAdmin && (
-            <button
-              onClick={() => setShowSuperAdminSettingsModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-              title="کنترل دسترسی سوپرادمین"
-            >
-              <Sliders size={15} />
-              <span>کنترل سراسری</span>
-            </button>
-          )}
-
-          {/* Manage Subjects Button */}
-          {(isSuperAdmin || isEduOfficer) && (
-            <button
-              onClick={() => {
-                setSubjectSettingUnit('education');
-                setShowSubjectSettingsModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-              title="مدیریت موضوعات درخواست‌ها"
-            >
-              <Settings size={15} />
-              <span>موضوعات درخواست‌ها</span>
-            </button>
-          )}
-
-          {/* Bulk Resolve Active Requests Button for Officers */}
-          {!isStudentUser && (
-            <>
-              <button
-                onClick={handleResolveAllActiveRequests}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-                title="تبدیل کلیه درخواست‌های فعال به انجام شد و پاک‌سازی هشدارها"
-              >
-                <CheckSquare size={15} className="text-emerald-700" />
-                <span>تبدیل همه درخواست‌های فعال به انجام شد</span>
-              </button>
-
-              <button
-                onClick={handleClearAllTestRequests}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
-                title="پاک‌سازی تمامی درخواست‌های تستی موجود در سیستم"
-              >
-                <Trash2 size={15} className="text-rose-600" />
-                <span>پاک‌سازی درخواست‌های تستی</span>
-              </button>
-            </>
-          )}
-
-          {/* Refresh Data Button */}
-          <button
-            onClick={() => loadData(false)}
-            disabled={isLoading}
-            className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
-            title="بروزرسانی اطلاعات"
-          >
-            <RefreshCw size={16} className={isLoading ? "animate-spin text-indigo-600" : ""} />
-          </button>
-        </div>
-      </div>
-
-      {/* Officer Department Tabs & Leave Requests Tab */}
-      {!isStudentUser && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200">
-          <button
-            onClick={() => setActiveUnitTab('all')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-              activeUnitTab === 'all' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-            )}
-          >
-            <Inbox size={14} />
-            <span>همه درخواست‌ها</span>
-          </button>
-
-          <button
-            onClick={() => setActiveUnitTab('education')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-              activeUnitTab === 'education' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-            )}
-          >
-            <GraduationCap size={14} />
-            <span>امور آموزشی</span>
-          </button>
-
-          <button
-            onClick={() => setActiveUnitTab('finance')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-              activeUnitTab === 'finance' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-            )}
-          >
-            <Coins size={14} />
-            <span>امور مالی و وام</span>
-          </button>
-
-          <button
-            onClick={() => setActiveUnitTab('cultural_welfare')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-              activeUnitTab === 'cultural_welfare' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-            )}
-          >
-            <Building2 size={14} />
-            <span>امور فرهنگی و رفاهی</span>
-          </button>
-
-          {/* DEDICATED LEAVE REQUESTS TAB FOR OFFICERS */}
-          <button
-            onClick={() => setActiveUnitTab('leave_requests')}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border",
-              activeUnitTab === 'leave_requests'
-                ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/20"
-                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-            )}
-          >
-            <CalendarCheck size={14} className={activeUnitTab === 'leave_requests' ? "text-white" : "text-amber-700"} />
-            <span>درخواست‌های مرخصی</span>
-            {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white mr-1">
-                {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* Global Disability Notice */}
-      {!globalConfig.isGlobalEnabled && (
-        <div className="p-4 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 text-xs font-bold flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle size={18} className="text-rose-600 shrink-0" />
-            <span>
-              <strong>هشدار سراسری:</strong> ثبت درخواست‌ها در حال حاضر توسط مدیریت کل سیستم <strong>غیرفعال</strong> شده است.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Officer dedicated status switcher */}
-      {!isStudentUser && activeUnitTab !== 'all' && activeUnitTab !== 'leave_requests' && (
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-11 h-11 rounded-2xl flex items-center justify-center border",
-              isCurrentOfficerAccepting 
-                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" 
-                : "bg-rose-500/20 text-rose-400 border-rose-500/40"
-            )}>
-              {isCurrentOfficerAccepting ? <CheckCircle2 size={22} /> : <XCircle size={22} />}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-300 font-medium">وضعیت پاسخگویی شما:</span>
-                <span className={cn(
-                  "text-xs font-black px-2.5 py-0.5 rounded-full",
-                  isCurrentOfficerAccepting ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+          {activeUnitTab !== 'all' && activeUnitTab !== 'leave_requests' && (
+            <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-sm flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={cn(
+                  "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border",
+                  isCurrentOfficerAccepting ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40"
                 )}>
-                  {isCurrentOfficerAccepting ? '● آماده دریافت و پاسخگویی' : '○ عدم پاسخگویی (خاموش)'}
+                  {isCurrentOfficerAccepting ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] text-slate-300 block">وضعیت پاسخگویی:</span>
+                  <span className={cn("text-xs font-black truncate block", isCurrentOfficerAccepting ? "text-emerald-300" : "text-rose-300")}>
+                    {isCurrentOfficerAccepting ? 'آماده دریافت و پاسخگویی' : 'عدم پاسخگویی'}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setOfficerNoteDraft(globalConfig.officersStatus[currentOfficerUnit]?.statusNote || '');
+                  setShowOfficerToggleStatusModal(true);
+                }}
+                className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[11px] font-bold border border-white/20 shrink-0 cursor-pointer"
+              >
+                تغییر وضعیت
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <MobileSearchFilterBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="جستجو در عنوان، متقاضی یا موضوع..."
+              onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+              filtersOpen={mobileFiltersOpen}
+              activeFilterCount={activeStatusFilter !== 'all' ? 1 : 0}
+            />
+            {mobileFiltersOpen && (
+              <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-2">
+                <label className="block text-[11px] font-black text-slate-700">فیلتر وضعیت رسیدگی:</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'all', label: 'همه' },
+                    { id: 'pending', label: '⏳ در انتظار' },
+                    { id: 'in_progress', label: '🔄 در حال بررسی' },
+                    { id: 'resolved', label: '✅ انجام شد' },
+                    { id: 'rejected', label: '❌ رد شده' }
+                  ].map(st => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setActiveStatusFilter(st.id)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer",
+                        activeStatusFilter === st.id
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-slate-50 text-slate-700 border-slate-200"
+                      )}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Top Header Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center border border-indigo-200 shadow-xs">
+                <Inbox size={28} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-black text-slate-900">
+                    {isStudentUser ? 'پنل ثبت درخواست طلاب' : 'پنل رسیدگی به درخواست طلاب'}
+                  </h1>
+                  {isSuperAdmin && (
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-black border border-indigo-200">
+                      مدیر کل (دسترسی به تمام واحدها)
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isStudentUser 
+                    ? 'ارسال آنلاین درخواست، ثبت مرخصی برنامه‌ای و پیگیری دوطرفه گفتگوها تا ختم رسیدگی'
+                    : 'بررسی درخواست‌ها، ثبت مرخصی با اعمال خودکار در حضور و غیاب و صدور پاسخ رسمی'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Actions for Level 3 Students */}
+              {isStudentUser && (
+                <>
+                  {/* Submit Leave Request Button (ثبت درخواست مرخصی) */}
+                  <button
+                    onClick={() => {
+                      setWeekOffset(0);
+                      setSelectedClassesForLeave([]);
+                      setLeaveAbsenceReason('');
+                      setShowLeaveRequestModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/20 active:scale-95 cursor-pointer"
+                  >
+                    <CalendarCheck size={16} />
+                    <span>ثبت درخواست مرخصی</span>
+                  </button>
+
+                  {/* Standard Request Button */}
+                  <button
+                    onClick={() => {
+                      setNewUnit('education');
+                      setNewCategory(unitSettings['education']?.allowedCategories[0] || '');
+                      setShowNewRequestModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+                  >
+                    <PlusCircle size={16} />
+                    <span>ثبت درخواست جدید</span>
+                  </button>
+                </>
+              )}
+
+              {/* Super Admin Control Button */}
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setShowSuperAdminSettingsModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                  title="کنترل دسترسی سوپرادمین"
+                >
+                  <Sliders size={15} />
+                  <span>کنترل سراسری</span>
+                </button>
+              )}
+
+              {/* Manage Subjects Button */}
+              {(isSuperAdmin || isEduOfficer) && (
+                <button
+                  onClick={() => {
+                    setSubjectSettingUnit('education');
+                    setShowSubjectSettingsModal(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                  title="مدیریت موضوعات درخواست‌ها"
+                >
+                  <Settings size={15} />
+                  <span>موضوعات درخواست‌ها</span>
+                </button>
+              )}
+
+              {/* Bulk Resolve Active Requests Button for Officers */}
+              {!isStudentUser && (
+                <>
+                  <button
+                    onClick={handleResolveAllActiveRequests}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                    title="تبدیل کلیه درخواست‌های فعال به انجام شد و پاک‌سازی هشدارها"
+                  >
+                    <CheckSquare size={15} className="text-emerald-700" />
+                    <span>تبدیل همه درخواست‌های فعال به انجام شد</span>
+                  </button>
+
+                  <button
+                    onClick={handleClearAllTestRequests}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+                    title="پاک‌سازی تمامی درخواست‌های تستی موجود در سیستم"
+                  >
+                    <Trash2 size={15} className="text-rose-600" />
+                    <span>پاک‌سازی درخواست‌های تستی</span>
+                  </button>
+                </>
+              )}
+
+              {/* Refresh Data Button */}
+              <button
+                onClick={() => loadData(false)}
+                disabled={isLoading}
+                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+                title="بروزرسانی اطلاعات"
+              >
+                <RefreshCw size={16} className={isLoading ? "animate-spin text-indigo-600" : ""} />
+              </button>
+            </div>
+          </div>
+
+          {/* Officer Department Tabs & Leave Requests Tab */}
+          {!isStudentUser && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+              <button
+                onClick={() => setActiveUnitTab('all')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                  activeUnitTab === 'all' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                )}
+              >
+                <Inbox size={14} />
+                <span>همه درخواست‌ها</span>
+              </button>
+
+              <button
+                onClick={() => setActiveUnitTab('education')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                  activeUnitTab === 'education' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                )}
+              >
+                <GraduationCap size={14} />
+                <span>امور آموزشی</span>
+              </button>
+
+              <button
+                onClick={() => setActiveUnitTab('finance')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                  activeUnitTab === 'finance' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                )}
+              >
+                <Coins size={14} />
+                <span>امور مالی و وام</span>
+              </button>
+
+              <button
+                onClick={() => setActiveUnitTab('cultural_welfare')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                  activeUnitTab === 'cultural_welfare' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                )}
+              >
+                <Building2 size={14} />
+                <span>امور فرهنگی و رفاهی</span>
+              </button>
+
+              {/* DEDICATED LEAVE REQUESTS TAB FOR OFFICERS */}
+              <button
+                onClick={() => setActiveUnitTab('leave_requests')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 border",
+                  activeUnitTab === 'leave_requests'
+                    ? "bg-amber-600 text-white border-amber-600 shadow-md shadow-amber-600/20"
+                    : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+                )}
+              >
+                <CalendarCheck size={14} className={activeUnitTab === 'leave_requests' ? "text-white" : "text-amber-700"} />
+                <span>درخواست‌های مرخصی</span>
+                {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white mr-1">
+                    {requests.filter(r => r.isLeaveRequest && r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Global Disability Notice */}
+          {!globalConfig.isGlobalEnabled && (
+            <div className="p-4 bg-rose-50 border border-rose-300 rounded-2xl text-rose-900 text-xs font-bold flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={18} className="text-rose-600 shrink-0" />
+                <span>
+                  <strong>هشدار سراسری:</strong> ثبت درخواست‌ها در حال حاضر توسط مدیریت کل سیستم <strong>غیرفعال</strong> شده است.
                 </span>
               </div>
             </div>
+          )}
+
+          {/* Officer dedicated status switcher */}
+          {!isStudentUser && activeUnitTab !== 'all' && activeUnitTab !== 'leave_requests' && (
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-11 h-11 rounded-2xl flex items-center justify-center border",
+                  isCurrentOfficerAccepting 
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" 
+                    : "bg-rose-500/20 text-rose-400 border-rose-500/40"
+                )}>
+                  {isCurrentOfficerAccepting ? <CheckCircle2 size={22} /> : <XCircle size={22} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-300 font-medium">وضعیت پاسخگویی شما:</span>
+                    <span className={cn(
+                      "text-xs font-black px-2.5 py-0.5 rounded-full",
+                      isCurrentOfficerAccepting ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                    )}>
+                      {isCurrentOfficerAccepting ? '● آماده دریافت و پاسخگویی' : '○ عدم پاسخگویی (خاموش)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setOfficerNoteDraft(globalConfig.officersStatus[currentOfficerUnit]?.statusNote || '');
+                  setShowOfficerToggleStatusModal(true);
+                }}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 shrink-0 cursor-pointer"
+              >
+                تغییر وضعیت پاسخگویی
+              </button>
+            </div>
+          )}
+
+          {/* Search & Filter Bar */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search size={16} className="absolute right-3.5 top-3 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="جستجو در عنوان، متقاضی، موضوع، متن یا پاسخ..."
+                className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-400 outline-none transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <select
+                value={activeStatusFilter}
+                onChange={(e) => setActiveStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="pending">⏳ در انتظار بررسی</option>
+                <option value="in_progress">🔄 در حال بررسی و اقدام</option>
+                <option value="resolved">✅ انجام شد / تکمیل گردید</option>
+                <option value="rejected">❌ رد درخواست</option>
+              </select>
+            </div>
           </div>
-
-          <button
-            onClick={() => {
-              setOfficerNoteDraft(globalConfig.officersStatus[currentOfficerUnit]?.statusNote || '');
-              setShowOfficerToggleStatusModal(true);
-            }}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 shrink-0 cursor-pointer"
-          >
-            تغییر وضعیت پاسخگویی
-          </button>
-        </div>
+        </>
       )}
-
-      {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search size={16} className="absolute right-3.5 top-3 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجو در عنوان، متقاضی، موضوع، متن یا پاسخ..."
-            className="w-full pr-10 pl-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-indigo-400 outline-none transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <select
-            value={activeStatusFilter}
-            onChange={(e) => setActiveStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer"
-          >
-            <option value="all">همه وضعیت‌ها</option>
-            <option value="pending">⏳ در انتظار بررسی</option>
-            <option value="in_progress">🔄 در حال بررسی و اقدام</option>
-            <option value="resolved">✅ انجام شد / تکمیل گردید</option>
-            <option value="rejected">❌ رد درخواست</option>
-          </select>
-        </div>
-      </div>
 
       {/* Request Cards List / Officer Student-Grouped View */}
       <div className="space-y-4">
@@ -1776,33 +1927,35 @@ export default function StudentRequestsPortal() {
                       className="border-t border-slate-200/90 bg-slate-50/60 p-4 sm:p-5 space-y-4"
                     >
                       {/* Sub Tabs: Active vs Closed */}
-                      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+                      <div className={cn("flex items-center gap-2 border-b border-slate-200 pb-3", isAdminMobile && "grid grid-cols-2")}>
                         <button
                           type="button"
                           onClick={() => setOfficerStudentSubTab({ ...officerStudentSubTab, [group.studentKey]: 'active' })}
                           className={cn(
-                            "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            "rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                            isAdminMobile ? "px-2.5 py-2 text-[11px]" : "px-4 py-2",
                             currentSubTab === 'active'
                               ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
                               : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
                           )}
                         >
                           <Clock size={14} />
-                          <span>درخواست‌های فعال و جاری ({group.activeRequests.length})</span>
+                          <span className="truncate">{isAdminMobile ? `فعال (${group.activeRequests.length})` : `درخواست‌های فعال و جاری (${group.activeRequests.length})`}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => setOfficerStudentSubTab({ ...officerStudentSubTab, [group.studentKey]: 'closed' })}
                           className={cn(
-                            "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            "rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5",
+                            isAdminMobile ? "px-2.5 py-2 text-[11px]" : "px-4 py-2",
                             currentSubTab === 'closed'
                               ? "bg-slate-800 text-white shadow-md"
                               : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
                           )}
                         >
                           <ShieldCheck size={14} />
-                          <span>مراودات مختومه‌شده و بایگانی ({group.closedRequests.length})</span>
+                          <span className="truncate">{isAdminMobile ? `مختومه (${group.closedRequests.length})` : `مراودات مختومه‌شده و بایگانی (${group.closedRequests.length})`}</span>
                         </button>
                       </div>
 
@@ -2176,7 +2329,7 @@ export default function StudentRequestsPortal() {
                     {/* Status quick buttons */}
                     <div className="space-y-1.5">
                       <label className="block font-bold text-slate-700">تعیین وضعیت نهایی پرونده:</label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className={cn("grid gap-2", isAdminMobile ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-3")}>
                         <button
                           type="button"
                           onClick={() => setReplyStatus('resolved')}
@@ -2685,13 +2838,13 @@ export default function StudentRequestsPortal() {
                       const currentSt = leaveClassStatuses[key] || cls.status;
 
                       return (
-                        <div key={idx} className="p-3 bg-white border border-amber-200 rounded-xl flex items-center justify-between text-xs gap-3">
+                        <div key={idx} className={cn("p-3 bg-white border border-amber-200 rounded-xl flex justify-between text-xs gap-3", isAdminMobile ? "flex-col items-stretch" : "items-center")}>
                           <div>
                             <span className="font-bold text-slate-900 block">{cls.dayOfWeek} ({cls.dateShamsi}) - {cls.programTitle}</span>
                             <span className="text-[11px] text-slate-500">{cls.teacherName || 'استاد'}</span>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <button
                               type="button"
                               onClick={() => setLeaveClassStatuses(prev => ({ ...prev, [key]: 'approved' }))}

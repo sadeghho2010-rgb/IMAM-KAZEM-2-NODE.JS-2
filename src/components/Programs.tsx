@@ -50,6 +50,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { exportElementToImage } from '../lib/imageExport';
 import { GradeAwareStudentPicker, normalizeGradeKey } from './programs/GradeAwareStudentPicker';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 export const GRADE_FILTER_OPTIONS = [
   { id: 'all', label: 'نمایش کلیه پایه‌ها' },
@@ -492,6 +494,8 @@ export function sortMainPrograms(
 export default function Programs() {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
 
   // Access control: only super_admin, education_manager, education_officer, or username 'SHAH' can edit
   const isAuthorizedToEdit = currentUser?.role === 'super_admin' || 
@@ -2672,205 +2676,364 @@ export default function Programs() {
   };
 
   return (
-    <div className="space-y-10" dir="rtl">
-      {/* Top Bar Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <BookOpen className="text-indigo-600" size={28} />
-            <span>برنامه‌های مدرسه و مشاوره درسی</span>
-          </h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            مدیریت کلاس‌های اصلی، برنامه‌های مشاوره مرتبط، ثبت‌نام طلاب و رسم نمودار سلسله‌مراتبی
-          </p>
-        </div>
+    <div className={cn(isAdminMobile ? "space-y-4" : "space-y-10")} dir="rtl">
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileSectionHeader
+            title="برنامه‌های مدرسه و مشاوره درسی"
+            subtitle="مدیریت کلاس‌های اصلی، مشاوره‌ها و ثبت‌نام طلاب"
+            icon={<BookOpen size={20} />}
+            variant="indigo"
+            badgeText={`${programs.length} برنامه`}
+            primaryAction={
+              isAuthorizedToEdit
+                ? {
+                    id: 'add-program',
+                    label: 'افزودن برنامه جدید',
+                    icon: <Plus size={16} />,
+                    tone: 'primary',
+                    onClick: () => {
+                      setEditingProgram(null);
+                      setShowAddStudentsSection(false);
+                      setNewProgram({
+                        title: '',
+                        type: 'اصلی',
+                        grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
+                        day: '',
+                        time: '۰۸:۰۰ الی ۰۹:۰۰',
+                        teacher: '',
+                        madrasRoom: '',
+                        parentProgramId: '',
+                        representativeStudentIds: [],
+                        representativeNames: [],
+                        studentIds: [],
+                      });
+                      setShowAddModal(true);
+                    },
+                  }
+                : undefined
+            }
+            secondaryActions={[
+              {
+                id: 'export-excel-all',
+                label: 'اکسل همه کلاس‌ها',
+                icon: <FileSpreadsheet size={15} />,
+                tone: 'emerald',
+                onClick: exportAllProgramsToExcel,
+              },
+              {
+                id: 'teacher-eval-modal',
+                label: 'ارزیابی اساتید (A5)',
+                icon: <GraduationCap size={15} />,
+                tone: 'amber',
+                onClick: () => {
+                  if (programs.length > 0 && !evalSelectedProgramId) {
+                    setEvalSelectedProgramId(programs[0].id);
+                  }
+                  setShowTeacherEvalModal(true);
+                },
+              },
+            ]}
+          />
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button 
-            onClick={exportAllProgramsToExcel}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm hover:shadow-md cursor-pointer"
-            title="خروجی فایل اکسل از لیست تمام برنامه‌ها و طلاب"
-          >
-            <FileSpreadsheet size={16} />
-            <span>خروجی اکسل همه کلاس‌ها</span>
-          </button>
+          <MobileHorizontalTabs
+            activeId={selectedGradeFilter}
+            onChange={setSelectedGradeFilter}
+            tabs={GRADE_FILTER_OPTIONS.map((opt) => {
+              const targetDigit = opt.id.replace(/[^0-9]/g, '');
+              const count =
+                opt.id === 'all'
+                  ? programs.length
+                  : programs.filter((p) => {
+                      if (!p.grade) return false;
+                      const g = p.grade.trim();
+                      const pDigits = g.replace(/[۰-۹]/g, (d) => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+                      return g === opt.id || (targetDigit && pDigits.includes(targetDigit));
+                    }).length;
+              return {
+                id: opt.id,
+                label: opt.id === 'all' ? 'همه پایه‌ها' : opt.label,
+                badge: count,
+              };
+            })}
+          />
 
-          <button 
-            type="button"
-            onClick={() => {
-              if (programs.length > 0 && !evalSelectedProgramId) {
-                setEvalSelectedProgramId(programs[0].id);
-              }
-              setShowTeacherEvalModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl font-extrabold text-xs transition-all shadow-md hover:shadow-lg border border-slate-700 cursor-pointer"
-            title="تولید فرم‌های ارزیابی اختصاصی A5 اساتید از طلاب کلاس"
-          >
-            <GraduationCap size={18} className="text-amber-400" />
-            <span>ارزیابی از اساتید (چاپ A5 / Word)</span>
-          </button>
+          <MobileSearchFilterBar
+            value={programSearchTerm}
+            onChange={setProgramSearchTerm}
+            placeholder="جستجوی درس، استاد، مَدرَس یا روز..."
+            onToggleFilters={() => setMobileControlsOpen((p) => !p)}
+            filtersOpen={mobileControlsOpen}
+            activeFilterCount={
+              (mainCourseSubjectSort !== 'default' ? 1 : 0) +
+              (enableCounselingSpacing ? 1 : 0) +
+              (pushSelfReportedToBottom ? 1 : 0)
+            }
+          />
 
-          {isAuthorizedToEdit ? (
-            <button 
-              onClick={() => {
-                setEditingProgram(null);
-                setShowAddStudentsSection(false);
-                setNewProgram({ 
-                  title: '', 
-                  type: 'اصلی', 
-                  grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
-                  day: '', 
-                  time: '۰۸:۰۰ الی ۰۹:۰۰', 
-                  teacher: '', 
-                  madrasRoom: '',
-                  parentProgramId: '',
-                  representativeStudentIds: [],
-                  representativeNames: [],
-                  studentIds: []
-                });
-                setShowAddModal(true);
-              }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md hover:shadow-lg cursor-pointer"
-            >
-              <Plus size={18} />
-              <span>افزودن برنامه جدید</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-xs font-bold">
-              <Eye size={14} className="text-slate-500" />
-              <span>حالت مشاهده برنامه‌ها</span>
+          {mobileControlsOpen && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-xs">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-black text-slate-600 block">اولویت درس اصلی:</span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(['default', 'اصول', 'فقه', 'فلسفه'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setMainCourseSubjectSort(mode)}
+                      className={cn(
+                        'min-h-[38px] rounded-xl text-xs font-black border transition-all cursor-pointer',
+                        mainCourseSubjectSort === mode
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
+                      )}
+                    >
+                      {mode === 'default' ? 'همه' : mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPushSelfReportedToBottom(!pushSelfReportedToBottom)}
+                  className={cn(
+                    'min-h-[42px] px-3 rounded-xl text-xs font-black border flex items-center justify-between cursor-pointer',
+                    pushSelfReportedToBottom
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck size={15} />
+                    <span>خوداظهاری در انتهای لیست</span>
+                  </span>
+                  {pushSelfReportedToBottom && <Check size={15} className="text-emerald-600" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEnableCounselingSpacing(!enableCounselingSpacing)}
+                  className={cn(
+                    'min-h-[42px] px-3 rounded-xl text-xs font-black border flex items-center justify-between cursor-pointer',
+                    enableCounselingSpacing
+                      ? 'bg-amber-50 text-amber-950 border-amber-300'
+                      : 'bg-slate-50 text-slate-700 border-slate-200'
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Layers size={15} />
+                    <span>هم‌ترازی با درس اصلی</span>
+                  </span>
+                  {enableCounselingSpacing && <Check size={15} className="text-amber-600" />}
+                </button>
+              </div>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Grade Filter Bar */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-          <GraduationCap className="text-indigo-600" size={18} />
-          <span>نمایش بر اساس پایه تحصیلی:</span>
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          {GRADE_FILTER_OPTIONS.map(opt => {
-            const isSelected = selectedGradeFilter === opt.id;
-            const targetDigit = opt.id.replace(/[^0-9]/g, '');
-            const count = opt.id === 'all' 
-              ? programs.length 
-              : programs.filter(p => {
-                  if (!p.grade) return false;
-                  const g = p.grade.trim();
-                  const pDigits = g.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
-                  return g === opt.id || (targetDigit && pDigits.includes(targetDigit));
-                }).length;
-
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setSelectedGradeFilter(opt.id)}
-                className={cn(
-                  "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer",
-                  isSelected
-                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200 scale-[1.02]"
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                )}
-              >
-                <span>{opt.label}</span>
-                <span className={cn(
-                  "px-1.5 py-0.5 rounded-md text-[10px] font-mono",
-                  isSelected ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
-                )}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Search, Subject Sort, Visual Alignment & Self-Reported Toggle Control Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text"
-              placeholder="جستجوی درس (مثل: استصحاب، مکاسب)، نام استاد، شماره مَدرَس، روز..."
-              value={programSearchTerm}
-              onChange={(e) => setProgramSearchTerm(e.target.value)}
-              className="w-full pr-10 pl-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-            />
-            {programSearchTerm && (
-              <button 
-                type="button" 
-                onClick={() => setProgramSearchTerm('')}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
-          {/* Sort, Alignment & Self-Reported Controls */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Self-Reported Sort Toggle */}
-            <button
-              type="button"
-              onClick={() => setPushSelfReportedToBottom(!pushSelfReportedToBottom)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer select-none",
-                pushSelfReportedToBottom
-                  ? "bg-emerald-600 text-white border-emerald-700 font-black shadow-xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
-              )}
-              title="نمایش کلاس‌های خوداظهاری در انتهای لیست کلاس‌ها"
-            >
-              <UserCheck size={15} />
-              <span>خوداظهاری در انتهای لیست</span>
-              {pushSelfReportedToBottom && <Check size={14} className="text-white" />}
-            </button>
-
-            {/* Sort Main Classes by Subject */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
-              <span className="px-2 text-slate-500 shrink-0 text-[10px]">اولویت درس اصلی:</span>
-              {(['default', 'اصول', 'فقه', 'فلسفه'] as const).map(mode => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setMainCourseSubjectSort(mode)}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
-                    mainCourseSubjectSort === mode
-                      ? "bg-indigo-600 text-white font-black shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  {mode === 'default' ? 'همه' : mode}
-                </button>
-              ))}
+      ) : (
+        <>
+          {/* Top Bar Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                <BookOpen className="text-indigo-600" size={28} />
+                <span>برنامه‌های مدرسه و مشاوره درسی</span>
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                مدیریت کلاس‌های اصلی، برنامه‌های مشاوره مرتبط، ثبت‌نام طلاب و رسم نمودار سلسله‌مراتبی
+              </p>
             </div>
 
-            {/* Visual Alignment / Spacing Toggle */}
-            <button
-              type="button"
-              onClick={() => setEnableCounselingSpacing(!enableCounselingSpacing)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer select-none",
-                enableCounselingSpacing
-                  ? "bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+            <div className="flex flex-wrap items-center gap-3">
+              <button 
+                onClick={exportAllProgramsToExcel}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm hover:shadow-md cursor-pointer"
+                title="خروجی فایل اکسل از لیست تمام برنامه‌ها و طلاب"
+              >
+                <FileSpreadsheet size={16} />
+                <span>خروجی اکسل همه کلاس‌ها</span>
+              </button>
+
+              <button 
+                type="button"
+                onClick={() => {
+                  if (programs.length > 0 && !evalSelectedProgramId) {
+                    setEvalSelectedProgramId(programs[0].id);
+                  }
+                  setShowTeacherEvalModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl font-extrabold text-xs transition-all shadow-md hover:shadow-lg border border-slate-700 cursor-pointer"
+                title="تولید فرم‌های ارزیابی اختصاصی A5 اساتید از طلاب کلاس"
+              >
+                <GraduationCap size={18} className="text-amber-400" />
+                <span>ارزیابی از اساتید (چاپ A5 / Word)</span>
+              </button>
+
+              {isAuthorizedToEdit ? (
+                <button 
+                  onClick={() => {
+                    setEditingProgram(null);
+                    setShowAddStudentsSection(false);
+                    setNewProgram({ 
+                      title: '', 
+                      type: 'اصلی', 
+                      grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
+                      day: '', 
+                      time: '۰۸:۰۰ الی ۰۹:۰۰', 
+                      teacher: '', 
+                      madrasRoom: '',
+                      parentProgramId: '',
+                      representativeStudentIds: [],
+                      representativeNames: [],
+                      studentIds: []
+                    });
+                    setShowAddModal(true);
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md hover:shadow-lg cursor-pointer"
+                >
+                  <Plus size={18} />
+                  <span>افزودن برنامه جدید</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-xs font-bold">
+                  <Eye size={14} className="text-slate-500" />
+                  <span>حالت مشاهده برنامه‌ها</span>
+                </div>
               )}
-              title="ایجاد فاصله و هم‌ترازی روبه‌روی کلاس اصلی مربوطه در جدول"
-            >
-              <Layers size={15} />
-              <span>ایجاد فاصله (تراز با درس اصلی)</span>
-              {enableCounselingSpacing && <Check size={14} className="text-slate-950" />}
-            </button>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Grade Filter Bar */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <GraduationCap className="text-indigo-600" size={18} />
+              <span>نمایش بر اساس پایه تحصیلی:</span>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+              {GRADE_FILTER_OPTIONS.map(opt => {
+                const isSelected = selectedGradeFilter === opt.id;
+                const targetDigit = opt.id.replace(/[^0-9]/g, '');
+                const count = opt.id === 'all' 
+                  ? programs.length 
+                  : programs.filter(p => {
+                      if (!p.grade) return false;
+                      const g = p.grade.trim();
+                      const pDigits = g.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+                      return g === opt.id || (targetDigit && pDigits.includes(targetDigit));
+                    }).length;
+
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedGradeFilter(opt.id)}
+                    className={cn(
+                      "px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer",
+                      isSelected
+                        ? "bg-indigo-600 text-white shadow-sm shadow-indigo-200 scale-[1.02]"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    )}
+                  >
+                    <span>{opt.label}</span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded-md text-[10px] font-mono",
+                      isSelected ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
+                    )}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Search, Subject Sort, Visual Alignment & Self-Reported Toggle Control Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* Search Box */}
+              <div className="relative flex-1">
+                <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="جستجوی درس (مثل: استصحاب، مکاسب)، نام استاد، شماره مَدرَس، روز..."
+                  value={programSearchTerm}
+                  onChange={(e) => setProgramSearchTerm(e.target.value)}
+                  className="w-full pr-10 pl-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                />
+                {programSearchTerm && (
+                  <button 
+                    type="button" 
+                    onClick={() => setProgramSearchTerm('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Sort, Alignment & Self-Reported Controls */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Self-Reported Sort Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setPushSelfReportedToBottom(!pushSelfReportedToBottom)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer select-none",
+                    pushSelfReportedToBottom
+                      ? "bg-emerald-600 text-white border-emerald-700 font-black shadow-xs"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                  )}
+                  title="نمایش کلاس‌های خوداظهاری در انتهای لیست کلاس‌ها"
+                >
+                  <UserCheck size={15} />
+                  <span>خوداظهاری در انتهای لیست</span>
+                  {pushSelfReportedToBottom && <Check size={14} className="text-white" />}
+                </button>
+
+                {/* Sort Main Classes by Subject */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                  <span className="px-2 text-slate-500 shrink-0 text-[10px]">اولویت درس اصلی:</span>
+                  {(['default', 'اصول', 'فقه', 'فلسفه'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setMainCourseSubjectSort(mode)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg transition-all cursor-pointer",
+                        mainCourseSubjectSort === mode
+                          ? "bg-indigo-600 text-white font-black shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      {mode === 'default' ? 'همه' : mode}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Visual Alignment / Spacing Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setEnableCounselingSpacing(!enableCounselingSpacing)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer select-none",
+                    enableCounselingSpacing
+                      ? "bg-amber-500 text-slate-950 border-amber-600 font-black shadow-xs"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                  )}
+                  title="ایجاد فاصله و هم‌ترازی روبه‌روی کلاس اصلی مربوطه در جدول"
+                >
+                  <Layers size={15} />
+                  <span>ایجاد فاصله (تراز با درس اصلی)</span>
+                  {enableCounselingSpacing && <Check size={14} className="text-slate-950" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Main & Counseling Grid */}
       {!enableCounselingSpacing ? (
@@ -3113,16 +3276,16 @@ export default function Programs() {
       })()}
 
       {/* HIERARCHY CHART SECTION */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 shadow-sm">
+      <div className={cn("bg-white rounded-3xl border border-slate-200 shadow-sm", isAdminMobile ? "p-3.5 space-y-4" : "p-6 sm:p-8 space-y-6")}>
         {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div>
             <div className="flex items-center gap-2">
-              <span className="p-2 bg-indigo-100 text-indigo-800 rounded-xl">
+              <span className="p-2 bg-indigo-100 text-indigo-800 rounded-xl shrink-0">
                 <GitFork size={20} />
               </span>
-              <h3 className="text-xl font-black text-slate-900">
-                نمودار سلسله‌مراتبی دروس اصلی و کلاس‌های مشاوره مرتبط (Hierarchy Chart)
+              <h3 className={cn("font-black text-slate-900", isAdminMobile ? "text-sm" : "text-xl")}>
+                نمودار سلسله‌مراتبی دروس اصلی و مشاوره‌ها
               </h3>
             </div>
             <p className="text-xs text-slate-500 font-medium mt-1">
@@ -3130,11 +3293,11 @@ export default function Programs() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto">
             <button
               onClick={handleExportHierarchyImage}
               disabled={isExportingImage || programs.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs rounded-xl transition-all shadow-sm disabled:opacity-50"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-black text-xs rounded-xl transition-all shadow-sm disabled:opacity-50"
               title="دانلود فایل تصویری کیفیت بالا PNG از نمودار (با اعمال فیلترهای نمایش)"
             >
               <ImageIcon size={16} />
@@ -3144,7 +3307,7 @@ export default function Programs() {
             <button
               onClick={handleExportHierarchyPdf}
               disabled={isExportingHierarchyPdf || programs.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl transition-all shadow-sm disabled:opacity-50"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl transition-all shadow-sm disabled:opacity-50"
               title="خروجی فایل PDF افقی از نمودار (با اعمال فیلترهای نمایش)"
             >
               <FileText size={16} />
@@ -3154,13 +3317,13 @@ export default function Programs() {
         </div>
 
         {/* Display Filter Toggles Panel */}
-        <div className="bg-slate-100/90 p-4 rounded-2xl border border-slate-200/90 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 text-xs">
+        <div className="bg-slate-100/90 p-3.5 rounded-2xl border border-slate-200/90 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 font-black text-slate-800">
-            <Eye size={18} className="text-indigo-600 shrink-0" />
-            <span>تنظیم فیلتر نمایش اسامی طلاب و گروه‌های مباحثه در نمودار و خروجی‌های تصویر و PDF:</span>
+            <Eye size={16} className="text-indigo-600 shrink-0" />
+            <span>فیلتر نمایش اسامی و گروه‌ها در نمودار:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
             <label className={cn(
               "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none",
               showMainStudents ? "bg-indigo-50 border-indigo-300 text-indigo-950 shadow-2xs" : "bg-white border-slate-200 text-slate-400"
@@ -3197,7 +3360,7 @@ export default function Programs() {
                 onChange={(e) => setShowDiscussionGroups(e.target.checked)}
                 className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
               />
-              <span>نمایش گروه‌ها و هم‌بحث‌ها ({discussionGroups.length})</span>
+              <span>گروه‌ها و هم‌بحث‌ها ({discussionGroups.length})</span>
             </label>
 
             <label className={cn(
@@ -3216,7 +3379,7 @@ export default function Programs() {
         </div>
 
         {/* HIERARCHY GRAPH CONTAINER */}
-        <div className="bg-slate-50/70 rounded-2xl p-6 border border-slate-200 overflow-x-auto min-w-[750px]" dir="rtl">
+        <div className={cn("bg-slate-50/70 rounded-2xl border border-slate-200 overflow-x-auto max-w-full", isAdminMobile ? "p-2.5" : "p-6 min-w-[750px]")} dir="rtl">
           <div ref={hierarchyChartRef} className="p-6 bg-white rounded-2xl border border-slate-200/90 space-y-10 min-w-[700px]">
             {/* School Header Banner inside the graph export */}
             <div className="text-center border-b-2 border-indigo-600 pb-4 space-y-1">

@@ -35,10 +35,14 @@ import { useAuth } from '../context/AuthContext';
 import { useMentor } from '../context/MentorContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 export default function ArticleEvaluations() {
   const { currentUser } = useAuth();
   const { filterStudents } = useMentor();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const isEducationStaff = currentUser?.role === 'education_manager' || 
                            currentUser?.role === 'education_officer' || 
@@ -444,113 +448,182 @@ export default function ArticleEvaluations() {
   });
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto font-vazir text-slate-800" dir="rtl">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-indigo-700/50 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-amber-300">
-            <Award size={32} />
+    <div className={cn("max-w-7xl mx-auto font-vazir text-slate-800", isAdminMobile ? "p-2.5 space-y-3.5" : "p-4 sm:p-6 space-y-6")} dir="rtl">
+      {isAdminMobile && isResearchManager ? (
+        <MobileSectionHeader
+          title="ارزیابی مقالات و کرسی‌های پژوهشی"
+          subtitle="مدیریت جلسه ارزیابی، تعیین داوران/ناقدان و بررسی درخواست‌ها"
+          icon={<Award size={20} />}
+          variant="indigo"
+          primaryAction={{
+            id: 'manual-article',
+            label: 'معرفی دستی مقاله جدید',
+            icon: <Plus size={15} />,
+            onClick: () => setShowManualModal(true),
+            tone: 'amber'
+          }}
+        />
+      ) : (
+        /* Header Banner */
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 shadow-md border border-indigo-700/50 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-amber-300">
+              <Award size={32} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black tracking-tight">سامانه ارزیابی مقالات و کرسی‌های پژوهشی</h1>
+              <p className="text-xs text-indigo-200 mt-1 font-medium">
+                {isResearchManager 
+                  ? 'مدیریت جلسه ارزیابی مقالات، تعیین داوران و ناقدان و بررسی درخواست‌های طلاب'
+                  : 'مشاهده مقالات فعال، ثبت درخواست ارزیابی مقاله خود و نام‌نویسی به‌عنوان ناقد یا داور'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-black tracking-tight">سامانه ارزیابی مقالات و کرسی‌های پژوهشی</h1>
-            <p className="text-xs text-indigo-200 mt-1 font-medium">
-              {isResearchManager 
-                ? 'مدیریت جلسه ارزیابی مقالات، تعیین داوران و ناقدان و بررسی درخواست‌های طلاب'
-                : 'مشاهده مقالات فعال، ثبت درخواست ارزیابی مقاله خود و نام‌نویسی به‌عنوان ناقد یا داور'}
-            </p>
-          </div>
-        </div>
 
-        {isResearchManager && (
-          <button
-            type="button"
-            onClick={() => setShowManualModal(true)}
-            className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>معرفی دستی مقاله جدید برای ارزیابی</span>
-          </button>
-        )}
-      </div>
+          {isResearchManager && (
+            <button
+              type="button"
+              onClick={() => setShowManualModal(true)}
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>معرفی دستی مقاله جدید برای ارزیابی</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 1. RESEARCH OFFICER / ADMIN VIEW */}
       {/* ========================================================================= */}
       {isResearchManager ? (
-        <div className="space-y-6">
+        <div className={cn(isAdminMobile ? "space-y-3.5" : "space-y-6")}>
           {/* Main Sub-Tabs Navigation for Research Officer */}
-          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit flex-wrap">
-            <button
-              type="button"
-              onClick={() => setManagerTab('requests')}
-              className={cn(
-                "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
-                managerTab === 'requests' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <MessageSquare size={16} />
-              <span>۱. مشاهده درخواست‌ها</span>
-              {requests.filter(r => r.status === 'pending').length > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">
-                  {requests.filter(r => r.status === 'pending').length}
+          {isAdminMobile ? (
+            <MobileHorizontalTabs
+              activeId={managerTab}
+              onChange={(id) => setManagerTab(id as any)}
+              tabs={[
+                {
+                  id: 'requests',
+                  label: 'درخواست‌ها',
+                  icon: <MessageSquare size={14} />,
+                  badge: requests.filter(r => r.status === 'pending').length || undefined
+                },
+                {
+                  id: 'activate',
+                  label: 'فعالسازی ارزیابی',
+                  icon: <Sparkles size={14} />,
+                  tone: 'amber'
+                },
+                {
+                  id: 'reports',
+                  label: 'گزارش ارزیابی‌ها',
+                  icon: <BookOpen size={14} />,
+                  tone: 'emerald',
+                  badge: evaluationSessions.length
+                }
+              ]}
+            />
+          ) : (
+            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit flex-wrap">
+              <button
+                type="button"
+                onClick={() => setManagerTab('requests')}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                  managerTab === 'requests' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <MessageSquare size={16} />
+                <span>۱. مشاهده درخواست‌ها</span>
+                {requests.filter(r => r.status === 'pending').length > 0 && (
+                  <span className="bg-rose-500 text-white text-[10px] font-mono px-1.5 py-0.5 rounded-full">
+                    {requests.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setManagerTab('activate')}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                  managerTab === 'activate' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <Sparkles size={16} />
+                <span>۲. فعالسازی ارزیابی مقالات</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setManagerTab('reports')}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
+                  managerTab === 'reports' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                )}
+              >
+                <BookOpen size={16} />
+                <span>۳. نمایش گزارش ارزیابی‌های برگزار شده</span>
+                <span className="bg-slate-200 text-slate-700 text-[10px] font-mono px-1.5 py-0.5 rounded-full">
+                  {evaluationSessions.length}
                 </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setManagerTab('activate')}
-              className={cn(
-                "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
-                managerTab === 'activate' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Sparkles size={16} />
-              <span>۲. فعالسازی ارزیابی مقالات</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setManagerTab('reports')}
-              className={cn(
-                "px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2",
-                managerTab === 'reports' ? "bg-white text-indigo-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <BookOpen size={16} />
-              <span>۳. نمایش گزارش ارزیابی‌های برگزار شده</span>
-              <span className="bg-slate-200 text-slate-700 text-[10px] font-mono px-1.5 py-0.5 rounded-full">
-                {evaluationSessions.length}
-              </span>
-            </button>
-          </div>
+              </button>
+            </div>
+          )}
 
           {/* TAB 1: VIEW REQUESTS */}
           {managerTab === 'requests' && (
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-6">
+            <div className={cn("bg-white border border-slate-200 shadow-xs", isAdminMobile ? "rounded-2xl p-3.5 space-y-3.5" : "rounded-3xl p-6 space-y-6")}>
               {/* Request Type Toggle */}
-              <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit">
-                <button
-                  type="button"
-                  onClick={() => setRequestSubTab('evaluations')}
-                  className={cn(
-                    "px-4 py-2 rounded-xl transition-all cursor-pointer",
-                    requestSubTab === 'evaluations' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  الف) درخواست‌های ارزیابی مقالات ({requests.filter(r => r.type === 'evaluation_request').length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRequestSubTab('roles')}
-                  className={cn(
-                    "px-4 py-2 rounded-xl transition-all cursor-pointer",
-                    requestSubTab === 'roles' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  ب) درخواست ثبت به عنوان داور یا ناقد ({requests.filter(r => r.type === 'role_registration').length})
-                </button>
-              </div>
+              {isAdminMobile ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRequestSubTab('evaluations')}
+                    className={cn(
+                      "px-2.5 py-2 rounded-xl text-[11px] font-black border transition-all cursor-pointer",
+                      requestSubTab === 'evaluations' ? "bg-indigo-600 text-white border-indigo-600 shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200"
+                    )}
+                  >
+                    ارزیابی مقالات ({requests.filter(r => r.type === 'evaluation_request').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequestSubTab('roles')}
+                    className={cn(
+                      "px-2.5 py-2 rounded-xl text-[11px] font-black border transition-all cursor-pointer",
+                      requestSubTab === 'roles' ? "bg-indigo-600 text-white border-indigo-600 shadow-xs" : "bg-slate-50 text-slate-700 border-slate-200"
+                    )}
+                  >
+                    داور یا ناقد ({requests.filter(r => r.type === 'role_registration').length})
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200 text-xs font-bold w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setRequestSubTab('evaluations')}
+                    className={cn(
+                      "px-4 py-2 rounded-xl transition-all cursor-pointer",
+                      requestSubTab === 'evaluations' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    الف) درخواست‌های ارزیابی مقالات ({requests.filter(r => r.type === 'evaluation_request').length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequestSubTab('roles')}
+                    className={cn(
+                      "px-4 py-2 rounded-xl transition-all cursor-pointer",
+                      requestSubTab === 'roles' ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                    )}
+                  >
+                    ب) درخواست ثبت به عنوان داور یا ناقد ({requests.filter(r => r.type === 'role_registration').length})
+                  </button>
+                </div>
+              )}
 
               {/* Request List Table */}
               {(() => {
@@ -567,7 +640,59 @@ export default function ArticleEvaluations() {
                   );
                 }
 
-                return (
+                return isAdminMobile ? (
+                  <div className="space-y-2.5">
+                    {filteredReqs.map(req => (
+                      <div key={req.id} className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-900 truncate">{req.studentName}</p>
+                            <span className="text-[10px] text-slate-500 font-bold">{req.studentGrade || 'پایه ۷'} • {new Date(req.createdAt).toLocaleDateString('fa-IR')}</span>
+                          </div>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0",
+                            req.status === 'pending' && "bg-amber-100 text-amber-800",
+                            req.status === 'approved' && "bg-emerald-100 text-emerald-800",
+                            req.status === 'rejected' && "bg-rose-100 text-rose-800"
+                          )}>
+                            {req.status === 'pending' ? 'در انتظار' : req.status === 'approved' ? 'تایید شده' : 'رد شده'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-bold text-indigo-900 leading-relaxed">{req.articleTitle}</p>
+                        {requestSubTab === 'roles' && (
+                          <div>
+                            <span className={cn(
+                              "px-2.5 py-1 rounded-full text-[11px] font-bold inline-block",
+                              req.requestedRole === 'critic' ? "bg-purple-100 text-purple-900" : "bg-blue-100 text-blue-900"
+                            )}>
+                              {req.requestedRole === 'critic' ? '🔍 ناقد مقاله' : '⚖️ داور مقاله'}
+                            </span>
+                          </div>
+                        )}
+                        {req.status === 'pending' && (
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/70">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateRequestStatus(req.id, 'approved')}
+                              className="py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1"
+                            >
+                              <Check size={14} />
+                              <span>تایید</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateRequestStatus(req.id, 'rejected')}
+                              className="py-2 bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1"
+                            >
+                              <X size={14} />
+                              <span>رد</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                   <div className="border border-slate-200 rounded-2xl overflow-hidden">
                     <table className="w-full text-right text-xs">
                       <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200">
@@ -649,96 +774,174 @@ export default function ArticleEvaluations() {
 
           {/* TAB 2: ENABLE ARTICLE EVALUATIONS */}
           {managerTab === 'activate' && (
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-6">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
-                  <h3 className="text-base font-black text-slate-900">انتخاب مقاله جهت برگزاری جلسه ارزیابی</h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    مقالات تحویل داده شده طلاب را تیک بزنید و مشخصات داوران، ناقدان و چکیده را تنظیم کنید.
-                  </p>
-                </div>
-
-                {/* Filters */}
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-48">
-                    <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="جستجوی نام یا مقاله..."
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                    />
+            <div className={cn("bg-white border border-slate-200 shadow-xs", isAdminMobile ? "rounded-2xl p-3.5 space-y-4" : "rounded-3xl p-6 space-y-6")}>
+              {isAdminMobile ? (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">انتخاب مقاله جهت ارزیابی</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">مقالات تحویل‌داده شده را انتخاب و داوران را تنظیم کنید.</p>
                   </div>
+                  <MobileSearchFilterBar
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    placeholder="جستجوی نام یا مقاله..."
+                    onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                    filtersOpen={mobileFiltersOpen}
+                    activeFilterCount={gradeFilter !== 'all' ? 1 : 0}
+                  />
+                  {mobileFiltersOpen && (
+                    <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                      <select
+                        value={gradeFilter}
+                        onChange={e => setGradeFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                      </select>
+                    </div>
+                  )}
 
-                  <select
-                    value={gradeFilter}
-                    onChange={e => setGradeFilter(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
-                  >
-                    <option value="all">همه پایه‌ها</option>
-                    <option value="پایه ۷">پایه ۷</option>
-                    <option value="پایه ۸">پایه ۸</option>
-                    <option value="پایه ۹">پایه ۹</option>
-                    <option value="پایه ۱۰">پایه ۱۰</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* List of Received Articles to Select */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-80 overflow-y-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200 sticky top-0">
-                    <tr>
-                      <th className="p-3 text-center w-12">انتخاب</th>
-                      <th className="p-3">عنوان مقاله</th>
-                      <th className="p-3">طلبه ارائه دهنده</th>
-                      <th className="p-3 text-center">پایه</th>
-                      <th className="p-3 text-center">نوع پژوهش</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
                     {filteredReceivedArticles.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-400 font-bold">
-                          هیچ مقاله‌ای یافت نشد.
-                        </td>
-                      </tr>
+                      <div className="p-6 text-center text-slate-400 font-bold text-xs bg-slate-50 rounded-2xl">
+                        هیچ مقاله‌ای یافت نشد.
+                      </div>
                     ) : (
                       filteredReceivedArticles.map(art => {
                         const isChecked = selectedArticleIds.includes(art.id);
                         return (
-                          <tr key={art.id} className={cn("hover:bg-slate-50 transition-colors", isChecked && "bg-indigo-50/50")}>
-                            <td className="p-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedArticleIds([...selectedArticleIds, art.id]);
-                                    if (art.summary) setAbstractText(art.summary);
-                                  } else {
-                                    setSelectedArticleIds(selectedArticleIds.filter(id => id !== art.id));
-                                  }
-                                }}
-                                className="w-4 h-4 text-indigo-600 rounded-md cursor-pointer accent-indigo-600"
-                              />
-                            </td>
-                            <td className="p-3 font-bold text-indigo-950">{art.title}</td>
-                            <td className="p-3 font-bold text-slate-900">{art.studentName}</td>
-                            <td className="p-3 text-center text-slate-500 font-bold">{art.studentGrade || '---'}</td>
-                            <td className="p-3 text-center">
-                              <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] text-slate-600 font-bold">
-                                {art.type === 'group' ? 'گروهی' : 'فردی'}
-                              </span>
-                            </td>
-                          </tr>
+                          <label
+                            key={art.id}
+                            className={cn(
+                              "flex items-start gap-2.5 p-3 rounded-2xl border cursor-pointer transition-all",
+                              isChecked ? "bg-indigo-50 border-indigo-300" : "bg-slate-50/70 border-slate-200"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedArticleIds([...selectedArticleIds, art.id]);
+                                  if (art.summary) setAbstractText(art.summary);
+                                } else {
+                                  setSelectedArticleIds(selectedArticleIds.filter(id => id !== art.id));
+                                }
+                              }}
+                              className="w-4 h-4 mt-0.5 text-indigo-600 rounded accent-indigo-600 shrink-0"
+                            />
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <p className="text-xs font-black text-indigo-950 leading-snug">{art.title}</p>
+                              <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-600">
+                                <span>{art.studentName}</span>
+                                <span>•</span>
+                                <span>{art.studentGrade || '---'}</span>
+                                <span className="px-1.5 py-0.5 bg-white rounded border border-slate-200">{art.type === 'group' ? 'گروهی' : 'فردی'}</span>
+                              </div>
+                            </div>
+                          </label>
                         );
                       })
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-base font-black text-slate-900">انتخاب مقاله جهت برگزاری جلسه ارزیابی</h3>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        مقالات تحویل داده شده طلاب را تیک بزنید و مشخصات داوران، ناقدان و چکیده را تنظیم کنید.
+                      </p>
+                    </div>
+
+                    {/* Filters */}
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:w-48">
+                        <Search size={15} className="absolute right-3 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="جستجوی نام یا مقاله..."
+                          value={searchQuery}
+                          onChange={e => setSearchQuery(e.target.value)}
+                          className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                        />
+                      </div>
+
+                      <select
+                        value={gradeFilter}
+                        onChange={e => setGradeFilter(e.target.value)}
+                        className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none cursor-pointer"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* List of Received Articles to Select */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-80 overflow-y-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-black border-b border-slate-200 sticky top-0">
+                        <tr>
+                          <th className="p-3 text-center w-12">انتخاب</th>
+                          <th className="p-3">عنوان مقاله</th>
+                          <th className="p-3">طلبه ارائه دهنده</th>
+                          <th className="p-3 text-center">پایه</th>
+                          <th className="p-3 text-center">نوع پژوهش</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {filteredReceivedArticles.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-slate-400 font-bold">
+                              هیچ مقاله‌ای یافت نشد.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredReceivedArticles.map(art => {
+                            const isChecked = selectedArticleIds.includes(art.id);
+                            return (
+                              <tr key={art.id} className={cn("hover:bg-slate-50 transition-colors", isChecked && "bg-indigo-50/50")}>
+                                <td className="p-3 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedArticleIds([...selectedArticleIds, art.id]);
+                                        if (art.summary) setAbstractText(art.summary);
+                                      } else {
+                                        setSelectedArticleIds(selectedArticleIds.filter(id => id !== art.id));
+                                      }
+                                    }}
+                                    className="w-4 h-4 text-indigo-600 rounded-md cursor-pointer accent-indigo-600"
+                                  />
+                                </td>
+                                <td className="p-3 font-bold text-indigo-950">{art.title}</td>
+                                <td className="p-3 font-bold text-slate-900">{art.studentName}</td>
+                                <td className="p-3 text-center text-slate-500 font-bold">{art.studentGrade || '---'}</td>
+                                <td className="p-3 text-center">
+                                  <span className="px-2 py-0.5 bg-slate-100 rounded-md text-[10px] text-slate-600 font-bold">
+                                    {art.type === 'group' ? 'گروهی' : 'فردی'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
 
               {/* EVALUATION CONFIGURATION FOR SELECTED ARTICLES */}
               {selectedArticleIds.length > 0 && (

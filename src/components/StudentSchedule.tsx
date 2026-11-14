@@ -36,6 +36,8 @@ import { useAuth } from '../context/AuthContext';
 import { cn, WEEK_DAYS, getProgramDays } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 interface StudentScheduleProps {
   initialStudentId?: string;
@@ -44,6 +46,8 @@ interface StudentScheduleProps {
 export default function StudentSchedule({ initialStudentId }: StudentScheduleProps) {
   const { filterStudents, currentMentorId, currentMentor, shahpooriFilter } = useMentor();
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
   
   const [students, setStudents] = useState<Student[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -451,60 +455,204 @@ export default function StudentSchedule({ initialStudentId }: StudentSchedulePro
   }
 
   return (
-    <div className="space-y-8" dir="rtl">
-      {/* Top Bar Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <CalendarDays className="text-indigo-600" size={28} />
-            <span>برنامه درسی طلاب</span>
-          </h2>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            مشاهده کامل برنامه کلاس‌های اصلی، مشاوره، پژوهش و ۵شنبه‌های هر طلبه به تفکیک زمان و روز
-          </p>
-        </div>
+    <div className={cn(isAdminMobile ? "space-y-4" : "space-y-8")} dir="rtl">
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="برنامه درسی طلاب"
+          subtitle="مشاهده برنامه هفتگی، کلاس‌ها و ساعات حضور طلبه"
+          icon={<CalendarDays size={20} />}
+          variant="indigo"
+          badgeText={selectedStudent ? selectedStudent.name : undefined}
+          primaryAction={
+            selectedStudent
+              ? {
+                  id: 'export-pdf-student',
+                  label: isExportingPdf ? 'در حال خروجی...' : 'خروجی PDF برنامه',
+                  icon: <FileText size={16} />,
+                  tone: 'primary',
+                  disabled: isExportingPdf,
+                  onClick: handleExportPdf,
+                }
+              : undefined
+          }
+          secondaryActions={[
+            ...(selectedStudent
+              ? [
+                  {
+                    id: 'export-excel-student',
+                    label: 'اکسل برنامه طلبه',
+                    icon: <FileSpreadsheet size={15} />,
+                    tone: 'amber' as const,
+                    onClick: exportStudentExcel,
+                  },
+                ]
+              : []),
+            ...(!isLevel3Student
+              ? [
+                  {
+                    id: 'export-excel-all',
+                    label: 'اکسل همه طلاب',
+                    icon: <FileSpreadsheet size={15} />,
+                    tone: 'emerald' as const,
+                    onClick: exportAllStudentsExcel,
+                  },
+                ]
+              : []),
+            ...(isAuthorizedToManageSchedule && selectedStudent
+              ? [
+                  {
+                    id: 'add-custom-sched',
+                    label: 'ثبت برنامه دستی',
+                    icon: <Plus size={15} />,
+                    tone: 'indigo' as const,
+                    onClick: () => setShowAddCustomModal(true),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ) : (
+        /* Top Bar Header */
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+              <CalendarDays className="text-indigo-600" size={28} />
+              <span>برنامه درسی طلاب</span>
+            </h2>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              مشاهده کامل برنامه کلاس‌های اصلی، مشاوره، پژوهش و ۵شنبه‌های هر طلبه به تفکیک زمان و روز
+            </p>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {!isLevel3Student && (
-            <button 
-              onClick={exportAllStudentsExcel}
-              className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm cursor-pointer"
-              title="خروجی اکسل خلاصه برنامه‌های تمام طلاب"
-            >
-              <FileSpreadsheet size={16} />
-              <span>خروجی اکسل همه طلاب</span>
-            </button>
-          )}
-
-          {selectedStudent && (
-            <>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isLevel3Student && (
               <button 
-                onClick={exportStudentExcel}
-                className="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl font-black text-xs transition-all shadow-sm cursor-pointer"
-                title="دانلود اکسل برنامه این طلبه"
+                onClick={exportAllStudentsExcel}
+                className="flex items-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold text-xs transition-all shadow-sm cursor-pointer"
+                title="خروجی اکسل خلاصه برنامه‌های تمام طلاب"
               >
                 <FileSpreadsheet size={16} />
-                <span>اکسل برنامه طلبه</span>
+                <span>خروجی اکسل همه طلاب</span>
               </button>
+            )}
 
-              <button 
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md disabled:opacity-50 cursor-pointer"
-                title="دانلود PDF برنامه هفتگی این طلبه"
-              >
-                <FileText size={16} />
-                <span>{isExportingPdf ? 'در حال خروجی...' : 'خروجی PDF برنامه'}</span>
-              </button>
-            </>
-          )}
+            {selectedStudent && (
+              <>
+                <button 
+                  onClick={exportStudentExcel}
+                  className="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 rounded-xl font-black text-xs transition-all shadow-sm cursor-pointer"
+                  title="دانلود اکسل برنامه این طلبه"
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>اکسل برنامه طلبه</span>
+                </button>
+
+                <button 
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-black text-xs transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                  title="دانلود PDF برنامه هفتگی این طلبه"
+                >
+                  <FileText size={16} />
+                  <span>{isExportingPdf ? 'در حال خروجی...' : 'خروجی PDF برنامه'}</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Grid: Left Sidebar Selector + Right Schedule View */}
-      <div className={cn("grid gap-6 items-start", isLevel3Student ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-4")}>
-        {/* Student Selector Sidebar (1 col) */}
-        {!isLevel3Student && (
+      <div className={cn("grid gap-6 items-start", isLevel3Student || isAdminMobile ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-4")}>
+        {/* Student Selector: Collapsible compact bar on mobile, sticky sidebar on desktop */}
+        {!isLevel3Student && isAdminMobile && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setMobilePickerOpen((p) => !p)}
+              className="w-full min-h-[44px] flex items-center justify-between gap-2 text-right cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0 font-black text-xs">
+                  <Users size={17} />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold text-slate-400 block">طلبه انتخاب‌شده</span>
+                  <span className="text-xs font-black text-slate-900 truncate block">
+                    {selectedStudent ? `${selectedStudent.name} (پایه ${selectedStudent.grade || '—'})` : 'انتخاب طلبه'}
+                  </span>
+                </div>
+              </div>
+              <span className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-black shrink-0">
+                {mobilePickerOpen ? 'بستن لیست' : `تغییر (${availableStudents.length})`}
+              </span>
+            </button>
+
+            {mobilePickerOpen && (
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <MobileSearchFilterBar
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  placeholder="جستجوی نام یا کد ملی..."
+                />
+
+                <MobileHorizontalTabs
+                  activeId={gradeFilter}
+                  onChange={setGradeFilter}
+                  tabs={[
+                    { id: 'all', label: 'همه' },
+                    { id: '۷', label: 'پایه ۷' },
+                    { id: '۸', label: 'پایه ۸' },
+                    { id: '۹', label: 'پایه ۹' },
+                    { id: '۱۰', label: 'پایه ۱۰' },
+                  ]}
+                />
+
+                <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+                  {availableStudents.map(student => {
+                    const isSelected = selectedStudent?.id === student.id;
+                    const stEnrollmentsCount = enrollments.filter(e => e.studentId === student.id).length;
+                    return (
+                      <button
+                        key={student.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedStudentId(student.id);
+                          setMobilePickerOpen(false);
+                        }}
+                        className={cn(
+                          "w-full text-right p-3 rounded-xl border transition-all flex items-center justify-between cursor-pointer",
+                          isSelected
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                            : "bg-slate-50 text-slate-800 border-slate-200"
+                        )}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-black truncate">{student.name}</p>
+                          <p className={cn("text-[10px]", isSelected ? "text-indigo-100" : "text-slate-500")}>
+                            پایه {student.grade || '---'}
+                          </p>
+                        </div>
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border",
+                          isSelected ? "bg-white/20 text-white border-white/30" : "bg-white text-slate-600 border-slate-200"
+                        )}>
+                          {stEnrollmentsCount} کلاس
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {availableStudents.length === 0 && (
+                    <div className="py-6 text-center text-xs text-slate-400 italic">طلبه‌ای یافت نشد.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Student Selector Sidebar (Desktop - untouched) */}
+        {!isLevel3Student && !isAdminMobile && (
           <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 shadow-xs lg:sticky lg:top-20">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-black text-sm text-slate-800 flex items-center gap-2">

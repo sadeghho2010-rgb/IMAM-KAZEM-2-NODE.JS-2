@@ -45,6 +45,12 @@ import {
   FinanceClaimCategory, 
   StudentClaimRecord 
 } from '../../types';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileSearchFilterBar
+} from '../admin/mobile/MobileModulePrimitives';
 
 interface ClaimsManagementProps {
   onNavigateTab?: (tab: string, params?: any) => void;
@@ -54,6 +60,8 @@ type ClaimTargetGroup = 'student' | 'teacher' | 'staff';
 
 export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProps) {
   const { currentUser, isReadOnly } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Active Main Navigation: 3 Target Sections + Bank Settings
   const [activeGroup, setActiveGroup] = useState<ClaimTargetGroup | 'settings'>('student');
@@ -929,8 +937,14 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
     }
   };
 
+  const activeClaimFiltersCount =
+    (selectedCategoryFilter !== 'all' ? 1 : 0) +
+    (selectedStatusFilter !== 'all' ? 1 : 0) +
+    (activeGroup === 'student' && selectedGradeFilter !== 'all' ? 1 : 0) +
+    (activeGroup === 'staff' && selectedStaffRoleFilter !== 'all' ? 1 : 0);
+
   return (
-    <div className="space-y-6 font-vazir pb-16" dir="rtl">
+    <div className={cn(isAdminMobile ? "px-3 pt-2 pb-6 space-y-4 font-vazir" : "space-y-6 font-vazir pb-16")} dir="rtl">
       {/* Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
@@ -947,136 +961,217 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
       </AnimatePresence>
 
       {/* Main Header & 3-Way Target Split Tabs */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
-              <HandCoins size={24} />
+      {isAdminMobile ? (
+        <div className="space-y-3">
+          <MobileSectionHeader
+            variant="indigo"
+            title="مدیریت مطالبات و بدهی‌ها"
+            subtitle="تفکیک بدهی‌های طلاب، اساتید و کارکنان و حساب‌های مقصد"
+            icon={<HandCoins size={20} />}
+            primaryAction={
+              activeGroup !== 'settings'
+                ? {
+                    id: 'batch-claim',
+                    label: `ثبت مطالبه ${activeGroup === 'student' ? 'طلاب' : activeGroup === 'teacher' ? 'اساتید' : 'کارکنان'}`,
+                    icon: <Plus size={15} />,
+                    onClick: () => openBatchCreateModal(activeGroup),
+                    tone: 'emerald'
+                  }
+                : undefined
+            }
+            secondaryActions={
+              activeGroup !== 'settings'
+                ? [
+                    {
+                      id: 'export-excel',
+                      label: 'خروجی اکسل',
+                      icon: <FileSpreadsheet size={15} />,
+                      onClick: handleExportExcel,
+                      tone: 'emerald'
+                    },
+                    {
+                      id: 'print-claims',
+                      label: 'چاپ گزارش',
+                      icon: <Printer size={15} />,
+                      onClick: handlePrint,
+                      tone: 'default'
+                    }
+                  ]
+                : []
+            }
+          />
+
+          <MobileHorizontalTabs
+            activeId={activeGroup}
+            onChange={(id) => {
+              setActiveGroup(id as any);
+              setSearchQuery('');
+              setSelectedCategoryFilter('all');
+            }}
+            tabs={[
+              {
+                id: 'student',
+                label: 'طلاب',
+                icon: <GraduationCap size={14} />,
+                badge: claims.filter(c => (!c.targetType || c.targetType === 'student')).length,
+                tone: 'indigo'
+              },
+              {
+                id: 'teacher',
+                label: 'اساتید',
+                icon: <BookOpen size={14} />,
+                badge: claims.filter(c => c.targetType === 'teacher').length,
+                tone: 'emerald'
+              },
+              {
+                id: 'staff',
+                label: 'کارکنان',
+                icon: <Briefcase size={14} />,
+                badge: claims.filter(c => c.targetType === 'staff').length,
+                tone: 'amber'
+              },
+              {
+                id: 'settings',
+                label: 'سرفصل و حساب',
+                icon: <Settings size={14} />,
+                badge: categories.length,
+                tone: 'slate'
+              }
+            ]}
+          />
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                <HandCoins size={24} />
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>مدیریت مطالبات و بدهی‌ها</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                    سه بخش مجزا: طلاب • اساتید • کارکنان
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  تفکیک مستقل بدهی‌ها، سرفصل‌های اختصاصی، تعیین مبلغ کسر ماهانه و تخصیص حساب‌های مقصد واریز
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span>مدیریت مطالبات و بدهی‌ها</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
-                  سه بخش مجزا: طلاب • اساتید • کارکنان
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                تفکیک مستقل بدهی‌ها، سرفصل‌های اختصاصی، تعیین مبلغ کسر ماهانه و تخصیص حساب‌های مقصد واریز
-              </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {activeGroup !== 'settings' && (
+                <button
+                  onClick={() => openBatchCreateModal(activeGroup)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span>ثبت مطالبه جدید برای {activeGroup === 'student' ? 'طلاب' : activeGroup === 'teacher' ? 'اساتید' : 'کارکنان'}</span>
+                </button>
+              )}
+
+              {activeGroup !== 'settings' && (
+                <>
+                  <button
+                    onClick={handleExportExcel}
+                    className="flex items-center gap-1.5 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
+                    title="خروجی فایل اکسل"
+                  >
+                    <FileSpreadsheet size={16} />
+                    <span>اکسل</span>
+                  </button>
+
+                  <button
+                    onClick={handlePrint}
+                    className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer"
+                    title="چاپ گزارش"
+                  >
+                    <Printer size={16} />
+                    <span>چاپ</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {activeGroup !== 'settings' && (
-              <button
-                onClick={() => openBatchCreateModal(activeGroup)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-              >
-                <Plus size={16} />
-                <span>ثبت مطالبه جدید برای {activeGroup === 'student' ? 'طلاب' : activeGroup === 'teacher' ? 'اساتید' : 'کارکنان'}</span>
-              </button>
-            )}
+          {/* 3 Main Sections Navigation Tabs + Bank Settings */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-100">
+            <button
+              onClick={() => { setActiveGroup('student'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeGroup === 'student'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
+            >
+              <GraduationCap size={17} />
+              <span>۱. مطالبات از طلاب</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'student' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {claims.filter(c => (!c.targetType || c.targetType === 'student')).length}
+              </span>
+            </button>
 
-            {activeGroup !== 'settings' && (
-              <>
-                <button
-                  onClick={handleExportExcel}
-                  className="flex items-center gap-1.5 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer"
-                  title="خروجی فایل اکسل"
-                >
-                  <FileSpreadsheet size={16} />
-                  <span>اکسل</span>
-                </button>
+            <button
+              onClick={() => { setActiveGroup('teacher'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeGroup === 'teacher'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
+            >
+              <BookOpen size={17} />
+              <span>۲. مطالبات از اساتید</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'teacher' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {claims.filter(c => c.targetType === 'teacher').length}
+              </span>
+            </button>
 
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer"
-                  title="چاپ گزارش"
-                >
-                  <Printer size={16} />
-                  <span>چاپ</span>
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => { setActiveGroup('staff'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeGroup === 'staff'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
+            >
+              <Briefcase size={17} />
+              <span>۳. مطالبات از کارکنان و سایر</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'staff' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {claims.filter(c => c.targetType === 'staff').length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveGroup('settings')}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeGroup === 'settings'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
+            >
+              <Settings size={17} />
+              <span>بانک سرفصل‌ها و حساب‌ها</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'settings' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {categories.length} سرفصل
+              </span>
+            </button>
           </div>
         </div>
-
-        {/* 3 Main Sections Navigation Tabs + Bank Settings */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-100">
-          <button
-            onClick={() => { setActiveGroup('student'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeGroup === 'student'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <GraduationCap size={17} />
-            <span>۱. مطالبات از طلاب</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'student' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {claims.filter(c => (!c.targetType || c.targetType === 'student')).length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => { setActiveGroup('teacher'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeGroup === 'teacher'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <BookOpen size={17} />
-            <span>۲. مطالبات از اساتید</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'teacher' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {claims.filter(c => c.targetType === 'teacher').length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => { setActiveGroup('staff'); setSearchQuery(''); setSelectedCategoryFilter('all'); }}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeGroup === 'staff'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <Briefcase size={17} />
-            <span>۳. مطالبات از کارکنان و سایر</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'staff' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {claims.filter(c => c.targetType === 'staff').length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveGroup('settings')}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeGroup === 'settings'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <Settings size={17} />
-            <span>بانک سرفصل‌ها و حساب‌ها</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeGroup === 'settings' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {categories.length} سرفصل
-            </span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* Main Content: Group Views or Settings */}
       {activeGroup !== 'settings' ? (
         <div className="space-y-6">
           {/* Group Statistics Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
-              <span className="text-[11px] text-slate-500 font-medium">مجموع کل بدهی‌های تعریف‌شده</span>
-              <div className="text-base font-black text-slate-900">
+          <div className={cn("grid grid-cols-2 md:grid-cols-5", isAdminMobile ? "gap-2.5" : "gap-3.5")}>
+            <div className={cn("bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
+              <span className="text-[11px] text-slate-500 font-medium">مجموع بدهی‌ها</span>
+              <div className={cn("font-black text-slate-900 tabular-nums", isAdminMobile ? "text-sm" : "text-base")}>
                 {groupStats.totalDebt.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
               </div>
               <div className="text-[10px] text-indigo-600 font-bold">
@@ -1084,29 +1179,29 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
-              <span className="text-[11px] text-slate-500 font-medium">کل مبالغ وصول‌شده تاکنون</span>
-              <div className="text-base font-black text-emerald-600">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
+              <span className="text-[11px] text-slate-500 font-medium">وصول‌شده تاکنون</span>
+              <div className={cn("font-black text-emerald-600 tabular-nums", isAdminMobile ? "text-sm" : "text-base")}>
                 {groupStats.totalPaid.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
               </div>
-              <div className="text-[10px] text-emerald-600 font-bold">
+              <div className="text-[10px] text-emerald-600 font-bold tabular-nums">
                 {groupStats.totalDebt > 0 ? `${Math.round((groupStats.totalPaid / groupStats.totalDebt) * 100)}٪ وصولی` : '۰٪'}
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
-              <span className="text-[11px] text-slate-500 font-medium">مانده کل بدهی وصول نشده</span>
-              <div className="text-base font-black text-rose-600">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
+              <span className="text-[11px] text-slate-500 font-medium">مانده بدهی</span>
+              <div className={cn("font-black text-rose-600 tabular-nums", isAdminMobile ? "text-sm" : "text-base")}>
                 {groupStats.totalRemaining.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
               </div>
               <div className="text-[10px] text-rose-500 font-medium">
-                در انتظار کسر از دوره‌های آتی
+                در انتظار کسر آتی
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
-              <span className="text-[11px] text-slate-500 font-medium">مجموع کسر ماهانه جاری</span>
-              <div className="text-base font-black text-amber-600">
+            <div className={cn("bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-1", isAdminMobile ? "p-3.5" : "p-4")}>
+              <span className="text-[11px] text-slate-500 font-medium">کسر ماهانه جاری</span>
+              <div className={cn("font-black text-amber-600 tabular-nums", isAdminMobile ? "text-sm" : "text-base")}>
                 {groupStats.monthlyDeductionSum.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">تومان</span>
               </div>
               <div className="text-[10px] text-amber-600 font-bold">
@@ -1114,302 +1209,534 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1 col-span-2 md:col-span-1">
-              <span className="text-[11px] text-slate-500 font-medium">تعداد افراد دارای بدهی فعال</span>
-              <div className="text-base font-black text-slate-800">
-                {groupStats.uniqueCount} <span className="text-[10px] font-normal text-slate-500">نفر</span>
+            <div className={cn("bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-1 col-span-2 md:col-span-1", isAdminMobile ? "p-3.5" : "p-4")}>
+              <span className="text-[11px] text-slate-500 font-medium">افراد دارای بدهی فعال</span>
+              <div className={cn("font-black text-slate-800 tabular-nums", isAdminMobile ? "text-sm" : "text-base")}>
+                {groupStats.uniqueCount.toLocaleString('fa-IR')} <span className="text-[10px] font-normal text-slate-500">نفر</span>
               </div>
-              <div className="text-[10px] text-slate-500">
-                {groupStats.activeCount} پرونده جاری مطالبه
+              <div className="text-[10px] text-slate-500 tabular-nums">
+                {groupStats.activeCount.toLocaleString('fa-IR')} پرونده جاری مطالبه
               </div>
             </div>
           </div>
 
           {/* Filters & Search Toolbar */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-              {/* Search */}
-              <div className="relative">
-                <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={
-                    activeGroup === 'student' 
-                      ? 'جستجوی نام طلبه، کد ملی یا عنوان بدهی...' 
-                      : activeGroup === 'teacher' 
-                        ? 'جستجوی نام استاد، کد استادی، تخصص...' 
-                        : 'جستجوی نام کارمند، سمت، کد پرسنلی...'
-                  }
-                  className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 transition-all"
-                />
-              </div>
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder={
+                  activeGroup === 'student'
+                    ? 'جستجوی نام طلبه، کد ملی یا بدهی...'
+                    : activeGroup === 'teacher'
+                      ? 'جستجوی نام استاد، کد یا تخصص...'
+                      : 'جستجوی نام کارمند، سمت یا کد...'
+                }
+                onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={activeClaimFiltersCount}
+              />
 
-              {/* Category Filter */}
-              <div>
-                <select
-                  value={selectedCategoryFilter}
-                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
-                >
-                  <option value="all">همه سرفصل‌های بدهی</option>
-                  {categories
-                    .filter(c => !c.targetType || c.targetType === 'all' || c.targetType === activeGroup)
-                    .map(c => (
-                      <option key={c.id} value={c.id}>{c.title}</option>
-                    ))}
-                </select>
-              </div>
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2.5 shadow-2xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">سرفصل بدهی:</label>
+                    <select
+                      value={selectedCategoryFilter}
+                      onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                      className="w-full min-h-[42px] px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-hidden"
+                    >
+                      <option value="all">همه سرفصل‌های بدهی</option>
+                      {categories
+                        .filter(c => !c.targetType || c.targetType === 'all' || c.targetType === activeGroup)
+                        .map(c => (
+                          <option key={c.id} value={c.id}>{c.title}</option>
+                        ))}
+                    </select>
+                  </div>
 
-              {/* Status Filter */}
-              <div>
-                <select
-                  value={selectedStatusFilter}
-                  onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
-                >
-                  <option value="all">همه وضعیت‌ها</option>
-                  <option value="active">جاری (کسر فعال)</option>
-                  <option value="completed">تسویه کامل شده</option>
-                  <option value="paused">متوقف شده</option>
-                </select>
-              </div>
+                  <div className={cn("grid gap-2", activeGroup === 'teacher' ? "grid-cols-1" : "grid-cols-2")}>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">وضعیت:</label>
+                      <select
+                        value={selectedStatusFilter}
+                        onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+                        className="w-full min-h-[42px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-hidden"
+                      >
+                        <option value="all">همه وضعیت‌ها</option>
+                        <option value="active">جاری (کسر فعال)</option>
+                        <option value="completed">تسویه کامل</option>
+                        <option value="paused">متوقف شده</option>
+                      </select>
+                    </div>
 
-              {/* Group Specific Extra Filter */}
-              {activeGroup === 'student' && (
-                <div>
-                  <select
-                    value={selectedGradeFilter}
-                    onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
-                  >
-                    <option value="all">همه پایه‌های تحصیلی</option>
-                    <option value="پایه ۷">پایه ۷</option>
-                    <option value="پایه ۸">پایه ۸</option>
-                    <option value="پایه ۹">پایه ۹</option>
-                    <option value="پایه ۱۰">پایه ۱۰</option>
-                  </select>
-                </div>
-              )}
+                    {activeGroup === 'student' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">پایه:</label>
+                        <select
+                          value={selectedGradeFilter}
+                          onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                          className="w-full min-h-[42px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-hidden"
+                        >
+                          <option value="all">همه پایه‌ها</option>
+                          <option value="پایه ۷">پایه ۷</option>
+                          <option value="پایه ۸">پایه ۸</option>
+                          <option value="پایه ۹">پایه ۹</option>
+                          <option value="پایه ۱۰">پایه ۱۰</option>
+                        </select>
+                      </div>
+                    )}
 
-              {activeGroup === 'staff' && (
-                <div>
-                  <select
-                    value={selectedStaffRoleFilter}
-                    onChange={(e) => setSelectedStaffRoleFilter(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
-                  >
-                    <option value="all">همه سمت‌های سازمانی</option>
-                    {Array.from(new Set(staffList.map(s => s.roleTitle))).filter(Boolean).map(role => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {activeGroup === 'teacher' && (
-                <div className="flex items-center justify-end">
-                  <span className="text-xs text-slate-500 font-bold">
-                    نمایش {filteredClaims.length} از {currentGroupClaims.length} پرونده
-                  </span>
+                    {activeGroup === 'staff' && (
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">سمت سازمانی:</label>
+                        <select
+                          value={selectedStaffRoleFilter}
+                          onChange={(e) => setSelectedStaffRoleFilter(e.target.value)}
+                          className="w-full min-h-[42px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-hidden"
+                        >
+                          <option value="all">همه سمت‌ها</option>
+                          {Array.from(new Set(staffList.map(s => s.roleTitle))).filter(Boolean).map(role => (
+                            <option key={role} value={role}>{role}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Search */}
+                <div className="relative">
+                  <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={
+                      activeGroup === 'student' 
+                        ? 'جستجوی نام طلبه، کد ملی یا عنوان بدهی...' 
+                        : activeGroup === 'teacher' 
+                          ? 'جستجوی نام استاد، کد استادی، تخصص...' 
+                          : 'جستجوی نام کارمند، سمت، کد پرسنلی...'
+                    }
+                    className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 transition-all"
+                  />
+                </div>
 
-          {/* Claims Table */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Layers size={17} className="text-indigo-600" />
-                <h2 className="text-xs font-black text-slate-800">
-                  فهرست مطالبات و بدهی‌های {getSectionTitle(activeGroup)} ({filteredClaims.length})
-                </h2>
-              </div>
+                {/* Category Filter */}
+                <div>
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                  >
+                    <option value="all">همه سرفصل‌های بدهی</option>
+                    {categories
+                      .filter(c => !c.targetType || c.targetType === 'all' || c.targetType === activeGroup)
+                      .map(c => (
+                        <option key={c.id} value={c.id}>{c.title}</option>
+                      ))}
+                  </select>
+                </div>
 
-              <div className="text-[11px] text-slate-500 font-medium">
-                جهت ثبت قسط دستی یا تسویه کامل، از دکمه <span className="font-bold text-indigo-600">«تسویه / قسط»</span> استفاده نمایید.
+                {/* Status Filter */}
+                <div>
+                  <select
+                    value={selectedStatusFilter}
+                    onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                  >
+                    <option value="all">همه وضعیت‌ها</option>
+                    <option value="active">جاری (کسر فعال)</option>
+                    <option value="completed">تسویه کامل شده</option>
+                    <option value="paused">متوقف شده</option>
+                  </select>
+                </div>
+
+                {/* Group Specific Extra Filter */}
+                {activeGroup === 'student' && (
+                  <div>
+                    <select
+                      value={selectedGradeFilter}
+                      onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                    >
+                      <option value="all">همه پایه‌های تحصیلی</option>
+                      <option value="پایه ۷">پایه ۷</option>
+                      <option value="پایه ۸">پایه ۸</option>
+                      <option value="پایه ۹">پایه ۹</option>
+                      <option value="پایه ۱۰">پایه ۱۰</option>
+                    </select>
+                  </div>
+                )}
+
+                {activeGroup === 'staff' && (
+                  <div>
+                    <select
+                      value={selectedStaffRoleFilter}
+                      onChange={(e) => setSelectedStaffRoleFilter(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                    >
+                      <option value="all">همه سمت‌های سازمانی</option>
+                      {Array.from(new Set(staffList.map(s => s.roleTitle))).filter(Boolean).map(role => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {activeGroup === 'teacher' && (
+                  <div className="flex items-center justify-end">
+                    <span className="text-xs text-slate-500 font-bold">
+                      نمایش {filteredClaims.length} از {currentGroupClaims.length} پرونده
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
+          )}
 
-            {filteredClaims.length === 0 ? (
-              <div className="py-16 text-center text-slate-400 space-y-3">
-                <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
-                  <HandCoins size={28} />
+          {/* Claims Table / Mobile Cards */}
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              {filteredClaims.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 py-12 text-center text-slate-400 space-y-3 px-4">
+                  <HandCoins size={32} className="mx-auto text-slate-300" />
+                  <p className="text-xs font-bold text-slate-500">هیچ ردیف مطالبه‌ای یافت نشد.</p>
+                  <button
+                    type="button"
+                    onClick={() => openBatchCreateModal(activeGroup)}
+                    className="min-h-[40px] px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold"
+                  >
+                    ثبت اولین مطالبه
+                  </button>
                 </div>
-                <p className="text-xs font-bold text-slate-500">هیچ ردیف مطالبه‌ای با فیلترهای انتخابی یافت نشد.</p>
-                <button
-                  onClick={() => openBatchCreateModal(activeGroup)}
-                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all"
-                >
-                  ثبت اولین مطالبه برای این بخش
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200/80">
-                    <tr>
-                      <th className="py-3 px-3 w-12 text-center">ردیف</th>
-                      <th className="py-3 px-4">
-                        {activeGroup === 'student' ? 'نام طلبه و پایه' : activeGroup === 'teacher' ? 'نام استاد و تخصص' : 'نام کارمند و سمت'}
-                      </th>
-                      <th className="py-3 px-4">سرفصل بدهی</th>
-                      <th className="py-3 px-4">حساب مقصد واریز</th>
-                      <th className="py-3 px-3 text-center">مبلغ کل بدهی</th>
-                      <th className="py-3 px-3 text-center">کسر ماهانه</th>
-                      <th className="py-3 px-3 text-center">وصول‌شده</th>
-                      <th className="py-3 px-3 text-center">مانده بدهی</th>
-                      <th className="py-3 px-3 text-center">وضعیت</th>
-                      <th className="py-3 px-4 text-center">عملیات</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredClaims.map((claim, idx) => {
-                      const percentPaid = claim.totalDebtAmount > 0 
-                        ? Math.min(100, Math.round((claim.paidAmount / claim.totalDebtAmount) * 100)) 
-                        : 0;
-
-                      return (
-                        <tr key={claim.id} className="hover:bg-indigo-50/30 transition-colors">
-                          <td className="py-3 px-3 text-center text-slate-400 font-mono">
-                            {(idx + 1).toLocaleString('fa-IR')}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            <div className="font-bold text-slate-900">
-                              {claim.studentName || claim.targetName}
-                            </div>
-                            <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-                              {activeGroup === 'student' && claim.grade && (
-                                <span className="px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-700">
-                                  {claim.grade}
-                                </span>
-                              )}
-                              {activeGroup !== 'student' && claim.roleOrTitle && (
-                                <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-700 font-bold">
-                                  {claim.roleOrTitle}
-                                </span>
-                              )}
-                              {claim.nationalId && (
-                                <span className="font-mono text-slate-400">کد: {claim.nationalId}</span>
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="py-3 px-4">
-                            <span className="font-bold text-indigo-900 bg-indigo-50/70 px-2 py-0.5 rounded-lg border border-indigo-100/80">
-                              {claim.claimTitle}
-                            </span>
-                            {claim.startDate && (
-                              <div className="text-[10px] text-slate-400 mt-0.5">
-                                شروع: {claim.startDate}
-                              </div>
+              ) : (
+                filteredClaims.map((claim) => {
+                  const percentPaid = claim.totalDebtAmount > 0
+                    ? Math.min(100, Math.round((claim.paidAmount / claim.totalDebtAmount) * 100))
+                    : 0;
+                  return (
+                    <div key={claim.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-2.5 shadow-2xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black text-slate-900 truncate">
+                            {claim.studentName || claim.targetName}
+                          </h3>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                            {activeGroup === 'student' && claim.grade && <span>{claim.grade}</span>}
+                            {activeGroup !== 'student' && claim.roleOrTitle && <span>{claim.roleOrTitle}</span>}
+                            {claim.nationalId && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-mono tabular-nums">{claim.nationalId}</span>
+                              </>
                             )}
-                          </td>
+                            {claim.startDate && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-mono tabular-nums">{claim.startDate}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <span className={cn(
+                          "text-[11px] font-black shrink-0",
+                          claim.status === 'active'
+                            ? "text-emerald-700"
+                            : claim.status === 'completed'
+                              ? "text-blue-700"
+                              : "text-amber-700"
+                        )}>
+                          {claim.status === 'active' ? 'جاری' : claim.status === 'completed' ? 'تسویه کامل' : 'متوقف'}
+                        </span>
+                      </div>
 
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-slate-800 text-[11px]">
-                              {claim.destinationAccountTitle}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                              {claim.destinationBankInfo}
-                            </div>
-                          </td>
+                      <div className="text-[11px] space-y-0.5">
+                        <div className="font-bold text-indigo-900">{claim.claimTitle}</div>
+                        <div className="text-slate-500 truncate">
+                          مقصد: {claim.destinationAccountTitle || 'تعیین نشده'}
+                          {claim.destinationBankInfo ? ` · ${claim.destinationBankInfo}` : ''}
+                        </div>
+                      </div>
 
-                          <td className="py-3 px-3 text-center font-bold text-slate-800">
-                            {claim.totalDebtAmount.toLocaleString('fa-IR')}
-                          </td>
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                        <div>
+                          <div className="text-slate-400">کل بدهی</div>
+                          <div className="font-mono font-bold text-slate-800 tabular-nums mt-0.5">
+                            {claim.totalDebtAmount.toLocaleString('fa-IR')} ت
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">کسر ماهانه</div>
+                          <div className="font-mono font-bold text-amber-700 tabular-nums mt-0.5">
+                            {claim.monthlyDeductionAmount.toLocaleString('fa-IR')} ت
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-slate-400">مانده بدهی</div>
+                          <div className="font-mono font-black text-rose-600 tabular-nums mt-0.5">
+                            {claim.remainingAmount.toLocaleString('fa-IR')} ت
+                          </div>
+                        </div>
+                      </div>
 
-                          <td className="py-3 px-3 text-center font-bold text-amber-600">
-                            {claim.monthlyDeductionAmount.toLocaleString('fa-IR')}
-                          </td>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                          <span>وصول‌شده: <span className="font-mono text-emerald-700 tabular-nums">{claim.paidAmount.toLocaleString('fa-IR')} ت</span></span>
+                          <span className="font-mono tabular-nums">{percentPaid.toLocaleString('fa-IR')}٪</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${percentPaid}%` }} />
+                        </div>
+                      </div>
 
-                          <td className="py-3 px-3 text-center font-bold text-emerald-600">
-                            <div>{claim.paidAmount.toLocaleString('fa-IR')}</div>
-                            <div className="w-16 mx-auto bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
-                              <div 
-                                className="bg-emerald-500 h-full rounded-full" 
-                                style={{ width: `${percentPaid}%` }} 
-                              />
-                            </div>
-                          </td>
+                      <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 flex-wrap">
+                        {claim.remainingAmount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSettlement(claim)}
+                            className="flex-1 min-h-[40px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <Receipt size={14} />
+                            <span>تسویه / قسط</span>
+                          </button>
+                        )}
+                        {claim.status !== 'completed' && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleClaimStatus(claim)}
+                            className={cn(
+                              "min-h-[40px] px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 cursor-pointer",
+                              claim.status === 'active'
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                            )}
+                          >
+                            {claim.status === 'active' ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
+                            <span>{claim.status === 'active' ? 'توقف' : 'ادامه'}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setEditingClaim(claim)}
+                          className="min-h-[40px] px-2.5 bg-slate-50 text-slate-700 rounded-xl border border-slate-200 flex items-center justify-center cursor-pointer"
+                          aria-label="ویرایش مطالبه"
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteClaim(claim.id)}
+                          className="min-h-[40px] px-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                          aria-label="حذف مطالبه"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers size={17} className="text-indigo-600" />
+                  <h2 className="text-xs font-black text-slate-800">
+                    فهرست مطالبات و بدهی‌های {getSectionTitle(activeGroup)} ({filteredClaims.length})
+                  </h2>
+                </div>
 
-                          <td className="py-3 px-3 text-center font-black text-rose-600">
-                            {claim.remainingAmount.toLocaleString('fa-IR')}
-                          </td>
-
-                          <td className="py-3 px-3 text-center">
-                            <span className={cn(
-                              "px-2.5 py-1 rounded-full text-[10px] font-black inline-block",
-                              claim.status === 'active' 
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
-                                : claim.status === 'completed'
-                                  ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                  : "bg-amber-50 text-amber-700 border border-amber-200"
-                            )}>
-                              {claim.status === 'active' ? 'جاری (کسر خودکار)' : claim.status === 'completed' ? 'تسویه کامل' : 'متوقف شده'}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Quick Settlement Button */}
-                              {claim.remainingAmount > 0 && (
-                                <button
-                                  onClick={() => handleOpenSettlement(claim)}
-                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
-                                  title="ثبت تسویه یا واریز قسط دستی"
-                                >
-                                  <Receipt size={13} />
-                                  <span>تسویه/قسط</span>
-                                </button>
-                              )}
-
-                              {/* Pause / Resume */}
-                              {claim.status !== 'completed' && (
-                                <button
-                                  onClick={() => handleToggleClaimStatus(claim)}
-                                  className={cn(
-                                    "p-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer",
-                                    claim.status === 'active'
-                                      ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                                      : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
-                                  )}
-                                  title={claim.status === 'active' ? "توقف کسر خودکار" : "فعال‌سازی مجدد کسر"}
-                                >
-                                  {claim.status === 'active' ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
-                                </button>
-                              )}
-
-                              {/* Edit */}
-                              <button
-                                onClick={() => setEditingClaim(claim)}
-                                className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-all cursor-pointer"
-                                title="ویرایش اطلاعات مطالبه"
-                              >
-                                <Edit3 size={14} />
-                              </button>
-
-                              {/* Delete */}
-                              <button
-                                onClick={() => handleDeleteClaim(claim.id)}
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-all cursor-pointer"
-                                title="حذف مطالبه"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="text-[11px] text-slate-500 font-medium">
+                  جهت ثبت قسط دستی یا تسویه کامل، از دکمه <span className="font-bold text-indigo-600">«تسویه / قسط»</span> استفاده نمایید.
+                </div>
               </div>
-            )}
-          </div>
+
+              {filteredClaims.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 space-y-3">
+                  <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                    <HandCoins size={28} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-500">هیچ ردیف مطالبه‌ای با فیلترهای انتخابی یافت نشد.</p>
+                  <button
+                    onClick={() => openBatchCreateModal(activeGroup)}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all"
+                  >
+                    ثبت اولین مطالبه برای این بخش
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200/80">
+                      <tr>
+                        <th className="py-3 px-3 w-12 text-center">ردیف</th>
+                        <th className="py-3 px-4">
+                          {activeGroup === 'student' ? 'نام طلبه و پایه' : activeGroup === 'teacher' ? 'نام استاد و تخصص' : 'نام کارمند و سمت'}
+                        </th>
+                        <th className="py-3 px-4">سرفصل بدهی</th>
+                        <th className="py-3 px-4">حساب مقصد واریز</th>
+                        <th className="py-3 px-3 text-center">مبلغ کل بدهی</th>
+                        <th className="py-3 px-3 text-center">کسر ماهانه</th>
+                        <th className="py-3 px-3 text-center">وصول‌شده</th>
+                        <th className="py-3 px-3 text-center">مانده بدهی</th>
+                        <th className="py-3 px-3 text-center">وضعیت</th>
+                        <th className="py-3 px-4 text-center">عملیات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredClaims.map((claim, idx) => {
+                        const percentPaid = claim.totalDebtAmount > 0 
+                          ? Math.min(100, Math.round((claim.paidAmount / claim.totalDebtAmount) * 100)) 
+                          : 0;
+
+                        return (
+                          <tr key={claim.id} className="hover:bg-indigo-50/30 transition-colors">
+                            <td className="py-3 px-3 text-center text-slate-400 font-mono">
+                              {(idx + 1).toLocaleString('fa-IR')}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900">
+                                {claim.studentName || claim.targetName}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                                {activeGroup === 'student' && claim.grade && (
+                                  <span className="px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-700">
+                                    {claim.grade}
+                                  </span>
+                                )}
+                                {activeGroup !== 'student' && claim.roleOrTitle && (
+                                  <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-700 font-bold">
+                                    {claim.roleOrTitle}
+                                  </span>
+                                )}
+                                {claim.nationalId && (
+                                  <span className="font-mono text-slate-400">کد: {claim.nationalId}</span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className="font-bold text-indigo-900 bg-indigo-50/70 px-2 py-0.5 rounded-lg border border-indigo-100/80">
+                                {claim.claimTitle}
+                              </span>
+                              {claim.startDate && (
+                                <div className="text-[10px] text-slate-400 mt-0.5">
+                                  شروع: {claim.startDate}
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-slate-800 text-[11px]">
+                                {claim.destinationAccountTitle}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                {claim.destinationBankInfo}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 text-center font-bold text-slate-800">
+                              {claim.totalDebtAmount.toLocaleString('fa-IR')}
+                            </td>
+
+                            <td className="py-3 px-3 text-center font-bold text-amber-600">
+                              {claim.monthlyDeductionAmount.toLocaleString('fa-IR')}
+                            </td>
+
+                            <td className="py-3 px-3 text-center font-bold text-emerald-600">
+                              <div>{claim.paidAmount.toLocaleString('fa-IR')}</div>
+                              <div className="w-16 mx-auto bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+                                <div 
+                                  className="bg-emerald-500 h-full rounded-full" 
+                                  style={{ width: `${percentPaid}%` }} 
+                                />
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 text-center font-black text-rose-600">
+                              {claim.remainingAmount.toLocaleString('fa-IR')}
+                            </td>
+
+                            <td className="py-3 px-3 text-center">
+                              <span className={cn(
+                                "px-2.5 py-1 rounded-full text-[10px] font-black inline-block",
+                                claim.status === 'active' 
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                                  : claim.status === 'completed'
+                                    ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                              )}>
+                                {claim.status === 'active' ? 'جاری (کسر خودکار)' : claim.status === 'completed' ? 'تسویه کامل' : 'متوقف شده'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* Quick Settlement Button */}
+                                {claim.remainingAmount > 0 && (
+                                  <button
+                                    onClick={() => handleOpenSettlement(claim)}
+                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-bold border border-emerald-200 transition-all cursor-pointer flex items-center gap-1"
+                                    title="ثبت تسویه یا واریز قسط دستی"
+                                  >
+                                    <Receipt size={13} />
+                                    <span>تسویه/قسط</span>
+                                  </button>
+                                )}
+
+                                {/* Pause / Resume */}
+                                {claim.status !== 'completed' && (
+                                  <button
+                                    onClick={() => handleToggleClaimStatus(claim)}
+                                    className={cn(
+                                      "p-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer",
+                                      claim.status === 'active'
+                                        ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                        : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                                    )}
+                                    title={claim.status === 'active' ? "توقف کسر خودکار" : "فعال‌سازی مجدد کسر"}
+                                  >
+                                    {claim.status === 'active' ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
+                                  </button>
+                                )}
+
+                                {/* Edit */}
+                                <button
+                                  onClick={() => setEditingClaim(claim)}
+                                  className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-all cursor-pointer"
+                                  title="ویرایش اطلاعات مطالبه"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+
+                                {/* Delete */}
+                                <button
+                                  onClick={() => handleDeleteClaim(claim.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg border border-rose-200 transition-all cursor-pointer"
+                                  title="حذف مطالبه"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* Settings Tab: Categories Bank and Destination Accounts */
@@ -1957,7 +2284,7 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className={cn("grid gap-2", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">روش تسویه</label>
                     <select
@@ -2066,7 +2393,7 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">مبلغ کل بدهی (تومان)</label>
                     <input
@@ -2090,7 +2417,7 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn("grid gap-3", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">کل پرداخت شده (تومان)</label>
                     <input
@@ -2284,7 +2611,7 @@ export default function ClaimsManagement({ onNavigateTab }: ClaimsManagementProp
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className={cn("grid gap-2", isAdminMobile ? "grid-cols-1" : "grid-cols-2")}>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">نام بانک *</label>
                     <input

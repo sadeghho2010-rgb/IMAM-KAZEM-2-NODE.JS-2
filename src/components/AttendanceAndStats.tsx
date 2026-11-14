@@ -84,6 +84,12 @@ import {
   StudentRequest
 } from '../types';
 import { StudentSelfReportingModal } from './attendance/StudentSelfReportingModal';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileTabOption,
+} from './admin/mobile/MobileModulePrimitives';
 
 export type AttendanceRecord = AttendanceSessionLog;
 export type StudentAttendanceItem = StudentAttendanceDetail;
@@ -94,6 +100,7 @@ interface AttendanceAndStatsProps {
 
 export default function AttendanceAndStats({ initialStudentId }: AttendanceAndStatsProps = {}) {
   const { currentUser } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
 
   const [activeTab, setActiveTab] = useState<'record' | 'report' | 'class_status' | 'representatives_list' | 'leave_requests'>(() => {
     if (currentUser?.role === 'class_representative' || currentUser?.roleTitle?.includes('نماینده') || (currentUser as any)?.managedClassId) {
@@ -2712,6 +2719,84 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
       </AnimatePresence>
 
       {/* Header Banner - Modern, Compact, High-Positioned */}
+      {isAdminMobile && !isOrdinaryStudent ? (
+        <div className="space-y-2.5" dir="rtl">
+          <MobileSectionHeader
+            title={isRepresentative ? 'ثبت حضور و غیاب کلاس' : 'سامانه حضور و غیاب'}
+            subtitle={
+              isRepresentative
+                ? 'ثبت سریع حضور، غیبت و تاخیر طلاب'
+                : 'پایش کلاس‌ها، ثبت جلسات، گزارش‌های غیبت و مرخصی'
+            }
+            icon={<CheckSquare size={20} />}
+            variant="indigo"
+            primaryAction={
+              isRepresentative
+                ? {
+                    id: 'quick-att',
+                    label: 'ثبت سریع حضور و غیاب (۱ کلیک)',
+                    icon: <Sparkles size={15} />,
+                    tone: 'emerald',
+                    onClick: () => setIsQuickAttendanceOpen(true),
+                  }
+                : undefined
+            }
+            secondaryActions={
+              canManageSettings
+                ? [
+                    {
+                      id: 'att-settings',
+                      label: 'تنظیمات مهلت و گزارش‌ها',
+                      icon: <SlidersHorizontal size={14} />,
+                      tone: 'default',
+                      onClick: () => setIsSettingsOpen(true),
+                    },
+                  ]
+                : []
+            }
+            secondaryLabel="تنظیمات"
+          />
+
+          <MobileHorizontalTabs
+            activeId={activeTab}
+            onChange={(id) => setActiveTab(id as any)}
+            tabs={(() => {
+              const items: MobileTabOption[] = [];
+              if (!isRepresentative) {
+                items.push({ id: 'class_status', label: 'وضعیت کلاس‌ها', icon: <LayoutGrid size={14} />, tone: 'emerald' });
+              }
+              items.push({
+                id: 'record',
+                label: isRepresentative ? 'ثبت حضور و غیاب' : 'ثبت و ویرایش جلسه',
+                icon: <CheckSquare size={14} />,
+                tone: 'indigo',
+              });
+              items.push({
+                id: 'report',
+                label: isRepresentative ? 'آمار غیبت من' : 'گزارش‌ها و آمار',
+                icon: <FileCheck2 size={14} />,
+                tone: 'slate',
+              });
+              if (!isRepresentative) {
+                items.push({
+                  id: 'representatives_list',
+                  label: 'لیست نمایندگان',
+                  icon: <Users size={14} />,
+                  tone: 'indigo',
+                });
+              }
+              items.push({
+                id: 'leave_requests',
+                label: 'مرخصی‌ها',
+                icon: <CalendarCheck size={14} />,
+                badge: leaveRequestsList.filter((r) => r.status === 'pending').length || undefined,
+                tone: 'amber',
+              });
+              return items;
+            })()}
+          />
+        </div>
+      ) : (
       <div className={cn(
         "rounded-2xl p-2.5 sm:p-3.5 border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all -mt-2 sm:-mt-4 shadow-sm",
         isOrdinaryStudent
@@ -2880,6 +2965,7 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
           </div>
         )}
       </div>
+      )}
 
       {/* ===================================================================== */}
       {/* TAB 3: CLASSROOM ATTENDANCE OVERVIEW (وضعیت کلاس‌ها) */}
@@ -4812,16 +4898,20 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                         </div>
 
                         {/* Interactive Status Buttons & Individual Note */}
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className={cn("flex items-center gap-2 flex-wrap", isAdminMobile && "w-full")}>
                           {/* Status Options - Role Aware */}
-                          <div className="inline-flex rounded-xl p-1 bg-slate-100/90 border border-slate-200">
+                          <div className={cn(
+                            "rounded-xl p-1 bg-slate-100/90 border border-slate-200",
+                            isAdminMobile ? "grid grid-cols-3 sm:grid-cols-5 w-full gap-1" : "inline-flex"
+                          )}>
                             {/* 1. Present */}
                             <button
                               type="button"
                               disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'present')}
                               className={cn(
-                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer",
+                                isAdminMobile && "min-h-[38px]",
                                 currentStatus === 'present'
                                   ? "bg-emerald-600 text-white shadow-xs scale-102"
                                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
@@ -4838,7 +4928,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'absent')}
                               className={cn(
-                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer",
+                                isAdminMobile && "min-h-[38px]",
                                 currentStatus === 'absent'
                                   ? "bg-rose-600 text-white shadow-xs scale-102"
                                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
@@ -4855,7 +4946,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                               disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                               onClick={() => handleSetStudentStatus(student.id, 'late')}
                               className={cn(
-                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                                "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer",
+                                isAdminMobile && "min-h-[38px]",
                                 currentStatus === 'late'
                                   ? "bg-amber-500 text-white shadow-xs scale-102"
                                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60",
@@ -4873,7 +4965,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                                 onClick={() => handleSetStudentStatus(student.id, 'excused')}
                                 className={cn(
-                                  "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1 cursor-pointer",
+                                  "px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer",
+                                  isAdminMobile && "min-h-[38px]",
                                   currentStatus === 'excused'
                                     ? "bg-indigo-600 text-white shadow-xs scale-102"
                                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
@@ -4890,7 +4983,8 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 disabled={isDateLockedForRepresentative || isAttendanceReadOnlyForGradeSupervisor}
                                 onClick={() => handleSetStudentStatus(student.id, 'unspecified')}
                                 className={cn(
-                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                                  "px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer",
+                                  isAdminMobile && "min-h-[38px]",
                                   currentStatus === 'unspecified'
                                     ? "bg-slate-700 text-white shadow-xs"
                                     : "text-slate-500 hover:text-slate-800"
@@ -4916,7 +5010,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                                 setJustifyingStudent({ studentId: student.id, studentName: student.name });
                                 setJustificationReasonInput(studentExcused[student.id]?.reason || '');
                               }}
-                              className="px-2 py-1 text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                              className={cn(
+                                "px-2 py-1 text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg border border-indigo-200 transition-colors cursor-pointer",
+                                isAdminMobile && "min-h-[36px] px-3"
+                              )}
                               title="موجه کردن غیبت با ذکر دلیل"
                             >
                               {isExc ? 'ویرایش موجهی' : 'موجه‌سازی'}
@@ -4925,7 +5022,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
 
                           {/* Educational Warning Checkbox for Admins & Supervisors */}
                           {(isSuperAdmin || isEducationManager || isGradeSupervisor) && (
-                            <label className="flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50/80 px-2 py-1 rounded-lg border border-rose-200 cursor-pointer">
+                            <label className={cn(
+                              "flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50/80 px-2 py-1 rounded-lg border border-rose-200 cursor-pointer",
+                              isAdminMobile && "min-h-[36px] px-3"
+                            )}>
                               <input
                                 type="checkbox"
                                 checked={hasWarning}
@@ -4941,7 +5041,10 @@ export default function AttendanceAndStats({ initialStudentId }: AttendanceAndSt
                             type="text"
                             disabled={isDateLockedForRepresentative}
                             placeholder="توضیح غیبت / علت..."
-                            className="w-32 sm:w-40 px-2.5 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                            className={cn(
+                              "px-2.5 py-1 text-[11px] border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-400 bg-white",
+                              isAdminMobile ? "w-full min-h-[38px]" : "w-32 sm:w-40"
+                            )}
                             value={studentNote}
                             onChange={(e) => setStudentNotes({ ...studentNotes, [student.id]: e.target.value })}
                           />

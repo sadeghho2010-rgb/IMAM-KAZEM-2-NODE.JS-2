@@ -30,6 +30,8 @@ import { useMentor } from '../../context/MentorContext';
 import { ShamsiDatePicker } from '../ShamsiDatePicker';
 import { exportElementToPdf } from '../../lib/pdfExport';
 import { cn } from '../../lib/utils';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from '../admin/mobile/MobileModulePrimitives';
 import {
   compareShamsi,
   dateToShamsi,
@@ -77,6 +79,8 @@ export default function StudentWarningsManagement() {
   const { currentUser, canEditModule } = useAuth();
   const { filterStudents } = useMentor();
   const canEdit = canEditModule('warnings-management');
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [students, setStudents] = useState<Student[]>([]);
   const [workflowItems, setWorkflowItems] = useState<WorkflowItem[]>([]);
@@ -665,283 +669,512 @@ export default function StudentWarningsManagement() {
         )}
       </AnimatePresence>
 
-      {/* Top Header */}
-      <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-600 via-red-600 to-amber-600 text-white flex items-center justify-center shadow-lg shadow-rose-500/25 shrink-0">
-            <ShieldAlert size={24} />
-          </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-black text-slate-900">مدیریت اخطارهای طلاب (حضور و غیاب و مطالعه)</h1>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              پایش دقیق اخطارهای ثبت‌شده به تفکیک حضور و غیاب و ثبت مطالعه به همراه صدور و چاپ فرم تعهدنامه، ارجاع به شورا و مطالبه توضیحات
-            </p>
-          </div>
-        </div>
+      {isAdminMobile ? (
+        <div className="space-y-3.5 no-print">
+          <MobileSectionHeader
+            title="مدیریت اخطارهای طلاب"
+            subtitle="پایش اخطارهای حضور و غیاب و مطالعه و صدور فرم تعهدنامه"
+            icon={<ShieldAlert size={20} />}
+            badgeText={`${filteredRows.length} طلبه`}
+            variant="white"
+            primaryAction={{
+              id: 'export-warnings-excel',
+              label: 'خروجی اکسل',
+              icon: <FileSpreadsheet size={15} />,
+              onClick: handleExportExcel,
+              tone: 'emerald'
+            }}
+          />
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-          >
-            <FileSpreadsheet size={15} />
-            <span>خروجی اکسل</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 no-print">
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-500 block">طلاب دارای اخطار</span>
-            <span className="text-2xl font-black font-mono text-slate-900 mt-1 block">{kpis.studentsWithAnyWarning}</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
-            <Users size={20} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-rose-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-rose-600 block">اخطارهای حضور و غیاب</span>
-            <span className="text-2xl font-black font-mono text-rose-700 mt-1 block">{kpis.totalAttWarnings}</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
-            <AlertOctagon size={20} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-amber-700 block">اخطارهای ثبت مطالعه</span>
-            <span className="text-2xl font-black font-mono text-amber-700 mt-1 block">{kpis.totalStudyWarnings}</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
-            <BookOpen size={20} />
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-rose-600 to-indigo-700 text-white rounded-2xl p-4 shadow-md flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-rose-100 block">مجموع کل اخطارها</span>
-            <span className="text-2xl font-black font-mono text-white mt-1 block">{kpis.grandTotal}</span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center">
-            <AlertTriangle size={20} />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter & Time Range Toolbar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-4 no-print">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          {/* Range Mode Switcher */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-black text-slate-700 flex items-center gap-1.5 ml-1">
-              <CalendarIcon size={15} className="text-indigo-600" />
-              <span>محدوده زمانی محاسبه اخطارها:</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setRangeMode('all_time')}
-              className={cn(
-                'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border cursor-pointer',
-                rangeMode === 'all_time'
-                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              )}
-            >
-              از ابتدا تا کنون
-            </button>
-            <button
-              type="button"
-              onClick={() => setRangeMode('custom_range')}
-              className={cn(
-                'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border cursor-pointer',
-                rangeMode === 'custom_range'
-                  ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              )}
-            >
-              بازه زمانی مشخص
-            </button>
-          </div>
-
-          {rangeMode === 'custom_range' && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-40">
-                <ShamsiDatePicker value={startDate} onChange={setStartDate} placeholder="از تاریخ..." />
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 block">طلاب دارای اخطار</span>
+                <span className="text-xl font-black font-mono text-slate-900 mt-0.5 block">{kpis.studentsWithAnyWarning}</span>
               </div>
-              <span className="text-xs font-bold text-slate-400">تا</span>
-              <div className="w-40">
-                <ShamsiDatePicker value={endDate} onChange={setEndDate} placeholder="تا تاریخ..." />
+              <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                <Users size={16} />
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const today = getTodayShamsi();
-                  setStartDate(subtractDaysShamsi(today, 30));
-                  setEndDate(today);
-                }}
-                className="px-2.5 py-1.5 text-[11px] font-bold bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200 hover:bg-indigo-100 cursor-pointer"
-              >
-                ۳۰ روز اخیر
-              </button>
+            </div>
+            <div className="bg-gradient-to-br from-rose-600 to-indigo-700 text-white rounded-2xl p-3 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-rose-100 block">مجموع کل اخطارها</span>
+                <span className="text-xl font-black font-mono text-white mt-0.5 block">{kpis.grandTotal}</span>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                <AlertTriangle size={16} />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-3 border border-rose-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-rose-600 block">اخطار حضور و غیاب</span>
+                <span className="text-xl font-black font-mono text-rose-700 mt-0.5 block">{kpis.totalAttWarnings}</span>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertOctagon size={16} />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-3 border border-amber-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-amber-700 block">اخطار ثبت مطالعه</span>
+                <span className="text-xl font-black font-mono text-amber-700 mt-0.5 block">{kpis.totalStudyWarnings}</span>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <BookOpen size={16} />
+              </div>
+            </div>
+          </div>
+
+          <MobileSearchFilterBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجوی نام طلبه، کد ملی یا کد..."
+            onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+            filtersOpen={mobileFiltersOpen}
+            activeFilterCount={(gradeFilter !== 'all' ? 1 : 0) + (warningTypeFilter !== 'with_warnings' ? 1 : 0) + (rangeMode === 'custom_range' ? 1 : 0)}
+          />
+
+          {mobileFiltersOpen && (
+            <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-3">
+              <div className="space-y-2">
+                <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                  <CalendarIcon size={14} className="text-indigo-600" />
+                  <span>محدوده زمانی محاسبه اخطارها:</span>
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRangeMode('all_time')}
+                    className={cn(
+                      'min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-black border cursor-pointer',
+                      rangeMode === 'all_time'
+                        ? 'bg-indigo-600 text-white border-indigo-700'
+                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                    )}
+                  >
+                    از ابتدا تا کنون
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRangeMode('custom_range')}
+                    className={cn(
+                      'min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-black border cursor-pointer',
+                      rangeMode === 'custom_range'
+                        ? 'bg-indigo-600 text-white border-indigo-700'
+                        : 'bg-slate-50 text-slate-700 border-slate-200'
+                    )}
+                  >
+                    بازه زمانی مشخص
+                  </button>
+                </div>
+
+                {rangeMode === 'custom_range' && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block mb-1">از تاریخ</span>
+                      <ShamsiDatePicker value={startDate} onChange={setStartDate} placeholder="از تاریخ..." />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block mb-1">تا تاریخ</span>
+                      <ShamsiDatePicker value={endDate} onChange={setEndDate} placeholder="تا تاریخ..." />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = getTodayShamsi();
+                        setStartDate(subtractDaysShamsi(today, 30));
+                        setEndDate(today);
+                      }}
+                      className="col-span-2 py-2 text-xs font-black bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-200 cursor-pointer"
+                    >
+                      انتخاب ۳۰ روز اخیر
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5 pt-2 border-t border-slate-100">
+                <select
+                  value={gradeFilter}
+                  onChange={(e) => setGradeFilter(e.target.value)}
+                  className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 outline-none"
+                >
+                  <option value="all">همه پایه‌های تحصیلی</option>
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                  <option value="پایه ۱۱">پایه ۱۱</option>
+                </select>
+
+                <select
+                  value={warningTypeFilter}
+                  onChange={(e) => setWarningTypeFilter(e.target.value as any)}
+                  className="w-full p-2.5 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 outline-none"
+                >
+                  <option value="with_warnings">طلاب دارای اخطار (حضور یا مطالعه)</option>
+                  <option value="attendance_only">دارای اخطار حضور و غیاب</option>
+                  <option value="study_only">دارای اخطار ثبت مطالعه</option>
+                  <option value="both">دارای هر دو نوع اخطار</option>
+                  <option value="all_students">نمایش همه طلاب (حتی بدون اخطار)</option>
+                </select>
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Search, Grade & Type Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="relative">
-            <Search size={14} className="absolute right-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="جستجوی نام طلبه، کد ملی یا کد طلبگی..."
-              className="w-full pr-9 pl-3 py-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-          </div>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-500">
+              <span>{rangeMode === 'all_time' ? 'بازه: از ابتدا تا کنون' : `بازه: ${startDate} تا ${endDate}`}</span>
+              <span>{filteredRows.length} طلبه</span>
+            </div>
 
-          <select
-            value={gradeFilter}
-            onChange={(e) => setGradeFilter(e.target.value)}
-            className="w-full p-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none"
-          >
-            <option value="all">همه پایه‌های تحصیلی</option>
-            <option value="پایه ۷">پایه ۷</option>
-            <option value="پایه ۸">پایه ۸</option>
-            <option value="پایه ۹">پایه ۹</option>
-            <option value="پایه ۱۰">پایه ۱۰</option>
-            <option value="پایه ۱۱">پایه ۱۱</option>
-          </select>
-
-          <select
-            value={warningTypeFilter}
-            onChange={(e) => setWarningTypeFilter(e.target.value as any)}
-            className="w-full p-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none"
-          >
-            <option value="with_warnings">طلاب دارای اخطار (حضور و غیاب یا مطالعه)</option>
-            <option value="attendance_only">دارای اخطار حضور و غیاب</option>
-            <option value="study_only">دارای اخطار ثبت مطالعه</option>
-            <option value="both">دارای هر دو نوع اخطار</option>
-            <option value="all_students">نمایش همه طلاب (حتی بدون اخطار)</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Main Warnings Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden no-print">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <Filter size={15} className="text-rose-600" />
-            <h2 className="text-xs font-black text-slate-800">
-              لیست وضعیت اخطارهای طلاب ({rangeMode === 'all_time' ? 'از ابتدا تا کنون' : `بازه ${startDate} تا ${endDate}`})
-            </h2>
-          </div>
-          <span className="text-[11px] font-bold text-slate-500">
-            تعداد ردیف‌ها: {filteredRows.length} طلبه
-          </span>
-        </div>
-
-        {filteredRows.length === 0 ? (
-          <div className="p-12 text-center space-y-2 text-slate-500">
-            <CheckCircle2 size={36} className="mx-auto text-emerald-400" />
-            <p className="text-xs font-bold text-slate-700">موردی مطابق فیلتر انتخابی یافت نشد.</p>
-            <p className="text-[11px] text-slate-400">
-              برای مشاهده همه طلاب یا چاپ فرم برای یک طلبه خاص، گزینه «نمایش همه طلاب» را انتخاب نمایید.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead>
-                <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
-                  <th className="p-3">ردیف</th>
-                  <th className="p-3">نام و نام خانوادگی طلبه</th>
-                  <th className="p-3">پایه</th>
-                  <th className="p-3 text-center text-rose-700">اخطارهای حضور و غیاب</th>
-                  <th className="p-3 text-center text-amber-800">اخطارهای ثبت مطالعه</th>
-                  <th className="p-3 text-center">مجموع کل اخطارها</th>
-                  <th className="p-3 text-center">سوابق فرم چاپی</th>
-                  <th className="p-3 text-center">عملیات و صدور فرم قابل ویرایش</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredRows.map((row, idx) => (
-                  <tr key={row.student.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
-                    <td className="p-3">
-                      <div className="font-black text-slate-900">{row.student.name}</div>
-                      {row.student.nationalId && (
-                        <div className="text-[10.5px] text-slate-400 font-mono mt-0.5">کد ملی: {row.student.nationalId}</div>
-                      )}
-                    </td>
-                    <td className="p-3 font-bold text-slate-700">{row.student.grade || '---'}</td>
-                    <td className="p-3 text-center">
-                      {row.attendanceWarnings.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 font-mono font-black">
-                          {row.attendanceWarnings.length} مورد
-                        </span>
-                      ) : (
-                        <span className="text-slate-300 font-mono">۰</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {row.studyWarnings.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 font-mono font-black">
-                          {row.studyWarnings.length} مورد
-                        </span>
-                      ) : (
-                        <span className="text-slate-300 font-mono">۰</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      {row.totalWarningsCount > 0 ? (
-                        <span className="inline-flex items-center justify-center min-w-[32px] px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono font-black">
-                          {row.totalWarningsCount}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300 font-mono">۰</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-center font-mono text-slate-600 font-bold">
-                      {row.formalLetters.length > 0 ? (
-                        <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px]">
-                          {row.formalLetters.length} ابلاغیه
-                        </span>
-                      ) : '---'}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex items-center justify-center gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => setDetailRow(row)}
-                          className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 cursor-pointer transition-colors"
-                        >
-                          <Eye size={13} />
-                          <span>جزئیات ({row.totalWarningsCount})</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPrintableForm(row, 'commitment')}
-                          className="px-3 py-1.5 rounded-xl text-[11px] font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                        >
-                          <Printer size={13} />
-                          <span>صدور و چاپ فرم</span>
-                        </button>
+            {filteredRows.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2 text-slate-500">
+                <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
+                <p className="text-xs font-bold text-slate-700">موردی مطابق فیلتر انتخابی یافت نشد.</p>
+                <p className="text-[11px] text-slate-400">
+                  برای مشاهده همه طلاب، فیلتر «نمایش همه طلاب» را انتخاب کنید.
+                </p>
+              </div>
+            ) : (
+              filteredRows.map((row) => (
+                <div key={row.student.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-black text-slate-900 truncate">{row.student.name}</h3>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[11px] font-bold text-slate-500">
+                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">{row.student.grade || 'بدون پایه'}</span>
+                        {row.student.nationalId && <span className="font-mono text-slate-400">{row.student.nationalId}</span>}
+                        {row.formalLetters.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {row.formalLetters.length} ابلاغیه
+                          </span>
+                        )}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    <span className={cn(
+                      'px-2.5 py-1 rounded-xl font-mono text-xs font-black shrink-0',
+                      row.totalWarningsCount > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'
+                    )}>
+                      {row.totalWarningsCount} اخطار
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-black">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-rose-50/70 border border-rose-100 text-rose-700 flex items-center justify-between">
+                      <span>حضور و غیاب:</span>
+                      <span className="font-mono">{row.attendanceWarnings.length}</span>
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded-xl bg-amber-50/70 border border-amber-100 text-amber-800 flex items-center justify-between">
+                      <span>ثبت مطالعه:</span>
+                      <span className="font-mono">{row.studyWarnings.length}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setDetailRow(row)}
+                      className="min-h-[38px] px-3 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye size={14} />
+                      <span>جزئیات ({row.totalWarningsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPrintableForm(row, 'commitment')}
+                      className="min-h-[38px] px-3 py-2 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <Printer size={14} />
+                      <span>صدور فرم</span>
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <>
+          {/* Top Header */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-600 via-red-600 to-amber-600 text-white flex items-center justify-center shadow-lg shadow-rose-500/25 shrink-0">
+                <ShieldAlert size={24} />
+              </div>
+              <div>
+                <h1 className="text-base sm:text-lg font-black text-slate-900">مدیریت اخطارهای طلاب (حضور و غیاب و مطالعه)</h1>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  پایش دقیق اخطارهای ثبت‌شده به تفکیک حضور و غیاب و ثبت مطالعه به همراه صدور و چاپ فرم تعهدنامه، ارجاع به شورا و مطالبه توضیحات
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <FileSpreadsheet size={15} />
+                <span>خروجی اکسل</span>
+              </button>
+            </div>
+          </div>
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 no-print">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 block">طلاب دارای اخطار</span>
+                <span className="text-2xl font-black font-mono text-slate-900 mt-1 block">{kpis.studentsWithAnyWarning}</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                <Users size={20} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 border border-rose-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-rose-600 block">اخطارهای حضور و غیاب</span>
+                <span className="text-2xl font-black font-mono text-rose-700 mt-1 block">{kpis.totalAttWarnings}</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                <AlertOctagon size={20} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-amber-700 block">اخطارهای ثبت مطالعه</span>
+                <span className="text-2xl font-black font-mono text-amber-700 mt-1 block">{kpis.totalStudyWarnings}</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+                <BookOpen size={20} />
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-rose-600 to-indigo-700 text-white rounded-2xl p-4 shadow-md flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-rose-100 block">مجموع کل اخطارها</span>
+                <span className="text-2xl font-black font-mono text-white mt-1 block">{kpis.grandTotal}</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center">
+                <AlertTriangle size={20} />
+              </div>
+            </div>
+          </div>
+
+          {/* Filter & Time Range Toolbar */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-4 no-print">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              {/* Range Mode Switcher */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-black text-slate-700 flex items-center gap-1.5 ml-1">
+                  <CalendarIcon size={15} className="text-indigo-600" />
+                  <span>محدوده زمانی محاسبه اخطارها:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRangeMode('all_time')}
+                  className={cn(
+                    'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border cursor-pointer',
+                    rangeMode === 'all_time'
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  )}
+                >
+                  از ابتدا تا کنون
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRangeMode('custom_range')}
+                  className={cn(
+                    'px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border cursor-pointer',
+                    rangeMode === 'custom_range'
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  )}
+                >
+                  بازه زمانی مشخص
+                </button>
+              </div>
+
+              {rangeMode === 'custom_range' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="w-40">
+                    <ShamsiDatePicker value={startDate} onChange={setStartDate} placeholder="از تاریخ..." />
+                  </div>
+                  <span className="text-xs font-bold text-slate-400">تا</span>
+                  <div className="w-40">
+                    <ShamsiDatePicker value={endDate} onChange={setEndDate} placeholder="تا تاریخ..." />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = getTodayShamsi();
+                      setStartDate(subtractDaysShamsi(today, 30));
+                      setEndDate(today);
+                    }}
+                    className="px-2.5 py-1.5 text-[11px] font-bold bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200 hover:bg-indigo-100 cursor-pointer"
+                  >
+                    ۳۰ روز اخیر
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Search, Grade & Type Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="relative">
+                <Search size={14} className="absolute right-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="جستجوی نام طلبه، کد ملی یا کد طلبگی..."
+                  className="w-full pr-9 pl-3 py-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <select
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+                className="w-full p-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none"
+              >
+                <option value="all">همه پایه‌های تحصیلی</option>
+                <option value="پایه ۷">پایه ۷</option>
+                <option value="پایه ۸">پایه ۸</option>
+                <option value="پایه ۹">پایه ۹</option>
+                <option value="پایه ۱۰">پایه ۱۰</option>
+                <option value="پایه ۱۱">پایه ۱۱</option>
+              </select>
+
+              <select
+                value={warningTypeFilter}
+                onChange={(e) => setWarningTypeFilter(e.target.value as any)}
+                className="w-full p-2 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white outline-none"
+              >
+                <option value="with_warnings">طلاب دارای اخطار (حضور و غیاب یا مطالعه)</option>
+                <option value="attendance_only">دارای اخطار حضور و غیاب</option>
+                <option value="study_only">دارای اخطار ثبت مطالعه</option>
+                <option value="both">دارای هر دو نوع اخطار</option>
+                <option value="all_students">نمایش همه طلاب (حتی بدون اخطار)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Main Warnings Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden no-print">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Filter size={15} className="text-rose-600" />
+                <h2 className="text-xs font-black text-slate-800">
+                  لیست وضعیت اخطارهای طلاب ({rangeMode === 'all_time' ? 'از ابتدا تا کنون' : `بازه ${startDate} تا ${endDate}`})
+                </h2>
+              </div>
+              <span className="text-[11px] font-bold text-slate-500">
+                تعداد ردیف‌ها: {filteredRows.length} طلبه
+              </span>
+            </div>
+
+            {filteredRows.length === 0 ? (
+              <div className="p-12 text-center space-y-2 text-slate-500">
+                <CheckCircle2 size={36} className="mx-auto text-emerald-400" />
+                <p className="text-xs font-bold text-slate-700">موردی مطابق فیلتر انتخابی یافت نشد.</p>
+                <p className="text-[11px] text-slate-400">
+                  برای مشاهده همه طلاب یا چاپ فرم برای یک طلبه خاص، گزینه «نمایش همه طلاب» را انتخاب نمایید.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-700 font-black border-b border-slate-200">
+                      <th className="p-3">ردیف</th>
+                      <th className="p-3">نام و نام خانوادگی طلبه</th>
+                      <th className="p-3">پایه</th>
+                      <th className="p-3 text-center text-rose-700">اخطارهای حضور و غیاب</th>
+                      <th className="p-3 text-center text-amber-800">اخطارهای ثبت مطالعه</th>
+                      <th className="p-3 text-center">مجموع کل اخطارها</th>
+                      <th className="p-3 text-center">سوابق فرم چاپی</th>
+                      <th className="p-3 text-center">عملیات و صدور فرم قابل ویرایش</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredRows.map((row, idx) => (
+                      <tr key={row.student.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                        <td className="p-3">
+                          <div className="font-black text-slate-900">{row.student.name}</div>
+                          {row.student.nationalId && (
+                            <div className="text-[10.5px] text-slate-400 font-mono mt-0.5">کد ملی: {row.student.nationalId}</div>
+                          )}
+                        </td>
+                        <td className="p-3 font-bold text-slate-700">{row.student.grade || '---'}</td>
+                        <td className="p-3 text-center">
+                          {row.attendanceWarnings.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 border border-rose-200 font-mono font-black">
+                              {row.attendanceWarnings.length} مورد
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">۰</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          {row.studyWarnings.length > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 font-mono font-black">
+                              {row.studyWarnings.length} مورد
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">۰</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          {row.totalWarningsCount > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[32px] px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono font-black">
+                              {row.totalWarningsCount}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 font-mono">۰</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center font-mono text-slate-600 font-bold">
+                          {row.formalLetters.length > 0 ? (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px]">
+                              {row.formalLetters.length} ابلاغیه
+                            </span>
+                          ) : '---'}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setDetailRow(row)}
+                              className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Eye size={13} />
+                              <span>جزئیات ({row.totalWarningsCount})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPrintableForm(row, 'commitment')}
+                              className="px-3 py-1.5 rounded-xl text-[11px] font-black bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              <Printer size={13} />
+                              <span>صدور و چاپ فرم</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* =================================================================== */}
       {/* Modal 1: Student Warnings Detail Breakdown Modal                     */}

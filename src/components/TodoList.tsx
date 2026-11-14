@@ -33,12 +33,16 @@ import { PersonalTodo, TodoCategory, AssignedTodo } from '../types';
 import { AppUser } from '../types/auth';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 const DEFAULT_CATEGORIES = ['عمومی'];
 
 export default function TodoList() {
   const { currentUser, users, isReadOnly } = useAuth();
   const isFinanceOfficer = currentUser?.role === 'financial_officer' || currentUser?.role === 'finance_manager' || currentUser?.username?.toUpperCase() === 'MALI';
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Primary navigation tabs
   const [activeTab, setActiveTab] = useState<'personal' | 'assigned' | 'archive'>('personal');
@@ -502,203 +506,348 @@ export default function TodoList() {
   }, [assignedTodos, currentUser.id]);
 
   return (
-    <div className="p-4 md:p-6 space-y-6 dir-rtl font-vazir max-w-7xl mx-auto">
-      {/* Top Banner Header */}
-      <div className="bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl">
-                <Sparkles className="w-6 h-6 text-indigo-300" />
+    <div className={cn("dir-rtl font-vazir max-w-7xl mx-auto", isAdminMobile ? "p-2.5 space-y-3.5" : "p-4 md:p-6 space-y-6")}>
+      {isAdminMobile ? (
+        <>
+          <MobileSectionHeader
+            title={isFinanceOfficer ? 'پیگیری‌ها و ارجاعات مالی و اداری' : 'پیگیری‌های من و ارجاعات'}
+            subtitle={isFinanceOfficer ? 'مدیریت پیگیری‌های مالی، شهریه، نهار و کارکرد' : 'کارهای شخصی، ستون‌بندی و ارجاع به سایر مسئولین'}
+            icon={<Sparkles size={20} />}
+            variant="indigo"
+            primaryAction={activeTab === 'assigned' ? {
+              id: 'add-assigned',
+              label: 'ارسال پیگیری به مسئول',
+              icon: <Send size={15} />,
+              onClick: handleOpenAddAssignedModal,
+              tone: 'emerald'
+            } : {
+              id: 'add-personal',
+              label: 'ثبت پیگیری جدید',
+              icon: <Plus size={15} />,
+              onClick: () => handleOpenAddPersonalModal(),
+              tone: 'primary'
+            }}
+            secondaryActions={[
+              {
+                id: 'new-col',
+                label: '+ ایجاد ستون جدید',
+                icon: <FolderPlus size={14} />,
+                onClick: () => setIsAddCategoryModalOpen(true),
+                tone: 'indigo'
+              },
+              {
+                id: 'toggle-view',
+                label: personalViewMode === 'kanban' ? 'نمایش یک‌جا' : 'نمایش ستونی',
+                icon: personalViewMode === 'kanban' ? <List size={14} /> : <Columns size={14} />,
+                onClick: () => setPersonalViewMode(personalViewMode === 'kanban' ? 'list' : 'kanban')
+              }
+            ]}
+          />
+
+          <MobileHorizontalTabs
+            activeId={activeTab}
+            onChange={(id) => setActiveTab(id as any)}
+            tabs={[
+              {
+                id: 'personal',
+                label: 'کارهای شخصی',
+                icon: <Columns size={14} />,
+                badge: personalTodos.filter(t => !t.archived).length
+              },
+              {
+                id: 'assigned',
+                label: 'ارسالی و دریافتی',
+                icon: <ArrowRightLeft size={14} />,
+                tone: 'emerald',
+                badge: receivedAssignedTodos.filter(t => t.status === 'pending').length || undefined
+              },
+              {
+                id: 'archive',
+                label: 'بایگانی',
+                icon: <Archive size={14} />,
+                tone: 'slate',
+                badge: archivedPersonalTodos.length
+              }
+            ]}
+          />
+        </>
+      ) : (
+        /* Top Banner Header */
+        <div className="bg-gradient-to-l from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl">
+                  <Sparkles className="w-6 h-6 text-indigo-300" />
+                </div>
+                <div>
+                  <h1 className="text-xl md:text-2xl font-black text-white">
+                    {isFinanceOfficer ? 'پیگیری‌ها و ارجاعات مالی و اداری' : 'پیگیری‌های من و ارجاعات بین مسئولین'}
+                  </h1>
+                  <p className="text-xs text-indigo-200 mt-0.5">
+                    {isFinanceOfficer 
+                      ? 'مدیریت پیگیری‌های دریافت کارکرد اساتید، محاسبه شهریه طلاب، تسویه نهار، وام و امور مالی مدرسه'
+                      : 'مدیریت کارهای شخصی، دسته‌بندی ستونی و ارجاع پیگیری به سایر مسئولین مدرسه (مستقل برای هر کاربر)'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl md:text-2xl font-black text-white">
-                  {isFinanceOfficer ? 'پیگیری‌ها و ارجاعات مالی و اداری' : 'پیگیری‌های من و ارجاعات بین مسئولین'}
-                </h1>
-                <p className="text-xs text-indigo-200 mt-0.5">
-                  {isFinanceOfficer 
-                    ? 'مدیریت پیگیری‌های دریافت کارکرد اساتید، محاسبه شهریه طلاب، تسویه نهار، وام و امور مالی مدرسه'
-                    : 'مدیریت کارهای شخصی، دسته‌بندی ستونی و ارجاع پیگیری به سایر مسئولین مدرسه (مستقل برای هر کاربر)'}
-                </p>
-              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {activeTab === 'personal' && (
+                <button
+                  onClick={() => handleOpenAddPersonalModal()}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Plus size={16} />
+                  <span>ثبت پیگیری جدید</span>
+                </button>
+              )}
+
+              {activeTab === 'assigned' && (
+                <button
+                  onClick={handleOpenAddAssignedModal}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Send size={16} />
+                  <span>ارسال پیگیری به مسئول دیگر</span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {activeTab === 'personal' && (
-              <button
-                onClick={() => handleOpenAddPersonalModal()}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer"
-              >
-                <Plus size={16} />
-                <span>ثبت پیگیری جدید</span>
-              </button>
-            )}
+          {/* Primary Tabs */}
+          <div className="flex items-center gap-2 pt-5 mt-5 border-t border-slate-800 text-xs">
+            <button
+              onClick={() => setActiveTab('personal')}
+              className={cn(
+                "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
+                activeTab === 'personal'
+                  ? "bg-white text-slate-900 shadow-md"
+                  : "bg-white/10 text-slate-300 hover:bg-white/20"
+              )}
+            >
+              <Columns size={15} />
+              <span>پیگیری‌های شخصی من</span>
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-indigo-100 text-indigo-800">
+                {personalTodos.filter(t => !t.archived).length}
+              </span>
+            </button>
 
-            {activeTab === 'assigned' && (
-              <button
-                onClick={handleOpenAddAssignedModal}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md transition-all cursor-pointer"
-              >
-                <Send size={16} />
-                <span>ارسال پیگیری به مسئول دیگر</span>
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab('assigned')}
+              className={cn(
+                "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
+                activeTab === 'assigned'
+                  ? "bg-white text-slate-900 shadow-md"
+                  : "bg-white/10 text-slate-300 hover:bg-white/20"
+              )}
+            >
+              <ArrowRightLeft size={15} />
+              <span>پیگیری‌های ارسالی و دریافتی</span>
+              {receivedAssignedTodos.filter(t => t.status === 'pending').length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-amber-400 text-slate-950 font-black animate-pulse">
+                  {receivedAssignedTodos.filter(t => t.status === 'pending').length} نیازمند اقدام
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('archive')}
+              className={cn(
+                "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
+                activeTab === 'archive'
+                  ? "bg-white text-slate-900 shadow-md"
+                  : "bg-white/10 text-slate-300 hover:bg-white/20"
+              )}
+            >
+              <Archive size={15} />
+              <span>بایگانی</span>
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-slate-300">
+                {archivedPersonalTodos.length}
+              </span>
+            </button>
           </div>
         </div>
-
-        {/* Primary Tabs */}
-        <div className="flex items-center gap-2 pt-5 mt-5 border-t border-slate-800 text-xs">
-          <button
-            onClick={() => setActiveTab('personal')}
-            className={cn(
-              "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
-              activeTab === 'personal'
-                ? "bg-white text-slate-900 shadow-md"
-                : "bg-white/10 text-slate-300 hover:bg-white/20"
-            )}
-          >
-            <Columns size={15} />
-            <span>پیگیری‌های شخصی من</span>
-            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-indigo-100 text-indigo-800">
-              {personalTodos.filter(t => !t.archived).length}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('assigned')}
-            className={cn(
-              "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
-              activeTab === 'assigned'
-                ? "bg-white text-slate-900 shadow-md"
-                : "bg-white/10 text-slate-300 hover:bg-white/20"
-            )}
-          >
-            <ArrowRightLeft size={15} />
-            <span>پیگیری‌های ارسالی و دریافتی</span>
-            {receivedAssignedTodos.filter(t => t.status === 'pending').length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-amber-400 text-slate-950 font-black animate-pulse">
-                {receivedAssignedTodos.filter(t => t.status === 'pending').length} نیازمند اقدام
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('archive')}
-            className={cn(
-              "px-4 py-2 rounded-xl font-black flex items-center gap-2 transition-all cursor-pointer",
-              activeTab === 'archive'
-                ? "bg-white text-slate-900 shadow-md"
-                : "bg-white/10 text-slate-300 hover:bg-white/20"
-            )}
-          >
-            <Archive size={15} />
-            <span>بایگانی</span>
-            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-slate-300">
-              {archivedPersonalTodos.length}
-            </span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* TAB 1: PERSONAL TODOS */}
       {activeTab === 'personal' && (
         <div className="space-y-4">
-          {/* Global Super-Fast Quick Add Bar - Write & Press Enter */}
-          <div className="bg-white p-3.5 rounded-2xl border border-indigo-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
-              <Plus size={18} />
-            </div>
-            <input
-              type="text"
-              placeholder="ثبت سریع کار جدید... (عنوان پیگیری را بنویسید و کلید Enter را بزنید)"
-              value={globalQuickInput}
-              onChange={(e) => setGlobalQuickInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (globalQuickInput.trim()) {
-                    handleQuickAddPersonalTodo('عمومی', globalQuickInput);
-                  }
-                }
-              }}
-              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 placeholder:font-normal"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (globalQuickInput.trim()) {
-                  handleQuickAddPersonalTodo('عمومی', globalQuickInput);
-                }
-              }}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shrink-0 shadow-sm cursor-pointer transition-colors"
-            >
-              + ثبت کار
-            </button>
-          </div>
-
-          {/* Bar Controls */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            {/* Search and Category Filters */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 absolute right-3 top-2.5 text-slate-400" />
+          {isAdminMobile ? (
+            <>
+              {/* Mobile Compact Quick Add */}
+              <div className="bg-white p-2.5 rounded-2xl border border-indigo-200 shadow-2xs flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="جستجو در کارهای شخصی..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pr-9 pl-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="ثبت سریع کار جدید..."
+                  value={globalQuickInput}
+                  onChange={(e) => setGlobalQuickInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (globalQuickInput.trim()) {
+                        handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                      }
+                    }
+                  }}
+                  className="flex-1 min-w-0 px-3 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none"
                 />
-              </div>
-
-              <select
-                value={selectedCategoryFilter}
-                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                className="py-1.5 px-3 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="all">📂 همه ستون‌ها / دسته‌ها</option>
-                {allCategoryNames.map((cat, i) => (
-                  <option key={i} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* View switcher & Add Category */}
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                onClick={() => setIsAddCategoryModalOpen(true)}
-                className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <FolderPlus size={14} />
-                <span>+ ایجاد ستون جدید</span>
-              </button>
-
-              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
                 <button
-                  onClick={() => setPersonalViewMode('kanban')}
-                  className={cn(
-                    "px-3 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all",
-                    personalViewMode === 'kanban' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                  )}
+                  type="button"
+                  onClick={() => {
+                    if (globalQuickInput.trim()) {
+                      handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                    }
+                  }}
+                  className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shrink-0 cursor-pointer"
                 >
-                  <Columns size={13} />
-                  <span>ستون‌ها</span>
-                </button>
-                <button
-                  onClick={() => setPersonalViewMode('list')}
-                  className={cn(
-                    "px-3 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all",
-                    personalViewMode === 'list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
-                  )}
-                >
-                  <List size={13} />
-                  <span>همه یک‌جا</span>
+                  + ثبت
                 </button>
               </div>
-            </div>
-          </div>
+
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجو در کارهای شخصی..."
+                onToggleFilters={() => setMobileFiltersOpen(p => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={selectedCategoryFilter !== 'all' ? 1 : 0}
+              />
+
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-black text-slate-700 mb-1">فیلتر ستون / دسته:</label>
+                    <select
+                      value={selectedCategoryFilter}
+                      onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                      className="w-full py-2 px-3 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50"
+                    >
+                      <option value="all">📂 همه ستون‌ها / دسته‌ها</option>
+                      {allCategoryNames.map((cat, i) => (
+                        <option key={i} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setIsAddCategoryModalOpen(true)}
+                      className="py-2 px-3 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <FolderPlus size={14} />
+                      <span>ستون جدید</span>
+                    </button>
+                    <button
+                      onClick={() => setPersonalViewMode(personalViewMode === 'kanban' ? 'list' : 'kanban')}
+                      className="py-2 px-3 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      {personalViewMode === 'kanban' ? <List size={14} /> : <Columns size={14} />}
+                      <span>{personalViewMode === 'kanban' ? 'نمای یک‌جا' : 'نمای ستونی'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Global Super-Fast Quick Add Bar - Write & Press Enter */}
+              <div className="bg-white p-3.5 rounded-2xl border border-indigo-200 shadow-sm flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
+                  <Plus size={18} />
+                </div>
+                <input
+                  type="text"
+                  placeholder="ثبت سریع کار جدید... (عنوان پیگیری را بنویسید و کلید Enter را بزنید)"
+                  value={globalQuickInput}
+                  onChange={(e) => setGlobalQuickInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (globalQuickInput.trim()) {
+                        handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                      }
+                    }
+                  }}
+                  className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 rounded-xl text-xs font-bold text-slate-900 outline-none transition-all placeholder:text-slate-400 placeholder:font-normal"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (globalQuickInput.trim()) {
+                      handleQuickAddPersonalTodo('عمومی', globalQuickInput);
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shrink-0 shadow-sm cursor-pointer transition-colors"
+                >
+                  + ثبت کار
+                </button>
+              </div>
+
+              {/* Bar Controls */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                {/* Search and Category Filters */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="w-4 h-4 absolute right-3 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="جستجو در کارهای شخصی..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pr-9 pl-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="py-1.5 px-3 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="all">📂 همه ستون‌ها / دسته‌ها</option>
+                    {allCategoryNames.map((cat, i) => (
+                      <option key={i} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* View switcher & Add Category */}
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    onClick={() => setIsAddCategoryModalOpen(true)}
+                    className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <FolderPlus size={14} />
+                    <span>+ ایجاد ستون جدید</span>
+                  </button>
+
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                    <button
+                      onClick={() => setPersonalViewMode('kanban')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all",
+                        personalViewMode === 'kanban' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                      )}
+                    >
+                      <Columns size={13} />
+                      <span>ستون‌ها</span>
+                    </button>
+                    <button
+                      onClick={() => setPersonalViewMode('list')}
+                      className={cn(
+                        "px-3 py-1 rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all",
+                        personalViewMode === 'list' ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                      )}
+                    >
+                      <List size={13} />
+                      <span>همه یک‌جا</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* VIEW MODE: KANBAN / COLUMNS */}
           {personalViewMode === 'kanban' ? (
@@ -961,48 +1110,77 @@ export default function TodoList() {
       {activeTab === 'assigned' && (
         <div className="space-y-4">
           {/* Sub Tab Switcher */}
-          <div className="bg-white p-2 border border-slate-200 rounded-2xl shadow-xs flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          {isAdminMobile ? (
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setAssignedSubTab('received')}
                 className={cn(
-                  "py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2",
+                  "py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border",
                   assignedSubTab === 'received'
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                    : "bg-white text-slate-700 border-slate-200"
                 )}
               >
-                <Inbox size={16} />
-                <span>دریافتی‌های من ({receivedAssignedTodos.length})</span>
-                {receivedAssignedTodos.filter(t => t.status === 'pending').length > 0 && (
-                  <span className="px-1.5 py-0.5 bg-amber-400 text-slate-950 font-black rounded-md text-[10px]">
-                    {receivedAssignedTodos.filter(t => t.status === 'pending').length}
-                  </span>
-                )}
+                <Inbox size={15} />
+                <span>دریافتی ({receivedAssignedTodos.length})</span>
               </button>
-
               <button
                 onClick={() => setAssignedSubTab('sent')}
                 className={cn(
-                  "py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2",
+                  "py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 border",
                   assignedSubTab === 'sent'
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                    : "bg-white text-slate-700 border-slate-200"
                 )}
               >
-                <Send size={16} />
-                <span>ارسالی‌های من ({sentAssignedTodos.length})</span>
+                <Send size={15} />
+                <span>ارسالی ({sentAssignedTodos.length})</span>
               </button>
             </div>
+          ) : (
+            <div className="bg-white p-2 border border-slate-200 rounded-2xl shadow-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAssignedSubTab('received')}
+                  className={cn(
+                    "py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2",
+                    assignedSubTab === 'received'
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  )}
+                >
+                  <Inbox size={16} />
+                  <span>دریافتی‌های من ({receivedAssignedTodos.length})</span>
+                  {receivedAssignedTodos.filter(t => t.status === 'pending').length > 0 && (
+                    <span className="px-1.5 py-0.5 bg-amber-400 text-slate-950 font-black rounded-md text-[10px]">
+                      {receivedAssignedTodos.filter(t => t.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
 
-            <button
-              onClick={handleOpenAddAssignedModal}
-              className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Plus size={15} />
-              <span>ارسال پیگیری به مسئول دیگر</span>
-            </button>
-          </div>
+                <button
+                  onClick={() => setAssignedSubTab('sent')}
+                  className={cn(
+                    "py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2",
+                    assignedSubTab === 'sent'
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  )}
+                >
+                  <Send size={16} />
+                  <span>ارسالی‌های من ({sentAssignedTodos.length})</span>
+                </button>
+              </div>
+
+              <button
+                onClick={handleOpenAddAssignedModal}
+                className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus size={15} />
+                <span>ارسال پیگیری به مسئول دیگر</span>
+              </button>
+            </div>
+          )}
 
           {/* SUB TAB: RECEIVED (دریافتی‌های من) */}
           {assignedSubTab === 'received' && (

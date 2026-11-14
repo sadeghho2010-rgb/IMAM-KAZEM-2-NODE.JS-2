@@ -33,6 +33,12 @@ import { getTodayShamsi } from '../../lib/jalali';
 import { motion, AnimatePresence } from 'motion/react';
 import { GradeMentorCalculationItem, GradeMentorPeriod, StudentClaimRecord, PresenceReport, WorkflowItem } from '../../types';
 import { AppUser } from '../../types/auth';
+import { useIsAdminMobile } from '../admin/mobile/AdminMobileContext';
+import {
+  MobileHorizontalTabs,
+  MobileSearchFilterBar,
+  MobileSectionHeader,
+} from '../admin/mobile/MobileModulePrimitives';
 
 interface GradeProfessorsCompensationProps {
   onNavigateTab?: (tab: string, params?: any) => void;
@@ -40,6 +46,8 @@ interface GradeProfessorsCompensationProps {
 
 export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProfessorsCompensationProps) {
   const { currentUser, users } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Top level screen view: 'create_period' (active editor) vs 'periods_archive' (archive list)
   const [activeView, setActiveView] = useState<'create_period' | 'periods_archive'>('create_period');
@@ -898,80 +906,119 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       </AnimatePresence>
 
       {/* Main Header & Navigation */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
-              <Award size={24} />
+      {isAdminMobile ? (
+        <div className="space-y-2.5">
+          <MobileSectionHeader
+            title="حق‌الزحمه اساتید و مسئولین پایه"
+            subtitle="تنظیم بازه، ساعات حضور، کسر نهار و بدهی، تعدیل دستی و بایگانی"
+            badgeText="مسئول پایه = استاد پایه"
+            icon={<Award size={20} />}
+            variant="indigo"
+            primaryAction={{
+              id: 'start_period',
+              label: 'محاسبه حق‌الزحمه (دوره جدید)',
+              icon: <Calendar size={16} />,
+              tone: 'primary',
+              onClick: handleOpenDateRangeModal,
+            }}
+          />
+          <MobileHorizontalTabs
+            activeId={activeView}
+            onChange={(id) => setActiveView(id as 'create_period' | 'periods_archive')}
+            tabs={[
+              {
+                id: 'create_period',
+                label: 'محاسبه دوره پرداخت',
+                icon: <Clock size={14} />,
+                badge: `${items.length} استاد`,
+                tone: 'indigo',
+              },
+              {
+                id: 'periods_archive',
+                label: 'بایگانی دوره‌ها',
+                icon: <Archive size={14} />,
+                badge: `${periods.length} دوره`,
+                tone: 'slate',
+              },
+            ]}
+          />
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-indigo-700 rounded-2xl flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                <Award size={24} />
+              </div>
+              <div>
+                <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <span>محاسبه حق‌الزحمه اساتید و مسئولین پایه</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                    مسئول پایه = استاد پایه
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  تنظیم بازه زمانی، انتخاب اساتید، محاسبه ساعات حضور، کسر نهار، بدهی‌ها، افزایش/کاهش دستی، خروجی اکسل بالادستی و ثبت نهایی در بایگانی
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span>محاسبه حق‌الزحمه اساتید و مسئولین پایه</span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
-                  مسئول پایه = استاد پایه
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                تنظیم بازه زمانی، انتخاب اساتید، محاسبه ساعات حضور، کسر نهار، بدهی‌ها، افزایش/کاهش دستی، خروجی اکسل بالادستی و ثبت نهایی در بایگانی
-              </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleOpenDateRangeModal}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              >
+                <Calendar size={16} />
+                <span>محاسبه حق‌الزحمه (شروع دوره جدید)</span>
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Top-Level Primary Navigation Tabs */}
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
             <button
-              onClick={handleOpenDateRangeModal}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              onClick={() => setActiveView('create_period')}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeView === 'create_period'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
             >
-              <Calendar size={16} />
-              <span>محاسبه حق‌الزحمه (شروع دوره جدید)</span>
+              <Clock size={17} />
+              <span>بخش محاسبه دوره پرداخت حق‌الزحمه</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeView === 'create_period' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {items.length} استاد
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveView('periods_archive')}
+              className={cn(
+                "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
+                activeView === 'periods_archive'
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
+                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              )}
+            >
+              <Archive size={17} />
+              <span>مشاهده دوره‌های حق‌الزحمه {`{بایگانی}`}</span>
+              <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeView === 'periods_archive' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
+                {periods.length} دوره
+              </span>
             </button>
           </div>
         </div>
-
-        {/* Top-Level Primary Navigation Tabs */}
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-          <button
-            onClick={() => setActiveView('create_period')}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeView === 'create_period'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <Clock size={17} />
-            <span>بخش محاسبه دوره پرداخت حق‌الزحمه</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeView === 'create_period' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {items.length} استاد
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveView('periods_archive')}
-            className={cn(
-              "flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl font-bold text-xs transition-all cursor-pointer",
-              activeView === 'periods_archive'
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            )}
-          >
-            <Archive size={17} />
-            <span>مشاهده دوره‌های حق‌الزحمه {`{بایگانی}`}</span>
-            <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-black", activeView === 'periods_archive' ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700")}>
-              {periods.length} دوره
-            </span>
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ============================================================= */}
       {/* VIEW 1: ACTIVE CALCULATION WORKSPACE                          */}
       {/* ============================================================= */}
       {activeView === 'create_period' && (
-        <div className="space-y-6">
+        <div className={cn(isAdminMobile ? 'space-y-4' : 'space-y-6')}>
           {/* If no date range configured yet, show attractive landing banner */}
           {!periodTitle ? (
-            <div className="bg-white rounded-3xl p-10 border border-slate-200 text-center space-y-4 shadow-xs">
+            <div className={cn('bg-white border border-slate-200 text-center space-y-4 shadow-xs', isAdminMobile ? 'rounded-[22px] p-6' : 'rounded-3xl p-10')}>
               <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
                 <Calendar size={32} />
               </div>
@@ -983,7 +1030,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
               </div>
               <button
                 onClick={handleOpenDateRangeModal}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black shadow-md shadow-indigo-100 transition-all cursor-pointer inline-flex items-center gap-2"
+                className={cn(
+                  'bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black shadow-md shadow-indigo-100 transition-all cursor-pointer inline-flex items-center justify-center gap-2',
+                  isAdminMobile ? 'w-full min-h-[44px] px-5 py-3' : 'px-6 py-3'
+                )}
               >
                 <Plus size={16} />
                 <span>شروع محاسبه و تعیین بازه زمانی</span>
@@ -992,123 +1042,195 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
           ) : (
             <>
               {/* Active Period Header Strip */}
-              <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-black text-slate-900">{periodTitle}</h2>
-                      <span className={cn(
-                        "px-2.5 py-0.5 rounded-full text-[10px] font-black border",
-                        periodStatus === 'finalized' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
-                      )}>
-                        {periodStatus === 'finalized' ? 'نهایی‌شده' : 'پیش‌نویس در حال ویرایش'}
-                      </span>
+              {isAdminMobile ? (
+                <MobileSectionHeader
+                  title={periodTitle}
+                  subtitle={`بازه ${startDate} تا ${endDate} • نرخ ساعت ${baseHourlyRate.toLocaleString('fa-IR')} ت • نهار ${lunchCostPerMeal.toLocaleString('fa-IR')} ت`}
+                  badgeText={periodStatus === 'finalized' ? 'نهایی‌شده' : 'پیش‌نویس'}
+                  variant="white"
+                  primaryAction={{
+                    id: 'add_prof',
+                    label: 'افزودن استاد پایه',
+                    icon: <UserPlus size={15} />,
+                    tone: 'emerald',
+                    onClick: handleOpenAddProfessorModal,
+                  }}
+                  secondaryLabel="ابزارها و ثبت"
+                  secondaryActions={[
+                    {
+                      id: 'finalize_archive',
+                      label: 'ثبت نهایی و بایگانی',
+                      icon: <Save size={14} />,
+                      tone: 'indigo',
+                      disabled: items.length === 0,
+                      onClick: handleFinalizeAndArchive,
+                    },
+                    ...(items.length > 0 && approvedPresenceReports.length > 0
+                      ? [
+                          {
+                            id: 'apply_presence',
+                            label: `تایید مبنای جریان کار (${approvedPresenceReports.length})`,
+                            icon: <Clock size={14} />,
+                            tone: 'amber' as const,
+                            onClick: handleApplyAllPresenceBasis,
+                          },
+                        ]
+                      : []),
+                    {
+                      id: 'toggle_compact',
+                      label: isCompactView ? 'نمایش تفصیلی کامل' : 'نمایش جمع‌وجور',
+                      icon: <Layers size={14} />,
+                      onClick: () => setIsCompactView(!isCompactView),
+                    },
+                    {
+                      id: 'open_settings',
+                      label: 'تنظیمات نرخ و نهار',
+                      icon: <SlidersHorizontal size={14} />,
+                      onClick: () => setIsSettingsOpen(true),
+                    },
+                    {
+                      id: 'excel_detailed',
+                      label: 'اکسل تفصیلی',
+                      icon: <FileSpreadsheet size={14} />,
+                      tone: 'emerald',
+                      disabled: items.length === 0,
+                      onClick: () => handleExportDetailedExcel(filteredActiveItems, periodTitle),
+                    },
+                    {
+                      id: 'excel_upper',
+                      label: 'اکسل بالادستی',
+                      icon: <Building2 size={14} />,
+                      disabled: items.length === 0,
+                      onClick: () => handleExportUpperManagementExcel(filteredActiveItems, periodTitle),
+                    },
+                    {
+                      id: 'print_slips',
+                      label: 'چاپ همه فیش‌ها',
+                      icon: <Printer size={14} />,
+                      disabled: items.length === 0,
+                      onClick: () => setIsBatchSlipOpen(true),
+                    },
+                  ]}
+                />
+              ) : (
+                <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-black text-slate-900">{periodTitle}</h2>
+                        <span className={cn(
+                          "px-2.5 py-0.5 rounded-full text-[10px] font-black border",
+                          periodStatus === 'finalized' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                        )}>
+                          {periodStatus === 'finalized' ? 'نهایی‌شده' : 'پیش‌نویس در حال ویرایش'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
+                        <span className="flex items-center gap-1 font-mono font-bold text-slate-700">
+                          <Calendar size={13} className="text-slate-400" />
+                          بازه زمانی: {startDate} تا {endDate}
+                        </span>
+                        <span>•</span>
+                        <span>نرخ ساعت: <strong className="text-slate-800 font-mono">{baseHourlyRate.toLocaleString('fa-IR')}</strong> ت</span>
+                        <span>•</span>
+                        <span>هزینه نهار: <strong className="text-slate-800 font-mono">{lunchCostPerMeal.toLocaleString('fa-IR')}</strong> ت</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 font-mono font-bold text-slate-700">
-                        <Calendar size={13} className="text-slate-400" />
-                        بازه زمانی: {startDate} تا {endDate}
-                      </span>
-                      <span>•</span>
-                      <span>نرخ ساعت: <strong className="text-slate-800 font-mono">{baseHourlyRate.toLocaleString('fa-IR')}</strong> ت</span>
-                      <span>•</span>
-                      <span>هزینه نهار: <strong className="text-slate-800 font-mono">{lunchCostPerMeal.toLocaleString('fa-IR')}</strong> ت</span>
-                    </div>
-                  </div>
 
-                  {/* Actions Toolbar */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Add Professor Button */}
-                    <button
-                      onClick={handleOpenAddProfessorModal}
-                      className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
-                    >
-                      <UserPlus size={15} />
-                      <span>اضافه کردن استاد پایه جهت پرداخت</span>
-                    </button>
-
-                    {/* Batch confirm/apply approved presence hours button */}
-                    {items.length > 0 && approvedPresenceReports.length > 0 && (
+                    {/* Actions Toolbar */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Add Professor Button */}
                       <button
-                        onClick={handleApplyAllPresenceBasis}
-                        className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
-                        title="تایید و اعمال ساعات ارسالی کارتابل جریان کار برای تمام اساتید حاضر در این جدول"
+                        onClick={handleOpenAddProfessorModal}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
                       >
-                        <Clock size={15} />
-                        <span>تایید مبنای کارکرد ارسالی جریان کار ({approvedPresenceReports.length})</span>
+                        <UserPlus size={15} />
+                        <span>اضافه کردن استاد پایه جهت پرداخت</span>
                       </button>
-                    )}
 
-                    {/* Compact / Detailed Toggle */}
-                    <button
-                      onClick={() => setIsCompactView(!isCompactView)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
-                        isCompactView 
-                          ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-black"
-                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                      {/* Batch confirm/apply approved presence hours button */}
+                      {items.length > 0 && approvedPresenceReports.length > 0 && (
+                        <button
+                          onClick={handleApplyAllPresenceBasis}
+                          className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer"
+                          title="تایید و اعمال ساعات ارسالی کارتابل جریان کار برای تمام اساتید حاضر در این جدول"
+                        >
+                          <Clock size={15} />
+                          <span>تایید مبنای کارکرد ارسالی جریان کار ({approvedPresenceReports.length})</span>
+                        </button>
                       )}
-                    >
-                      <Layers size={15} />
-                      <span>{isCompactView ? 'نمایش تفصیلی کامل' : 'نمایش جمع و جور'}</span>
-                    </button>
 
-                    {/* Settings Modal Button */}
-                    <button
-                      onClick={() => setIsSettingsOpen(true)}
-                      className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 transition-all cursor-pointer"
-                      title="تنظیمات نرخ ساعتی و هزینه نهار"
-                    >
-                      <SlidersHorizontal size={15} />
-                    </button>
+                      {/* Compact / Detailed Toggle */}
+                      <button
+                        onClick={() => setIsCompactView(!isCompactView)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
+                          isCompactView 
+                            ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-black"
+                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                        )}
+                      >
+                        <Layers size={15} />
+                        <span>{isCompactView ? 'نمایش تفصیلی کامل' : 'نمایش جمع و جور'}</span>
+                      </button>
 
-                    {/* Detailed Excel Export */}
-                    <button
-                      onClick={() => handleExportDetailedExcel(filteredActiveItems, periodTitle)}
-                      disabled={items.length === 0}
-                      className="flex items-center gap-1 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer disabled:opacity-50"
-                      title="خروجی اکسل تفصیلی داخلی با تمام جزئیات"
-                    >
-                      <FileSpreadsheet size={15} />
-                      <span>اکسل تفصیلی</span>
-                    </button>
+                      {/* Settings Modal Button */}
+                      <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 transition-all cursor-pointer"
+                        title="تنظیمات نرخ ساعتی و هزینه نهار"
+                      >
+                        <SlidersHorizontal size={15} />
+                      </button>
 
-                    {/* Upper Management Excel Export */}
-                    <button
-                      onClick={() => handleExportUpperManagementExcel(filteredActiveItems, periodTitle)}
-                      disabled={items.length === 0}
-                      className="flex items-center gap-1 px-3 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold border border-blue-200 transition-all cursor-pointer disabled:opacity-50"
-                      title="خروجی ویژه حواله بالادستی و واریز پایا"
-                    >
-                      <Building2 size={15} />
-                      <span>اکسل بالادستی</span>
-                    </button>
+                      {/* Detailed Excel Export */}
+                      <button
+                        onClick={() => handleExportDetailedExcel(filteredActiveItems, periodTitle)}
+                        disabled={items.length === 0}
+                        className="flex items-center gap-1 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer disabled:opacity-50"
+                        title="خروجی اکسل تفصیلی داخلی با تمام جزئیات"
+                      >
+                        <FileSpreadsheet size={15} />
+                        <span>اکسل تفصیلی</span>
+                      </button>
 
-                    {/* Print Slips */}
-                    <button
-                      onClick={() => setIsBatchSlipOpen(true)}
-                      disabled={items.length === 0}
-                      className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 transition-all cursor-pointer disabled:opacity-50"
-                      title="چاپ فیش‌های حقوقی اساتید"
-                    >
-                      <Printer size={15} />
-                    </button>
+                      {/* Upper Management Excel Export */}
+                      <button
+                        onClick={() => handleExportUpperManagementExcel(filteredActiveItems, periodTitle)}
+                        disabled={items.length === 0}
+                        className="flex items-center gap-1 px-3 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold border border-blue-200 transition-all cursor-pointer disabled:opacity-50"
+                        title="خروجی ویژه حواله بالادستی و واریز پایا"
+                      >
+                        <Building2 size={15} />
+                        <span>اکسل بالادستی</span>
+                      </button>
 
-                    {/* Finalize & Transfer to Archive Button */}
-                    <button
-                      onClick={handleFinalizeAndArchive}
-                      disabled={items.length === 0}
-                      className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-100 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <Save size={15} />
-                      <span>ثبت نهایی و انتقال به بایگانی</span>
-                    </button>
+                      {/* Print Slips */}
+                      <button
+                        onClick={() => setIsBatchSlipOpen(true)}
+                        disabled={items.length === 0}
+                        className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 transition-all cursor-pointer disabled:opacity-50"
+                        title="چاپ فیش‌های حقوقی اساتید"
+                      >
+                        <Printer size={15} />
+                      </button>
+
+                      {/* Finalize & Transfer to Archive Button */}
+                      <button
+                        onClick={handleFinalizeAndArchive}
+                        disabled={items.length === 0}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-100 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <Save size={15} />
+                        <span>ثبت نهایی و انتقال به بایگانی</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Summary Stats Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+              <div className={cn('grid grid-cols-2 md:grid-cols-6', isAdminMobile ? 'gap-2.5 tabular-nums' : 'gap-3')}>
                 <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
                   <span className="text-[11px] text-slate-500 font-medium">تعداد اساتید در جدول</span>
                   <div className="text-base font-black text-slate-800">
@@ -1214,54 +1336,96 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
               )}
 
               {/* Filter Strip */}
-              <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="relative sm:col-span-2">
-                    <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="جستجوی نام استاد، کدملی، پایه تحت اشراف..."
-                      className="w-full pr-10 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 transition-all"
-                    />
-                  </div>
+              {isAdminMobile ? (
+                <div className="space-y-2">
+                  <MobileSearchFilterBar
+                    value={searchQuery}
+                    onChange={setSearchQuery}
+                    placeholder="جستجوی نام استاد، کدملی، پایه..."
+                    onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+                    filtersOpen={mobileFiltersOpen}
+                    activeFilterCount={selectedGradeFilter !== 'all' ? 1 : 0}
+                  />
+                  {mobileFiltersOpen && (
+                    <div className="bg-white rounded-2xl p-3 border border-slate-200 space-y-2">
+                      <label className="block text-[11px] font-black text-slate-600">فیلتر پایه تحصیلی</label>
+                      <select
+                        value={selectedGradeFilter}
+                        onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                        className="w-full min-h-[42px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                        <option value="پایه ۱۱">پایه ۱۱</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="relative sm:col-span-2">
+                      <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="جستجوی نام استاد، کدملی، پایه تحت اشراف..."
+                        className="w-full pr-10 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 transition-all"
+                      />
+                    </div>
 
-                  <div>
-                    <select
-                      value={selectedGradeFilter}
-                      onChange={(e) => setSelectedGradeFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
-                    >
-                      <option value="all">همه پایه‌ها</option>
-                      <option value="پایه ۷">پایه ۷</option>
-                      <option value="پایه ۸">پایه ۸</option>
-                      <option value="پایه ۹">پایه ۹</option>
-                      <option value="پایه ۱۰">پایه ۱۰</option>
-                      <option value="پایه ۱۱">پایه ۱۱</option>
-                    </select>
+                    <div>
+                      <select
+                        value={selectedGradeFilter}
+                        onChange={(e) => setSelectedGradeFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden focus:border-indigo-500 transition-all"
+                      >
+                        <option value="all">همه پایه‌ها</option>
+                        <option value="پایه ۷">پایه ۷</option>
+                        <option value="پایه ۸">پایه ۸</option>
+                        <option value="پایه ۹">پایه ۹</option>
+                        <option value="پایه ۱۰">پایه ۱۰</option>
+                        <option value="پایه ۱۱">پایه ۱۱</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Main Table: Empty State or Populated Table */}
-              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-                <div className="p-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+              <div className={cn('bg-white border border-slate-200/80 shadow-xs overflow-hidden', isAdminMobile ? 'rounded-[22px]' : 'rounded-3xl')}>
+                <div className={cn('bg-slate-50/80 border-b border-slate-100 flex items-center justify-between gap-2', isAdminMobile ? 'p-3.5 flex-wrap' : 'p-4')}>
                   <div className="flex items-center gap-2">
                     <Users size={17} className="text-indigo-600" />
                     <h3 className="text-xs font-black text-slate-800">
-                      جدول محاسبه حق‌الزحمه ({filteredActiveItems.length} استاد) - {isCompactView ? 'نمای جمع و جور' : 'نمای تفصیلی کامل'}
+                      {isAdminMobile
+                        ? `محاسبه حق‌الزحمه (${filteredActiveItems.length} استاد)`
+                        : `جدول محاسبه حق‌الزحمه (${filteredActiveItems.length} استاد) - ${isCompactView ? 'نمای جمع و جور' : 'نمای تفصیلی کامل'}`}
                     </h3>
                   </div>
 
-                  <div className="text-[11px] text-slate-500">
-                    تمامی ستون‌ها از جمله ساعت، نهار، بدهی‌ها و تعدیلات دستی قابل ویرایش مستقیم می‌باشند.
-                  </div>
+                  {isAdminMobile ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCompactView(!isCompactView)}
+                      className="min-h-[34px] px-2.5 py-1 rounded-xl text-[11px] font-black border border-indigo-200 bg-indigo-50 text-indigo-700 cursor-pointer"
+                    >
+                      {isCompactView ? 'نمای تفصیلی' : 'نمای جمع‌وجور'}
+                    </button>
+                  ) : (
+                    <div className="text-[11px] text-slate-500">
+                      تمامی ستون‌ها از جمله ساعت، نهار، بدهی‌ها و تعدیلات دستی قابل ویرایش مستقیم می‌باشند.
+                    </div>
+                  )}
                 </div>
 
                 {items.length === 0 ? (
                   /* User explicitly asked: "سپس یک جدول کاملا خالی می بینم، دکمه اضافه کردن استاد پایه جهت پرداخت رو میزنیم" */
-                  <div className="py-20 text-center space-y-4">
+                  <div className={cn('text-center space-y-4', isAdminMobile ? 'py-12 px-4' : 'py-20')}>
                     <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-3xl flex items-center justify-center mx-auto text-slate-400">
                       <Users size={32} />
                     </div>
@@ -1273,7 +1437,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                     </div>
                     <button
                       onClick={handleOpenAddProfessorModal}
-                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black shadow-md shadow-emerald-100 transition-all cursor-pointer inline-flex items-center gap-2"
+                      className={cn(
+                        'bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black shadow-md shadow-emerald-100 transition-all cursor-pointer inline-flex items-center justify-center gap-2',
+                        isAdminMobile ? 'w-full min-h-[44px] px-5 py-3' : 'px-6 py-3'
+                      )}
                     >
                       <UserPlus size={16} />
                       <span>اضافه کردن استاد پایه جهت پرداخت</span>
@@ -1282,6 +1449,225 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                 ) : filteredActiveItems.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 text-xs">
                     استادی با مشخصات جستجو شده یافت نشد.
+                  </div>
+                ) : isAdminMobile ? (
+                  <div className="p-3 space-y-3 bg-slate-50/50">
+                    {filteredActiveItems.map((item, idx) => {
+                      const totalDed = (item.lunchDeduction || 0) + (item.debtDeduction || 0) + (item.loanInstallment || 0) + (item.fundContribution || 0) + (item.otherDeductions || 0);
+                      const matchingReport = findMatchingApprovedReport(item.userId, item.name, startDate, endDate);
+
+                      return (
+                        <div key={item.id} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 space-y-3 shadow-2xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="w-5 h-5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-mono font-bold inline-flex items-center justify-center">
+                                  {(idx + 1).toLocaleString('fa-IR')}
+                                </span>
+                                <span className="font-black text-sm text-slate-900 truncate">{item.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-500">
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">
+                                  {item.gradesStr}
+                                </span>
+                                {item.teacherCode && <span className="font-mono">کد: {item.teacherCode}</span>}
+                              </div>
+                            </div>
+
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5 text-left shrink-0">
+                              <div className="text-[9px] text-emerald-700 font-bold">خالص پرداختی</div>
+                              <div className="text-xs font-black font-mono tabular-nums text-emerald-900">
+                                {item.netPayable.toLocaleString('fa-IR')} <span className="text-[9px] font-normal">ت</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {matchingReport && (
+                            <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-2.5 flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 text-[11px] text-teal-900">
+                                <Clock size={13} className="text-teal-600 shrink-0" />
+                                <span>کارکرد جریان کار: <strong>{matchingReport.totalHours} ساعت</strong></span>
+                              </div>
+                              {item.isPresenceBasisConfirmed ? (
+                                <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-100 text-emerald-900 text-[10px] font-black border border-emerald-300">
+                                  <CheckCircle2 size={12} />
+                                  <span>مبنا تایید شد</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetPresenceBasis(item.id)}
+                                    className="mr-1 text-slate-500 hover:text-rose-600 cursor-pointer"
+                                    title="لغو مبنا"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmPresenceBasis(item.id, matchingReport)}
+                                  className="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-500 text-white text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Check size={12} />
+                                  <span>تایید مبنا ({matchingReport.totalHours} س)</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {isCompactView ? (
+                            <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">ساعت کارکرد</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.totalHours}
+                                  onChange={(e) => handleItemFieldChange(item.id, 'totalHours', Number(e.target.value))}
+                                  className="w-full min-h-[38px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-center text-slate-800"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">تعدیل دستی (+/-)</label>
+                                <input
+                                  type="number"
+                                  value={item.manualAdjustmentAmount || 0}
+                                  onChange={(e) => handleItemFieldChange(item.id, 'manualAdjustmentAmount', Number(e.target.value))}
+                                  className="w-full min-h-[38px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-center text-slate-800"
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                <input
+                                  type="text"
+                                  value={item.manualAdjustmentReason || ''}
+                                  onChange={(e) => handleItemFieldChange(item.id, 'manualAdjustmentReason', e.target.value)}
+                                  placeholder="علت تعدیل دستی..."
+                                  className="w-full min-h-[38px] px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                                />
+                              </div>
+                              <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                                <span className="text-[10px] text-slate-500 block">ناخالص کارکرد</span>
+                                <span className="font-mono font-black text-slate-800">{item.baseCompensation.toLocaleString('fa-IR')} ت</span>
+                              </div>
+                              <div className="bg-rose-50/70 rounded-xl p-2 border border-rose-100">
+                                <span className="text-[10px] text-rose-700 block">جمع کسورات</span>
+                                <span className="font-mono font-black text-rose-700">{totalDed.toLocaleString('fa-IR')} ت</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2.5 text-xs tabular-nums">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 mb-1">ساعت کارکرد</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.totalHours}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'totalHours', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 mb-1">نرخ ساعتی (ت)</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.hourlyRate}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'hourlyRate', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-amber-800 mb-1">تعداد نهار</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.lunchCount}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'lunchCount', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-amber-50/60 border border-amber-200 rounded-xl font-mono font-bold text-center text-amber-900"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-amber-800 mb-1">کسر بدهی/وام</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.debtDeduction || 0}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'debtDeduction', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-amber-50/60 border border-amber-200 rounded-xl font-mono font-bold text-center text-amber-900"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-emerald-700 mb-1">پاداش (ت)</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.bonusAmount}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'bonusAmount', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-emerald-50/60 border border-emerald-200 rounded-xl font-mono font-bold text-center text-emerald-900"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-indigo-700 mb-1">تعدیل دستی (+/-)</label>
+                                  <input
+                                    type="number"
+                                    value={item.manualAdjustmentAmount || 0}
+                                    onChange={(e) => handleItemFieldChange(item.id, 'manualAdjustmentAmount', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2.5 py-1.5 bg-indigo-50/60 border border-indigo-200 rounded-xl font-mono font-bold text-center text-indigo-900"
+                                  />
+                                </div>
+                              </div>
+
+                              <input
+                                type="text"
+                                value={item.manualAdjustmentReason || ''}
+                                onChange={(e) => handleItemFieldChange(item.id, 'manualAdjustmentReason', e.target.value)}
+                                placeholder="علت افزایش/کاهش دستی..."
+                                className="w-full min-h-[38px] px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-[11px]"
+                              />
+
+                              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                                  <span className="text-[10px] text-slate-500 block">ناخالص کارکرد</span>
+                                  <span className="font-mono font-black text-slate-800">{item.baseCompensation.toLocaleString('fa-IR')} ت</span>
+                                </div>
+                                <div className="bg-rose-50/70 rounded-xl p-2 border border-rose-100">
+                                  <span className="text-[10px] text-rose-700 block">کسر نهار ({item.lunchCount} وعده)</span>
+                                  <span className="font-mono font-black text-rose-700">{item.lunchDeduction.toLocaleString('fa-IR')} ت</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="text-[10px] font-mono text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 truncate">
+                            حساب/شبا: {item.bankSheba || item.bankAccount || '-'}
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                            <button
+                              onClick={() => setSingleSlipItem(item)}
+                              className="flex-1 min-h-[40px] px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Receipt size={14} />
+                              <span>مشاهده فیش</span>
+                            </button>
+                            <button
+                              onClick={() => setEditingItem(item)}
+                              className="min-h-[40px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 size={14} />
+                              <span>ویرایش</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="min-h-[40px] min-w-[40px] bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                              title="حذف از جدول"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1633,7 +2019,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       {/* ============================================================= */}
       {activeView === 'periods_archive' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-6">
+          <div className={cn('bg-white border border-slate-200/80 shadow-xs space-y-6', isAdminMobile ? 'rounded-[22px] p-4' : 'rounded-3xl p-6')}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
                 <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
@@ -1647,7 +2033,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
 
               <button
                 onClick={handleOpenDateRangeModal}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                className={cn(
+                  'flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer',
+                  isAdminMobile ? 'w-full min-h-[42px] px-4 py-2.5' : 'px-3.5 py-2'
+                )}
               >
                 <Plus size={15} />
                 <span>تعریف دوره جدید</span>
@@ -1662,7 +2051,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
             ) : (
               <div className="space-y-6">
                 {/* Period Selector Tabs */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-100 scrollbar-hide">
                   {periods.map(p => (
                     <button
                       key={p.id}
@@ -1672,6 +2061,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                       }}
                       className={cn(
                         "px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-2",
+                        isAdminMobile && "min-h-[40px]",
                         selectedArchivedPeriod?.id === p.id
                           ? "bg-indigo-600 text-white shadow-md shadow-indigo-100 ring-2 ring-indigo-600/20"
                           : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200"
@@ -1695,44 +2085,53 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                     {/* Archived Period Bar */}
                     <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="text-sm font-black text-slate-900">{selectedArchivedPeriod.title}</h3>
                           <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
                             بایگانی‌شده
                           </span>
                         </div>
-                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-3">
+                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-3 flex-wrap">
                           <span>بازه: <strong className="text-slate-700 font-mono">{selectedArchivedPeriod.startDate}</strong> تا <strong className="text-slate-700 font-mono">{selectedArchivedPeriod.endDate}</strong></span>
-                          <span>•</span>
-                          <span>خالص کل پرداختی: <strong className="text-emerald-700 font-mono font-black">{selectedArchivedPeriod.totalPayoutAmount.toLocaleString('fa-IR')}</strong> تومان</span>
+                          {!isAdminMobile && <span>•</span>}
+                          <span>خالص کل پرداختی: <strong className="text-emerald-700 font-mono font-black tabular-nums">{selectedArchivedPeriod.totalPayoutAmount.toLocaleString('fa-IR')}</strong> تومان</span>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/* Compact view switch */}
-                        <button
-                          onClick={() => setIsCompactView(!isCompactView)}
-                          className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Layers size={14} />
-                          <span>{isCompactView ? 'نمایش تفصیلی' : 'نمایش جمع و جور'}</span>
-                        </button>
-
+                      <div className={cn(isAdminMobile ? 'grid grid-cols-2 gap-2 w-full' : 'flex flex-wrap items-center gap-2')}>
                         {/* Save Archived Changes */}
                         {isArchivedModified && (
                           <button
                             onClick={handleSaveArchivedChanges}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                            className={cn(
+                              'bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                              isAdminMobile ? 'col-span-2 min-h-[42px] px-4 py-2' : 'px-4 py-2'
+                            )}
                           >
                             <Save size={14} />
                             <span>ذخیره تغییرات در بایگانی</span>
                           </button>
                         )}
 
+                        {/* Compact view switch */}
+                        <button
+                          onClick={() => setIsCompactView(!isCompactView)}
+                          className={cn(
+                            'bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                            isAdminMobile ? 'min-h-[40px] px-3 py-2' : 'px-3 py-2'
+                          )}
+                        >
+                          <Layers size={14} />
+                          <span>{isCompactView ? 'نمایش تفصیلی' : 'نمایش جمع و جور'}</span>
+                        </button>
+
                         {/* Detailed Excel */}
                         <button
                           onClick={() => handleExportDetailedExcel(selectedArchivedPeriod.items, selectedArchivedPeriod.title)}
-                          className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer flex items-center gap-1.5"
+                          className={cn(
+                            'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                            isAdminMobile ? 'min-h-[40px] px-3 py-2' : 'px-3 py-2'
+                          )}
                         >
                           <FileSpreadsheet size={14} />
                           <span>اکسل تفصیلی</span>
@@ -1741,7 +2140,10 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                         {/* Upper Management Excel */}
                         <button
                           onClick={() => handleExportUpperManagementExcel(selectedArchivedPeriod.items, selectedArchivedPeriod.title)}
-                          className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold border border-blue-200 transition-all cursor-pointer flex items-center gap-1.5"
+                          className={cn(
+                            'bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl text-xs font-bold border border-blue-200 transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                            isAdminMobile ? 'min-h-[40px] px-3 py-2' : 'px-3 py-2'
+                          )}
                         >
                           <Building2 size={14} />
                           <span>اکسل بالادستی</span>
@@ -1750,18 +2152,134 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                         {/* Delete from archive */}
                         <button
                           onClick={() => handleDeleteArchivedPeriod(selectedArchivedPeriod.id)}
-                          className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl border border-rose-200 transition-all cursor-pointer"
+                          className={cn(
+                            'bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl border border-rose-200 transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                            isAdminMobile ? 'min-h-[40px] px-3 py-2 text-xs font-bold' : 'p-2'
+                          )}
                           title="حذف این دوره از بایگانی"
                         >
                           <Trash2 size={15} />
+                          {isAdminMobile && <span>حذف دوره</span>}
                         </button>
                       </div>
                     </div>
 
-                    {/* Table of Selected Archived Period */}
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-right text-xs">
+                    {/* Table / Mobile Cards of Selected Archived Period */}
+                    {isAdminMobile ? (
+                      <div className="space-y-3">
+                        {selectedArchivedPeriod.items.map((item, idx) => {
+                          const totalDed = (item.lunchDeduction || 0) + (item.debtDeduction || 0) + (item.loanInstallment || 0) + (item.fundContribution || 0) + (item.otherDeductions || 0);
+                          return (
+                            <div key={item.id} className="bg-slate-50/70 rounded-2xl border border-slate-200 p-3.5 space-y-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-5 h-5 rounded-md bg-white border border-slate-200 text-slate-600 text-[10px] font-mono font-bold inline-flex items-center justify-center">
+                                      {(idx + 1).toLocaleString('fa-IR')}
+                                    </span>
+                                    <span className="font-black text-sm text-slate-900 truncate">{item.name}</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-bold">{item.gradesStr}</span>
+                                    {item.isPresenceBasisConfirmed && (
+                                      <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                        ✓ جریان کار ({item.totalHours} س)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-2.5 py-1.5 text-left shrink-0">
+                                  <span className="text-[9px] text-emerald-700 font-bold block">خالص پرداختی</span>
+                                  <span className="text-xs font-black font-mono tabular-nums text-emerald-900">
+                                    {item.netPayable.toLocaleString('fa-IR')} ت
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 text-xs tabular-nums">
+                                {!isCompactView && (
+                                  <>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-500 mb-1">ساعت کارکرد</label>
+                                      <input
+                                        type="number"
+                                        value={item.totalHours}
+                                        onChange={(e) => handleArchivedItemFieldChange(item.id, 'totalHours', Number(e.target.value))}
+                                        className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-500 mb-1">تعداد نهار</label>
+                                      <input
+                                        type="number"
+                                        value={item.lunchCount}
+                                        onChange={(e) => handleArchivedItemFieldChange(item.id, 'lunchCount', Number(e.target.value))}
+                                        className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold text-slate-500 mb-1">کسر بدهی/وام</label>
+                                      <input
+                                        type="number"
+                                        value={item.debtDeduction || 0}
+                                        onChange={(e) => handleArchivedItemFieldChange(item.id, 'debtDeduction', Number(e.target.value))}
+                                        className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 mb-1">تعدیل دستی (+/-)</label>
+                                  <input
+                                    type="number"
+                                    value={item.manualAdjustmentAmount || 0}
+                                    onChange={(e) => handleArchivedItemFieldChange(item.id, 'manualAdjustmentAmount', Number(e.target.value))}
+                                    className="w-full min-h-[38px] px-2 py-1 bg-white border border-slate-200 rounded-xl font-mono font-bold text-center"
+                                  />
+                                </div>
+                                <div className="col-span-2">
+                                  <input
+                                    type="text"
+                                    value={item.manualAdjustmentReason || ''}
+                                    onChange={(e) => handleArchivedItemFieldChange(item.id, 'manualAdjustmentReason', e.target.value)}
+                                    placeholder="علت تعدیل دستی..."
+                                    className="w-full min-h-[38px] px-3 py-1 bg-white border border-slate-200 rounded-xl text-[11px]"
+                                  />
+                                </div>
+                                <div className="bg-white rounded-xl p-2 border border-slate-200">
+                                  <span className="text-[10px] text-slate-500 block">ناخالص ({item.totalHours} س)</span>
+                                  <span className="font-mono font-bold text-slate-800">{item.baseCompensation.toLocaleString('fa-IR')} ت</span>
+                                </div>
+                                <div className="bg-rose-50/70 rounded-xl p-2 border border-rose-200">
+                                  <span className="text-[10px] text-rose-700 block">جمع کسورات</span>
+                                  <span className="font-mono font-bold text-rose-700">{totalDed.toLocaleString('fa-IR')} ت</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                                <button
+                                  onClick={() => setSingleSlipItem(item)}
+                                  className="flex-1 min-h-[40px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <Receipt size={14} />
+                                  <span>مشاهده فیش</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteArchivedItem(item.id)}
+                                  className="min-h-[40px] min-w-[40px] bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl border border-rose-200 flex items-center justify-center cursor-pointer"
+                                  title="حذف از این دوره بایگانی"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-right text-xs">
                           <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
                             {isCompactView ? (
                               <tr>
@@ -1934,6 +2452,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                         </table>
                       </div>
                     </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1947,12 +2466,15 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       {/* ============================================================= */}
       <AnimatePresence>
         {isDateRangeModalOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={cn('fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center', isAdminMobile ? 'p-3' : 'p-4')}>
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-5"
+              className={cn(
+                'bg-white max-w-lg w-full shadow-2xl border border-slate-100 space-y-5 max-h-[90vh] overflow-y-auto',
+                isAdminMobile ? 'rounded-2xl p-4' : 'rounded-3xl p-6'
+              )}
               dir="rtl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -1986,7 +2508,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn('grid gap-3', isAdminMobile ? 'grid-cols-1' : 'grid-cols-2')}>
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">از تاریخ (شروع بازه ارزیابی) *</label>
                     <input
@@ -2010,7 +2532,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div className={cn('grid gap-3 pt-2 border-t border-slate-100', isAdminMobile ? 'grid-cols-1' : 'grid-cols-2')}>
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">نرخ مصوب هر ساعت کارکرد (تومان)</label>
                     <input
@@ -2038,18 +2560,18 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                   پس از ثبت، وارد صفحه محاسبه با جدول خالی می‌شوید و می‌توانید با زدن دکمه <strong>«اضافه کردن استاد پایه جهت پرداخت»</strong> اساتید مورد نظر را از لیست انتخاب فرمایید.
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <div className={cn('flex items-center gap-2 pt-2 border-t border-slate-100', isAdminMobile ? 'flex-col-reverse' : 'justify-end')}>
                   <button
                     type="button"
                     onClick={() => setIsDateRangeModalOpen(false)}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer"
+                    className={cn('px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold cursor-pointer', isAdminMobile && 'w-full min-h-[42px]')}
                   >
                     انصراف
                   </button>
                   <button
                     type="button"
                     onClick={handleConfirmDateRange}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-md shadow-indigo-100 cursor-pointer"
+                    className={cn('px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-md shadow-indigo-100 cursor-pointer', isAdminMobile && 'w-full min-h-[44px]')}
                   >
                     ثبت بازه زمانی و ورود به جدول محاسبه
                   </button>
@@ -2275,12 +2797,15 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
       {/* ============================================================= */}
       <AnimatePresence>
         {editingItem && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className={cn('fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center overflow-y-auto', isAdminMobile ? 'p-3' : 'p-4')}>
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 my-8"
+              className={cn(
+                'bg-white max-w-lg w-full shadow-2xl border border-slate-100 space-y-4 my-8 max-h-[90vh] overflow-y-auto',
+                isAdminMobile ? 'rounded-2xl p-4' : 'rounded-3xl p-6'
+              )}
               dir="rtl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -2295,7 +2820,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className={cn('grid gap-3 text-xs', isAdminMobile ? 'grid-cols-1' : 'grid-cols-2')}>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">ساعت حضور و کارکرد</label>
                   <input
@@ -2378,7 +2903,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                   />
                 </div>
 
-                <div className="col-span-2">
+                <div className={isAdminMobile ? '' : 'col-span-2'}>
                   <label className="block font-bold text-slate-700 mb-1">شماره شبا بانکی</label>
                   <input
                     type="text"
@@ -2388,7 +2913,7 @@ export default function GradeProfessorsCompensation({ onNavigateTab }: GradeProf
                   />
                 </div>
 
-                <div className="col-span-2">
+                <div className={isAdminMobile ? '' : 'col-span-2'}>
                   <label className="block font-bold text-slate-700 mb-1">شماره حساب بانکی</label>
                   <input
                     type="text"

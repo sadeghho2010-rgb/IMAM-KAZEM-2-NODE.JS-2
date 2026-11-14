@@ -27,6 +27,8 @@ import { Student, StudentComment, CommentPriority, OralExam, OralExamSubjectType
 import { useMentor } from '../context/MentorContext';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import { MobileSectionHeader, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
 const TEACHER_PRESETS = [
   'استاد فقه',
@@ -64,6 +66,7 @@ interface StudentCommentsProps {
 
 export default function StudentComments({ initialStudentId }: StudentCommentsProps = {}) {
   const { filterStudents, currentMentorId, shahpooriFilter } = useMentor();
+  const isAdminMobile = useIsAdminMobile();
   const [students, setStudents] = useState<Student[]>([]);
   const [comments, setComments] = useState<StudentComment[]>([]);
   const [oralExams, setOralExams] = useState<OralExam[]>([]);
@@ -489,6 +492,72 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
     <div className="max-w-7xl mx-auto space-y-6" dir="rtl">
       {/* CASE 1: Student List View */}
       {!selectedStudent ? (
+        isAdminMobile ? (
+          <div className="space-y-3.5">
+            <MobileSectionHeader
+              title="نظرات و صحبت‌ها"
+              subtitle="پرونده گفتگوها، ارزیابی اساتید و نمرات امتحانات شفاهی"
+              icon={<MessageSquare size={20} />}
+              badgeText={`${activeStudents.length} فعال`}
+              variant="white"
+            />
+
+            <MobileSearchFilterBar
+              value={searchStudentQuery}
+              onChange={setSearchStudentQuery}
+              placeholder="جستجوی نام طلبه یا پایه..."
+            />
+
+            <div className="space-y-2.5">
+              {filteredActiveStudents.map(student => {
+                const allStudentComms = comments.filter(c => c.studentId === student.id);
+                const mgrCount = allStudentComms.filter(c => c.authorName === 'خودم (مدیر)' || c.authorName.includes('مدیر')).length;
+                const tchCount = allStudentComms.filter(c => c.authorName !== 'خودم (مدیر)' && !c.authorName.includes('مدیر')).length;
+                const examsCount = oralExams.filter(o => o.studentId === student.id).length;
+
+                return (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => setSelectedStudent(student)}
+                    className="w-full text-right bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs active:scale-[0.99] transition-all cursor-pointer space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-11 h-11 bg-indigo-50 text-indigo-700 rounded-2xl flex items-center justify-center font-black text-base shrink-0 overflow-hidden border border-indigo-100">
+                          {student.photoUrl ? (
+                            <img src={student.photoUrl} alt={student.name} className="w-full h-full object-cover" />
+                          ) : (
+                            student.name.charAt(0)
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-black text-slate-900 truncate">{student.name}</h3>
+                          <p className="text-[11px] text-slate-400 font-bold mt-0.5">
+                            پایه {student.grade || 'نامشخص'}
+                          </p>
+                        </div>
+                      </div>
+                      <ArrowRight size={16} className="rotate-180 text-indigo-500 shrink-0" />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] font-black">
+                      <div className="bg-indigo-50/70 text-indigo-900 py-1.5 px-2 rounded-xl border border-indigo-100/70">
+                        مدیریت: {mgrCount}
+                      </div>
+                      <div className="bg-purple-50/70 text-purple-900 py-1.5 px-2 rounded-xl border border-purple-100/70">
+                        اساتید: {tchCount}
+                      </div>
+                      <div className="bg-amber-50/70 text-amber-900 py-1.5 px-2 rounded-xl border border-amber-100/70">
+                        شفاهی: {examsCount}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           {/* Header */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -603,57 +672,106 @@ export default function StudentComments({ initialStudentId }: StudentCommentsPro
             </div>
           )}
         </div>
+        )
       ) : (
         /* CASE 2: Single Student Detailed View (3 BOXES) */
-        <div className="space-y-6">
-          {/* Back Button and Student Profile Banner */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+        <div className="space-y-4">
+          {isAdminMobile ? (
+            <div className="bg-white p-3.5 rounded-2xl shadow-2xs border border-slate-200 space-y-3">
               <button
+                type="button"
                 onClick={() => setSelectedStudent(null)}
-                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-all flex items-center gap-1.5 text-xs font-bold shrink-0"
+                className="w-full min-h-[38px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer"
               >
-                <ArrowRight size={18} />
+                <ArrowRight size={16} />
                 <span>بازگشت به لیست طلاب</span>
               </button>
 
-              <div className="h-8 w-px bg-slate-200 hidden sm:block" />
-
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-lg shrink-0 overflow-hidden">
+                <div className="w-11 h-11 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-base shrink-0 overflow-hidden">
                   {selectedStudent.photoUrl ? (
                     <img src={selectedStudent.photoUrl} alt={selectedStudent.name} className="w-full h-full object-cover" />
                   ) : (
                     selectedStudent.name.charAt(0)
                   )}
                 </div>
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">{selectedStudent.name}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5 font-bold">
-                    پایه {selectedStudent.grade || 'نامشخص'} • {studentComments.length} صحبت/ارزیابی • {studentOralExams.length} امتحان شفاهی
+                <div className="min-w-0">
+                  <h2 className="text-base font-black text-slate-900 truncate">{selectedStudent.name}</h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5 font-bold">
+                    پایه {selectedStudent.grade || 'نامشخص'} • {studentComments.length} ارزیابی • {studentOralExams.length} شفاهی
                   </p>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => handleOpenAddModal(true)}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-1.5 shrink-0"
-              >
-                <Plus size={16} />
-                <span>ثبت صحبت / ارزیابی</span>
-              </button>
-
-              <button
-                onClick={handleOpenAddOralExam}
-                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-amber-100 flex items-center gap-1.5 shrink-0"
-              >
-                <Award size={16} />
-                <span>ثبت نمره شفاهی</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddModal(true)}
+                  className="min-h-[40px] px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>ثبت صحبت</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddOralExam}
+                  className="min-h-[40px] px-3 py-2 bg-amber-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Award size={15} />
+                  <span>نمره شفاهی</span>
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Back Button and Student Profile Banner */
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setSelectedStudent(null)}
+                  className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-all flex items-center gap-1.5 text-xs font-bold shrink-0"
+                >
+                  <ArrowRight size={18} />
+                  <span>بازگشت به لیست طلاب</span>
+                </button>
+
+                <div className="h-8 w-px bg-slate-200 hidden sm:block" />
+
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-lg shrink-0 overflow-hidden">
+                    {selectedStudent.photoUrl ? (
+                      <img src={selectedStudent.photoUrl} alt={selectedStudent.name} className="w-full h-full object-cover" />
+                    ) : (
+                      selectedStudent.name.charAt(0)
+                    )}
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">{selectedStudent.name}</h2>
+                    <p className="text-xs text-slate-500 mt-0.5 font-bold">
+                      پایه {selectedStudent.grade || 'نامشخص'} • {studentComments.length} صحبت/ارزیابی • {studentOralExams.length} امتحان شفاهی
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => handleOpenAddModal(true)}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus size={16} />
+                  <span>ثبت صحبت / ارزیابی</span>
+                </button>
+
+                <button
+                  onClick={handleOpenAddOralExam}
+                  className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-amber-100 flex items-center gap-1.5 shrink-0"
+                >
+                  <Award size={16} />
+                  <span>ثبت نمره شفاهی</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* THREE MAIN BOXES / COLUMNS */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

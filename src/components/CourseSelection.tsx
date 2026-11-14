@@ -60,12 +60,19 @@ function isMatchingGrade(itemGrade: string | undefined | null, targetGrade: stri
 }
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
+import {
+  MobileSectionHeader,
+  MobileHorizontalTabs,
+  MobileSearchFilterBar
+} from './admin/mobile/MobileModulePrimitives';
 
 const ACADEMIC_YEARS_LIST = ['۱۴۰۲-۱۴۰۳', '۱۴۰۳-۱۴۰۴', '۱۴۰۴-۱۴۰۵', '۱۴۰۵-۱۴۰۶', '۱۴۰۶-۱۴۰۷'];
 const SEMESTER_OPTIONS_LIST = ['نیم‌سال اول', 'نیم‌سال دوم', 'تمامی سال', 'تابستان', 'پنج‌شنبه‌ها'];
 
 export default function CourseSelection() {
   const { currentUser, isSuperAdmin } = useAuth();
+  const isAdminMobile = useIsAdminMobile();
   const isEducationManager = currentUser?.role === 'education_manager' || currentUser?.role === 'education_officer' || currentUser?.username?.toUpperCase() === 'SHAH';
 
   const isGradeSupervisor = currentUser?.role === 'grade_supervisor' || 
@@ -139,6 +146,7 @@ export default function CourseSelection() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
   const [filterPeriodId, setFilterPeriodId] = useState<string>('all');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState<boolean>(false);
 
   // Review / Rejection Modal State
   const [rejectModalRequest, setRejectModalRequest] = useState<CourseSelectionRequest | null>(null);
@@ -811,78 +819,120 @@ export default function CourseSelection() {
   return (
     <div className="space-y-6 pb-12">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-sm border border-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-indigo-700/80 rounded-2xl border border-indigo-500 flex items-center justify-center text-white font-black text-lg">
-            <BookOpen size={24} />
+      {isAdminMobile ? (
+        <MobileSectionHeader
+          title="مدیریت انتخاب واحد طلاب"
+          subtitle="تعریف دوره‌ها، تخصیص طلاب و تایید خودکار ثبت‌نام"
+          variant="indigo"
+          icon={<BookOpen size={18} />}
+          primaryAction={{
+            id: 'new-period',
+            label: 'تعریف دوره جدید انتخاب واحد',
+            icon: <Plus size={15} />,
+            tone: 'amber',
+            onClick: () => handleOpenPeriodModal()
+          }}
+        />
+      ) : (
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 text-white p-6 rounded-3xl shadow-sm border border-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-indigo-700/80 rounded-2xl border border-indigo-500 flex items-center justify-center text-white font-black text-lg">
+              <BookOpen size={24} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-white">مدیریت و بررسی انتخاب واحد طلاب</h2>
+              <p className="text-xs text-indigo-200 font-medium mt-0.5">
+                تعریف دوره‌های انتخاب واحد، تخصیص طلاب مجاز، فیلتر دروس و ثبت خودکار در کلاس‌ها
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-black text-white">مدیریت و بررسی انتخاب واحد طلاب</h2>
-            <p className="text-xs text-indigo-200 font-medium mt-0.5">
-              تعریف دوره‌های انتخاب واحد، تخصیص طلاب مجاز، فیلتر دروس و ثبت خودکار در کلاس‌ها
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenPeriodModal()}
-            className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
-          >
-            <Plus size={16} />
-            <span>تعریف دوره جدید انتخاب واحد</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleOpenPeriodModal()}
+              className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+            >
+              <Plus size={16} />
+              <span>تعریف دوره جدید انتخاب واحد</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Mode Switch Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setActiveTab('requests')}
-          className={cn(
-            "px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2",
-            activeTab === 'requests' 
-              ? "bg-indigo-600 text-white shadow-xs" 
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <FileText size={16} />
-          <span>بررسی درخواست‌های انتخاب واحد طلاب ({requests.length})</span>
-        </button>
+      {isAdminMobile ? (
+        <MobileHorizontalTabs
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as 'requests' | 'periods')}
+          tabs={[
+            {
+              id: 'requests',
+              label: 'درخواست‌های انتخاب واحد',
+              badge: requests.length,
+              icon: <FileText size={14} />,
+              tone: 'indigo'
+            },
+            {
+              id: 'periods',
+              label: 'دوره‌های تعریف‌شده',
+              badge: periods.length,
+              icon: <Calendar size={14} />,
+              tone: 'slate'
+            }
+          ]}
+        />
+      ) : (
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={cn(
+              "px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2",
+              activeTab === 'requests' 
+                ? "bg-indigo-600 text-white shadow-xs" 
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <FileText size={16} />
+            <span>بررسی درخواست‌های انتخاب واحد طلاب ({requests.length})</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('periods')}
-          className={cn(
-            "px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2",
-            activeTab === 'periods' 
-              ? "bg-indigo-600 text-white shadow-xs" 
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          )}
-        >
-          <Calendar size={16} />
-          <span>دوره‌های تعریف‌شده و تنظیمی ({periods.length})</span>
-        </button>
-      </div>
+          <button
+            onClick={() => setActiveTab('periods')}
+            className={cn(
+              "px-4 py-2 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2",
+              activeTab === 'periods' 
+                ? "bg-indigo-600 text-white shadow-xs" 
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            )}
+          >
+            <Calendar size={16} />
+            <span>دوره‌های تعریف‌شده و تنظیمی ({periods.length})</span>
+          </button>
+        </div>
+      )}
 
       {activeTab === 'requests' ? (
         /* REQUESTS LIST & FILTERS */
         <div className="space-y-4">
           {/* Active Period Info Banner */}
           {activePeriod ? (
-            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-xs">
+            <div className={cn(
+              "bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex justify-between gap-3 text-xs",
+              isAdminMobile ? "flex-col items-stretch" : "items-center"
+            )}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-black">
+                <div className="w-10 h-10 bg-emerald-600 text-white rounded-xl flex items-center justify-center font-black shrink-0">
                   <CheckCircle2 size={20} />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-emerald-950 text-sm">دوره فعال انتخاب واحد: {activePeriod.title}</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-emerald-950 text-sm">دوره فعال: {activePeriod.title}</span>
                     <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                      هم‌اکنون در حال دریافت درخواست
+                      در حال دریافت درخواست
                     </span>
                   </div>
-                  <p className="text-slate-600 font-medium mt-0.5">
-                    سال: {activePeriod.academicYear || '۱۴۰۳-۱۴۰۴'} | ترم: {activePeriod.term || 'نیم‌سال اول'} | پایه‌های مجاز: {activePeriod.allowedGrades?.join('، ') || 'همه'}
+                  <p className="text-slate-600 font-medium mt-0.5 leading-relaxed">
+                    سال: {activePeriod.academicYear || '۱۴۰۳-۱۴۰۴'} | ترم: {activePeriod.term || 'نیم‌سال اول'} | پایه‌ها: {activePeriod.allowedGrades?.join('، ') || 'همه'}
                   </p>
                 </div>
               </div>
@@ -890,22 +940,25 @@ export default function CourseSelection() {
               <button
                 type="button"
                 onClick={() => handleTogglePeriodActive(activePeriod)}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                className="min-h-[40px] px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
               >
                 <Power size={14} />
                 <span>بستن و غیرفعال‌سازی دوره</span>
               </button>
             </div>
           ) : (
-            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center justify-between gap-3 text-xs">
+            <div className={cn(
+              "bg-amber-50 border border-amber-200 p-4 rounded-2xl flex justify-between gap-3 text-xs",
+              isAdminMobile ? "flex-col items-stretch" : "items-center"
+            )}>
               <div className="flex items-center gap-3">
-                <AlertCircle size={20} className="text-amber-600" />
+                <AlertCircle size={20} className="text-amber-600 shrink-0" />
                 <span className="font-bold text-amber-900">هیچ دوره انتخاب واحدی هم‌اکنون فعال نیست.</span>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveTab('periods')}
-                className="px-3 py-1 bg-amber-600 text-white rounded-xl font-bold text-xs hover:bg-amber-700 transition-colors cursor-pointer"
+                className="min-h-[40px] px-3 py-1.5 bg-amber-600 text-white rounded-xl font-bold text-xs hover:bg-amber-700 transition-colors cursor-pointer"
               >
                 مدیریت و فعال‌سازی دوره‌ها
               </button>
@@ -913,47 +966,91 @@ export default function CourseSelection() {
           )}
 
           {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 flex-1">
-              <div className="relative min-w-[200px]">
-                <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="جستجوی نام یا کد ملی..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+          {isAdminMobile ? (
+            <div className="space-y-2.5">
+              <MobileSearchFilterBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جستجوی نام طلبه یا کد ملی..."
+                onToggleFilters={() => setMobileFiltersOpen((p) => !p)}
+                filtersOpen={mobileFiltersOpen}
+                activeFilterCount={[filterStatus !== 'all', filterGrade !== 'all'].filter(Boolean).length}
+              />
+
+              {mobileFiltersOpen && (
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 grid grid-cols-2 gap-2 shadow-xs">
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="min-h-[40px] px-2.5 py-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">همه وضعیت‌ها</option>
+                    <option value="pending">در انتظار بررسی</option>
+                    <option value="approved">تایید شده</option>
+                    <option value="rejected">رد شده</option>
+                  </select>
+
+                  <select
+                    value={filterGrade}
+                    onChange={(e) => setFilterGrade(e.target.value)}
+                    className="min-h-[40px] px-2.5 py-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">همه پایه‌ها</option>
+                    <option value="پایه ۷">پایه ۷</option>
+                    <option value="پایه ۸">پایه ۸</option>
+                    <option value="پایه ۹">پایه ۹</option>
+                    <option value="پایه ۱۰">پایه ۱۰</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="text-[11px] text-slate-500 font-bold px-1">
+                تعداد موارد: {filteredRequests.length} درخواست
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 flex-1">
+                <div className="relative min-w-[200px]">
+                  <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="جستجوی نام یا کد ملی..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="p-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
+                >
+                  <option value="all">همه وضعیت‌ها</option>
+                  <option value="pending">در انتظار بررسی</option>
+                  <option value="approved">تایید شده</option>
+                  <option value="rejected">رد شده</option>
+                </select>
+
+                <select
+                  value={filterGrade}
+                  onChange={(e) => setFilterGrade(e.target.value)}
+                  className="p-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  <option value="پایه ۷">پایه ۷</option>
+                  <option value="پایه ۸">پایه ۸</option>
+                  <option value="پایه ۹">پایه ۹</option>
+                  <option value="پایه ۱۰">پایه ۱۰</option>
+                </select>
               </div>
 
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="p-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
-              >
-                <option value="all">همه وضعیت‌ها</option>
-                <option value="pending">در انتظار بررسی</option>
-                <option value="approved">تایید شده</option>
-                <option value="rejected">رد شده</option>
-              </select>
-
-              <select
-                value={filterGrade}
-                onChange={(e) => setFilterGrade(e.target.value)}
-                className="p-2 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold"
-              >
-                <option value="all">همه پایه‌ها</option>
-                <option value="پایه ۷">پایه ۷</option>
-                <option value="پایه ۸">پایه ۸</option>
-                <option value="پایه ۹">پایه ۹</option>
-                <option value="پایه ۱۰">پایه ۱۰</option>
-              </select>
+              <span className="text-xs text-slate-500 font-bold">
+                تعداد موارد: {filteredRequests.length} درخواست
+              </span>
             </div>
-
-            <span className="text-xs text-slate-500 font-bold">
-              تعداد موارد: {filteredRequests.length} درخواست
-            </span>
-          </div>
+          )}
 
           {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1010,16 +1107,16 @@ export default function CourseSelection() {
                 </div>
 
                 {/* Actions Bar */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[10px] text-slate-400 font-mono">
                     ثبت: {req.submittedAt}
                   </span>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {req.status !== 'approved' && (
                       <button
                         onClick={() => handleApproveRequest(req)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                        className="min-h-[38px] px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center gap-1"
                       >
                         <Check size={14} />
                         <span>تایید و افزودن به کلاس‌ها</span>
@@ -1029,7 +1126,7 @@ export default function CourseSelection() {
                     {req.status !== 'rejected' && (
                       <button
                         onClick={() => setRejectModalRequest(req)}
-                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1"
+                        className="min-h-[38px] px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1"
                       >
                         <X size={14} />
                         <span>رد درخواست</span>
@@ -1151,12 +1248,12 @@ export default function CourseSelection() {
               </div>
 
               {/* Modal Sub-Tabs */}
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-xs font-bold">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-2 text-xs font-bold overflow-x-auto scrollbar-hide">
                 <button
                   type="button"
                   onClick={() => setModalTab('info')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5",
+                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap",
                     modalTab === 'info' ? "bg-indigo-600 text-white font-black" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   )}
                 >
@@ -1168,7 +1265,7 @@ export default function CourseSelection() {
                   type="button"
                   onClick={() => setModalTab('students')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5",
+                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap",
                     modalTab === 'students' ? "bg-indigo-600 text-white font-black" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   )}
                 >
@@ -1180,7 +1277,7 @@ export default function CourseSelection() {
                   type="button"
                   onClick={() => setModalTab('courses')}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5",
+                    "px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap",
                     modalTab === 'courses' ? "bg-indigo-600 text-white font-black" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   )}
                 >
