@@ -1493,7 +1493,7 @@ export async function fetchBootstrapData(callerUserOrLevel: any, userRole?: stri
     'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'academic_sub_periods',
     'counseling_session_grades',
     'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress',
-    'student_portal_access_config', 'audit_logs'
+    'student_portal_access_config'
   ];
 
   const BATCH_SIZE = 6;

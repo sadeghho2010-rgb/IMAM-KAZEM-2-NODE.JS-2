@@ -1009,6 +1009,7 @@ class LocalDatabase {
   private syncedCollections = new Set<string>();
   private lastSyncTimestamps = new Map<string, number>();
   private isRealtimeSubscribed = false;
+  private bootstrapInFlightPromise: Promise<{ success: boolean; totalRecords: number }> | null = null;
 
   public getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -1875,103 +1876,117 @@ class LocalDatabase {
   async loadAllCollectionsFromServer(): Promise<{ success: boolean; totalRecords: number }> {
     if (typeof window === 'undefined') return { success: false, totalRecords: 0 };
 
-    let totalRecords = 0;
-    try {
-      const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (this.bootstrapInFlightPromise) {
+      return this.bootstrapInFlightPromise;
+    }
 
-      const res = await fetch('/api/data/bootstrap', {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
+    let currentPromise: Promise<{ success: boolean; totalRecords: number }>;
+    currentPromise = (async (): Promise<{ success: boolean; totalRecords: number }> => {
+      let totalRecords = 0;
+      try {
+        const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (res.ok) {
-        const payload = await res.json();
-        if (payload.success && payload.data && typeof payload.data === 'object') {
-          const pendingMap = getPendingLocalDocsMap();
-          const idb = await this.getDb();
-          for (const [col, docs] of Object.entries(payload.data)) {
-            if (Array.isArray(docs)) {
-              const resolvedCol = this.resolveCollection(col);
-              const serverDocIds = new Set(docs.map((d: any) => String(d?.id || '')).filter(Boolean));
-              const localDocs = this.getLocalStorageDocs(resolvedCol);
-              const pendingLocalDocs = localDocs.filter((ld: any) => {
-                if (!ld || !ld.id) return false;
-                const lid = String(ld.id);
-                const normKey = `${normalizeCollectionName(resolvedCol)}::${lid}`;
-                return !serverDocIds.has(lid) && (pendingMap.has(normKey) || pendingMap.has(`${resolvedCol}::${lid}`));
-              });
+        const res = await fetch('/api/data/bootstrap', {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
 
-              const authoritativeDocs = [...docs, ...pendingLocalDocs];
-              const authoritativeIds = new Set(authoritativeDocs.map((d: any) => String(d?.id || '')).filter(Boolean));
-
-              if (idb.objectStoreNames.contains(resolvedCol)) {
-                await new Promise<void>((resolve) => {
-                  try {
-                    const tx = idb.transaction(resolvedCol, 'readwrite');
-                    const store = tx.objectStore(resolvedCol);
-                    const allKeysReq = store.getAllKeys();
-                    allKeysReq.onsuccess = () => {
-                      const existingKeys = allKeysReq.result || [];
-                      for (const key of existingKeys) {
-                        const keyStr = String(key);
-                        if (!authoritativeIds.has(keyStr)) {
-                          store.delete(key);
-                        }
-                      }
-                      for (const doc of authoritativeDocs) {
-                        if (doc && doc.id) store.put(doc);
-                      }
-                    };
-                    tx.oncomplete = () => resolve();
-                    tx.onerror = () => resolve();
-                  } catch (e) {
-                    resolve();
-                  }
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload.success && payload.data && typeof payload.data === 'object') {
+            const pendingMap = getPendingLocalDocsMap();
+            const idb = await this.getDb();
+            for (const [col, docs] of Object.entries(payload.data)) {
+              if (Array.isArray(docs)) {
+                const resolvedCol = this.resolveCollection(col);
+                const serverDocIds = new Set(docs.map((d: any) => String(d?.id || '')).filter(Boolean));
+                const localDocs = this.getLocalStorageDocs(resolvedCol);
+                const pendingLocalDocs = localDocs.filter((ld: any) => {
+                  if (!ld || !ld.id) return false;
+                  const lid = String(ld.id);
+                  const normKey = `${normalizeCollectionName(resolvedCol)}::${lid}`;
+                  return !serverDocIds.has(lid) && (pendingMap.has(normKey) || pendingMap.has(`${resolvedCol}::${lid}`));
                 });
+
+                const authoritativeDocs = [...docs, ...pendingLocalDocs];
+                const authoritativeIds = new Set(authoritativeDocs.map((d: any) => String(d?.id || '')).filter(Boolean));
+
+                if (idb.objectStoreNames.contains(resolvedCol)) {
+                  await new Promise<void>((resolve) => {
+                    try {
+                      const tx = idb.transaction(resolvedCol, 'readwrite');
+                      const store = tx.objectStore(resolvedCol);
+                      const allKeysReq = store.getAllKeys();
+                      allKeysReq.onsuccess = () => {
+                        const existingKeys = allKeysReq.result || [];
+                        for (const key of existingKeys) {
+                          const keyStr = String(key);
+                          if (!authoritativeIds.has(keyStr)) {
+                            store.delete(key);
+                          }
+                        }
+                        for (const doc of authoritativeDocs) {
+                          if (doc && doc.id) store.put(doc);
+                        }
+                      };
+                      tx.oncomplete = () => resolve();
+                      tx.onerror = () => resolve();
+                    } catch (e) {
+                      resolve();
+                    }
+                  });
+                }
+
+                try {
+                  localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(authoritativeDocs));
+                } catch (e) {}
+
+                this.syncedCollections.add(resolvedCol);
+                totalRecords += authoritativeDocs.length;
               }
-
-              try {
-                localStorage.setItem(`fallback_idb_${resolvedCol}`, JSON.stringify(authoritativeDocs));
-              } catch (e) {}
-
-              this.syncedCollections.add(resolvedCol);
-              totalRecords += authoritativeDocs.length;
             }
+            this.notify();
+            return { success: true, totalRecords };
           }
-          this.notify();
-          return { success: true, totalRecords };
         }
+      } catch (e) {
+        console.warn('[Bootstrap fetch notice, attempting fallback]:', e);
       }
-    } catch (e) {
-      console.warn('[Bootstrap fetch notice, attempting fallback]:', e);
-    }
 
-    const collectionsToLoad: CollectionName[] = [
-      'system_users', 'students', 'teachers', 'classrooms', 'programs',
-      'enrollments', 'attendance', 'study_stats', 'study_periods',
-      'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'research', 'received_articles',
-      'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
-      'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
-      'student_lockers', 'academic_calendar_periods', 'academic_holidays',
-      'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress'
-    ];
+      const collectionsToLoad: CollectionName[] = [
+        'system_users', 'students', 'teachers', 'classrooms', 'programs',
+        'enrollments', 'attendance', 'study_stats', 'study_periods',
+        'periodic_study_logs', 'study_daily_entries', 'discussion_groups', 'research', 'received_articles',
+        'article_evaluations', 'evaluation_requests', 'tuition_periods', 'tuition_records',
+        'finance_loans', 'finance_expenses', 'personal_todos', 'assigned_todos',
+        'student_lockers', 'academic_calendar_periods', 'academic_holidays',
+        'curriculum_subjects', 'curriculum_books', 'curriculum_chapters', 'student_course_progress'
+      ];
 
-    try {
-      const results = await Promise.allSettled(collectionsToLoad.map(col => this.syncCollectionFromCloud(col, true)));
-      results.forEach(r => {
-        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
-          totalRecords += r.value.length;
-        }
-      });
-    } catch (e) {
-      console.warn('[Startup Sync Error]:', e);
-    }
+      try {
+        const results = await Promise.allSettled(collectionsToLoad.map(col => this.syncCollectionFromCloud(col, true)));
+        results.forEach(r => {
+          if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+            totalRecords += r.value.length;
+          }
+        });
+      } catch (e) {
+        console.warn('[Startup Sync Error]:', e);
+      }
 
-    this.notify();
-    return { success: true, totalRecords };
+      this.notify();
+      return { success: true, totalRecords };
+    })().finally(() => {
+      if (this.bootstrapInFlightPromise === currentPromise) {
+        this.bootstrapInFlightPromise = null;
+      }
+    });
+
+    this.bootstrapInFlightPromise = currentPromise;
+    return currentPromise;
   }
 
   // Background Non-blocking Real-time Mirror to Server

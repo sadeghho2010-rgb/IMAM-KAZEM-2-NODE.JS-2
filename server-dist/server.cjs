@@ -4783,8 +4783,7 @@ async function fetchBootstrapData(callerUserOrLevel, userRole) {
     "curriculum_books",
     "curriculum_chapters",
     "student_course_progress",
-    "student_portal_access_config",
-    "audit_logs"
+    "student_portal_access_config"
   ];
   const BATCH_SIZE = 6;
   const results = [];
@@ -13432,7 +13431,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-13T16:42:28.489Z",
+  "buildTime": "2026-11-14T09:42:45.566Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
