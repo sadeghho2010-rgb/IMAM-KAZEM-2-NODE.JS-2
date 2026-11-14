@@ -51,6 +51,7 @@ import { cn, matchesGradeFilter } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import DeactivationModal from './DeactivationModal';
 import StudentRecordHistoryModal from './StudentRecordHistoryModal';
+import StudentExcelImportModal from './student/StudentExcelImportModal';
 import { getTodayShamsi } from '../lib/jalali';
 import { StudentCourseProgressService } from '../services/StudentCourseProgressService';
 
@@ -351,6 +352,8 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   const [studentToDeactivate, setStudentToDeactivate] = useState<Student | null>(null);
   const [showDeactivationModal, setShowDeactivationModal] = useState(false);
   const [selectedStudentForRecords, setSelectedStudentForRecords] = useState<Student | null>(null);
+  const [excelImportFile, setExcelImportFile] = useState<File | null>(null);
+  const [showExcelImportModal, setShowExcelImportModal] = useState(false);
 
   // Status Filter in the All-Users Bank (all | active | inactive)
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -1076,134 +1079,11 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const buffer = evt.target?.result;
-        const XLSX = await import('xlsx');
-        const wb = XLSX.read(buffer, { type: 'array' });
-        const wsname = wb.SheetNames[0];
-        if (!wsname) {
-          alert('فایل اکسل خالی یا نامعتبر است');
-          return;
-        }
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws) as any[];
-
-        if (!data || data.length === 0) {
-          alert('هیچ داده‌ای در فایل اکسل یافت نشد');
-          return;
-        }
-
-        for (const row of data) {
-          const getString = (val: any) => (val !== undefined && val !== null) ? String(val).trim() : '';
-
-          const name = getString(row['نام و نام خانوادگی'] ?? row['نام'] ?? row.Name ?? row.name) || 'نامشخص';
-          const nationalId = getString(row['کد ملی'] ?? row.NationalId ?? row.nationalId);
-          const phoneNumber = getString(row['شماره تماس'] ?? row['تلفن'] ?? row.Phone ?? row.phone);
-          const grade = getString(row['پایه تحصیلی'] ?? row['پایه'] ?? row.Grade ?? row.grade);
-          const fatherOccupation = getString(row['شغل پدر'] ?? row.FatherOccupation);
-          const birthPlace = getString(row['اهل کجاست'] ?? row['محل تولد'] ?? row.BirthPlace);
-          const birthDate = getString(row['تاریخ تولد'] ?? row.BirthDate);
-          
-          const rawMarital = getString(row['وضعیت تاهل'] ?? row.MaritalStatus);
-          const maritalStatus = (rawMarital === 'متاهل' || rawMarital === 'متأهل') ? 'متاهل' : 'مجرد';
-          
-          const rawChildren = row['تعداد فرزندان'] ?? row.ChildrenCount;
-          const childrenCount = (rawChildren !== undefined && rawChildren !== null && !isNaN(Number(rawChildren))) ? Number(rawChildren) : 0;
-          
-          const rawLiving = getString(row['سکونت'] ?? row.LivingStatus);
-          let livingStatus: any = 'پدری';
-          if (['خوابگاه', 'اجاره ای', 'شخصی', 'پدری', 'سایر'].includes(rawLiving)) {
-            livingStatus = rawLiving;
-          } else if (rawLiving.includes('خوابگاه')) {
-            livingStatus = 'خوابگاه';
-          } else if (rawLiving.includes('اجاره')) {
-            livingStatus = 'اجاره ای';
-          } else if (rawLiving.includes('شخصی')) {
-            livingStatus = 'شخصی';
-          }
-
-          const classicEducation = getString(row['تحصیلات کلاسیک'] ?? row.ClassicEducation);
-          const howzaEntryYear = getString(row['سال ورود به حوزه'] ?? row.HowzaEntryYear);
-          const instituteEntryYear = getString(row['سال ورود به موسسه'] ?? row.InstituteEntryYear);
-          const levelOneSchool = getString(row['مدرسه سطح یک'] ?? row.LevelOneSchool);
-          
-          const rawTammom = getString(row['وضعیت تعمم'] ?? row.TammomStatus);
-          let tammomStatus: any = 'غیر معمم';
-          if (['معمم', 'غیر معمم', 'در شرف تعمم'].includes(rawTammom)) {
-            tammomStatus = rawTammom;
-          }
-
-          const rawStatus = row['وضعیت حضور'] ?? row['وضعیت'] ?? row.IsActive ?? row.isActive;
-          let isActive = true;
-          if (rawStatus !== undefined && rawStatus !== null) {
-            if (typeof rawStatus === 'boolean') {
-              isActive = rawStatus;
-            } else {
-              const strStatus = String(rawStatus).trim().toLowerCase();
-              if (strStatus.includes('غیر') || strStatus === 'false' || strStatus === '0') {
-                isActive = false;
-              }
-            }
-          }
-
-          const deactivationReason = getString(row['علت غیرفعال بودن'] ?? row.DeactivationReason ?? row.deactivationReason);
-          const managementCenterCode = getString(row['کد مرکز مدیریت'] ?? row.ManagementCenterCode ?? row.managementCenterCode);
-          const instituteCode = getString(row['کد موسسه'] ?? row.InstituteCode ?? row.instituteCode);
-          const servicesCenterCode = getString(row['کد مرکز خدمات'] ?? row.ServicesCenterCode ?? row.servicesCenterCode);
-          const tuitionCode = getString(row['کد شهریه'] ?? row.TuitionCode ?? row.tuitionCode);
-          const bankName1 = getString(row['بانک ۱'] ?? row.BankName1 ?? row.bankName1);
-          const bankAccount1 = getString(row['شماره حساب ۱'] ?? row.BankAccount1 ?? row.bankAccount1);
-          const bankSheba1 = getString(row['شماره شبا ۱'] ?? row.BankSheba1 ?? row.bankSheba1);
-          const bankName2 = getString(row['بانک ۲'] ?? row.BankName2 ?? row.bankName2);
-          const bankAccount2 = getString(row['شماره حساب ۲'] ?? row.BankAccount2 ?? row.bankAccount2);
-          const bankSheba2 = getString(row['شماره شبا ۲'] ?? row.BankSheba2 ?? row.bankSheba2);
-
-          await localDb.addDoc('students', {
-            name,
-            nationalId,
-            phoneNumber,
-            grade,
-            fatherOccupation,
-            birthPlace,
-            birthDate,
-            maritalStatus,
-            childrenCount,
-            livingStatus,
-            classicEducation,
-            howzaEntryYear,
-            instituteEntryYear,
-            levelOneSchool,
-            tammomStatus,
-            isActive,
-            deactivationReason: !isActive ? (deactivationReason || 'صرفا غیر فعال') : undefined,
-            managementCenterCode,
-            instituteCode,
-            servicesCenterCode,
-            tuitionCode,
-            bankName1,
-            bankAccount1,
-            bankSheba1,
-            bankName2,
-            bankAccount2,
-            bankSheba2,
-            createdAt: new Date().toISOString()
-          });
-        }
-        fetchStudents();
-        alert('اطلاعات فایل اکسل با موفقیت وارد شد');
-      } catch (error) {
-        console.error("Error importing excel:", error);
-        alert('خطا در خواندن یا ثبت اطلاعات فایل اکسل');
-      } finally {
-        if (e.target) {
-          e.target.value = '';
-        }
-      }
-    };
-    reader.readAsArrayBuffer(file);
+    setExcelImportFile(file);
+    setShowExcelImportModal(true);
+    if (e.target) {
+      e.target.value = '';
+    }
   };
 
   // Extract unique grades dynamically
@@ -1440,7 +1320,7 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                 <label className="flex items-center gap-2 px-4 py-2 border border-slate-200 bg-white text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-colors cursor-pointer shadow-sm">
                   <FileSpreadsheet size={16} />
                   <span>وارد کردن اکسل</span>
-                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelImport} />
+                  <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelImport} />
                 </label>
               )}
 
@@ -3196,6 +3076,18 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         isOpen={!!selectedStudentForRecords}
         student={selectedStudentForRecords}
         onClose={() => setSelectedStudentForRecords(null)}
+      />
+
+      {/* Smart Custom Excel Import Wizard */}
+      <StudentExcelImportModal
+        isOpen={showExcelImportModal}
+        initialFile={excelImportFile}
+        existingStudents={students}
+        onClose={() => {
+          setShowExcelImportModal(false);
+          setExcelImportFile(null);
+        }}
+        onImportCompleted={() => fetchStudents(true)}
       />
     </div>
   );
