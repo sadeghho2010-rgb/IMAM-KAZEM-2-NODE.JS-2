@@ -17,7 +17,8 @@ import {
   Monitor,
   Timer,
   Layers,
-  BookOpen
+  BookOpen,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -73,6 +74,15 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
 
   const [isSavedToastVisible, setIsSavedToastVisible] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [confirmForceReload, setConfirmForceReload] = useState(false);
+  const [isSendingForceReload, setIsSendingForceReload] = useState(false);
+  const [forceReloadMessage, setForceReloadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const canTriggerForceReload = Boolean(
+    currentUser &&
+      (['super_admin', 'school_manager', 'education_manager', 'education_officer'].includes(currentUser.role) ||
+        ['SADEGH', 'SHAH'].includes((currentUser.username || '').toUpperCase()))
+  );
 
   // Apply preferences to DOM whenever changed
   useEffect(() => {
@@ -123,6 +133,58 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
   const handleResetDefaults = () => {
     if (window.confirm('آیا از بازگردانی تنظیمات به حالت اولیه پیش‌فرض اطمینان دارید؟')) {
       setPrefs(DEFAULT_PREFERENCES);
+    }
+  };
+
+  const handleTriggerForceReload = async () => {
+    if (isSendingForceReload) return;
+    setIsSendingForceReload(true);
+    setForceReloadMessage(null);
+    try {
+      const token =
+        localStorage.getItem('auth_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('auth_access_token') ||
+        sessionStorage.getItem('auth_access_token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('token');
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/system/force-reload', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+      });
+      const json = await res.json().catch((parseErr) => {
+        console.warn('[ForceReload] Response parse notice:', parseErr);
+        return {};
+      });
+
+      if (!res.ok || !json.success) {
+        throw new Error(json?.message || `خطا در ارسال دستور بروزرسانی (${res.status})`);
+      }
+
+      setConfirmForceReload(false);
+      setForceReloadMessage({
+        type: 'success',
+        text: 'دستور بروزرسانی ثبت شد؛ هر کاربر در ورود فعلی یا بعدی خود دقیقاً یک بار نسخه جدید را دریافت خواهد کرد.',
+      });
+    } catch (err: any) {
+      console.error('[FORCE_RELOAD_TRIGGER_ERROR]', err);
+      setForceReloadMessage({
+        type: 'error',
+        text: err?.message || 'خطا در برقراری ارتباط با سرور برای ارسال دستور بروزرسانی.',
+      });
+    } finally {
+      setIsSendingForceReload(false);
     }
   };
 
@@ -441,6 +503,77 @@ export default function SettingsModal({ isOpen, onClose, onPreferencesChange }: 
                   {currentUser?.securityPinEnabled ? 'ویرایش / خاموش کردن پین' : 'افزایش سطح امنیتی'}
                 </button>
               </div>
+
+              {/* Manual One-Time Force Reload Section (Super Admin, School Manager, Education Manager) */}
+              {canTriggerForceReload && (
+                <div className="pt-3 border-t border-slate-200/80 bg-rose-50/70 p-3.5 rounded-2xl border border-rose-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 font-black text-rose-950 text-xs">
+                        <RefreshCw size={16} className="text-rose-600" />
+                        <span>بروزرسانی دستی نسخه کاربران</span>
+                      </div>
+                      <p className="text-[11px] text-rose-900/80 font-medium leading-relaxed">
+                        پس از استقرار نسخه جدید روی سرور، با این دکمه کش مرورگر کاربران فقط یک بار پاک شده و بدون خروج از حساب کاربری نسخه جدید را دریافت می‌کنند.
+                      </p>
+                    </div>
+
+                    {!confirmForceReload && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForceReloadMessage(null);
+                          setConfirmForceReload(true);
+                        }}
+                        className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer shadow-2xs whitespace-nowrap"
+                      >
+                        اعمال نسخه جدید برای همه کاربران (هارد رفرش تکباره)
+                      </button>
+                    )}
+                  </div>
+
+                  {confirmForceReload && (
+                    <div className="p-3 bg-white border border-rose-200 rounded-xl flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-800">
+                        آیا از ارسال دستور هارد رفرش تکباره برای همه کاربران اطمینان دارید؟
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={isSendingForceReload}
+                          onClick={() => setConfirmForceReload(false)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                        >
+                          انصراف
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSendingForceReload}
+                          onClick={handleTriggerForceReload}
+                          className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          {isSendingForceReload && <RefreshCw size={12} className="animate-spin" />}
+                          <span>تایید و ارسال دستور</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {forceReloadMessage && (
+                    <div
+                      className={cn(
+                        'p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2',
+                        forceReloadMessage.type === 'success'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-rose-100 border-rose-300 text-rose-800'
+                      )}
+                    >
+                      {forceReloadMessage.type === 'success' && <Check size={15} className="text-emerald-600 shrink-0" />}
+                      <span>{forceReloadMessage.text}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Account Security PIN Modal */}

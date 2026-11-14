@@ -2580,3 +2580,86 @@ export async function recordLoginAuditInDb(log: {
     }
   }
 }
+
+const FORCE_RELOAD_COLLECTION = 'system_settings';
+const FORCE_RELOAD_DOC_ID = 'force_reload_config';
+const FORCE_RELOAD_CACHE_TTL_MS = 10000;
+let cachedForceReloadVersion: number | null = null;
+let cachedForceReloadFetchedAt = 0;
+
+export async function getForceReloadVersion(): Promise<number> {
+  const now = Date.now();
+  if (cachedForceReloadVersion !== null && (now - cachedForceReloadFetchedAt) < FORCE_RELOAD_CACHE_TTL_MS) {
+    return cachedForceReloadVersion;
+  }
+
+  const pool = getMysqlPool();
+  if (!pool) {
+    return cachedForceReloadVersion ?? 0;
+  }
+
+  try {
+    const doc = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    const ver = Number(doc?.forceReloadVersion) || 0;
+    cachedForceReloadVersion = ver;
+    cachedForceReloadFetchedAt = Date.now();
+    return ver;
+  } catch (err: any) {
+    console.warn('[STORAGE_FAILURE] getForceReloadVersion error:', err?.message || err);
+    return cachedForceReloadVersion ?? 0;
+  }
+}
+
+export async function setForceReloadVersion(
+  operatorUsername: string,
+  operatorName: string
+): Promise<{ forceReloadVersion: number; version: number; updatedAt: string }> {
+  const pool = getMysqlPool();
+  const nowIso = new Date().toISOString();
+  let existingDoc: any = null;
+
+  if (pool) {
+    try {
+      existingDoc = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    } catch (err: any) {
+      console.warn('[STORAGE_FAILURE] setForceReloadVersion pre-read error:', err?.message || err);
+    }
+  }
+
+  const prevDocVersion = Number(existingDoc?.version) || 0;
+  const prevForceVersion = Number(existingDoc?.forceReloadVersion) || (cachedForceReloadVersion ?? 0);
+  const nextForceVersion = Math.max(Date.now(), prevForceVersion + 1);
+  const nextDocVersion = prevDocVersion + 1;
+
+  const payload = {
+    id: FORCE_RELOAD_DOC_ID,
+    forceReloadVersion: nextForceVersion,
+    updatedBy: operatorUsername,
+    updatedByName: operatorName,
+    updatedAt: nowIso,
+    updated_at: nowIso,
+    version: nextDocVersion,
+  };
+
+  if (pool) {
+    await MysqlRepository.saveDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID, payload);
+    const fresh = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    const confirmedForceVersion = Number(fresh?.forceReloadVersion) || nextForceVersion;
+    const confirmedDocVersion = Number(fresh?.version) || nextDocVersion;
+    cachedForceReloadVersion = confirmedForceVersion;
+    cachedForceReloadFetchedAt = Date.now();
+    return {
+      forceReloadVersion: confirmedForceVersion,
+      version: confirmedDocVersion,
+      updatedAt: String(fresh?.updatedAt || nowIso),
+    };
+  }
+
+  cachedForceReloadVersion = nextForceVersion;
+  cachedForceReloadFetchedAt = Date.now();
+  return {
+    forceReloadVersion: nextForceVersion,
+    version: nextDocVersion,
+    updatedAt: nowIso,
+  };
+}

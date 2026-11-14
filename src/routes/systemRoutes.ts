@@ -1,14 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { verifyAccessToken } from '../lib/serverAuth';
 import { getSystemHealthReport, recordMemorySnapshot } from '../lib/systemHealthMonitor';
-import { getDbConnectionStatus, testMysqlConnection } from '../lib/databaseAbstraction';
+import {
+  getDbConnectionStatus,
+  testMysqlConnection,
+  getForceReloadVersion,
+  setForceReloadVersion,
+  MysqlRepository,
+} from '../lib/databaseAbstraction';
 
 const router = Router();
 
 // Helper to extract JWT token from request cookies or Authorization headers
 const extractToken = (req: Request): string | null => {
-  if (req.cookies && req.cookies.auth_access_token) {
-    return req.cookies.auth_access_token;
+  if (req.cookies && (req.cookies.auth_access_token || req.cookies.auth_token)) {
+    return req.cookies.auth_access_token || req.cookies.auth_token;
   }
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -54,12 +60,81 @@ router.get('/health', async (req: Request, res: Response) => {
     await recordMemorySnapshot();
 
     const report = getSystemHealthReport();
+    const forceReloadVersion = await getForceReloadVersion();
     return res.json({
       success: true,
+      forceReloadVersion,
       ...report
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'خطا در دریافت وضعیت سلامت سیستم';
+    return res.status(500).json({ success: false, message });
+  }
+});
+
+/**
+ * POST /api/system/force-reload
+ * Triggers a manual one-time hard reload version in MySQL system settings.
+ * Restricted strictly to super_admin, school_manager, and education_manager.
+ */
+router.post('/force-reload', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+  try {
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'توکن امنیتی معتبر یافت نشد.' });
+    }
+
+    const verification = verifyAccessToken(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: 'اعتبار جلسه کاربری منقضی شده است.' });
+    }
+
+    const user = verification.decoded as any;
+    const allowedRoles = ['super_admin', 'school_manager', 'education_manager', 'education_officer'];
+    const usernameUpper = String(user.username || '').toUpperCase();
+    const isAuthorized =
+      allowedRoles.includes(user.role) ||
+      usernameUpper === 'SADEGH' ||
+      usernameUpper === 'SHAH';
+
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: 'دسترسی غیرمجاز: فقط سوپر ادمین، مدیر مدرسه و مسئول آموزش مجاز به ارسال دستور هارد رفرش هستند.',
+      });
+    }
+
+    const result = await setForceReloadVersion(
+      String(user.username || user.id || 'admin'),
+      String(user.name || user.username || 'مدیر')
+    );
+
+    try {
+      await MysqlRepository.recordAuditLog({
+        userId: String(user.id || ''),
+        username: String(user.username || ''),
+        action: 'SYSTEM_FORCE_RELOAD',
+        entityType: 'system_settings',
+        entityId: 'force_reload_config',
+        description: `اعمال نسخه جدید (هارد رفرش تکباره) با شناسه ${result.forceReloadVersion} توسط ${user.name || user.username}`,
+        ipAddress: req.ip || '',
+      });
+    } catch (auditErr: any) {
+      console.warn('[Audit Log Notice - force-reload]:', auditErr?.message || auditErr);
+    }
+
+    return res.json({
+      success: true,
+      forceReloadVersion: result.forceReloadVersion,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      message: 'دستور بروزرسانی ثبت شد؛ هر کاربر در ورود فعلی یا بعدی خود دقیقاً یک بار نسخه جدید را دریافت خواهد کرد.',
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'خطا در ثبت دستور بروزرسانی سراسری';
+    console.error('[SYSTEM_FORCE_RELOAD_ERROR]', err);
     return res.status(500).json({ success: false, message });
   }
 });

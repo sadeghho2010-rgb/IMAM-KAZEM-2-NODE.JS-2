@@ -51,6 +51,9 @@ export type StudentImportFieldKey =
   | 'instituteEntryYear'
   | 'levelOneSchool'
   | 'tuitionCode'
+  | 'fundBookAccountNumber'
+  | 'tejaratBankAccount'
+  | 'tejaratBankSheba'
   | 'bankName1'
   | 'bankAccount1'
   | 'bankSheba1'
@@ -300,6 +303,27 @@ const STUDENT_FIELDS: StudentFieldDefinition[] = [
     group: 'finance',
     isNumericCode: true,
     headerAliases: ['شماره شبا ۲', 'شبا ۲', 'شماره شبا 2', 'banksheba2'],
+  },
+  {
+    key: 'fundBookAccountNumber',
+    label: 'شماره حساب دفتر صندوق',
+    group: 'finance',
+    isNumericCode: true,
+    headerAliases: ['شماره حساب دفتر صندوق', 'دفتر صندوق', 'حساب صندوق', 'شماره دفتر صندوق', 'fundbookaccountnumber'],
+  },
+  {
+    key: 'tejaratBankAccount',
+    label: 'شماره حساب بانک تجارت',
+    group: 'finance',
+    isNumericCode: true,
+    headerAliases: ['شماره حساب بانک تجارت', 'حساب بانک تجارت', 'حساب تجارت', 'بانک تجارت', 'tejaratbankaccount'],
+  },
+  {
+    key: 'tejaratBankSheba',
+    label: 'شماره شبا (بانک تجارت)',
+    group: 'finance',
+    isNumericCode: true,
+    headerAliases: ['شماره شبا بانک تجارت', 'شبا بانک تجارت', 'شبا تجارت', 'tejaratbanksheba'],
   },
 ];
 

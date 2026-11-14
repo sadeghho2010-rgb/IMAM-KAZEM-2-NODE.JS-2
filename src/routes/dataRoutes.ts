@@ -684,9 +684,11 @@ router.get('/sync/events', async (req: Request, res: Response) => {
 // GET /api/sync/changes - High-efficiency delta polling endpoint
 router.get('/sync/changes', async (req: Request, res: Response) => {
   const { getRecentChangesSince } = await import('../lib/serverDataApi');
+  const { getForceReloadVersion } = await import('../lib/databaseAbstraction');
   const since = Number(req.query.since) || 0;
   const changes = getRecentChangesSince(since);
-  return res.json({ success: true, changes, serverTime: Date.now() });
+  const forceReloadVersion = await getForceReloadVersion();
+  return res.json({ success: true, changes, serverTime: Date.now(), forceReloadVersion });
 });
 
 export default router;

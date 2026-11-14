@@ -906,6 +906,16 @@ export default function StudentRecordHistoryModal({
                             <div>شماره حساب: <span className="font-mono font-bold text-slate-900">{student.bankAccount2 || '---'}</span></div>
                             <div>شماره شبا: <span className="font-mono font-bold text-slate-900" dir="ltr">{student.bankSheba2 || '---'}</span></div>
                           </div>
+
+                          {/* Fund Book & Tejarat Bank Account */}
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1 text-xs sm:col-span-2">
+                            <span className="text-[11px] font-bold text-slate-700 block border-b border-slate-200 pb-1">
+                              حساب دفتر صندوق و بانک تجارت
+                            </span>
+                            <div>شماره حساب دفتر صندوق: <span className="font-mono font-bold text-slate-900">{student.fundBookAccountNumber || '---'}</span></div>
+                            <div>شماره حساب بانک تجارت: <span className="font-mono font-bold text-slate-900">{student.tejaratBankAccount || '---'}</span></div>
+                            <div>شماره شبا: <span className="font-mono font-bold text-slate-900" dir="ltr">{student.tejaratBankSheba || '---'}</span></div>
+                          </div>
                         </div>
                       </div>
                     </div>

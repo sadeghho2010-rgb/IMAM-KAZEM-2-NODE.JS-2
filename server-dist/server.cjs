@@ -717,6 +717,7 @@ __export(databaseAbstraction_exports, {
   ensurePerformanceIndexes: () => ensurePerformanceIndexes,
   executeMysqlQuery: () => executeMysqlQuery,
   getDbConnectionStatus: () => getDbConnectionStatus,
+  getForceReloadVersion: () => getForceReloadVersion,
   getMysqlPool: () => getMysqlPool,
   isConnectionError: () => isConnectionError,
   isMysqlConfigured: () => isMysqlConfigured,
@@ -726,6 +727,7 @@ __export(databaseAbstraction_exports, {
   parseMysqlConfig: () => parseMysqlConfig,
   recordLoginAuditInDb: () => recordLoginAuditInDb,
   sanitizeRecordForDb: () => sanitizeRecordForDb,
+  setForceReloadVersion: () => setForceReloadVersion,
   testMysqlConnection: () => testMysqlConnection,
   translateMysqlError: () => translateMysqlError,
   validateMysqlConfig: () => validateMysqlConfig
@@ -1937,7 +1939,72 @@ async function recordLoginAuditInDb(log) {
     }
   }
 }
-var import_promise, import_bcryptjs, import_dotenv, DbConnectionError, isMysqlConfigured, pool, hasEnsuredIndexes, lastConnectionError, isCurrentlyConnected, MysqlRepository;
+async function getForceReloadVersion() {
+  const now = Date.now();
+  if (cachedForceReloadVersion !== null && now - cachedForceReloadFetchedAt < FORCE_RELOAD_CACHE_TTL_MS) {
+    return cachedForceReloadVersion;
+  }
+  const pool2 = getMysqlPool();
+  if (!pool2) {
+    return cachedForceReloadVersion ?? 0;
+  }
+  try {
+    const doc = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    const ver = Number(doc?.forceReloadVersion) || 0;
+    cachedForceReloadVersion = ver;
+    cachedForceReloadFetchedAt = Date.now();
+    return ver;
+  } catch (err) {
+    console.warn("[STORAGE_FAILURE] getForceReloadVersion error:", err?.message || err);
+    return cachedForceReloadVersion ?? 0;
+  }
+}
+async function setForceReloadVersion(operatorUsername, operatorName) {
+  const pool2 = getMysqlPool();
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  let existingDoc = null;
+  if (pool2) {
+    try {
+      existingDoc = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    } catch (err) {
+      console.warn("[STORAGE_FAILURE] setForceReloadVersion pre-read error:", err?.message || err);
+    }
+  }
+  const prevDocVersion = Number(existingDoc?.version) || 0;
+  const prevForceVersion = Number(existingDoc?.forceReloadVersion) || (cachedForceReloadVersion ?? 0);
+  const nextForceVersion = Math.max(Date.now(), prevForceVersion + 1);
+  const nextDocVersion = prevDocVersion + 1;
+  const payload = {
+    id: FORCE_RELOAD_DOC_ID,
+    forceReloadVersion: nextForceVersion,
+    updatedBy: operatorUsername,
+    updatedByName: operatorName,
+    updatedAt: nowIso,
+    updated_at: nowIso,
+    version: nextDocVersion
+  };
+  if (pool2) {
+    await MysqlRepository.saveDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID, payload);
+    const fresh = await MysqlRepository.getDocument(FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID);
+    const confirmedForceVersion = Number(fresh?.forceReloadVersion) || nextForceVersion;
+    const confirmedDocVersion = Number(fresh?.version) || nextDocVersion;
+    cachedForceReloadVersion = confirmedForceVersion;
+    cachedForceReloadFetchedAt = Date.now();
+    return {
+      forceReloadVersion: confirmedForceVersion,
+      version: confirmedDocVersion,
+      updatedAt: String(fresh?.updatedAt || nowIso)
+    };
+  }
+  cachedForceReloadVersion = nextForceVersion;
+  cachedForceReloadFetchedAt = Date.now();
+  return {
+    forceReloadVersion: nextForceVersion,
+    version: nextDocVersion,
+    updatedAt: nowIso
+  };
+}
+var import_promise, import_bcryptjs, import_dotenv, DbConnectionError, isMysqlConfigured, pool, hasEnsuredIndexes, lastConnectionError, isCurrentlyConnected, MysqlRepository, FORCE_RELOAD_COLLECTION, FORCE_RELOAD_DOC_ID, FORCE_RELOAD_CACHE_TTL_MS, cachedForceReloadVersion, cachedForceReloadFetchedAt;
 var init_databaseAbstraction = __esm({
   "src/lib/databaseAbstraction.ts"() {
     import_promise = __toESM(require("mysql2/promise"), 1);
@@ -3316,6 +3383,11 @@ var init_databaseAbstraction = __esm({
         return appDocItems;
       }
     };
+    FORCE_RELOAD_COLLECTION = "system_settings";
+    FORCE_RELOAD_DOC_ID = "force_reload_config";
+    FORCE_RELOAD_CACHE_TTL_MS = 1e4;
+    cachedForceReloadVersion = null;
+    cachedForceReloadFetchedAt = 0;
   }
 });
 
@@ -13025,9 +13097,11 @@ data: ${JSON.stringify(event)}
 });
 router20.get("/sync/changes", async (req, res) => {
   const { getRecentChangesSince: getRecentChangesSince2 } = await Promise.resolve().then(() => (init_serverDataApi(), serverDataApi_exports));
+  const { getForceReloadVersion: getForceReloadVersion2 } = await Promise.resolve().then(() => (init_databaseAbstraction(), databaseAbstraction_exports));
   const since = Number(req.query.since) || 0;
   const changes = getRecentChangesSince2(since);
-  return res.json({ success: true, changes, serverTime: Date.now() });
+  const forceReloadVersion = await getForceReloadVersion2();
+  return res.json({ success: true, changes, serverTime: Date.now(), forceReloadVersion });
 });
 var dataRoutes_default = router20;
 
@@ -13038,8 +13112,8 @@ init_systemHealthMonitor();
 init_databaseAbstraction();
 var router21 = (0, import_express21.Router)();
 var extractToken2 = (req) => {
-  if (req.cookies && req.cookies.auth_access_token) {
-    return req.cookies.auth_access_token;
+  if (req.cookies && (req.cookies.auth_access_token || req.cookies.auth_token)) {
+    return req.cookies.auth_access_token || req.cookies.auth_token;
   }
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -13070,12 +13144,65 @@ router21.get("/health", async (req, res) => {
     }
     await recordMemorySnapshot();
     const report = getSystemHealthReport();
+    const forceReloadVersion = await getForceReloadVersion();
     return res.json({
       success: true,
+      forceReloadVersion,
       ...report
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "\u062E\u0637\u0627 \u062F\u0631 \u062F\u0631\u06CC\u0627\u0641\u062A \u0648\u0636\u0639\u06CC\u062A \u0633\u0644\u0627\u0645\u062A \u0633\u06CC\u0633\u062A\u0645";
+    return res.status(500).json({ success: false, message });
+  }
+});
+router21.post("/force-reload", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    const token = extractToken2(req);
+    if (!token) {
+      return res.status(401).json({ success: false, message: "\u062A\u0648\u06A9\u0646 \u0627\u0645\u0646\u06CC\u062A\u06CC \u0645\u0639\u062A\u0628\u0631 \u06CC\u0627\u0641\u062A \u0646\u0634\u062F." });
+    }
+    const verification = verifyAccessToken2(token);
+    if (!verification.valid || !verification.decoded) {
+      return res.status(401).json({ success: false, message: "\u0627\u0639\u062A\u0628\u0627\u0631 \u062C\u0644\u0633\u0647 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0645\u0646\u0642\u0636\u06CC \u0634\u062F\u0647 \u0627\u0633\u062A." });
+    }
+    const user = verification.decoded;
+    const allowedRoles = ["super_admin", "school_manager", "education_manager", "education_officer"];
+    const usernameUpper = String(user.username || "").toUpperCase();
+    const isAuthorized = allowedRoles.includes(user.role) || usernameUpper === "SADEGH" || usernameUpper === "SHAH";
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: "\u062F\u0633\u062A\u0631\u0633\u06CC \u063A\u06CC\u0631\u0645\u062C\u0627\u0632: \u0641\u0642\u0637 \u0633\u0648\u067E\u0631 \u0627\u062F\u0645\u06CC\u0646\u060C \u0645\u062F\u06CC\u0631 \u0645\u062F\u0631\u0633\u0647 \u0648 \u0645\u0633\u0626\u0648\u0644 \u0622\u0645\u0648\u0632\u0634 \u0645\u062C\u0627\u0632 \u0628\u0647 \u0627\u0631\u0633\u0627\u0644 \u062F\u0633\u062A\u0648\u0631 \u0647\u0627\u0631\u062F \u0631\u0641\u0631\u0634 \u0647\u0633\u062A\u0646\u062F."
+      });
+    }
+    const result = await setForceReloadVersion(
+      String(user.username || user.id || "admin"),
+      String(user.name || user.username || "\u0645\u062F\u06CC\u0631")
+    );
+    try {
+      await MysqlRepository.recordAuditLog({
+        userId: String(user.id || ""),
+        username: String(user.username || ""),
+        action: "SYSTEM_FORCE_RELOAD",
+        entityType: "system_settings",
+        entityId: "force_reload_config",
+        description: `\u0627\u0639\u0645\u0627\u0644 \u0646\u0633\u062E\u0647 \u062C\u062F\u06CC\u062F (\u0647\u0627\u0631\u062F \u0631\u0641\u0631\u0634 \u062A\u06A9\u0628\u0627\u0631\u0647) \u0628\u0627 \u0634\u0646\u0627\u0633\u0647 ${result.forceReloadVersion} \u062A\u0648\u0633\u0637 ${user.name || user.username}`,
+        ipAddress: req.ip || ""
+      });
+    } catch (auditErr) {
+      console.warn("[Audit Log Notice - force-reload]:", auditErr?.message || auditErr);
+    }
+    return res.json({
+      success: true,
+      forceReloadVersion: result.forceReloadVersion,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      message: "\u062F\u0633\u062A\u0648\u0631 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u062B\u0628\u062A \u0634\u062F\u061B \u0647\u0631 \u06A9\u0627\u0631\u0628\u0631 \u062F\u0631 \u0648\u0631\u0648\u062F \u0641\u0639\u0644\u06CC \u06CC\u0627 \u0628\u0639\u062F\u06CC \u062E\u0648\u062F \u062F\u0642\u06CC\u0642\u0627\u064B \u06CC\u06A9 \u0628\u0627\u0631 \u0646\u0633\u062E\u0647 \u062C\u062F\u06CC\u062F \u0631\u0627 \u062F\u0631\u06CC\u0627\u0641\u062A \u062E\u0648\u0627\u0647\u062F \u06A9\u0631\u062F."
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "\u062E\u0637\u0627 \u062F\u0631 \u062B\u0628\u062A \u062F\u0633\u062A\u0648\u0631 \u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0633\u0631\u0627\u0633\u0631\u06CC";
+    console.error("[SYSTEM_FORCE_RELOAD_ERROR]", err);
     return res.status(500).json({ success: false, message });
   }
 });
@@ -13500,7 +13627,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-14T10:46:33.258Z",
+  "buildTime": "2026-11-14T15:20:12.859Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"

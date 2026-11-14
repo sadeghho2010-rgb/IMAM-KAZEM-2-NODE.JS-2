@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import mysql from 'mysql2/promise';
 import { verifyAccessToken } from '../lib/serverAuth';
+import { getForceReloadVersion } from '../lib/databaseAbstraction';
 
 export function createSyncRouter(pool: mysql.Pool): Router {
   const router = Router();
@@ -85,11 +86,14 @@ export function createSyncRouter(pool: mysql.Pool): Router {
 
       const nextCursor = items.length > 0 ? items[items.length - 1].seq : cursor;
       const hasMore = items.length === limit;
+      const forceReloadVersion = await getForceReloadVersion();
 
       return res.status(200).json({
         success: true,
+        forceReloadVersion,
         data: {
           items: filteredItems,
+          forceReloadVersion,
           pagination: {
             cursor: nextCursor.toString(),
             hasMore,

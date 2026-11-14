@@ -449,6 +449,9 @@ export interface Student {
 
   // اطلاعات مالی
   tuitionCode?: string; // کد شهریه
+  fundBookAccountNumber?: string; // شماره حساب دفتر صندوق
+  tejaratBankAccount?: string; // شماره حساب بانک تجارت
+  tejaratBankSheba?: string; // شماره شبا بانک تجارت
   bankName1?: string; // نام بانک ۱
   bankAccount1?: string; // شماره حساب بانک ۱
   bankSheba1?: string; // شماره شبا حساب شماره ۱

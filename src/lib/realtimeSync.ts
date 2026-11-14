@@ -4,6 +4,8 @@
  * that works seamlessly on MySQL, VPS, Docker, or Dedicated Hosting.
  */
 
+import { hasActiveCriticalWrite } from './saveFeedback';
+
 export interface RealtimeChangeEvent {
   collection: string;
   id: string;
@@ -23,6 +25,7 @@ class RealtimeSyncManager {
   private pollingTimer: any = null;
   private backoffDelayMs = 2000;
   private broadcastChannel: BroadcastChannel | null = null;
+  private isForceReloading = false;
 
   constructor() {
     if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
@@ -200,9 +203,48 @@ class RealtimeSyncManager {
           if (typeof data.serverTime === 'number' && data.serverTime > this.lastTimestamp) {
             this.lastTimestamp = data.serverTime;
           }
+          if (data.forceReloadVersion !== undefined) {
+            await this.handleForceReloadIfNeeded(data.forceReloadVersion);
+          }
         }
       }
     } catch (e) {}
+  }
+
+  private async handleForceReloadIfNeeded(serverForceReloadVersion: unknown): Promise<void> {
+    if (typeof window === 'undefined' || this.isForceReloading) return;
+    const serverVersion = Number(serverForceReloadVersion) || 0;
+    if (serverVersion <= 0) return;
+
+    const appliedVersion = Number(localStorage.getItem('applied_force_reload_version') || 0);
+    if (serverVersion <= appliedVersion) return;
+
+    if (hasActiveCriticalWrite()) {
+      return;
+    }
+
+    this.isForceReloading = true;
+    localStorage.setItem('applied_force_reload_version', String(serverVersion));
+
+    try {
+      if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+        const names = await caches.keys();
+        await Promise.all(names.map((name) => caches.delete(name)));
+      }
+    } catch (cacheErr) {
+      console.warn('[ForceReload] Cache cleanup notice:', cacheErr);
+    }
+
+    try {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.update()));
+      }
+    } catch (swErr) {
+      console.warn('[ForceReload] ServiceWorker update notice:', swErr);
+    }
+
+    window.location.reload();
   }
 
   /**

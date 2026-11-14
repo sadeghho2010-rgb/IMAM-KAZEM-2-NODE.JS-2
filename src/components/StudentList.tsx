@@ -340,6 +340,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     deactivationDate: '',
     deactivationNotes: '',
     tuitionCode: '',
+    fundBookAccountNumber: '',
+    tejaratBankAccount: '',
+    tejaratBankSheba: '',
     bankName1: '',
     bankAccount1: '',
     bankSheba1: '',
@@ -448,6 +451,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
     { id: 'isActive', label: 'وضعیت حضور' },
     { id: 'deactivationReason', label: 'علت غیرفعال بودن' },
     { id: 'tuitionCode', label: 'کد شهریه' },
+    { id: 'fundBookAccountNumber', label: 'شماره حساب دفتر صندوق' },
+    { id: 'tejaratBankAccount', label: 'شماره حساب بانک تجارت' },
+    { id: 'tejaratBankSheba', label: 'شماره شبا (تجارت)' },
     { id: 'userStatus', label: 'وضعیت کاربری سایت' },
     { id: 'actions', label: 'عملیات' },
   ];
@@ -745,6 +751,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
 
       // اطلاعات مالی
       tuitionCode: '',
+      fundBookAccountNumber: '',
+      tejaratBankAccount: '',
+      tejaratBankSheba: '',
       bankName1: '',
       bankAccount1: '',
       bankSheba1: '',
@@ -1061,6 +1070,9 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
       'وضعیت حضور': isStudentActive(s.isActive) ? 'فعال (حاضر)' : 'غیرفعال (سابق)',
       'علت غیرفعال بودن': !isStudentActive(s.isActive) ? (s.deactivationReason || 'صرفا غیر فعال') : '—',
       'کد شهریه': s.tuitionCode || '',
+      'شماره حساب دفتر صندوق': s.fundBookAccountNumber || '',
+      'شماره حساب بانک تجارت': s.tejaratBankAccount || '',
+      'شماره شبا (بانک تجارت)': s.tejaratBankSheba || '',
       'بانک ۱': s.bankName1 || '',
       'شماره حساب ۱': s.bankAccount1 || '',
       'شماره شبا ۱': s.bankSheba1 || '',
@@ -1129,7 +1141,10 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
         s.managementCenterCode?.includes(searchTerm) ||
         s.instituteCode?.includes(searchTerm) ||
         s.servicesCenterCode?.includes(searchTerm) ||
-        s.tuitionCode?.includes(searchTerm);
+        s.tuitionCode?.includes(searchTerm) ||
+        s.fundBookAccountNumber?.includes(searchTerm) ||
+        s.tejaratBankAccount?.includes(searchTerm) ||
+        s.tejaratBankSheba?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesGrade = matchesGradeFilter(s.grade, gradeFilter);
 
@@ -1771,20 +1786,6 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                   {visibleColumns.includes('tammomStatus') && (
                     <td className="px-6 py-4 text-xs text-slate-600">{student.tammomStatus || '---'}</td>
                   )}
-                  {visibleColumns.includes('tuitionCode') && (
-                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.tuitionCode || '---'}</td>
-                  )}
-                  {visibleColumns.includes('deactivationReason') && (
-                    <td className="px-6 py-4 text-xs text-slate-600">
-                      {!isStudentActive(student.isActive) ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                          {student.deactivationReason || 'صرفا غیر فعال'}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300 text-[11px]">—</span>
-                      )}
-                    </td>
-                  )}
                   {visibleColumns.includes('isActive') && (
                     <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                       <button 
@@ -1805,6 +1806,29 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                         {isStudentActive(student.isActive) ? 'حاضر (فعال)' : 'سابق (غیرفعال)'}
                       </button>
                     </td>
+                  )}
+                  {visibleColumns.includes('deactivationReason') && (
+                    <td className="px-6 py-4 text-xs text-slate-600">
+                      {!isStudentActive(student.isActive) ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          {student.deactivationReason || 'صرفا غیر فعال'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300 text-[11px]">—</span>
+                      )}
+                    </td>
+                  )}
+                  {visibleColumns.includes('tuitionCode') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.tuitionCode || '---'}</td>
+                  )}
+                  {visibleColumns.includes('fundBookAccountNumber') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.fundBookAccountNumber || '---'}</td>
+                  )}
+                  {visibleColumns.includes('tejaratBankAccount') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600">{student.tejaratBankAccount || '---'}</td>
+                  )}
+                  {visibleColumns.includes('tejaratBankSheba') && (
+                    <td className="px-6 py-4 text-xs font-mono text-slate-600" dir="ltr">{student.tejaratBankSheba || '---'}</td>
                   )}
                   {visibleColumns.includes('userStatus') && (
                     <td className="px-6 py-4" onClick={(e) => {
@@ -2388,6 +2412,39 @@ export default function StudentList({ onlyActive = false, initialStudentId }: St
                       value={newStudent.bankSheba2 || ''}
                       onChange={(e) => setNewStudent({...newStudent, bankSheba2: e.target.value})}
                     />
+                  </div>
+
+                  <div className="col-span-full pt-2 mt-1 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره حساب دفتر صندوق</label>
+                      <input
+                        type="text"
+                        placeholder="شماره حساب دفتر صندوق"
+                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                        value={newStudent.fundBookAccountNumber || ''}
+                        onChange={(e) => setNewStudent({ ...newStudent, fundBookAccountNumber: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره حساب بانک تجارت</label>
+                      <input
+                        type="text"
+                        placeholder="شماره حساب بانک تجارت"
+                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left"
+                        value={newStudent.tejaratBankAccount || ''}
+                        onChange={(e) => setNewStudent({ ...newStudent, tejaratBankAccount: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-full">
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">شماره شبا (بانک تجارت)</label>
+                      <input
+                        type="text"
+                        placeholder="IR000000000000000000000000"
+                        className="w-full px-3 py-2 text-sm font-mono border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-left uppercase"
+                        value={newStudent.tejaratBankSheba || ''}
+                        onChange={(e) => setNewStudent({ ...newStudent, tejaratBankSheba: e.target.value })}
+                      />
+                    </div>
                   </div>
                 </div>
 
