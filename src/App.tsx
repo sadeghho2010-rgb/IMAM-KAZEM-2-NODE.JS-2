@@ -243,6 +243,7 @@ function AppContent() {
   );
 
   const navigateToTab = (tab: string, studentId?: string) => {
+    const currentActive = activeTab;
     setSelectedStudentIdForTab(studentId || undefined);
     setNavigationHistory(prev => {
       if (prev[prev.length - 1] === tab) return prev;
@@ -252,6 +253,25 @@ function AppContent() {
       setDashboardCategoryGroup(null);
     }
     setActiveTab(tab);
+    if (tab !== currentActive) {
+      if (tab !== 'dashboard' && currentActive === 'dashboard') {
+        window.history.pushState({ appTab: tab }, '', window.location.href);
+      } else {
+        window.history.replaceState({ appTab: tab }, '', window.location.href);
+      }
+    }
+  };
+
+  const handleCategoryGroupChange = (group: string | null) => {
+    const prevGroup = dashboardCategoryGroup;
+    setDashboardCategoryGroup(group);
+    if (group !== prevGroup) {
+      if (group !== null && prevGroup === null) {
+        window.history.pushState({ appCategoryGroup: group }, '', window.location.href);
+      } else if (group === null) {
+        window.history.replaceState({ appCategoryGroup: null }, '', window.location.href);
+      }
+    }
   };
 
   const handleBack = () => {
@@ -267,6 +287,17 @@ function AppContent() {
       setDashboardCategoryGroup(null);
     }
   };
+
+  // Listen to browser/mobile back button (popstate)
+  useEffect(() => {
+    const handlePopState = () => {
+      handleBack();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeTab, dashboardCategoryGroup]);
 
   const getActiveTabTitle = (tab: string) => {
     switch (tab) {
@@ -389,7 +420,7 @@ function AppContent() {
             onNavigateTab={handleNavigate} 
             onOpenSettings={() => setIsSettingsModalOpen(true)}
             initialCategoryGroup={dashboardCategoryGroup}
-            onCategoryGroupChange={setDashboardCategoryGroup}
+            onCategoryGroupChange={handleCategoryGroupChange}
             isInsideShell={isStaffMobile}
           />
         );
