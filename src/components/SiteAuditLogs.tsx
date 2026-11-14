@@ -433,7 +433,8 @@ export default function SiteAuditLogs() {
   );
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [hasLoadedLogs, setHasLoadedLogs] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // Filters
@@ -442,7 +443,7 @@ export default function SiteAuditLogs() {
   const [selectedUser, setSelectedUser] = useState<string>('all');
   const [selectedModule, setSelectedModule] = useState<string>('all');
   const [selectedAction, setSelectedAction] = useState<string>('all');
-  const [selectedDateFilter, setSelectedDateFilter] = useState<'all' | 'today' | 'week' | 'three_weeks' | 'month'>('all');
+  const [selectedDateFilter, setSelectedDateFilter] = useState<'all' | 'today' | 'week' | 'three_weeks' | 'month'>('today');
 
   // Modal States
   const [selectedLogForDetail, setSelectedLogForDetail] = useState<AuditLog | null>(null);
@@ -464,12 +465,15 @@ export default function SiteAuditLogs() {
   }, []);
 
   const loadLogs = async (forceCloud = false) => {
+    if (forceCloud) {
+      setHasLoadedLogs(true);
+    }
     setIsLoading(true);
     try {
       if (forceCloud) {
-        await localDb.syncCollectionFromCloud('audit_logs', true).catch(() => {});
+        await localDb.syncAuditLogsRecent(24, 300).catch(() => {});
       }
-      const records = await localDb.getDocs<any>('audit_logs');
+      const records = await localDb.getLocalDocsSnapshot<any>('audit_logs');
       const mergedMap = new Map<string, AuditLog>();
 
       (records || []).forEach(r => {
@@ -490,7 +494,7 @@ export default function SiteAuditLogs() {
   };
 
   useEffect(() => {
-    loadLogs(true);
+    if (!hasLoadedLogs) return;
     const unsubscribe = localDb.subscribe(() => {
       loadLogs(false);
     });
@@ -500,7 +504,7 @@ export default function SiteAuditLogs() {
       unsubscribe();
       window.removeEventListener('collection_change_audit_logs', handleAuditChange);
     };
-  }, []);
+  }, [hasLoadedLogs]);
 
   if (!isAuthorized) {
     return (
@@ -891,10 +895,11 @@ export default function SiteAuditLogs() {
             </button>
             <button
               onClick={() => loadLogs(true)}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              disabled={isLoading}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
             >
               <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-              <span>بروزرسانی</span>
+              <span>{hasLoadedLogs ? 'بروزرسانی' : 'نمایش لاگ‌ها'}</span>
             </button>
           </div>
         </div>
@@ -1197,7 +1202,22 @@ export default function SiteAuditLogs() {
           </div>
         </div>
 
-        {isLoading ? (
+        {!hasLoadedLogs && !isLoading ? (
+          <div className="py-16 px-4 text-center bg-slate-50/50 space-y-4">
+            <Activity size={42} className="mx-auto text-indigo-400" />
+            <p className="text-sm font-bold text-slate-700">
+              برای مشاهده‌ی فعالیت‌های سایت، دکمه را بزنید
+            </p>
+            <button
+              type="button"
+              onClick={() => loadLogs(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+            >
+              <Eye size={16} />
+              <span>نمایش لاگ‌ها</span>
+            </button>
+          </div>
+        ) : isLoading ? (
           <div className="py-16 text-center space-y-3 text-slate-400">
             <RefreshCw size={28} className="animate-spin mx-auto text-indigo-600" />
             <p className="text-xs font-bold">در حال بارگذاری و فراخوانی کلیه فعالیت‌های سایت...</p>

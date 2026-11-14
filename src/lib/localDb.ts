@@ -1234,6 +1234,91 @@ class LocalDatabase {
     return this.getLocalStorageDocs(resolvedCol);
   }
 
+  // Additive sync for recent audit_logs (never prunes or deletes existing cached logs in IndexedDB/localStorage)
+  async syncAuditLogsRecent(hours = 24, limit = 300): Promise<any[]> {
+    if (typeof window === 'undefined') return [];
+
+    const safeHours = Math.max(1, Math.floor(Number(hours) || 24));
+    const safeLimit = Math.max(1, Math.floor(Number(limit) || 300));
+
+    try {
+      const token = this.getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      const apiRes = await fetch(`/api/data/audit_logs/recent?hours=${safeHours}&limit=${safeLimit}&_t=${Date.now()}`, {
+        method: 'GET',
+        headers: {
+          ...headers,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        },
+        cache: 'no-store',
+        credentials: 'include',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        if (json.success && Array.isArray(json.items)) {
+          const recentDocs = json.items.filter((d: any) => d && d.id);
+
+          // Additive upsert into IndexedDB (no deletion / no pruning of older cached records)
+          const idb = await this.getDb();
+          if (idb.objectStoreNames.contains('audit_logs')) {
+            await new Promise<void>((resolve) => {
+              try {
+                const tx = idb.transaction('audit_logs', 'readwrite');
+                const store = tx.objectStore('audit_logs');
+                for (const doc of recentDocs) {
+                  store.put(doc);
+                }
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+              } catch (e) {
+                resolve();
+              }
+            });
+          }
+
+          // Additive merge into localStorage fallback (preserve all existing cached entries)
+          const key = 'fallback_idb_audit_logs';
+          const existingDocs = this.getLocalStorageDocs<any>('audit_logs');
+          const mergedMap = new Map<string, any>();
+          for (const existing of existingDocs) {
+            if (existing && existing.id) {
+              mergedMap.set(String(existing.id), existing);
+            }
+          }
+          for (const doc of recentDocs) {
+            mergedMap.set(String(doc.id), doc);
+          }
+
+          const mergedDocs = Array.from(mergedMap.values());
+          const prevJson = localStorage.getItem(key) || '[]';
+          const nextJson = JSON.stringify(mergedDocs);
+          try {
+            localStorage.setItem(key, nextJson);
+          } catch (e) {}
+
+          if (prevJson !== nextJson) {
+            this.notify();
+          }
+
+          return recentDocs;
+        }
+      }
+    } catch (e) {
+      console.warn('Exception syncing recent audit_logs from cloud:', e);
+    }
+
+    return this.getLocalStorageDocs('audit_logs');
+  }
+
   // Universal Realtime synchronization across all devices and tabs
   public setupRealtimeSync() {
     if (typeof window === 'undefined' || this.isRealtimeSubscribed) return;

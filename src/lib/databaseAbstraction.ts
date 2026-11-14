@@ -2492,6 +2492,51 @@ export const MysqlRepository = {
     }
 
     return result;
+  },
+
+  // 10. Query Recent Audit Logs with Time Window and LIMIT (Independent from queryCollection)
+  async queryAuditLogsRecent(hours: number = 24, limit: number = 300): Promise<any[]> {
+    const pool = getMysqlPool();
+    if (!pool) return [];
+
+    const safeHours = Math.max(1, Math.min(24 * 365, Math.floor(Number(hours) || 24)));
+    const safeLimit = Math.max(1, Math.min(5000, Math.floor(Number(limit) || 300)));
+
+    const startTime = Date.now();
+    const appDocItems: any[] = [];
+    try {
+      const [rows]: any = await pool.query(
+        `SELECT id, data, updated_at FROM app_collections WHERE collection_name = 'audit_logs' AND updated_at >= (NOW() - INTERVAL ? HOUR) ORDER BY updated_at DESC LIMIT ?`,
+        [safeHours, safeLimit]
+      );
+      const seenIds = new Set<string>();
+      for (const r of (rows || [])) {
+        const rowId = String(r.id);
+        if (seenIds.has(rowId)) continue;
+        seenIds.add(rowId);
+        let parsed: any = {};
+        try {
+          parsed = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
+        } catch {
+          parsed = {};
+        }
+        const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : undefined;
+        appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+      }
+    } catch (e: any) {
+      console.warn(`[queryAuditLogsRecent app_collections notice]:`, e?.message || e);
+    }
+
+    const duration = Date.now() - startTime;
+    if (duration > 1000) {
+      logSlowQuery(
+        'audit_logs_recent',
+        duration,
+        `SELECT id, data, updated_at FROM app_collections WHERE collection_name = 'audit_logs' AND updated_at >= (NOW() - INTERVAL ${safeHours} HOUR) ORDER BY updated_at DESC LIMIT ${safeLimit}`
+      );
+    }
+
+    return appDocItems;
   }
 };
 

@@ -10,6 +10,7 @@ import {
   fetchBootstrapData
 } from '../lib/serverDataApi';
 import { verifyAccessToken, logServerAudit, fetchAllUsersFromStorage } from '../lib/serverAuth';
+import { MysqlRepository } from '../lib/databaseAbstraction';
 import { logger } from '../lib/logger';
 
 const router = Router();
@@ -259,6 +260,41 @@ router.get('/audit-logs/verify-chain', async (req: Request, res: Response) => {
 });
 
 // ===================== SECURE DEDICATED DATA API ENDPOINTS =====================
+
+// GET /api/data/audit_logs/recent?hours=24&limit=300
+router.get('/data/audit_logs/recent', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const token = extractToken(req);
+  let callerUser = null;
+
+  if (token) {
+    const verification = verifyAccessToken(token);
+    if (verification.valid && verification.decoded) {
+      callerUser = await getEnrichedCallerUser(verification.decoded);
+    }
+  }
+
+  const authCheck = authorizeCollectionAccess(callerUser, 'audit_logs', 'read');
+  if (!authCheck.allowed) {
+    return res.status(403).json({ success: false, message: authCheck.reason || 'دسترسی غیرمجاز' });
+  }
+
+  const rawHours = Number(req.query.hours);
+  const rawLimit = Number(req.query.limit);
+  const hours = Number.isFinite(rawHours) && rawHours > 0 ? Math.floor(rawHours) : 24;
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 300;
+
+  try {
+    const items = await MysqlRepository.queryAuditLogsRecent(hours, limit);
+    return res.json({ success: true, items });
+  } catch (err) {
+    logger.error('Error querying recent audit_logs:', err);
+    return res.status(500).json({ success: false, message: 'خطا در دریافت لاگ‌های اخیر از سرور.' });
+  }
+});
 
 // GET /api/data/:collection
 router.get('/data/:collection', async (req: Request, res: Response) => {

@@ -3274,6 +3274,46 @@ var init_databaseAbstraction = __esm({
           logSlowQuery(collectionName, duration, `SELECT id, data FROM app_collections WHERE collection_name = '${collectionName}' ORDER BY updated_at DESC`);
         }
         return result;
+      },
+      // 10. Query Recent Audit Logs with Time Window and LIMIT (Independent from queryCollection)
+      async queryAuditLogsRecent(hours = 24, limit = 300) {
+        const pool2 = getMysqlPool();
+        if (!pool2) return [];
+        const safeHours = Math.max(1, Math.min(24 * 365, Math.floor(Number(hours) || 24)));
+        const safeLimit = Math.max(1, Math.min(5e3, Math.floor(Number(limit) || 300)));
+        const startTime = Date.now();
+        const appDocItems = [];
+        try {
+          const [rows] = await pool2.query(
+            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = 'audit_logs' AND updated_at >= (NOW() - INTERVAL ? HOUR) ORDER BY updated_at DESC LIMIT ?`,
+            [safeHours, safeLimit]
+          );
+          const seenIds = /* @__PURE__ */ new Set();
+          for (const r of rows || []) {
+            const rowId = String(r.id);
+            if (seenIds.has(rowId)) continue;
+            seenIds.add(rowId);
+            let parsed = {};
+            try {
+              parsed = typeof r.data === "string" ? JSON.parse(r.data) : r.data || {};
+            } catch {
+              parsed = {};
+            }
+            const dbUpdatedAt = r.updated_at ? new Date(r.updated_at).toISOString() : void 0;
+            appDocItems.push({ ...parsed, id: r.id, updatedAt: parsed?.updatedAt || dbUpdatedAt });
+          }
+        } catch (e) {
+          console.warn(`[queryAuditLogsRecent app_collections notice]:`, e?.message || e);
+        }
+        const duration = Date.now() - startTime;
+        if (duration > 1e3) {
+          logSlowQuery(
+            "audit_logs_recent",
+            duration,
+            `SELECT id, data, updated_at FROM app_collections WHERE collection_name = 'audit_logs' AND updated_at >= (NOW() - INTERVAL ${safeHours} HOUR) ORDER BY updated_at DESC LIMIT ${safeLimit}`
+          );
+        }
+        return appDocItems;
       }
     };
   }
@@ -12434,6 +12474,7 @@ var import_path4 = __toESM(require("path"), 1);
 var import_fs4 = __toESM(require("fs"), 1);
 init_serverDataApi();
 init_serverAuth();
+init_databaseAbstraction();
 init_logger();
 var router20 = (0, import_express20.Router)();
 router20.use((req, res, next) => {
@@ -12633,6 +12674,34 @@ router20.get("/audit-logs/verify-chain", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : "\u062E\u0637\u0627 \u062F\u0631 \u0627\u0639\u062A\u0628\u0627\u0631\u0633\u0646\u062C\u06CC \u0632\u0646\u062C\u06CC\u0631\u0647 \u0644\u0627\u06AF\u200C\u0647\u0627";
     return res.status(500).json({ success: false, message });
+  }
+});
+router20.get("/data/audit_logs/recent", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  const token = extractToken(req);
+  let callerUser = null;
+  if (token) {
+    const verification = verifyAccessToken2(token);
+    if (verification.valid && verification.decoded) {
+      callerUser = await getEnrichedCallerUser(verification.decoded);
+    }
+  }
+  const authCheck = authorizeCollectionAccess(callerUser, "audit_logs", "read");
+  if (!authCheck.allowed) {
+    return res.status(403).json({ success: false, message: authCheck.reason || "\u062F\u0633\u062A\u0631\u0633\u06CC \u063A\u06CC\u0631\u0645\u062C\u0627\u0632" });
+  }
+  const rawHours = Number(req.query.hours);
+  const rawLimit = Number(req.query.limit);
+  const hours = Number.isFinite(rawHours) && rawHours > 0 ? Math.floor(rawHours) : 24;
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 300;
+  try {
+    const items = await MysqlRepository.queryAuditLogsRecent(hours, limit);
+    return res.json({ success: true, items });
+  } catch (err) {
+    logger.error("Error querying recent audit_logs:", err);
+    return res.status(500).json({ success: false, message: "\u062E\u0637\u0627 \u062F\u0631 \u062F\u0631\u06CC\u0627\u0641\u062A \u0644\u0627\u06AF\u200C\u0647\u0627\u06CC \u0627\u062E\u06CC\u0631 \u0627\u0632 \u0633\u0631\u0648\u0631." });
   }
 });
 router20.get("/data/:collection", async (req, res) => {
@@ -13431,7 +13500,7 @@ init_systemHealthMonitor();
 // src/lib/buildInfo.ts
 var BUILD_INFO = {
   "version": "v1.0.2-secure",
-  "buildTime": "2026-11-14T09:42:45.566Z",
+  "buildTime": "2026-11-14T10:46:33.258Z",
   "features": [
     "version-endpoint",
     "hardcoded-secrets-removed"
