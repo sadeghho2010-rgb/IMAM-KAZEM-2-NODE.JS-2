@@ -272,6 +272,62 @@ export default function StudentAccessManagement() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [confirmForceReload, setConfirmForceReload] = useState(false);
+  const [isSendingForceReload, setIsSendingForceReload] = useState(false);
+  const [forceReloadMessage, setForceReloadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleTriggerForceReload = async () => {
+    if (isSendingForceReload) return;
+    setIsSendingForceReload(true);
+    setForceReloadMessage(null);
+    try {
+      const token =
+        localStorage.getItem('auth_token') ||
+        sessionStorage.getItem('auth_token') ||
+        localStorage.getItem('auth_access_token') ||
+        sessionStorage.getItem('auth_access_token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('token');
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/system/force-reload', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+      });
+      const json = await res.json().catch((parseErr) => {
+        console.warn('[ForceReload] Response parse notice:', parseErr);
+        return {};
+      });
+
+      if (!res.ok || !json.success) {
+        throw new Error(json?.message || `خطا در ارسال دستور بروزرسانی (${res.status})`);
+      }
+
+      setConfirmForceReload(false);
+      setForceReloadMessage({
+        type: 'success',
+        text: 'دستور بروزرسانی ثبت شد؛ هر کاربر در ورود فعلی یا بعدی خود دقیقاً یک بار نسخه جدید را دریافت خواهد کرد.',
+      });
+    } catch (err: any) {
+      console.error('[FORCE_RELOAD_TRIGGER_ERROR]', err);
+      setForceReloadMessage({
+        type: 'error',
+        text: err?.message || 'خطا در برقراری ارتباط با سرور برای ارسال دستور بروزرسانی.',
+      });
+    } finally {
+      setIsSendingForceReload(false);
+    }
+  };
+
   const showToast = (type: 'success' | 'error', text: string) => {
     setToast({ type, text });
     setTimeout(() => setToast(null), 3500);
@@ -532,6 +588,76 @@ export default function StudentAccessManagement() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Manual Force-Reload Card */}
+      <div className="bg-gradient-to-l from-rose-50 via-white to-rose-50/50 rounded-3xl p-5 border border-rose-200/80 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5 font-black text-rose-950 text-xs sm:text-sm">
+              <RefreshCw size={18} className="text-rose-600" />
+              <span>بروزرسانی دستی نسخه کاربران (هارد رفرش سراسری)</span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-rose-900/80 font-medium leading-relaxed">
+              پس از استقرار نسخه جدید روی سرور، با این دکمه کش مرورگر طلاب و کاربران پاک شده و بدون خروج از حساب کاربری نسخه جدید را دریافت می‌کنند.
+            </p>
+          </div>
+
+          {!confirmForceReload && (
+            <button
+              type="button"
+              onClick={() => {
+                setForceReloadMessage(null);
+                setConfirmForceReload(true);
+              }}
+              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer shadow-sm whitespace-nowrap flex items-center gap-1.5"
+            >
+              <RefreshCw size={14} />
+              <span>اعمال نسخه جدید برای همه کاربران</span>
+            </button>
+          )}
+        </div>
+
+        {confirmForceReload && (
+          <div className="p-3.5 bg-white border border-rose-200 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs font-bold text-slate-800">
+              آیا از ارسال دستور هارد رفرش تکباره برای همه کاربران (طلاب و اساتید) اطمینان دارید؟
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={isSendingForceReload}
+                onClick={() => setConfirmForceReload(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                disabled={isSendingForceReload}
+                onClick={handleTriggerForceReload}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSendingForceReload && <RefreshCw size={13} className="animate-spin" />}
+                <span>تایید و ارسال دستور</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {forceReloadMessage && (
+          <div
+            className={cn(
+              'p-3 rounded-xl border text-xs font-bold flex items-center gap-2',
+              forceReloadMessage.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-100 border-rose-300 text-rose-800'
+            )}
+          >
+            {forceReloadMessage.type === 'success' && <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />}
+            <span>{forceReloadMessage.text}</span>
+          </div>
+        )}
       </div>
 
       {/* Toast Notification */}
