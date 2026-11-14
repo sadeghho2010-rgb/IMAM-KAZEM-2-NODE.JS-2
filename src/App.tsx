@@ -275,6 +275,41 @@ function AppContent() {
   };
 
   const handleBack = () => {
+    // 1. If Sidebar is open, close Sidebar first
+    if (isSidebarOpen) {
+      setIsSidebarOpen(false);
+      return;
+    }
+
+    // 2. If Settings modal is open, close it first
+    if (isSettingsModalOpen) {
+      setIsSettingsModalOpen(false);
+      return;
+    }
+
+    // 3. If Bug Report modal is open, close it first
+    if (isBugModalOpen) {
+      setIsBugModalOpen(false);
+      setBugModalInitialValues(undefined);
+      return;
+    }
+
+    // 4. Check if any tab-level modal or dialog overlay is currently open in the DOM
+    const openModalOverlays = document.querySelectorAll(
+      '.fixed.inset-0.z-50, .fixed.inset-0.z-\\[50\\], .fixed.inset-0.z-\\[60\\], .fixed.inset-0.z-\\[70\\], .fixed.inset-0.z-\\[80\\], .fixed.inset-0.bg-black\\/60, .fixed.inset-0.bg-black\\/70, .fixed.inset-0.bg-slate-900\\/60, .fixed.inset-0.bg-slate-950\\/70'
+    );
+    if (openModalOverlays && openModalOverlays.length > 0) {
+      const topOverlay = openModalOverlays[openModalOverlays.length - 1];
+      const closeBtn = topOverlay.querySelector(
+        'button.text-slate-400, button.hover\\:bg-slate-100, button[title*="بستن"], button[title*="لغو"], button:not([type="submit"]):has(svg)'
+      ) as HTMLButtonElement | null;
+      if (closeBtn) {
+        closeBtn.click();
+        return;
+      }
+    }
+
+    // 5. Otherwise, proceed with normal tab / category group back navigation
     if (activeTab !== 'dashboard') {
       const parentCat = TAB_PARENT_CATEGORY_MAP[activeTab] || null;
       setDashboardCategoryGroup(parentCat);
