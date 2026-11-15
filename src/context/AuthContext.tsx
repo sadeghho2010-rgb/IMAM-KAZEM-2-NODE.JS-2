@@ -23,7 +23,7 @@ export const ALL_SYSTEM_TABS: SystemTabDef[] = [
   // آموزش و تدریس
   { id: 'academic-calendar', label: 'تقویم آموزشی', group: 'آموزش و تدریس', description: 'مدیریت تقویم سالنامه، تعطیلات، پنج‌شنبه‌ها و سرفصل‌ها' },
   { id: 'programs', label: 'برنامه‌های مدرسه و سرفصل‌ها', group: 'آموزش و تدریس', description: 'ثبت و مدیریت برنامه‌ها، ساعات و اساتید دروس' },
-  { id: 'student-schedule', label: 'برنامه درسی طلاب', group: 'آموزش و تدریس', description: 'مشاهده و چاپ برنامه هفتگی و زمان‌بندی طلاب' },
+  { id: 'student-schedule', label: 'برنامه درسی طلاب', group: 'مدیریت طلاب و کاربران', description: 'مشاهده و چاپ برنامه هفتگی و زمان‌بندی طلاب' },
   { id: 'teachers-schedule', label: 'برنامه درسی اساتید', group: 'آموزش و تدریس', description: 'جدول زمان‌بندی و برنامه هفتگی تدریس اساتید' },
   { id: 'teacher-portal', label: 'پنل اختصاصی اساتید', group: 'آموزش و تدریس', description: 'مشاهده برنامه درسی، تقویم آموزشی و ثبت سریع ارزیابی مشاوره‌ها' },
   { id: 'classrooms', label: 'مدرس‌ها (کلاس‌های درس)', group: 'آموزش و تدریس', description: 'مدیریت فضاهای فیزیکی و اتاق‌های تدریس' },

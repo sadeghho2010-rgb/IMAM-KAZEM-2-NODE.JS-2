@@ -68,7 +68,7 @@ const ALL_ADMIN_DRAWER_MODULES: AdminDrawerModuleItem[] = [
   { tabId: 'programs', title: 'برنامه‌ها و کلاس‌های درس', subtitle: 'مدیریت دروس، ساعات و اعضا', icon: GlyphProgramsBook, accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', category: 'education' },
   { tabId: 'teachers-bank', title: 'بانک اساتید', subtitle: 'اطلاعات و سوابق اساتید', icon: GlyphTeachersCap, accentClass: 'bg-sky-50 text-sky-700 border-sky-200', category: 'education' },
   { tabId: 'classrooms', title: 'مدرس‌ها و فضاهای کلاس', subtitle: 'چینش فضاهای آموزشی و مباحثه', icon: GlyphProgramsBook, accentClass: 'bg-blue-50 text-blue-700 border-blue-200', category: 'education' },
-  { tabId: 'student-schedule', title: 'برنامه هفتگی طلاب', subtitle: 'تقویم کلاسی هفتگی پایه‌ها', icon: GlyphProgramsBook, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'education' },
+  { tabId: 'student-schedule', title: 'برنامه هفتگی طلاب', subtitle: 'تقویم کلاسی هفتگی پایه‌ها', icon: GlyphProgramsBook, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'students' },
   { tabId: 'teachers-schedule', title: 'برنامه درسی اساتید', subtitle: 'زمان‌بندی تدریس اساتید', icon: GlyphTeachersCap, accentClass: 'bg-indigo-50 text-indigo-700 border-indigo-200', category: 'education' },
   { tabId: 'course-selection', title: 'انتخاب واحد', subtitle: 'بازه‌ها و تایید انتخاب واحد', icon: GlyphProgramsBook, accentClass: 'bg-teal-50 text-teal-700 border-teal-200', category: 'education' },
   { tabId: 'oral-exams', title: 'آزمون شفاهی', subtitle: 'برنامه‌ریزی و ثبت نمرات شفاهی', icon: GlyphTeachersCap, accentClass: 'bg-cyan-50 text-cyan-700 border-cyan-200', category: 'education' },

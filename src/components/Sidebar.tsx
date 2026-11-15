@@ -85,7 +85,6 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
     itemIds: [
       'programs',
       'classrooms',
-      'student-schedule',
       'teachers-schedule',
       'course-selection',
       'passed-courses',
@@ -101,6 +100,7 @@ export const MENU_CATEGORIES: MenuCategoryDef[] = [
     itemIds: [
       'students',
       'active-students',
+      'student-schedule',
       'passed-courses',
       'rep-attendance',
       'self-reporting',

@@ -111,7 +111,6 @@ const BACK_BUTTON_GRADIENTS = [
 const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
   'programs': 'education_group',
   'classrooms': 'education_group',
-  'student-schedule': 'education_group',
   'teachers-schedule': 'education_group',
   'course-selection': 'education_group',
   'passed-courses': 'education_group',
@@ -126,6 +125,7 @@ const TAB_PARENT_CATEGORY_MAP: Record<string, string> = {
 
   'students': 'students_group',
   'active-students': 'students_group',
+  'student-schedule': 'students_group',
   'attendance': 'students_group',
   'warnings-management': 'students_group',
   'student-access-management': 'students_group',

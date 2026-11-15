@@ -1182,7 +1182,7 @@ export default function MainDashboard({
       cardGradient: 'from-indigo-600/15 via-violet-500/5 to-transparent',
       borderGlow: 'hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-600/25',
       accentText: 'text-indigo-600',
-      itemIds: ['programs', 'classrooms', 'student-schedule', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'teachers-bank']
+      itemIds: ['programs', 'classrooms', 'teachers-schedule', 'course-selection', 'passed-courses', 'oral-exams', 'academic-calendar', 'held-sessions', 'teachers-bank']
     },
     {
       id: 'students_group',
@@ -1194,7 +1194,7 @@ export default function MainDashboard({
       cardGradient: 'from-sky-500/15 via-blue-500/5 to-transparent',
       borderGlow: 'hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25',
       accentText: 'text-sky-600',
-      itemIds: ['students', 'active-students', 'student-portal', 'attendance', 'warnings-management', 'student-access-management', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
+      itemIds: ['students', 'active-students', 'student-schedule', 'student-portal', 'attendance', 'warnings-management', 'student-access-management', 'discussion', 'stats', 'comments', 'summary', 'passed-courses']
     },
     {
       id: 'research_group',
