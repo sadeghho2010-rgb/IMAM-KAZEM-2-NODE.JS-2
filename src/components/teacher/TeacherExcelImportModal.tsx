@@ -39,6 +39,7 @@ export type TeacherImportFieldKey =
   | 'lastName'
   | 'fatherName'
   | 'nationalId'
+  | 'birthDate'
   | 'birthCertificateNumber'
   | 'phoneNumber'
   | 'homePhone'
@@ -55,6 +56,7 @@ export type TeacherImportFieldKey =
   | 'bankSheba'
   | 'tejaratBankAccount'
   | 'sibaBankAccount'
+  | 'sandooqAccount'
   | 'bankName'
   | 'bankAccount';
 
@@ -99,6 +101,12 @@ const TEACHER_FIELDS: TeacherFieldDefinition[] = [
     group: 'identity',
     isNumericCode: true,
     headerAliases: ['کد ملی', 'کدملی', 'شماره ملی', 'nationalid', 'national id', 'nationalcode'],
+  },
+  {
+    key: 'birthDate',
+    label: 'تاریخ تولد',
+    group: 'identity',
+    headerAliases: ['تاریخ تولد', 'تولد', 'birthdate', 'birth date', 'dob'],
   },
   {
     key: 'birthCertificateNumber',
@@ -213,6 +221,13 @@ const TEACHER_FIELDS: TeacherFieldDefinition[] = [
     group: 'finance',
     isNumericCode: true,
     headerAliases: ['حساب سیبا', 'شماره حساب سیبا', 'سیبا', 'sibabankaccount', 'siba'],
+  },
+  {
+    key: 'sandooqAccount',
+    label: 'شماره حساب دفتر صندوق',
+    group: 'finance',
+    isNumericCode: true,
+    headerAliases: ['شماره حساب دفتر صندوق', 'حساب دفتر صندوق', 'دفتر صندوق', 'صندوق', 'sandooqaccount', 'sandooq'],
   },
   {
     key: 'bankName',

@@ -1212,6 +1212,7 @@ export interface Teacher {
   name?: string; // alias for display
   fatherName?: string; // نام پدر
   nationalId?: string; // کد ملی
+  birthDate?: string; // تاریخ تولد
   birthCertificateNumber?: string; // شماره شناسنامه
   teacherCode?: string; // کد استادی داخلی
   centerTeacherCode?: string; // کد استاد مرکز
@@ -1234,6 +1235,7 @@ export interface Teacher {
   bankSheba?: string; // شماره شبا
   tejaratBankAccount?: string; // شماره حساب بانک تجارت
   sibaBankAccount?: string; // شماره حساب سیبا
+  sandooqAccount?: string; // شماره حساب دفتر صندوق
   bankAccounts?: TeacherBankAccount[]; // لیست شماره حساب‌ها و کارت‌های متکثر استاد
   priority: 1 | 2 | 3 | '1' | '2' | '3';
   isActive: boolean;

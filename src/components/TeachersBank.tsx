@@ -210,6 +210,7 @@ export default function TeachersBank() {
   const [lastName, setLastName] = useState<string>('');
   const [fatherName, setFatherName] = useState<string>('');
   const [nationalId, setNationalId] = useState<string>('');
+  const [birthDate, setBirthDate] = useState<string>('');
   const [birthCertificateNumber, setBirthCertificateNumber] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [homePhone, setHomePhone] = useState<string>('');
@@ -238,6 +239,7 @@ export default function TeachersBank() {
   const [bankSheba, setBankSheba] = useState<string>('');
   const [tejaratBankAccount, setTejaratBankAccount] = useState<string>('');
   const [sibaBankAccount, setSibaBankAccount] = useState<string>('');
+  const [sandooqAccount, setSandooqAccount] = useState<string>('');
 
   // Detailed Specialties State
   const [usulSpecialties, setUsulSpecialties] = useState<('رسائل' | 'کفایه' | 'حلقات')[]>([]);
@@ -487,6 +489,7 @@ export default function TeachersBank() {
     setLastName('');
     setFatherName('');
     setNationalId('');
+    setBirthDate('');
     setBirthCertificateNumber('');
     setTeacherCode(generateUniqueTeacherCode());
     setCenterTeacherCode('');
@@ -506,6 +509,7 @@ export default function TeachersBank() {
     setBankSheba('');
     setTejaratBankAccount('');
     setSibaBankAccount('');
+    setSandooqAccount('');
     setBankAccountsList([
       { id: `acc_${Date.now()}`, bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: 'حساب اصلی' }
     ]);
@@ -527,6 +531,7 @@ export default function TeachersBank() {
     setLastName(parsedLast);
     setFatherName(t.fatherName || '');
     setNationalId(t.nationalId || '');
+    setBirthDate(t.birthDate || '');
     setBirthCertificateNumber(t.birthCertificateNumber || '');
     setTeacherCode(t.teacherCode || generateUniqueTeacherCode());
     setCenterTeacherCode(t.centerTeacherCode || '');
@@ -546,6 +551,7 @@ export default function TeachersBank() {
     setBankSheba(t.bankSheba || t.bankAccounts?.[0]?.shebaNumber || '');
     setTejaratBankAccount(t.tejaratBankAccount || '');
     setSibaBankAccount(t.sibaBankAccount || '');
+    setSandooqAccount(t.sandooqAccount || '');
     
     // Multiple bank accounts fallback
     if (t.bankAccounts && t.bankAccounts.length > 0) {
@@ -615,6 +621,7 @@ export default function TeachersBank() {
       fullName: combinedFullName,
       fatherName: fatherName.trim(),
       nationalId: nationalId.trim(),
+      birthDate: birthDate.trim(),
       birthCertificateNumber: birthCertificateNumber.trim(),
       teacherCode: finalTeacherCode,
       centerTeacherCode: centerTeacherCode.trim(),
@@ -634,6 +641,7 @@ export default function TeachersBank() {
       bankSheba: resolvedSheba,
       tejaratBankAccount: tejaratBankAccount.trim(),
       sibaBankAccount: sibaBankAccount.trim(),
+      sandooqAccount: sandooqAccount.trim(),
       bankAccounts: normalizedAccountsList,
       detailedSpecialties: {
         usul: (selectedCategories.includes('اصول') || selectedCategories.includes('مشاوره اصول')) ? usulSpecialties : [],
@@ -655,6 +663,7 @@ export default function TeachersBank() {
       fullName: combinedFullName,
       fatherName: teacherData.fatherName || '',
       nationalId: teacherData.nationalId || '',
+      birthDate: teacherData.birthDate || '',
       birthCertificateNumber: teacherData.birthCertificateNumber || '',
       teacherCode: teacherData.teacherCode || '',
       centerTeacherCode: teacherData.centerTeacherCode || '',
@@ -674,6 +683,7 @@ export default function TeachersBank() {
       bankSheba: teacherData.bankSheba || '',
       tejaratBankAccount: teacherData.tejaratBankAccount || '',
       sibaBankAccount: teacherData.sibaBankAccount || '',
+      sandooqAccount: teacherData.sandooqAccount || '',
       bankAccounts: teacherData.bankAccounts || [],
       detailedSpecialties: teacherData.detailedSpecialties,
       createdAt: editingTeacher?.createdAt || nowIso,
@@ -829,7 +839,9 @@ export default function TeachersBank() {
       t.homePhone?.includes(searchLower) ||
       t.homeAddress?.toLowerCase().includes(searchLower) ||
       t.nationalId?.includes(searchLower) ||
+      t.birthDate?.includes(searchLower) ||
       t.birthCertificateNumber?.includes(searchLower) ||
+      t.sandooqAccount?.includes(searchLower) ||
       t.teacherCode?.toLowerCase().includes(searchLower) ||
       t.centerTeacherCode?.toLowerCase().includes(searchLower) ||
       t.servicesCenterCode?.toLowerCase().includes(searchLower) ||
@@ -890,6 +902,7 @@ export default function TeachersBank() {
         'نام و نام خانوادگی': t.fullName,
         'نام پدر': t.fatherName || '-',
         'کد ملی': t.nationalId || '-',
+        'تاریخ تولد': t.birthDate || '-',
         'ش.شناسنامه': t.birthCertificateNumber || '-',
         'کد استادی داخلی': t.teacherCode || '-',
         'کد استاد مرکز': t.centerTeacherCode || '-',
@@ -906,6 +919,7 @@ export default function TeachersBank() {
       row['شماره شبا'] = t.bankSheba || t.bankAccounts?.[0]?.shebaNumber || '-';
       row['حساب تجارت'] = t.tejaratBankAccount || '-';
       row['حساب سیبا'] = t.sibaBankAccount || '-';
+      row['شماره حساب دفتر صندوق'] = t.sandooqAccount || '-';
       row['تخصص‌های کلی'] = t.categories?.join(' | ') || '-';
       row['تخصص‌های جزئی'] = specList.join(' / ') || '-';
       row['سوابق تدریس در مجموعه'] = combinedExperience || '-';
@@ -2316,6 +2330,18 @@ export default function TeachersBank() {
                       </div>
 
                       <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ تولد</label>
+                        <input 
+                          type="text" 
+                          placeholder="مثلاً ۱۳۶۵/۰۵/۱۲"
+                          value={birthDate}
+                          onChange={(e) => setBirthDate(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">ش.شناسنامه</label>
                         <input 
                           type="text" 
@@ -2442,8 +2468,8 @@ export default function TeachersBank() {
                     <span>اطلاعات مالی و حساب‌های بانکی واریز حق‌الزحمه</span>
                   </legend>
 
-                  {/* Dedicated Sheba, Tejarat, Siba Fields */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3 rounded-xl border border-emerald-200/80 shadow-2xs">
+                  {/* Dedicated Sheba, Tejarat, Siba & Sandooq Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-emerald-200/80 shadow-2xs">
                     <div>
                       <label className="block text-xs font-bold text-emerald-950 mb-1">شماره شبا (IR...)</label>
                       <input
@@ -2475,6 +2501,18 @@ export default function TeachersBank() {
                         placeholder="شماره حساب سیبا (بانک ملی)..."
                         value={sibaBankAccount}
                         onChange={(e) => setSibaBankAccount(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-right focus:bg-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-950 mb-1">حساب دفتر صندوق</label>
+                      <input
+                        type="text"
+                        placeholder="شماره حساب دفتر صندوق..."
+                        value={sandooqAccount}
+                        onChange={(e) => setSandooqAccount(e.target.value)}
                         dir="ltr"
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-right focus:bg-white focus:outline-none focus:border-emerald-500"
                       />
