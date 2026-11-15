@@ -30,9 +30,24 @@ import {
   PhoneCall,
   ShieldAlert,
   Building2,
-  Loader2
+  Loader2,
+  Hash,
+  MapPin,
+  History,
+  CreditCard,
+  User
 } from 'lucide-react';
-import { Teacher, TeacherCategory, TeacherDetailedSpecialties, TeacherBankAccount } from '../types';
+import {
+  Teacher,
+  TeacherCategory,
+  TeacherDetailedSpecialties,
+  TeacherBankAccount,
+  Program,
+  TeacherManualSchedule,
+  StudentCourseProgress,
+  AttendanceSessionLog,
+  AcademicWeeklyProgram
+} from '../types';
 import { localDb } from '../lib/localDb';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -41,6 +56,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
 import { MobileSectionHeader, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
+import TeacherExcelImportModal from './teacher/TeacherExcelImportModal';
 
 const ALL_CATEGORIES: TeacherCategory[] = [
   'فقه',
@@ -52,6 +68,84 @@ const ALL_CATEGORIES: TeacherCategory[] = [
   'دروس پنجشنبه',
   'ویژه'
 ];
+
+function normalizeTeacherText(input?: string): string {
+  return String(input || '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/أ|إ|آ/g, 'ا')
+    .replace(/حجت\s*الاسلام\s*و\s*المسلمین/g, ' ')
+    .replace(/حجت\s*الاسلام|حجه\s*الاسلام|آیت\s*الله|استاد|حاج\s*آقا|دکتر|شیخ|آقای|سرکار\s*خانم|خانم/g, ' ')
+    .replace(/[\u200c\s]+/g, ' ')
+    .trim();
+}
+
+function matchTeacherWithRecordName(rawName: string | undefined, teacher: Teacher): boolean {
+  const normRaw = normalizeTeacherText(rawName);
+  if (!normRaw) return false;
+
+  const candidates = [
+    teacher.fullName,
+    [teacher.firstName, teacher.lastName].filter(Boolean).join(' ')
+  ]
+    .map((c) => normalizeTeacherText(c))
+    .filter((c) => c.length >= 2);
+
+  for (const cand of candidates) {
+    if (normRaw === cand) return true;
+    const rawNoPrefix = normRaw.replace(/^(سید|سیده)\s+/, '');
+    const candNoPrefix = cand.replace(/^(سید|سیده)\s+/, '');
+    if (rawNoPrefix && candNoPrefix && rawNoPrefix === candNoPrefix) return true;
+    if (cand.length >= 4 && (normRaw.includes(cand) || cand.includes(normRaw))) return true;
+  }
+  return false;
+}
+
+function splitFullNameParts(fullName?: string, firstName?: string, lastName?: string): { firstName: string; lastName: string } {
+  const f = (firstName || '').trim();
+  const l = (lastName || '').trim();
+  if (f || l) {
+    return { firstName: f, lastName: l };
+  }
+  const cleanFull = (fullName || '').trim().replace(/\s+/g, ' ');
+  if (!cleanFull) return { firstName: '', lastName: '' };
+  const parts = cleanFull.split(' ');
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts[parts.length - 1]
+  };
+}
+
+function extractShamsiYear(dateStr?: string): string {
+  if (!dateStr) return '';
+  const clean = String(dateStr).trim();
+  if (/^\d{4}\//.test(clean) || /^[۰-۹]{4}\//.test(clean)) {
+    return clean.slice(0, 4).replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  }
+  const dt = new Date(clean);
+  if (!Number.isNaN(dt.getTime())) {
+    try {
+      const faDate = dt.toLocaleDateString('fa-IR');
+      const m = faDate.match(/[۰-۹]{4}|\d{4}/);
+      if (m) {
+        return m[0].replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+      }
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+export interface AutoTeachingHistoryInfo {
+  currentCourses: string[];
+  pastCourses: string[];
+  summaryText: string;
+  totalCount: number;
+}
 
 export default function TeachersBank() {
   const { currentUser } = useAuth();
@@ -70,6 +164,11 @@ export default function TeachersBank() {
   );
 
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [teacherSchedules, setTeacherSchedules] = useState<TeacherManualSchedule[]>([]);
+  const [courseProgressRecords, setCourseProgressRecords] = useState<StudentCourseProgress[]>([]);
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceSessionLog[]>([]);
+  const [weeklyPrograms, setWeeklyPrograms] = useState<AcademicWeeklyProgram[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Multi-copy phone state (Level 2)
@@ -88,7 +187,9 @@ export default function TeachersBank() {
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const pdfPrintRef = useRef<HTMLDivElement>(null);
 
-  // Import State
+  // Import State (4-Step Excel Wizard + JSON Legacy Import Modal)
+  const [excelImportFile, setExcelImportFile] = useState<File | null>(null);
+  const [showExcelImportModal, setShowExcelImportModal] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importLoading, setImportLoading] = useState<boolean>(false);
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -104,17 +205,30 @@ export default function TeachersBank() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
-  // Form State
-  const [fullName, setFullName] = useState<string>('');
+  // Form State — Separated Basic/Identity & Contact Fields
+  const [firstName, setFirstName] = useState<string>('');
+  const [lastName, setLastName] = useState<string>('');
+  const [fatherName, setFatherName] = useState<string>('');
   const [nationalId, setNationalId] = useState<string>('');
-  const [teacherCode, setTeacherCode] = useState<string>('');
+  const [birthCertificateNumber, setBirthCertificateNumber] = useState<string>('');
   const [phoneNumber, setPhoneNumber] = useState<string>('');
+  const [homePhone, setHomePhone] = useState<string>('');
+  const [homeAddress, setHomeAddress] = useState<string>('');
   const [photoUrl, setPhotoUrl] = useState<string>('');
+
+  // Form State — Codes & Center Identifiers
+  const [teacherCode, setTeacherCode] = useState<string>('');
+  const [centerTeacherCode, setCenterTeacherCode] = useState<string>('');
+  const [servicesCenterCode, setServicesCenterCode] = useState<string>('');
+  const [managementCenterFileNumber, setManagementCenterFileNumber] = useState<string>('');
+
+  // Form State — Status, Priority, Categories, Notes, Experience
   const [priority, setPriority] = useState<1 | 2 | 3>(1);
   const [isActive, setIsActive] = useState<boolean>(true);
   const [selectedCategories, setSelectedCategories] = useState<TeacherCategory[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [experienceHistory, setExperienceHistory] = useState<string>('');
+
   // Financial & Multiple Bank Accounts State
   const [bankAccountsList, setBankAccountsList] = useState<TeacherBankAccount[]>([
     { id: 'acc_1', bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: '' }
@@ -122,6 +236,8 @@ export default function TeachersBank() {
   const [bankName, setBankName] = useState<string>('');
   const [bankAccount, setBankAccount] = useState<string>('');
   const [bankSheba, setBankSheba] = useState<string>('');
+  const [tejaratBankAccount, setTejaratBankAccount] = useState<string>('');
+  const [sibaBankAccount, setSibaBankAccount] = useState<string>('');
 
   // Detailed Specialties State
   const [usulSpecialties, setUsulSpecialties] = useState<('رسائل' | 'کفایه' | 'حلقات')[]>([]);
@@ -131,11 +247,46 @@ export default function TeachersBank() {
 
   const isSeedingRef = useRef<boolean>(false);
 
-  // Fetch teachers from DB, seed default external institutes, & cleanup any seed samples
+  // Fetch teachers & school teaching history collections from DB
   const fetchTeachers = async () => {
     try {
       setLoading(true);
-      const docs = (await localDb.getDocs('teachers')) as Teacher[];
+      const [
+        docs,
+        programsDocs,
+        schedulesDocs,
+        progressDocs,
+        attendanceDocs,
+        weeklyDocs
+      ] = await Promise.all([
+        localDb.getDocs('teachers') as Promise<Teacher[]>,
+        (localDb.getDocs('programs') as Promise<Program[]>).catch((err) => {
+          console.error('[TEACHERS_BANK_FETCH_FAIL] programs:', err);
+          return [] as Program[];
+        }),
+        (localDb.getDocs('teacher_schedules') as Promise<TeacherManualSchedule[]>).catch((err) => {
+          console.error('[TEACHERS_BANK_FETCH_FAIL] teacher_schedules:', err);
+          return [] as TeacherManualSchedule[];
+        }),
+        (localDb.getDocs('student_course_progress') as Promise<StudentCourseProgress[]>).catch((err) => {
+          console.error('[TEACHERS_BANK_FETCH_FAIL] student_course_progress:', err);
+          return [] as StudentCourseProgress[];
+        }),
+        (localDb.getDocs('attendance') as Promise<AttendanceSessionLog[]>).catch((err) => {
+          console.error('[TEACHERS_BANK_FETCH_FAIL] attendance:', err);
+          return [] as AttendanceSessionLog[];
+        }),
+        (localDb.getDocs('academic_weekly_programs') as Promise<AcademicWeeklyProgram[]>).catch((err) => {
+          console.error('[TEACHERS_BANK_FETCH_FAIL] academic_weekly_programs:', err);
+          return [] as AcademicWeeklyProgram[];
+        }),
+      ]);
+
+      setPrograms(programsDocs);
+      setTeacherSchedules(schedulesDocs);
+      setCourseProgressRecords(progressDocs);
+      setAttendanceLogs(attendanceDocs);
+      setWeeklyPrograms(weeklyDocs);
 
       if (!isSeedingRef.current) {
         isSeedingRef.current = true;
@@ -160,7 +311,8 @@ export default function TeachersBank() {
         setTeachers(docs.filter(t => !t.isExternal));
       }
     } catch (err) {
-      console.error('Error fetching teachers:', err);
+      console.error('[TEACHERS_BANK_FETCH_FAIL] teachers:', err);
+      dispatchDatabaseToast('خطا در دریافت اطلاعات بانک اساتید', 'error');
     } finally {
       setLoading(false);
     }
@@ -174,6 +326,156 @@ export default function TeachersBank() {
     return () => unsub();
   }, []);
 
+  // Precompute automatic teaching history for every teacher from programs, archived courses, passed records, weekly programs & substitute logs
+  const autoTeachingHistoryMap = React.useMemo(() => {
+    const map: Record<string, AutoTeachingHistoryInfo> = {};
+
+    // Index passed progress records by programId
+    const passedByProgramId: Record<string, StudentCourseProgress[]> = {};
+    for (const rec of courseProgressRecords) {
+      if (rec.status === 'passed' && rec.programId) {
+        if (!passedByProgramId[rec.programId]) passedByProgramId[rec.programId] = [];
+        passedByProgramId[rec.programId].push(rec);
+      }
+    }
+
+    // Index attendance years by programId
+    const attendanceYearsByProgramId: Record<string, Set<string>> = {};
+    for (const log of attendanceLogs) {
+      if (log.isCancelled) continue;
+      const yr = extractShamsiYear(log.date);
+      if (yr && log.programId) {
+        if (!attendanceYearsByProgramId[log.programId]) attendanceYearsByProgramId[log.programId] = new Set();
+        attendanceYearsByProgramId[log.programId].add(yr);
+      }
+    }
+
+    for (const teacher of teachers) {
+      const currentCourses: string[] = [];
+      const pastCourses: string[] = [];
+      const seenCurrent = new Set<string>();
+      const seenPast = new Set<string>();
+
+      // 1. School Programs (active vs archived/deleted/passed-to-history)
+      const matchedPrograms = programs.filter((p) => matchTeacherWithRecordName(p.teacher, teacher));
+      for (const prog of matchedPrograms) {
+        const isArchived = Boolean(prog.isDeleted) || prog.status === 'inactive' || prog.status === 'deleted';
+        const passedList = passedByProgramId[prog.id] || [];
+        const detailsParts = [
+          prog.title,
+          prog.grade ? `(${prog.grade})` : '',
+          prog.subjectBook ? `کتاب: ${prog.subjectBook}${prog.subjectChapter ? ` - ${prog.subjectChapter}` : ''}` : ''
+        ].filter(Boolean);
+        const baseLabel = detailsParts.join(' ');
+
+        if (!isArchived) {
+          if (!seenCurrent.has(baseLabel)) {
+            seenCurrent.add(baseLabel);
+            currentCourses.push(baseLabel);
+          }
+        } else {
+          const years = Array.from(
+            new Set([
+              ...(attendanceYearsByProgramId[prog.id] ? Array.from(attendanceYearsByProgramId[prog.id]) : []),
+              extractShamsiYear(prog.deletedAt)
+            ].filter(Boolean))
+          ).sort();
+          const yearSuffix = years.length > 0 ? ` [سال ${years.join('، ')}]` : ' [آرشیو/دوره قبل]';
+          const pastLabel = `${baseLabel}${yearSuffix}`;
+          if (!seenPast.has(pastLabel)) {
+            seenPast.add(pastLabel);
+            pastCourses.push(pastLabel);
+          }
+        }
+
+        // If courses from this program were finalized/moved to students' passed course records (end-of-year archival)
+        if (passedList.length > 0) {
+          const passedYears = Array.from(
+            new Set(passedList.map((r) => extractShamsiYear(r.passedAt || r.updatedAt)).filter(Boolean))
+          ).sort();
+          const sampleRec = passedList[0];
+          const courseTitle = [
+            sampleRec.bookTitle || prog.subjectBook || prog.title,
+            sampleRec.chapterTitle || prog.subjectChapter
+          ].filter(Boolean).join(' - ');
+          const pastPassedLabel = `درس پایان‌یافته/منتقل‌شده به سوابق: ${courseTitle}${prog.grade ? ` (${prog.grade})` : ''}${passedYears.length > 0 ? ` — سال ${passedYears.join('، ')}` : ''} (${passedList.length} طلبه ثبت‌شده در سوابق)`;
+          if (!seenPast.has(pastPassedLabel)) {
+            seenPast.add(pastPassedLabel);
+            pastCourses.push(pastPassedLabel);
+          }
+        }
+      }
+
+      // 2. Teacher Manual Schedules (برنامه هفتگی اختصاصی اساتید)
+      for (const sch of teacherSchedules) {
+        if (sch.teacherId === teacher.id || matchTeacherWithRecordName(sch.teacherName, teacher)) {
+          const label = [
+            sch.title,
+            sch.grade ? `(${sch.grade})` : '',
+            sch.days?.length ? `- ${sch.days.join('، ')}` : sch.day ? `- ${sch.day}` : ''
+          ].filter(Boolean).join(' ');
+          if (label && !seenCurrent.has(label)) {
+            seenCurrent.add(label);
+            currentCourses.push(label);
+          }
+        }
+      }
+
+      // 3. Academic Weekly Programs (برنامه‌های هفتگی تقویم آموزشی)
+      for (const wp of weeklyPrograms) {
+        if (matchTeacherWithRecordName(wp.locationOrTeacher, teacher)) {
+          const yr = extractShamsiYear(wp.startDate);
+          const label = `${wp.title}${wp.grade ? ` (${wp.grade})` : ''}${yr ? ` [برنامه ${yr}]` : ''}`;
+          if (!seenCurrent.has(label)) {
+            seenCurrent.add(label);
+            currentCourses.push(label);
+          }
+        }
+      }
+
+      // 4. Substitute teaching logs from attendance
+      const subMap = new Map<string, { title: string; grade?: string; years: Set<string>; count: number }>();
+      for (const log of attendanceLogs) {
+        if (log.isCancelled || !log.hasSubstituteTeacher) continue;
+        const isMatch = log.substituteTeacherId === teacher.id || matchTeacherWithRecordName(log.substituteTeacherName, teacher);
+        if (!isMatch) continue;
+        const key = `${log.programTitle || ''}__${log.grade || ''}`;
+        if (!subMap.has(key)) {
+          subMap.set(key, { title: log.programTitle || 'کلاس', grade: log.grade, years: new Set(), count: 0 });
+        }
+        const entry = subMap.get(key)!;
+        entry.count += 1;
+        const yr = extractShamsiYear(log.date);
+        if (yr) entry.years.add(yr);
+      }
+      for (const sub of subMap.values()) {
+        const yrs = Array.from(sub.years).sort();
+        const label = `تدریس جایگزین: ${sub.title}${sub.grade ? ` (${sub.grade})` : ''} — ${sub.count} جلسه${yrs.length > 0 ? ` [${yrs.join('، ')}]` : ''}`;
+        if (!seenPast.has(label)) {
+          seenPast.add(label);
+          pastCourses.push(label);
+        }
+      }
+
+      const summaryParts: string[] = [];
+      if (currentCourses.length > 0) {
+        summaryParts.push(`برنامه‌های جاری: ${currentCourses.join(' | ')}`);
+      }
+      if (pastCourses.length > 0) {
+        summaryParts.push(`سوابق و دروس منتقل‌شده: ${pastCourses.join(' | ')}`);
+      }
+
+      map[teacher.id] = {
+        currentCourses,
+        pastCourses,
+        summaryText: summaryParts.join(' — '),
+        totalCount: currentCourses.length + pastCourses.length,
+      };
+    }
+
+    return map;
+  }, [teachers, programs, teacherSchedules, courseProgressRecords, attendanceLogs, weeklyPrograms]);
+
   const generateUniqueTeacherCode = (): string => {
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     return `T-${randomNum}`;
@@ -181,10 +483,18 @@ export default function TeachersBank() {
 
   const openAddModal = () => {
     setEditingTeacher(null);
-    setFullName('');
+    setFirstName('');
+    setLastName('');
+    setFatherName('');
     setNationalId('');
+    setBirthCertificateNumber('');
     setTeacherCode(generateUniqueTeacherCode());
+    setCenterTeacherCode('');
+    setServicesCenterCode('');
+    setManagementCenterFileNumber('');
     setPhoneNumber('');
+    setHomePhone('');
+    setHomeAddress('');
     setPhotoUrl('');
     setPriority(1);
     setIsActive(true);
@@ -194,6 +504,8 @@ export default function TeachersBank() {
     setBankName('بانک ملی');
     setBankAccount('');
     setBankSheba('');
+    setTejaratBankAccount('');
+    setSibaBankAccount('');
     setBankAccountsList([
       { id: `acc_${Date.now()}`, bankName: 'بانک ملی', accountNumber: '', cardNumber: '', shebaNumber: '', note: 'حساب اصلی' }
     ]);
@@ -206,10 +518,23 @@ export default function TeachersBank() {
 
   const openEditModal = (t: Teacher) => {
     setEditingTeacher(t);
-    setFullName(t.fullName || '');
+    const { firstName: parsedFirst, lastName: parsedLast } = splitFullNameParts(
+      t.fullName,
+      t.firstName,
+      t.lastName
+    );
+    setFirstName(parsedFirst);
+    setLastName(parsedLast);
+    setFatherName(t.fatherName || '');
     setNationalId(t.nationalId || '');
+    setBirthCertificateNumber(t.birthCertificateNumber || '');
     setTeacherCode(t.teacherCode || generateUniqueTeacherCode());
+    setCenterTeacherCode(t.centerTeacherCode || '');
+    setServicesCenterCode(t.servicesCenterCode || '');
+    setManagementCenterFileNumber(t.managementCenterFileNumber || '');
     setPhoneNumber(t.phoneNumber || '');
+    setHomePhone(t.homePhone || '');
+    setHomeAddress(t.homeAddress || '');
     setPhotoUrl(t.photoUrl || '');
     setPriority((Number(t.priority) || 1) as 1 | 2 | 3);
     setIsActive(t.isActive !== false);
@@ -218,14 +543,23 @@ export default function TeachersBank() {
     setExperienceHistory(t.experienceHistory || '');
     setBankName(t.bankName || '');
     setBankAccount(t.bankAccount || '');
-    setBankSheba(t.bankSheba || '');
+    setBankSheba(t.bankSheba || t.bankAccounts?.[0]?.shebaNumber || '');
+    setTejaratBankAccount(t.tejaratBankAccount || '');
+    setSibaBankAccount(t.sibaBankAccount || '');
     
     // Multiple bank accounts fallback
     if (t.bankAccounts && t.bankAccounts.length > 0) {
       setBankAccountsList(t.bankAccounts);
     } else {
       setBankAccountsList([
-        { id: `acc_1`, bankName: t.bankName || 'بانک ملی', accountNumber: t.bankAccount || '', cardNumber: '', shebaNumber: t.bankSheba || '', note: 'حساب اصلی' }
+        {
+          id: `acc_1`,
+          bankName: t.bankName || 'بانک ملی',
+          accountNumber: t.bankAccount || '',
+          cardNumber: '',
+          shebaNumber: t.bankSheba || '',
+          note: 'حساب اصلی'
+        }
       ]);
     }
 
@@ -240,49 +574,95 @@ export default function TeachersBank() {
     e.preventDefault();
     if (isSaving) return;
 
-    if (!fullName.trim()) {
+    const cleanFirst = firstName.trim();
+    const cleanLast = lastName.trim();
+    const combinedFullName = [cleanFirst, cleanLast].filter(Boolean).join(' ').trim();
+
+    if (!cleanFirst && !cleanLast) {
       dispatchDatabaseToast('لطفاً نام و نام خانوادگی استاد را وارد نمایید.', 'warning');
       return;
     }
 
     setIsSaving(true);
 
-    // Ensure teacherCode always exists even if left blank
     const finalTeacherCode = teacherCode.trim() || generateUniqueTeacherCode();
     const primaryAcc = bankAccountsList[0];
+    const resolvedSheba = bankSheba.trim() || primaryAcc?.shebaNumber?.trim() || '';
+    const resolvedBankAccount =
+      primaryAcc?.accountNumber?.trim() ||
+      tejaratBankAccount.trim() ||
+      sibaBankAccount.trim() ||
+      bankAccount.trim() ||
+      '';
+    const resolvedBankName =
+      primaryAcc?.bankName?.trim() ||
+      bankName.trim() ||
+      (tejaratBankAccount.trim() ? 'بانک تجارت' : sibaBankAccount.trim() ? 'بانک ملی (سیبا)' : '');
+
+    // Keep primary bankAccountsList[0].shebaNumber synced if bankSheba is entered
+    const normalizedAccountsList = bankAccountsList.map((acc, index) =>
+      index === 0 && resolvedSheba && !acc.shebaNumber?.trim()
+        ? { ...acc, shebaNumber: resolvedSheba }
+        : acc
+    );
+
+    const nowIso = new Date().toISOString();
+    const nextVersion = (editingTeacher?.version || 0) + 1;
 
     const teacherData: Partial<Teacher> = {
-      fullName: fullName.trim(),
+      firstName: cleanFirst,
+      lastName: cleanLast,
+      fullName: combinedFullName,
+      fatherName: fatherName.trim(),
       nationalId: nationalId.trim(),
+      birthCertificateNumber: birthCertificateNumber.trim(),
       teacherCode: finalTeacherCode,
+      centerTeacherCode: centerTeacherCode.trim(),
+      servicesCenterCode: servicesCenterCode.trim(),
+      managementCenterFileNumber: managementCenterFileNumber.trim(),
       phoneNumber: phoneNumber.trim(),
+      homePhone: homePhone.trim(),
+      homeAddress: homeAddress.trim(),
       photoUrl,
       priority,
       isActive,
       categories: selectedCategories,
       notes: notes.trim(),
       experienceHistory: experienceHistory.trim(),
-      bankName: primaryAcc?.bankName || bankName.trim(),
-      bankAccount: primaryAcc?.accountNumber || bankAccount.trim(),
-      bankSheba: primaryAcc?.shebaNumber || bankSheba.trim(),
-      bankAccounts: bankAccountsList,
+      bankName: resolvedBankName,
+      bankAccount: resolvedBankAccount,
+      bankSheba: resolvedSheba,
+      tejaratBankAccount: tejaratBankAccount.trim(),
+      sibaBankAccount: sibaBankAccount.trim(),
+      bankAccounts: normalizedAccountsList,
       detailedSpecialties: {
         usul: (selectedCategories.includes('اصول') || selectedCategories.includes('مشاوره اصول')) ? usulSpecialties : [],
         fiqh: (selectedCategories.includes('فقه') || selectedCategories.includes('مشاوره فقه')) ? fiqhSpecialties : [],
         falsafa: (selectedCategories.includes('فلسفه') || selectedCategories.includes('مشاوره فلسفه')) ? falsafaSpecialties : [],
         thursdayNote: selectedCategories.includes('دروس پنجشنبه') ? thursdayNote.trim() : ''
       },
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
+      updated_at: nowIso,
+      version: nextVersion,
       isExternal: false
     };
 
     const targetId = editingTeacher ? editingTeacher.id : `t_${Date.now()}`;
     const fullTeacherObject: Teacher = {
       id: targetId,
-      fullName: teacherData.fullName || '',
+      firstName: cleanFirst,
+      lastName: cleanLast,
+      fullName: combinedFullName,
+      fatherName: teacherData.fatherName || '',
       nationalId: teacherData.nationalId || '',
+      birthCertificateNumber: teacherData.birthCertificateNumber || '',
       teacherCode: teacherData.teacherCode || '',
+      centerTeacherCode: teacherData.centerTeacherCode || '',
+      servicesCenterCode: teacherData.servicesCenterCode || '',
+      managementCenterFileNumber: teacherData.managementCenterFileNumber || '',
       phoneNumber: teacherData.phoneNumber || '',
+      homePhone: teacherData.homePhone || '',
+      homeAddress: teacherData.homeAddress || '',
       photoUrl: teacherData.photoUrl || '',
       priority: teacherData.priority || 1,
       isActive: teacherData.isActive !== false,
@@ -292,10 +672,14 @@ export default function TeachersBank() {
       bankName: teacherData.bankName || '',
       bankAccount: teacherData.bankAccount || '',
       bankSheba: teacherData.bankSheba || '',
+      tejaratBankAccount: teacherData.tejaratBankAccount || '',
+      sibaBankAccount: teacherData.sibaBankAccount || '',
       bankAccounts: teacherData.bankAccounts || [],
       detailedSpecialties: teacherData.detailedSpecialties,
-      createdAt: editingTeacher?.createdAt || new Date().toISOString(),
-      updatedAt: teacherData.updatedAt,
+      createdAt: editingTeacher?.createdAt || nowIso,
+      updatedAt: nowIso,
+      updated_at: nowIso,
+      version: nextVersion,
       isExternal: false
     };
 
@@ -321,14 +705,14 @@ export default function TeachersBank() {
         await localDb.addDoc('teachers', {
           ...teacherData,
           id: targetId,
-          createdAt: new Date().toISOString()
+          createdAt: nowIso
         });
       }
-      fetchTeachers();
+      await fetchTeachers();
     } catch (err) {
-      console.error('Error saving teacher:', err);
+      console.error('[TEACHERS_BANK_SAVE_FAIL]', targetId, err);
       dispatchDatabaseToast('خطا در ذخیره‌سازی اطلاعات در سرور. در حال بازهمگام‌سازی...', 'error');
-      fetchTeachers();
+      await fetchTeachers();
     } finally {
       setIsSaving(false);
     }
@@ -356,7 +740,7 @@ export default function TeachersBank() {
       dispatchDatabaseToast(`«${teacherName}» با موفقیت از بانک اساتید پاک شد.`, 'success');
       fetchTeachers();
     } catch (err) {
-      console.error('Error deleting teacher:', err);
+      console.error('[TEACHERS_BANK_DELETE_FAIL]', id, err);
       setTeachers(originalTeachers);
       dispatchDatabaseToast(`خطا در حذف «${teacherName}». اطلاعات بازگردانده شد.`, 'error');
     } finally {
@@ -370,13 +754,17 @@ export default function TeachersBank() {
 
   const handleToggleStatus = async (t: Teacher) => {
     try {
+      const nowIso = new Date().toISOString();
       await localDb.updateDoc('teachers', t.id, {
         isActive: !t.isActive,
-        updatedAt: new Date().toISOString()
+        updatedAt: nowIso,
+        updated_at: nowIso,
+        version: (t.version || 0) + 1
       });
       fetchTeachers();
     } catch (err) {
-      console.error('Error toggling status:', err);
+      console.error('[TEACHERS_BANK_STATUS_FAIL]', t.id, err);
+      dispatchDatabaseToast('خطا در تغییر وضعیت استاد.', 'error');
     }
   };
 
@@ -430,14 +818,25 @@ export default function TeachersBank() {
   const filteredTeachers = teachers.filter(t => {
     if (t.isExternal === true) return false;
 
+    const autoHistory = autoTeachingHistoryMap[t.id];
     const searchLower = searchTerm.toLowerCase().trim();
     const matchesSearch = !searchLower || 
       t.fullName?.toLowerCase().includes(searchLower) ||
+      t.firstName?.toLowerCase().includes(searchLower) ||
+      t.lastName?.toLowerCase().includes(searchLower) ||
+      t.fatherName?.toLowerCase().includes(searchLower) ||
       t.phoneNumber?.includes(searchLower) ||
+      t.homePhone?.includes(searchLower) ||
+      t.homeAddress?.toLowerCase().includes(searchLower) ||
       t.nationalId?.includes(searchLower) ||
+      t.birthCertificateNumber?.includes(searchLower) ||
       t.teacherCode?.toLowerCase().includes(searchLower) ||
+      t.centerTeacherCode?.toLowerCase().includes(searchLower) ||
+      t.servicesCenterCode?.toLowerCase().includes(searchLower) ||
+      t.managementCenterFileNumber?.toLowerCase().includes(searchLower) ||
       t.notes?.toLowerCase().includes(searchLower) ||
       t.experienceHistory?.toLowerCase().includes(searchLower) ||
+      autoHistory?.summaryText?.toLowerCase().includes(searchLower) ||
       t.categories?.some(c => c.toLowerCase().includes(searchLower)) ||
       t.detailedSpecialties?.usul?.some(u => u.includes(searchLower)) ||
       t.detailedSpecialties?.falsafa?.some(f => f.includes(searchLower)) ||
@@ -453,34 +852,63 @@ export default function TeachersBank() {
     return matchesSearch && matchesCategory && matchesPriority && matchesStatus && matchesPhone;
   });
 
+  // 4-Step Smart Excel Import trigger (Exact parity with StudentList)
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setExcelImportFile(file);
+    setShowExcelImportModal(true);
+    e.target.value = '';
+  };
+
   // Export to Excel
   const handleExportExcel = async () => {
     if (filteredTeachers.length === 0) {
-      alert('هیچ استادی جهت خروجی در فیلتر فعلی وجود ندارد.');
+      dispatchDatabaseToast('هیچ استادی جهت خروجی در فیلتر فعلی وجود ندارد.', 'warning');
       return;
     }
 
     const XLSX = await import('xlsx');
 
     const exportData = filteredTeachers.map((t, idx) => {
+      const { firstName: fn, lastName: ln } = splitFullNameParts(t.fullName, t.firstName, t.lastName);
       const specList: string[] = [];
       if (t.detailedSpecialties?.usul?.length) specList.push(`اصول: ${t.detailedSpecialties.usul.join('، ')}`);
       if (t.detailedSpecialties?.fiqh?.length) specList.push(`فقه: ${t.detailedSpecialties.fiqh.join('، ')}`);
       if (t.detailedSpecialties?.falsafa?.length) specList.push(`فلسفه: ${t.detailedSpecialties.falsafa.join('، ')}`);
       if (t.detailedSpecialties?.thursdayNote) specList.push(`پنج‌شنبه: ${t.detailedSpecialties.thursdayNote}`);
 
+      const autoSummary = autoTeachingHistoryMap[t.id]?.summaryText || '';
+      const combinedExperience = [t.experienceHistory, autoSummary ? `[خودکار] ${autoSummary}` : '']
+        .filter(Boolean)
+        .join(' | ');
+
       const row: Record<string, any> = {
         'ردیف': idx + 1,
+        'نام': fn || '-',
+        'نام خانوادگی': ln || '-',
         'نام و نام خانوادگی': t.fullName,
+        'نام پدر': t.fatherName || '-',
+        'کد ملی': t.nationalId || '-',
+        'ش.شناسنامه': t.birthCertificateNumber || '-',
+        'کد استادی داخلی': t.teacherCode || '-',
+        'کد استاد مرکز': t.centerTeacherCode || '-',
+        'کد مرکز خدمات': t.servicesCenterCode || '-',
+        'شماره پرونده مرکز مدیریت': t.managementCenterFileNumber || '-',
       };
 
       if (includePhoneInExport) {
         row['شماره تماس'] = t.phoneNumber || 'ثبت نشده';
+        row['شماره منزل'] = t.homePhone || '-';
+        row['آدرس منزل'] = t.homeAddress || '-';
       }
 
+      row['شماره شبا'] = t.bankSheba || t.bankAccounts?.[0]?.shebaNumber || '-';
+      row['حساب تجارت'] = t.tejaratBankAccount || '-';
+      row['حساب سیبا'] = t.sibaBankAccount || '-';
       row['تخصص‌های کلی'] = t.categories?.join(' | ') || '-';
       row['تخصص‌های جزئی'] = specList.join(' / ') || '-';
-      row['سوابق تدریس در مجموعه'] = t.experienceHistory || '-';
+      row['سوابق تدریس در مجموعه'] = combinedExperience || '-';
       row['توضیحات'] = t.notes || '-';
       row['اولویت'] = `اولویت ${t.priority}`;
       row['وضعیت'] = t.isActive ? 'فعال' : 'غیرفعال';
@@ -789,15 +1217,27 @@ export default function TeachersBank() {
               onClick: handleExportJson
             },
             ...(canManageTeachers
-              ? [{
-                  id: 'import-teachers',
-                  label: 'افزودن از فایل',
-                  icon: <Upload size={14} />,
-                  onClick: () => {
-                    setImportMessage(null);
-                    setShowImportModal(true);
+              ? [
+                  {
+                    id: 'import-excel-teachers',
+                    label: 'وارد کردن اکسل',
+                    icon: <FileSpreadsheet size={14} />,
+                    tone: 'emerald' as const,
+                    fileInputProps: {
+                      accept: '.xlsx, .xls, .csv',
+                      onChange: handleExcelImport
+                    }
+                  },
+                  {
+                    id: 'import-json-teachers',
+                    label: 'افزودن از فایل JSON',
+                    icon: <Upload size={14} />,
+                    onClick: () => {
+                      setImportMessage(null);
+                      setShowImportModal(true);
+                    }
                   }
-                }]
+                ]
               : [])
           ]}
         />
@@ -839,7 +1279,7 @@ export default function TeachersBank() {
 
               <button
                 onClick={handleExportExcel}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 <FileSpreadsheet size={15} />
                 <span>خروجی اکسل</span>
@@ -848,7 +1288,7 @@ export default function TeachersBank() {
               <button
                 onClick={handleExportPdf}
                 disabled={isExportingPdf}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 disabled:opacity-50"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <Download size={15} />
                 <span>{isExportingPdf ? 'در حال دریافت...' : 'خروجی PDF'}</span>
@@ -856,7 +1296,7 @@ export default function TeachersBank() {
 
               <button
                 onClick={handleExportJson}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer"
               >
                 <FileText size={15} />
                 <span>خروجی JSON</span>
@@ -864,20 +1304,32 @@ export default function TeachersBank() {
 
               {canManageTeachers && (
                 <>
+                  <label className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer">
+                    <FileSpreadsheet size={15} />
+                    <span>وارد کردن اکسل</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".xlsx, .xls, .csv"
+                      onChange={handleExcelImport}
+                    />
+                  </label>
+
                   <button
                     onClick={() => {
                       setImportMessage(null);
                       setShowImportModal(true);
                     }}
-                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95"
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 bg-slate-700/80 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-2xl text-xs transition-all shadow-md active:scale-95 cursor-pointer"
+                    title="بازیابی از فایل JSON"
                   >
                     <Upload size={15} />
-                    <span>افزودن از فایل (اکسل/JSON)</span>
+                    <span>ورود JSON</span>
                   </button>
 
                   <button
                     onClick={openAddModal}
-                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
+                    className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-indigo-500 hover:bg-indigo-400 text-white font-black px-4 py-2 rounded-2xl text-xs transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95 cursor-pointer"
                   >
                     <UserPlus size={16} />
                     <span>افزودن استاد جدید</span>
@@ -1229,11 +1681,19 @@ export default function TeachersBank() {
                             <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                               {teacher.isExternal && <Building2 size={13} className="text-amber-500 shrink-0" />}
                               <span>{teacher.fullName}</span>
+                              {teacher.fatherName && (
+                                <span className="text-[11px] font-medium text-slate-500">({teacher.fatherName})</span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-mono">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 font-mono">
                               {teacher.teacherCode && (
                                 <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-bold">
                                   کد: {teacher.teacherCode}
+                                </span>
+                              )}
+                              {teacher.centerTeacherCode && (
+                                <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">
+                                  کد مرکز: {teacher.centerTeacherCode}
                                 </span>
                               )}
                               {teacher.nationalId && (
@@ -1252,16 +1712,23 @@ export default function TeachersBank() {
                       {/* Phone Number */}
                       <td className="py-3 px-4 font-mono font-medium text-slate-700">
                         {teacher.phoneNumber ? (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => copyPhoneNumber(teacher.id, teacher.phoneNumber)}
-                              className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
-                              title="کپی شماره"
-                            >
-                              {copiedPhoneId === teacher.id ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                            </button>
-                            <span>{teacher.phoneNumber}</span>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => copyPhoneNumber(teacher.id, teacher.phoneNumber)}
+                                className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
+                                title="کپی شماره"
+                              >
+                                {copiedPhoneId === teacher.id ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                              </button>
+                              <span>{teacher.phoneNumber}</span>
+                            </div>
+                            {teacher.homePhone && (
+                              <div className="text-[10px] text-slate-400 pr-6">منزل: {teacher.homePhone}</div>
+                            )}
                           </div>
+                        ) : teacher.homePhone ? (
+                          <span className="text-xs text-slate-500">منزل: {teacher.homePhone}</span>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
@@ -1317,15 +1784,31 @@ export default function TeachersBank() {
                         </div>
                       </td>
 
-                      {/* Experience History */}
+                      {/* Experience History (Auto + Manual) */}
                       <td className="py-3 px-4 text-slate-700 max-w-xs">
-                        {teacher.experienceHistory ? (
-                          <div className="line-clamp-2 text-[11px] leading-relaxed bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            {teacher.experienceHistory}
-                          </div>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
+                        {(() => {
+                          const autoInfo = autoTeachingHistoryMap[teacher.id];
+                          const hasAuto = Boolean(autoInfo && autoInfo.totalCount > 0);
+                          const hasManual = Boolean(teacher.experienceHistory);
+                          if (!hasAuto && !hasManual) {
+                            return <span className="text-slate-300">-</span>;
+                          }
+                          return (
+                            <div className="space-y-1 text-[11px] leading-relaxed">
+                              {hasAuto && (
+                                <div className="line-clamp-2 bg-indigo-50/70 text-indigo-900 p-1.5 rounded-lg border border-indigo-100">
+                                  <span className="font-black text-[10px] text-indigo-700 ml-1">خودکار:</span>
+                                  {autoInfo.summaryText}
+                                </div>
+                              )}
+                              {hasManual && (
+                                <div className="line-clamp-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                                  {teacher.experienceHistory}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Notes */}
@@ -1459,7 +1942,10 @@ export default function TeachersBank() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <h3 className="font-bold text-slate-800 text-sm sm:text-base truncate">{teacher.fullName}</h3>
+                        <h3 className="font-bold text-slate-800 text-sm sm:text-base truncate">
+                          {teacher.fullName}
+                          {teacher.fatherName ? <span className="text-xs font-medium text-slate-500 mr-1">({teacher.fatherName})</span> : null}
+                        </h3>
                         <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-slate-500 font-mono">
                           <span className="flex items-center gap-1">
                             <Phone size={12} className="text-slate-400" />
@@ -1468,6 +1954,11 @@ export default function TeachersBank() {
                           {teacher.teacherCode && (
                             <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
                               کد: {teacher.teacherCode}
+                            </span>
+                          )}
+                          {teacher.centerTeacherCode && (
+                            <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                              مرکز: {teacher.centerTeacherCode}
                             </span>
                           )}
                           {teacher.nationalId && (
@@ -1518,16 +2009,34 @@ export default function TeachersBank() {
                     </div>
                   ) : null}
 
-                  {/* Experience History */}
-                  {teacher.experienceHistory && (
-                    <div className="text-xs space-y-1">
+                  {/* Experience History (Auto + Manual) */}
+                  {(teacher.experienceHistory || (autoTeachingHistoryMap[teacher.id]?.totalCount || 0) > 0) && (
+                    <div className="text-xs space-y-1.5">
                       <div className="font-bold text-slate-700 text-[11px] flex items-center gap-1">
-                        <FileText size={12} className="text-indigo-600" />
-                        <span>سوابق تدریس و بازخورد:</span>
+                        <History size={12} className="text-indigo-600" />
+                        <span>سوابق تدریس در مجموعه (خودکار و دستی):</span>
                       </div>
-                      <p className="text-slate-600 text-[11px] leading-relaxed bg-amber-50/50 border border-amber-100 p-2.5 rounded-xl">
-                        {teacher.experienceHistory}
-                      </p>
+                      {autoTeachingHistoryMap[teacher.id]?.totalCount > 0 && (
+                        <div className="text-indigo-900 text-[11px] leading-relaxed bg-indigo-50/70 border border-indigo-100 p-2.5 rounded-xl space-y-1">
+                          {autoTeachingHistoryMap[teacher.id].currentCourses.length > 0 && (
+                            <div>
+                              <span className="font-black text-indigo-700">برنامه‌های جاری: </span>
+                              {autoTeachingHistoryMap[teacher.id].currentCourses.join(' | ')}
+                            </div>
+                          )}
+                          {autoTeachingHistoryMap[teacher.id].pastCourses.length > 0 && (
+                            <div>
+                              <span className="font-black text-amber-700">دروس سال قبل / سوابق: </span>
+                              {autoTeachingHistoryMap[teacher.id].pastCourses.join(' | ')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {teacher.experienceHistory && (
+                        <p className="text-slate-600 text-[11px] leading-relaxed bg-amber-50/50 border border-amber-100 p-2.5 rounded-xl">
+                          {teacher.experienceHistory}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -1658,7 +2167,14 @@ export default function TeachersBank() {
                     )}
                     <td className="p-2 border border-slate-300">{t.categories?.join('، ') || '-'}</td>
                     <td className="p-2 border border-slate-300 font-medium">{specList.join(' | ') || '-'}</td>
-                    <td className="p-2 border border-slate-300 text-[11px] leading-relaxed">{t.experienceHistory || '-'}</td>
+                    <td className="p-2 border border-slate-300 text-[11px] leading-relaxed">
+                      {[
+                        t.experienceHistory,
+                        autoTeachingHistoryMap[t.id]?.summaryText
+                          ? `[خودکار] ${autoTeachingHistoryMap[t.id].summaryText}`
+                          : ''
+                      ].filter(Boolean).join(' | ') || '-'}
+                    </td>
                     <td className="p-2 border border-slate-300 text-[11px] leading-relaxed">{t.notes || '-'}</td>
                     <td className="p-2 border border-slate-300 text-center font-bold">
                       اولویت {t.priority}
@@ -1682,25 +2198,28 @@ export default function TeachersBank() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 w-full max-w-2xl border border-slate-200 shadow-2xl my-8 space-y-5"
+              className="bg-white rounded-3xl p-5 sm:p-6 w-full max-w-3xl border border-slate-200 shadow-2xl my-6 max-h-[92vh] overflow-y-auto space-y-5"
               dir="rtl"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4 sticky top-0 bg-white/95 backdrop-blur-xs z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
-                    <GraduationCap size={20} />
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold border border-indigo-100">
+                    <GraduationCap size={21} />
                   </div>
                   <div>
-                    <h2 className="text-base font-bold text-slate-800">
+                    <h2 className="text-base font-black text-slate-800">
                       {editingTeacher ? 'ویرایش مشخصات استاد' : 'افزودن استاد جدید به بانک اساتید'}
                     </h2>
-                    <p className="text-[11px] text-slate-400 font-medium">اطلاعات تخصص، اولویت و سوابق استاد را وارد کنید</p>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      اطلاعات هویتی، کدهای مرکز، حساب‌های مالی، اولویت و سوابق تدریس استاد را تکمیل نمایید
+                    </p>
                   </div>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setShowModal(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
                 >
                   <XCircle size={20} />
                 </button>
@@ -1708,50 +2227,82 @@ export default function TeachersBank() {
 
               <form onSubmit={handleSave} className="space-y-4">
                 
-                {/* Photo and Primary Spec */}
-                <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                  <div className="relative group shrink-0">
-                    {photoUrl ? (
-                      <img 
-                        src={photoUrl} 
-                        alt="استاد" 
-                        className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-500 shadow-xs" 
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-xl border border-indigo-200">
-                        {fullName?.charAt(0) || 'استاد'}
-                      </div>
-                    )}
-                    <label className="absolute -bottom-1 -right-1 bg-indigo-600 text-white p-1.5 rounded-xl cursor-pointer hover:bg-indigo-700 transition-all shadow-md">
-                      <Upload size={12} />
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={handleImageUpload} 
-                        className="hidden" 
-                      />
-                    </label>
-                  </div>
+                {/* FIELDSET 1: Basic, Identity & Contact Information */}
+                <fieldset className="bg-slate-50/90 p-4 rounded-2xl border border-slate-200 space-y-3.5">
+                  <legend className="px-2.5 py-0.5 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-800 flex items-center gap-1.5 shadow-2xs">
+                    <User size={14} className="text-indigo-600" />
+                    <span>اطلاعات پایه، هویتی و تماس</span>
+                  </legend>
 
-                  <div className="flex-1 w-full space-y-2">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        نام و نام خانوادگی استاد <span className="text-rose-500">*</span>
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                    {/* Photo Uploader */}
+                    <div className="relative group shrink-0 mt-1">
+                      {photoUrl ? (
+                        <img 
+                          src={photoUrl} 
+                          alt="استاد" 
+                          className="w-20 h-20 rounded-2xl object-cover border-2 border-indigo-500 shadow-xs" 
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-2xl bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-2xl border border-indigo-200">
+                          {firstName?.charAt(0) || lastName?.charAt(0) || 'ا'}
+                        </div>
+                      )}
+                      <label className="absolute -bottom-1.5 -right-1.5 bg-indigo-600 text-white p-1.5 rounded-xl cursor-pointer hover:bg-indigo-700 transition-all shadow-md" title="انتخاب تصویر استاد">
+                        <Upload size={12} />
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          onChange={handleImageUpload} 
+                          className="hidden" 
+                        />
                       </label>
-                      <input 
-                        type="text" 
-                        required
-                        placeholder="مثلا: استاد سید علی حسینی"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Identity & Contact Grid */}
+                    <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">
-                          کد ملی استاد <span className="text-slate-400 font-normal">(جهت تطبیق دقیق پنل و ورود)</span>
+                          نام <span className="text-rose-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          placeholder="مثلاً: سید علی"
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          نام خانوادگی <span className="text-rose-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          placeholder="مثلاً: حسینی"
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">نام پدر</label>
+                        <input 
+                          type="text" 
+                          placeholder="نام پدر استاد"
+                          value={fatherName}
+                          onChange={(e) => setFatherName(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          کد ملی <span className="text-[10px] text-slate-400 font-normal">(ورود و تطبیق)</span>
                         </label>
                         <input 
                           type="text" 
@@ -1759,68 +2310,181 @@ export default function TeachersBank() {
                           value={nationalId}
                           onChange={(e) => setNationalId(e.target.value)}
                           maxLength={10}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                          dir="ltr"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-xs font-bold text-slate-700">
-                            شناسه / کد استادی
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setTeacherCode(generateUniqueTeacherCode())}
-                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
-                          >
-                            تولید خودکار کد
-                          </button>
-                        </div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">ش.شناسنامه</label>
                         <input 
                           type="text" 
-                          placeholder="مثلاً T-104"
-                          value={teacherCode}
-                          onChange={(e) => setTeacherCode(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="شماره شناسنامه"
+                          value={birthCertificateNumber}
+                          onChange={(e) => setBirthCertificateNumber(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">شماره تماس</label>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">شماره همراه / تماس</label>
                         <input 
                           type="text" 
                           placeholder="0912..."
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                          dir="ltr"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">اولویت پیشنهاد</label>
-                        <select
-                          value={priority}
-                          onChange={(e) => setPriority(Number(e.target.value) as 1 | 2 | 3)}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          <option value={1}>اولویت ۱ (عالی)</option>
-                          <option value={2}>اولویت ۲ (خوب)</option>
-                          <option value={3}>اولویت ۳ (معمولی)</option>
-                        </select>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">شماره منزل</label>
+                        <input 
+                          type="text" 
+                          placeholder="025..."
+                          value={homePhone}
+                          onChange={(e) => setHomePhone(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <MapPin size={12} className="text-slate-400" />
+                          <span>آدرس منزل</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          placeholder="نشانی کامل محل سکونت..."
+                          value={homeAddress}
+                          onChange={(e) => setHomeAddress(e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
                       </div>
                     </div>
                   </div>
-                </div>
+                </fieldset>
 
-                {/* Financial & Multiple Bank Accounts Section */}
-                <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
-                      <Building2 size={16} className="text-emerald-700" />
-                      <span>اطلاعات مالی و شماره حساب‌ها / کارت‌های واریز حق‌الزحمه:</span>
+                {/* FIELDSET 2: Teacher & Center Codes */}
+                <fieldset className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200/80 space-y-3">
+                  <legend className="px-2.5 py-0.5 bg-white border border-indigo-200 rounded-lg text-xs font-black text-indigo-950 flex items-center gap-1.5 shadow-2xs">
+                    <Hash size={14} className="text-indigo-600" />
+                    <span>اطلاعات کدهای استادی و شناسه‌های مرکز</span>
+                  </legend>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700">کد استادی داخلی</label>
+                        <button
+                          type="button"
+                          onClick={() => setTeacherCode(generateUniqueTeacherCode())}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                        >
+                          تولید خودکار
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder="مثلاً T-104"
+                        value={teacherCode}
+                        onChange={(e) => setTeacherCode(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
                     </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">کد استاد مرکز</label>
+                      <input 
+                        type="text" 
+                        placeholder="کد استاد در مرکز..."
+                        value={centerTeacherCode}
+                        onChange={(e) => setCenterTeacherCode(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">کد مرکز خدمات</label>
+                      <input 
+                        type="text" 
+                        placeholder="کد مرکز خدمات حوزه‌ها..."
+                        value={servicesCenterCode}
+                        onChange={(e) => setServicesCenterCode(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">شماره پرونده مرکز مدیریت</label>
+                      <input 
+                        type="text" 
+                        placeholder="شماره پرونده..."
+                        value={managementCenterFileNumber}
+                        onChange={(e) => setManagementCenterFileNumber(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-right outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+
+                {/* FIELDSET 3: Financial & Dedicated Bank Accounts */}
+                <fieldset className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80 space-y-3">
+                  <legend className="px-2.5 py-0.5 bg-white border border-emerald-200 rounded-lg text-xs font-black text-emerald-950 flex items-center gap-1.5 shadow-2xs">
+                    <CreditCard size={14} className="text-emerald-700" />
+                    <span>اطلاعات مالی و حساب‌های بانکی واریز حق‌الزحمه</span>
+                  </legend>
+
+                  {/* Dedicated Sheba, Tejarat, Siba Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3 rounded-xl border border-emerald-200/80 shadow-2xs">
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-950 mb-1">شماره شبا (IR...)</label>
+                      <input
+                        type="text"
+                        placeholder="IR000000000000000000000000"
+                        value={bankSheba}
+                        onChange={(e) => setBankSheba(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-right focus:bg-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-950 mb-1">حساب تجارت</label>
+                      <input
+                        type="text"
+                        placeholder="شماره حساب بانک تجارت..."
+                        value={tejaratBankAccount}
+                        onChange={(e) => setTejaratBankAccount(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-right focus:bg-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-emerald-950 mb-1">حساب سیبا</label>
+                      <input
+                        type="text"
+                        placeholder="شماره حساب سیبا (بانک ملی)..."
+                        value={sibaBankAccount}
+                        onChange={(e) => setSibaBankAccount(e.target.value)}
+                        dir="ltr"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-right focus:bg-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-bold text-emerald-900">
+                      سایر حساب‌ها / شماره کارت‌های تکمیلی استاد:
+                    </span>
                     <button
                       type="button"
                       onClick={() => setBankAccountsList([
@@ -1830,7 +2494,7 @@ export default function TeachersBank() {
                       className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
                     >
                       <Plus size={13} />
-                      <span>+ افزودن شماره حساب / کارت جدید</span>
+                      <span>افزودن حساب / کارت جدید</span>
                     </button>
                   </div>
 
@@ -1918,21 +2582,40 @@ export default function TeachersBank() {
                       </div>
                     ))}
                   </div>
-                </div>
+                </fieldset>
 
-                {/* Status Switch */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-xs font-bold text-slate-700">وضعیت استاد:</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsActive(!isActive)}
-                    className={cn(
-                      "px-3 py-1 rounded-xl text-xs font-bold transition-all border",
-                      isActive ? "bg-emerald-600 text-white border-emerald-600" : "bg-rose-100 text-rose-700 border-rose-300"
-                    )}
-                  >
-                    {isActive ? 'فعال جهت دعوت' : 'غیرفعال (موقت)'}
-                  </button>
+                {/* Status Switch & Priority Directly Beneath Status */}
+                <div className="bg-slate-50 rounded-2xl border border-slate-200 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">وضعیت استاد:</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsActive(!isActive)}
+                      className={cn(
+                        "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer",
+                        isActive ? "bg-emerald-600 text-white border-emerald-600 shadow-xs" : "bg-rose-100 text-rose-700 border-rose-300"
+                      )}
+                    >
+                      {isActive ? 'فعال جهت دعوت' : 'غیرفعال (موقت)'}
+                    </button>
+                  </div>
+
+                  {/* Suggested Priority directly below Teacher Status */}
+                  <div className="pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Star size={14} className="text-amber-500" />
+                      <span>اولویت پیشنهادی:</span>
+                    </label>
+                    <select
+                      value={priority}
+                      onChange={(e) => setPriority(Number(e.target.value) as 1 | 2 | 3)}
+                      className="sm:w-56 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value={1}>اولویت ۱ (عالی)</option>
+                      <option value={2}>اولویت ۲ (خوب)</option>
+                      <option value={3}>اولویت ۳ (معمولی)</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Main Categories Checkboxes */}
@@ -2077,18 +2760,102 @@ export default function TeachersBank() {
                   </motion.div>
                 )}
 
-                {/* Experience History */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">
-                    سوابق تدریس در مجموعه و بازخوردها:
-                  </label>
-                  <textarea 
-                    rows={2}
-                    placeholder="بنویسید چه درسی تا حالا درس گفته تو مجموعه و نتیجه چی بوده..."
-                    value={experienceHistory}
-                    onChange={(e) => setExperienceHistory(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-none"
-                  />
+                {/* Experience History (Auto-populated from school programs/history + Manual input) */}
+                <div className="space-y-2.5 bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <History size={15} className="text-indigo-600" />
+                      <span>سوابق تدریس (خودکار از برنامه‌های مدرسه و سوابق سال قبل + ثبت دستی)</span>
+                    </label>
+                  </div>
+
+                  {(() => {
+                    const modalTeacherObj: Teacher = {
+                      id: editingTeacher?.id || '__draft__',
+                      fullName: [firstName, lastName].filter(Boolean).join(' ').trim(),
+                      firstName: firstName.trim(),
+                      lastName: lastName.trim(),
+                      categories: selectedCategories,
+                      priority,
+                      isActive,
+                      createdAt: ''
+                    };
+                    const autoInfo = editingTeacher && autoTeachingHistoryMap[editingTeacher.id]
+                      ? autoTeachingHistoryMap[editingTeacher.id]
+                      : (() => {
+                          const currentCourses: string[] = [];
+                          const pastCourses: string[] = [];
+                          const matchedProgs = programs.filter((p) => matchTeacherWithRecordName(p.teacher, modalTeacherObj));
+                          for (const p of matchedProgs) {
+                            const isArch = Boolean(p.isDeleted) || p.status === 'inactive' || p.status === 'deleted';
+                            const label = `${p.title}${p.grade ? ` (${p.grade})` : ''}${p.subjectBook ? ` کتاب: ${p.subjectBook}` : ''}`;
+                            if (isArch) pastCourses.push(`${label} [آرشیو]`);
+                            else currentCourses.push(label);
+                          }
+                          return {
+                            currentCourses,
+                            pastCourses,
+                            summaryText: [...currentCourses, ...pastCourses].join(' | '),
+                            totalCount: currentCourses.length + pastCourses.length
+                          };
+                        })();
+
+                    return (
+                      <div className="bg-white border border-indigo-200/80 rounded-xl p-3 space-y-2 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-900 flex items-center gap-1">
+                            <Sparkles size={13} className="text-indigo-600" />
+                            <span>استخراج خودکار از سامانه:</span>
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {autoInfo.totalCount > 0 ? `${autoInfo.totalCount} مورد یافت شد` : 'سابقه خودکاری یافت نشد'}
+                          </span>
+                        </div>
+
+                        {autoInfo.totalCount > 0 ? (
+                          <div className="space-y-1.5">
+                            {autoInfo.currentCourses.length > 0 && (
+                              <div className="bg-indigo-50/70 border border-indigo-100 rounded-lg p-2">
+                                <div className="font-black text-indigo-800 text-[10px] mb-1">برنامه‌های جاری مدرسه:</div>
+                                <ul className="list-disc list-inside space-y-0.5 text-indigo-950">
+                                  {autoInfo.currentCourses.map((c, i) => (
+                                    <li key={i}>{c}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {autoInfo.pastCourses.length > 0 && (
+                              <div className="bg-amber-50/70 border border-amber-100 rounded-lg p-2">
+                                <div className="font-black text-amber-800 text-[10px] mb-1">دروس سال قبل و منتقل‌شده به سوابق:</div>
+                                <ul className="list-disc list-inside space-y-0.5 text-amber-950">
+                                  {autoInfo.pastCourses.map((c, i) => (
+                                    <li key={i}>{c}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-400">
+                            بر اساس برنامه‌های فعلی، کلاس‌های آرشیوی و سوابق پایان‌یافته طلاب، موردی برای این نام یافت نشد.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      سوابق تدریس دستی و بازخوردها (تکمیلی):
+                    </label>
+                    <textarea 
+                      rows={2}
+                      placeholder="بنویسید چه درسی تا حالا درس گفته یا چه بازخوردهایی داشته است..."
+                      value={experienceHistory}
+                      onChange={(e) => setExperienceHistory(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                  </div>
                 </div>
 
                 {/* Notes */}
@@ -2217,6 +2984,20 @@ export default function TeachersBank() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 4-Step Smart Teacher Excel Import Wizard (Exact Parity with StudentList) */}
+      <TeacherExcelImportModal
+        isOpen={showExcelImportModal}
+        initialFile={excelImportFile}
+        existingTeachers={teachers}
+        onClose={() => {
+          setShowExcelImportModal(false);
+          setExcelImportFile(null);
+        }}
+        onImportCompleted={() => {
+          fetchTeachers();
+        }}
+      />
 
     </div>
   );

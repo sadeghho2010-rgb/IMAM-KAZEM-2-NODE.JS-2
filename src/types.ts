@@ -1207,11 +1207,20 @@ export interface TeacherBankAccount {
 export interface Teacher {
   id: string;
   fullName: string;
+  firstName?: string; // نام
+  lastName?: string; // نام خانوادگی
   name?: string; // alias for display
+  fatherName?: string; // نام پدر
   nationalId?: string; // کد ملی
-  teacherCode?: string; // کد استادی
-  phoneNumber?: string;
+  birthCertificateNumber?: string; // شماره شناسنامه
+  teacherCode?: string; // کد استادی داخلی
+  centerTeacherCode?: string; // کد استاد مرکز
+  servicesCenterCode?: string; // کد مرکز خدمات
+  managementCenterFileNumber?: string; // شماره پرونده مرکز مدیریت
+  phoneNumber?: string; // شماره همراه
   phone?: string; // alias
+  homePhone?: string; // شماره منزل
+  homeAddress?: string; // آدرس منزل
   subjectSpecialty?: string; // تخصص اصلی
   courses?: string[]; // عناوین دروس تدریسی
   managedGrades?: string[]; // پایه‌های تحت اشراف
@@ -1223,11 +1232,15 @@ export interface Teacher {
   bankName?: string; // نام بانک
   bankAccount?: string; // شماره حساب
   bankSheba?: string; // شماره شبا
+  tejaratBankAccount?: string; // شماره حساب بانک تجارت
+  sibaBankAccount?: string; // شماره حساب سیبا
   bankAccounts?: TeacherBankAccount[]; // لیست شماره حساب‌ها و کارت‌های متکثر استاد
   priority: 1 | 2 | 3 | '1' | '2' | '3';
   isActive: boolean;
   createdAt: string;
   updatedAt?: string;
+  updated_at?: string;
+  version?: number;
   isExternal?: boolean;
 }
 
