@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Plus, Search, X } from 'lucide-react';
 import { Teacher } from '../../types';
 import { cn } from '../../lib/utils';
 
@@ -43,10 +43,16 @@ function matchesTeacherQuery(teacher: Teacher, normalizedQuery: string): boolean
   return tokens.every((token) => normalizedHaystack.includes(token));
 }
 
+export interface TeacherConflictBadgeInfo {
+  programTitle: string;
+  day: string;
+  time: string;
+}
+
 type FlatOption =
   | { kind: 'clear'; key: string }
   | { kind: 'fallback'; key: string; name: string }
-  | { kind: 'teacher'; key: string; teacher: Teacher }
+  | { kind: 'teacher'; key: string; teacher: Teacher; conflict?: TeacherConflictBadgeInfo | null }
   | { kind: 'custom'; key: string; prefill?: string };
 
 interface SearchableTeacherSelectProps {
@@ -54,6 +60,7 @@ interface SearchableTeacherSelectProps {
   value: string;
   onChange: (teacherName: string) => void;
   onSwitchToCustom: (prefillName?: string) => void;
+  getConflictInfo?: (teacher: Teacher) => TeacherConflictBadgeInfo | null;
   currentTeacherFallback?: string;
   placeholder?: string;
   className?: string;
@@ -64,6 +71,7 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
   value,
   onChange,
   onSwitchToCustom,
+  getConflictInfo,
   currentTeacherFallback,
   placeholder = '-- انتخاب یا جستجوی استاد (بدون تداخل زمانی)... --',
   className,
@@ -82,13 +90,17 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
     [searchQuery]
   );
 
-  const { internalTeachers, externalTeachers, showFallback } = useMemo(() => {
+  const { internalTeachers, externalTeachers, conflictingTeachers, showFallback } = useMemo(() => {
     const internal: Teacher[] = [];
     const external: Teacher[] = [];
+    const conflicting: Array<{ teacher: Teacher; conflict: TeacherConflictBadgeInfo }> = [];
 
     for (const t of teachers) {
       if (!matchesTeacherQuery(t, normalizedQuery)) continue;
-      if (t.isExternal) {
+      const conflict = getConflictInfo ? getConflictInfo(t) : null;
+      if (conflict) {
+        conflicting.push({ teacher: t, conflict });
+      } else if (t.isExternal) {
         external.push(t);
       } else {
         internal.push(t);
@@ -109,9 +121,10 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
     return {
       internalTeachers: internal,
       externalTeachers: external,
+      conflictingTeachers: conflicting,
       showFallback: fallbackMatches,
     };
-  }, [teachers, normalizedQuery, currentTeacherFallback]);
+  }, [teachers, normalizedQuery, currentTeacherFallback, getConflictInfo]);
 
   const flatOptions = useMemo<FlatOption[]>(() => {
     const list: FlatOption[] = [];
@@ -126,10 +139,18 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
       });
     }
     for (const t of internalTeachers) {
-      list.push({ kind: 'teacher', key: `int_${t.id}`, teacher: t });
+      list.push({ kind: 'teacher', key: `int_${t.id}`, teacher: t, conflict: null });
     }
     for (const t of externalTeachers) {
-      list.push({ kind: 'teacher', key: `ext_${t.id}`, teacher: t });
+      list.push({ kind: 'teacher', key: `ext_${t.id}`, teacher: t, conflict: null });
+    }
+    for (const item of conflictingTeachers) {
+      list.push({
+        kind: 'teacher',
+        key: `busy_${item.teacher.id}`,
+        teacher: item.teacher,
+        conflict: item.conflict,
+      });
     }
     const trimmedQuery = searchQuery.trim();
     list.push({
@@ -144,6 +165,7 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
     currentTeacherFallback,
     internalTeachers,
     externalTeachers,
+    conflictingTeachers,
     searchQuery,
   ]);
 
@@ -151,7 +173,6 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
   useEffect(() => {
     if (!isOpen) return;
     if (normalizedQuery) {
-      // Highlight first matching teacher (or custom fallback if none)
       const firstTeacherIdx = flatOptions.findIndex(
         (o) => o.kind === 'teacher' || o.kind === 'fallback'
       );
@@ -284,7 +305,6 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
       openWithQuery('');
       return;
     }
-    // Printable character while focused (without clicking): open dropdown & seed search
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       openWithQuery(e.key);
@@ -324,7 +344,10 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
   };
 
   const totalMatches =
-    internalTeachers.length + externalTeachers.length + (showFallback ? 1 : 0);
+    internalTeachers.length +
+    externalTeachers.length +
+    conflictingTeachers.length +
+    (showFallback ? 1 : 0);
 
   let optionRenderCursor = 0;
 
@@ -439,7 +462,7 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
           </div>
 
           {/* Options List */}
-          <div className="max-h-52 overflow-y-auto py-1 divide-y divide-slate-50">
+          <div className="max-h-56 overflow-y-auto py-1 divide-y divide-slate-50">
             {!normalizedQuery && (() => {
               const idx = optionRenderCursor++;
               const isActive = highlightedIndex === idx;
@@ -606,9 +629,59 @@ export const SearchableTeacherSelect: React.FC<SearchableTeacherSelectProps> = (
               </div>
             )}
 
+            {conflictingTeachers.length > 0 && (
+              <div>
+                <div className="px-3 py-1 text-[10px] font-black text-rose-600 bg-rose-50/90 sticky top-0 flex items-center gap-1">
+                  <AlertTriangle size={11} className="shrink-0" />
+                  <span>دارای تداخل زمانی در ساعت فعلی (با تغییر ساعت آزاد می‌شوند)</span>
+                </div>
+                {conflictingTeachers.map(({ teacher: t, conflict }) => {
+                  const idx = optionRenderCursor++;
+                  const isActive = highlightedIndex === idx;
+                  const isSelected = value === t.fullName;
+                  return (
+                    <button
+                      key={`busy_${t.id}`}
+                      ref={(el) => {
+                        optionRefs.current[idx] = el;
+                      }}
+                      type="button"
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      onClick={() =>
+                        selectOption({
+                          kind: 'teacher',
+                          key: `busy_${t.id}`,
+                          teacher: t,
+                          conflict,
+                        })
+                      }
+                      className={cn(
+                        'w-full px-3 py-1.5 text-right text-xs flex items-center justify-between gap-2 transition-colors',
+                        isActive
+                          ? 'bg-rose-50 text-rose-900'
+                          : isSelected
+                            ? 'bg-rose-50/60 text-rose-800'
+                            : 'text-slate-600 hover:bg-rose-50/40'
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-bold truncate">{t.fullName}</span>
+                        <span className="text-[10px] text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded font-bold shrink-0 truncate max-w-[180px]">
+                          تداخل {conflict.time} ({conflict.programTitle})
+                        </span>
+                      </span>
+                      {isSelected && (
+                        <Check size={13} className="text-rose-600 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {totalMatches === 0 && (
               <div className="px-3 py-3 text-center text-[11px] text-slate-500 font-medium">
-                استادی با عبارت «{searchQuery.trim()}» در لیست در دسترس یافت نشد.
+                استادی با عبارت «{searchQuery.trim()}» در لیست یافت نشد.
               </div>
             )}
           </div>

@@ -50,7 +50,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { exportElementToImage } from '../lib/imageExport';
 import { GradeAwareStudentPicker, normalizeGradeKey } from './programs/GradeAwareStudentPicker';
-import { SearchableTeacherSelect } from './programs/SearchableTeacherSelect';
+import { SearchableTeacherSelect, normalizeTeacherSearchText } from './programs/SearchableTeacherSelect';
 import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
 import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
@@ -206,15 +206,18 @@ export const SUBJECT_BOOKS_MAP: Record<'اصول' | 'فقه' | 'فلسفه', str
 
 export function cleanTeacherName(name: string): string {
   if (!name) return '';
-  return name
-    .replace(/^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|حضرت\s*آیت\s*الله|آیت\s*الله|دکتر|مهندس|جناب\s*آقای|آقای|شیخ|سید)\s+/gi, '')
-    .trim()
-    .toLowerCase();
+  return normalizeTeacherSearchText(name)
+    .replace(/^(استاد|حجت\s*الاسلام\s*و\s*المسلمین|حجت\s*الاسلام|حضرت\s*ایت\s*الله|ایت\s*الله|دکتر|مهندس|جناب\s*اقای|اقای|شیخ|سید)\s+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function normalizeTimeStr(timeStr?: string): string {
   if (!timeStr) return '';
-  const eng = timeStr.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]).trim();
+  const eng = timeStr
+    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+    .trim();
   const parts = eng.split(':');
   if (parts.length === 2) {
     const hh = parts[0].padStart(2, '0');
@@ -231,7 +234,9 @@ export function extractProgramTimeRange(prog: { time?: string; startTime?: strin
     if (s && e) return { startTime: s, endTime: e };
   }
   if (!prog.time) return null;
-  const eng = prog.time.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+  const eng = prog.time
+    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
   const match = eng.match(/(\d{1,2}:\d{2})\s*(?:الی|تا|-|to)\s*(\d{1,2}:\d{2})/i);
   if (match) {
     return {
@@ -295,38 +300,45 @@ export function getConflictingTeachers(
   return conflictMap;
 }
 
-export function isTeacherConflicting(teacher: Teacher, conflictMap: Map<string, TeacherConflictInfo[]>): boolean {
-  const tFull = (teacher.fullName || '').trim().toLowerCase();
-  const tName = (teacher.name || '').trim().toLowerCase();
+export function getTeacherConflictForTeacher(
+  teacher: Teacher,
+  conflictMap: Map<string, TeacherConflictInfo[]>
+): TeacherConflictInfo | null {
+  const tFull = normalizeTeacherSearchText(teacher.fullName || '');
+  const tName = normalizeTeacherSearchText(teacher.name || '');
   const tCleanFull = cleanTeacherName(teacher.fullName || '');
   const tCleanName = cleanTeacherName(teacher.name || '');
 
-  for (const [busyName] of conflictMap.entries()) {
-    const bLower = busyName.trim().toLowerCase();
+  for (const [busyName, list] of conflictMap.entries()) {
+    const bNorm = normalizeTeacherSearchText(busyName);
     const bClean = cleanTeacherName(busyName);
     if (
-      (tFull && (tFull === bLower || tFull.includes(bLower) || bLower.includes(tFull))) ||
-      (tName && (tName === bLower || tName.includes(bLower) || bLower.includes(tName))) ||
-      (tCleanFull && bClean && (tCleanFull === bClean || tCleanFull.includes(bClean) || bClean.includes(tCleanFull))) ||
-      (tCleanName && bClean && (tCleanName === bClean || tCleanName.includes(bClean) || bClean.includes(tCleanName)))
+      (tFull && tFull === bNorm) ||
+      (tName && tName === bNorm) ||
+      (tCleanFull && bClean && tCleanFull === bClean) ||
+      (tCleanName && bClean && tCleanName === bClean)
     ) {
-      return true;
+      return list[0] || null;
     }
   }
-  return false;
+  return null;
+}
+
+export function isTeacherConflicting(teacher: Teacher, conflictMap: Map<string, TeacherConflictInfo[]>): boolean {
+  return getTeacherConflictForTeacher(teacher, conflictMap) !== null;
 }
 
 export function getTeacherConflictDetails(targetTeacherName: string, conflictMap: Map<string, TeacherConflictInfo[]>): TeacherConflictInfo | null {
   if (!targetTeacherName || targetTeacherName === '__OTHER__') return null;
-  const targetLower = targetTeacherName.trim().toLowerCase();
+  const targetNorm = normalizeTeacherSearchText(targetTeacherName);
   const targetClean = cleanTeacherName(targetTeacherName);
 
   for (const [busyName, list] of conflictMap.entries()) {
-    const bLower = busyName.trim().toLowerCase();
+    const bNorm = normalizeTeacherSearchText(busyName);
     const bClean = cleanTeacherName(busyName);
     if (
-      targetLower === bLower || targetLower.includes(bLower) || bLower.includes(targetLower) ||
-      (targetClean && bClean && (targetClean === bClean || targetClean.includes(bClean) || bClean.includes(targetClean)))
+      (targetNorm && targetNorm === bNorm) ||
+      (targetClean && bClean && targetClean === bClean)
     ) {
       return list[0] || null;
     }
@@ -682,7 +694,7 @@ export default function Programs() {
     type: 'اصلی', 
     grade: 'پایه 7',
     day: '', 
-    time: '۰۸:۰۰ الی ۰۹:۰۰', 
+    time: '', 
     teacher: '',
     madrasRoom: '',
     parentProgramId: '',
@@ -737,8 +749,8 @@ export default function Programs() {
   }, [rooms, busyRoomsMapEdit]);
 
   // Custom time mode state
-  const [customStartAdd, setCustomStartAdd] = useState('08:00');
-  const [customEndAdd, setCustomEndAdd] = useState('09:00');
+  const [customStartAdd, setCustomStartAdd] = useState('');
+  const [customEndAdd, setCustomEndAdd] = useState('');
   const [customStartEdit, setCustomStartEdit] = useState('08:00');
   const [customEndEdit, setCustomEndEdit] = useState('09:00');
 
@@ -1523,6 +1535,12 @@ export default function Programs() {
       return;
     }
 
+    const programTime = (newProgram.time || '').trim();
+    if (!programTime) {
+      dispatchDatabaseToast('لطفاً ساعت برگزاری کلاس را انتخاب نمایید.', 'warning');
+      return;
+    }
+
     // Check teacher conflict
     const targetTeacher = (newProgram.teacher || '').trim();
     if (targetTeacher && targetTeacher !== '__OTHER__') {
@@ -1548,7 +1566,6 @@ export default function Programs() {
     try {
       const dayStr = addModalDays.join(' ، ');
       const programGrade = newProgram.grade || 'پایه 7';
-      const programTime = newProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
       const cleanTeacher = (newProgram.teacher || '').trim();
       const cleanRoom = (newProgram.madrasRoom || '').trim();
 
@@ -1606,7 +1623,7 @@ export default function Programs() {
         type: 'اصلی', 
         grade: programGrade, 
         day: '', 
-        time: '۰۸:۰۰ الی ۰۹:۰۰', 
+        time: '', 
         teacher: '', 
         madrasRoom: '', 
         parentProgramId: '',
@@ -1620,8 +1637,10 @@ export default function Programs() {
         chapterId: undefined
       });
       setAddModalDays(DEFAULT_MAIN_DAYS);
-      setCustomStartAdd('08:00');
-      setCustomEndAdd('09:00');
+      setCustomStartAdd('');
+      setCustomEndAdd('');
+      setIsCustomTeacherAdd(false);
+      setIsCustomRoomAdd(false);
 
       if (selectedGradeFilter !== 'all' && selectedGradeFilter !== programGrade) {
         setSelectedGradeFilter(programGrade);
@@ -1682,10 +1701,10 @@ export default function Programs() {
     setEditingProgram(program);
     setEditModalDays(getProgramDays(program));
     if (program.time) {
-      const parts = program.time.split('الی').map(p => p.trim());
-      if (parts.length === 2) {
-        setCustomStartEdit(parts[0]);
-        setCustomEndEdit(parts[1]);
+      const parsed = extractProgramTimeRange({ time: program.time });
+      if (parsed) {
+        setCustomStartEdit(parsed.startTime);
+        setCustomEndEdit(parsed.endTime);
       }
     }
   };
@@ -2696,12 +2715,16 @@ export default function Programs() {
                     onClick: () => {
                       setEditingProgram(null);
                       setShowAddStudentsSection(false);
+                      setIsCustomTeacherAdd(false);
+                      setIsCustomRoomAdd(false);
+                      setCustomStartAdd('');
+                      setCustomEndAdd('');
                       setNewProgram({
                         title: '',
                         type: 'اصلی',
                         grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
                         day: '',
-                        time: '۰۸:۰۰ الی ۰۹:۰۰',
+                        time: '',
                         teacher: '',
                         madrasRoom: '',
                         parentProgramId: '',
@@ -2877,12 +2900,16 @@ export default function Programs() {
                   onClick={() => {
                     setEditingProgram(null);
                     setShowAddStudentsSection(false);
+                    setIsCustomTeacherAdd(false);
+                    setIsCustomRoomAdd(false);
+                    setCustomStartAdd('');
+                    setCustomEndAdd('');
                     setNewProgram({ 
                       title: '', 
                       type: 'اصلی', 
                       grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
                       day: '', 
-                      time: '۰۸:۰۰ الی ۰۹:۰۰', 
+                      time: '', 
                       teacher: '', 
                       madrasRoom: '',
                       parentProgramId: '',
@@ -4357,7 +4384,18 @@ export default function Programs() {
                   <select 
                     className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-bold text-slate-800 mb-1.5"
                     value={newProgram.time || ''}
-                    onChange={(e) => setNewProgram({...newProgram, time: e.target.value})}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewProgram({ ...newProgram, time: val });
+                      const parsed = extractProgramTimeRange({ time: val });
+                      if (parsed) {
+                        setCustomStartAdd(parsed.startTime);
+                        setCustomEndAdd(parsed.endTime);
+                      } else if (!val) {
+                        setCustomStartAdd('');
+                        setCustomEndAdd('');
+                      }
+                    }}
                   >
                     <option value="">-- انتخاب از ساعات پیش‌فرض کلاس‌ها --</option>
                     {CLASS_TIME_PRESETS.map(slot => (
@@ -4373,10 +4411,22 @@ export default function Programs() {
                         className="flex-1 px-1.5 py-1 text-xs border border-slate-200 rounded-lg bg-white font-mono font-bold text-slate-800"
                         value={customStartAdd}
                         onChange={(e) => {
-                          setCustomStartAdd(e.target.value);
-                          setNewProgram({...newProgram, time: `${e.target.value} الی ${customEndAdd}`});
+                          const start = e.target.value;
+                          setCustomStartAdd(start);
+                          if (!start) {
+                            setNewProgram({ ...newProgram, time: '' });
+                            return;
+                          }
+                          let end = customEndAdd;
+                          if (!end || end <= start) {
+                            const nextValid = END_HOURS_ALLOWED.find(h => h > start) || END_HOURS_ALLOWED[END_HOURS_ALLOWED.length - 1];
+                            end = nextValid;
+                            setCustomEndAdd(end);
+                          }
+                          setNewProgram({ ...newProgram, time: `${start} الی ${end}` });
                         }}
                       >
+                        <option value="">--</option>
                         {START_HOURS_ALLOWED.map(h => (
                           <option key={h} value={h}>{h}</option>
                         ))}
@@ -4386,10 +4436,22 @@ export default function Programs() {
                         className="flex-1 px-1.5 py-1 text-xs border border-slate-200 rounded-lg bg-white font-mono font-bold text-slate-800"
                         value={customEndAdd}
                         onChange={(e) => {
-                          setCustomEndAdd(e.target.value);
-                          setNewProgram({...newProgram, time: `${customStartAdd} الی ${e.target.value}`});
+                          const end = e.target.value;
+                          setCustomEndAdd(end);
+                          if (!end) {
+                            setNewProgram({ ...newProgram, time: '' });
+                            return;
+                          }
+                          let start = customStartAdd;
+                          if (!start || start >= end) {
+                            const validStarts = START_HOURS_ALLOWED.filter(h => h < end);
+                            start = validStarts[validStarts.length - 1] || START_HOURS_ALLOWED[0];
+                            setCustomStartAdd(start);
+                          }
+                          setNewProgram({ ...newProgram, time: `${start} الی ${end}` });
                         }}
                       >
+                        <option value="">--</option>
                         {END_HOURS_ALLOWED.map(h => (
                           <option key={h} value={h}>{h}</option>
                         ))}
@@ -4512,8 +4574,9 @@ export default function Programs() {
                   {!isCustomTeacherAdd ? (
                     <>
                       <SearchableTeacherSelect
-                        teachers={availableTeachersAdd}
+                        teachers={teachers}
                         value={newProgram.teacher || ''}
+                        getConflictInfo={(teacher) => getTeacherConflictForTeacher(teacher, busyTeachersMapAdd)}
                         onChange={(teacherName) =>
                           setNewProgram({ ...newProgram, teacher: teacherName })
                         }
@@ -4529,7 +4592,7 @@ export default function Programs() {
                       {teachers.length - availableTeachersAdd.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
                           <span>⚡</span>
-                          <span>{teachers.length - availableTeachersAdd.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
+                          <span>{teachers.length - availableTeachersAdd.length} مدرس در ساعت انتخابی تداخل زمانی دارند و در انتهای لیست با برچسب تداخل نمایش داده شده‌اند.</span>
                         </p>
                       )}
                     </>
@@ -5024,7 +5087,15 @@ export default function Programs() {
                   <select 
                     className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-bold text-slate-800 mb-1.5"
                     value={editingProgram.time || ''}
-                    onChange={(e) => setEditingProgram({...editingProgram, time: e.target.value})}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditingProgram({ ...editingProgram, time: val });
+                      const parsed = extractProgramTimeRange({ time: val });
+                      if (parsed) {
+                        setCustomStartEdit(parsed.startTime);
+                        setCustomEndEdit(parsed.endTime);
+                      }
+                    }}
                   >
                     <option value="">-- انتخاب از ساعات پیش‌فرض کلاس‌ها --</option>
                     {editingProgram.time && !CLASS_TIME_PRESETS.includes(editingProgram.time) && (
@@ -5043,8 +5114,14 @@ export default function Programs() {
                         className="flex-1 px-1.5 py-1 text-xs border border-slate-200 rounded-lg bg-white font-mono font-bold text-slate-800"
                         value={customStartEdit}
                         onChange={(e) => {
-                          setCustomStartEdit(e.target.value);
-                          setEditingProgram({...editingProgram, time: `${e.target.value} الی ${customEndEdit}`});
+                          const start = e.target.value;
+                          setCustomStartEdit(start);
+                          let end = customEndEdit;
+                          if (!end || end <= start) {
+                            end = END_HOURS_ALLOWED.find(h => h > start) || END_HOURS_ALLOWED[END_HOURS_ALLOWED.length - 1];
+                            setCustomEndEdit(end);
+                          }
+                          setEditingProgram({ ...editingProgram, time: `${start} الی ${end}` });
                         }}
                       >
                         {START_HOURS_ALLOWED.map(h => (
@@ -5056,8 +5133,15 @@ export default function Programs() {
                         className="flex-1 px-1.5 py-1 text-xs border border-slate-200 rounded-lg bg-white font-mono font-bold text-slate-800"
                         value={customEndEdit}
                         onChange={(e) => {
-                          setCustomEndEdit(e.target.value);
-                          setEditingProgram({...editingProgram, time: `${customStartEdit} الی ${e.target.value}`});
+                          const end = e.target.value;
+                          setCustomEndEdit(end);
+                          let start = customStartEdit;
+                          if (!start || start >= end) {
+                            const validStarts = START_HOURS_ALLOWED.filter(h => h < end);
+                            start = validStarts[validStarts.length - 1] || START_HOURS_ALLOWED[0];
+                            setCustomStartEdit(start);
+                          }
+                          setEditingProgram({ ...editingProgram, time: `${start} الی ${end}` });
                         }}
                       >
                         {END_HOURS_ALLOWED.map(h => (
@@ -5201,8 +5285,9 @@ export default function Programs() {
                   {!isCustomTeacherEdit ? (
                     <>
                       <SearchableTeacherSelect
-                        teachers={availableTeachersEdit}
+                        teachers={teachers}
                         value={editingProgram.teacher || ''}
+                        getConflictInfo={(teacher) => getTeacherConflictForTeacher(teacher, busyTeachersMapEdit)}
                         currentTeacherFallback={editingProgram.teacher || undefined}
                         onChange={(teacherName) =>
                           setEditingProgram({ ...editingProgram, teacher: teacherName })
@@ -5219,7 +5304,7 @@ export default function Programs() {
                       {teachers.length - availableTeachersEdit.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
                           <span>⚡</span>
-                          <span>{teachers.length - availableTeachersEdit.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
+                          <span>{teachers.length - availableTeachersEdit.length} مدرس در ساعت انتخابی تداخل زمانی دارند و در انتهای لیست با برچسب تداخل نمایش داده شده‌اند.</span>
                         </p>
                       )}
                     </>
