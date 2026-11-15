@@ -50,6 +50,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { exportElementToPdf } from '../lib/pdfExport';
 import { exportElementToImage } from '../lib/imageExport';
 import { GradeAwareStudentPicker, normalizeGradeKey } from './programs/GradeAwareStudentPicker';
+import { SearchableTeacherSelect } from './programs/SearchableTeacherSelect';
 import { useIsAdminMobile } from './admin/mobile/AdminMobileContext';
 import { MobileSectionHeader, MobileHorizontalTabs, MobileSearchFilterBar } from './admin/mobile/MobileModulePrimitives';
 
@@ -4510,34 +4511,20 @@ export default function Programs() {
 
                   {!isCustomTeacherAdd ? (
                     <>
-                      <select
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                      <SearchableTeacherSelect
+                        teachers={availableTeachersAdd}
                         value={newProgram.teacher || ''}
-                        onChange={(e) => {
-                          if (e.target.value === '__OTHER__') {
-                            setIsCustomTeacherAdd(true);
-                          } else {
-                            setNewProgram({...newProgram, teacher: e.target.value});
+                        onChange={(teacherName) =>
+                          setNewProgram({ ...newProgram, teacher: teacherName })
+                        }
+                        onSwitchToCustom={(prefillName) => {
+                          if (prefillName) {
+                            setNewProgram({ ...newProgram, teacher: prefillName });
                           }
+                          setIsCustomTeacherAdd(true);
                         }}
-                      >
-                        <option value="">-- انتخاب استاد از اساتید در دسترس (بدون تداخل زمانی) --</option>
-                        <optgroup label="اساتید داخلی مؤسسه (در دسترس)">
-                          {availableTeachersAdd.filter(t => !t.isExternal).map(t => (
-                            <option key={t.id} value={t.fullName}>
-                              {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
-                          {availableTeachersAdd.filter(t => t.isExternal).map(t => (
-                            <option key={t.id} value={t.fullName}>
-                              {t.fullName} (خارج از مجموعه)
-                            </option>
-                          ))}
-                        </optgroup>
-                        <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
-                      </select>
+                        placeholder="-- انتخاب یا جستجوی استاد (تایپ کنید)... --"
+                      />
 
                       {teachers.length - availableTeachersAdd.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
@@ -5213,39 +5200,21 @@ export default function Programs() {
 
                   {!isCustomTeacherEdit ? (
                     <>
-                      <select
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold bg-white text-slate-800"
+                      <SearchableTeacherSelect
+                        teachers={availableTeachersEdit}
                         value={editingProgram.teacher || ''}
-                        onChange={(e) => {
-                          if (e.target.value === '__OTHER__') {
-                            setIsCustomTeacherEdit(true);
-                          } else {
-                            setEditingProgram({...editingProgram, teacher: e.target.value});
+                        currentTeacherFallback={editingProgram.teacher || undefined}
+                        onChange={(teacherName) =>
+                          setEditingProgram({ ...editingProgram, teacher: teacherName })
+                        }
+                        onSwitchToCustom={(prefillName) => {
+                          if (prefillName) {
+                            setEditingProgram({ ...editingProgram, teacher: prefillName });
                           }
+                          setIsCustomTeacherEdit(true);
                         }}
-                      >
-                        <option value="">-- انتخاب استاد از اساتید در دسترس (بدون تداخل زمانی) --</option>
-                        {editingProgram.teacher && !availableTeachersEdit.some(t => t.fullName === editingProgram.teacher) && (
-                          <option value={editingProgram.teacher}>
-                            {editingProgram.teacher} (استاد فعلی کلاس)
-                          </option>
-                        )}
-                        <optgroup label="اساتید داخلی مؤسسه (در دسترس)">
-                          {availableTeachersEdit.filter(t => !t.isExternal).map(t => (
-                            <option key={t.id} value={t.fullName}>
-                              {t.fullName} {t.phoneNumber ? `(${t.phoneNumber})` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="مدرس‌های خارج از مجموعه (در دسترس)">
-                          {availableTeachersEdit.filter(t => t.isExternal).map(t => (
-                            <option key={t.id} value={t.fullName}>
-                              {t.fullName} (خارج از مجموعه)
-                            </option>
-                          ))}
-                        </optgroup>
-                        <option value="__OTHER__">➕ سایر (ورود دستی نام استاد)...</option>
-                      </select>
+                        placeholder="-- انتخاب یا جستجوی استاد (تایپ کنید)... --"
+                      />
 
                       {teachers.length - availableTeachersEdit.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
