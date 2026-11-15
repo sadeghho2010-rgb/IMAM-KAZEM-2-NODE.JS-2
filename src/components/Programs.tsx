@@ -219,7 +219,7 @@ export function normalizeTimeStr(timeStr?: string): string {
     .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
     .trim();
   const parts = eng.split(':');
-  if (parts.length === 2) {
+  if (parts.length >= 2) {
     const hh = parts[0].padStart(2, '0');
     const mm = parts[1].padStart(2, '0');
     return `${hh}:${mm}`;
@@ -228,28 +228,47 @@ export function normalizeTimeStr(timeStr?: string): string {
 }
 
 export function extractProgramTimeRange(prog: { time?: string; startTime?: string; endTime?: string }): { startTime: string; endTime: string } | null {
+  if (prog.time) {
+    const eng = prog.time
+      .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+      .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+      .replace(/：/g, ':');
+    const match = eng.match(/(\d{1,2}:\d{2})(?::\d{2})?\s*(?:الی|تا|-|–|—|to)\s*(\d{1,2}:\d{2})(?::\d{2})?/i);
+    if (match) {
+      return {
+        startTime: normalizeTimeStr(match[1]),
+        endTime: normalizeTimeStr(match[2])
+      };
+    }
+  }
   if (prog.startTime && prog.endTime) {
     const s = normalizeTimeStr(prog.startTime);
     const e = normalizeTimeStr(prog.endTime);
     if (s && e) return { startTime: s, endTime: e };
   }
-  if (!prog.time) return null;
-  const eng = prog.time
-    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
-    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
-  const match = eng.match(/(\d{1,2}:\d{2})\s*(?:الی|تا|-|to)\s*(\d{1,2}:\d{2})/i);
-  if (match) {
-    return {
-      startTime: normalizeTimeStr(match[1]),
-      endTime: normalizeTimeStr(match[2])
-    };
-  }
   return null;
+}
+
+function parseMinutesFromHHMM(hhmm: string): number | null {
+  const norm = normalizeTimeStr(hhmm);
+  const m = norm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (isNaN(h) || isNaN(min)) return null;
+  return h * 60 + min;
 }
 
 export function isTimeSlotOverlapping(start1: string, end1: string, start2: string, end2: string): boolean {
   if (!start1 || !end1 || !start2 || !end2) return false;
-  return (start1 < end2) && (start2 < end1);
+  const s1 = parseMinutesFromHHMM(start1);
+  const e1 = parseMinutesFromHHMM(end1);
+  const s2 = parseMinutesFromHHMM(start2);
+  const e2 = parseMinutesFromHHMM(end2);
+  if (s1 === null || e1 === null || s2 === null || e2 === null) {
+    return (start1 < end2) && (start2 < end1);
+  }
+  return (s1 < e2) && (s2 < e1);
 }
 
 export interface TeacherConflictInfo {
@@ -273,6 +292,7 @@ export function getConflictingTeachers(
   if (!targetRange) return conflictMap;
 
   for (const prog of allPrograms) {
+    if (!prog || prog.isDeleted === true || prog.status === 'deleted' || prog.status === 'inactive' || Boolean((prog as any).deletedAt)) continue;
     if (excludeProgramId && prog.id === excludeProgramId) continue;
     const teacherName = (prog.teacher || '').trim();
     if (!teacherName) continue;
@@ -367,6 +387,7 @@ export function getConflictingClassrooms(
   if (!targetRange) return conflictMap;
 
   for (const prog of allPrograms) {
+    if (!prog || prog.isDeleted === true || prog.status === 'deleted' || prog.status === 'inactive' || Boolean((prog as any).deletedAt)) continue;
     if (excludeProgramId && prog.id === excludeProgramId) continue;
     const roomName = (prog.madrasRoom || prog.classroom || '').trim();
     if (!roomName || roomName === '__OTHER__') continue;
@@ -394,30 +415,53 @@ export function getConflictingClassrooms(
   return conflictMap;
 }
 
-export function isClassroomConflicting(room: MadrasRoom, conflictMap: Map<string, ClassroomConflictInfo[]>): boolean {
-  const rName = (room.name || '').trim().toLowerCase();
-  const rCode = (room.code || '').trim().toLowerCase();
+function normalizeRoomKey(val?: string): string {
+  return normalizeTeacherSearchText(val || '');
+}
 
-  for (const [busyName] of conflictMap.entries()) {
-    const bLower = busyName.trim().toLowerCase();
+function stripRoomFloorPrefix(val: string): string {
+  return val
+    .replace(/^(طبقه\s*(همکف|اول|دوم|سوم|چهارم|زیرزمین))\s*-\s*/i, '')
+    .trim();
+}
+
+export function getClassroomConflictForRoom(
+  room: MadrasRoom,
+  conflictMap: Map<string, ClassroomConflictInfo[]>
+): ClassroomConflictInfo | null {
+  const rName = normalizeRoomKey(room.name);
+  const rNameStripped = normalizeRoomKey(stripRoomFloorPrefix(room.name || ''));
+  const rCode = normalizeRoomKey(room.code);
+
+  for (const [busyName, list] of conflictMap.entries()) {
+    const bNorm = normalizeRoomKey(busyName);
+    const bStripped = normalizeRoomKey(stripRoomFloorPrefix(busyName));
     if (
-      (rName && (rName === bLower || rName.includes(bLower) || bLower.includes(rName))) ||
-      (rCode && (rCode === bLower || bLower.includes(rCode)))
+      (rName && (rName === bNorm || rName === bStripped)) ||
+      (rNameStripped && (rNameStripped === bNorm || rNameStripped === bStripped)) ||
+      (rCode && (rCode === bNorm || rCode === bStripped))
     ) {
-      return true;
+      return list[0] || null;
     }
   }
-  return false;
+  return null;
+}
+
+export function isClassroomConflicting(room: MadrasRoom, conflictMap: Map<string, ClassroomConflictInfo[]>): boolean {
+  return getClassroomConflictForRoom(room, conflictMap) !== null;
 }
 
 export function getClassroomConflictDetails(targetRoomName: string, conflictMap: Map<string, ClassroomConflictInfo[]>): ClassroomConflictInfo | null {
   if (!targetRoomName || targetRoomName === '__OTHER__') return null;
-  const targetLower = targetRoomName.trim().toLowerCase();
+  const targetNorm = normalizeRoomKey(targetRoomName);
+  const targetStripped = normalizeRoomKey(stripRoomFloorPrefix(targetRoomName));
 
   for (const [busyName, list] of conflictMap.entries()) {
-    const bLower = busyName.trim().toLowerCase();
+    const bNorm = normalizeRoomKey(busyName);
+    const bStripped = normalizeRoomKey(stripRoomFloorPrefix(busyName));
     if (
-      targetLower === bLower || targetLower.includes(bLower) || bLower.includes(targetLower)
+      (targetNorm && (targetNorm === bNorm || targetNorm === bStripped)) ||
+      (targetStripped && (targetStripped === bNorm || targetStripped === bStripped))
     ) {
       return list[0] || null;
     }
@@ -694,7 +738,7 @@ export default function Programs() {
     type: 'اصلی', 
     grade: 'پایه 7',
     day: '', 
-    time: '', 
+    time: '۰۸:۰۰ الی ۰۹:۰۰', 
     teacher: '',
     madrasRoom: '',
     parentProgramId: '',
@@ -749,8 +793,8 @@ export default function Programs() {
   }, [rooms, busyRoomsMapEdit]);
 
   // Custom time mode state
-  const [customStartAdd, setCustomStartAdd] = useState('');
-  const [customEndAdd, setCustomEndAdd] = useState('');
+  const [customStartAdd, setCustomStartAdd] = useState('08:00');
+  const [customEndAdd, setCustomEndAdd] = useState('09:00');
   const [customStartEdit, setCustomStartEdit] = useState('08:00');
   const [customEndEdit, setCustomEndEdit] = useState('09:00');
 
@@ -1572,6 +1616,7 @@ export default function Programs() {
       const tempId = `prog_${Date.now()}`;
       const nowIso = new Date().toISOString();
       const initialStudentIds = Array.from(new Set(newProgram.studentIds || []));
+      const parsedAddRange = extractProgramTimeRange({ time: programTime });
       const programPayload: Program = {
         id: tempId,
         title,
@@ -1580,6 +1625,8 @@ export default function Programs() {
         day: dayStr,
         grade: programGrade,
         time: programTime,
+        startTime: parsedAddRange?.startTime,
+        endTime: parsedAddRange?.endTime,
         teacher: cleanTeacher,
         madrasRoom: cleanRoom,
         classroom: cleanRoom,
@@ -1623,7 +1670,7 @@ export default function Programs() {
         type: 'اصلی', 
         grade: programGrade, 
         day: '', 
-        time: '', 
+        time: '۰۸:۰۰ الی ۰۹:۰۰', 
         teacher: '', 
         madrasRoom: '', 
         parentProgramId: '',
@@ -1637,8 +1684,8 @@ export default function Programs() {
         chapterId: undefined
       });
       setAddModalDays(DEFAULT_MAIN_DAYS);
-      setCustomStartAdd('');
-      setCustomEndAdd('');
+      setCustomStartAdd('08:00');
+      setCustomEndAdd('09:00');
       setIsCustomTeacherAdd(false);
       setIsCustomRoomAdd(false);
 
@@ -1740,6 +1787,8 @@ export default function Programs() {
       const nowIso = new Date().toISOString();
       const uniqueEditedStudentIds = Array.from(new Set(editSelectedStudentIds));
 
+      const editTimeStr = editingProgram.time || '۰۸:۰۰ الی ۰۹:۰۰';
+      const parsedEditRange = extractProgramTimeRange({ time: editTimeStr });
       const updatedProgram: Program = {
         ...editingProgram,
         title: (editingProgram.title || '').trim() || 'برنامه آموزشی',
@@ -1747,7 +1796,9 @@ export default function Programs() {
         grade: editingProgram.grade || 'پایه 7',
         days: [...editModalDays],
         day: dayStr,
-        time: editingProgram.time || '۰۸:۰۰ الی ۰۹:۰۰',
+        time: editTimeStr,
+        startTime: parsedEditRange?.startTime,
+        endTime: parsedEditRange?.endTime,
         teacher: targetTeacher,
         madrasRoom: targetRoom,
         classroom: targetRoom,
@@ -2717,14 +2768,15 @@ export default function Programs() {
                       setShowAddStudentsSection(false);
                       setIsCustomTeacherAdd(false);
                       setIsCustomRoomAdd(false);
-                      setCustomStartAdd('');
-                      setCustomEndAdd('');
+                      setCustomStartAdd('08:00');
+                      setCustomEndAdd('09:00');
+                      setAddModalDays(DEFAULT_MAIN_DAYS);
                       setNewProgram({
                         title: '',
                         type: 'اصلی',
                         grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
                         day: '',
-                        time: '',
+                        time: '۰۸:۰۰ الی ۰۹:۰۰',
                         teacher: '',
                         madrasRoom: '',
                         parentProgramId: '',
@@ -2902,14 +2954,15 @@ export default function Programs() {
                     setShowAddStudentsSection(false);
                     setIsCustomTeacherAdd(false);
                     setIsCustomRoomAdd(false);
-                    setCustomStartAdd('');
-                    setCustomEndAdd('');
+                    setCustomStartAdd('08:00');
+                    setCustomEndAdd('09:00');
+                    setAddModalDays(DEFAULT_MAIN_DAYS);
                     setNewProgram({ 
                       title: '', 
                       type: 'اصلی', 
                       grade: selectedGradeFilter !== 'all' ? selectedGradeFilter : 'پایه 7',
                       day: '', 
-                      time: '', 
+                      time: '۰۸:۰۰ الی ۰۹:۰۰', 
                       teacher: '', 
                       madrasRoom: '',
                       parentProgramId: '',
@@ -4511,10 +4564,21 @@ export default function Programs() {
                       </select>
 
                       {rooms.length - availableRoomsAdd.length > 0 && (
-                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
-                          <span>⚡</span>
-                          <span>{rooms.length - availableRoomsAdd.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند.</span>
-                        </p>
+                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2.5 py-1.5 rounded-lg mt-1 font-bold space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span>⚡</span>
+                            <span>{rooms.length - availableRoomsAdd.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند:</span>
+                          </div>
+                          <div className="text-[9.5px] font-medium text-amber-700 pr-4">
+                            {rooms
+                              .filter(r => isClassroomConflicting(r, busyRoomsMapAdd))
+                              .map(r => {
+                                const c = getClassroomConflictForRoom(r, busyRoomsMapAdd);
+                                return c ? `${r.name} (${c.time} - ${c.programTitle})` : r.name;
+                              })
+                              .join(' ، ')}
+                          </div>
+                        </div>
                       )}
                     </>
                   ) : (
@@ -4574,9 +4638,8 @@ export default function Programs() {
                   {!isCustomTeacherAdd ? (
                     <>
                       <SearchableTeacherSelect
-                        teachers={teachers}
+                        teachers={availableTeachersAdd}
                         value={newProgram.teacher || ''}
-                        getConflictInfo={(teacher) => getTeacherConflictForTeacher(teacher, busyTeachersMapAdd)}
                         onChange={(teacherName) =>
                           setNewProgram({ ...newProgram, teacher: teacherName })
                         }
@@ -4592,7 +4655,7 @@ export default function Programs() {
                       {teachers.length - availableTeachersAdd.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
                           <span>⚡</span>
-                          <span>{teachers.length - availableTeachersAdd.length} مدرس در ساعت انتخابی تداخل زمانی دارند و در انتهای لیست با برچسب تداخل نمایش داده شده‌اند.</span>
+                          <span>{teachers.length - availableTeachersAdd.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
                         </p>
                       )}
                     </>
@@ -5213,10 +5276,21 @@ export default function Programs() {
                       </select>
 
                       {rooms.length - availableRoomsEdit.length > 0 && (
-                        <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
-                          <span>⚡</span>
-                          <span>{rooms.length - availableRoomsEdit.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند.</span>
-                        </p>
+                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2.5 py-1.5 rounded-lg mt-1 font-bold space-y-0.5">
+                          <div className="flex items-center gap-1">
+                            <span>⚡</span>
+                            <span>{rooms.length - availableRoomsEdit.length} مَدرَس به دلیل رزرو بودن در روز و ساعت انتخابی از لیست مخفی شدند:</span>
+                          </div>
+                          <div className="text-[9.5px] font-medium text-amber-700 pr-4">
+                            {rooms
+                              .filter(r => isClassroomConflicting(r, busyRoomsMapEdit))
+                              .map(r => {
+                                const c = getClassroomConflictForRoom(r, busyRoomsMapEdit);
+                                return c ? `${r.name} (${c.time} - ${c.programTitle})` : r.name;
+                              })
+                              .join(' ، ')}
+                          </div>
+                        </div>
                       )}
                     </>
                   ) : (
@@ -5285,9 +5359,8 @@ export default function Programs() {
                   {!isCustomTeacherEdit ? (
                     <>
                       <SearchableTeacherSelect
-                        teachers={teachers}
+                        teachers={availableTeachersEdit}
                         value={editingProgram.teacher || ''}
-                        getConflictInfo={(teacher) => getTeacherConflictForTeacher(teacher, busyTeachersMapEdit)}
                         currentTeacherFallback={editingProgram.teacher || undefined}
                         onChange={(teacherName) =>
                           setEditingProgram({ ...editingProgram, teacher: teacherName })
@@ -5304,7 +5377,7 @@ export default function Programs() {
                       {teachers.length - availableTeachersEdit.length > 0 && (
                         <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200/90 px-2 py-1 rounded-lg mt-1 font-bold flex items-center gap-1">
                           <span>⚡</span>
-                          <span>{teachers.length - availableTeachersEdit.length} مدرس در ساعت انتخابی تداخل زمانی دارند و در انتهای لیست با برچسب تداخل نمایش داده شده‌اند.</span>
+                          <span>{teachers.length - availableTeachersEdit.length} مدرس به دلیل تداخل ساعت در روزهای انتخابی از لیست مخفی شدند.</span>
                         </p>
                       )}
                     </>

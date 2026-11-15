@@ -200,19 +200,31 @@ export function isProgramInRoom(prog: Program, room: MadrasRoom): boolean {
   const pRoom = (prog.madrasRoom || prog.classroom || '').trim();
   if (!pRoom) return false;
 
+  const stripFloor = (s: string) =>
+    s.replace(/^(طبقه\s*(همکف|اول|دوم|سوم|چهارم|زیرزمین))\s*-\s*/i, '').trim();
+
   const cleanPRoom = cleanPersianText(pRoom);
+  const cleanPRoomStripped = cleanPersianText(stripFloor(pRoom));
   const cleanRoomName = cleanPersianText(room.name);
+  const cleanRoomNameStripped = cleanPersianText(stripFloor(room.name));
   const cleanRoomCode = cleanPersianText(room.code || '');
 
-  if (cleanPRoom === cleanRoomName || (cleanRoomCode && cleanPRoom === cleanRoomCode)) return true;
-  if (cleanPRoom.includes(cleanRoomName) || cleanRoomName.includes(cleanPRoom)) return true;
-  if (cleanRoomCode && (cleanPRoom.includes(cleanRoomCode) || cleanRoomCode.includes(cleanPRoom))) return true;
+  if (
+    cleanPRoom === cleanRoomName ||
+    (cleanPRoomStripped && cleanRoomNameStripped && cleanPRoomStripped === cleanRoomNameStripped) ||
+    (cleanRoomCode && (cleanPRoom === cleanRoomCode || cleanPRoomStripped === cleanRoomCode))
+  ) {
+    return true;
+  }
 
-  // Compare without parentheses e.g. "مدرس ۱"
+  // Compare without parentheses e.g. "مدرس ۱ (شیخ انصاری)" vs "مدرس ۱"
   const roomNameNoParen = cleanPersianText(room.name.replace(/\(.*?\)/g, ''));
-  if (roomNameNoParen && (cleanPRoom.includes(roomNameNoParen) || roomNameNoParen.includes(cleanPRoom))) return true;
+  const pRoomNoParen = cleanPersianText(pRoom.replace(/\(.*?\)/g, ''));
+  if (roomNameNoParen && (cleanPRoom === roomNameNoParen || pRoomNoParen === roomNameNoParen)) {
+    return true;
+  }
 
-  // Check matching room number e.g. "مدرس 1" vs "مدرس ۱"
+  // Check matching whole room number e.g. "مدرس 1" vs "مدرس ۱ (شیخ انصاری)"
   const numInPRoom = cleanPRoom.match(/\d+/);
   const numInRoom = cleanRoomName.match(/\d+/);
   if (numInPRoom && numInRoom && numInPRoom[0] === numInRoom[0]) {
